@@ -1,0 +1,64 @@
+import json
+import os
+from typing import Any
+
+import anyio
+
+from app.domain.schema import BUNDLE_JSON_SCHEMA_V1
+from app.providers.base import Provider, ProviderError
+
+
+class OpenAIProvider(Provider):
+    name = "openai"
+
+    def __init__(self) -> None:
+        self.api_key = os.getenv("OPENAI_API_KEY", "")
+        if not self.api_key:
+            raise ProviderError("Provider configuration error.")
+
+    def generate_bundle(
+        self,
+        requirements: dict[str, Any],
+        *,
+        schema_version: str,
+        request_id: str,
+    ) -> dict[str, Any]:
+        try:
+            from openai import OpenAI
+        except Exception as exc:  # pragma: no cover - env dependent
+            raise ProviderError("Provider SDK unavailable.") from exc
+
+        client = OpenAI(api_key=self.api_key, max_retries=0, timeout=20)
+        stability_checklist = (
+            "Stability checklist:\n"
+            "- Return one JSON bundle object only.\n"
+            "- Include top-level keys: adr, onepager, eval_plan, ops_checklist.\n"
+            "- Include required fields for each doc section per schema.\n"
+            "- Do not include TODO/TBD/FIXME.\n"
+            "- Keep each doc section sufficiently detailed (target >= 600 chars per doc after rendering).\n"
+            "- Output JSON only, no markdown."
+        )
+        prompt = (
+            "Return ONLY JSON matching this schema. No markdown.\n"
+            f"{stability_checklist}\n"
+            f"schema_version={schema_version}\n"
+            f"schema={json.dumps(BUNDLE_JSON_SCHEMA_V1, ensure_ascii=False)}\n"
+            f"requirements={json.dumps(requirements, ensure_ascii=False)}"
+        )
+
+        try:
+            async def _call_with_timeout():
+                with anyio.fail_after(20):
+                    return await anyio.to_thread.run_sync(
+                        lambda: client.responses.create(
+                            model=os.getenv("DECISIONDOC_OPENAI_MODEL", "gpt-4o-mini"),
+                            input=prompt,
+                            response_format={"type": "json_object"},
+                        )
+                    )
+
+            response = anyio.run(_call_with_timeout)
+            text = response.output_text
+            return json.loads(text)
+        except Exception as exc:  # pragma: no cover - network dependent
+            raise ProviderError("Provider request failed.") from exc

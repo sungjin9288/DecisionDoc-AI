@@ -1,0 +1,6 @@
+{
+  "title": "Cost-First Tradeoff",
+  "goal": "Prioritize low operational cost while preserving maintainability",
+  "constraints": "No paid external services in MVP",
+  "priority": "maintainability > cost > security > performance > speed"
+}

@@ -1,0 +1,6 @@
+{
+  "title": "PII Risk Constraint",
+  "goal": "Define safe operational checks",
+  "constraints": "No storage of raw personal data in logs or debug outputs",
+  "doc_types": ["eval_plan", "ops_checklist"]
+}

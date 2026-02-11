@@ -1,0 +1,38 @@
+{
+  "request_id": "d7bfa661-12cb-4972-b53e-7cfbdd53397d",
+  "title": "Smoke",
+  "created_at": "2026-02-09T01:43:44.953701+00:00",
+  "payload": {
+    "title": "Smoke",
+    "goal": "Check default data save",
+    "context": "",
+    "constraints": "",
+    "priority": "maintainability > security > cost > performance > speed",
+    "doc_types": [
+      "adr",
+      "onepager",
+      "eval_plan",
+      "ops_checklist"
+    ],
+    "audience": "mixed",
+    "assumptions": []
+  },
+  "docs": [
+    {
+      "doc_type": "adr",
+      "markdown": "# ADR: Smoke\n\n## Goal\nCheck default data save\n\n## Context\nNo additional context provided.\n\n## Constraints\nNo explicit constraints provided.\n\n## Decision\nUse FastAPI with a mock provider and template-first generation.\n\n## Options\n- Option A: Build API-only MVP with MockProvider and filesystem persistence.\n- Option B: Add real LLM integration now (rejected for MVP stability).\n\n## Risks\n- Generated content quality may be simplistic before LLM integration.\n- Storing request payloads may include sensitive text if users ignore warnings.\n\n## Assumptions\n- Current requirements are stable for the next 2 weeks.\n- Windows local development is the primary environment.\n\n## Checks\n- Validate output structure and section completeness.\n- Confirm generated markdown can be reviewed by mixed audience.\n\n## Next actions\n- Add provider adapter interface tests.\n- Introduce authenticated storage and retention policy in next iteration.\n"
+    },
+    {
+      "doc_type": "onepager",
+      "markdown": "# Onepager: Smoke\n\n## Problem\nDecision documentation is inconsistent and slow without a standard pipeline.\n\n## Recommendation\nGenerate four standardized markdown documents from a single request.\n\n## Impact\n- Faster decision record creation and review.\n- Repeatable artifact format for future automation.\n\n## Constraints\nNo explicit constraints provided.\n\n## Checks\n- Validate output structure and section completeness.\n- Confirm generated markdown can be reviewed by mixed audience.\n"
+    },
+    {
+      "doc_type": "eval_plan",
+      "markdown": "# Eval Plan: Smoke\n\n## Metrics\n- Generation success rate\n- Median response time\n- Template section completeness\n\n## Test cases\n- Minimal payload with default doc types\n- Custom doc_types order is preserved\n- Invalid payload is rejected by strict schema\n\n## Failure criteria\n- Any required section missing in rendered markdown\n- Response schema mismatch or non-200 for valid request\n\n## Monitoring\n- Track request count and error count only\n- Avoid logging full request payload to protect sensitive data\n"
+    },
+    {
+      "doc_type": "ops_checklist",
+      "markdown": "# Ops Checklist: Smoke\n\n## Security\n- [ ] Do not log sensitive request text.\n- [ ] Disallow hardcoded secrets in source.\n\n## Reliability\n- [ ] Persist each request atomically to disk.\n- [ ] Keep provider behavior deterministic for tests.\n\n## Cost\n- [ ] No external API calls in MVP.\n- [ ] Run fully on local environment with free-tier tooling.\n\n## Operations\n- [ ] Run service via uvicorn.\n- [ ] Review generated JSON records in DATA_DIR for troubleshooting.\n"
+    }
+  ]
+}

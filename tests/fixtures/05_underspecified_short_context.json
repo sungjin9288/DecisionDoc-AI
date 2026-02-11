@@ -1,0 +1,5 @@
+{
+  "title": "Edge Context",
+  "goal": "Validate output with very short context",
+  "context": "."
+}

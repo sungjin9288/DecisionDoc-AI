@@ -1,0 +1,48 @@
+name: live-eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      template_version:
+        description: "Template version"
+        required: true
+        default: "v1"
+        type: string
+
+jobs:
+  live-eval:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DECISIONDOC_CACHE_ENABLED: "0"
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Fail fast if secrets missing
+        run: |
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "Missing OPENAI_API_KEY secret"
+            exit 1
+          fi
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "Missing GEMINI_API_KEY secret"
+            exit 1
+          fi
+      - name: Run live eval comparison
+        run: |
+          python -m app.eval_live --template-version "${{ inputs.template_version }}" --fail-on-error
+      - name: Upload live eval report
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-eval-report
+          path: reports/eval-live/**

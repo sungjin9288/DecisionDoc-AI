@@ -1,0 +1,21 @@
+# Eval Plan: {{ title }}
+
+## Metrics
+{% for metric in metrics %}
+- {{ metric }}
+{% endfor %}
+
+## Test cases
+{% for test_case in test_cases %}
+- {{ test_case }}
+{% endfor %}
+
+## Failure criteria
+{% for criterion in failure_criteria %}
+- {{ criterion }}
+{% endfor %}
+
+## Monitoring
+{% for item in monitoring %}
+- {{ item }}
+{% endfor %}

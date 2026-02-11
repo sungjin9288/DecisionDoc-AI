@@ -1,0 +1,111 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Deployment stage"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+      template_version:
+        description: "Template version"
+        required: true
+        default: v1
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CI: "true"
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve stage secrets
+        run: |
+          if [ "${{ inputs.stage }}" = "dev" ]; then
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
+            BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_DEV }}"
+            THROTTLE_BURST="5"
+            THROTTLE_RATE="2"
+            RESERVED_CONCURRENCY="2"
+          else
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
+            BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_PROD }}"
+            THROTTLE_BURST="20"
+            THROTTLE_RATE="10"
+            RESERVED_CONCURRENCY="5"
+          fi
+          API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
+          if [ -z "${AWS_REGION}" ]; then
+            echo "Missing AWS_REGION secret"
+            exit 1
+          fi
+          if [ -z "${ROLE_ARN}" ]; then
+            echo "Missing stage role secret"
+            exit 1
+          fi
+          if [ -z "${BUCKET}" ]; then
+            echo "Missing stage S3 bucket secret"
+            exit 1
+          fi
+          if [ -z "${API_KEY}" ]; then
+            echo "Missing DECISIONDOC_API_KEY secret"
+            exit 1
+          fi
+          echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+          echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
+          echo "DECISIONDOC_API_KEY=${API_KEY}" >> "$GITHUB_ENV"
+          echo "THROTTLE_BURST=${THROTTLE_BURST}" >> "$GITHUB_ENV"
+          echo "THROTTLE_RATE=${THROTTLE_RATE}" >> "$GITHUB_ENV"
+          echo "RESERVED_CONCURRENCY=${RESERVED_CONCURRENCY}" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: SAM build
+        run: |
+          sam build --template-file infra/sam/template.yaml
+
+      - name: SAM deploy
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name decisiondoc-ai-${{ inputs.stage }} \
+            --region "${AWS_REGION}" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --parameter-overrides \
+              Stage=${{ inputs.stage }} \
+              TemplateVersion=${{ inputs.template_version }} \
+              S3BucketName=${DECISIONDOC_S3_BUCKET} \
+              S3Prefix=decisiondoc-ai/ \
+              DecisionDocApiKey=${DECISIONDOC_API_KEY} \
+              ApiThrottlingBurstLimit=${THROTTLE_BURST} \
+              ApiThrottlingRateLimit=${THROTTLE_RATE} \
+              LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}

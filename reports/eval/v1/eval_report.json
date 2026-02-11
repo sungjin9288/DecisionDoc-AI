@@ -1,0 +1,224 @@
+{
+  "eval_version": "v1",
+  "template_version": "v1",
+  "provider": "mock",
+  "generated_at": "2026-02-11T06:11:39.826157+00:00",
+  "summary": {
+    "fixtures": 10,
+    "pass_count": 10,
+    "fail_count": 0,
+    "avg_total_chars": 2322
+  },
+  "results": [
+    {
+      "fixture_id": "01_normal_default_all",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 823,
+        "onepager": 474,
+        "eval_plan": 445,
+        "ops_checklist": 563,
+        "total": 2305
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "02_normal_custom_subset",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 837,
+        "onepager": 466,
+        "eval_plan": 437,
+        "ops_checklist": 555,
+        "total": 2295
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "03_normal_full_fields",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 815,
+        "onepager": 510,
+        "eval_plan": 448,
+        "ops_checklist": 566,
+        "total": 2339
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "04_underspecified_short_goal",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 770,
+        "onepager": 465,
+        "eval_plan": 436,
+        "ops_checklist": 554,
+        "total": 2225
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "05_underspecified_short_context",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 806,
+        "onepager": 465,
+        "eval_plan": 436,
+        "ops_checklist": 554,
+        "total": 2261
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "06_underspecified_minimal_subset",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 807,
+        "onepager": 467,
+        "eval_plan": 438,
+        "ops_checklist": 556,
+        "total": 2268
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "07_security_sensitive_constraints_1",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 869,
+        "onepager": 531,
+        "eval_plan": 444,
+        "ops_checklist": 562,
+        "total": 2406
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "08_security_sensitive_constraints_2",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 859,
+        "onepager": 528,
+        "eval_plan": 443,
+        "ops_checklist": 561,
+        "total": 2391
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "09_cost_constrained_1",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 845,
+        "onepager": 508,
+        "eval_plan": 440,
+        "ops_checklist": 558,
+        "total": 2351
+      },
+      "errors": []
+    },
+    {
+      "fixture_id": "10_cost_constrained_2",
+      "pass": true,
+      "validator_pass": true,
+      "lint_pass": true,
+      "required_sections_coverage": {
+        "adr": 1.0,
+        "onepager": 1.0,
+        "eval_plan": 1.0,
+        "ops_checklist": 1.0
+      },
+      "banned_token_violations": 0,
+      "length_chars": {
+        "adr": 869,
+        "onepager": 504,
+        "eval_plan": 443,
+        "ops_checklist": 561,
+        "total": 2377
+      },
+      "errors": []
+    }
+  ]
+}

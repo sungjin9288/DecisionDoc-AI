@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: DecisionDoc AI Lambda + HTTP API
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+  TemplateVersion:
+    Type: String
+    Default: v1
+  S3BucketName:
+    Type: String
+  S3Prefix:
+    Type: String
+    Default: decisiondoc-ai/
+  DecisionDocApiKey:
+    Type: String
+    NoEcho: true
+  ApiThrottlingBurstLimit:
+    Type: Number
+    Default: 5
+  ApiThrottlingRateLimit:
+    Type: Number
+    Default: 2
+  LambdaReservedConcurrentExecutions:
+    Type: Number
+    Default: 2
+
+Resources:
+  DecisionDocApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: !Ref ApiThrottlingBurstLimit
+        ThrottlingRateLimit: !Ref ApiThrottlingRateLimit
+
+  DecisionDocFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub decisiondoc-ai-${Stage}
+      CodeUri: ../
+      Handler: app.aws_lambda.handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrentExecutions
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+      Environment:
+        Variables:
+          DECISIONDOC_STORAGE: s3
+          DECISIONDOC_S3_BUCKET: !Ref S3BucketName
+          DECISIONDOC_S3_PREFIX: !Ref S3Prefix
+          DECISIONDOC_TEMPLATE_VERSION: !Ref TemplateVersion
+          DECISIONDOC_PROVIDER: mock
+          DECISIONDOC_ENV: !Ref Stage
+          DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
+      Events:
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DecisionDocApi
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DecisionDocApi
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  HttpApiUrl:
+    Description: HTTP API endpoint
+    Value: !Sub https://${DecisionDocApi}.execute-api.${AWS::Region}.amazonaws.com

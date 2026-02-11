@@ -1,0 +1,5 @@
+{
+  "title": "Budget Guardrail",
+  "goal": "Keep monthly spend within strict cap",
+  "constraints": "Monthly budget must remain under USD 20"
+}

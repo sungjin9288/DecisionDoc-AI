@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DECISIONDOC_PROVIDER: "mock"
+      DECISIONDOC_TEMPLATE_VERSION: "v1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run tests (offline)
+        run: |
+          python -m pytest -q
+      - name: Run eval (fixtures, offline)
+        run: |
+          python -m app.eval --fail-on-error
+      - name: Upload eval report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: reports/eval/**

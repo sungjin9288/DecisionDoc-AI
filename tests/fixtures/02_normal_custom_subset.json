@@ -1,0 +1,7 @@
+{
+  "title": "Subset Output",
+  "goal": "Generate only ADR and onepager for quick review",
+  "doc_types": ["adr", "onepager"],
+  "context": "Stakeholder review prep",
+  "audience": "product"
+}

@@ -1,0 +1,10 @@
+{
+  "title": "Platform Standardization",
+  "goal": "Align architecture and operation standards",
+  "context": "Two teams merging workflows",
+  "constraints": "No external APIs in current phase",
+  "priority": "maintainability > security > cost > performance > speed",
+  "doc_types": ["adr", "onepager", "eval_plan", "ops_checklist"],
+  "audience": "mixed",
+  "assumptions": ["Current team capacity remains stable"]
+}

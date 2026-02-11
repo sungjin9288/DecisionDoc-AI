@@ -1,0 +1,5 @@
+{
+  "title": "Minimal Subset",
+  "goal": "Check minimal payload with a single doc",
+  "doc_types": ["ops_checklist"]
+}

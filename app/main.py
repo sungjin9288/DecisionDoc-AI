@@ -1,0 +1,154 @@
+import os
+import logging
+from pathlib import Path
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+
+from app.api.exception_handlers import install_exception_handlers
+from app.auth.api_key import require_api_key
+from app.middleware.observability import install_observability_middleware
+from app.middleware.request_id import install_request_id_middleware
+from app.observability.logging import log_event, setup_logging
+from app.observability.timing import Timer
+from app.schemas import GenerateExportResponse, GenerateRequest, GenerateResponse, HealthResponse
+from app.providers.factory import get_provider
+from app.services.generation_service import GenerationService
+from app.storage.factory import get_storage
+
+logger = logging.getLogger("decisiondoc.generate")
+
+
+def create_app() -> FastAPI:
+    load_dotenv()
+    setup_logging()
+    environment = os.getenv("DECISIONDOC_ENV", "dev").lower()
+    configured_api_key = os.getenv("DECISIONDOC_API_KEY", "")
+    if environment == "prod" and not configured_api_key:
+        raise RuntimeError("DECISIONDOC_API_KEY is required when DECISIONDOC_ENV=prod.")
+
+    configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
+    template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+    template_dir = Path(__file__).resolve().parent / "templates" / template_version
+    data_dir = Path(os.getenv("DATA_DIR", "./data"))
+    storage = get_storage()
+    service = GenerationService(provider_factory=get_provider, template_dir=template_dir, data_dir=data_dir, storage=storage)
+
+    app = FastAPI(title="DecisionDoc AI", version="0.1.0")
+    install_observability_middleware(app)
+    install_request_id_middleware(app)
+    install_exception_handlers(app)
+
+    @app.get("/health", response_model=HealthResponse)
+    def health(request: Request) -> HealthResponse:
+        request.state.provider = configured_provider
+        request.state.template_version = template_version
+        return HealthResponse(status="ok", provider=configured_provider)
+
+    @app.post("/generate", response_model=GenerateResponse)
+    def generate(payload: GenerateRequest, request: Request) -> GenerateResponse:
+        require_api_key(request)
+        # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
+        request_id = request.state.request_id
+        result = service.generate_documents(payload, request_id=request_id)
+        docs = result["docs"]
+
+        request.state.provider = result["metadata"]["provider"]
+        request.state.template_version = template_version
+        request.state.schema_version = result["metadata"]["schema_version"]
+        request.state.cache_hit = result["metadata"]["cache_hit"]
+        timings = result["metadata"].get("timings_ms", {})
+        request.state.provider_ms = timings.get("provider_ms")
+        request.state.render_ms = timings.get("render_ms")
+        request.state.lints_ms = timings.get("lints_ms")
+        request.state.validator_ms = timings.get("validator_ms")
+
+        log_event(
+            logger,
+            {
+                "event": "generate.completed",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 200,
+                "provider": result["metadata"]["provider"],
+                "template_version": template_version,
+                "schema_version": result["metadata"]["schema_version"],
+                "cache_hit": result["metadata"]["cache_hit"],
+                "provider_ms": request.state.provider_ms,
+                "render_ms": request.state.render_ms,
+                "lints_ms": request.state.lints_ms,
+                "validator_ms": request.state.validator_ms,
+            },
+        )
+        return GenerateResponse(
+            request_id=request_id,
+            bundle_id=result["metadata"]["bundle_id"],
+            title=payload.title,
+            provider=result["metadata"]["provider"],
+            schema_version=result["metadata"]["schema_version"],
+            cache_hit=result["metadata"]["cache_hit"],
+            docs=docs,
+        )
+
+    @app.post("/generate/export", response_model=GenerateExportResponse)
+    def generate_export(payload: GenerateRequest, request: Request) -> GenerateExportResponse:
+        require_api_key(request)
+        # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
+        request_id = request.state.request_id
+        result = service.generate_documents(payload, request_id=request_id)
+        docs = result["docs"]
+        bundle_id = result["metadata"]["bundle_id"]
+        export_timer = Timer()
+        with export_timer.measure("export_ms"):
+            files = []
+            for doc in docs:
+                storage.save_export(bundle_id, doc["doc_type"], doc["markdown"])
+                files.append({"doc_type": doc["doc_type"], "path": storage.get_export_path(bundle_id, doc["doc_type"])})
+            export_dir = storage.get_export_dir(bundle_id)
+
+        request.state.provider = result["metadata"]["provider"]
+        request.state.template_version = template_version
+        request.state.schema_version = result["metadata"]["schema_version"]
+        request.state.cache_hit = result["metadata"]["cache_hit"]
+        timings = result["metadata"].get("timings_ms", {})
+        request.state.provider_ms = timings.get("provider_ms")
+        request.state.render_ms = timings.get("render_ms")
+        request.state.lints_ms = timings.get("lints_ms")
+        request.state.validator_ms = timings.get("validator_ms")
+        request.state.export_ms = export_timer.durations_ms.get("export_ms")
+
+        log_event(
+            logger,
+            {
+                "event": "generate.completed",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 200,
+                "provider": result["metadata"]["provider"],
+                "template_version": template_version,
+                "schema_version": result["metadata"]["schema_version"],
+                "cache_hit": result["metadata"]["cache_hit"],
+                "provider_ms": request.state.provider_ms,
+                "render_ms": request.state.render_ms,
+                "lints_ms": request.state.lints_ms,
+                "validator_ms": request.state.validator_ms,
+                "export_ms": request.state.export_ms,
+            },
+        )
+        return GenerateExportResponse(
+            request_id=request_id,
+            bundle_id=bundle_id,
+            title=payload.title,
+            provider=result["metadata"]["provider"],
+            schema_version=result["metadata"]["schema_version"],
+            cache_hit=result["metadata"]["cache_hit"],
+            export_dir=str(export_dir),
+            files=files,
+        )
+
+    return app
+
+
+app = create_app()

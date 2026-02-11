@@ -1,0 +1,20 @@
+# Onepager: {{ title }}
+
+## Problem
+{{ problem }}
+
+## Recommendation
+{{ recommendation }}
+
+## Impact
+{% for item in impact %}
+- {{ item }}
+{% endfor %}
+
+## Constraints
+{{ constraints }}
+
+## Checks
+{% for check in checks %}
+- {{ check }}
+{% endfor %}
