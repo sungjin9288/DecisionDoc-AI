@@ -4,16 +4,23 @@ from typing import Any
 import httpx
 
 
+class StatuspageError(Exception):
+    pass
+
+
 class StatuspageClient:
     def __init__(self, base_url: str = "https://api.statuspage.io/v1") -> None:
         self.base_url = base_url.rstrip("/")
 
-    def create_investigating_incident(self, *, stage: str, incident_id: str) -> str | None:
+    def _credentials(self) -> tuple[str, str]:
         page_id = os.getenv("STATUSPAGE_PAGE_ID", "").strip()
         api_key = os.getenv("STATUSPAGE_API_KEY", "").strip()
         if not page_id or not api_key:
-            return None
+            raise StatuspageError("Status page notification failed.")
+        return page_id, api_key
 
+    def create_investigating_incident(self, *, stage: str, incident_key: str) -> dict[str, str]:
+        page_id, api_key = self._credentials()
         url = f"{self.base_url}/pages/{page_id}/incidents"
         body = {
             "incident": {
@@ -23,29 +30,52 @@ class StatuspageClient:
                     "We are investigating. Next update in 30 minutes. "
                     "Request IDs available on request."
                 ),
-                "metadata": {"stage": stage, "incident_id": incident_id},
+                "metadata": {"stage": stage, "incident_key": incident_key},
             }
         }
         headers = {
             "Authorization": f"OAuth {api_key}",
             "Content-Type": "application/json",
         }
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(url, headers=headers, json=body)
-            if response.status_code >= 400:
-                return None
-            payload: Any = response.json()
-            if not isinstance(payload, dict):
-                return None
-            shortlink = payload.get("shortlink")
-            if isinstance(shortlink, str) and shortlink.strip():
-                return shortlink
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, headers=headers, json=body)
+        if response.status_code >= 400:
+            raise StatuspageError("Status page notification failed.")
+        payload: Any = response.json()
+        if not isinstance(payload, dict):
+            raise StatuspageError("Status page notification failed.")
+
+        incident_id = payload.get("id")
+        if not isinstance(incident_id, str) or not incident_id.strip():
             incident = payload.get("incident")
             if isinstance(incident, dict):
-                incident_id_value = incident.get("id")
-                if isinstance(incident_id_value, str) and incident_id_value.strip():
-                    return incident_id_value
-            return None
-        except Exception:
-            return None
+                candidate = incident.get("id")
+                if isinstance(candidate, str) and candidate.strip():
+                    incident_id = candidate
+        if not isinstance(incident_id, str) or not incident_id.strip():
+            raise StatuspageError("Status page notification failed.")
+
+        incident_url = payload.get("shortlink")
+        if not isinstance(incident_url, str) or not incident_url.strip():
+            incident_url = incident_id
+        return {"incident_id": incident_id, "incident_url": incident_url}
+
+    def post_investigating_update(self, *, incident_id: str) -> None:
+        page_id, api_key = self._credentials()
+        url = f"{self.base_url}/pages/{page_id}/incidents/{incident_id}/incident_updates"
+        body = {
+            "incident_update": {
+                "status": "investigating",
+                "body": "Still investigating elevated errors/latency. Next update in 30 minutes.",
+                "wants_twitter_update": False,
+                "wants_email": False,
+            }
+        }
+        headers = {
+            "Authorization": f"OAuth {api_key}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, headers=headers, json=body)
+        if response.status_code >= 400:
+            raise StatuspageError("Status page notification failed.")

@@ -138,11 +138,26 @@ curl -X POST "http://127.0.0.1:8000/generate" `
   - `window_minutes` (default `30`, max `180`)
   - `reason` (optional, sanitized)
   - `stage` (`dev|prod`, optional)
+  - `force` (optional, default `false`; set `true` to bypass dedupe cache)
 - Response:
   - `incident_id`
+  - `incident_key` (deterministic dedupe key)
+  - `deduped` (whether cached response was returned)
   - `summary` (counts, p95 timings, top error codes)
   - `statuspage_incident_url`
   - `report_s3_key` (internal S3 key)
+  - `statuspage_posted` / `statuspage_error` (partial-failure visibility)
+
+Behavior:
+
+- Dedupe is enabled for repeated requests within TTL:
+  - `DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS` (default `300`)
+  - `DECISIONDOC_INVESTIGATE_BUCKET_SECONDS` (default `300`)
+- Same `incident_key` reuses the same Statuspage incident (avoids duplicates).
+- Statuspage update spam is throttled by:
+  - `DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS` (default `600`)
+- By default, Statuspage failure does not fail investigation (`statuspage_posted=false`).
+  - Strict mode: `DECISIONDOC_OPS_STATUSPAGE_STRICT=1`
 
 Example:
 
@@ -255,6 +270,10 @@ DECISIONDOC_HTTP_API_ID=
 DECISIONDOC_LAMBDA_FUNCTION_NAME=
 STATUSPAGE_PAGE_ID=
 STATUSPAGE_API_KEY=
+DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS=300
+DECISIONDOC_INVESTIGATE_BUCKET_SECONDS=300
+DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS=600
+DECISIONDOC_OPS_STATUSPAGE_STRICT=0
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 ```

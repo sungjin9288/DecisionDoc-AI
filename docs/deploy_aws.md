@@ -56,7 +56,18 @@ Deployment template sets:
 Notes:
 - `prod` stage disables `/docs`, `/redoc`, and `/openapi.json` by design.
 - For key rotation, you can migrate to `DECISIONDOC_API_KEYS` (comma-separated) while keeping legacy `DECISIONDOC_API_KEY` support.
-- Investigation reports are written to S3 under `reports/incidents/<incident_id>/`.
+- Investigation reports are written to S3 under `reports/incidents/<incident_key>/<run_id>/`.
+- Investigation dedupe uses deterministic `incident_key` + time bucket:
+  - `DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS` (default `300`)
+  - `DECISIONDOC_INVESTIGATE_BUCKET_SECONDS` (default `300`)
+  - Use request body `force=true` to bypass dedupe and run a fresh collection.
+- Statuspage duplicate prevention and spam control:
+  - same `incident_key` reuses existing incident id
+  - deduped requests only post update when min interval passes:
+    `DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS` (default `600`)
+- Statuspage failure policy:
+  - default soft mode (`DECISIONDOC_OPS_STATUSPAGE_STRICT=0`): investigation succeeds and evidence is stored
+  - strict mode (`DECISIONDOC_OPS_STATUSPAGE_STRICT=1`): investigate request fails if notify fails
 - Recommended lifecycle: expire incident report objects after N days (e.g., 30-90 days).
 
 Cost safety rails are set in SAM parameters:

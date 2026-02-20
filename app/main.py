@@ -224,6 +224,7 @@ def create_app() -> FastAPI:
             reason=payload.reason,
             stage=stage,
             request_id=request_id,
+            force=payload.force,
         )
         request.state.maintenance = is_maintenance_mode()
         log_event(

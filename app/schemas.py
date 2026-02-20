@@ -91,6 +91,7 @@ class OpsInvestigateRequest(BaseModel):
     window_minutes: int = Field(default=30, ge=1, le=180)
     reason: str = Field(default="", max_length=200)
     stage: Literal["dev", "prod"] | None = None
+    force: bool = False
 
 
 class OpsInvestigateResponse(BaseModel):
@@ -98,3 +99,7 @@ class OpsInvestigateResponse(BaseModel):
     summary: dict[str, Any]
     statuspage_incident_url: str | None = None
     report_s3_key: str
+    incident_key: str = ""
+    deduped: bool = False
+    statuspage_posted: bool | None = None
+    statuspage_error: str | None = None

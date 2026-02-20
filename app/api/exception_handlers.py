@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth.api_key import UnauthorizedError
 from app.maintenance.mode import MaintenanceModeError
+from app.ops.service import OpsNotifyFailedError
 from app.schemas import ErrorResponse
 from app.services.generation_service import EvalLintFailedError, ProviderFailedError
 from app.storage.base import StorageFailedError
@@ -74,6 +75,15 @@ def install_exception_handlers(app: FastAPI) -> None:
             request,
             code="STORAGE_FAILED",
             message="Storage operation failed.",
+            status_code=500,
+        )
+
+    @app.exception_handler(OpsNotifyFailedError)
+    async def ops_notify_failed_handler(request: Request, exc: OpsNotifyFailedError):  # noqa: ARG001
+        return _error_response(
+            request,
+            code="OPS_NOTIFY_FAILED",
+            message="Incident notification failed.",
             status_code=500,
         )
 
