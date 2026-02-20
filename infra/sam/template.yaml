@@ -20,6 +20,12 @@ Parameters:
   DecisionDocApiKey:
     Type: String
     NoEcho: true
+  DecisionDocMaintenance:
+    Type: String
+    Default: "0"
+    AllowedValues:
+      - "0"
+      - "1"
   ApiThrottlingBurstLimit:
     Type: Number
     Default: 5
@@ -61,6 +67,7 @@ Resources:
           DECISIONDOC_PROVIDER: mock
           DECISIONDOC_ENV: !Ref Stage
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
+          DECISIONDOC_MAINTENANCE: !Ref DecisionDocMaintenance
       Events:
         Root:
           Type: HttpApi

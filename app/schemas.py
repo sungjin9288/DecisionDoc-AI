@@ -44,6 +44,7 @@ class GenerateRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     provider: str
+    maintenance: bool | None = None
 
 
 class GeneratedDoc(BaseModel):

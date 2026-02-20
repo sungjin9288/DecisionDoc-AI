@@ -43,6 +43,7 @@ def install_observability_middleware(app: FastAPI) -> None:
         optional_keys = [
             "provider",
             "template_version",
+            "maintenance",
             "schema_version",
             "cache_hit",
             "error_code",

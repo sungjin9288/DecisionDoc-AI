@@ -19,6 +19,7 @@ def _resolve_live_api_key() -> str:
 
 def _live_client(monkeypatch, provider: str):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", provider)
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     from app.main import create_app
 
     return TestClient(create_app())

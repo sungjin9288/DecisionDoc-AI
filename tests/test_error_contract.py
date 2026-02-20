@@ -11,6 +11,7 @@ def _create_client(tmp_path, monkeypatch, provider="mock"):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -115,4 +116,20 @@ def test_unauthorized_401_error_contract(tmp_path, monkeypatch):
     body = response.json()
     assert set(body.keys()) == {"code", "message", "request_id"}
     assert body["code"] == "UNAUTHORIZED"
+    assert body["request_id"] == response.headers.get("X-Request-Id")
+
+
+def test_maintenance_mode_503_error_contract(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "1")
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "test-api-key")
+    response = client.post(
+        "/generate",
+        headers={"X-DecisionDoc-Api-Key": "test-api-key"},
+        json={"title": "x", "goal": "y"},
+    )
+    assert response.status_code == 503
+    body = response.json()
+    assert set(body.keys()) == {"code", "message", "request_id"}
+    assert body["code"] == "MAINTENANCE_MODE"
     assert body["request_id"] == response.headers.get("X-Request-Id")

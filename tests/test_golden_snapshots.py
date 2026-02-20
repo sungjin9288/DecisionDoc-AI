@@ -43,6 +43,7 @@ def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app

@@ -3,6 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.auth.api_key import UnauthorizedError
+from app.maintenance.mode import MaintenanceModeError
 from app.schemas import ErrorResponse
 from app.services.generation_service import EvalLintFailedError, ProviderFailedError
 from app.storage.base import StorageFailedError
@@ -22,6 +23,15 @@ def _error_response(request: Request, *, code: str, message: str, status_code: i
 
 
 def install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(MaintenanceModeError)
+    async def maintenance_mode_handler(request: Request, exc: MaintenanceModeError):  # noqa: ARG001
+        return _error_response(
+            request,
+            code="MAINTENANCE_MODE",
+            message="Service temporarily unavailable.",
+            status_code=503,
+        )
+
     @app.exception_handler(UnauthorizedError)
     async def unauthorized_handler(request: Request, exc: UnauthorizedError):  # noqa: ARG001
         return _error_response(

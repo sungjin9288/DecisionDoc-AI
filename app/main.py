@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import install_exception_handlers
 from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys, require_api_key
+from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
 from app.observability.logging import log_event, setup_logging
@@ -66,15 +67,20 @@ def create_app() -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     def health(request: Request) -> HealthResponse:
+        maintenance = is_maintenance_mode()
         request.state.provider = configured_provider
         request.state.template_version = template_version
-        return HealthResponse(status="ok", provider=configured_provider)
+        request.state.maintenance = maintenance
+        return HealthResponse(status="ok", provider=configured_provider, maintenance=maintenance)
 
-    @app.post("/generate", response_model=GenerateResponse)
+    @app.post(
+        "/generate",
+        response_model=GenerateResponse,
+        dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    )
     def generate(
         payload: GenerateRequest,
         request: Request,
-        _: None = Depends(require_api_key),
     ) -> GenerateResponse:
         # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
         request_id = request.state.request_id
@@ -119,11 +125,14 @@ def create_app() -> FastAPI:
             docs=docs,
         )
 
-    @app.post("/generate/export", response_model=GenerateExportResponse)
+    @app.post(
+        "/generate/export",
+        response_model=GenerateExportResponse,
+        dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    )
     def generate_export(
         payload: GenerateRequest,
         request: Request,
-        _: None = Depends(require_api_key),
     ) -> GenerateExportResponse:
         # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
         request_id = request.state.request_id

@@ -24,6 +24,19 @@ This runbook covers manual deployment with GitHub Actions `workflow_dispatch`.
 
 The workflow builds and deploys SAM template `infra/sam/template.yaml`.
 
+## Deploy + Smoke Workflow
+
+`deploy-smoke` workflow is `workflow_dispatch` only and runs:
+
+1. Deploy (`infra/sam/template.yaml`)
+2. Post-deploy smoke checks (`scripts/smoke.py`)
+
+Smoke validates:
+- `GET /health` returns `200`
+- `POST /generate` without key returns `401 UNAUTHORIZED`
+- `POST /generate` with key returns `200` with `bundle_id`
+- `POST /generate/export` with key returns `200` with export metadata
+
 ## Runtime Storage Configuration
 
 Deployment template sets:
@@ -33,6 +46,7 @@ Deployment template sets:
 - `DECISIONDOC_S3_PREFIX=decisiondoc-ai/`
 - `DECISIONDOC_ENV=<stage>`
 - `DECISIONDOC_API_KEY=<GitHub secret>`
+- `DECISIONDOC_MAINTENANCE=<0|1>`
 
 Notes:
 - `prod` stage disables `/docs`, `/redoc`, and `/openapi.json` by design.
@@ -51,3 +65,31 @@ No API keys or secrets are stored in source files.
 3. Verify S3 objects are created under:
    - `decisiondoc-ai/bundles/<bundle_id>.json`
    - `decisiondoc-ai/exports/<bundle_id>/<doc_type>.md` (if `/generate/export` used)
+
+## Kill Switch (Maintenance Mode)
+
+Use maintenance mode when you need to immediately block write traffic:
+
+1. Run `deploy` (or `deploy-smoke`) with `maintenance_mode=1`.
+2. Expected behavior:
+   - `POST /generate` -> `503 MAINTENANCE_MODE`
+   - `POST /generate/export` -> `503 MAINTENANCE_MODE`
+   - `GET /health` stays `200`
+3. To resume service, redeploy with `maintenance_mode=0`.
+
+## Incident Runbook
+
+### Cost spike / abuse response
+
+1. Enable maintenance mode (`maintenance_mode=1`) and redeploy.
+2. Rotate API keys (`DECISIONDOC_API_KEYS` preferred; keep temporary overlap).
+3. Lower safety rails:
+   - HTTP API throttling (`ApiThrottlingBurstLimit`, `ApiThrottlingRateLimit`)
+   - Lambda reserved concurrency (`LambdaReservedConcurrentExecutions`)
+4. Re-run smoke checks before reopening traffic.
+
+### Key rotation (summary)
+
+1. Deploy with both old and new keys in `DECISIONDOC_API_KEYS`.
+2. Move clients to the new key.
+3. Redeploy removing the old key.
