@@ -84,7 +84,8 @@ Generates Markdown docs, returns response, and persists exported `.md` files.
   - `POST /generate`
   - `POST /generate/export`
 - Auth header: `X-DecisionDoc-Api-Key`
-- If `DECISIONDOC_API_KEY` is set, exact header match is required.
+- In deployed env (`DECISIONDOC_ENV=prod`), `DECISIONDOC_API_KEY` is required and exact header match is required for protected endpoints.
+- In local dev (`DECISIONDOC_ENV=dev`), missing `DECISIONDOC_API_KEY` is allowed for DX.
 - `/health` is always public.
 - In production (`DECISIONDOC_ENV=prod`), startup fails fast if `DECISIONDOC_API_KEY` is missing.
 

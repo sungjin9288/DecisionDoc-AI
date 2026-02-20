@@ -53,6 +53,33 @@ def test_generate_accepts_correct_api_key(tmp_path, monkeypatch):
     assert response.json()["provider"] == "mock"
 
 
+def test_generate_export_requires_api_key_when_configured(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+
+    response = client.post("/generate/export", json={"title": "t", "goal": "g"})
+    assert response.status_code == 401
+    body = response.json()
+    assert body["code"] == "UNAUTHORIZED"
+    assert body["message"] == "Authentication required."
+    assert body["request_id"] == response.headers.get("X-Request-Id")
+
+
+def test_generate_export_accepts_correct_api_key(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+
+    response = client.post(
+        "/generate/export",
+        headers={"X-DecisionDoc-Api-Key": "expected-key"},
+        json={"title": "t", "goal": "g"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "mock"
+    assert len(body["files"]) == 4
+
+
 def test_health_does_not_require_api_key(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")

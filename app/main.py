@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 
 from app.api.exception_handlers import install_exception_handlers
 from app.auth.api_key import require_api_key
@@ -46,8 +46,11 @@ def create_app() -> FastAPI:
         return HealthResponse(status="ok", provider=configured_provider)
 
     @app.post("/generate", response_model=GenerateResponse)
-    def generate(payload: GenerateRequest, request: Request) -> GenerateResponse:
-        require_api_key(request)
+    def generate(
+        payload: GenerateRequest,
+        request: Request,
+        _: None = Depends(require_api_key),
+    ) -> GenerateResponse:
         # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
         request_id = request.state.request_id
         result = service.generate_documents(payload, request_id=request_id)
@@ -92,8 +95,11 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/generate/export", response_model=GenerateExportResponse)
-    def generate_export(payload: GenerateRequest, request: Request) -> GenerateExportResponse:
-        require_api_key(request)
+    def generate_export(
+        payload: GenerateRequest,
+        request: Request,
+        _: None = Depends(require_api_key),
+    ) -> GenerateExportResponse:
         # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
         request_id = request.state.request_id
         result = service.generate_documents(payload, request_id=request_id)
