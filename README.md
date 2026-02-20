@@ -84,10 +84,13 @@ Generates Markdown docs, returns response, and persists exported `.md` files.
   - `POST /generate`
   - `POST /generate/export`
 - Auth header: `X-DecisionDoc-Api-Key`
-- In deployed env (`DECISIONDOC_ENV=prod`), `DECISIONDOC_API_KEY` is required and exact header match is required for protected endpoints.
-- In local dev (`DECISIONDOC_ENV=dev`), missing `DECISIONDOC_API_KEY` is allowed for DX.
+- Key env precedence:
+  - `DECISIONDOC_API_KEYS` (comma-separated, rotation-ready)
+  - fallback: `DECISIONDOC_API_KEY` (legacy single key)
+- In deployed env (`DECISIONDOC_ENV=prod`), at least one effective key is required and exact header match is required for protected endpoints.
+- In local dev (`DECISIONDOC_ENV=dev`), missing API keys are allowed for DX.
 - `/health` is always public.
-- In production (`DECISIONDOC_ENV=prod`), startup fails fast if `DECISIONDOC_API_KEY` is missing.
+- In production (`DECISIONDOC_ENV=prod`), startup fails fast if no effective API key is configured.
 
 Example:
 
@@ -97,6 +100,30 @@ curl -X POST "http://127.0.0.1:8000/generate" `
   -H "X-DecisionDoc-Api-Key: ***" `
   -d "{\"title\":\"Auth Smoke\",\"goal\":\"Verify API key guard\"}"
 ```
+
+## Auth Rotation
+
+- Use `DECISIONDOC_API_KEYS` for rotation, e.g. `old_key,new_key`.
+- Rotation procedure:
+  - deploy with both old+new keys
+  - switch clients to new key
+  - remove old key in the next deploy
+- Legacy `DECISIONDOC_API_KEY` remains supported for backward compatibility.
+
+## CORS / Preflight
+
+- Toggle app CORS middleware:
+  - `DECISIONDOC_CORS_ENABLED=1`
+  - `DECISIONDOC_CORS_ALLOW_ORIGINS=https://a.example,https://b.example`
+- If CORS origins are not set in dev, app defaults to `*`.
+- Preflight `OPTIONS` requests bypass API key auth to avoid browser integration failures.
+
+## Prod Hardening
+
+- When `DECISIONDOC_ENV=prod`, the app disables:
+  - `/docs`
+  - `/redoc`
+  - `/openapi.json`
 
 ## Request Example
 
@@ -183,7 +210,10 @@ Copy from `.env.example`:
 ```env
 DECISIONDOC_PROVIDER=mock
 DECISIONDOC_ENV=dev
+DECISIONDOC_API_KEYS=
 DECISIONDOC_API_KEY=
+DECISIONDOC_CORS_ENABLED=0
+DECISIONDOC_CORS_ALLOW_ORIGINS=
 DECISIONDOC_STORAGE=local
 DATA_DIR=./data
 EXPORT_DIR=./data

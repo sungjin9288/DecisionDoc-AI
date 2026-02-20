@@ -4,9 +4,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import install_exception_handlers
-from app.auth.api_key import require_api_key
+from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys, require_api_key
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
 from app.observability.logging import log_event, setup_logging
@@ -19,13 +20,23 @@ from app.storage.factory import get_storage
 logger = logging.getLogger("decisiondoc.generate")
 
 
+def _is_enabled(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_cors_allow_origins(environment: str) -> list[str]:
+    raw = os.getenv("DECISIONDOC_CORS_ALLOW_ORIGINS")
+    if raw is None:
+        return ["*"] if environment == "dev" else []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 def create_app() -> FastAPI:
     load_dotenv()
     setup_logging()
     environment = os.getenv("DECISIONDOC_ENV", "dev").lower()
-    configured_api_key = os.getenv("DECISIONDOC_API_KEY", "")
-    if environment == "prod" and not configured_api_key:
-        raise RuntimeError("DECISIONDOC_API_KEY is required when DECISIONDOC_ENV=prod.")
+    if environment == "prod" and not get_allowed_api_keys():
+        raise RuntimeError("An API key is required when DECISIONDOC_ENV=prod.")
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
@@ -34,7 +45,21 @@ def create_app() -> FastAPI:
     storage = get_storage()
     service = GenerationService(provider_factory=get_provider, template_dir=template_dir, data_dir=data_dir, storage=storage)
 
-    app = FastAPI(title="DecisionDoc AI", version="0.1.0")
+    app = FastAPI(
+        title="DecisionDoc AI",
+        version="0.1.0",
+        docs_url=None if environment == "prod" else "/docs",
+        redoc_url=None if environment == "prod" else "/redoc",
+        openapi_url=None if environment == "prod" else "/openapi.json",
+    )
+    cors_enabled = _is_enabled(os.getenv("DECISIONDOC_CORS_ENABLED", "0"))
+    if cors_enabled:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_resolve_cors_allow_origins(environment),
+            allow_methods=["*"],
+            allow_headers=[API_KEY_HEADER, "Content-Type", "Authorization"],
+        )
     install_observability_middleware(app)
     install_request_id_middleware(app)
     install_exception_handlers(app)

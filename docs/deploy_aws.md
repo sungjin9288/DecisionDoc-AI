@@ -34,6 +34,10 @@ Deployment template sets:
 - `DECISIONDOC_ENV=<stage>`
 - `DECISIONDOC_API_KEY=<GitHub secret>`
 
+Notes:
+- `prod` stage disables `/docs`, `/redoc`, and `/openapi.json` by design.
+- For key rotation, you can migrate to `DECISIONDOC_API_KEYS` (comma-separated) while keeping legacy `DECISIONDOC_API_KEY` support.
+
 Cost safety rails are set in SAM parameters:
 - HTTP API throttling (`ThrottlingBurstLimit`, `ThrottlingRateLimit`)
 - Lambda reserved concurrency (`ReservedConcurrentExecutions`)

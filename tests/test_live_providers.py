@@ -8,6 +8,15 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.live
 
 
+def _resolve_live_api_key() -> str:
+    raw_keys = os.getenv("DECISIONDOC_API_KEYS")
+    if raw_keys is not None:
+        keys = [item.strip() for item in raw_keys.split(",") if item.strip()]
+        if keys:
+            return keys[0]
+    return os.getenv("DECISIONDOC_API_KEY", "")
+
+
 def _live_client(monkeypatch, provider: str):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", provider)
     from app.main import create_app
@@ -23,7 +32,7 @@ def test_live_openai_generate_ok(monkeypatch):
 
     client = _live_client(monkeypatch, "openai")
     headers = {}
-    api_key = os.getenv("DECISIONDOC_API_KEY")
+    api_key = _resolve_live_api_key()
     if api_key:
         headers["X-DecisionDoc-Api-Key"] = api_key
     response = client.post("/generate", json={"title": "Live OpenAI", "goal": "live smoke"}, headers=headers)
@@ -41,7 +50,7 @@ def test_live_gemini_generate_ok(monkeypatch):
 
     client = _live_client(monkeypatch, "gemini")
     headers = {}
-    api_key = os.getenv("DECISIONDOC_API_KEY")
+    api_key = _resolve_live_api_key()
     if api_key:
         headers["X-DecisionDoc-Api-Key"] = api_key
     response = client.post("/generate", json={"title": "Live Gemini", "goal": "live smoke"}, headers=headers)
