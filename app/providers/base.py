@@ -18,3 +18,6 @@ class Provider(ABC):
         request_id: str,
     ) -> dict[str, Any]:
         raise NotImplementedError
+
+    def consume_usage_tokens(self) -> dict[str, int] | None:
+        return None

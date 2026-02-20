@@ -62,6 +62,7 @@ class GenerationService:
         timer = Timer()
         cache_enabled = os.getenv("DECISIONDOC_CACHE_ENABLED", "0") == "1"
         cache_hit = False
+        provider_called = False
 
         bundle: dict[str, Any]
         cache_path = self._cache_path(provider.name, SCHEMA_VERSION, payload)
@@ -73,6 +74,7 @@ class GenerationService:
             else:
                 with timer.measure("provider_ms"):
                     bundle = self._call_provider_once(provider, payload, request_id)
+                provider_called = True
                 bundle = stabilize_bundle(bundle)
                 bundle = strip_internal_bundle_fields(bundle)
                 self._validate_bundle_schema(bundle)
@@ -80,6 +82,7 @@ class GenerationService:
         else:
             with timer.measure("provider_ms"):
                 bundle = self._call_provider_once(provider, payload, request_id)
+            provider_called = True
             bundle = stabilize_bundle(bundle)
             bundle = strip_internal_bundle_fields(bundle)
             self._validate_bundle_schema(bundle)
@@ -97,6 +100,7 @@ class GenerationService:
             raise EvalLintFailedError(lint_errors)
         with timer.measure("validator_ms"):
             validate_docs(docs)
+        usage_tokens = provider.consume_usage_tokens() if provider_called else None
         return {
             "docs": docs,
             "raw_bundle": bundle,
@@ -107,6 +111,9 @@ class GenerationService:
                 "request_id": request_id,
                 "bundle_id": bundle_id,
                 "timings_ms": timer.durations_ms,
+                "llm_prompt_tokens": (usage_tokens or {}).get("prompt_tokens"),
+                "llm_output_tokens": (usage_tokens or {}).get("output_tokens"),
+                "llm_total_tokens": (usage_tokens or {}).get("total_tokens"),
             },
         }
 

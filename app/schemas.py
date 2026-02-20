@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -82,3 +83,18 @@ class ErrorResponse(BaseModel):
     code: str
     message: str
     request_id: str
+
+
+class OpsInvestigateRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    window_minutes: int = Field(default=30, ge=1, le=180)
+    reason: str = Field(default="", max_length=200)
+    stage: Literal["dev", "prod"] | None = None
+
+
+class OpsInvestigateResponse(BaseModel):
+    incident_id: str
+    summary: dict[str, Any]
+    statuspage_incident_url: str | None = None
+    report_s3_key: str

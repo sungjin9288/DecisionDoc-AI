@@ -70,6 +70,11 @@ Generates Markdown docs and returns them in response.
 
 Generates Markdown docs, returns response, and persists exported `.md` files.
 
+### POST `/ops/investigate`
+
+Runs an on-demand operational investigation window and stores sanitized evidence to S3.
+Auth header: `X-DecisionDoc-Ops-Key`
+
 ## Request ID (Tracing)
 
 - Header: `X-Request-Id`
@@ -124,6 +129,29 @@ curl -X POST "http://127.0.0.1:8000/generate" `
   - `/docs`
   - `/redoc`
   - `/openapi.json`
+
+## Ops Investigate
+
+- Endpoint: `POST /ops/investigate`
+- Header: `X-DecisionDoc-Ops-Key: ***` (`DECISIONDOC_OPS_KEY`)
+- Request body:
+  - `window_minutes` (default `30`, max `180`)
+  - `reason` (optional, sanitized)
+  - `stage` (`dev|prod`, optional)
+- Response:
+  - `incident_id`
+  - `summary` (counts, p95 timings, top error codes)
+  - `statuspage_incident_url`
+  - `report_s3_key` (internal S3 key)
+
+Example:
+
+```powershell
+curl -X POST "http://127.0.0.1:8000/ops/investigate" `
+  -H "Content-Type: application/json" `
+  -H "X-DecisionDoc-Ops-Key: ***" `
+  -d "{\"window_minutes\":30,\"reason\":\"Investigate elevated 5xx\",\"stage\":\"dev\"}"
+```
 
 ## Request Example
 
@@ -212,6 +240,8 @@ DECISIONDOC_PROVIDER=mock
 DECISIONDOC_ENV=dev
 DECISIONDOC_API_KEYS=
 DECISIONDOC_API_KEY=
+DECISIONDOC_OPS_KEY=
+DECISIONDOC_MAINTENANCE=0
 DECISIONDOC_CORS_ENABLED=0
 DECISIONDOC_CORS_ALLOW_ORIGINS=
 DECISIONDOC_STORAGE=local
@@ -221,6 +251,10 @@ DECISIONDOC_CACHE_ENABLED=0
 DECISIONDOC_TEMPLATE_VERSION=v1
 DECISIONDOC_S3_BUCKET=
 DECISIONDOC_S3_PREFIX=decisiondoc-ai/
+DECISIONDOC_HTTP_API_ID=
+DECISIONDOC_LAMBDA_FUNCTION_NAME=
+STATUSPAGE_PAGE_ID=
+STATUSPAGE_API_KEY=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 ```

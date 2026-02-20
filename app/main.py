@@ -8,12 +8,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import install_exception_handlers
 from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys, require_api_key
+from app.auth.ops_key import require_ops_key
 from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
 from app.observability.logging import log_event, setup_logging
 from app.observability.timing import Timer
-from app.schemas import GenerateExportResponse, GenerateRequest, GenerateResponse, HealthResponse
+from app.ops.factory import get_ops_service
+from app.schemas import (
+    GenerateExportResponse,
+    GenerateRequest,
+    GenerateResponse,
+    HealthResponse,
+    OpsInvestigateRequest,
+    OpsInvestigateResponse,
+)
 from app.providers.factory import get_provider
 from app.services.generation_service import GenerationService
 from app.storage.factory import get_storage
@@ -40,11 +49,13 @@ def create_app() -> FastAPI:
         raise RuntimeError("An API key is required when DECISIONDOC_ENV=prod.")
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
+    configured_stage = os.getenv("DECISIONDOC_ENV", "dev").lower()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
     data_dir = Path(os.getenv("DATA_DIR", "./data"))
     storage = get_storage()
     service = GenerationService(provider_factory=get_provider, template_dir=template_dir, data_dir=data_dir, storage=storage)
+    ops_service = get_ops_service()
 
     app = FastAPI(
         title="DecisionDoc AI",
@@ -91,6 +102,9 @@ def create_app() -> FastAPI:
         request.state.template_version = template_version
         request.state.schema_version = result["metadata"]["schema_version"]
         request.state.cache_hit = result["metadata"]["cache_hit"]
+        request.state.llm_prompt_tokens = result["metadata"].get("llm_prompt_tokens")
+        request.state.llm_output_tokens = result["metadata"].get("llm_output_tokens")
+        request.state.llm_total_tokens = result["metadata"].get("llm_total_tokens")
         timings = result["metadata"].get("timings_ms", {})
         request.state.provider_ms = timings.get("provider_ms")
         request.state.render_ms = timings.get("render_ms")
@@ -109,6 +123,9 @@ def create_app() -> FastAPI:
                 "template_version": template_version,
                 "schema_version": result["metadata"]["schema_version"],
                 "cache_hit": result["metadata"]["cache_hit"],
+                "llm_prompt_tokens": request.state.llm_prompt_tokens,
+                "llm_output_tokens": request.state.llm_output_tokens,
+                "llm_total_tokens": request.state.llm_total_tokens,
                 "provider_ms": request.state.provider_ms,
                 "render_ms": request.state.render_ms,
                 "lints_ms": request.state.lints_ms,
@@ -151,6 +168,9 @@ def create_app() -> FastAPI:
         request.state.template_version = template_version
         request.state.schema_version = result["metadata"]["schema_version"]
         request.state.cache_hit = result["metadata"]["cache_hit"]
+        request.state.llm_prompt_tokens = result["metadata"].get("llm_prompt_tokens")
+        request.state.llm_output_tokens = result["metadata"].get("llm_output_tokens")
+        request.state.llm_total_tokens = result["metadata"].get("llm_total_tokens")
         timings = result["metadata"].get("timings_ms", {})
         request.state.provider_ms = timings.get("provider_ms")
         request.state.render_ms = timings.get("render_ms")
@@ -170,6 +190,9 @@ def create_app() -> FastAPI:
                 "template_version": template_version,
                 "schema_version": result["metadata"]["schema_version"],
                 "cache_hit": result["metadata"]["cache_hit"],
+                "llm_prompt_tokens": request.state.llm_prompt_tokens,
+                "llm_output_tokens": request.state.llm_output_tokens,
+                "llm_total_tokens": request.state.llm_total_tokens,
                 "provider_ms": request.state.provider_ms,
                 "render_ms": request.state.render_ms,
                 "lints_ms": request.state.lints_ms,
@@ -187,6 +210,36 @@ def create_app() -> FastAPI:
             export_dir=str(export_dir),
             files=files,
         )
+
+    @app.post(
+        "/ops/investigate",
+        response_model=OpsInvestigateResponse,
+        dependencies=[Depends(require_ops_key)],
+    )
+    def investigate_ops(payload: OpsInvestigateRequest, request: Request) -> OpsInvestigateResponse:
+        request_id = request.state.request_id
+        stage = payload.stage or configured_stage
+        result = ops_service.investigate(
+            window_minutes=payload.window_minutes,
+            reason=payload.reason,
+            stage=stage,
+            request_id=request_id,
+        )
+        request.state.maintenance = is_maintenance_mode()
+        log_event(
+            logger,
+            {
+                "event": "ops.investigate.completed",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 200,
+                "stage": stage,
+                "incident_id": result["incident_id"],
+                "window_minutes": payload.window_minutes,
+            },
+        )
+        return OpsInvestigateResponse(**result)
 
     return app
 

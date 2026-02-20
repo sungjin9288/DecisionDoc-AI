@@ -65,6 +65,9 @@ jobs:
             RESERVED_CONCURRENCY="5"
           fi
           API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
+          OPS_KEY="${{ secrets.DECISIONDOC_OPS_KEY }}"
+          STATUSPAGE_PAGE_ID="${{ secrets.STATUSPAGE_PAGE_ID }}"
+          STATUSPAGE_API_KEY="${{ secrets.STATUSPAGE_API_KEY }}"
           if [ -z "${AWS_REGION}" ]; then
             echo "Missing AWS_REGION secret"
             exit 1
@@ -81,9 +84,24 @@ jobs:
             echo "Missing DECISIONDOC_API_KEY secret"
             exit 1
           fi
+          if [ -z "${OPS_KEY}" ]; then
+            echo "Missing DECISIONDOC_OPS_KEY secret"
+            exit 1
+          fi
+          if [ -z "${STATUSPAGE_PAGE_ID}" ]; then
+            echo "Missing STATUSPAGE_PAGE_ID secret"
+            exit 1
+          fi
+          if [ -z "${STATUSPAGE_API_KEY}" ]; then
+            echo "Missing STATUSPAGE_API_KEY secret"
+            exit 1
+          fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_API_KEY=${API_KEY}" >> "$GITHUB_ENV"
+          echo "DECISIONDOC_OPS_KEY=${OPS_KEY}" >> "$GITHUB_ENV"
+          echo "STATUSPAGE_PAGE_ID=${STATUSPAGE_PAGE_ID}" >> "$GITHUB_ENV"
+          echo "STATUSPAGE_API_KEY=${STATUSPAGE_API_KEY}" >> "$GITHUB_ENV"
           echo "THROTTLE_BURST=${THROTTLE_BURST}" >> "$GITHUB_ENV"
           echo "THROTTLE_RATE=${THROTTLE_RATE}" >> "$GITHUB_ENV"
           echo "RESERVED_CONCURRENCY=${RESERVED_CONCURRENCY}" >> "$GITHUB_ENV"
@@ -114,7 +132,10 @@ jobs:
               S3BucketName=${DECISIONDOC_S3_BUCKET} \
               S3Prefix=decisiondoc-ai/ \
               DecisionDocApiKey=${DECISIONDOC_API_KEY} \
+              DecisionDocOpsKey=${DECISIONDOC_OPS_KEY} \
               DecisionDocMaintenance=${{ inputs.maintenance_mode }} \
+              StatuspagePageId=${STATUSPAGE_PAGE_ID} \
+              StatuspageApiKey=${STATUSPAGE_API_KEY} \
               ApiThrottlingBurstLimit=${THROTTLE_BURST} \
               ApiThrottlingRateLimit=${THROTTLE_RATE} \
               LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}

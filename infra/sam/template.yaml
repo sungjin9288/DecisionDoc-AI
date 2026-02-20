@@ -20,12 +20,22 @@ Parameters:
   DecisionDocApiKey:
     Type: String
     NoEcho: true
+  DecisionDocOpsKey:
+    Type: String
+    NoEcho: true
   DecisionDocMaintenance:
     Type: String
     Default: "0"
     AllowedValues:
       - "0"
       - "1"
+  StatuspagePageId:
+    Type: String
+    Default: ""
+  StatuspageApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
   ApiThrottlingBurstLimit:
     Type: Number
     Default: 5
@@ -67,7 +77,12 @@ Resources:
           DECISIONDOC_PROVIDER: mock
           DECISIONDOC_ENV: !Ref Stage
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
+          DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
           DECISIONDOC_MAINTENANCE: !Ref DecisionDocMaintenance
+          DECISIONDOC_HTTP_API_ID: !Ref DecisionDocApi
+          DECISIONDOC_LAMBDA_FUNCTION_NAME: !Sub decisiondoc-ai-${Stage}
+          STATUSPAGE_PAGE_ID: !Ref StatuspagePageId
+          STATUSPAGE_API_KEY: !Ref StatuspageApiKey
       Events:
         Root:
           Type: HttpApi

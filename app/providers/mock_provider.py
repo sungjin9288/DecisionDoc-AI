@@ -84,3 +84,6 @@ class MockProvider(Provider):
                 ],
             },
         }
+
+    def consume_usage_tokens(self) -> dict[str, int] | None:
+        return {"prompt_tokens": 0, "output_tokens": 0, "total_tokens": 0}

@@ -13,6 +13,7 @@ class GeminiProvider(Provider):
 
     def __init__(self) -> None:
         self.api_key = os.getenv("GEMINI_API_KEY", "")
+        self._last_usage_tokens: dict[str, int] | None = None
         if not self.api_key:
             raise ProviderError("Provider configuration error.")
 
@@ -56,6 +57,24 @@ class GeminiProvider(Provider):
                     )
 
             response = anyio.run(_call_with_timeout)
+            usage = getattr(response, "usage_metadata", None)
+            usage_map: dict[str, int] | None = None
+            if usage is not None:
+                prompt_tokens = getattr(usage, "prompt_token_count", None)
+                output_tokens = getattr(usage, "candidates_token_count", None)
+                total_tokens = getattr(usage, "total_token_count", None)
+                if isinstance(prompt_tokens, int) or isinstance(output_tokens, int) or isinstance(total_tokens, int):
+                    usage_map = {
+                        "prompt_tokens": int(prompt_tokens or 0),
+                        "output_tokens": int(output_tokens or 0),
+                        "total_tokens": int(total_tokens or 0),
+                    }
+            self._last_usage_tokens = usage_map
             return json.loads(response.text or "{}")
         except Exception as exc:  # pragma: no cover - network dependent
             raise ProviderError("Provider request failed.") from exc
+
+    def consume_usage_tokens(self) -> dict[str, int] | None:
+        usage = self._last_usage_tokens
+        self._last_usage_tokens = None
+        return usage
