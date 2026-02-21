@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +39,46 @@ def _resolve_cors_allow_origins(environment: str) -> list[str]:
     if raw is None:
         return ["*"] if environment == "dev" else []
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _apply_generate_state(request: Request, result: dict, template_version: str) -> None:
+    """Set all generate-related fields on request.state for observability middleware."""
+    metadata = result["metadata"]
+    timings = metadata.get("timings_ms", {})
+    request.state.provider = metadata["provider"]
+    request.state.template_version = template_version
+    request.state.schema_version = metadata["schema_version"]
+    request.state.cache_hit = metadata["cache_hit"]
+    request.state.llm_prompt_tokens = metadata.get("llm_prompt_tokens")
+    request.state.llm_output_tokens = metadata.get("llm_output_tokens")
+    request.state.llm_total_tokens = metadata.get("llm_total_tokens")
+    request.state.provider_ms = timings.get("provider_ms")
+    request.state.render_ms = timings.get("render_ms")
+    request.state.lints_ms = timings.get("lints_ms")
+    request.state.validator_ms = timings.get("validator_ms")
+
+
+def _build_generate_log_event(request: Request, result: dict, request_id: str, template_version: str) -> dict:
+    """Build the structured log event dict for a completed generate call."""
+    metadata = result["metadata"]
+    return {
+        "event": "generate.completed",
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": 200,
+        "provider": metadata["provider"],
+        "template_version": template_version,
+        "schema_version": metadata["schema_version"],
+        "cache_hit": metadata["cache_hit"],
+        "llm_prompt_tokens": request.state.llm_prompt_tokens,
+        "llm_output_tokens": request.state.llm_output_tokens,
+        "llm_total_tokens": request.state.llm_total_tokens,
+        "provider_ms": request.state.provider_ms,
+        "render_ms": request.state.render_ms,
+        "lints_ms": request.state.lints_ms,
+        "validator_ms": request.state.validator_ms,
+    }
 
 
 def create_app() -> FastAPI:
@@ -96,50 +136,19 @@ def create_app() -> FastAPI:
         # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
         request_id = request.state.request_id
         result = service.generate_documents(payload, request_id=request_id)
-        docs = result["docs"]
 
-        request.state.provider = result["metadata"]["provider"]
-        request.state.template_version = template_version
-        request.state.schema_version = result["metadata"]["schema_version"]
-        request.state.cache_hit = result["metadata"]["cache_hit"]
-        request.state.llm_prompt_tokens = result["metadata"].get("llm_prompt_tokens")
-        request.state.llm_output_tokens = result["metadata"].get("llm_output_tokens")
-        request.state.llm_total_tokens = result["metadata"].get("llm_total_tokens")
-        timings = result["metadata"].get("timings_ms", {})
-        request.state.provider_ms = timings.get("provider_ms")
-        request.state.render_ms = timings.get("render_ms")
-        request.state.lints_ms = timings.get("lints_ms")
-        request.state.validator_ms = timings.get("validator_ms")
+        _apply_generate_state(request, result, template_version)
+        log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
 
-        log_event(
-            logger,
-            {
-                "event": "generate.completed",
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": 200,
-                "provider": result["metadata"]["provider"],
-                "template_version": template_version,
-                "schema_version": result["metadata"]["schema_version"],
-                "cache_hit": result["metadata"]["cache_hit"],
-                "llm_prompt_tokens": request.state.llm_prompt_tokens,
-                "llm_output_tokens": request.state.llm_output_tokens,
-                "llm_total_tokens": request.state.llm_total_tokens,
-                "provider_ms": request.state.provider_ms,
-                "render_ms": request.state.render_ms,
-                "lints_ms": request.state.lints_ms,
-                "validator_ms": request.state.validator_ms,
-            },
-        )
+        metadata = result["metadata"]
         return GenerateResponse(
             request_id=request_id,
-            bundle_id=result["metadata"]["bundle_id"],
+            bundle_id=metadata["bundle_id"],
             title=payload.title,
-            provider=result["metadata"]["provider"],
-            schema_version=result["metadata"]["schema_version"],
-            cache_hit=result["metadata"]["cache_hit"],
-            docs=docs,
+            provider=metadata["provider"],
+            schema_version=metadata["schema_version"],
+            cache_hit=metadata["cache_hit"],
+            docs=result["docs"],
         )
 
     @app.post(
@@ -164,49 +173,21 @@ def create_app() -> FastAPI:
                 files.append({"doc_type": doc["doc_type"], "path": storage.get_export_path(bundle_id, doc["doc_type"])})
             export_dir = storage.get_export_dir(bundle_id)
 
-        request.state.provider = result["metadata"]["provider"]
-        request.state.template_version = template_version
-        request.state.schema_version = result["metadata"]["schema_version"]
-        request.state.cache_hit = result["metadata"]["cache_hit"]
-        request.state.llm_prompt_tokens = result["metadata"].get("llm_prompt_tokens")
-        request.state.llm_output_tokens = result["metadata"].get("llm_output_tokens")
-        request.state.llm_total_tokens = result["metadata"].get("llm_total_tokens")
-        timings = result["metadata"].get("timings_ms", {})
-        request.state.provider_ms = timings.get("provider_ms")
-        request.state.render_ms = timings.get("render_ms")
-        request.state.lints_ms = timings.get("lints_ms")
-        request.state.validator_ms = timings.get("validator_ms")
+        _apply_generate_state(request, result, template_version)
         request.state.export_ms = export_timer.durations_ms.get("export_ms")
 
-        log_event(
-            logger,
-            {
-                "event": "generate.completed",
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": 200,
-                "provider": result["metadata"]["provider"],
-                "template_version": template_version,
-                "schema_version": result["metadata"]["schema_version"],
-                "cache_hit": result["metadata"]["cache_hit"],
-                "llm_prompt_tokens": request.state.llm_prompt_tokens,
-                "llm_output_tokens": request.state.llm_output_tokens,
-                "llm_total_tokens": request.state.llm_total_tokens,
-                "provider_ms": request.state.provider_ms,
-                "render_ms": request.state.render_ms,
-                "lints_ms": request.state.lints_ms,
-                "validator_ms": request.state.validator_ms,
-                "export_ms": request.state.export_ms,
-            },
-        )
+        log_event_data = _build_generate_log_event(request, result, request_id, template_version)
+        log_event_data["export_ms"] = request.state.export_ms
+        log_event(logger, log_event_data)
+
+        metadata = result["metadata"]
         return GenerateExportResponse(
             request_id=request_id,
             bundle_id=bundle_id,
             title=payload.title,
-            provider=result["metadata"]["provider"],
-            schema_version=result["metadata"]["schema_version"],
-            cache_hit=result["metadata"]["cache_hit"],
+            provider=metadata["provider"],
+            schema_version=metadata["schema_version"],
+            cache_hit=metadata["cache_hit"],
             export_dir=str(export_dir),
             files=files,
         )

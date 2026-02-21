@@ -5,15 +5,14 @@ from typing import Any
 import anyio
 
 from app.domain.schema import BUNDLE_JSON_SCHEMA_V1
-from app.providers.base import Provider, ProviderError
+from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 
-class GeminiProvider(Provider):
+class GeminiProvider(UsageTokenMixin, Provider):
     name = "gemini"
 
     def __init__(self) -> None:
         self.api_key = os.getenv("GEMINI_API_KEY", "")
-        self._last_usage_tokens: dict[str, int] | None = None
         if not self.api_key:
             raise ProviderError("Provider configuration error.")
 
@@ -69,12 +68,7 @@ class GeminiProvider(Provider):
                         "output_tokens": int(output_tokens or 0),
                         "total_tokens": int(total_tokens or 0),
                     }
-            self._last_usage_tokens = usage_map
+            self._set_usage_tokens(usage_map)
             return json.loads(response.text or "{}")
         except Exception as exc:  # pragma: no cover - network dependent
             raise ProviderError("Provider request failed.") from exc
-
-    def consume_usage_tokens(self) -> dict[str, int] | None:
-        usage = self._last_usage_tokens
-        self._last_usage_tokens = None
-        return usage

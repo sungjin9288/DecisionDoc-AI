@@ -72,20 +72,10 @@ class GenerationService:
                 bundle = cached
                 cache_hit = True
             else:
-                with timer.measure("provider_ms"):
-                    bundle = self._call_provider_once(provider, payload, request_id)
-                provider_called = True
-                bundle = stabilize_bundle(bundle)
-                bundle = strip_internal_bundle_fields(bundle)
-                self._validate_bundle_schema(bundle)
+                bundle, provider_called = self._call_and_prepare_bundle(provider, payload, request_id, timer)
                 self._write_cache_atomic(cache_path, bundle)
         else:
-            with timer.measure("provider_ms"):
-                bundle = self._call_provider_once(provider, payload, request_id)
-            provider_called = True
-            bundle = stabilize_bundle(bundle)
-            bundle = strip_internal_bundle_fields(bundle)
-            self._validate_bundle_schema(bundle)
+            bundle, provider_called = self._call_and_prepare_bundle(provider, payload, request_id, timer)
             if cache_enabled:
                 self._write_cache_atomic(cache_path, bundle)
 
@@ -164,13 +154,23 @@ class GenerationService:
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{digest}.json"
 
+    def _call_and_prepare_bundle(
+        self,
+        provider: Provider,
+        payload: dict[str, Any],
+        request_id: str,
+        timer: Timer,
+    ) -> tuple[dict[str, Any], bool]:
+        """Call the provider, stabilize, strip internal fields, and validate schema. Returns (bundle, provider_called=True)."""
+        with timer.measure("provider_ms"):
+            bundle = self._call_provider_once(provider, payload, request_id)
+        bundle = stabilize_bundle(bundle)
+        bundle = strip_internal_bundle_fields(bundle)
+        self._validate_bundle_schema(bundle)
+        return bundle, True
+
     def _call_provider_once(self, provider: Provider, payload: dict[str, Any], request_id: str) -> dict[str, Any]:
-        max_calls_per_request = 1
-        calls_made = 0
         try:
-            calls_made += 1
-            if calls_made > max_calls_per_request:
-                raise ProviderFailedError("Provider failed.")
             return provider.generate_bundle(payload, schema_version=SCHEMA_VERSION, request_id=request_id)
         except ProviderError as exc:
             raise ProviderFailedError("Provider failed.") from exc
