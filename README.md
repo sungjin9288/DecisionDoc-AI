@@ -1,384 +1,277 @@
 # DecisionDoc AI
 
-API-only FastAPI service that converts requirement input into 4 decision documents in Markdown:
+> AI가 요구사항을 받아 **4종 의사결정 문서를 자동 생성**하는 FastAPI 백엔드 서비스  
+> An API-first FastAPI service that converts requirements into 4 decision documents via LLM.
 
-- ADR
-- Onepager
-- Eval Plan
-- Ops Checklist
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![Tests](https://img.shields.io/badge/Tests-75%20passed-brightgreen)](#테스트--test-strategy)
 
-## Portfolio Highlights (KR + EN)
+---
 
-### Architecture
+## 생성 문서 4종 / Generated Document Types
+
+| 문서 | 설명 |
+|------|------|
+| **ADR** (Architecture Decision Record) | 기술 결정 기록 — 옵션 비교, 리스크, 다음 액션 |
+| **Onepager** | 의사결정 요약 보고서 — 문제·권고안·임팩트 |
+| **Eval Plan** | 평가·검증 계획서 — 메트릭, 테스트 케이스, 모니터링 |
+| **Ops Checklist** | 운영 준비 체크리스트 — 보안, 신뢰성, 비용, 운영 |
+
+---
+
+## 아키텍처 / Architecture
+
+```
+[요구사항] → [LLM Provider] → [Bundle JSON] → [Jinja2 렌더링] → [품질 검증] → [Markdown 출력]
+```
 
 ```mermaid
 graph LR
-    A[User Request] --> B(Provider Adapter)
-    B --> C{Bundle JSON}
-    C --> D[Jinja2 Renderer]
-    D --> E[Eval Lints]
-    E --> F[Doc Validator]
-    F --> G[Storage Adapter]
-    G --> H((Markdown Output))
-    
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style C fill:#bbf,stroke:#333,stroke-width:2px
-    style H fill:#bfb,stroke:#333,stroke-width:2px
+    Client["클라이언트"] -->|POST /generate| API["FastAPI"]
+    API --> Auth["Auth 미들웨어\n(API Key 검증)"]
+    Auth --> Svc["GenerationService"]
+    Svc -->|캐시 히트| Cache["파일 캐시\n(SHA-256 키)"]
+    Svc -->|캐시 미스| Provider["Provider Adapter\n(OpenAI / Gemini / Mock)"]
+    Provider --> Bundle["Bundle JSON"]
+    Bundle --> Stabilizer["Stabilizer\n(누락 필드 보정)"]
+    Stabilizer --> Renderer["Jinja2 렌더러\n(4종 MD 템플릿)"]
+    Renderer --> Lints["Eval Lints\n(품질 자동 검사)"]
+    Lints --> Validator["Doc Validator\n(구조 무결성)"]
+    Validator --> Storage["Storage Adapter\n(Local / S3)"]
+    Storage --> Client
 ```
 
-- **Architecture discipline**: `Provider -> Bundle(JSON) -> Jinja2 -> Eval Lints -> Validator -> Storage`
-- **Contract stability**: unified API error schema `{code, message, request_id}` + `X-Request-Id` propagation
-- **Security guardrails**: API key protection for generation endpoints, constant-time compare, no secret logging
-- **Quality assurance**: fixture-based regression tests, golden snapshots, eval report pipeline
-- **Ops readiness**: offline CI, opt-in live tests, AWS SAM deploy with throttling/concurrency controls
+### 계층 구조 / Layer Structure
+
+| 계층 | 역할 |
+|------|------|
+| **API Layer** (`main.py`) | 엔드포인트, 미들웨어, 예외 핸들러 |
+| **Service Layer** (`generation_service.py`) | 전체 생성 파이프라인 오케스트레이션 |
+| **Provider Layer** (`providers/`) | LLM 공급자 추상화 — 교체 가능한 어댑터 구조 |
+| **Storage Layer** (`storage/`) | 번들·익스포트 저장소 추상화 |
+| **Observability** (`middleware/`, `observability/`) | 구조화 JSON 로그, 요청 추적 |
+
+---
+
+## 주요 기능 / Key Features
+
+### 🤖 멀티 LLM 공급자
+- **OpenAI** (gpt-4o-mini) / **Gemini** (gemini-1.5-flash) / **Mock** (테스트용)
+- 환경변수 한 줄로 전환: `DECISIONDOC_PROVIDER=openai`
+- `Provider` 추상 인터페이스로 신규 LLM 추가 용이
+
+### ⚡ 응답 캐싱
+- 동일 요구사항 + 공급자 → SHA-256 키로 파일 캐싱
+- Atomic write(tmp → rename)로 캐시 파일 손상 방지
+- `DECISIONDOC_CACHE_ENABLED=1` opt-in 활성화
+
+### 🛡️ 5단계 품질 보증 파이프라인
+1. **Pydantic 입력 검증** — strict 모드, 허용 외 필드 차단
+2. **Bundle Schema 검증** — LLM 출력 구조 확인
+3. **Stabilizer** — 누락 필드 자동 보정 (null-safe 렌더링 보장)
+4. **Eval Lints** — `TODO/TBD/FIXME` 금지, 최소 길이, 필수 섹션 확인
+5. **Doc Validator** — 필수 헤딩 존재 확인, ADR Options ≥ 2 보장
+
+### 🔐 보안
+- `X-DecisionDoc-Api-Key` 헤더 인증 (constant-time compare로 timing attack 방지)
+- 복수 키 로테이션 지원: `DECISIONDOC_API_KEYS=old_key,new_key`
+- `prod` 환경에서 API 키 미설정 시 서버 시작 차단
+- API 키, 요청 바디, LLM 출력 로그 미기록
+
+### 📊 가관측성 (Observability)
+- 모든 요청에 구조화 JSON 로그 1건 기록
+- `X-Request-Id` 헤더로 분산 추적 (제공 시 에코, 없으면 UUID 자동 생성)
+- 단계별 타이밍: `provider_ms`, `render_ms`, `lints_ms`, `validator_ms`, `export_ms`
+- LLM 토큰 사용량 추적: `prompt_tokens`, `output_tokens`, `total_tokens`
+
+### 🚨 Ops 자동화
+- `POST /ops/investigate` — 온디맨드 운영 장애 조사
+  - 지정 시간 윈도우 로그 집계, p95 타이밍, 에러 코드 분포 산출
+  - S3 증거 리포트 저장, Statuspage 인시던트 자동 생성/업데이트
+  - TTL 기반 중복 조사 방지 (dedup cache)
+
+---
 
 ## Tech Stack
 
-- FastAPI + Pydantic v2
-- Jinja2 templates (`app/templates/v1/`)
-- Provider adapters: `mock` (default), `openai`, `gemini`
-- Storage adapters: `local` (default), `s3`
-- Pytest + fixture/golden/eval test strategy
+| 영역 | 기술 |
+|------|------|
+| **Framework** | FastAPI + Pydantic v2 |
+| **LLM** | OpenAI Responses API, Google Gemini |
+| **템플릿** | Jinja2 |
+| **스토리지** | Local FS / AWS S3 |
+| **배포** | AWS Lambda + API Gateway (SAM) |
+| **테스트** | pytest (fixture, golden snapshot, eval pipeline) |
+| **런타임** | Python 3.12 |
 
-## Run (Windows PowerShell)
+---
 
-```powershell
-cd decisiondoc-ai
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+## 로컬 실행 / Quick Start
+
+```bash
+# 의존성 설치
+python -m venv .venv && source .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# 환경 설정
+cp .env.example .env   # DECISIONDOC_PROVIDER=mock (기본값, API 키 불필요)
+
+# 서버 실행
 uvicorn app.main:app --reload
+# → http://localhost:8000/docs 에서 Swagger UI 확인
+
+# 테스트 실행
+pytest tests/
 ```
 
-Swagger UI: `http://127.0.0.1:8000/docs`
+---
 
-## API Endpoints
+## API 엔드포인트 / API Endpoints
 
-### GET `/health`
+### `POST /generate` — 문서 생성
 
-Response:
-
-```json
-{ "status": "ok", "provider": "mock" }
-```
-
-### POST `/generate`
-
-Generates Markdown docs and returns them in response.
-
-### POST `/generate/export`
-
-Generates Markdown docs, returns response, and persists exported `.md` files.
-
-### POST `/ops/investigate`
-
-Runs an on-demand operational investigation window and stores sanitized evidence to S3.
-Auth header: `X-DecisionDoc-Ops-Key`
-
-## Request ID (Tracing)
-
-- Header: `X-Request-Id`
-- Safe token pattern: `[A-Za-z0-9._-]{8,64}`
-- If valid header is provided, server echoes it.
-- If missing/invalid, server generates a UUID.
-- Include `request_id` when reporting bugs.
-
-## Auth (Generate Endpoints)
-
-- Protected endpoints:
-  - `POST /generate`
-  - `POST /generate/export`
-- Auth header: `X-DecisionDoc-Api-Key`
-- Key env precedence:
-  - `DECISIONDOC_API_KEYS` (comma-separated, rotation-ready)
-  - fallback: `DECISIONDOC_API_KEY` (legacy single key)
-- In deployed env (`DECISIONDOC_ENV=prod`), at least one effective key is required and exact header match is required for protected endpoints.
-- In local dev (`DECISIONDOC_ENV=dev`), missing API keys are allowed for DX.
-- `/health` is always public.
-- In production (`DECISIONDOC_ENV=prod`), startup fails fast if no effective API key is configured.
-
-Example:
-
-```powershell
-curl -X POST "http://127.0.0.1:8000/generate" `
-  -H "Content-Type: application/json" `
-  -H "X-DecisionDoc-Api-Key: ***" `
-  -d "{\"title\":\"Auth Smoke\",\"goal\":\"Verify API key guard\"}"
-```
-
-## Auth Rotation
-
-- Use `DECISIONDOC_API_KEYS` for rotation, e.g. `old_key,new_key`.
-- Rotation procedure:
-  - deploy with both old+new keys
-  - switch clients to new key
-  - remove old key in the next deploy
-- Legacy `DECISIONDOC_API_KEY` remains supported for backward compatibility.
-
-## CORS / Preflight
-
-- Toggle app CORS middleware:
-  - `DECISIONDOC_CORS_ENABLED=1`
-  - `DECISIONDOC_CORS_ALLOW_ORIGINS=https://a.example,https://b.example`
-- If CORS origins are not set in dev, app defaults to `*`.
-- Preflight `OPTIONS` requests bypass API key auth to avoid browser integration failures.
-
-## Prod Hardening
-
-- When `DECISIONDOC_ENV=prod`, the app disables:
-  - `/docs`
-  - `/redoc`
-  - `/openapi.json`
-
-## Ops Investigate
-
-- Endpoint: `POST /ops/investigate`
-- Header: `X-DecisionDoc-Ops-Key: ***` (`DECISIONDOC_OPS_KEY`)
-- Request body:
-  - `window_minutes` (default `30`, max `180`)
-  - `reason` (optional, sanitized)
-  - `stage` (`dev|prod`, optional)
-  - `force` (optional, default `false`; set `true` to bypass dedupe cache)
-- Response:
-  - `incident_id`
-  - `incident_key` (deterministic dedupe key)
-  - `deduped` (whether cached response was returned)
-  - `summary` (counts, p95 timings, top error codes)
-  - `statuspage_incident_url`
-  - `report_s3_key` (internal S3 key)
-  - `statuspage_posted` / `statuspage_error` (partial-failure visibility)
-
-Behavior:
-
-- Dedupe is enabled for repeated requests within TTL:
-  - `DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS` (default `300`)
-  - `DECISIONDOC_INVESTIGATE_BUCKET_SECONDS` (default `300`)
-- Same `incident_key` reuses the same Statuspage incident (avoids duplicates).
-- Statuspage update spam is throttled by:
-  - `DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS` (default `600`)
-- By default, Statuspage failure does not fail investigation (`statuspage_posted=false`).
-  - Strict mode: `DECISIONDOC_OPS_STATUSPAGE_STRICT=1`
-
-Example:
-
-```powershell
-curl -X POST "http://127.0.0.1:8000/ops/investigate" `
-  -H "Content-Type: application/json" `
-  -H "X-DecisionDoc-Ops-Key: ***" `
-  -d "{\"window_minutes\":30,\"reason\":\"Investigate elevated 5xx\",\"stage\":\"dev\"}"
-```
-
-## Request Example
-
+**요청 예시:**
 ```json
 {
-  "title": "DecisionDoc AI MVP",
-  "goal": "Generate 4 standard decision docs",
-  "context": "2-week API-first MVP",
-  "constraints": "No external API calls",
-  "priority": "maintainability > security > cost > performance > speed",
+  "title": "결제 서비스 MSA 전환",
+  "goal": "모놀리식 결제 모듈을 MSA로 분리",
+  "context": "월 거래량 100만 건, B2B SaaS",
+  "constraints": "기존 DB 스키마 유지, 3개월 이내 완료",
+  "priority": "reliability > security > performance > cost",
   "doc_types": ["adr", "onepager", "eval_plan", "ops_checklist"],
-  "audience": "mixed",
-  "assumptions": ["Windows-first local development"]
+  "audience": "engineering + cto"
 }
 ```
 
-## Response Fields
+**응답 예시:**
+```json
+{
+  "request_id": "abc-123",
+  "bundle_id": "f47ac10b-...",
+  "provider": "openai",
+  "schema_version": "v1",
+  "cache_hit": false,
+  "docs": [
+    { "doc_type": "adr", "markdown": "# ADR: 결제 서비스 MSA 전환\n\n## Goal\n..." },
+    { "doc_type": "onepager", "markdown": "..." }
+  ]
+}
+```
 
-- `request_id`: trace identifier from `X-Request-Id`
-- `bundle_id`: persisted artifact identifier (UUID)
-- `title`: echoed request title
-- `provider`: active provider
-- `schema_version`: bundle schema version (`v1`)
-- `cache_hit`: `true/false/null` (`null` when cache disabled)
-- `docs`: list of `{doc_type, markdown}`
+### `POST /generate/export` — 문서 생성 + 파일 저장
+위와 동일하나 Markdown 파일을 스토리지에 저장하고 경로를 반환합니다.
 
-For `/generate/export`:
+### `GET /health` — 헬스체크 (인증 불필요)
 
-- `export_dir`
-- `files`: list of `{doc_type, path}`
+### `POST /ops/investigate` — 운영 장애 조사 (`X-DecisionDoc-Ops-Key` 필요)
 
-## Unified Error Contract
+---
 
-All API errors return:
+## 인증 / Auth
+
+- 보호 엔드포인트: `POST /generate`, `POST /generate/export`
+- 인증 헤더: `X-DecisionDoc-Api-Key`
+- 키 우선순위: `DECISIONDOC_API_KEYS` (쉼표 구분, 로테이션) → `DECISIONDOC_API_KEY` (레거시)
+- `dev` 환경에서는 키 없이 동작 (DX 편의)
+- `/health`는 항상 공개
+
+```bash
+curl -X POST "http://127.0.0.1:8000/generate" \
+  -H "Content-Type: application/json" \
+  -H "X-DecisionDoc-Api-Key: your-key" \
+  -d '{"title":"Test","goal":"Smoke test"}'
+```
+
+---
+
+## 통합 에러 계약 / Unified Error Contract
+
+모든 에러 응답이 동일한 형태로 반환됩니다:
 
 ```json
 {
   "code": "PROVIDER_FAILED",
   "message": "Provider request failed.",
-  "request_id": "..."
+  "request_id": "abc-123"
 }
 ```
 
-Common `code` values:
+| code | HTTP | 상황 |
+|------|------|------|
+| `UNAUTHORIZED` | 401 | API 키 불일치 |
+| `REQUEST_VALIDATION_FAILED` | 422 | 입력 스키마 오류 |
+| `PROVIDER_FAILED` | 500 | LLM 호출 실패 |
+| `EVAL_LINT_FAILED` | 500 | 품질 검사 실패 |
+| `DOC_VALIDATION_FAILED` | 500 | 문서 구조 검증 실패 |
+| `MAINTENANCE_MODE` | 503 | 점검 중 |
 
-- `UNAUTHORIZED`
-- `REQUEST_VALIDATION_FAILED`
-- `PROVIDER_FAILED`
-- `EVAL_LINT_FAILED`
-- `DOC_VALIDATION_FAILED`
-- `STORAGE_FAILED`
-- `INTERNAL_ERROR`
+---
 
-## Validation & Quality Guardrails
+## 테스트 전략 / Test Strategy
 
-- Input validation (Pydantic strict model)
-- Template rendering from versioned templates (`v1`)
-- Eval lints:
-  - required headings
-  - banned tokens (`TODO`, `TBD`, `FIXME`)
-  - non-empty critical sections
-- Document integrity validator:
-  - required section headings per doc type
-  - ADR must contain `## Options` with at least 2 options
+```bash
+pytest tests/         # 전체 오프라인 테스트 (75 passed)
+pytest tests/ -m live # Live LLM 테스트 (API 키 필요, opt-in)
+python -m app.eval    # Eval 리포트 생성 (reports/eval/v1/)
+```
 
-## Observability
+| 전략 | 내용 |
+|------|------|
+| **Fixture 기반 회귀 테스트** | 다양한 입력 케이스를 JSON fixture로 관리 |
+| **Golden Snapshot 테스트** | 렌더링 포맷 변경 감지 |
+| **Eval Pipeline** | 전체 fixture 품질 점수 및 리포트 자동 생성 |
+| **Live 테스트 (opt-in)** | 실제 OpenAI / Gemini 호출 검증 |
+| **에러 계약 테스트** | 모든 에러 코드·상태코드·응답 구조 보장 |
 
-Structured JSON logs (one event per request):
+---
 
-- base fields: `request_id`, `method`, `path`, `status_code`, `latency_ms`
-- generate fields: `provider`, `template_version`, `schema_version`, `cache_hit`
-- stage timings: `provider_ms`, `render_ms`, `lints_ms`, `validator_ms`, `export_ms` (export only)
+## 스토리지 / Storage
 
-Privacy policy:
+| 모드 | 번들 경로 | 익스포트 경로 |
+|------|-----------|---------------|
+| **Local** (기본) | `./data/{bundle_id}.json` | `./exports/{bundle_id}/{doc_type}.md` |
+| **S3** | `bundles/{bundle_id}.json` | `exports/{bundle_id}/{doc_type}.md` |
 
-- request body is not logged
-- API keys/env secret values are not logged
-- raw model output is not logged
+전환: `DECISIONDOC_STORAGE=s3` + `DECISIONDOC_S3_BUCKET=my-bucket`
 
-## Environment Variables
+---
 
-Copy from `.env.example`:
+## 주요 환경변수 / Environment Variables
+
+`.env.example`을 복사하여 사용:
 
 ```env
-DECISIONDOC_PROVIDER=mock
-DECISIONDOC_ENV=dev
-DECISIONDOC_API_KEYS=
-DECISIONDOC_API_KEY=
-DECISIONDOC_OPS_KEY=
-DECISIONDOC_MAINTENANCE=0
-DECISIONDOC_CORS_ENABLED=0
-DECISIONDOC_CORS_ALLOW_ORIGINS=
-DECISIONDOC_STORAGE=local
-DATA_DIR=./data
-EXPORT_DIR=./data
-DECISIONDOC_CACHE_ENABLED=0
-DECISIONDOC_TEMPLATE_VERSION=v1
-DECISIONDOC_S3_BUCKET=
-DECISIONDOC_S3_PREFIX=decisiondoc-ai/
-DECISIONDOC_HTTP_API_ID=
-DECISIONDOC_LAMBDA_FUNCTION_NAME=
-STATUSPAGE_PAGE_ID=
-STATUSPAGE_API_KEY=
-DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS=300
-DECISIONDOC_INVESTIGATE_BUCKET_SECONDS=300
-DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS=600
-DECISIONDOC_OPS_STATUSPAGE_STRICT=0
+DECISIONDOC_PROVIDER=mock          # mock | openai | gemini
+DECISIONDOC_ENV=dev                # dev | prod
+DECISIONDOC_API_KEYS=              # 쉼표 구분 복수 키 (로테이션 지원)
+DECISIONDOC_CACHE_ENABLED=0        # 1 = 캐싱 활성화
+DECISIONDOC_STORAGE=local          # local | s3
+DECISIONDOC_MAINTENANCE=0          # 1 = 점검 모드 (503 반환)
+DECISIONDOC_CORS_ENABLED=0         # 1 = CORS 미들웨어 활성화
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 ```
 
-Key handling:
+> ⚠️ `.env` 파일은 절대 커밋하지 마세요. API 키를 로그·이슈·README에 노출하지 마세요.
 
-- Environment variables only
-- Never commit `.env`
-- Never paste secrets into logs/issues/README
+---
 
-## Storage
+## 배포 / Deployment (AWS)
 
-Default local storage:
+- AWS Lambda + API Gateway HTTP API (SAM)
+- 수동 배포 전용: `.github/workflows/deploy.yml` (`workflow_dispatch`)
+- 런타임 스토리지: S3 자동 전환
+- 비용 보호: API Gateway throttling + Lambda reserved concurrency 제한
+- 배포 상세: [`docs/deploy_aws.md`](docs/deploy_aws.md)
 
-- `DECISIONDOC_STORAGE=local`
-- bundle: `./data/<bundle_id>.json`
-- export: `./data/<bundle_id>/<doc_type>.md` (or `EXPORT_DIR` override)
+---
 
-S3 storage:
+## 활용 방안 / Use Cases
 
-- `DECISIONDOC_STORAGE=s3`
-- required: `DECISIONDOC_S3_BUCKET`
-- optional: `DECISIONDOC_S3_PREFIX` (default `decisiondoc-ai/`)
-- key scheme:
-  - `bundles/{bundle_id}.json`
-  - `exports/{bundle_id}/{doc_type}.md`
-
-## CI / Test Strategy
-
-Offline suite (required):
-
-```powershell
-python -m pytest -q
-```
-
-Rules:
-
-- CI runs offline tests only
-- `--update-golden` is blocked in CI
-- eval runner is enforced in CI
-
-Golden snapshots:
-
-```powershell
-python -m pytest -q -k golden
-python -m pytest -q --update-golden -k golden
-```
-
-## Eval Reports
-
-Generate eval report from fixtures:
-
-```powershell
-python -m app.eval --fail-on-error
-```
-
-Outputs:
-
-- `reports/eval/v1/eval_report.json`
-- `reports/eval/v1/eval_report.md`
-
-## Live Tests (Opt-in)
-
-Local live tests:
-
-```powershell
-# OpenAI
-$env:DECISIONDOC_PROVIDER="openai"
-$env:OPENAI_API_KEY="***"
-python -m pytest -m live -q
-
-# Gemini
-$env:DECISIONDOC_PROVIDER="gemini"
-$env:GEMINI_API_KEY="***"
-python -m pytest -m live -q
-```
-
-GitHub Actions live workflows:
-
-- `live`: provider-specific smoke
-- `live-eval`: fixed 3-fixture comparison (`openai` vs `gemini`)
-
-Live eval guardrails:
-
-- fixed fixtures (non-random)
-- cache off for fair comparison
-- bounded call budget
-- no raw requirements/model outputs in reports
-
-## Deployment (AWS)
-
-- Manual deploy workflow only: `.github/workflows/deploy.yml` (`workflow_dispatch`)
-- Serverless package: AWS Lambda + API Gateway HTTP API (SAM)
-- Runtime storage default in deployment: S3
-
-Cost guardrails in SAM:
-
-- HTTP API throttling (`ThrottlingBurstLimit`, `ThrottlingRateLimit`)
-- Lambda reserved concurrency cap (`ReservedConcurrentExecutions`)
-
-Runbook:
-
-- `docs/deploy_aws.md`
-
-## Security Warning
-
-Do not include sensitive customer data in requests for this MVP.
-Do not commit credentials, `.env`, or secret-bearing artifacts.
+| 상황 | 활용 방법 |
+|------|-----------|
+| **스타트업 기술 의사결정** | 새 기능/시스템 검토 시 ADR + Onepager 초안 자동 생성 → 팀 리뷰 |
+| **개발팀 온보딩** | 운영 시스템의 의사결정 맥락을 빠르게 문서화 |
+| **컨설팅·SI 프로젝트** | 고객사 요구사항 수집 후 Eval Plan · Ops Checklist 자동 생성 |
+| **내부 도구 연동** | Jira / Confluence / Notion API와 연결해 문서 자동 발행 파이프라인 구성 |
