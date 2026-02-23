@@ -165,6 +165,9 @@ pytest tests/
 ### `GET /health` — 헬스체크 (인증 불필요)
 
 ### `POST /ops/investigate` — 운영 장애 조사 (`X-DecisionDoc-Ops-Key` 필요)
+- 요청 필드: `window_minutes`, `reason`, `stage`, `force`, `notify`
+- `notify=false` 이면 Statuspage 호출 없이 조사 + S3 증거 저장만 수행
+- 동일 조건 재호출은 TTL 내 `deduped=true`로 빠르게 반환
 
 ---
 
@@ -264,6 +267,22 @@ GEMINI_API_KEY=
 - 런타임 스토리지: S3 자동 전환
 - 비용 보호: API Gateway throttling + Lambda reserved concurrency 제한
 - 배포 상세: [`docs/deploy_aws.md`](docs/deploy_aws.md)
+- `deploy-smoke`는 `dev` 스테이지에서 기본적으로 API smoke + ops smoke를 수행
+
+---
+
+## Ops Smoke (수동 실행)
+
+```bash
+SMOKE_BASE_URL=https://... \
+SMOKE_OPS_KEY=*** \
+SMOKE_S3_BUCKET=... \
+AWS_REGION=ap-northeast-2 \
+python scripts/ops_smoke.py
+```
+
+- 1차 호출: `/ops/investigate` (`notify=false`) + S3 `head_object` 검증
+- 2차 호출: 동일 요청 `deduped=true` 확인
 
 ---
 

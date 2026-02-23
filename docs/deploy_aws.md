@@ -32,12 +32,16 @@ The workflow builds and deploys SAM template `infra/sam/template.yaml`.
 
 1. Deploy (`infra/sam/template.yaml`)
 2. Post-deploy smoke checks (`scripts/smoke.py`)
+3. Ops smoke on `dev` by default (`scripts/ops_smoke.py`)
+   - `prod` runs ops smoke only when workflow input `include_ops_smoke=true`
 
 Smoke validates:
 - `GET /health` returns `200`
 - `POST /generate` without key returns `401 UNAUTHORIZED`
 - `POST /generate` with key returns `200` with `bundle_id`
 - `POST /generate/export` with key returns `200` with export metadata
+- `POST /ops/investigate` with `notify=false` returns `200` and stores report to S3
+- immediate second `/ops/investigate` call returns `deduped=true`
 
 ## Runtime Storage Configuration
 
@@ -83,6 +87,9 @@ No API keys or secrets are stored in source files.
 3. Verify S3 objects are created under:
    - `decisiondoc-ai/bundles/<bundle_id>.json`
    - `decisiondoc-ai/exports/<bundle_id>/<doc_type>.md` (if `/generate/export` used)
+4. Run ops smoke and confirm:
+   - first call has report json key and S3 object exists
+   - second call is deduped (`deduped=true`)
 
 ## Kill Switch (Maintenance Mode)
 
@@ -100,6 +107,7 @@ Use maintenance mode when you need to immediately block write traffic:
 1. Start investigation immediately:
    - `POST /ops/investigate` with `window_minutes=30`
    - include `X-DecisionDoc-Ops-Key`
+   - set `notify=false` for smoke/probe scenarios to avoid Statuspage spam
 2. Confirm response fields:
    - `incident_id`
    - `summary` (`api_5xx`, `api_4xx`, throttles, p95 latency)

@@ -206,21 +206,9 @@ def create_app() -> FastAPI:
             stage=stage,
             request_id=request_id,
             force=payload.force,
+            notify=payload.notify,
         )
         request.state.maintenance = is_maintenance_mode()
-        log_event(
-            logger,
-            {
-                "event": "ops.investigate.completed",
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": 200,
-                "stage": stage,
-                "incident_id": result["incident_id"],
-                "window_minutes": payload.window_minutes,
-            },
-        )
         return OpsInvestigateResponse(**result)
 
     return app

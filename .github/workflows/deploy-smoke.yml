@@ -33,6 +33,14 @@ on:
         options:
           - "0"
           - "1"
+      include_ops_smoke:
+        description: "Run ops smoke on non-dev stage"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   deploy:
@@ -168,7 +176,10 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -195,6 +206,10 @@ jobs:
             echo "Missing DECISIONDOC_API_KEY secret"
             exit 1
           fi
+          if [ -z "${AWS_REGION}" ]; then
+            echo "Missing AWS_REGION secret"
+            exit 1
+          fi
 
       - name: Run smoke
         env:
@@ -203,3 +218,82 @@ jobs:
           SMOKE_PROVIDER: ${{ inputs.provider }}
         run: |
           python scripts/smoke.py
+
+      - name: Resolve smoke role
+        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+        run: |
+          if [ "${{ inputs.stage }}" = "dev" ]; then
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
+          else
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
+          fi
+          if [ -z "${ROLE_ARN}" ]; then
+            echo "Missing stage role secret"
+            exit 1
+          fi
+          echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials for ops smoke (OIDC)
+        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve ops smoke S3 bucket from stack parameters
+        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+        env:
+          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
+        run: |
+          SMOKE_S3_BUCKET="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Parameters[?ParameterKey==`S3BucketName`].ParameterValue' \
+            --output text)"
+          SMOKE_S3_PREFIX="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Parameters[?ParameterKey==`S3Prefix`].ParameterValue' \
+            --output text)"
+          if [ -z "${SMOKE_S3_BUCKET}" ] || [ "${SMOKE_S3_BUCKET}" = "None" ]; then
+            echo "Missing S3BucketName stack parameter"
+            exit 1
+          fi
+          echo "SMOKE_S3_BUCKET=${SMOKE_S3_BUCKET}" >> "$GITHUB_ENV"
+          if [ -n "${SMOKE_S3_PREFIX}" ] && [ "${SMOKE_S3_PREFIX}" != "None" ]; then
+            echo "SMOKE_S3_PREFIX=${SMOKE_S3_PREFIX}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate ops smoke inputs
+        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_OPS_KEY: ${{ secrets.DECISIONDOC_OPS_KEY }}
+        run: |
+          if [ -z "${SMOKE_BASE_URL}" ]; then
+            echo "Missing smoke base URL output"
+            exit 1
+          fi
+          if [ -z "${SMOKE_OPS_KEY}" ]; then
+            echo "Missing DECISIONDOC_OPS_KEY secret"
+            exit 1
+          fi
+          if [ -z "${SMOKE_S3_BUCKET}" ]; then
+            echo "Missing ops smoke S3 bucket"
+            exit 1
+          fi
+          if [ -z "${AWS_REGION}" ]; then
+            echo "Missing AWS_REGION secret"
+            exit 1
+          fi
+
+      - name: Run ops smoke
+        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_OPS_KEY: ${{ secrets.DECISIONDOC_OPS_KEY }}
+          SMOKE_S3_BUCKET: ${{ env.SMOKE_S3_BUCKET }}
+          SMOKE_S3_PREFIX: ${{ env.SMOKE_S3_PREFIX }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          python scripts/ops_smoke.py

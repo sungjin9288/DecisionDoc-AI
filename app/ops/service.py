@@ -1,13 +1,18 @@
 import hashlib
 import json
+import logging
 import os
 import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import Any, Callable
 from uuid import uuid4
 
+from app.observability.logging import log_event
 from app.ops.statuspage import StatuspageClient
+
+logger = logging.getLogger("decisiondoc.ops")
 
 
 class OpsNotifyFailedError(Exception):
@@ -90,6 +95,16 @@ class OpsInvestigationService:
         self.statuspage_client = statuspage_client or StatuspageClient()
         self.max_log_events = max_log_events
         self.now_provider = now_provider
+        self._cw_metric_calls = 0
+        self._cw_log_calls = 0
+        self._log_events_returned = 0
+        self._s3_put_count = 0
+
+    def _reset_kpi_counters(self) -> None:
+        self._cw_metric_calls = 0
+        self._cw_log_calls = 0
+        self._log_events_returned = 0
+        self._s3_put_count = 0
 
     def investigate(
         self,
@@ -99,7 +114,9 @@ class OpsInvestigationService:
         stage: str,
         request_id: str,
         force: bool = False,
+        notify: bool = True,
     ) -> dict[str, Any]:
+        self._reset_kpi_counters()
         now = self._now()
         reason_norm = _normalize_reason_for_key(reason)
         reason_safe = _sanitize_reason_for_storage(reason)
@@ -122,27 +139,59 @@ class OpsInvestigationService:
         )
         index_key = self._index_key(incident_key)
         index_data = self._read_s3_json(index_key)
+        started = perf_counter()
+        metrics_ms = 0
+        logs_ms = 0
+        report_ms = 0
+        s3_ms = 0
+        statuspage_ms = 0
 
         if index_data and not force and self._is_dedupe_hit(index_data, now=now, ttl_seconds=ttl_seconds):
             status_url = self._index_statuspage_url(index_data)
             status_posted = False
+            status_skipped = not notify
             status_error: str | None = None
             status = self._index_status(index_data)
             incident_id = status.get("incident_id", "")
-            if incident_id and self._should_post_dedupe_update(
+            if (
+                notify
+                and incident_id
+                and self._should_post_dedupe_update(
                 index_data=index_data,
                 now=now,
                 min_seconds=status_update_min_seconds,
+                )
             ):
                 try:
+                    status_started = perf_counter()
                     self.statuspage_client.post_investigating_update(incident_id=incident_id)
+                    statuspage_ms += self._elapsed_ms(status_started)
                     status_posted = True
                     status["last_update_at"] = _iso_utc(now)
                     status["last_state"] = "investigating"
+                    s3_started = perf_counter()
                     index_data["statuspage"] = status
                     self._write_s3_json(index_key, index_data)
+                    s3_ms += self._elapsed_ms(s3_started)
                 except Exception:
+                    statuspage_ms += self._elapsed_ms(status_started)
                     status_error = "Status page notification failed."
+                    self._emit_kpi_log(
+                        request_id=request_id,
+                        incident_key=incident_key,
+                        deduped=True,
+                        force=force,
+                        notify=notify,
+                        window_minutes=window_minutes,
+                        started=started,
+                        metrics_ms=metrics_ms,
+                        logs_ms=logs_ms,
+                        report_ms=report_ms,
+                        s3_ms=s3_ms,
+                        statuspage_ms=statuspage_ms,
+                        statuspage_posted=False,
+                        error_code="OPS_NOTIFY_FAILED",
+                    )
                     if statuspage_strict:
                         raise OpsNotifyFailedError("Incident notification failed.")
 
@@ -151,19 +200,42 @@ class OpsInvestigationService:
                 summary = {}
             latest_prefix = index_data.get("latest_report_prefix", "")
             report_key = f"{latest_prefix}report.json" if isinstance(latest_prefix, str) and latest_prefix else ""
-            return {
+            response = {
                 "incident_id": incident_key,
                 "incident_key": incident_key,
                 "deduped": True,
                 "summary": summary,
                 "statuspage_incident_url": status_url,
                 "report_s3_key": report_key,
+                "report_json_key": report_key,
                 "statuspage_posted": status_posted,
+                "statuspage_skipped": status_skipped,
                 "statuspage_error": status_error,
             }
+            self._emit_kpi_log(
+                request_id=request_id,
+                incident_key=incident_key,
+                deduped=True,
+                force=force,
+                notify=notify,
+                window_minutes=window_minutes,
+                started=started,
+                metrics_ms=metrics_ms,
+                logs_ms=logs_ms,
+                report_ms=report_ms,
+                s3_ms=s3_ms,
+                statuspage_ms=statuspage_ms,
+                statuspage_posted=status_posted,
+                error_code="OPS_NOTIFY_FAILED" if status_error else None,
+            )
+            return response
 
+        metrics_started = perf_counter()
         metrics = self._collect_metrics(start=now - timedelta(minutes=window_minutes), end=now, stage=stage)
+        metrics_ms = self._elapsed_ms(metrics_started)
+        logs_started = perf_counter()
         logs = self._collect_logs(start=now - timedelta(minutes=window_minutes), end=now)
+        logs_ms = self._elapsed_ms(logs_started)
         summary = self._build_summary(metrics=metrics, logs=logs)
 
         run_id = self._build_run_id(now)
@@ -173,26 +245,48 @@ class OpsInvestigationService:
         status = self._index_status(index_data)
         status_url = status.get("incident_url")
         status_posted = False
+        status_skipped = not notify
         status_error: str | None = None
-        try:
-            if status.get("incident_id"):
-                self.statuspage_client.post_investigating_update(incident_id=status["incident_id"])
-                status_posted = True
-                status["last_state"] = "investigating"
-                status["last_update_at"] = _iso_utc(now)
-            else:
-                created = self.statuspage_client.create_investigating_incident(stage=stage, incident_key=incident_key)
-                status_posted = True
-                status["incident_id"] = created["incident_id"]
-                status["incident_url"] = created.get("incident_url", "")
-                status["last_state"] = "investigating"
-                status["last_update_at"] = _iso_utc(now)
-            status_url = status.get("incident_url")
-        except Exception:
-            status_error = "Status page notification failed."
-            if statuspage_strict:
-                raise OpsNotifyFailedError("Incident notification failed.")
+        if notify:
+            try:
+                status_started = perf_counter()
+                if status.get("incident_id"):
+                    self.statuspage_client.post_investigating_update(incident_id=status["incident_id"])
+                    status_posted = True
+                    status["last_state"] = "investigating"
+                    status["last_update_at"] = _iso_utc(now)
+                else:
+                    created = self.statuspage_client.create_investigating_incident(stage=stage, incident_key=incident_key)
+                    status_posted = True
+                    status["incident_id"] = created["incident_id"]
+                    status["incident_url"] = created.get("incident_url", "")
+                    status["last_state"] = "investigating"
+                    status["last_update_at"] = _iso_utc(now)
+                statuspage_ms = self._elapsed_ms(status_started)
+                status_url = status.get("incident_url")
+            except Exception:
+                statuspage_ms = self._elapsed_ms(status_started)
+                status_error = "Status page notification failed."
+                if statuspage_strict:
+                    self._emit_kpi_log(
+                        request_id=request_id,
+                        incident_key=incident_key,
+                        deduped=False,
+                        force=force,
+                        notify=notify,
+                        window_minutes=window_minutes,
+                        started=started,
+                        metrics_ms=metrics_ms,
+                        logs_ms=logs_ms,
+                        report_ms=report_ms,
+                        s3_ms=s3_ms,
+                        statuspage_ms=statuspage_ms,
+                        statuspage_posted=False,
+                        error_code="OPS_NOTIFY_FAILED",
+                    )
+                    raise OpsNotifyFailedError("Incident notification failed.")
 
+        report_started = perf_counter()
         report = {
             "incident_id": incident_key,
             "incident_key": incident_key,
@@ -218,6 +312,8 @@ class OpsInvestigationService:
                 "incident_url": status_url,
             },
         }
+        report_ms = self._elapsed_ms(report_started)
+        s3_started = perf_counter()
         self._write_reports(report_prefix=report_prefix, report=report)
 
         next_index = {
@@ -237,17 +333,37 @@ class OpsInvestigationService:
             },
         }
         self._write_s3_json(index_key, next_index)
+        s3_ms = self._elapsed_ms(s3_started)
 
-        return {
+        response = {
             "incident_id": incident_key,
             "incident_key": incident_key,
             "deduped": False,
             "summary": summary,
             "statuspage_incident_url": status_url,
             "report_s3_key": report_json_key,
+            "report_json_key": report_json_key,
             "statuspage_posted": status_posted,
+            "statuspage_skipped": status_skipped,
             "statuspage_error": status_error,
         }
+        self._emit_kpi_log(
+            request_id=request_id,
+            incident_key=incident_key,
+            deduped=False,
+            force=force,
+            notify=notify,
+            window_minutes=window_minutes,
+            started=started,
+            metrics_ms=metrics_ms,
+            logs_ms=logs_ms,
+            report_ms=report_ms,
+            s3_ms=s3_ms,
+            statuspage_ms=statuspage_ms,
+            statuspage_posted=status_posted,
+            error_code="OPS_NOTIFY_FAILED" if status_error else None,
+        )
+        return response
 
     def _build_incident_key(
         self,
@@ -262,6 +378,51 @@ class OpsInvestigationService:
         material = f"{stage}|{window_minutes}|{bucket}|{reason_norm}"
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
         return f"inc-{digest}"
+
+    def _elapsed_ms(self, started: float) -> int:
+        return max(0, int((perf_counter() - started) * 1000))
+
+    def _emit_kpi_log(
+        self,
+        *,
+        request_id: str,
+        incident_key: str,
+        deduped: bool,
+        force: bool,
+        notify: bool,
+        window_minutes: int,
+        started: float,
+        metrics_ms: int,
+        logs_ms: int,
+        report_ms: int,
+        s3_ms: int,
+        statuspage_ms: int,
+        statuspage_posted: bool,
+        error_code: str | None,
+    ) -> None:
+        event = {
+            "event": "ops.investigate.completed",
+            "request_id": request_id,
+            "incident_key": incident_key,
+            "deduped": deduped,
+            "force": force,
+            "notify": notify,
+            "window_minutes": window_minutes,
+            "latency_ms_total": self._elapsed_ms(started),
+            "metrics_ms": max(0, metrics_ms),
+            "logs_ms": max(0, logs_ms),
+            "report_ms": max(0, report_ms),
+            "s3_ms": max(0, s3_ms),
+            "statuspage_ms": max(0, statuspage_ms),
+            "cw_metric_calls": self._cw_metric_calls,
+            "cw_log_calls": self._cw_log_calls,
+            "log_events_returned": self._log_events_returned,
+            "s3_put_count": self._s3_put_count,
+            "statuspage_posted": statuspage_posted,
+        }
+        if error_code:
+            event["error_code"] = error_code
+        log_event(logger, event)
 
     def _is_dedupe_hit(self, index_data: dict[str, Any], *, now: datetime, ttl_seconds: int) -> bool:
         updated_at = _parse_iso_utc(str(index_data.get("updated_at", "")))
@@ -299,7 +460,9 @@ class OpsInvestigationService:
         bucket = self._bucket()
         s3 = self._s3()
         s3.put_object(Bucket=bucket, Key=report_json_key, Body=report_json, ContentType="application/json")
+        self._s3_put_count += 1
         s3.put_object(Bucket=bucket, Key=report_md_key, Body=report_md, ContentType="text/markdown; charset=utf-8")
+        self._s3_put_count += 1
 
     def _build_markdown(self, report: dict[str, Any]) -> str:
         summary = report.get("summary", {})
@@ -429,6 +592,7 @@ class OpsInvestigationService:
             )
 
         try:
+            self._cw_metric_calls += 1
             response = self._cloudwatch().get_metric_data(
                 MetricDataQueries=queries,
                 StartTime=start,
@@ -484,10 +648,12 @@ class OpsInvestigationService:
             "limit": self.max_log_events,
         }
         try:
+            self._cw_log_calls += 1
             response = self._logs().filter_log_events(**params)
             events = response.get("events", [])
             if not isinstance(events, list):
                 events = []
+            self._log_events_returned = len(events)
             for event in events:
                 if not isinstance(event, dict):
                     continue
@@ -652,6 +818,7 @@ class OpsInvestigationService:
     def _write_s3_json(self, key: str, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self._s3().put_object(Bucket=self._bucket(), Key=key, Body=data, ContentType="application/json")
+        self._s3_put_count += 1
 
     def _cloudwatch(self):
         if self._cloudwatch_client is not None:

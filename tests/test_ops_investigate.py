@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -28,7 +29,7 @@ class _FakeOpsService:
     def __init__(self):
         self.calls: list[dict] = []
 
-    def investigate(self, *, window_minutes, reason, stage, request_id, force=False):  # noqa: ANN001
+    def investigate(self, *, window_minutes, reason, stage, request_id, force=False, notify=True):  # noqa: ANN001
         self.calls.append(
             {
                 "window_minutes": window_minutes,
@@ -36,6 +37,7 @@ class _FakeOpsService:
                 "stage": stage,
                 "request_id": request_id,
                 "force": force,
+                "notify": notify,
             }
         )
         return {
@@ -45,7 +47,9 @@ class _FakeOpsService:
             "summary": {"counts": {"lambda_errors": 2}},
             "statuspage_incident_url": "https://status.example/incidents/123",
             "report_s3_key": "decisiondoc-ai/reports/incidents/incident-123/report.json",
+            "report_json_key": "decisiondoc-ai/reports/incidents/incident-123/report.json",
             "statuspage_posted": True,
+            "statuspage_skipped": False,
             "statuspage_error": None,
         }
 
@@ -69,7 +73,7 @@ def test_ops_investigate_auth_401_and_200(tmp_path, monkeypatch):
     ok = client.post(
         "/ops/investigate",
         headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
-        json={"window_minutes": 15, "reason": "latency spike", "stage": "prod", "force": True},
+        json={"window_minutes": 15, "reason": "latency spike", "stage": "prod", "force": True, "notify": False},
     )
     assert ok.status_code == 200
     body = ok.json()
@@ -79,6 +83,7 @@ def test_ops_investigate_auth_401_and_200(tmp_path, monkeypatch):
     assert service.calls[-1]["window_minutes"] == 15
     assert service.calls[-1]["stage"] == "prod"
     assert service.calls[-1]["force"] is True
+    assert service.calls[-1]["notify"] is False
 
 
 class _FakeCloudWatchClient:
@@ -392,6 +397,95 @@ def test_statuspage_failure_soft_does_not_fail_investigation_by_default(monkeypa
     assert result["report_s3_key"] in fake_s3.objects
     assert fake_cw.calls == 1
     assert fake_logs.calls == 1
+
+
+def test_ops_investigate_notify_false_skips_statuspage(monkeypatch):
+    now = datetime(2026, 2, 20, 12, 34, 56, tzinfo=UTC)
+    fake_s3 = _FakeS3Client()
+    fake_cw = _FakeCloudWatchClient()
+    fake_logs = _FakeLogsClient()
+    fake_status = _FakeStatuspageClient()
+    service = _ops_service(
+        monkeypatch,
+        now=now,
+        fake_s3=fake_s3,
+        fake_cw=fake_cw,
+        fake_logs=fake_logs,
+        fake_statuspage=fake_status,
+    )
+
+    result = service.investigate(
+        window_minutes=30,
+        reason="smoke",
+        stage="dev",
+        request_id="ops-req-1",
+        force=False,
+        notify=False,
+    )
+
+    assert result["statuspage_posted"] is False
+    assert result["statuspage_skipped"] is True
+    assert fake_status.create_calls == 0
+    assert fake_status.update_calls == 0
+    report_puts = [k for k in fake_s3.objects if k.endswith("report.json") or k.endswith("report.md")]
+    assert len(report_puts) == 2
+
+
+def test_ops_investigate_emits_kpi_log_fields(monkeypatch, caplog):
+    now = datetime(2026, 2, 20, 12, 34, 56, tzinfo=UTC)
+    fake_s3 = _FakeS3Client()
+    fake_cw = _FakeCloudWatchClient()
+    fake_logs = _FakeLogsClient()
+    fake_status = _FakeStatuspageClient()
+    service = _ops_service(
+        monkeypatch,
+        now=now,
+        fake_s3=fake_s3,
+        fake_cw=fake_cw,
+        fake_logs=fake_logs,
+        fake_statuspage=fake_status,
+    )
+    caplog.set_level(logging.INFO)
+    sentinel = "SUPER_SECRET_DO_NOT_LOG"
+
+    service.investigate(
+        window_minutes=30,
+        reason=sentinel,
+        stage="prod",
+        request_id="ops-req-1",
+        force=False,
+        notify=False,
+    )
+
+    events = [record.msg for record in caplog.records if isinstance(record.msg, dict)]
+    ops_events = [e for e in events if e.get("event") == "ops.investigate.completed"]
+    assert len(ops_events) == 1
+    event = ops_events[0]
+    assert event["request_id"] == "ops-req-1"
+    assert isinstance(event["incident_key"], str) and event["incident_key"]
+    assert event["deduped"] is False
+    assert event["force"] is False
+    assert event["notify"] is False
+    for key in [
+        "window_minutes",
+        "latency_ms_total",
+        "metrics_ms",
+        "logs_ms",
+        "report_ms",
+        "s3_ms",
+        "statuspage_ms",
+        "cw_metric_calls",
+        "cw_log_calls",
+        "log_events_returned",
+        "s3_put_count",
+    ]:
+        assert isinstance(event.get(key), int)
+        assert event[key] >= 0
+    assert event["statuspage_posted"] is False
+
+    all_logs = "\n".join([caplog.text] + [str(record.msg) for record in caplog.records])
+    assert sentinel not in all_logs
+    assert "VERY_SECRET_OPS_KEY_VALUE" not in all_logs
 
 
 def test_ops_report_contains_no_sensitive_strings(monkeypatch):

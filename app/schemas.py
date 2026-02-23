@@ -92,6 +92,7 @@ class OpsInvestigateRequest(BaseModel):
     reason: str = Field(default="", max_length=200)
     stage: Literal["dev", "prod"] | None = None
     force: bool = False
+    notify: bool = True
 
 
 class OpsInvestigateResponse(BaseModel):
@@ -102,4 +103,6 @@ class OpsInvestigateResponse(BaseModel):
     incident_key: str = ""
     deduped: bool = False
     statuspage_posted: bool | None = None
+    statuspage_skipped: bool | None = None
     statuspage_error: str | None = None
+    report_json_key: str | None = None
