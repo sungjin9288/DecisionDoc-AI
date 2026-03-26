@@ -136,6 +136,8 @@ def create_app() -> FastAPI:
     async def _lifespan(app: FastAPI):
         """FastAPI lifespan: drain background eval executor on shutdown."""
         yield
+        if os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
+            return
         from app.services.generation_service import _eval_executor
         _shutdown_thread = threading.Thread(
             target=lambda: _eval_executor.shutdown(wait=True, cancel_futures=False),

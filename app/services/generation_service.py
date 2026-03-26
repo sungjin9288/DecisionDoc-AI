@@ -327,23 +327,29 @@ class GenerationService:
                 active_eval_store = self._eval_store
 
             from app.eval.pipeline import run_eval_pipeline
-            _future = _eval_executor.submit(
-                run_eval_pipeline,
-                request_id,
-                bundle_type,
-                docs,
-                active_eval_store,
-                title=payload.get("title", ""),
-                goal=payload.get("goal", ""),
-                context=payload.get("context", ""),
-                ab_store=ab_store_instance,
-                ab_variant=ab_variant,
-                finetune_store=self._finetune_store,
-                ft_system_prompt=ft_system_prompt,
-                ft_output=ft_output,
-                tenant_id=tenant_id,
-            )
-            _future.add_done_callback(_eval_done_callback)
+            try:
+                _future = _eval_executor.submit(
+                    run_eval_pipeline,
+                    request_id,
+                    bundle_type,
+                    docs,
+                    active_eval_store,
+                    title=payload.get("title", ""),
+                    goal=payload.get("goal", ""),
+                    context=payload.get("context", ""),
+                    ab_store=ab_store_instance,
+                    ab_variant=ab_variant,
+                    finetune_store=self._finetune_store,
+                    ft_system_prompt=ft_system_prompt,
+                    ft_output=ft_output,
+                    tenant_id=tenant_id,
+                )
+                _future.add_done_callback(_eval_done_callback)
+            except RuntimeError as exc:
+                _log.warning(
+                    "[Eval] Background eval skipped because executor is unavailable: %s",
+                    exc,
+                )
 
         # Record usage (fire-and-forget — don't fail generation on billing errors)
         try:

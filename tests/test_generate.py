@@ -263,6 +263,23 @@ def test_generate_export_returns_files_and_writes_markdown(tmp_path, monkeypatch
         assert md_path.read_text(encoding="utf-8").strip()
 
 
+def test_generate_succeeds_when_eval_executor_is_unavailable(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+
+    def _raise_executor_shutdown(*args, **kwargs):  # noqa: ANN001, ARG001
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    monkeypatch.setattr("app.services.generation_service._eval_executor.submit", _raise_executor_shutdown)
+
+    response = client.post(
+        "/generate",
+        json={"title": "executor shutdown", "goal": "skip background eval safely"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
+
+
 def test_generate_export_validation_failure_returns_500_and_no_export_dir(tmp_path, monkeypatch):
     import app.main as main_module
     from app.providers.mock_provider import MockProvider
