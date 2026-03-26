@@ -21,6 +21,22 @@ def get_allowed_api_keys() -> list[str]:
     return []
 
 
+def has_valid_api_key_header(request: Request) -> bool:
+    """Return True when the request carries a configured global API key."""
+    provided = request.headers.get(API_KEY_HEADER, "")
+    if not provided:
+        return False
+
+    allowed_keys = get_allowed_api_keys()
+    if not allowed_keys:
+        return False
+
+    ok = False
+    for allowed_key in allowed_keys:
+        ok |= hmac.compare_digest(provided, allowed_key)
+    return ok
+
+
 def require_api_key(request: Request) -> None:
     if request.method.upper() == "OPTIONS":
         return
@@ -34,12 +50,7 @@ def require_api_key(request: Request) -> None:
     if not allowed_keys:
         return
 
-    provided = request.headers.get(API_KEY_HEADER, "")
-    ok = False
-    for allowed_key in allowed_keys:
-        ok |= hmac.compare_digest(provided, allowed_key)
-
-    if not ok:
+    if not has_valid_api_key_header(request):
         raise UnauthorizedError("Authentication required.")
 
 

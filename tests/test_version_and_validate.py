@@ -64,6 +64,24 @@ def test_version_procurement_flag_reflects_env(tmp_path, monkeypatch):
     assert data["features"]["procurement_copilot"] is True
 
 
+def test_version_is_public_even_when_users_exist(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert register.status_code == 200
+
+    response = client.get("/version")
+    assert response.status_code == 200
+    assert "features" in response.json()
+
+
 def test_version_provider_is_mock(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()

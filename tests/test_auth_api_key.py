@@ -104,6 +104,31 @@ def test_authenticated_ui_session_bypasses_api_key_gate(tmp_path, monkeypatch):
     assert body["name"] == "UI Project"
 
 
+def test_generate_with_api_key_still_works_after_users_exist(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert register.status_code == 200
+
+    response = client.post(
+        "/generate",
+        headers={"X-DecisionDoc-Api-Key": "expected-key"},
+        json={"title": "t", "goal": "g"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
+
+
 def test_generate_export_requires_api_key_when_configured(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
