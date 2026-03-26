@@ -34,6 +34,7 @@ from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.feedback_store import FeedbackStore
 from app.storage.prompt_override_store import PromptOverrideStore
+from app.storage.state_backend import get_state_backend
 
 
 def _resolve_cors_allow_origins(environment: str) -> list[str]:
@@ -89,11 +90,12 @@ def create_app() -> FastAPI:
     data_dir = _resolve_data_dir(explicit_data_dir=explicit_data_dir)
     os.environ["DATA_DIR"] = str(data_dir)
     storage = get_storage()
+    state_backend = get_state_backend(data_dir=data_dir)
 
     # ── Multi-tenant setup ──────────────────────────────────────────────────
     from app.storage.tenant_store import TenantStore, migrate_legacy_data
     from app.middleware.tenant import install_tenant_middleware
-    _tenant_store = TenantStore(data_dir)
+    _tenant_store = TenantStore(data_dir, backend=state_backend)
     _tenant_store.ensure_system_tenant()
     migrate_legacy_data(data_dir)
 
@@ -104,7 +106,7 @@ def create_app() -> FastAPI:
     _search_service = SearchService()
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
     _finetune_store = _FineTuneStore(data_dir)
-    procurement_store = ProcurementDecisionStore(base_dir=str(data_dir))
+    procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
     service = GenerationService(
         provider_factory=get_provider,
@@ -119,8 +121,8 @@ def create_app() -> FastAPI:
         finetune_store=_finetune_store,
     )
     ops_service = get_ops_service()
-    approval_store = ApprovalStore(base_dir=str(data_dir))
-    project_store = ProjectStore(base_dir=str(data_dir))
+    approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
+    project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
     voice_brief_base_url = get_voice_brief_api_base_url()
     voice_brief_import_service = (
         VoiceBriefImportService(
@@ -196,6 +198,7 @@ def create_app() -> FastAPI:
     app.state.tenant_store = _tenant_store
     app.state.data_dir = data_dir
     app.state.storage = storage
+    app.state.state_backend = state_backend
     app.state.environment = environment
     from app.services.event_bus import get_event_bus
     app.state.event_bus = get_event_bus()

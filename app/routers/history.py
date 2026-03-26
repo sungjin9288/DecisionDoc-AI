@@ -116,7 +116,7 @@ def create_share_link(payload: CreateShareRequest, request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.share_store import ShareStore
-    store = ShareStore(tenant_id)
+    store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
     link = store.create(
         tenant_id=tenant_id,
         request_id=payload.request_id,
@@ -136,14 +136,13 @@ def create_share_link(payload: CreateShareRequest, request: Request):
 def view_shared_document(share_id: str, request: Request):
     """Public endpoint — no auth required."""
     from app.storage.share_store import ShareStore
-    data_dir = request.app.state.data_dir
-    tenants_dir = data_dir / "tenants"
-    if not tenants_dir.exists():
-        raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
-    for tenant_dir in tenants_dir.iterdir():
-        if not tenant_dir.is_dir():
-            continue
-        store = ShareStore(tenant_dir.name)
+    tenant_store = request.app.state.tenant_store
+    for tenant in tenant_store.list_tenants():
+        store = ShareStore(
+            tenant.tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        )
         link = store.get(share_id)
         if link and link.get("is_active"):
             store.increment_access(share_id)
@@ -242,7 +241,7 @@ def revoke_share_link(share_id: str, request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.share_store import ShareStore
-    store = ShareStore(tenant_id)
+    store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
     success = store.revoke(share_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.tenant import SYSTEM_TENANT_ID, Tenant
+from app.storage.state_backend import StateBackend, get_state_backend
 
 _log = logging.getLogger("decisiondoc.storage.tenant")
 
@@ -17,26 +18,31 @@ _log = logging.getLogger("decisiondoc.storage.tenant")
 class TenantStore:
     """Thread-safe JSON store for tenant registry."""
 
-    def __init__(self, data_dir: Path) -> None:
-        self._path = Path(data_dir) / "tenants.json"
+    def __init__(self, data_dir: Path, *, backend: StateBackend | None = None) -> None:
+        self._data_dir = Path(data_dir)
+        self._path = self._data_dir / "tenants.json"
+        self._relative_path = "tenants.json"
+        self._backend = backend or get_state_backend(data_dir=self._data_dir)
         self._lock = threading.Lock()
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        if self._backend.kind == "local":
+            self._path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
     def _load(self) -> dict[str, Any]:
-        if not self._path.exists():
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None:
             return {}
         try:
-            return json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
             _log.error("Corrupted tenants store: %s", exc)
             return {}
 
     def _persist(self, data: dict[str, Any]) -> None:
-        self._path.write_text(
+        self._backend.write_text(
+            self._relative_path,
             json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
         )
 
     def _record_to_tenant(self, record: dict[str, Any]) -> Tenant:

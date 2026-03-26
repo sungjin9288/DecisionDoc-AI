@@ -69,20 +69,9 @@ async def auth_middleware(request: Request, call_next):
         tenant_id = request.headers.get("X-Tenant-ID", "system") or "system"
         _users_exist = False
         try:
-            import json
-            import os
-            from pathlib import Path
+            from app.storage.user_store import get_user_store
 
-            users_file = (
-                Path(os.getenv("DATA_DIR", "./data"))
-                / "tenants"
-                / tenant_id
-                / "users.json"
-            )
-            if users_file.exists():
-                data = json.loads(users_file.read_text(encoding="utf-8"))
-                if data:  # non-empty dict → registered users exist
-                    _users_exist = True
+            _users_exist = get_user_store(tenant_id).has_any_users()
         except Exception as exc:
             import logging as _logging
             _logging.getLogger("decisiondoc.auth").error(

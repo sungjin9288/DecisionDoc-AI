@@ -247,7 +247,10 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
         invite = store.get(invite_id)
         if invite and invite.get("is_active"):
             data_dir = Path(os.getenv("DATA_DIR", "./data"))
-            user_store = UserStore(data_dir / "tenants" / tenant.tenant_id)
+            user_store = UserStore(
+                data_dir / "tenants" / tenant.tenant_id,
+                backend=request.app.state.state_backend,
+            )
             existing = user_store.get_by_username(tenant.tenant_id, body.username)
             if existing:
                 raise HTTPException(400, "이미 사용 중인 아이디입니다.")
@@ -418,7 +421,10 @@ def admin_list_locations(request: Request) -> list[dict]:
     result = []
     for tenant in tenant_store.list_tenants():
         try:
-            user_store = UserStore(data_dir / "tenants" / tenant.tenant_id)
+            user_store = UserStore(
+                data_dir / "tenants" / tenant.tenant_id,
+                backend=request.app.state.state_backend,
+            )
             users = user_store.list_by_tenant(tenant.tenant_id)
             user_count = len(users)
         except Exception:
@@ -448,7 +454,10 @@ def admin_location_users(tenant_id_path: str, request: Request) -> list[dict]:
     if tenant_store.get_tenant(tenant_id_path) is None:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")
     data_dir = request.app.state.data_dir
-    user_store = UserStore(data_dir / "tenants" / tenant_id_path)
+    user_store = UserStore(
+        data_dir / "tenants" / tenant_id_path,
+        backend=request.app.state.state_backend,
+    )
     users = user_store.list_by_tenant(tenant_id_path)
     return [
         {

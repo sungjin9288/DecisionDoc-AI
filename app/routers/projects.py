@@ -179,8 +179,9 @@ def list_projects_endpoint(
 @router.get("/projects/{project_id}", dependencies=[Depends(require_api_key)])
 def get_project_endpoint(project_id: str, request: Request) -> dict:
     """Get project detail with all documents."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
-    proj = project_store.get(project_id)
+    proj = project_store.get(project_id, tenant_id=tenant_id)
     if proj is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
     return asdict(proj)
@@ -189,10 +190,12 @@ def get_project_endpoint(project_id: str, request: Request) -> dict:
 @router.patch("/projects/{project_id}", dependencies=[Depends(require_api_key)])
 def update_project_endpoint(project_id: str, payload: UpdateProjectRequest, request: Request) -> dict:
     """Update project fields."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     try:
         proj = project_store.update(
             project_id,
+            tenant_id=tenant_id,
             **{k: v for k, v in payload.model_dump().items() if v is not None}
         )
     except KeyError as e:
@@ -221,9 +224,10 @@ def delete_project_endpoint(project_id: str, request: Request) -> dict:
 @router.post("/projects/{project_id}/archive", dependencies=[Depends(require_api_key)])
 def archive_project_endpoint(project_id: str, request: Request) -> dict:
     """Archive a project."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     try:
-        proj = project_store.archive(project_id)
+        proj = project_store.archive(project_id, tenant_id=tenant_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return asdict(proj)
@@ -234,6 +238,7 @@ def add_document_to_project_endpoint(
     project_id: str, payload: AddDocumentToProjectRequest, request: Request
 ) -> dict:
     """Manually add a document to a project."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     try:
         doc = project_store.add_document(
@@ -244,6 +249,7 @@ def add_document_to_project_endpoint(
             docs=payload.docs,
             approval_id=payload.approval_id,
             tags=payload.tags,
+            tenant_id=tenant_id,
         )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -526,9 +532,10 @@ def remove_document_from_project_endpoint(
     project_id: str, doc_id: str, request: Request
 ) -> dict:
     """Remove a document from a project."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     try:
-        project_store.remove_document(project_id, doc_id)
+        project_store.remove_document(project_id, doc_id, tenant_id=tenant_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"ok": True}
@@ -542,8 +549,9 @@ async def download_project_doc_endpoint(
     project_id: str, doc_id: str, fmt: str, request: Request
 ) -> Response:
     """Download a specific project document."""
+    tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
-    proj = project_store.get(project_id)
+    proj = project_store.get(project_id, tenant_id=tenant_id)
     if proj is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
     doc = next((d for d in proj.documents if d.doc_id == doc_id), None)

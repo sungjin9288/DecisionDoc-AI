@@ -5,9 +5,10 @@ Thread-safe via threading.Lock per store instance.
 """
 from __future__ import annotations
 
+import json
 import threading
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -15,6 +16,7 @@ from pathlib import Path
 import bcrypt
 
 from app.storage.base import BaseJsonStore
+from app.storage.state_backend import StateBackend, get_state_backend
 
 
 class UserRole(str, Enum):
@@ -77,15 +79,40 @@ def _validate_password(password: str) -> None:
 class UserStore(BaseJsonStore):
     """Thread-safe, file-backed user store scoped to a single tenant."""
 
-    def __init__(self, tenant_dir: Path) -> None:
+    def __init__(self, tenant_dir: Path, *, backend: StateBackend | None = None) -> None:
         super().__init__()
-        self._path = tenant_dir / "users.json"
-        tenant_dir.mkdir(parents=True, exist_ok=True)
-        if not self._path.exists():
+        self._tenant_dir = Path(tenant_dir)
+        self._path = self._tenant_dir / "users.json"
+        self._relative_path = f"tenants/{self._tenant_dir.name}/users.json"
+        self._backend = backend
+        if self._backend is None:
+            self._tenant_dir.mkdir(parents=True, exist_ok=True)
+        if self._backend is None and not self._path.exists():
             self._save({})
 
     def _get_path(self) -> Path:
         return self._path
+
+    def _load(self, *, strict: bool = False) -> dict:
+        if self._backend is None:
+            return super()._load()
+        try:
+            raw = self._backend.read_text(self._relative_path)
+            if raw is None or not raw.strip():
+                return {}
+            return dict(json.loads(raw))
+        except Exception:
+            if strict:
+                raise
+            return {}
+
+    def _save(self, data: dict) -> None:
+        if self._backend is None:
+            return super()._save(data)
+        self._backend.write_text(
+            self._relative_path,
+            json.dumps(data, ensure_ascii=False, indent=2),
+        )
 
     # ── internal helpers ──────────────────────────────────────────────────
 
@@ -214,18 +241,30 @@ class UserStore(BaseJsonStore):
                 data[user_id]["last_login"] = _now_iso()
                 self._save(data)
 
+    def has_any_users(self) -> bool:
+        """Return True when the tenant has at least one registered user.
+
+        Uses a strict load path so auth bootstrap can fail closed on corrupted
+        state instead of silently treating it as an empty tenant.
+        """
+        with self._lock:
+            data = self._load(strict=True)
+        return bool(data)
+
 
 # ── per-tenant factory ─────────────────────────────────────────────────────────
 
-_user_stores: dict[str, UserStore] = {}
+_user_stores: dict[tuple[str, str, str], UserStore] = {}
 _us_lock = threading.Lock()
 
 
 def get_user_store(tenant_id: str) -> UserStore:
     """Return a shared UserStore instance for the given tenant."""
     with _us_lock:
-        if tenant_id not in _user_stores:
-            data_dir = Path(__import__("os").getenv("DATA_DIR", "./data"))
+        data_dir = Path(__import__("os").getenv("DATA_DIR", "./data"))
+        backend = get_state_backend(data_dir=data_dir)
+        cache_key = (tenant_id, backend.kind, str(data_dir))
+        if cache_key not in _user_stores:
             tenant_dir = data_dir / "tenants" / tenant_id
-            _user_stores[tenant_id] = UserStore(tenant_dir)
-        return _user_stores[tenant_id]
+            _user_stores[cache_key] = UserStore(tenant_dir, backend=backend)
+        return _user_stores[cache_key]

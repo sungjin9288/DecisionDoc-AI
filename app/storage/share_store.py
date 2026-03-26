@@ -2,14 +2,15 @@
 Document sharing store.
 Generates shareable links for generated documents.
 """
+import json
 import secrets
-import threading
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.storage.base import BaseJsonStore
+from app.storage.state_backend import StateBackend, get_state_backend
 
 _log = logging.getLogger("decisiondoc.share")
 
@@ -29,16 +30,39 @@ class ShareLink:
 
 
 class ShareStore(BaseJsonStore):
-    def __init__(self, tenant_id: str):
+    def __init__(
+        self,
+        tenant_id: str,
+        *,
+        data_dir: Path | None = None,
+        backend: StateBackend | None = None,
+    ):
         super().__init__()
         self.tenant_id = tenant_id
-        self._path = (
-            Path("data") / "tenants" / tenant_id / "shares.json"
-        )
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_data_dir = Path(data_dir or __import__("os").getenv("DATA_DIR", "./data"))
+        self._backend = backend or get_state_backend(data_dir=resolved_data_dir)
+        self._path = resolved_data_dir / "tenants" / tenant_id / "shares.json"
+        self._relative_path = str(Path("tenants") / tenant_id / "shares.json")
+        if self._backend.kind == "local":
+            self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def _get_path(self) -> Path:
         return self._path
+
+    def _load(self) -> dict:
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None or not raw.strip():
+            return {}
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def _save(self, data: dict) -> None:
+        self._backend.write_text(
+            self._relative_path,
+            json.dumps(data, ensure_ascii=False, indent=2),
+        )
 
     def create(
         self,

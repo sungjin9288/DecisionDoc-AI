@@ -17,6 +17,7 @@ from typing import Any
 
 from app.schemas import ProcurementDecisionRecord, ProcurementDecisionUpsert, ProcurementSourceSnapshotMetadata
 from app.storage.base import BaseJsonStore, atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
 
 
 def _now_iso() -> str:
@@ -26,22 +27,28 @@ def _now_iso() -> str:
 class ProcurementDecisionStore(BaseJsonStore):
     """Thread-safe, tenant-scoped JSON-backed procurement state store."""
 
-    def __init__(self, base_dir: str = "data") -> None:
+    def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
         super().__init__()
         self._base = Path(base_dir)
+        self._backend = backend or get_state_backend(data_dir=self._base)
 
     def _get_path(self) -> Path:  # multi-tenant: use tenant-specific helpers below
         return self._base / "tenants"
 
     def _path(self, tenant_id: str) -> Path:
         tenant_dir = self._base / "tenants" / tenant_id
-        tenant_dir.mkdir(parents=True, exist_ok=True)
+        if self._backend.kind == "local":
+            tenant_dir.mkdir(parents=True, exist_ok=True)
         return tenant_dir / "procurement_decisions.json"
 
     def _snapshot_dir(self, tenant_id: str, project_id: str) -> Path:
         path = self._base / "tenants" / tenant_id / "procurement_snapshots" / project_id
-        path.mkdir(parents=True, exist_ok=True)
+        if self._backend.kind == "local":
+            path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def _relative_path(self, tenant_id: str) -> str:
+        return str(Path("tenants") / tenant_id / "procurement_decisions.json")
 
     def _snapshot_relpath(self, tenant_id: str, project_id: str, snapshot_id: str) -> str:
         return str(Path("tenants") / tenant_id / "procurement_snapshots" / project_id / f"{snapshot_id}.json")
@@ -50,19 +57,20 @@ class ProcurementDecisionStore(BaseJsonStore):
         return self._snapshot_dir(tenant_id, project_id) / f"{snapshot_id}.json"
 
     def _load(self, tenant_id: str) -> list[dict[str, Any]]:
-        path = self._path(tenant_id)
-        if not path.exists():
+        raw = self._backend.read_text(self._relative_path(tenant_id))
+        if raw is None:
             return []
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             return []
 
     def _save(self, tenant_id: str, records: list[dict[str, Any]]) -> None:
-        atomic_write_text(
-            self._path(tenant_id),
-            json.dumps(records, ensure_ascii=False, indent=2),
-        )
+        payload = json.dumps(records, ensure_ascii=False, indent=2)
+        if self._backend.kind == "local":
+            atomic_write_text(self._path(tenant_id), payload)
+            return
+        self._backend.write_text(self._relative_path(tenant_id), payload)
 
     @staticmethod
     def _from_dict(data: dict[str, Any]) -> ProcurementDecisionRecord:
@@ -87,13 +95,15 @@ class ProcurementDecisionStore(BaseJsonStore):
                     return tenant_id, records, idx, parsed
             return None
 
-        tenants_dir = self._base / "tenants"
-        if not tenants_dir.exists():
-            return None
-        for tenant_dir in tenants_dir.iterdir():
-            if not tenant_dir.is_dir():
-                continue
-            tid = tenant_dir.name
+        tenant_paths = self._backend.list_prefix("tenants/")
+        tenant_ids = sorted(
+            {
+                Path(path).parts[1]
+                for path in tenant_paths
+                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
+            }
+        )
+        for tid in tenant_ids:
             records = self._load(tid)
             for idx, record in enumerate(records):
                 if record.get("project_id") == project_id:
@@ -163,11 +173,12 @@ class ProcurementDecisionStore(BaseJsonStore):
         content_type: str = "application/json",
     ) -> ProcurementSourceSnapshotMetadata:
         snapshot_id = str(uuid.uuid4())
-        snapshot_path = self._snapshot_abspath(tenant_id, project_id, snapshot_id)
-        atomic_write_text(
-            snapshot_path,
-            json.dumps(payload, ensure_ascii=False, indent=2),
-        )
+        snapshot_payload = json.dumps(payload, ensure_ascii=False, indent=2)
+        snapshot_relpath = self._snapshot_relpath(tenant_id, project_id, snapshot_id)
+        if self._backend.kind == "local":
+            atomic_write_text(self._snapshot_abspath(tenant_id, project_id, snapshot_id), snapshot_payload)
+        else:
+            self._backend.write_text(snapshot_relpath, snapshot_payload)
         return ProcurementSourceSnapshotMetadata.model_validate(
             {
                 "snapshot_id": snapshot_id,
@@ -175,7 +186,7 @@ class ProcurementDecisionStore(BaseJsonStore):
                 "source_label": source_label,
                 "external_id": external_id,
                 "captured_at": _now_iso(),
-                "storage_path": self._snapshot_relpath(tenant_id, project_id, snapshot_id),
+                "storage_path": snapshot_relpath,
                 "content_type": content_type,
             }
         )
@@ -187,10 +198,10 @@ class ProcurementDecisionStore(BaseJsonStore):
         project_id: str,
         snapshot_id: str,
     ) -> Any | None:
-        path = self._snapshot_abspath(tenant_id, project_id, snapshot_id)
-        if not path.exists():
+        raw = self._backend.read_text(self._snapshot_relpath(tenant_id, project_id, snapshot_id))
+        if raw is None:
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             return None

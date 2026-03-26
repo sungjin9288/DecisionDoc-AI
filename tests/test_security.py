@@ -315,6 +315,65 @@ def test_project_store_get_not_tenant_scoped(tmp_path):
     assert result.tenant_id == "tenant_b"
 
 
+def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-security-tests-32chars!")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    from app.main import create_app
+
+    tc = TestClient(create_app(), raise_server_exceptions=False)
+    tc.app.state.tenant_store.create_tenant("tenant_a", "Tenant A")
+    tc.app.state.tenant_store.create_tenant("tenant_b", "Tenant B")
+    project = tc.app.state.project_store.create(
+        tenant_id="tenant_b",
+        name="Cross Tenant Project",
+        description="",
+    )
+
+    res = tc.get(
+        f"/projects/{project.project_id}",
+        headers={
+            "X-DecisionDoc-Api-Key": "expected-key",
+            "X-Tenant-ID": "tenant_a",
+        },
+    )
+
+    assert res.status_code == 404
+
+
+def test_approval_route_blocks_cross_tenant_access(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-security-tests-32chars!")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    from app.main import create_app
+
+    tc = TestClient(create_app(), raise_server_exceptions=False)
+    tc.app.state.tenant_store.create_tenant("tenant_a", "Tenant A")
+    tc.app.state.tenant_store.create_tenant("tenant_b", "Tenant B")
+    approval = tc.app.state.approval_store.create(
+        tenant_id="tenant_b",
+        request_id="req-tenant-b",
+        bundle_id="bid_decision_kr",
+        title="Cross Tenant Approval",
+        drafter="alice",
+        docs=[],
+    )
+
+    res = tc.get(
+        f"/approvals/{approval.approval_id}",
+        headers={
+            "X-DecisionDoc-Api-Key": "expected-key",
+            "X-Tenant-ID": "tenant_a",
+        },
+    )
+
+    assert res.status_code == 404
+
+
 # ── H7: CORS not wildcard ─────────────────────────────────────────────────────
 
 def test_cors_not_wildcard_default(monkeypatch):

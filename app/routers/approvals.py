@@ -147,8 +147,9 @@ def list_approvals_endpoint(
 @router.get("/approvals/{approval_id}", dependencies=[Depends(require_api_key)])
 def get_approval_endpoint(approval_id: str, request: Request) -> dict:
     """Get a single approval record."""
+    tenant_id = get_tenant_id(request)
     approval_store = request.app.state.approval_store
-    rec = approval_store.get(approval_id)
+    rec = approval_store.get(approval_id, tenant_id=tenant_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"결재 문서를 찾을 수 없습니다: {approval_id}")
     return asdict(rec)
@@ -161,7 +162,11 @@ async def submit_for_review_endpoint(approval_id: str, payload: ApprovalActionRe
     approval_store = request.app.state.approval_store
     actor_name = getattr(request.state, "username", payload.username or "")
     try:
-        rec = approval_store.submit_for_review(approval_id, reviewer=payload.reviewer or payload.username)
+        rec = approval_store.submit_for_review(
+            approval_id,
+            reviewer=payload.reviewer or payload.username,
+            tenant_id=tenant_id,
+        )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -190,7 +195,12 @@ async def approve_review_endpoint(approval_id: str, payload: ApprovalActionReque
     approval_store = request.app.state.approval_store
     actor_name = getattr(request.state, "username", payload.username or "")
     try:
-        rec = approval_store.approve_review(approval_id, author=payload.username, comment=payload.comment)
+        rec = approval_store.approve_review(
+            approval_id,
+            author=payload.username,
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -213,7 +223,12 @@ async def request_changes_endpoint(approval_id: str, payload: ApprovalActionRequ
     approval_store = request.app.state.approval_store
     actor_name = getattr(request.state, "username", payload.username or "")
     try:
-        rec = approval_store.request_changes(approval_id, author=payload.username, comment=payload.comment)
+        rec = approval_store.request_changes(
+            approval_id,
+            author=payload.username,
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -244,11 +259,20 @@ async def final_approve_endpoint(approval_id: str, payload: ApprovalActionReques
     actor_name = getattr(request.state, "username", payload.username or "")
     if payload.approver:
         try:
-            approval_store.submit_for_approval(approval_id, approver=payload.approver)
+            approval_store.submit_for_approval(
+                approval_id,
+                approver=payload.approver,
+                tenant_id=tenant_id,
+            )
         except (KeyError, ValueError):
             pass
     try:
-        rec = approval_store.approve_final(approval_id, author=payload.username, comment=payload.comment)
+        rec = approval_store.approve_final(
+            approval_id,
+            author=payload.username,
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -278,7 +302,12 @@ async def reject_approval_endpoint(approval_id: str, payload: ApprovalActionRequ
     approval_store = request.app.state.approval_store
     actor_name = getattr(request.state, "username", payload.username or "")
     try:
-        rec = approval_store.reject(approval_id, author=payload.username, comment=payload.comment)
+        rec = approval_store.reject(
+            approval_id,
+            author=payload.username,
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -328,8 +357,9 @@ def update_approval_docs_endpoint(approval_id: str, payload: UpdateApprovalDocsR
 async def download_approved_doc_endpoint(approval_id: str, fmt: str, request: Request) -> Response:
     """Download approved document. Only works when status=approved.
     Uses doc_snapshot (immutable approved version) + stored gov_options."""
+    tenant_id = get_tenant_id(request)
     approval_store = request.app.state.approval_store
-    rec = approval_store.get(approval_id)
+    rec = approval_store.get(approval_id, tenant_id=tenant_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"결재 문서를 찾을 수 없습니다: {approval_id}")
     if rec.status != "approved":

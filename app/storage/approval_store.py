@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import BaseJsonStore, atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
 
 
 class ApprovalStatus(str, Enum):
@@ -66,9 +67,10 @@ class ApprovalRecord:
 class ApprovalStore(BaseJsonStore):
     """Thread-safe, tenant-scoped JSON-backed approval workflow store."""
 
-    def __init__(self, base_dir: str = "data") -> None:
+    def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
         super().__init__()
         self._base = Path(base_dir)
+        self._backend = backend or get_state_backend(data_dir=self._base)
 
     def _get_path(self) -> Path:  # multi-tenant: use tenant-specific path helpers below
         return self._base / "tenants"
@@ -77,23 +79,28 @@ class ApprovalStore(BaseJsonStore):
 
     def _path(self, tenant_id: str) -> Path:
         p = self._base / "tenants" / tenant_id
-        p.mkdir(parents=True, exist_ok=True)
+        if self._backend.kind == "local":
+            p.mkdir(parents=True, exist_ok=True)
         return p / "approvals.json"
 
+    def _relative_path(self, tenant_id: str) -> str:
+        return str(Path("tenants") / tenant_id / "approvals.json")
+
     def _load(self, tenant_id: str) -> list[dict]:
-        path = self._path(tenant_id)
-        if not path.exists():
+        raw = self._backend.read_text(self._relative_path(tenant_id))
+        if raw is None:
             return []
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
             return []
 
     def _save(self, tenant_id: str, records: list[dict]) -> None:
-        atomic_write_text(
-            self._path(tenant_id),
-            json.dumps(records, ensure_ascii=False, indent=2),
-        )
+        payload = json.dumps(records, ensure_ascii=False, indent=2)
+        if self._backend.kind == "local":
+            atomic_write_text(self._path(tenant_id), payload)
+            return
+        self._backend.write_text(self._relative_path(tenant_id), payload)
 
     @staticmethod
     def _to_dict(rec: ApprovalRecord) -> dict:
@@ -142,13 +149,15 @@ class ApprovalStore(BaseJsonStore):
                     return tenant_id, records, i, rec
             return None
         # Unscoped fallback (for backward compatibility with internal callers)
-        tenants_dir = self._base / "tenants"
-        if not tenants_dir.exists():
-            return None
-        for tenant_dir in tenants_dir.iterdir():
-            if not tenant_dir.is_dir():
-                continue
-            tid = tenant_dir.name
+        tenant_paths = self._backend.list_prefix("tenants/")
+        tenant_ids = sorted(
+            {
+                Path(path).parts[1]
+                for path in tenant_paths
+                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
+            }
+        )
+        for tid in tenant_ids:
             records = self._load(tid)
             for i, r in enumerate(records):
                 if r.get("approval_id") == approval_id:
