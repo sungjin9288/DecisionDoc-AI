@@ -86,6 +86,31 @@ def test_ops_investigate_auth_401_and_200(tmp_path, monkeypatch):
     assert service.calls[-1]["notify"] is False
 
 
+def test_ops_investigate_with_ops_key_still_works_after_users_exist(tmp_path, monkeypatch):
+    service = _FakeOpsService()
+    client = _create_client(tmp_path, monkeypatch, service)
+
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert register.status_code == 200
+
+    response = client.post(
+        "/ops/investigate",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+        json={"window_minutes": 15, "reason": "ops smoke", "notify": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["incident_id"] == "incident-123"
+
+
 class _FakeCloudWatchClient:
     def __init__(self):
         self.calls = 0

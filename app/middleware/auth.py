@@ -10,6 +10,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.auth.api_key import has_valid_api_key_header
+from app.auth.ops_key import has_valid_ops_key_header
 from app.services.auth_service import get_current_user_from_request
 
 # Paths that don't require a valid JWT
@@ -64,7 +65,7 @@ async def auth_middleware(request: Request, call_next):
     user = get_current_user_from_request(request)
 
     if not user:
-        if has_valid_api_key_header(request):
+        if has_valid_api_key_header(request) or has_valid_ops_key_header(request):
             return await call_next(request)
 
         # Allow anonymous access on fresh installs (no registered users yet).
