@@ -82,7 +82,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub decisiondoc-ai-${Stage}
-      CodeUri: ../
+      CodeUri: ../../
       Handler: app.aws_lambda.handler
       Runtime: python3.11
       Timeout: 30
