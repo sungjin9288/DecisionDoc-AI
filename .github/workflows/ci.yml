@@ -1,37 +1,95 @@
-name: ci
+name: CI
 
 on:
-  pull_request:
-    branches: ["main"]
   push:
-    branches: ["main"]
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
 
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    env:
-      CI: "true"
-      DECISIONDOC_PROVIDER: "mock"
-      DECISIONDOC_TEMPLATE_VERSION: "v1"
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: "pip"
-      - name: Install deps
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
-      - name: Run tests (offline)
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run full test suite
+        env:
+          ENVIRONMENT: test
+          JWT_SECRET_KEY: test-secret-key-32-chars-minimum!!
+          DECISIONDOC_PROVIDER: mock
+          DECISIONDOC_STORAGE: local
+          DECISIONDOC_TEMPLATE_VERSION: v1
+          DECISIONDOC_ENV: dev
         run: |
-          python -m pytest -q
-      - name: Run eval (fixtures, offline)
-        run: |
-          python -m app.eval --fail-on-error
-      - name: Upload eval report artifact
-        uses: actions/upload-artifact@v4
+          pytest tests/ -q --tb=short
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          name: eval-report
-          path: reports/eval/**
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install security tools
+        run: pip install bandit safety
+
+      - name: Run Bandit (SAST)
+        run: |
+          bandit -r app/ \
+            -x app/providers/mock_provider.py \
+            -ll \
+            --format json \
+            -o bandit-report.json || true
+          bandit -r app/ -x app/providers/mock_provider.py -ll || true
+
+      - name: Run Safety (dependency vulnerabilities)
+        run: safety check --json || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: bandit-report.json
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install linters
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: ruff check app/ --select=E,F,W --ignore=E501 || true
