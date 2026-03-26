@@ -120,6 +120,10 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
         for message in console_messages
     )
     assert not any(
+        "Password forms should have" in message
+        for message in console_messages
+    )
+    assert not any(
         "cdn.tailwindcss.com should not be used in production" in message
         for message in console_messages
     )
