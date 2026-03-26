@@ -2089,6 +2089,21 @@
       padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;
       font-size: 0.875rem;
     }
+    body.auth-pending .hero,
+    body.auth-pending .wave,
+    body.auth-pending #page-nav,
+    body.auth-pending #onboarding-banner,
+    body.auth-pending #main-content,
+    body.auth-pending #project-page,
+    body.auth-pending #knowledge-page,
+    body.auth-pending #approval-page,
+    body.auth-pending #locations-page,
+    body.auth-pending #perf-dashboard,
+    body.auth-pending #mobile-bottom-nav,
+    body.auth-pending #app-footer,
+    body.auth-pending #notification-container {
+      display: none !important;
+    }
 
     /* ── User info in header ────────────────────────────────────── */
     .user-info {
@@ -2746,7 +2761,7 @@
     body.dark .step-prog-line { background: rgba(255,255,255,.15); }
   </style>
 </head>
-<body>
+<body class="auth-pending">
 <a href="#main-content" class="skip-link">본문으로 건너뛰기</a>
 <div id="sr-live-region" aria-live="assertive" aria-atomic="true" class="sr-only" role="status"></div>
 
@@ -7154,6 +7169,11 @@
   /* ── Auth: login screen + state ──────────────────────────────── */
   let _currentUser = null;
 
+  function setAppShellAuthenticated(authenticated) {
+    document.body.classList.toggle('auth-pending', !authenticated);
+    document.body.classList.toggle('auth-ready', Boolean(authenticated));
+  }
+
   function checkAuthState() {
     const token = localStorage.getItem('dd_access_token');
     if (!token) { showLoginScreen(); return; }
@@ -7169,6 +7189,7 @@
   }
 
   function showLoginScreen() {
+    setAppShellAuthenticated(false);
     const existing = document.getElementById('login-screen');
     if (existing) return;
     const screen = document.createElement('div');
@@ -7807,10 +7828,12 @@
 
   /* ── Init ──────────────────────────────────────────────────────── */
   function initApp() {
+    setAppShellAuthenticated(true);
     renderUserInfo();
     loadFormDraft();
     loadServerVersionInfo();
     loadBundles().then(() => restoreShareState());
+    loadProjectSelector();
     attachStarListeners();
     attachSubmitListener();
     loadTenantList();
@@ -9075,9 +9098,6 @@
       });
     }
   })();
-
-  // Load project selector on page init
-  loadProjectSelector();
 
   /* ── Dashboard state ──────────────────────────────────────────── */
   let _dashBundlePerf = [];
