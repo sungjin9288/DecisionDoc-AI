@@ -17,6 +17,7 @@ from app.services.auth_service import get_current_user_from_request
 PUBLIC_PATHS: frozenset[str] = frozenset({
     # App shell — served before JS auth runs
     "/",
+    "/favicon.ico",
     "/manifest.json",
     "/sw.js",
     "/offline.html",

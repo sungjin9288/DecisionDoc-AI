@@ -75,6 +75,23 @@ def test_root_html_avoids_external_cdn_scripts(client):
     assert "fonts.googleapis.com" not in res.text
 
 
+def test_favicon_stays_public_even_after_user_registration(client):
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "infra-admin",
+            "display_name": "Infra Admin",
+            "email": "infra@example.com",
+            "password": "InfraPass123!",
+        },
+    )
+    assert register.status_code == 200
+
+    res = client.get("/favicon.ico")
+    assert res.status_code == 200
+    assert res.headers.get("content-type", "").startswith("image/")
+
+
 # ── PWA endpoints ─────────────────────────────────────────────────────────────
 
 def test_offline_html_accessible(client):
