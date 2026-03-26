@@ -113,7 +113,7 @@ The feature should:
   - `app/config.py`
   - `app/main.py`
   - `app/static/index.html`
-  - `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED` does not exist yet; current env-flag helpers are `is_enabled(...)` and `env_is_enabled(...)`.
+  - `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED` now exists, is resolved through `app.config.is_procurement_copilot_enabled()`, and is exposed to the UI via `/version.features.procurement_copilot`.
 
 ## Plan corrections discovered from the real repository
 
@@ -266,7 +266,21 @@ None — initiative complete
 - Milestone 2 keeps a single primary `opportunity` on the procurement decision record; the broader PRD allowance for multiple opportunity records remains future work
 - Current scoring heuristics are deterministic and intentionally conservative, but the factor weights and keyword rules are still v1 defaults that will likely need tuning through later eval work
 - Recommendation summary and checklist language are deterministic v1 text, not polished executive prose yet; richer explanation quality remains future work
-- Full `pytest tests/ -q` is green again, but the suite still emits existing warnings from short JWT test keys, Playwright/websocket deprecations, and a few `datetime.utcnow()` test fixtures that should be cleaned up separately from procurement work
+
+---
+
+## Post-closeout hardening
+
+- Lambda-local state drift was removed from the live dev path by moving core tenant/user/project/procurement state stores onto the shared S3-backed state backend when `DECISIONDOC_STORAGE=s3`
+- Live auth/bootstrap blockers were closed so authenticated browser sessions can use project and procurement routes without falling back to API-key-only access
+- The login shell no longer emits the earlier `addSSOLoginButtons`, favicon, password-form, autocomplete, service-worker, or CDN console errors/warnings observed during dev rollout hardening
+- Public shell and PWA routes now support `HEAD` as well as `GET`, which keeps browser/probe/header-only checks off the earlier `405` path
+- Test verification is now warning-free: JWT short-key fixtures, `datetime.utcnow()` fixture usage, deprecated uvicorn websocket startup in the E2E fixture, and fixed-port E2E server binding have all been cleaned up
+- Latest verified branch closeout commits:
+  - `6974114` — public shell `HEAD` support
+  - `163214f` — JWT/UTC test warning cleanup
+  - `f2d18e6` — E2E websocket warning cleanup
+  - `fe4a695` — dynamic E2E port allocation
 
 ---
 
@@ -395,6 +409,23 @@ None — initiative complete
   feature flag, project-detail UI, project-doc approval/share reuse, audit mapping, smoke/docs rollout coverage, targeted regression tests, e2e, and full suite all passed
 - notes:
   closed the project-detail procurement workflow without creating new public routes or parallel approval/share systems, reused `/generate/stream` for project auto-link behavior, and wired deploy-time rollout control through the existing SAM + GitHub Actions path
+- date/time:
+  2026-03-27 00:28:00 KST
+- milestone:
+  Post-closeout hardening — live dev rollout and verification hygiene
+- commands run:
+  `python3 -m py_compile app/main.py tests/test_pwa.py tests/test_auth.py tests/test_notifications.py tests/test_sso.py tests/test_audit.py tests/test_history_favorites.py tests/e2e/conftest.py tests/e2e/test_main_flow.py`
+  `.venv/bin/pytest -q tests/test_pwa.py tests/test_infrastructure.py`
+  `.venv/bin/pytest -q tests/test_auth.py tests/test_notifications.py tests/test_sso.py tests/test_audit.py tests/test_history_favorites.py`
+  `.venv/bin/pytest -q tests/e2e/test_main_flow.py`
+  `.venv/bin/pytest -q tests/`
+  `curl -I -s https://jawzr3widk.execute-api.ap-northeast-2.amazonaws.com/`
+  `curl -I -s https://jawzr3widk.execute-api.ap-northeast-2.amazonaws.com/favicon.ico`
+  `gh api repos/sungjin9288/DecisionDoc-AI/actions/runs/23603114976`
+- result:
+  local targeted regression, warning cleanup, E2E, and full suite all passed (`1608 passed, 3 skipped`) with warning summary reduced to zero; live dev `HEAD /` and `HEAD /favicon.ico` both returned `200`; `deploy-smoke` run `23603114976` completed successfully
+- notes:
+  post-Milestone 6 hardening closed live Lambda state drift, public shell bootstrap noise, favicon/public asset regressions, public `HEAD` compatibility, JWT/UTC test warnings, deprecated E2E websocket startup, and fixed-port E2E collision risk without reopening procurement scope
 
 ---
 
@@ -525,10 +556,10 @@ None — initiative complete
 
 ## Demo / smoke notes
 
-Milestone 4 now exposes an executable procurement API workflow through `POST /projects/{project_id}/imports/g2b-opportunity`, `GET /projects/{project_id}/procurement`, `POST /projects/{project_id}/procurement/evaluate`, and `POST /projects/{project_id}/procurement/recommend`. Validation closed through targeted regression tests plus a full `pytest tests/ -q` run. No project-detail UI has been added yet.
+The initiative now exposes an executable project-detail procurement workflow through `POST /projects/{project_id}/imports/g2b-opportunity`, `GET /projects/{project_id}/procurement`, `POST /projects/{project_id}/procurement/evaluate`, `POST /projects/{project_id}/procurement/recommend`, and project-scoped `POST /generate/stream` generation for `bid_decision_kr`, `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr`. Validation is closed through targeted regression tests, E2E coverage, full `pytest tests/ -q`, and successful dev `deploy-smoke` execution.
 
 ---
 
 ## Release notes draft
 
-Internal only. Milestone 4 adds deterministic project-scoped recommendation and categorized bid-readiness checklist generation on top of the persisted hard-filter and scoring state, stores the resulting decision package in structured procurement state, and exposes the smallest recommendation API needed before decision-bundle and downstream-handoff milestones.
+Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into DecisionDoc AI as a project-scoped upstream decision workflow. Users can attach a public opportunity to a project, run deterministic Go/Conditional-Go/No-Go evaluation with structured evidence and checklist output, generate `bid_decision_kr`, and hand the resulting context directly into `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` without creating a parallel document or approval system. Post-closeout hardening also stabilized live dev rollout behavior, public shell/PWA delivery, and warning-free test verification.
