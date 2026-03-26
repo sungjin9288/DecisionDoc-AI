@@ -89,7 +89,7 @@ def page(playwright, live_server):  # noqa: ARG001
     pg.goto(live_server["base_url"])
     pg.fill("#login-username", live_server["auth"]["username"])
     pg.fill("#login-password", live_server["auth"]["password"])
-    pg.press("#login-password", "Enter")
+    pg.click("#login-btn")
     pg.wait_for_selector(".bundle-card", timeout=10000)
     yield pg
     ctx.close()

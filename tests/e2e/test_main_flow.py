@@ -85,26 +85,28 @@ def test_page_loads(page):
 
 
 def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_server):
-    console_errors: list[str] = []
+    console_messages: list[str] = []
     browser = playwright.chromium.launch()
     ctx = browser.new_context()
     pg = ctx.new_page()
-    pg.on(
-        "console",
-        lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
-    )
+    pg.on("console", lambda msg: console_messages.append(msg.text))
 
     pg.goto(live_server["base_url"])
     pg.wait_for_selector("#login-screen", timeout=10000)
 
     assert pg.evaluate("document.body.classList.contains('auth-pending')")
+    assert pg.locator("#login-form").count() == 1
     assert not pg.locator(".hero").is_visible()
     assert not pg.locator("#page-nav").is_visible()
     assert not pg.locator("#main-content").is_visible()
     assert not pg.locator("#mobile-bottom-nav").is_visible()
     assert not any(
         "addSSOLoginButtons is not defined" in message
-        for message in console_errors
+        for message in console_messages
+    )
+    assert not any(
+        "Password field is not contained in a form" in message
+        for message in console_messages
     )
 
     ctx.close()
