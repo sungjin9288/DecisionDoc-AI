@@ -1,9 +1,10 @@
 """tests/test_pwa.py — Tests for PWA (Progressive Web App) support.
 
-Coverage (16 tests):
+Coverage:
   Endpoints       : GET /manifest.json (200, content-type),
                     GET /sw.js (200, Service-Worker-Allowed header),
                     GET /offline.html (200, html),
+                    GET /favicon.ico (200, image),
                     GET / (200, returns HTML)
   Manifest content: name, short_name, icons array, shortcuts, start_url,
                     display=standalone, categories
@@ -97,6 +98,20 @@ def test_offline_html_is_html(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
     res = client.get("/offline.html")
     assert "text/html" in res.headers.get("content-type", "")
+
+
+def test_favicon_endpoint_200(tmp_path, monkeypatch):
+    """GET /favicon.ico returns 200."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.get("/favicon.ico")
+    assert res.status_code == 200
+
+
+def test_favicon_is_image(tmp_path, monkeypatch):
+    """GET /favicon.ico returns an image content-type."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.get("/favicon.ico")
+    assert res.headers.get("content-type", "").startswith("image/")
 
 
 # ── Manifest content tests ─────────────────────────────────────────────────────
@@ -239,6 +254,12 @@ def test_index_html_has_apple_meta():
     content = open("app/static/index.html").read()
     assert "apple-mobile-web-app-capable" in content
     assert "apple-touch-icon" in content
+
+
+def test_index_html_has_favicon_link():
+    content = open("app/static/index.html").read()
+    assert 'rel="icon"' in content
+    assert 'href="/favicon.ico"' in content
 
 
 def test_index_html_has_sw_registration():

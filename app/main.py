@@ -254,22 +254,25 @@ def create_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
 
     @app.get("/")
-    async def root(request: Request):
-        """Serve the Web UI index.html (PWA entry point) with CSP nonce injected."""
-        import re
-        from fastapi.responses import HTMLResponse
+    async def root():
+        """Serve the Web UI index.html (PWA entry point)."""
         index_path = static_dir / "index.html"
         if not index_path.exists():
             return {"status": "DecisionDoc AI API", "docs": "/docs"}
-        nonce = getattr(request.state, "csp_nonce", "")
-        content = index_path.read_text(encoding="utf-8")
-        if nonce:
-            content = re.sub(
-                r"<script\b(?![^>]*\bnonce=)",
-                f'<script nonce="{nonce}"',
-                content,
-            )
-        return HTMLResponse(content)
+        return HTMLResponse(index_path.read_text(encoding="utf-8"))
+
+    @app.get("/favicon.ico")
+    async def serve_favicon():
+        """Serve the favicon without authentication to avoid browser console noise."""
+        from fastapi.responses import FileResponse as _FR
+
+        svg_icon = static_dir / "icons" / "icon.svg"
+        png_icon = static_dir / "icons" / "icon-192.png"
+        if svg_icon.exists():
+            return _FR(str(svg_icon), media_type="image/svg+xml")
+        if png_icon.exists():
+            return _FR(str(png_icon), media_type="image/png")
+        raise HTTPException(404, "favicon not found")
 
     @app.get("/manifest.json")
     async def serve_manifest():
