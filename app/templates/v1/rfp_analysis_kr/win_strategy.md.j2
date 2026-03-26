@@ -1,0 +1,23 @@
+# 수주 전략서: {{ title }}
+
+## SWOT 분석
+{{ swot_analysis }}
+
+## 차별화 포인트
+{% if differentiation_points %}{% for point in differentiation_points %}
+- {{ point }}
+{% endfor %}{% endif %}
+
+## 리스크 요인
+{% if risk_factors %}{% for risk in risk_factors %}
+- {{ risk }}
+{% endfor %}{% endif %}
+
+## 대응 전략
+{% if response_strategy %}{{ response_strategy }}
+{% endif %}
+
+## 핵심 메시지
+{% if key_messages %}{% for msg in key_messages %}
+- {{ msg }}
+{% endfor %}{% endif %}

@@ -1,0 +1,24 @@
+# 시장 분석: {{ title }}
+
+## 시장 현황
+{{ market_overview }}
+
+## 타깃 고객
+{% for segment in target_segments %}
+- {{ segment }}
+{% endfor %}
+
+## 경쟁사 분석
+{% for comp in competitor_analysis %}
+- {{ comp }}
+{% endfor %}
+
+## 시장 트렌드
+{% for trend in market_trends %}
+- {{ trend }}
+{% endfor %}
+
+## 기회 및 위협
+{% for item in opportunities_threats %}
+- {{ item }}
+{% endfor %}

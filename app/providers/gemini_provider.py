@@ -4,7 +4,7 @@ from typing import Any
 
 import anyio
 
-from app.domain.schema import BUNDLE_JSON_SCHEMA_V1
+from app.domain.schema import build_bundle_prompt
 from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 
@@ -16,42 +16,43 @@ class GeminiProvider(UsageTokenMixin, Provider):
         if not self.api_key:
             raise ProviderError("Provider configuration error.")
 
-    def generate_bundle(
-        self,
-        requirements: dict[str, Any],
-        *,
-        schema_version: str,
-        request_id: str,
-    ) -> dict[str, Any]:
+    def generate_raw(self, prompt: str, *, request_id: str, max_output_tokens: int | None = None) -> str:
+        """Call Gemini and return the raw text response.
+
+        Token usage is captured via _set_usage_tokens() before returning.
+
+        Raises:
+            ProviderError: on SDK import failure, empty response, API error, or timeout.
+        """
+        # Reset stale token state from any previous call before making a new one.
+        self._set_usage_tokens(None)
+
         try:
             from google import genai
             from google.genai import types
-        except Exception as exc:  # pragma: no cover - env dependent
+        except ImportError as exc:  # pragma: no cover - env dependent
             raise ProviderError("Provider SDK unavailable.") from exc
-
-        prompt = (
-            "Return ONLY JSON matching this schema. No markdown.\n"
-            "Stability checklist:\n"
-            "- Return one JSON bundle object only.\n"
-            "- Include top-level keys: adr, onepager, eval_plan, ops_checklist.\n"
-            "- Include required fields for each doc section per schema.\n"
-            "- Do not include TODO/TBD/FIXME.\n"
-            "- Keep each doc section sufficiently detailed (target >= 600 chars per doc after rendering).\n"
-            "- Output JSON only, no markdown.\n"
-            f"schema_version={schema_version}\n"
-            f"schema={json.dumps(BUNDLE_JSON_SCHEMA_V1, ensure_ascii=False)}\n"
-            f"requirements={json.dumps(requirements, ensure_ascii=False)}"
-        )
 
         try:
             client = genai.Client(api_key=self.api_key)
+
+            _timeout = int(os.getenv("DECISIONDOC_PROVIDER_TIMEOUT", "120"))
+            # Priority: explicit kwarg > env var
+            effective_max = max_output_tokens or (
+                int(v) if (v := os.getenv("DECISIONDOC_MAX_OUTPUT_TOKENS")) else None
+            )
+            _gen_config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                **({"max_output_tokens": effective_max} if effective_max else {}),
+            )
+
             async def _call_with_timeout():
-                with anyio.fail_after(20):
+                with anyio.fail_after(_timeout):
                     return await anyio.to_thread.run_sync(
                         lambda: client.models.generate_content(
-                            model=os.getenv("DECISIONDOC_GEMINI_MODEL", "gemini-1.5-flash"),
+                            model=os.getenv("DECISIONDOC_GEMINI_MODEL", "gemini-2.0-flash"),
                             contents=prompt,
-                            config=types.GenerateContentConfig(response_mime_type="application/json"),
+                            config=_gen_config,
                         )
                     )
 
@@ -69,6 +70,28 @@ class GeminiProvider(UsageTokenMixin, Provider):
                         "total_tokens": int(total_tokens or 0),
                     }
             self._set_usage_tokens(usage_map)
-            return json.loads(response.text or "{}")
+            raw = response.text
+            if not raw:
+                raise ProviderError("Provider returned empty response.")
+            return raw
+        except ProviderError:
+            raise
         except Exception as exc:  # pragma: no cover - network dependent
+            raise ProviderError("Provider request failed.") from exc
+
+    def generate_bundle(
+        self,
+        requirements: dict[str, Any],
+        *,
+        schema_version: str,
+        request_id: str,
+        bundle_spec: Any = None,
+        feedback_hints: str = "",
+    ) -> dict[str, Any]:
+        prompt = build_bundle_prompt(requirements, schema_version, bundle_spec, feedback_hints=feedback_hints)
+        _max = getattr(bundle_spec, "max_output_tokens", None) if bundle_spec else None
+        try:
+            raw = self.generate_raw(prompt, request_id=request_id, max_output_tokens=_max)
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
             raise ProviderError("Provider request failed.") from exc

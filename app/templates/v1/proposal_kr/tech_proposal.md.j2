@@ -1,0 +1,37 @@
+# 기술제안서: {{ title }}
+
+## 적용 기술
+{% if tech_stack %}{% for tech in tech_stack %}
+- {{ tech }}
+{% endfor %}{% endif %}
+
+## 시스템 아키텍처
+{% if architecture_overview %}{{ architecture_overview }}
+{% endif %}
+## AI 접근 방식
+{% if ai_approach %}{{ ai_approach }}
+{% endif %}
+## 보안 대책
+{% if security_measures %}{% for measure in security_measures %}
+- {{ measure }}
+{% endfor %}{% endif %}
+
+## 차별성
+{% if differentiation %}{% for diff in differentiation %}
+- {{ diff }}
+{% endfor %}{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

@@ -1,0 +1,26 @@
+# 트래킹 & 회고: {{ title }}
+
+## 주간 체크인
+{% for c in weekly_checkin %}
+- {{ c }}
+{% endfor %}
+
+## 월간 리뷰
+{% for r in monthly_review %}
+- {{ r }}
+{% endfor %}
+
+## 회고 질문
+{% for q in retrospective_questions %}
+- {{ q }}
+{% endfor %}
+
+## 에스컬레이션 기준
+{% for e in escalation_criteria %}
+- {{ e }}
+{% endfor %}
+
+## 성과 축하
+{% for m in celebration_milestones %}
+- {{ m }}
+{% endfor %}

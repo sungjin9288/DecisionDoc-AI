@@ -1,296 +1,525 @@
-# DecisionDoc AI
+# AGENTS.md — DecisionDoc AI
 
-> AI가 요구사항을 받아 **4종 의사결정 문서를 자동 생성**하는 FastAPI 백엔드 서비스  
-> An API-first FastAPI service that converts requirements into 4 decision documents via LLM.
+DecisionDoc AI is a FastAPI-based AI document generation and collaboration platform.
+This file defines durable repository-wide engineering rules for Codex and human contributors.
 
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![Tests](https://img.shields.io/badge/Tests-75%20passed-brightgreen)](#테스트--test-strategy)
-
----
-
-## 생성 문서 4종 / Generated Document Types
-
-| 문서 | 설명 |
-|------|------|
-| **ADR** (Architecture Decision Record) | 기술 결정 기록 — 옵션 비교, 리스크, 다음 액션 |
-| **Onepager** | 의사결정 요약 보고서 — 문제·권고안·임팩트 |
-| **Eval Plan** | 평가·검증 계획서 — 메트릭, 테스트 케이스, 모니터링 |
-| **Ops Checklist** | 운영 준비 체크리스트 — 보안, 신뢰성, 비용, 운영 |
+If this file conflicts with the actual repository state, trust the real codebase first.
+For ambiguous or cross-cutting work, inspect the repository, identify the real integration points, and avoid broad implementation until the change surface is clear.
 
 ---
 
-## 아키텍처 / Architecture
+## 1) Working agreement
 
-```
-[요구사항] → [LLM Provider] → [Bundle JSON] → [Jinja2 렌더링] → [품질 검증] → [Markdown 출력]
-```
-
-```mermaid
-graph LR
-    Client["클라이언트"] -->|POST /generate| API["FastAPI"]
-    API --> Auth["Auth 미들웨어\n(API Key 검증)"]
-    Auth --> Svc["GenerationService"]
-    Svc -->|캐시 히트| Cache["파일 캐시\n(SHA-256 키)"]
-    Svc -->|캐시 미스| Provider["Provider Adapter\n(OpenAI / Gemini / Mock)"]
-    Provider --> Bundle["Bundle JSON"]
-    Bundle --> Stabilizer["Stabilizer\n(누락 필드 보정)"]
-    Stabilizer --> Renderer["Jinja2 렌더러\n(4종 MD 템플릿)"]
-    Renderer --> Lints["Eval Lints\n(품질 자동 검사)"]
-    Lints --> Validator["Doc Validator\n(구조 무결성)"]
-    Validator --> Storage["Storage Adapter\n(Local / S3)"]
-    Storage --> Client
-```
-
-### 계층 구조 / Layer Structure
-
-| 계층 | 역할 |
-|------|------|
-| **API Layer** (`main.py`) | 엔드포인트, 미들웨어, 예외 핸들러 |
-| **Service Layer** (`generation_service.py`) | 전체 생성 파이프라인 오케스트레이션 |
-| **Provider Layer** (`providers/`) | LLM 공급자 추상화 — 교체 가능한 어댑터 구조 |
-| **Storage Layer** (`storage/`) | 번들·익스포트 저장소 추상화 |
-| **Observability** (`middleware/`, `observability/`) | 구조화 JSON 로그, 요청 추적 |
+- Treat this file as the repository-wide engineering contract.
+- Keep changes additive and backward compatible unless the task explicitly requires a breaking change.
+- Reuse existing product flows before inventing new subsystems.
+- Prefer narrow, verifiable diffs over large speculative rewrites.
+- For difficult tasks, plan first, then implement, then validate.
+- When repository-specific task docs exist under `docs/specs/...`, treat them as the task-level source of truth.
+- If assumptions are wrong, update the relevant task status/spec document before widening the implementation.
 
 ---
 
-## 주요 기능 / Key Features
+## 2) Product scope
 
-### 🤖 멀티 LLM 공급자
-- **OpenAI** (gpt-4o-mini) / **Gemini** (gemini-1.5-flash) / **Mock** (테스트용)
-- 환경변수 한 줄로 전환: `DECISIONDOC_PROVIDER=openai`
-- `Provider` 추상 인터페이스로 신규 LLM 추가 용이
+DecisionDoc AI provides:
+- AI-assisted document generation
+- project/workspace management
+- document collaboration, review, approval, sharing, and history
+- public procurement / G2B support
+- knowledge document ingestion and reuse
+- export flows (DOCX, PDF, HWP, XLSX, PPTX, ZIP)
+- evaluation, A/B testing, dataset and operations tooling
+- web UI and API from the same FastAPI application
 
-### ⚡ 응답 캐싱
-- 동일 요구사항 + 공급자 → SHA-256 키로 파일 캐싱
-- Atomic write(tmp → rename)로 캐시 파일 손상 방지
-- `DECISIONDOC_CACHE_ENABLED=1` opt-in 활성화
+This repository is not just a simple generation API.
+When implementing new features, preserve the platform model:
 
-### 🛡️ 5단계 품질 보증 파이프라인
-1. **Pydantic 입력 검증** — strict 모드, 허용 외 필드 차단
-2. **Bundle Schema 검증** — LLM 출력 구조 확인
-3. **Stabilizer** — 누락 필드 자동 보정 (null-safe 렌더링 보장)
-4. **Eval Lints** — `TODO/TBD/FIXME` 금지, 최소 길이, 필수 섹션 확인
-5. **Doc Validator** — 필수 헤딩 존재 확인, ADR Options ≥ 2 보장
-
-### 🔐 보안
-- `X-DecisionDoc-Api-Key` 헤더 인증 (constant-time compare로 timing attack 방지)
-- 복수 키 로테이션 지원: `DECISIONDOC_API_KEYS=old_key,new_key`
-- `prod` 환경에서 API 키 미설정 시 서버 시작 차단
-- API 키, 요청 바디, LLM 출력 로그 미기록
-
-### 📊 가관측성 (Observability)
-- 모든 요청에 구조화 JSON 로그 1건 기록
-- `X-Request-Id` 헤더로 분산 추적 (제공 시 에코, 없으면 UUID 자동 생성)
-- 단계별 타이밍: `provider_ms`, `render_ms`, `lints_ms`, `validator_ms`, `export_ms`
-- LLM 토큰 사용량 추적: `prompt_tokens`, `output_tokens`, `total_tokens`
-
-### 🚨 Ops 자동화
-- `POST /ops/investigate` — 온디맨드 운영 장애 조사
-  - 지정 시간 윈도우 로그 집계, p95 타이밍, 에러 코드 분포 산출
-  - S3 증거 리포트 저장, Statuspage 인시던트 자동 생성/업데이트
-  - TTL 기반 중복 조사 방지 (dedup cache)
+**project + knowledge + generation + approval/share + export + audit + ops**
 
 ---
 
-## Tech Stack
+## 3) Representative repository map
 
-| 영역 | 기술 |
-|------|------|
-| **Framework** | FastAPI + Pydantic v2 |
-| **LLM** | OpenAI Responses API, Google Gemini |
-| **템플릿** | Jinja2 |
-| **스토리지** | Local FS / AWS S3 |
-| **배포** | AWS Lambda + API Gateway (SAM) |
-| **테스트** | pytest (fixture, golden snapshot, eval pipeline) |
-| **런타임** | Python 3.12 |
+> Note:
+> The paths below are a high-level reference, not a guaranteed exhaustive map.
+> If the repository has evolved, prefer the actual code layout over this summary.
+
+Representative areas include:
+- `app/main.py` — application entrypoint / app creation
+- `app/aws_lambda.py` — Lambda handler
+- `app/routers/` or equivalent API route modules
+- `app/services/` — service-layer orchestration
+- `app/providers/` — LLM provider abstractions and implementations
+- `app/storage/` — storage abstractions and implementations
+- `app/templates/` — document templates
+- `app/bundle_catalog/` — bundle registry and bundle metadata
+- `app/domain/` — domain schema / domain rules
+- `app/auth/` — auth and permission helpers
+- `app/middleware/` and `app/observability/` — request tracking, logging, metrics
+- `app/ops/` — operations tooling
+- `app/eval/`, `app/eval_live/` — evaluation pipelines
+- `app/static/` — UI assets when served from the same app
+- `data/` — local storage data
+- `tests/` — automated tests
+- `scripts/` — smoke and operational helper scripts
+- `infra/sam/` — AWS SAM deployment
+- `docs/` — product, deployment, and task-specific specs
+- `.github/workflows/` — CI/CD workflows
+
+Do not assume this summary is complete.
+Inspect the real repository before making cross-cutting changes.
 
 ---
 
-## 로컬 실행 / Quick Start
+## 4) Runtime, deployment, and environment model
+
+- Primary backend framework: FastAPI
+- Primary language: Python
+- Data validation: Pydantic v2
+- Template engine: Jinja2
+- Deployment modes:
+  - local development
+  - Docker Compose
+  - AWS SAM / Lambda
+- Storage modes:
+  - local filesystem
+  - AWS S3
+- Provider modes may include:
+  - `openai`
+  - `gemini`
+  - `local`
+  - `mock`
+
+Important rules:
+- `mock` provider must remain usable and deterministic for development and test flows.
+- Local filesystem and S3 storage abstractions must both be preserved unless an explicit architecture change is requested.
+
+---
+
+## 5) Core commands
+
+Use the real repository commands if they differ, but these are the default expectations.
+
+### Local setup
 
 ```bash
-# 의존성 설치
-python -m venv .venv && source .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+cp .env.example .env
+python -m uvicorn app.main:app --reload
+```
 
-# 환경 설정
-cp .env.example .env   # DECISIONDOC_PROVIDER=mock (기본값, API 키 불필요)
+### Docker
 
-# 서버 실행
-uvicorn app.main:app --reload
-# → http://localhost:8000/docs 에서 Swagger UI 확인
+```bash
+docker compose up -d
+curl http://localhost:8000/health
+```
 
-# 테스트 실행
+### Tests
+
+```bash
 pytest tests/
+pytest tests/ -m "not live"
+pytest tests/ -m live
 ```
 
----
-
-## API 엔드포인트 / API Endpoints
-
-### `POST /generate` — 문서 생성
-
-**요청 예시:**
-```json
-{
-  "title": "결제 서비스 MSA 전환",
-  "goal": "모놀리식 결제 모듈을 MSA로 분리",
-  "context": "월 거래량 100만 건, B2B SaaS",
-  "constraints": "기존 DB 스키마 유지, 3개월 이내 완료",
-  "priority": "reliability > security > performance > cost",
-  "doc_types": ["adr", "onepager", "eval_plan", "ops_checklist"],
-  "audience": "engineering + cto"
-}
-```
-
-**응답 예시:**
-```json
-{
-  "request_id": "abc-123",
-  "bundle_id": "f47ac10b-...",
-  "provider": "openai",
-  "schema_version": "v1",
-  "cache_hit": false,
-  "docs": [
-    { "doc_type": "adr", "markdown": "# ADR: 결제 서비스 MSA 전환\n\n## Goal\n..." },
-    { "doc_type": "onepager", "markdown": "..." }
-  ]
-}
-```
-
-### `POST /generate/export` — 문서 생성 + 파일 저장
-위와 동일하나 Markdown 파일을 스토리지에 저장하고 경로를 반환합니다.
-
-### `GET /health` — 헬스체크 (인증 불필요)
-
-### `POST /ops/investigate` — 운영 장애 조사 (`X-DecisionDoc-Ops-Key` 필요)
-- 요청 필드: `window_minutes`, `reason`, `stage`, `force`, `notify`
-- `notify=false` 이면 Statuspage 호출 없이 조사 + S3 증거 저장만 수행
-- 동일 조건 재호출은 TTL 내 `deduped=true`로 빠르게 반환
-
----
-
-## 인증 / Auth
-
-- 보호 엔드포인트: `POST /generate`, `POST /generate/export`
-- 인증 헤더: `X-DecisionDoc-Api-Key`
-- 키 우선순위: `DECISIONDOC_API_KEYS` (쉼표 구분, 로테이션) → `DECISIONDOC_API_KEY` (레거시)
-- `dev` 환경에서는 키 없이 동작 (DX 편의)
-- `/health`는 항상 공개
+### Targeted example
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/generate" \
-  -H "Content-Type: application/json" \
-  -H "X-DecisionDoc-Api-Key: your-key" \
-  -d '{"title":"Test","goal":"Smoke test"}'
+pytest tests/test_voice_brief_import.py -q
 ```
 
----
-
-## 통합 에러 계약 / Unified Error Contract
-
-모든 에러 응답이 동일한 형태로 반환됩니다:
-
-```json
-{
-  "code": "PROVIDER_FAILED",
-  "message": "Provider request failed.",
-  "request_id": "abc-123"
-}
-```
-
-| code | HTTP | 상황 |
-|------|------|------|
-| `UNAUTHORIZED` | 401 | API 키 불일치 |
-| `REQUEST_VALIDATION_FAILED` | 422 | 입력 스키마 오류 |
-| `PROVIDER_FAILED` | 500 | LLM 호출 실패 |
-| `EVAL_LINT_FAILED` | 500 | 품질 검사 실패 |
-| `DOC_VALIDATION_FAILED` | 500 | 문서 구조 검증 실패 |
-| `MAINTENANCE_MODE` | 503 | 점검 중 |
-
----
-
-## 테스트 전략 / Test Strategy
+### Smoke
 
 ```bash
-pytest tests/         # 전체 오프라인 테스트 (75 passed)
-pytest tests/ -m live # Live LLM 테스트 (API 키 필요, opt-in)
-python -m app.eval    # Eval 리포트 생성 (reports/eval/v1/)
-```
-
-| 전략 | 내용 |
-|------|------|
-| **Fixture 기반 회귀 테스트** | 다양한 입력 케이스를 JSON fixture로 관리 |
-| **Golden Snapshot 테스트** | 렌더링 포맷 변경 감지 |
-| **Eval Pipeline** | 전체 fixture 품질 점수 및 리포트 자동 생성 |
-| **Live 테스트 (opt-in)** | 실제 OpenAI / Gemini 호출 검증 |
-| **에러 계약 테스트** | 모든 에러 코드·상태코드·응답 구조 보장 |
-
----
-
-## 스토리지 / Storage
-
-| 모드 | 번들 경로 | 익스포트 경로 |
-|------|-----------|---------------|
-| **Local** (기본) | `./data/{bundle_id}.json` | `./exports/{bundle_id}/{doc_type}.md` |
-| **S3** | `bundles/{bundle_id}.json` | `exports/{bundle_id}/{doc_type}.md` |
-
-전환: `DECISIONDOC_STORAGE=s3` + `DECISIONDOC_S3_BUCKET=my-bucket`
-
----
-
-## 주요 환경변수 / Environment Variables
-
-`.env.example`을 복사하여 사용:
-
-```env
-DECISIONDOC_PROVIDER=mock          # mock | openai | gemini
-DECISIONDOC_ENV=dev                # dev | prod
-DECISIONDOC_API_KEYS=              # 쉼표 구분 복수 키 (로테이션 지원)
-DECISIONDOC_CACHE_ENABLED=0        # 1 = 캐싱 활성화
-DECISIONDOC_STORAGE=local          # local | s3
-DECISIONDOC_MAINTENANCE=0          # 1 = 점검 모드 (503 반환)
-DECISIONDOC_CORS_ENABLED=0         # 1 = CORS 미들웨어 활성화
-OPENAI_API_KEY=
-GEMINI_API_KEY=
-```
-
-> ⚠️ `.env` 파일은 절대 커밋하지 마세요. API 키를 로그·이슈·README에 노출하지 마세요.
-
----
-
-## 배포 / Deployment (AWS)
-
-- AWS Lambda + API Gateway HTTP API (SAM)
-- 수동 배포 전용: `.github/workflows/deploy.yml` (`workflow_dispatch`)
-- 런타임 스토리지: S3 자동 전환
-- 비용 보호: API Gateway throttling + Lambda reserved concurrency 제한
-- 배포 상세: [`docs/deploy_aws.md`](docs/deploy_aws.md)
-- `deploy-smoke`는 `dev` 스테이지에서 기본적으로 API smoke + ops smoke를 수행
-
----
-
-## Ops Smoke (수동 실행)
-
-```bash
-SMOKE_BASE_URL=https://... \
-SMOKE_OPS_KEY=*** \
-SMOKE_S3_BUCKET=... \
-AWS_REGION=ap-northeast-2 \
+python scripts/smoke.py
 python scripts/ops_smoke.py
+python scripts/voice_brief_smoke.py
 ```
 
-- 1차 호출: `/ops/investigate` (`notify=false`) + S3 `head_object` 검증
-- 2차 호출: 동일 요청 `deduped=true` 확인
+### Eval
+
+```bash
+python -m app.eval
+python -m app.eval_live
+```
+
+### AWS SAM
+
+```bash
+sam local start-api -t infra/sam/template.yaml
+sam deploy --guided --template-file infra/sam/template.yaml
+```
+
+If linting or type-check commands are configured in the repository, run them for touched areas as part of validation.
 
 ---
 
-## 활용 방안 / Use Cases
+## 6) Configuration guidance
 
-| 상황 | 활용 방법 |
-|------|-----------|
-| **스타트업 기술 의사결정** | 새 기능/시스템 검토 시 ADR + Onepager 초안 자동 생성 → 팀 리뷰 |
-| **개발팀 온보딩** | 운영 시스템의 의사결정 맥락을 빠르게 문서화 |
-| **컨설팅·SI 프로젝트** | 고객사 요구사항 수집 후 Eval Plan · Ops Checklist 자동 생성 |
-| **내부 도구 연동** | Jira / Confluence / Notion API와 연결해 문서 자동 발행 파이프라인 구성 |
+Prefer reading configuration once during app startup / dependency wiring rather than inside request handlers.
+
+Important environment groups include:
+
+### Runtime / Provider
+- `DECISIONDOC_PROVIDER`
+- `DECISIONDOC_ENV`
+- `ENVIRONMENT`
+- `DECISIONDOC_TEMPLATE_VERSION`
+
+### Auth / Security
+- `DECISIONDOC_API_KEY`
+- `DECISIONDOC_API_KEYS`
+- `DECISIONDOC_OPS_KEY`
+- `JWT_SECRET_KEY`
+- `DECISIONDOC_CORS_ENABLED`
+- `ALLOWED_ORIGINS`
+
+### Storage
+- `DECISIONDOC_STORAGE`
+- `DATA_DIR`
+- `EXPORT_DIR`
+- `DECISIONDOC_S3_BUCKET`
+- `DECISIONDOC_S3_PREFIX`
+- `AWS_REGION`
+
+### Search / LLM / Retrieval
+- `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
+- `LOCAL_LLM_*`
+- `DECISIONDOC_SEARCH_ENABLED`
+- `SERPER_API_KEY`
+- `BRAVE_API_KEY`
+- `TAVILY_API_KEY`
+
+### Enterprise integrations
+- `G2B_API_KEY`
+- `STRIPE_*`
+- `STATUSPAGE_*`
+- `SSO_ENCRYPTION_KEY`
+
+### Voice Brief
+- `VOICE_BRIEF_API_BASE_URL`
+- `VOICE_BRIEF_API_BEARER_TOKEN`
+- `VOICE_BRIEF_TIMEOUT_SECONDS`
+
+Rules:
+- Do not scatter raw `os.getenv(...)` calls through route handlers.
+- Prefer configuration collection and validation at app creation time.
+- Preserve production behavior such as disabling docs/openapi routes when production mode is enabled.
+
+---
+
+## 7) Engineering rules
+
+### 7.1 Pydantic and request/response models
+
+Use strict validation for external input models.
+
+Preferred pattern:
+
+```python
+class ExampleRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+```
+
+Rules:
+- New request models should reject unknown fields unless there is a strong reason not to.
+- Preserve clear field constraints and explicit defaults.
+- Prefer stable, explicit schemas over loosely typed payloads.
+
+### 7.2 Provider and storage abstractions
+
+Provider and storage logic must stay behind clear abstractions.
+
+Rules:
+- Provider implementations should follow the repository’s provider interface / ABC pattern.
+- Storage implementations should follow the repository’s storage interface / ABC pattern.
+- Add or extend provider/storage implementations through the existing factory pattern.
+- Do not bypass factory wiring with ad-hoc instantiation in route handlers.
+
+### 7.3 Function signatures
+
+Prefer keyword-only arguments for important operational parameters.
+
+Preferred style:
+
+```python
+def generate_documents(self, requirements: dict[str, Any], *, request_id: str) -> dict[str, Any]:
+    ...
+```
+
+### 7.4 File writes and persistence
+
+Use safe persistence patterns.
+For local file writes, prefer atomic write patterns such as:
+- write temp file
+- flush
+- fsync
+- replace
+
+Do not introduce fragile partial-write behavior.
+
+### 7.5 Logging and observability
+
+Use structured logging.
+Prefer repository utilities such as `log_event(...)` and request-scoped structured fields.
+
+Rules:
+- Preserve request id propagation.
+- Preserve structured logs for API and ops flows.
+- Prefer explicit operational metadata over free-form print statements.
+
+### 7.6 Dependency wiring
+
+Prefer application-level dependency wiring and `app.state` style dependency access where that is the repository pattern.
+
+Rules:
+- Keep route handlers thin.
+- Put orchestration in services.
+- Put provider/storage selection in factories or startup wiring.
+- Do not hide architectural decisions inside handlers.
+
+### 7.7 Types
+
+Use modern Python typing consistently:
+- `dict[str, Any]`
+- `list[str]`
+- `str | None`
+
+Prefer explicit types for service boundaries and persisted data structures.
+
+---
+
+## 8) Architecture principles
+
+### 8.1 Reuse the existing platform
+
+When adding features:
+- reuse project/workspace concepts
+- reuse document generation flows
+- reuse bundle registry and export flows
+- reuse knowledge document flows
+- reuse approval/share/history/audit mechanisms
+- reuse eval and smoke patterns
+- reuse existing integration points such as G2B and attachment/RFP parsing where applicable
+
+Do not create:
+- a second document system
+- a second project system
+- a second approval workflow
+- a second storage model without explicit need
+- a standalone side-app unless explicitly requested
+
+### 8.2 Keep deterministic logic separate from generated prose
+
+For any decisioning or analysis feature:
+- prefer deterministic validation, normalization, and scoring first
+- use LLM generation to explain, summarize, draft, or transform
+- do not make model prose the sole source of truth when structured logic exists
+
+### 8.3 Preserve provider abstraction
+
+- Keep provider-specific behavior inside provider implementations or provider-facing service layers.
+- Do not spread provider branching across routers.
+- `mock` mode must remain safe for local and CI use.
+
+### 8.4 Preserve storage abstraction
+
+- Keep local and S3 support compatible.
+- Do not couple core product logic tightly to only one storage backend.
+
+### 8.5 Additive rollout
+
+When introducing substantial new capability:
+- prefer feature flags
+- prefer project-scoped rollout before platform-wide redesign
+- prefer backward-compatible schema and API extensions
+
+---
+
+## 9) Do-not rules
+
+Do NOT:
+- add new code to deprecated or legacy provider layers
+- modify or revive legacy storage paths such as deprecated file-repo code without explicit instruction
+- duplicate existing config helpers such as enable/disable utility functions when a shared config helper already exists
+- call `os.getenv(...)` directly inside route handlers unless there is a compelling local-only reason
+- top-level import `boto3` in modules where lazy import is the established pattern
+- replace real filesystem tests with excessive mocking when `tmp_path` or equivalent repository testing patterns are available
+- create external-input request models without strict validation unless the task explicitly needs permissive parsing
+- hardcode long prompt strings in multiple places
+- build a parallel templating pipeline when the bundle/template system already exists
+- bypass auth, tenant isolation, audit, or approval expectations
+- broaden scope beyond the current task or milestone
+
+---
+
+## 10) Validation and definition of done
+
+A change is not done just because the code compiles.
+
+Default completion checklist:
+1. The requested behavior is implemented or the bug is fixed.
+2. Existing platform flows are not broken.
+3. Relevant tests are added or updated.
+4. Targeted tests for changed areas are run.
+5. `pytest tests/ -q` passes unless the repo/task explicitly calls for a narrower validation scope.
+6. If applicable, smoke scripts for touched flows are run.
+7. If applicable, lint/type-check commands already used by the repo are run.
+8. `mock` provider behavior still works for non-live workflows.
+9. Storage abstraction behavior is preserved.
+10. Any task-specific status/spec document is updated.
+
+When a change touches:
+- deployment or infra behavior → run the appropriate deployment/smoke validation
+- storage behavior → validate both logic and persistence paths
+- provider behavior → validate `mock` plus the affected provider path when credentials are available
+- API contracts → verify route behavior and backward compatibility
+- bundle generation → verify generation, export, and any downstream handoff paths
+
+If validation fails, repair first.
+Do not continue expanding scope on top of a broken baseline.
+
+---
+
+## 11) Tests
+
+Use the repository’s real testing patterns.
+
+General expectations:
+- prefer targeted tests plus a repository-wide safety pass
+- use fixtures and golden/snapshot patterns where the repo already uses them
+- keep tests deterministic in default/mock mode
+- reserve live/provider tests for explicit cases with credentials configured
+
+When adding a new feature:
+- add tests for structured data contracts
+- add tests for service behavior
+- add tests for route behavior if routes are introduced or changed
+- add smoke coverage when the feature changes a primary user workflow
+
+---
+
+## 12) Legacy and hot spots
+
+Be careful around these areas:
+- deprecated provider paths
+- deprecated file-repo style storage code
+- duplicated config helpers
+- old architectural seams left for backward compatibility
+- production-mode behavior such as docs/openapi disablement
+- multi-tenant and auth-sensitive endpoints
+- ops and audit paths
+
+If you are unsure whether a path is current or legacy, inspect usage first.
+
+---
+
+## 13) Security and operational expectations
+
+- Preserve authentication and tenant isolation.
+- Preserve auditability for sensitive actions.
+- Do not expose secrets in logs or generated artifacts.
+- Keep production-safe behavior intact.
+- Preserve request id and observability metadata for operational troubleshooting.
+- Avoid introducing unaudited external dependencies unless the task clearly justifies them.
+
+---
+
+## 14) Active initiative — Public Procurement Go/No-Go Copilot
+
+When a task mentions procurement, G2B, bid decision, go/no-go, bid readiness, RFP analysis handoff, or `bid_decision_kr`, treat the following as the active initiative.
+
+### 14.1 Task-level source of truth
+
+When these files exist, read them before making changes:
+- `docs/specs/public_procurement_copilot/PRD.md`
+- `docs/specs/public_procurement_copilot/PLAN.md`
+- `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+- `docs/specs/public_procurement_copilot/STATUS.md`
+
+### 14.2 Scope rules
+
+Build this capability **inside DecisionDoc AI**.
+
+Do not create:
+- a standalone procurement app
+- a second document system
+- a second project/workspace concept
+- a parallel approval or export flow
+
+Reuse existing:
+- project/workspace flows
+- document generation and export flows
+- bundle registry
+- knowledge documents
+- G2B integration
+- attachment / RFP parsing
+- approval / share / history / audit
+- evaluation and smoke patterns
+
+### 14.3 Decision policy
+
+Recommendation values must be:
+- `GO`
+- `CONDITIONAL_GO`
+- `NO_GO`
+
+Rules:
+- deterministic hard filters run before model-generated narrative
+- hard-fail conditions may force `NO_GO`
+- `CONDITIONAL_GO` is only valid when the missing items are realistically remediable before the bid deadline
+- human approval remains the final authority
+
+### 14.4 Checklist policy
+
+The bid-readiness checklist must exist in both:
+- structured machine-readable form
+- human-readable document form
+
+### 14.5 Integration expectations
+
+Prefer:
+- project-scoped integration
+- reuse of current bundle and export flows
+- reuse of structured metadata for downstream handoff
+
+Avoid:
+- provider logic in routers
+- prose-only decision logic without structured backing data
+- destructive schema changes
+- broad UI redesign for v1
+
+### 14.6 Rollout and validation
+
+Prefer additive rollout behind:
+- `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`
+
+Work milestone-by-milestone when a plan/status file exists.
+
+After each milestone:
+- run targeted validation
+- run `pytest tests/ -q`
+- update the relevant `STATUS.md`
+- stop if validation fails
+### 14.7 Downstream handoff target
+
+When implemented, the procurement decision flow should hand off cleanly to existing document workflows such as:
+- `rfp_analysis_kr`
+- `proposal_kr`
+- `performance_plan_kr`
+
+Preserve structured context so users do not have to re-enter the same opportunity, fit, risk, and checklist information multiple times.
+
+---
+
+## 15) Final rule
+
+Keep this file practical and durable.
+
+If a rule here repeatedly causes confusion because the repository has changed:
+- update this file
+- keep it shorter, clearer, and closer to reality
+- move task-specific detail into task-specific docs instead of bloating root guidance

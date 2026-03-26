@@ -34,11 +34,23 @@ _REQUIRED_STRUCTURE: dict[str, dict[str, Any]] = {
 }
 
 
-def stabilize_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+def stabilize_bundle(
+    bundle: dict[str, Any],
+    structure: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Patch missing fields in a provider bundle with safe defaults.
+
+    Args:
+        bundle:    The raw dict returned by the provider.
+        structure: Per-doc field defaults to enforce.  When *None* (default)
+                   the legacy ``_REQUIRED_STRUCTURE`` for the tech_decision
+                   bundle is used, preserving backward compatibility.
+    """
+    effective = structure if structure is not None else _REQUIRED_STRUCTURE
     working = deepcopy(bundle) if isinstance(bundle, dict) else {}
     patched: list[str] = []
 
-    for top_key, required_fields in _REQUIRED_STRUCTURE.items():
+    for top_key, required_fields in effective.items():
         section = working.get(top_key)
         if not isinstance(section, dict):
             working[top_key] = {}
@@ -51,10 +63,21 @@ def stabilize_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(value, str):
                     section[field] = ""
                     patched.append(f"{top_key}.{field}")
+            elif isinstance(default, int):
+                if not isinstance(value, int):
+                    section[field] = default
+                    patched.append(f"{top_key}.{field}")
             elif isinstance(default, list):
                 if not isinstance(value, list):
                     section[field] = []
                     patched.append(f"{top_key}.{field}")
+                else:
+                    # Coerce non-string items in arrays (e.g. int → str).
+                    # Dict items (slide_outline objects) are kept as-is.
+                    section[field] = [
+                        str(item) if not isinstance(item, (str, dict)) else item
+                        for item in value
+                    ]
 
     if patched:
         working[_INTERNAL_MARKER_KEY] = {"patched": patched}

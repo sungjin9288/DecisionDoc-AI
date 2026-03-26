@@ -1,0 +1,24 @@
+# 자격 요건: {{ title }}
+
+## 필수 자격
+{% for q in required_qualifications %}
+- {{ q }}
+{% endfor %}
+
+## 우대 자격
+{% for q in preferred_qualifications %}
+- {{ q }}
+{% endfor %}
+
+## 필수 기술
+{% for s in required_skills %}
+- {{ s }}
+{% endfor %}
+
+## 우대 기술
+{% for s in preferred_skills %}
+- {{ s }}
+{% endfor %}
+
+## 근무 조건
+{{ work_conditions }}

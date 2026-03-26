@@ -1,44 +1,12 @@
 from dataclasses import dataclass
 
+from app.domain.headings import VALIDATOR_HEADINGS
+
 
 @dataclass
 class DocumentValidationError(Exception):
     doc_type: str
     missing: list[str]
-
-
-REQUIRED_HEADINGS: dict[str, list[str]] = {
-    "adr": [
-        "## Goal",
-        "## Context",
-        "## Constraints",
-        "## Decision",
-        "## Options",
-        "## Risks",
-        "## Assumptions",
-        "## Checks",
-        "## Next actions",
-    ],
-    "onepager": [
-        "## Problem",
-        "## Recommendation",
-        "## Impact",
-        "## Constraints",
-        "## Checks",
-    ],
-    "eval_plan": [
-        "## Metrics",
-        "## Test cases",
-        "## Failure criteria",
-        "## Monitoring",
-    ],
-    "ops_checklist": [
-        "## Security",
-        "## Reliability",
-        "## Cost",
-        "## Operations",
-    ],
-}
 
 
 def _extract_section(markdown: str, heading: str) -> str:
@@ -52,9 +20,22 @@ def _extract_section(markdown: str, heading: str) -> str:
     return markdown[section_start:next_heading]
 
 
-def validate_doc(doc_type: str, markdown: str) -> None:
+def validate_doc(
+    doc_type: str,
+    markdown: str,
+    headings_override: dict[str, list[str]] | None = None,
+) -> None:
+    """Validate a single rendered document.
+
+    Args:
+        doc_type:          The document key (e.g. ``"adr"``, ``"business_understanding"``).
+        markdown:          The fully rendered markdown string.
+        headings_override: When provided, used instead of ``VALIDATOR_HEADINGS``.
+                           Pass ``bundle_spec.validator_headings_map()`` for non-tech_decision bundles.
+    """
+    effective = headings_override if headings_override is not None else VALIDATOR_HEADINGS
     missing: list[str] = []
-    headings = REQUIRED_HEADINGS.get(doc_type, [])
+    headings = effective.get(doc_type, [])
     for heading in headings:
         if heading not in markdown:
             missing.append(f"missing_heading:{heading}")
@@ -69,6 +50,19 @@ def validate_doc(doc_type: str, markdown: str) -> None:
         raise DocumentValidationError(doc_type=doc_type, missing=missing)
 
 
-def validate_docs(docs: list[dict]) -> None:
+def validate_docs(
+    docs: list[dict[str, str]],
+    headings_override: dict[str, list[str]] | None = None,
+) -> None:
+    """Validate all rendered documents in a bundle.
+
+    Args:
+        docs:              List of ``{"doc_type": ..., "markdown": ...}`` dicts.
+        headings_override: Forwarded to each :func:`validate_doc` call.
+    """
     for doc in docs:
-        validate_doc(doc_type=doc["doc_type"], markdown=doc["markdown"])
+        validate_doc(
+            doc_type=doc["doc_type"],
+            markdown=doc["markdown"],
+            headings_override=headings_override,
+        )

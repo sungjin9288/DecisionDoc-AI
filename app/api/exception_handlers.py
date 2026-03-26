@@ -6,7 +6,8 @@ from app.auth.api_key import UnauthorizedError
 from app.maintenance.mode import MaintenanceModeError
 from app.ops.service import OpsNotifyFailedError
 from app.schemas import ErrorResponse
-from app.services.generation_service import EvalLintFailedError, ProviderFailedError
+from app.services.attachment_service import AttachmentError
+from app.services.generation_service import BundleNotSupportedError, EvalLintFailedError, ProviderFailedError
 from app.storage.base import StorageFailedError
 from app.services.validator import DocumentValidationError
 
@@ -16,10 +17,19 @@ def _request_id_from_state(request: Request) -> str:
     return value if isinstance(value, str) and value else "unknown-request-id"
 
 
-def _error_response(request: Request, *, code: str, message: str, status_code: int) -> JSONResponse:
+def _error_response(
+    request: Request,
+    *,
+    code: str,
+    message: str,
+    status_code: int,
+    errors: list[str] | None = None,
+) -> JSONResponse:
     request_id = _request_id_from_state(request)
     request.state.error_code = code
-    body = ErrorResponse(code=code, message=message, request_id=request_id).model_dump()
+    body = ErrorResponse(code=code, message=message, request_id=request_id, errors=errors).model_dump(
+        exclude_none=True
+    )
     return JSONResponse(status_code=status_code, content=body)
 
 
@@ -52,21 +62,23 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(EvalLintFailedError)
-    async def eval_lint_failed_handler(request: Request, exc: EvalLintFailedError):  # noqa: ARG001
+    async def eval_lint_failed_handler(request: Request, exc: EvalLintFailedError):
         return _error_response(
             request,
             code="EVAL_LINT_FAILED",
             message="Quality checks failed.",
             status_code=500,
+            errors=exc.errors[:10] if exc.errors else None,
         )
 
     @app.exception_handler(DocumentValidationError)
-    async def doc_validation_failed_handler(request: Request, exc: DocumentValidationError):  # noqa: ARG001
+    async def doc_validation_failed_handler(request: Request, exc: DocumentValidationError):
         return _error_response(
             request,
             code="DOC_VALIDATION_FAILED",
             message="Document validation failed.",
             status_code=500,
+            errors=exc.missing[:10] if exc.missing else None,
         )
 
     @app.exception_handler(StorageFailedError)
@@ -87,13 +99,36 @@ def install_exception_handlers(app: FastAPI) -> None:
             status_code=500,
         )
 
+    @app.exception_handler(AttachmentError)
+    async def attachment_error_handler(request: Request, exc: AttachmentError):
+        return _error_response(
+            request,
+            code="ATTACHMENT_ERROR",
+            message=str(exc),
+            status_code=422,
+        )
+
+    @app.exception_handler(BundleNotSupportedError)
+    async def bundle_not_supported_handler(request: Request, exc: BundleNotSupportedError):  # noqa: ARG001
+        return _error_response(
+            request,
+            code="BUNDLE_NOT_SUPPORTED",
+            message=str(exc),
+            status_code=422,
+        )
+
     @app.exception_handler(RequestValidationError)
-    async def request_validation_failed_handler(request: Request, exc: RequestValidationError):  # noqa: ARG001
+    async def request_validation_failed_handler(request: Request, exc: RequestValidationError):
+        details = [
+            f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}"
+            for err in exc.errors()
+        ]
         return _error_response(
             request,
             code="REQUEST_VALIDATION_FAILED",
             message="Request validation failed.",
             status_code=422,
+            errors=details[:10] if details else None,
         )
 
     @app.exception_handler(Exception)

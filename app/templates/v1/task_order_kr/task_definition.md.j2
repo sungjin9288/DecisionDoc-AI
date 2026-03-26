@@ -1,0 +1,38 @@
+# 과업지시서: {{ title }}
+
+## 과업 개요
+{{ task_overview }}
+
+## 과업 범위
+
+### 포함 범위 (In-Scope)
+{% if scope_in %}{% for item in scope_in %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+### 제외 범위 (Out-of-Scope)
+{% if scope_out %}{% for item in scope_out %}
+- {{ item }}
+{% endfor %}{% else %}
+(별도 제외 범위 없음)
+{% endif %}
+
+## 기능 요구사항
+{% if functional_requirements %}{% for req in functional_requirements %}
+- {{ req }}
+{% endfor %}{% endif %}
+
+## 비기능 요구사항
+{% if non_functional_requirements %}{% for req in non_functional_requirements %}
+- {{ req }}
+{% endfor %}{% endif %}
+
+## 납품물 목록
+{% if deliverables %}{% for item in deliverables %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 검수 기준
+{% if inspection_criteria %}{% for criterion in inspection_criteria %}
+- {{ criterion }}
+{% endfor %}{% endif %}

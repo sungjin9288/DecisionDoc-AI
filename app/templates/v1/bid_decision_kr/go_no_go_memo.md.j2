@@ -1,0 +1,20 @@
+# Go/No-Go 메모: {{ title }}
+
+## 추천 결론
+{{ recommendation_decision }}
+
+## Hard Filter 결과
+{% if hard_filter_findings %}{% for item in hard_filter_findings %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## Soft-fit 점수 해석
+{{ soft_fit_summary }}
+
+## 결정 근거
+{% if decision_rationale %}{% for item in decision_rationale %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 경영진 메모
+{{ executive_notes }}

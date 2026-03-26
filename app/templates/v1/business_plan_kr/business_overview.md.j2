@@ -1,0 +1,34 @@
+# 사업 개요: {{ title }}
+
+## 비전
+{% if vision %}{{ vision }}
+{% endif %}
+## 문제 정의
+{% if problem_statement %}{{ problem_statement }}
+{% endif %}
+## 솔루션
+{% if solution %}{{ solution }}
+{% endif %}
+## 타겟 시장
+{% if target_market %}{% for market in target_market %}
+- {{ market }}
+{% endfor %}{% endif %}
+
+## 핵심 가치
+{% if unique_value %}{{ unique_value }}
+{% endif %}
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

@@ -1,0 +1,31 @@
+# RFP 분석서: {{ title }}
+
+## RFP 핵심 요약
+{{ project_overview }}
+
+> **예산 및 일정**: {{ budget_schedule }}
+
+## 발주처 핵심 니즈
+{% if issuer_needs %}{% for need in issuer_needs %}
+- {{ need }}
+{% endfor %}{% endif %}
+
+## 평가항목 분석
+{% if evaluation_criteria %}{% for criterion in evaluation_criteria %}
+- {{ criterion }}
+{% endfor %}{% endif %}
+
+## 필수 요구사항
+{% if mandatory_requirements %}{% for req in mandatory_requirements %}
+- {{ req }}
+{% endfor %}{% endif %}
+
+## 선택 요구사항
+{% if optional_requirements %}{% for req in optional_requirements %}
+- {{ req }}
+{% endfor %}{% else %}
+(선택 요구사항 없음)
+{% endif %}
+
+## 수주 가능성
+{{ win_probability }}

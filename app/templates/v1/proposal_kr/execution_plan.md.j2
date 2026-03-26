@@ -1,0 +1,39 @@
+# 수행계획서: {{ title }}
+
+## 추진 체계
+{% if team_structure %}{% for member in team_structure %}
+- {{ member }}
+{% endfor %}{% endif %}
+
+## 추진 일정
+{% if milestones %}{% for milestone in milestones %}
+- {{ milestone }}
+{% endfor %}{% endif %}
+
+## 수행 방법론
+{% if methodology %}{{ methodology }}
+{% endif %}
+## 리스크 관리
+{% if risk_management %}{% for risk in risk_management %}
+- {{ risk }}
+{% endfor %}{% endif %}
+
+## 산출물
+{% if deliverables %}{% for deliverable in deliverables %}
+- {{ deliverable }}
+{% endfor %}{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

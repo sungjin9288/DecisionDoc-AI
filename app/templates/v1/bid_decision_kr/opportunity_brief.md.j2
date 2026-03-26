@@ -1,0 +1,17 @@
+# 입찰 기회 브리프: {{ title }}
+
+## 공고 개요
+{{ opportunity_summary }}
+
+## 발주처 및 사업 범위
+{{ issuer_and_scope }}
+
+## 상업 조건 및 일정
+{% if commercial_terms %}{% for item in commercial_terms %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 원문 및 맥락 하이라이트
+{% if source_highlights %}{% for item in source_highlights %}
+- {{ item }}
+{% endfor %}{% endif %}

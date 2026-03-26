@@ -1,0 +1,16 @@
+# 발표 스크립트: {{ title }}
+
+## 오프닝
+{% if opening %}{{ opening }}
+{% endif %}
+## 본론 스크립트
+{% if body_scripts %}{% for script in body_scripts %}
+{{ loop.index }}. {{ script }}
+{% endfor %}{% endif %}
+
+## 클로징
+{% if closing %}{{ closing }}
+{% endif %}
+## 시간 배분
+{% if time_allocation %}{{ time_allocation }}
+{% endif %}

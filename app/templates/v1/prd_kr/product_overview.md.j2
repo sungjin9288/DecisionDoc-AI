@@ -1,0 +1,29 @@
+# 제품 개요: {{ title }}
+
+## 제품 비전
+{{ product_vision }}
+
+## 문제 정의
+{{ problem_statement }}
+
+## 대상 사용자
+{% for u in target_users %}
+- {{ u }}
+{% endfor %}
+
+## 성공 지표
+{% for m in success_metrics %}
+- {{ m }}
+{% endfor %}
+
+## 범위 정의
+
+### In Scope
+{% for item in scope_boundaries.in_scope %}
+- {{ item }}
+{% endfor %}
+
+### Out of Scope
+{% for item in scope_boundaries.out_of_scope %}
+- {{ item }}
+{% endfor %}

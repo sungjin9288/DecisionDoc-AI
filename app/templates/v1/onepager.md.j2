@@ -1,20 +1,22 @@
 # Onepager: {{ title }}
 
 ## Problem
-{{ problem }}
-
+{% if problem %}{{ problem }}
+{% endif %}
 ## Recommendation
-{{ recommendation }}
-
+{% if recommendation %}{{ recommendation }}
+{% endif %}
 ## Impact
-{% for item in impact %}
+{% if impact %}{% for item in impact %}
 - {{ item }}
-{% endfor %}
+{% endfor %}{% endif %}
 
+{% if constraints %}
 ## Constraints
 {{ constraints }}
 
+{% endif %}
 ## Checks
-{% for check in checks %}
+{% if checks %}{% for check in checks %}
 - {{ check }}
-{% endfor %}
+{% endfor %}{% endif %}

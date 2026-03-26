@@ -1,0 +1,24 @@
+# 사업수행계획서: {{ title }}
+
+## 사업 개요
+{{ project_info }}
+
+## 수행 범위
+{% if scope_of_work %}{% for item in scope_of_work %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 산출물 목록
+{% if deliverables %}{% for deliverable in deliverables %}
+- {{ deliverable }}
+{% endfor %}{% endif %}
+
+## 투입 인력
+{% if team_structure %}{% for member in team_structure %}
+- {{ member }}
+{% endfor %}{% endif %}
+
+## WBS
+{% if wbs_summary %}{% for phase in wbs_summary %}
+- {{ phase }}
+{% endfor %}{% endif %}

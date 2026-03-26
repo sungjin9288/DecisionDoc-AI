@@ -1,0 +1,35 @@
+# 운영 계획: {{ title }}
+
+## 시설 및 인력
+{% if facilities_and_staff %}{% for item in facilities_and_staff %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 연간 일정
+{% if annual_schedule %}{% for schedule in annual_schedule %}
+- {{ schedule }}
+{% endfor %}{% endif %}
+
+## 예산 계획
+{% if budget_plan %}{% for budget in budget_plan %}
+- {{ budget }}
+{% endfor %}{% endif %}
+
+## 비상 운영 계획
+{% if emergency_plan %}{{ emergency_plan }}
+{% endif %}
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

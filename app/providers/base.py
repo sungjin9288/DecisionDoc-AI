@@ -30,8 +30,25 @@ class Provider(ABC):
         *,
         schema_version: str,
         request_id: str,
+        bundle_spec: Any = None,
+        feedback_hints: str = "",
     ) -> dict[str, Any]:
         raise NotImplementedError
+
+    def generate_raw(self, prompt: str, *, request_id: str, max_output_tokens: int | None = None) -> str:
+        """Generate raw LLM text output for the given prompt string.
+
+        Override in subclasses to enable StructuredGenerator and FallbackPipeline.
+        Token usage should be stored via _set_usage_tokens() before returning.
+
+        Raises:
+            NotImplementedError: if the subclass has not implemented this method.
+            ProviderError:       on API / SDK / network failure.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement generate_raw(). "
+            "Override this method to use StructuredGenerator or FallbackPipeline."
+        )
 
     def consume_usage_tokens(self) -> dict[str, int] | None:
         return None

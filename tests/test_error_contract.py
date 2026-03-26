@@ -1,5 +1,6 @@
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -36,26 +37,32 @@ def test_request_id_passthrough(tmp_path, monkeypatch):
 
 
 def test_provider_failed_error_contract(tmp_path, monkeypatch):
+    # Startup fail-fast: missing API key is now caught before the app accepts traffic.
+    # Patch load_dotenv to prevent the real .env file from overwriting monkeypatched vars.
+    monkeypatch.setattr("app.main.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "openai")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    client = _create_client(tmp_path, monkeypatch, provider="openai")
-    response = client.post("/generate", json={"title": "x", "goal": "y"})
-    assert response.status_code == 500
-    body = response.json()
-    assert set(body.keys()) == {"code", "message", "request_id"}
-    assert body["code"] == "PROVIDER_FAILED"
-    assert body["request_id"] == response.headers.get("X-Request-Id")
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY is required"):
+        create_app()
 
 
 def test_storage_failed_error_contract(tmp_path, monkeypatch):
+    # Startup fail-fast: missing S3 bucket is now caught before the app accepts traffic.
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DECISIONDOC_STORAGE", "s3")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.delenv("DECISIONDOC_S3_BUCKET", raising=False)
-    client = _create_client(tmp_path, monkeypatch, provider="mock")
-    response = client.post("/generate", json={"title": "x", "goal": "y"})
-    assert response.status_code == 500
-    body = response.json()
-    assert set(body.keys()) == {"code", "message", "request_id"}
-    assert body["code"] == "STORAGE_FAILED"
-    assert body["request_id"] == response.headers.get("X-Request-Id")
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="DECISIONDOC_S3_BUCKET is required"):
+        create_app()
 
 
 def test_doc_validation_failed_error_contract(tmp_path, monkeypatch):
@@ -63,8 +70,8 @@ def test_doc_validation_failed_error_contract(tmp_path, monkeypatch):
     from app.providers.mock_provider import MockProvider
 
     class BrokenMockProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id, bundle_spec=bundle_spec, feedback_hints=feedback_hints)
             bundle["adr"]["options"] = ["only one option"]
             return bundle
 
@@ -73,9 +80,11 @@ def test_doc_validation_failed_error_contract(tmp_path, monkeypatch):
     response = client.post("/generate", json={"title": "x", "goal": "y"})
     assert response.status_code == 500
     body = response.json()
-    assert set(body.keys()) == {"code", "message", "request_id"}
     assert body["code"] == "DOC_VALIDATION_FAILED"
     assert body["request_id"] == response.headers.get("X-Request-Id")
+    assert "errors" in body
+    assert isinstance(body["errors"], list)
+    assert any("adr_options_lt_2" in err for err in body["errors"])
 
 
 def test_eval_lint_failed_error_contract(tmp_path, monkeypatch):
@@ -83,8 +92,8 @@ def test_eval_lint_failed_error_contract(tmp_path, monkeypatch):
     from app.providers.mock_provider import MockProvider
 
     class LintFailMockProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id, bundle_spec=bundle_spec, feedback_hints=feedback_hints)
             bundle["onepager"]["problem"] = "TODO improve this section"
             return bundle
 
@@ -93,9 +102,11 @@ def test_eval_lint_failed_error_contract(tmp_path, monkeypatch):
     response = client.post("/generate", json={"title": "x", "goal": "y"})
     assert response.status_code == 500
     body = response.json()
-    assert set(body.keys()) == {"code", "message", "request_id"}
     assert body["code"] == "EVAL_LINT_FAILED"
     assert body["request_id"] == response.headers.get("X-Request-Id")
+    assert "errors" in body
+    assert isinstance(body["errors"], list)
+    assert any("banned_token" in err for err in body["errors"])
 
 
 def test_request_validation_422_error_contract(tmp_path, monkeypatch):
@@ -103,9 +114,11 @@ def test_request_validation_422_error_contract(tmp_path, monkeypatch):
     response = client.post("/generate", json={"title": "only-title"})
     assert response.status_code == 422
     body = response.json()
-    assert set(body.keys()) == {"code", "message", "request_id"}
     assert body["code"] == "REQUEST_VALIDATION_FAILED"
     assert body["request_id"] == response.headers.get("X-Request-Id")
+    assert "errors" in body
+    assert isinstance(body["errors"], list)
+    assert any("goal" in err for err in body["errors"])
 
 
 def test_unauthorized_401_error_contract(tmp_path, monkeypatch):

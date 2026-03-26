@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오프라인 — DecisionDoc AI</title>
+<style>
+  body {
+    font-family: 'Malgun Gothic', sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; margin: 0; background: #f9fafb; color: #111;
+  }
+  .container { text-align: center; padding: 2rem; max-width: 400px; }
+  .icon { font-size: 4rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.5rem; margin-bottom: .5rem; }
+  p { color: #6b7280; margin-bottom: 1.5rem; }
+  button {
+    padding: 10px 24px; background: #6366f1; color: white;
+    border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">📡</div>
+  <h1>인터넷 연결이 없습니다</h1>
+  <p>네트워크 연결을 확인한 후 다시 시도해주세요.<br>
+     캐시된 데이터는 연결 복구 후 자동으로 동기화됩니다.</p>
+  <button onclick="location.reload()">다시 시도</button>
+</div>
+</body>
+</html>

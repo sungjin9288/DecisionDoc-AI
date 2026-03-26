@@ -1,0 +1,22 @@
+# 채용 프로세스: {{ title }}
+
+## 전형 단계
+{% for s in stages %}
+- {{ s }}
+{% endfor %}
+
+## 일정 안내
+{{ timeline }}
+
+## 평가 기준
+{% for c in evaluation_criteria %}
+- {{ c }}
+{% endfor %}
+
+## 지원 팁
+{% for t in application_tips %}
+- {{ t }}
+{% endfor %}
+
+## 문의
+{{ contact_info }}

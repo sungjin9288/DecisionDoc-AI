@@ -1,43 +1,45 @@
 import logging
 import os
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.exception_handlers import install_exception_handlers
-from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys, require_api_key
-from app.auth.ops_key import require_ops_key
-from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
+from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys
+from app.config import (
+    is_procurement_copilot_enabled,
+    get_voice_brief_api_base_url,
+    get_voice_brief_api_bearer_token,
+    get_voice_brief_timeout_seconds,
+    is_enabled,
+)
+from app.maintenance.mode import is_maintenance_mode
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
-from app.observability.logging import log_event, setup_logging
-from app.observability.timing import Timer
+from app.observability.logging import setup_logging
 from app.ops.factory import get_ops_service
-from app.schemas import (
-    GenerateExportResponse,
-    GenerateRequest,
-    GenerateResponse,
-    HealthResponse,
-    OpsInvestigateRequest,
-    OpsInvestigateResponse,
-)
+from app.services.search_service import SearchService
+from app.services.voice_brief_import_service import VoiceBriefImportService
 from app.providers.factory import get_provider
 from app.services.generation_service import GenerationService
 from app.storage.factory import get_storage
-
-logger = logging.getLogger("decisiondoc.generate")
-
-
-def _is_enabled(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+from app.storage.approval_store import ApprovalStore
+from app.storage.procurement_store import ProcurementDecisionStore
+from app.storage.project_store import ProjectStore
+from app.storage.feedback_store import FeedbackStore
+from app.storage.prompt_override_store import PromptOverrideStore
 
 
 def _resolve_cors_allow_origins(environment: str) -> list[str]:
-    raw = os.getenv("DECISIONDOC_CORS_ALLOW_ORIGINS")
+    raw = os.getenv("ALLOWED_ORIGINS") or os.getenv("DECISIONDOC_CORS_ALLOW_ORIGINS")
     if raw is None:
-        return ["*"] if environment == "dev" else []
+        return ["http://localhost:3000", "http://localhost:8000"]
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
@@ -53,179 +55,382 @@ def _resolve_data_dir(*, explicit_data_dir: str = "") -> Path:
     return Path("./data")
 
 
-def _apply_generate_state(request: Request, result: dict, template_version: str) -> None:
-    """Set all generate-related fields on request.state for observability middleware."""
-    metadata = result["metadata"]
-    timings = metadata.get("timings_ms", {})
-    request.state.provider = metadata["provider"]
-    request.state.template_version = template_version
-    request.state.schema_version = metadata["schema_version"]
-    request.state.cache_hit = metadata["cache_hit"]
-    request.state.llm_prompt_tokens = metadata.get("llm_prompt_tokens")
-    request.state.llm_output_tokens = metadata.get("llm_output_tokens")
-    request.state.llm_total_tokens = metadata.get("llm_total_tokens")
-    request.state.provider_ms = timings.get("provider_ms")
-    request.state.render_ms = timings.get("render_ms")
-    request.state.lints_ms = timings.get("lints_ms")
-    request.state.validator_ms = timings.get("validator_ms")
-
-
-def _build_generate_log_event(request: Request, result: dict, request_id: str, template_version: str) -> dict:
-    """Build the structured log event dict for a completed generate call."""
-    metadata = result["metadata"]
-    return {
-        "event": "generate.completed",
-        "request_id": request_id,
-        "method": request.method,
-        "path": request.url.path,
-        "status_code": 200,
-        "provider": metadata["provider"],
-        "template_version": template_version,
-        "schema_version": metadata["schema_version"],
-        "cache_hit": metadata["cache_hit"],
-        "llm_prompt_tokens": request.state.llm_prompt_tokens,
-        "llm_output_tokens": request.state.llm_output_tokens,
-        "llm_total_tokens": request.state.llm_total_tokens,
-        "provider_ms": request.state.provider_ms,
-        "render_ms": request.state.render_ms,
-        "lints_ms": request.state.lints_ms,
-        "validator_ms": request.state.validator_ms,
-    }
-
 
 def create_app() -> FastAPI:
     explicit_data_dir = os.environ.get("DATA_DIR", "")
     load_dotenv()
     setup_logging()
     environment = os.getenv("DECISIONDOC_ENV", "dev").lower()
+    # Also honour the standardized ENVIRONMENT variable (production → treat as prod)
+    _std_env = os.getenv("ENVIRONMENT", "development").lower()
+    if _std_env == "production":
+        environment = "prod"
     if environment == "prod" and not get_allowed_api_keys():
         raise RuntimeError("An API key is required when DECISIONDOC_ENV=prod.")
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
+    provider_names = [n.strip() for n in configured_provider.split(",") if n.strip()]
     configured_stage = os.getenv("DECISIONDOC_ENV", "dev").lower()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
+
+    # Fail fast on misconfigured environment before accepting traffic.
+    # provider_names supports comma-separated fallback chains (e.g. "openai,gemini").
+    if not template_dir.is_dir():
+        raise RuntimeError(f"Template directory does not exist: {template_dir}")
+    if "openai" in provider_names and not os.getenv("OPENAI_API_KEY", "").strip():
+        raise RuntimeError("OPENAI_API_KEY is required when DECISIONDOC_PROVIDER=openai.")
+    if "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
+        raise RuntimeError("GEMINI_API_KEY is required when DECISIONDOC_PROVIDER=gemini.")
+    storage_kind = os.getenv("DECISIONDOC_STORAGE", "local").lower()
+    if storage_kind == "s3" and not os.getenv("DECISIONDOC_S3_BUCKET", "").strip():
+        raise RuntimeError("DECISIONDOC_S3_BUCKET is required when DECISIONDOC_STORAGE=s3.")
+
     data_dir = _resolve_data_dir(explicit_data_dir=explicit_data_dir)
     os.environ["DATA_DIR"] = str(data_dir)
     storage = get_storage()
-    service = GenerationService(provider_factory=get_provider, template_dir=template_dir, data_dir=data_dir, storage=storage)
+
+    # ── Multi-tenant setup ──────────────────────────────────────────────────
+    from app.storage.tenant_store import TenantStore, migrate_legacy_data
+    from app.middleware.tenant import install_tenant_middleware
+    _tenant_store = TenantStore(data_dir)
+    _tenant_store.ensure_system_tenant()
+    migrate_legacy_data(data_dir)
+
+    feedback_store = FeedbackStore(data_dir=data_dir)
+    _prompt_override_store = PromptOverrideStore(data_dir=data_dir)
+    from app.eval.eval_store import EvalStore as _EvalStore
+    _eval_store = _EvalStore(data_dir)
+    _search_service = SearchService()
+    from app.storage.finetune_store import FineTuneStore as _FineTuneStore
+    _finetune_store = _FineTuneStore(data_dir)
+    procurement_store = ProcurementDecisionStore(base_dir=str(data_dir))
+    procurement_copilot_enabled = is_procurement_copilot_enabled()
+    service = GenerationService(
+        provider_factory=get_provider,
+        template_dir=template_dir,
+        data_dir=data_dir,
+        storage=storage,
+        procurement_store=procurement_store,
+        procurement_copilot_enabled=procurement_copilot_enabled,
+        feedback_store=feedback_store,
+        eval_store=_eval_store,
+        search_service=_search_service,
+        finetune_store=_finetune_store,
+    )
     ops_service = get_ops_service()
+    approval_store = ApprovalStore(base_dir=str(data_dir))
+    project_store = ProjectStore(base_dir=str(data_dir))
+    voice_brief_base_url = get_voice_brief_api_base_url()
+    voice_brief_import_service = (
+        VoiceBriefImportService(
+            base_url=voice_brief_base_url,
+            bearer_token=get_voice_brief_api_bearer_token(),
+            timeout_seconds=get_voice_brief_timeout_seconds(),
+        )
+        if voice_brief_base_url
+        else None
+    )
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        """FastAPI lifespan: drain background eval executor on shutdown."""
+        yield
+        from app.services.generation_service import _eval_executor
+        _shutdown_thread = threading.Thread(
+            target=lambda: _eval_executor.shutdown(wait=True, cancel_futures=False),
+            daemon=True,
+            name="eval-executor-drain",
+        )
+        _shutdown_thread.start()
+        _shutdown_thread.join(timeout=10)
 
     app = FastAPI(
         title="DecisionDoc AI",
         version="0.1.0",
+        lifespan=_lifespan,
         docs_url=None if environment == "prod" else "/docs",
         redoc_url=None if environment == "prod" else "/redoc",
         openapi_url=None if environment == "prod" else "/openapi.json",
     )
-    cors_enabled = _is_enabled(os.getenv("DECISIONDOC_CORS_ENABLED", "0"))
+    cors_enabled = is_enabled(os.getenv("DECISIONDOC_CORS_ENABLED", "0"))
     if cors_enabled:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=_resolve_cors_allow_origins(environment),
-            allow_methods=["*"],
-            allow_headers=[API_KEY_HEADER, "Content-Type", "Authorization"],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+            allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Session-ID", API_KEY_HEADER],
         )
     install_observability_middleware(app)
     install_request_id_middleware(app)
     install_exception_handlers(app)
+    install_tenant_middleware(app, _tenant_store)
+    from app.middleware.auth import install_auth_middleware
+    install_auth_middleware(app)
+    from app.middleware.audit import install_audit_middleware
+    install_audit_middleware(app)
+    from app.middleware.billing import install_billing_middleware
+    install_billing_middleware(app)
+    from app.middleware.rate_limit import install_rate_limit_middleware
+    install_rate_limit_middleware(app)
+    from app.middleware.security_headers import install_security_headers_middleware
+    install_security_headers_middleware(app)
 
-    @app.get("/health", response_model=HealthResponse)
-    def health(request: Request) -> HealthResponse:
-        maintenance = is_maintenance_mode()
-        request.state.provider = configured_provider
-        request.state.template_version = template_version
-        request.state.maintenance = maintenance
-        return HealthResponse(status="ok", provider=configured_provider, maintenance=maintenance)
+    # ── Store shared dependencies on app.state for router access ─────────
+    app.state.service = service
+    app.state.template_version = template_version
+    app.state.approval_store = approval_store
+    app.state.procurement_store = procurement_store
+    app.state.procurement_copilot_enabled = procurement_copilot_enabled
+    app.state.project_store = project_store
+    app.state.voice_brief_import_service = voice_brief_import_service
+    app.state.feedback_store = feedback_store
+    app.state.prompt_override_store = _prompt_override_store
+    app.state.eval_store = _eval_store
+    app.state.search_service = _search_service
+    app.state.finetune_store = _finetune_store
+    app.state.ops_service = ops_service
+    app.state.tenant_store = _tenant_store
+    app.state.data_dir = data_dir
+    app.state.storage = storage
+    app.state.environment = environment
+    from app.services.event_bus import get_event_bus
+    app.state.event_bus = get_event_bus()
 
-    @app.post(
-        "/generate",
-        response_model=GenerateResponse,
-        dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
-    )
-    def generate(
-        payload: GenerateRequest,
+    # ── Register APIRouters ───────────────────────────────────────────────
+    from app.routers.auth import router as auth_router
+    from app.routers.approvals import router as approvals_router
+    from app.routers.projects import router as projects_router
+    from app.routers.billing import router as billing_router
+    from app.routers.sso import router as sso_router
+    from app.routers.notifications import router as notifications_router
+    from app.routers.messages import router as messages_router
+    from app.routers.styles import router as styles_router
+    from app.routers.dashboard import router as dashboard_router
+    from app.routers.history import router as history_router
+    from app.routers.finetune import router as finetune_router
+    from app.routers.admin import router as admin_router
+    from app.routers.eval import router as eval_router
+    from app.routers.audit import router as audit_router
+    from app.routers.local_llm import router as local_llm_router
+    from app.routers.g2b import router as g2b_router
+
+    app.include_router(auth_router)
+    app.include_router(approvals_router)
+    app.include_router(projects_router)
+    app.include_router(billing_router)
+    app.include_router(sso_router)
+    app.include_router(notifications_router)
+    app.include_router(messages_router)
+    app.include_router(styles_router)
+    app.include_router(dashboard_router)
+    app.include_router(history_router)
+    app.include_router(finetune_router)
+    app.include_router(admin_router)
+    app.include_router(eval_router)
+    app.include_router(audit_router)
+    app.include_router(local_llm_router)
+    app.include_router(g2b_router)
+    from app.routers.generate import router as generate_router
+    from app.routers.health import router as health_router
+    from app.routers.templates import router as templates_router
+    from app.routers.knowledge import router as knowledge_router
+    from app.routers.events import router as events_router
+    app.include_router(generate_router)
+    app.include_router(health_router)
+    app.include_router(templates_router)
+    app.include_router(knowledge_router)
+    app.include_router(events_router)
+
+    # Mount static files (Web UI).
+    static_dir = Path(__file__).resolve().parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+    @app.get("/")
+    async def root(request: Request):
+        """Serve the Web UI index.html (PWA entry point) with CSP nonce injected."""
+        import re
+        from fastapi.responses import HTMLResponse
+        index_path = static_dir / "index.html"
+        if not index_path.exists():
+            return {"status": "DecisionDoc AI API", "docs": "/docs"}
+        nonce = getattr(request.state, "csp_nonce", "")
+        content = index_path.read_text(encoding="utf-8")
+        if nonce:
+            content = re.sub(
+                r"<script\b(?![^>]*\bnonce=)",
+                f'<script nonce="{nonce}"',
+                content,
+            )
+        return HTMLResponse(content)
+
+    @app.get("/manifest.json")
+    async def serve_manifest():
+        """Serve the PWA Web App Manifest."""
+        from fastapi.responses import FileResponse as _FR
+        path = static_dir / "manifest.json"
+        if path.exists():
+            return _FR(str(path), media_type="application/manifest+json")
+        raise HTTPException(404, "manifest.json not found")
+
+    @app.get("/sw.js")
+    async def serve_sw():
+        """Serve the Service Worker (must be at root scope)."""
+        from fastapi.responses import FileResponse as _FR
+        path = static_dir / "sw.js"
+        if path.exists():
+            return _FR(
+                str(path),
+                media_type="application/javascript",
+                headers={"Service-Worker-Allowed": "/"},
+            )
+        raise HTTPException(404, "sw.js not found")
+
+    @app.get("/offline.html")
+    async def serve_offline():
+        """Serve the PWA offline fallback page."""
+        from fastapi.responses import FileResponse as _FR
+        path = static_dir / "offline.html"
+        if path.exists():
+            return _FR(str(path), media_type="text/html")
+        raise HTTPException(404, "offline.html not found")
+
+    @app.get("/bundles")
+    def list_bundle_types(
         request: Request,
-    ) -> GenerateResponse:
-        # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
-        request_id = request.state.request_id
-        result = service.generate_documents(payload, request_id=request_id)
+        q: str | None = None,
+        category: str | None = None,
+    ) -> list[dict]:
+        """Return all available document bundle types for the UI selection screen.
 
-        _apply_generate_state(request, result, template_version)
-        log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
+        Query parameters:
+          - q: keyword search (filters by id, name_ko, name_en, description_ko)
+          - category: filter by category (e.g. 'tech', 'business', 'public')
+        """
+        from app.bundle_catalog.registry import list_bundles
+        all_bundles = list_bundles()
+        tenant = getattr(request.state, "tenant", None)
+        if tenant and tenant.allowed_bundles:
+            all_bundles = [b for b in all_bundles if b["id"] in tenant.allowed_bundles]
 
-        metadata = result["metadata"]
-        return GenerateResponse(
-            request_id=request_id,
-            bundle_id=metadata["bundle_id"],
-            title=payload.title,
-            provider=metadata["provider"],
-            schema_version=metadata["schema_version"],
-            cache_hit=metadata["cache_hit"],
-            docs=result["docs"],
-        )
+        # Keyword search filter
+        if q:
+            q_lower = q.lower()
+            all_bundles = [
+                b for b in all_bundles
+                if q_lower in (b.get("id") or "").lower()
+                or q_lower in (b.get("name_ko") or "").lower()
+                or q_lower in (b.get("name_en") or "").lower()
+                or q_lower in (b.get("description_ko") or "").lower()
+            ]
 
-    @app.post(
-        "/generate/export",
-        response_model=GenerateExportResponse,
-        dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
-    )
-    def generate_export(
-        payload: GenerateRequest,
-        request: Request,
-    ) -> GenerateExportResponse:
-        # Keep sync endpoints to avoid nested event-loop issues because providers use anyio.run internally.
-        request_id = request.state.request_id
-        result = service.generate_documents(payload, request_id=request_id)
-        docs = result["docs"]
-        bundle_id = result["metadata"]["bundle_id"]
-        export_timer = Timer()
-        with export_timer.measure("export_ms"):
-            files = []
-            for doc in docs:
-                storage.save_export(bundle_id, doc["doc_type"], doc["markdown"])
-                files.append({"doc_type": doc["doc_type"], "path": storage.get_export_path(bundle_id, doc["doc_type"])})
-            export_dir = storage.get_export_dir(bundle_id)
+        # Category filter
+        if category:
+            all_bundles = [
+                b for b in all_bundles
+                if (b.get("category") or "").lower() == category.lower()
+            ]
 
-        _apply_generate_state(request, result, template_version)
-        request.state.export_ms = export_timer.durations_ms.get("export_ms")
+        return all_bundles
 
-        log_event_data = _build_generate_log_event(request, result, request_id, template_version)
-        log_event_data["export_ms"] = request.state.export_ms
-        log_event(logger, log_event_data)
+    @app.get("/bundles/{bundle_id}")
+    def get_bundle_detail(bundle_id: str, request: Request) -> dict:
+        """Return detailed information for a specific bundle type."""
+        from app.bundle_catalog.registry import BUNDLE_REGISTRY
+        if bundle_id not in BUNDLE_REGISTRY:
+            raise HTTPException(status_code=404, detail=f"번들을 찾을 수 없습니다: {bundle_id}")
+        spec = BUNDLE_REGISTRY[bundle_id]
+        metadata = spec.ui_metadata()
 
-        metadata = result["metadata"]
-        return GenerateExportResponse(
-            request_id=request_id,
-            bundle_id=bundle_id,
-            title=payload.title,
-            provider=metadata["provider"],
-            schema_version=metadata["schema_version"],
-            cache_hit=metadata["cache_hit"],
-            export_dir=str(export_dir),
-            files=files,
-        )
-
-    @app.post(
-        "/ops/investigate",
-        response_model=OpsInvestigateResponse,
-        dependencies=[Depends(require_ops_key)],
-    )
-    def investigate_ops(payload: OpsInvestigateRequest, request: Request) -> OpsInvestigateResponse:
-        request_id = request.state.request_id
-        stage = payload.stage or configured_stage
-        result = ops_service.investigate(
-            window_minutes=payload.window_minutes,
-            reason=payload.reason,
-            stage=stage,
-            request_id=request_id,
-            force=payload.force,
-            notify=payload.notify,
-        )
-        request.state.maintenance = is_maintenance_mode()
-        return OpsInvestigateResponse(**result)
+        # Add extra detail fields
+        metadata["doc_schema_keys"] = [
+            {"doc_key": doc.key, "json_schema_keys": list(doc.json_schema.keys())}
+            for doc in spec.docs
+        ]
+        return metadata
 
     return app
+
+
+# ── SSO helper functions ───────────────────────────────────────────────────────
+
+def _provision_sso_user(tenant_id: str, username: str, display_name: str, email: str, role: str):
+    """Create or update SSO user on first login."""
+    from app.storage.user_store import get_user_store, UserRole
+    usr_store = get_user_store(tenant_id)
+    user = usr_store.get_by_username(tenant_id, username)
+    if user is None:
+        import secrets as _secrets
+        random_pw = _secrets.token_urlsafe(32)
+        try:
+            user_role = UserRole(role) if role in ("admin", "member", "viewer") else UserRole.MEMBER
+        except ValueError:
+            user_role = UserRole.MEMBER
+        user = usr_store.create(
+            tenant_id=tenant_id,
+            username=username,
+            display_name=display_name or username,
+            email=email,
+            password=random_pw,
+            role=user_role,
+        )
+    return user
+
+
+def _create_jwt_for_user(user) -> str:
+    """Create JWT token for a provisioned user."""
+    import jwt as pyjwt
+    from datetime import datetime, timezone, timedelta
+    from app.config import get_jwt_secret_key
+    payload = {
+        "sub": user.user_id,
+        "username": user.username,
+        "role": user.role.value if hasattr(user.role, "value") else user.role,
+        "tenant_id": user.tenant_id,
+        "type": "access",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+    }
+    return pyjwt.encode(payload, get_jwt_secret_key(), algorithm="HS256")
+
+
+def _mask_sso_secrets(d: dict) -> None:
+    """Replace secret fields with '***' for safe client response."""
+    SECRET_FIELDS = {"bind_password", "client_secret", "sp_private_key"}
+    for k, v in list(d.items()):
+        if k in SECRET_FIELDS and v:
+            d[k] = "***"
+        elif isinstance(v, dict):
+            _mask_sso_secrets(v)
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    _mask_sso_secrets(item)
+
+
+def _update_ldap_config(cfg, payload: dict, store) -> None:
+    for k, v in payload.items():
+        if k == "bind_password" and v and v != "***":
+            setattr(cfg, k, store.encrypt_secret(v))
+        elif hasattr(cfg, k):
+            setattr(cfg, k, v)
+
+
+def _update_saml_config(cfg, payload: dict, store) -> None:
+    for k, v in payload.items():
+        if k == "sp_private_key" and v and v != "***":
+            setattr(cfg, k, store.encrypt_secret(v))
+        elif hasattr(cfg, k):
+            setattr(cfg, k, v)
+
+
+def _update_gcloud_config(cfg, payload: dict, store) -> None:
+    for k, v in payload.items():
+        if k == "client_secret" and v and v != "***":
+            setattr(cfg, k, store.encrypt_secret(v))
+        elif hasattr(cfg, k):
+            setattr(cfg, k, v)
 
 
 app = create_app()

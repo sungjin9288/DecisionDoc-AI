@@ -1,0 +1,30 @@
+# 중간보고서: {{ title }}
+
+## 전체 진척 현황
+{% if report_date %}> **보고 기준일**: {{ report_date }}
+
+{% endif %}{{ overall_progress }}
+
+## 단계별 진척 현황
+{% if phase_progress %}{% for phase in phase_progress %}
+- {{ phase }}
+{% endfor %}{% endif %}
+
+## 주요 이슈
+{% if active_issues %}{% for issue in active_issues %}
+- {{ issue }}
+{% endfor %}{% else %}
+(현재 주요 이슈 없음)
+{% endif %}
+
+## 향후 일정
+{% if next_schedule %}{% for item in next_schedule %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 변경 요청 사항
+{% if change_requests %}{% for cr in change_requests %}
+- {{ cr }}
+{% endfor %}{% else %}
+(변경 요청 없음)
+{% endif %}

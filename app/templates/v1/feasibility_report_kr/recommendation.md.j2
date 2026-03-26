@@ -1,0 +1,24 @@
+# 추진 권고안: {{ title }}
+
+## 최종 판정
+{{ verdict }}
+
+## 추진 근거
+{% for item in rationale %}
+- {{ item }}
+{% endfor %}
+
+## 실행 계획
+{% for item in implementation_plan %}
+- {{ item }}
+{% endfor %}
+
+## 성공 조건
+{% for condition in success_conditions %}
+- {{ condition }}
+{% endfor %}
+
+## 다음 단계
+{% for step in next_steps %}
+- {{ step }}
+{% endfor %}

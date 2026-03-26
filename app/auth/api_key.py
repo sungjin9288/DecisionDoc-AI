@@ -36,3 +36,15 @@ def require_api_key(request: Request) -> None:
 
     if not ok:
         raise UnauthorizedError("Authentication required.")
+
+
+def get_tenant_from_api_key(request: Request) -> str | None:
+    """If the provided API key matches a per-tenant key, return the tenant_id. Else None."""
+    provided = request.headers.get(API_KEY_HEADER, "")
+    if not provided or not provided.startswith("dd_"):
+        return None
+    try:
+        tenant_store = request.app.state.tenant_store
+        return tenant_store.find_tenant_by_api_key(provided)
+    except Exception:
+        return None

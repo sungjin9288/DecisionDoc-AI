@@ -1,0 +1,20 @@
+# 포지션 개요: {{ title }}
+
+## 포지션 소개
+{{ position_summary }}
+
+## 팀 소개
+{{ team_context }}
+
+## 주요 업무
+{% for r in key_responsibilities %}
+- {{ r }}
+{% endfor %}
+
+## 일상 업무
+{% for w in daily_work %}
+- {{ w }}
+{% endfor %}
+
+## 성장 기회
+{{ growth_opportunity }}

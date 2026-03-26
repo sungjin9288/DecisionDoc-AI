@@ -1,10 +1,15 @@
 import json
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
 from typing import Any
 
-from app.storage.base import Storage, StorageFailedError
+from app.storage.base import Storage, StorageFailedError, atomic_write_text
+
+_log = logging.getLogger("decisiondoc.storage.local")
+
+_MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB guard-rail
 
 
 class LocalStorage(Storage):
@@ -33,8 +38,18 @@ class LocalStorage(Storage):
         if not path.exists():
             return None
         try:
+            size = path.stat().st_size
+            if size > _MAX_BUNDLE_SIZE_BYTES:
+                _log.warning(
+                    "Bundle file too large to load (%d MB > %d MB limit): %s",
+                    size // 1_048_576,
+                    _MAX_BUNDLE_SIZE_BYTES // 1_048_576,
+                    path,
+                )
+                return None
             return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            _log.warning("Failed to load bundle %s: %s", bundle_id, exc)
             return None
 
     def save_export(self, bundle_id: str, doc_type: str, markdown: str) -> None:
@@ -50,18 +65,12 @@ class LocalStorage(Storage):
     def _atomic_write_json(self, path: Path, payload: dict[str, Any]) -> None:
         try:
             data = json.dumps(payload, ensure_ascii=False, indent=2)
-            self._atomic_write_text(path, data)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise StorageFailedError("Storage operation failed.") from exc
+        self._atomic_write_text(path, data)
 
     def _atomic_write_text(self, path: Path, text: str) -> None:
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
-            with tmp.open("w", encoding="utf-8") as f:
-                f.write(text)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
+            atomic_write_text(path, text)
         except Exception as exc:
             raise StorageFailedError("Storage operation failed.") from exc

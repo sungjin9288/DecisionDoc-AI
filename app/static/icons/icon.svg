@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="24" fill="#6366f1"/>
+  <rect x="48" y="40" width="96" height="8" rx="4" fill="white" opacity="0.9"/>
+  <rect x="48" y="60" width="80" height="8" rx="4" fill="white" opacity="0.7"/>
+  <rect x="48" y="80" width="88" height="8" rx="4" fill="white" opacity="0.7"/>
+  <rect x="48" y="108" width="96" height="40" rx="6" fill="white" opacity="0.15"/>
+  <text x="96" y="135" font-family="sans-serif" font-size="20" font-weight="bold"
+        fill="white" text-anchor="middle">AI</text>
+</svg>

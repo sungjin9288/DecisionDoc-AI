@@ -1,0 +1,26 @@
+# 우선순위 매트릭스: {{ title }}
+
+## Must Have
+{% for m in must_have %}
+- {{ m }}
+{% endfor %}
+
+## Should Have
+{% for s in should_have %}
+- {{ s }}
+{% endfor %}
+
+## Could Have
+{% for c in could_have %}
+- {{ c }}
+{% endfor %}
+
+## Won't Have
+{% for w in wont_have %}
+- {{ w }}
+{% endfor %}
+
+## 출시 단계
+{% for p in release_phases %}
+- {{ p }}
+{% endfor %}

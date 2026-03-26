@@ -1,0 +1,40 @@
+# 사업 모델: {{ title }}
+
+## 수익 구조
+{% if revenue_streams %}{% for stream in revenue_streams %}
+- {{ stream }}
+{% endfor %}{% endif %}
+
+## 비용 구조
+{% if cost_structure %}{% for cost in cost_structure %}
+- {{ cost }}
+{% endfor %}{% endif %}
+
+## 주요 파트너십
+{% if key_partnerships %}{% for partner in key_partnerships %}
+- {{ partner }}
+{% endfor %}{% endif %}
+
+## 가격 전략
+{% if pricing_strategy %}{{ pricing_strategy }}
+{% endif %}
+## 성장 동력
+{% if growth_levers %}{% for lever in growth_levers %}
+- {{ lever }}
+{% endfor %}{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

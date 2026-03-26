@@ -46,6 +46,8 @@ def install_observability_middleware(app: FastAPI) -> None:
             "maintenance",
             "schema_version",
             "cache_hit",
+            "bundle_type",
+            "doc_count",
             "llm_prompt_tokens",
             "llm_output_tokens",
             "llm_total_tokens",

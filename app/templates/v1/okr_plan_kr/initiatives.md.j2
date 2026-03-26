@@ -1,0 +1,26 @@
+# 이니셔티브: {{ title }}
+
+## 실행 과제 목록
+{% for i in initiative_list %}
+- {{ i }}
+{% endfor %}
+
+## 우선순위
+{% for p in priority_order %}
+- {{ p }}
+{% endfor %}
+
+## 의존성
+{% for d in dependencies %}
+- {{ d }}
+{% endfor %}
+
+## 필요 자원
+{% for r in resource_needs %}
+- {{ r }}
+{% endfor %}
+
+## 리스크
+{% for r in risk_factors %}
+- {{ r }}
+{% endfor %}

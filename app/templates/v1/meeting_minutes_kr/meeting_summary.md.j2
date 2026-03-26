@@ -1,0 +1,22 @@
+# 회의록: {{ title }}
+
+## 회의 개요
+{{ meeting_info }}
+
+## 안건
+{% for item in agenda_items %}
+- {{ item }}
+{% endfor %}
+
+## 주요 논의 사항
+{% for point in discussion_points %}
+- {{ point }}
+{% endfor %}
+
+## 의사결정 사항
+{% for decision in decisions_made %}
+- {{ decision }}
+{% endfor %}
+
+## 다음 회의
+{{ next_meeting }}
