@@ -84,6 +84,28 @@ def test_page_loads(page):
     assert "DecisionDoc" in page.title()
 
 
+def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_server):
+    console_errors: list[str] = []
+    browser = playwright.chromium.launch()
+    ctx = browser.new_context()
+    pg = ctx.new_page()
+    pg.on(
+        "console",
+        lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+    )
+
+    pg.goto(live_server["base_url"])
+    pg.wait_for_selector("#login-screen", timeout=10000)
+
+    assert not any(
+        "addSSOLoginButtons is not defined" in message
+        for message in console_errors
+    )
+
+    ctx.close()
+    browser.close()
+
+
 def test_bundle_selection_enables_generate_button(page):
     """Clicking a bundle card must enable the generate button."""
     page.wait_for_selector(".bundle-card", timeout=5000)

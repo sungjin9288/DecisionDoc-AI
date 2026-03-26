@@ -7199,7 +7199,11 @@
     screen.querySelectorAll('input').forEach(inp => {
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
     });
-    addSSOLoginButtons();
+    window.setTimeout(() => {
+      if (typeof window.addSSOLoginButtons === 'function') {
+        window.addSSOLoginButtons();
+      }
+    }, 0);
   }
 
   function showRegisterScreen(e) {
