@@ -1,8 +1,6 @@
 """app/middleware/security_headers.py — HTTP security headers for all responses."""
 from __future__ import annotations
 
-import secrets
-
 from fastapi import Request
 
 _STATIC_HEADERS = {
@@ -16,18 +14,15 @@ _STATIC_HEADERS = {
 
 
 async def security_headers_middleware(request: Request, call_next):
-    """Add security headers (with per-request nonce for CSP) to all responses."""
-    nonce = secrets.token_urlsafe(16)
-    request.state.csp_nonce = nonce
-
+    """Add security headers to all responses."""
     response = await call_next(request)
 
     csp = (
         "default-src 'self'; "
-        # The current single-file web UI still relies on inline event handlers.
-        # Keep the nonce for inline <script> blocks while allowing existing
-        # handler attributes until the UI is fully refactored away from them.
-        f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}'; "
+        # The current single-file web UI still relies on inline event handlers
+        # and inline script blocks. Keep this policy aligned with the shipped UI
+        # until those handlers are fully refactored away.
+        "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "

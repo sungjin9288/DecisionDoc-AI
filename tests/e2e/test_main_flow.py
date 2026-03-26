@@ -102,6 +102,11 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
     assert not pg.locator("#main-content").is_visible()
     assert not pg.locator("#mobile-bottom-nav").is_visible()
     assert "cdn.jsdelivr.net" not in html
+
+    pg.get_by_role("link", name="관리자 계정 만들기").click()
+    pg.wait_for_selector("#register-form", timeout=5000)
+    assert pg.get_by_role("heading", name="관리자 계정 만들기").inner_text() == "관리자 계정 만들기"
+
     assert not any(
         "addSSOLoginButtons is not defined" in message
         for message in console_messages
@@ -116,6 +121,10 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
     )
     assert not any(
         "cdn.tailwindcss.com should not be used in production" in message
+        for message in console_messages
+    )
+    assert not any(
+        "Executing inline event handler violates" in message
         for message in console_messages
     )
 
