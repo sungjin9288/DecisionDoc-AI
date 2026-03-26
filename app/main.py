@@ -253,7 +253,7 @@ def create_app() -> FastAPI:
     if static_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def root():
         """Serve the Web UI index.html (PWA entry point)."""
         index_path = static_dir / "index.html"
@@ -261,7 +261,7 @@ def create_app() -> FastAPI:
             return {"status": "DecisionDoc AI API", "docs": "/docs"}
         return HTMLResponse(index_path.read_text(encoding="utf-8"))
 
-    @app.get("/favicon.ico")
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"])
     async def serve_favicon():
         """Serve the favicon without authentication to avoid browser console noise."""
         from fastapi.responses import FileResponse as _FR
@@ -274,7 +274,7 @@ def create_app() -> FastAPI:
             return _FR(str(png_icon), media_type="image/png")
         raise HTTPException(404, "favicon not found")
 
-    @app.get("/manifest.json")
+    @app.api_route("/manifest.json", methods=["GET", "HEAD"])
     async def serve_manifest():
         """Serve the PWA Web App Manifest."""
         from fastapi.responses import FileResponse as _FR
@@ -283,7 +283,7 @@ def create_app() -> FastAPI:
             return _FR(str(path), media_type="application/manifest+json")
         raise HTTPException(404, "manifest.json not found")
 
-    @app.get("/sw.js")
+    @app.api_route("/sw.js", methods=["GET", "HEAD"])
     async def serve_sw():
         """Serve the Service Worker (must be at root scope)."""
         from fastapi.responses import FileResponse as _FR
@@ -296,7 +296,7 @@ def create_app() -> FastAPI:
             )
         raise HTTPException(404, "sw.js not found")
 
-    @app.get("/offline.html")
+    @app.api_route("/offline.html", methods=["GET", "HEAD"])
     async def serve_offline():
         """Serve the PWA offline fallback page."""
         from fastapi.responses import FileResponse as _FR

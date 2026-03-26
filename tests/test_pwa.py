@@ -50,6 +50,14 @@ def test_root_returns_html(tmp_path, monkeypatch):
     assert "text/html" in res.headers.get("content-type", "")
 
 
+def test_root_head_returns_html_headers(tmp_path, monkeypatch):
+    """HEAD / should return 200 with HTML headers."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.head("/")
+    assert res.status_code == 200
+    assert "text/html" in res.headers.get("content-type", "")
+
+
 def test_manifest_json_endpoint_200(tmp_path, monkeypatch):
     """GET /manifest.json returns 200."""
     client = _make_client(tmp_path, monkeypatch)
@@ -61,6 +69,15 @@ def test_manifest_json_content_type(tmp_path, monkeypatch):
     """GET /manifest.json returns application/manifest+json content-type."""
     client = _make_client(tmp_path, monkeypatch)
     res = client.get("/manifest.json")
+    ct = res.headers.get("content-type", "")
+    assert "manifest+json" in ct or "application/json" in ct
+
+
+def test_manifest_json_head_returns_headers(tmp_path, monkeypatch):
+    """HEAD /manifest.json returns 200 with manifest headers."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.head("/manifest.json")
+    assert res.status_code == 200
     ct = res.headers.get("content-type", "")
     assert "manifest+json" in ct or "application/json" in ct
 
@@ -86,6 +103,15 @@ def test_sw_js_javascript_content_type(tmp_path, monkeypatch):
     assert "javascript" in res.headers.get("content-type", "")
 
 
+def test_sw_js_head_returns_headers(tmp_path, monkeypatch):
+    """HEAD /sw.js returns 200 with service worker headers."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.head("/sw.js")
+    assert res.status_code == 200
+    assert "javascript" in res.headers.get("content-type", "")
+    assert res.headers.get("service-worker-allowed") == "/"
+
+
 def test_offline_html_endpoint_200(tmp_path, monkeypatch):
     """GET /offline.html returns 200."""
     client = _make_client(tmp_path, monkeypatch)
@@ -100,6 +126,14 @@ def test_offline_html_is_html(tmp_path, monkeypatch):
     assert "text/html" in res.headers.get("content-type", "")
 
 
+def test_offline_html_head_returns_headers(tmp_path, monkeypatch):
+    """HEAD /offline.html returns 200 with HTML headers."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.head("/offline.html")
+    assert res.status_code == 200
+    assert "text/html" in res.headers.get("content-type", "")
+
+
 def test_favicon_endpoint_200(tmp_path, monkeypatch):
     """GET /favicon.ico returns 200."""
     client = _make_client(tmp_path, monkeypatch)
@@ -111,6 +145,14 @@ def test_favicon_is_image(tmp_path, monkeypatch):
     """GET /favicon.ico returns an image content-type."""
     client = _make_client(tmp_path, monkeypatch)
     res = client.get("/favicon.ico")
+    assert res.headers.get("content-type", "").startswith("image/")
+
+
+def test_favicon_head_returns_headers(tmp_path, monkeypatch):
+    """HEAD /favicon.ico returns 200 with image headers."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.head("/favicon.ico")
+    assert res.status_code == 200
     assert res.headers.get("content-type", "").startswith("image/")
 
 
