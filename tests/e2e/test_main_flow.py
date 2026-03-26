@@ -108,6 +108,10 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
         "Password field is not contained in a form" in message
         for message in console_messages
     )
+    assert not any(
+        "autocomplete attributes" in message
+        for message in console_messages
+    )
 
     ctx.close()
     browser.close()

@@ -3668,7 +3668,7 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
       <div>
         <label style="color:#c4b5fd;font-size:.78rem;display:block;margin-bottom:.3rem;">Ops Key</label>
-        <input id="ops-key-input" type="password" placeholder="X-DecisionDoc-Ops-Key"
+        <input id="ops-key-input" type="password" placeholder="X-DecisionDoc-Ops-Key" autocomplete="new-password"
                style="width:100%;background:#2d2b6b;border:1px solid #4c1d95;color:#fff;
                       border-radius:8px;padding:.5rem .75rem;box-sizing:border-box;"/>
       </div>
@@ -7242,13 +7242,13 @@
       <div id="reg-error" class="login-error" style="display:none"></div>
       <form id="register-form">
         <label for="reg-username" class="sr-only">아이디 (로그인 ID)</label>
-        <input id="reg-username" placeholder="아이디 (로그인 ID)" aria-required="true">
+        <input id="reg-username" placeholder="아이디 (로그인 ID)" autocomplete="username" aria-required="true">
         <label for="reg-display" class="sr-only">표시 이름</label>
-        <input id="reg-display" placeholder="표시 이름">
+        <input id="reg-display" placeholder="표시 이름" autocomplete="name">
         <label for="reg-email" class="sr-only">이메일</label>
-        <input id="reg-email" type="email" placeholder="이메일">
+        <input id="reg-email" type="email" placeholder="이메일" autocomplete="email">
         <label for="reg-password" class="sr-only">비밀번호 (8자 이상)</label>
-        <input id="reg-password" type="password" placeholder="비밀번호 (8자 이상)" aria-required="true">
+        <input id="reg-password" type="password" placeholder="비밀번호 (8자 이상)" autocomplete="new-password" aria-required="true">
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;font-size:1rem;margin-top:4px">계정 생성</button>
       </form>
       <p style="font-size:.8rem;text-align:center;margin-top:8px;opacity:.6">
@@ -10912,8 +10912,8 @@ async function addSSOLoginButtons() {
     if (provider === 'ldap') {
       container.innerHTML = `
         <div id="ldap-login-form" style="display:flex;flex-direction:column;gap:.5rem">
-          <input type="text" id="ldap-username" placeholder="LDAP 사용자명" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
-          <input type="password" id="ldap-password" placeholder="비밀번호" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
+          <input type="text" id="ldap-username" placeholder="LDAP 사용자명" autocomplete="username" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
+          <input type="password" id="ldap-password" placeholder="비밀번호" autocomplete="current-password" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
           <button class="btn btn-primary" onclick="submitLDAPLogin()" style="width:100%">🔐 LDAP 로그인</button>
         </div>`;
     } else if (provider === 'saml') {
@@ -10996,7 +10996,7 @@ function _ldapFormHTML() {
   return `<div class="sso-form">
     <div class="sso-form-row"><label>서버 URL</label><input type="url" id="sso-ldap-server_url" placeholder="ldap://dc.corp.local:389"></div>
     <div class="sso-form-row"><label>Bind DN</label><input type="text" id="sso-ldap-bind_dn" placeholder="CN=svc,DC=corp,DC=local"></div>
-    <div class="sso-form-row"><label>Bind 비밀번호</label><input type="password" id="sso-ldap-bind_password" placeholder="변경 시에만 입력"></div>
+    <div class="sso-form-row"><label>Bind 비밀번호</label><input type="password" id="sso-ldap-bind_password" placeholder="변경 시에만 입력" autocomplete="new-password"></div>
     <div class="sso-form-row"><label>Base DN</label><input type="text" id="sso-ldap-base_dn" placeholder="DC=corp,DC=local"></div>
     <div class="sso-form-row"><label>사용자 검색 필터</label><input type="text" id="sso-ldap-user_search_filter" value="(sAMAccountName={username})"></div>
     <div class="sso-form-row"><label>Admin 그룹 DN</label><input type="text" id="sso-ldap-admin_group" placeholder="CN=DDAdmin,OU=Groups,..."></div>
@@ -11032,7 +11032,7 @@ function _samlFormHTML() {
 function _gcloudFormHTML() {
   return `<div class="sso-form">
     <div class="sso-form-row"><label>Client ID</label><input type="text" id="sso-gcloud-client_id" placeholder="xxxx.apps.googleusercontent.com"></div>
-    <div class="sso-form-row"><label>Client Secret</label><input type="password" id="sso-gcloud-client_secret" placeholder="변경 시에만 입력"></div>
+    <div class="sso-form-row"><label>Client Secret</label><input type="password" id="sso-gcloud-client_secret" placeholder="변경 시에만 입력" autocomplete="new-password"></div>
     <div class="sso-form-row"><label>Hosted Domain (hd)</label><input type="text" id="sso-gcloud-hd" placeholder="agency.go.kr"></div>
     <div class="sso-form-row"><label>기본 역할</label>
       <select id="sso-gcloud-default_role" style="padding:.5rem;border:1.5px solid rgba(255,255,255,.2);border-radius:var(--radius-sm);background:rgba(255,255,255,.08);color:#e2e8f0;">
