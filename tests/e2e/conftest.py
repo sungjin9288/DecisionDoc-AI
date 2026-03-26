@@ -58,7 +58,14 @@ def live_server(tmp_path_factory):
     from app.main import create_app
 
     config = uvicorn.Config(
-        create_app(), host="127.0.0.1", port=18765, log_level="error"
+        create_app(),
+        host="127.0.0.1",
+        port=18765,
+        log_level="error",
+        # The app uses SSE in tests, not WebSocket endpoints. Disabling the
+        # WebSocket protocol stack keeps the e2e fixture off uvicorn's
+        # deprecated websockets implementation path.
+        ws="none",
     )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
