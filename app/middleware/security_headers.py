@@ -24,7 +24,10 @@ async def security_headers_middleware(request: Request, call_next):
 
     csp = (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+        # The current single-file web UI still relies on inline event handlers.
+        # Keep the nonce for inline <script> blocks while allowing existing
+        # handler attributes until the UI is fully refactored away from them.
+        f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "

@@ -25,6 +25,11 @@ def require_api_key(request: Request) -> None:
     if request.method.upper() == "OPTIONS":
         return
 
+    # Browser UI sessions authenticate via JWT first. Once auth middleware has
+    # attached a user to request.state, do not force a second API key gate.
+    if getattr(request.state, "user_id", None):
+        return
+
     allowed_keys = get_allowed_api_keys()
     if not allowed_keys:
         return

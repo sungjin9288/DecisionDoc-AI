@@ -61,6 +61,8 @@ def test_security_headers_csp(client):
     res = client.get("/health")
     csp = res.headers.get("content-security-policy", "")
     assert "default-src" in csp
+    assert "script-src" in csp
+    assert "'unsafe-inline'" in csp
     assert "frame-ancestors" in csp
 
 
