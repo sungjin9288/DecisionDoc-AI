@@ -3,12 +3,21 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 import time
 from urllib import request as urllib_request
 
 import pytest
 import uvicorn
+
+
+def _reserve_local_port() -> int:
+    """Return an available localhost TCP port for the session-scoped test server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return int(sock.getsockname()[1])
 
 
 def _bootstrap_e2e_user(base_url: str) -> dict[str, str]:
@@ -41,7 +50,7 @@ def _bootstrap_e2e_user(base_url: str) -> dict[str, str]:
 
 @pytest.fixture(scope="session")
 def live_server(tmp_path_factory):
-    """Session-scoped fixture: starts uvicorn on port 18765 with mock provider."""
+    """Session-scoped fixture: starts uvicorn on a free localhost port with mock provider."""
     tmp = tmp_path_factory.mktemp("e2e_data")
     os.environ.update(
         {
@@ -57,10 +66,11 @@ def live_server(tmp_path_factory):
 
     from app.main import create_app
 
+    port = _reserve_local_port()
     config = uvicorn.Config(
         create_app(),
         host="127.0.0.1",
-        port=18765,
+        port=port,
         log_level="error",
         # The app uses SSE in tests, not WebSocket endpoints. Disabling the
         # WebSocket protocol stack keeps the e2e fixture off uvicorn's
@@ -77,7 +87,7 @@ def live_server(tmp_path_factory):
         if server.started:
             break
 
-    base_url = "http://127.0.0.1:18765"
+    base_url = f"http://127.0.0.1:{port}"
     auth = _bootstrap_e2e_user(base_url)
 
     yield {"base_url": base_url, "auth": auth}

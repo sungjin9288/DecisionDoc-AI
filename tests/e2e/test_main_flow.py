@@ -276,11 +276,11 @@ def test_keyboard_shortcut_ctrl_enter_triggers_generate(page):
     assert len(content.strip()) > 0
 
 
-def test_project_detail_shows_procurement_panel_and_doc_actions(page):
+def test_project_detail_shows_procurement_panel_and_doc_actions(page, live_server):
     project_id = _create_project_with_document(page)
     token = page.evaluate("localStorage.getItem('dd_access_token')")
     request = urllib_request.Request(
-        f"http://127.0.0.1:18765/projects/{project_id}",
+        f"{live_server['base_url']}/projects/{project_id}",
         headers={"Authorization": f"Bearer {token}"},
         method="GET",
     )
