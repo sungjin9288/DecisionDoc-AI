@@ -3664,30 +3664,32 @@
 <section id="ops-panel" style="display:none;margin:2rem auto;max-width:760px;padding:2rem;
          background:#1e1b4b;color:#fff;border-radius:var(--radius-lg);">
   <h3 style="font-size:1rem;font-weight:800;margin:0 0 1.2rem;">🔧 Ops 대시보드</h3>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
-    <div>
-      <label style="color:#c4b5fd;font-size:.78rem;display:block;margin-bottom:.3rem;">Ops Key</label>
-      <input id="ops-key-input" type="password" placeholder="X-DecisionDoc-Ops-Key"
-             style="width:100%;background:#2d2b6b;border:1px solid #4c1d95;color:#fff;
-                    border-radius:8px;padding:.5rem .75rem;box-sizing:border-box;"/>
+  <form id="ops-form">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+      <div>
+        <label style="color:#c4b5fd;font-size:.78rem;display:block;margin-bottom:.3rem;">Ops Key</label>
+        <input id="ops-key-input" type="password" placeholder="X-DecisionDoc-Ops-Key"
+               style="width:100%;background:#2d2b6b;border:1px solid #4c1d95;color:#fff;
+                      border-radius:8px;padding:.5rem .75rem;box-sizing:border-box;"/>
+      </div>
+      <div>
+        <label style="color:#c4b5fd;font-size:.78rem;display:block;margin-bottom:.3rem;">
+          조사 기간: <span id="ops-window-label">30</span>분
+        </label>
+        <input id="ops-window" type="range" min="1" max="180" value="30" style="width:100%;margin-top:.4rem;"
+               oninput="$id('ops-window-label').textContent=this.value"/>
+      </div>
     </div>
-    <div>
-      <label style="color:#c4b5fd;font-size:.78rem;display:block;margin-bottom:.3rem;">
-        조사 기간: <span id="ops-window-label">30</span>분
-      </label>
-      <input id="ops-window" type="range" min="1" max="180" value="30" style="width:100%;margin-top:.4rem;"
-             oninput="$id('ops-window-label').textContent=this.value"/>
-    </div>
-  </div>
-  <textarea id="ops-reason" placeholder="조사 이유 (선택)"
-            style="width:100%;background:#2d2b6b;border:1px solid #4c1d95;color:#fff;
-                   border-radius:8px;padding:.5rem .75rem;min-height:60px;
-                   box-sizing:border-box;margin-bottom:1rem;resize:vertical;"></textarea>
-  <button id="ops-investigate-btn"
-          style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
-                 border-radius:8px;padding:.6rem 1.5rem;font-weight:700;cursor:pointer;">
-    🔍 조사 시작
-  </button>
+    <textarea id="ops-reason" placeholder="조사 이유 (선택)"
+              style="width:100%;background:#2d2b6b;border:1px solid #4c1d95;color:#fff;
+                     border-radius:8px;padding:.5rem .75rem;min-height:60px;
+                     box-sizing:border-box;margin-bottom:1rem;resize:vertical;"></textarea>
+    <button id="ops-investigate-btn" type="submit"
+            style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;
+                   border-radius:8px;padding:.6rem 1.5rem;font-weight:700;cursor:pointer;">
+      🔍 조사 시작
+    </button>
+  </form>
   <div id="ops-result" style="margin-top:1.2rem;"></div>
 
   <!-- ── 로컬 LLM 상태 패널 ───────────────────────────────────── -->
@@ -6185,7 +6187,8 @@
     loadSSOConfig();
     loadBillingStatus();
   }
-  $id('ops-investigate-btn').addEventListener('click', async () => {
+  $id('ops-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
     const opsKey  = $id('ops-key-input').value.trim();
     const wm      = parseInt($id('ops-window').value, 10);
     const reason  = $id('ops-reason').value.trim();
