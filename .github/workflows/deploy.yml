@@ -131,6 +131,37 @@ jobs:
 
       - name: SAM deploy
         run: |
+          PARAM_OVERRIDES=(
+            "Stage=${{ inputs.stage }}"
+            "TemplateVersion=${{ inputs.template_version }}"
+            "S3BucketName=${DECISIONDOC_S3_BUCKET}"
+            "S3Prefix=decisiondoc-ai/"
+            "DecisionDocApiKey=${DECISIONDOC_API_KEY}"
+            "DecisionDocOpsKey=${DECISIONDOC_OPS_KEY}"
+            "DecisionDocMaintenance=${{ inputs.maintenance_mode }}"
+            "DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED}"
+            "ApiThrottlingBurstLimit=${THROTTLE_BURST}"
+            "ApiThrottlingRateLimit=${THROTTLE_RATE}"
+            "LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}"
+          )
+          if [ -n "${STATUSPAGE_PAGE_ID}" ]; then
+            PARAM_OVERRIDES+=("StatuspagePageId=${STATUSPAGE_PAGE_ID}")
+          fi
+          if [ -n "${STATUSPAGE_API_KEY}" ]; then
+            PARAM_OVERRIDES+=("StatuspageApiKey=${STATUSPAGE_API_KEY}")
+          fi
+          if [ -n "${G2B_API_KEY}" ]; then
+            PARAM_OVERRIDES+=("G2bApiKey=${G2B_API_KEY}")
+          fi
+          if [ -n "${VOICE_BRIEF_API_BASE_URL}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefApiBaseUrl=${VOICE_BRIEF_API_BASE_URL}")
+          fi
+          if [ -n "${VOICE_BRIEF_API_BEARER_TOKEN}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefApiBearerToken=${VOICE_BRIEF_API_BEARER_TOKEN}")
+          fi
+          if [ -n "${VOICE_BRIEF_TIMEOUT_SECONDS}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefTimeoutSeconds=${VOICE_BRIEF_TIMEOUT_SECONDS}")
+          fi
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name decisiondoc-ai-${{ inputs.stage }} \
@@ -139,21 +170,4 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3 \
-            --parameter-overrides \
-              Stage=${{ inputs.stage }} \
-              TemplateVersion=${{ inputs.template_version }} \
-              S3BucketName=${DECISIONDOC_S3_BUCKET} \
-              S3Prefix=decisiondoc-ai/ \
-              DecisionDocApiKey=${DECISIONDOC_API_KEY} \
-              DecisionDocOpsKey=${DECISIONDOC_OPS_KEY} \
-              DecisionDocMaintenance=${{ inputs.maintenance_mode }} \
-              DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED} \
-              StatuspagePageId=${STATUSPAGE_PAGE_ID} \
-              StatuspageApiKey=${STATUSPAGE_API_KEY} \
-              G2bApiKey="${G2B_API_KEY}" \
-              VoiceBriefApiBaseUrl="${VOICE_BRIEF_API_BASE_URL}" \
-              VoiceBriefApiBearerToken="${VOICE_BRIEF_API_BEARER_TOKEN}" \
-              VoiceBriefTimeoutSeconds=${VOICE_BRIEF_TIMEOUT_SECONDS} \
-              ApiThrottlingBurstLimit=${THROTTLE_BURST} \
-              ApiThrottlingRateLimit=${THROTTLE_RATE} \
-              LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
