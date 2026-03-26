@@ -8,6 +8,27 @@ from app.storage.base import Storage, StorageFailedError
 _log = logging.getLogger("decisiondoc.storage.s3")
 
 
+def _describe_storage_exception(exc: Exception) -> str:
+    parts = [type(exc).__name__]
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error", {})
+        code = error.get("Code")
+        message = error.get("Message")
+        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if code:
+            parts.append(f"code={code}")
+        if status:
+            parts.append(f"http_status={status}")
+        if message:
+            parts.append(f"message={message}")
+    else:
+        text = str(exc).strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
 class S3Storage(Storage):
     def __init__(
         self,
@@ -76,7 +97,11 @@ class S3Storage(Storage):
             self.client.head_bucket(Bucket=self.bucket)
             return {"ok": True}
         except Exception as exc:
-            _log.warning("S3 health check failed for bucket=%s: %s", self.bucket, exc)
+            _log.warning(
+                "S3 health check failed for bucket=%s detail=%s",
+                self.bucket,
+                _describe_storage_exception(exc),
+            )
             raise StorageFailedError("Storage operation failed.") from exc
 
     def _put(self, key: str, body: bytes, content_type: str) -> None:
@@ -85,7 +110,12 @@ class S3Storage(Storage):
                 raise StorageFailedError("Storage operation failed.")
             self.client.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=content_type)
         except Exception as exc:
-            _log.warning("S3 put failed for key=%s: %s", key, exc)
+            _log.warning(
+                "S3 put failed bucket=%s key=%s detail=%s",
+                self.bucket,
+                key,
+                _describe_storage_exception(exc),
+            )
             raise StorageFailedError("Storage operation failed.") from exc
 
 

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,6 +12,8 @@ from app.services.attachment_service import AttachmentError
 from app.services.generation_service import BundleNotSupportedError, EvalLintFailedError, ProviderFailedError
 from app.storage.base import StorageFailedError
 from app.services.validator import DocumentValidationError
+
+_log = logging.getLogger("decisiondoc.api.errors")
 
 
 def _request_id_from_state(request: Request) -> str:
@@ -132,7 +136,14 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def internal_error_handler(request: Request, exc: Exception):  # noqa: ARG001
+    async def internal_error_handler(request: Request, exc: Exception):
+        _log.exception(
+            "Unhandled application error request_id=%s method=%s path=%s",
+            _request_id_from_state(request),
+            request.method,
+            request.url.path,
+            exc_info=exc,
+        )
         return _error_response(
             request,
             code="INTERNAL_ERROR",
