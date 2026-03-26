@@ -64,6 +64,15 @@ def test_security_headers_csp(client):
     assert "script-src" in csp
     assert "'unsafe-inline'" in csp
     assert "frame-ancestors" in csp
+    assert "cdn.jsdelivr.net" not in csp
+
+
+def test_root_html_avoids_external_cdn_scripts(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "cdn.jsdelivr.net" not in res.text
+    assert "tailwindcss.com" not in res.text
+    assert "fonts.googleapis.com" not in res.text
 
 
 # ── PWA endpoints ─────────────────────────────────────────────────────────────

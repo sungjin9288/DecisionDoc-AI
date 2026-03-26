@@ -27,7 +27,7 @@ async def security_headers_middleware(request: Request, call_next):
         # The current single-file web UI still relies on inline event handlers.
         # Keep the nonce for inline <script> blocks while allowing existing
         # handler attributes until the UI is fully refactored away from them.
-        f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+        f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "

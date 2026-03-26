@@ -93,6 +93,7 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
 
     pg.goto(live_server["base_url"])
     pg.wait_for_selector("#login-screen", timeout=10000)
+    html = pg.content()
 
     assert pg.evaluate("document.body.classList.contains('auth-pending')")
     assert pg.locator("#login-form").count() == 1
@@ -100,6 +101,7 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
     assert not pg.locator("#page-nav").is_visible()
     assert not pg.locator("#main-content").is_visible()
     assert not pg.locator("#mobile-bottom-nav").is_visible()
+    assert "cdn.jsdelivr.net" not in html
     assert not any(
         "addSSOLoginButtons is not defined" in message
         for message in console_messages
