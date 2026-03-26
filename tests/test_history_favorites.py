@@ -1,4 +1,6 @@
 """Tests for history favorites endpoints."""
+from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -17,7 +19,7 @@ def _create_client(tmp_path, monkeypatch):
 def _seed_history(tmp_path, tenant_id="system", user_id="test_user"):
     """Seed a history entry directly."""
     from app.storage.history_store import HistoryStore, HistoryEntry
-    import datetime, uuid
+    import uuid
     store = HistoryStore(tenant_id)
     entry_id = str(uuid.uuid4())
     store.add(HistoryEntry(
@@ -28,7 +30,7 @@ def _seed_history(tmp_path, tenant_id="system", user_id="test_user"):
         bundle_name="기술 결정",
         title="테스트 문서",
         request_id=str(uuid.uuid4()),
-        created_at=datetime.datetime.utcnow().isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     ))
     return entry_id
 
@@ -54,7 +56,7 @@ def test_history_store_toggle_favorite(tmp_path, monkeypatch):
     """HistoryStore.toggle_favorite 가 올바르게 동작해야 한다."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.history_store import HistoryStore, HistoryEntry
-    import datetime, uuid
+    import uuid
 
     tenant_id = f"test_tenant_{uuid.uuid4().hex[:8]}"
     store = HistoryStore(tenant_id)
@@ -69,7 +71,7 @@ def test_history_store_toggle_favorite(tmp_path, monkeypatch):
         bundle_name="기술 결정",
         title="테스트",
         request_id=str(uuid.uuid4()),
-        created_at=datetime.datetime.utcnow().isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     ))
 
     # 처음 토글: starred = True
@@ -85,7 +87,7 @@ def test_history_store_get_favorites(tmp_path, monkeypatch):
     """get_favorites 는 starred=True 인 항목만 반환해야 한다."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.history_store import HistoryStore, HistoryEntry
-    import datetime, uuid
+    import uuid
 
     # 격리된 tenant_id 사용 (테스트 간 데이터 오염 방지)
     tenant_id = f"test_tenant_{uuid.uuid4().hex[:8]}"
@@ -104,7 +106,7 @@ def test_history_store_get_favorites(tmp_path, monkeypatch):
             bundle_name=f"문서 {i}",
             title=f"제목 {i}",
             request_id=str(uuid.uuid4()),
-            created_at=datetime.datetime.utcnow().isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         ))
 
     # 첫 번째 항목만 즐겨찾기
@@ -119,7 +121,7 @@ def test_history_store_favorite_persists(tmp_path, monkeypatch):
     """즐겨찾기 상태가 재로드 후에도 유지되어야 한다."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.history_store import HistoryStore, HistoryEntry
-    import datetime, uuid
+    import uuid
 
     tenant_id = f"test_tenant_{uuid.uuid4().hex[:8]}"
     user_id = f"persist_{uuid.uuid4().hex[:6]}"
@@ -134,7 +136,7 @@ def test_history_store_favorite_persists(tmp_path, monkeypatch):
         bundle_name="기술 결정",
         title="영속성 테스트",
         request_id=str(uuid.uuid4()),
-        created_at=datetime.datetime.utcnow().isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     ))
     store.toggle_favorite(entry_id, user_id)
 

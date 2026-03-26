@@ -19,6 +19,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+TEST_JWT_SECRET_KEY = "test-secret-key-auth-tests-32chars!!"
+TEST_JWT_EXPIRY_SECRET_KEY = "test-secret-key-auth-expiry-32chars!"
+
 
 # ── Client factory ─────────────────────────────────────────────────────────────
 
@@ -31,7 +34,7 @@ def _make_client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-auth-tests")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT_SECRET_KEY)
     from app.main import create_app
 
     return TestClient(create_app())
@@ -173,7 +176,7 @@ def test_jwt_expired_token_returns_none(monkeypatch):
     from app.services.auth_service import ALGORITHM, verify_token
     from datetime import datetime, timedelta, timezone
 
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-for-expiry")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT_EXPIRY_SECRET_KEY)
     expired_payload = {
         "sub": "uid-1",
         "tenant_id": "t1",

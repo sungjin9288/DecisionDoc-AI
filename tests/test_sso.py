@@ -15,6 +15,9 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+TEST_JWT_SECRET_KEY = "test-secret-key-for-sso-testing-32chars!!"
+TEST_SSO_STORE_SECRET_KEY = "test-key-32chars-padding-padding!!"
+
 
 # ── module-level cache cleanup ────────────────────────────────────────────────
 
@@ -36,7 +39,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-sso-testing")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT_SECRET_KEY)
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -50,7 +53,7 @@ def admin_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-sso-testing")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT_SECRET_KEY)
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -76,7 +79,7 @@ def admin_client(tmp_path, monkeypatch):
 
 def test_sso_store_default_disabled(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import SSOStore, SSOProvider
     store = SSOStore("t1")
     cfg = store.get()
@@ -85,7 +88,7 @@ def test_sso_store_default_disabled(tmp_path, monkeypatch):
 
 def test_sso_store_save_and_get(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import SSOStore, SSOProvider
     store = SSOStore("t2")
     cfg = store.get()
@@ -102,7 +105,7 @@ def test_sso_store_save_and_get(tmp_path, monkeypatch):
 def test_sso_store_encrypt_decrypt(tmp_path, monkeypatch):
     pytest.importorskip("cryptography", reason="cryptography package not installed")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key-32chars-padding-padding!")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import SSOStore
     store = SSOStore("t3")
     plain = "super-secret-password"
@@ -116,7 +119,7 @@ def test_sso_store_encrypt_decrypt(tmp_path, monkeypatch):
 def test_sso_store_encrypt_empty(tmp_path, monkeypatch):
     """Empty string encrypt/decrypt is always safe (no crypto needed)."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import SSOStore
     store = SSOStore("t4")
     # Empty strings bypass crypto entirely
@@ -126,7 +129,7 @@ def test_sso_store_encrypt_empty(tmp_path, monkeypatch):
 
 def test_sso_store_is_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import SSOStore, SSOProvider
     store = SSOStore("t5")
     assert not store.is_sso_enabled()
@@ -140,7 +143,7 @@ def test_sso_store_is_enabled(tmp_path, monkeypatch):
 
 def test_sso_store_get_sso_store_factory(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_SSO_STORE_SECRET_KEY)
     from app.storage.sso_store import get_sso_store
     # Factory returns the same instance for the same tenant_id
     s1 = get_sso_store("tenant-x")

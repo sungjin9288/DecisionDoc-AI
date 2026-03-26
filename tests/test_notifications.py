@@ -29,6 +29,8 @@ from fastapi.testclient import TestClient
 
 from tests.async_helper import run_async
 
+TEST_JWT_SECRET_KEY = "test-secret-key-notif-tests-32chars!"
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -40,7 +42,7 @@ def _make_client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-notif-tests")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT_SECRET_KEY)
     from app.main import create_app
 
     return TestClient(create_app())
