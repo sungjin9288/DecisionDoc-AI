@@ -41,6 +41,18 @@ def _resolve_cors_allow_origins(environment: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _resolve_data_dir(*, explicit_data_dir: str = "") -> Path:
+    configured = explicit_data_dir.strip()
+    if configured:
+        return Path(configured)
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
+        return Path("/tmp/decisiondoc")
+    configured = (os.getenv("DATA_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    return Path("./data")
+
+
 def _apply_generate_state(request: Request, result: dict, template_version: str) -> None:
     """Set all generate-related fields on request.state for observability middleware."""
     metadata = result["metadata"]
@@ -82,6 +94,7 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
 
 
 def create_app() -> FastAPI:
+    explicit_data_dir = os.environ.get("DATA_DIR", "")
     load_dotenv()
     setup_logging()
     environment = os.getenv("DECISIONDOC_ENV", "dev").lower()
@@ -92,7 +105,8 @@ def create_app() -> FastAPI:
     configured_stage = os.getenv("DECISIONDOC_ENV", "dev").lower()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
-    data_dir = Path(os.getenv("DATA_DIR", "./data"))
+    data_dir = _resolve_data_dir(explicit_data_dir=explicit_data_dir)
+    os.environ["DATA_DIR"] = str(data_dir)
     storage = get_storage()
     service = GenerationService(provider_factory=get_provider, template_dir=template_dir, data_dir=data_dir, storage=storage)
     ops_service = get_ops_service()
