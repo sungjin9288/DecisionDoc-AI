@@ -41,6 +41,14 @@ on:
         options:
           - "false"
           - "true"
+      include_voice_brief_smoke:
+        description: "Run Voice Brief import smoke when integration is configured"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   deploy:
@@ -76,17 +84,43 @@ jobs:
             THROTTLE_BURST="5"
             THROTTLE_RATE="2"
             RESERVED_CONCURRENCY="2"
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_DEV }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_DEV }}"
+            VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_DEV }}"
+            VOICE_BRIEF_TIMEOUT_SECONDS="${{ vars.VOICE_BRIEF_TIMEOUT_SECONDS_DEV }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_DEV }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_DEV }}"
+            PROCUREMENT_COPILOT_ENABLED="${{ vars.DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV }}"
           else
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
             BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_PROD }}"
             THROTTLE_BURST="20"
             THROTTLE_RATE="10"
             RESERVED_CONCURRENCY="5"
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_PROD }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_PROD }}"
+            VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_PROD }}"
+            VOICE_BRIEF_TIMEOUT_SECONDS="${{ vars.VOICE_BRIEF_TIMEOUT_SECONDS_PROD }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_PROD }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_PROD }}"
+            PROCUREMENT_COPILOT_ENABLED="${{ vars.DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_PROD }}"
           fi
           API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
           OPS_KEY="${{ secrets.DECISIONDOC_OPS_KEY }}"
           STATUSPAGE_PAGE_ID="${{ secrets.STATUSPAGE_PAGE_ID }}"
           STATUSPAGE_API_KEY="${{ secrets.STATUSPAGE_API_KEY }}"
+          if [ -z "${VOICE_BRIEF_TIMEOUT_SECONDS}" ]; then
+            VOICE_BRIEF_TIMEOUT_SECONDS="10.0"
+          fi
+          if [ -z "${PROCUREMENT_COPILOT_ENABLED}" ]; then
+            PROCUREMENT_COPILOT_ENABLED="0"
+          fi
           if [ -z "${AWS_REGION}" ]; then
             echo "Missing AWS_REGION secret"
             exit 1
@@ -107,19 +141,21 @@ jobs:
             echo "Missing DECISIONDOC_OPS_KEY secret"
             exit 1
           fi
-          if [ -z "${STATUSPAGE_PAGE_ID}" ]; then
-            echo "Missing STATUSPAGE_PAGE_ID secret"
-            exit 1
-          fi
-          if [ -z "${STATUSPAGE_API_KEY}" ]; then
-            echo "Missing STATUSPAGE_API_KEY secret"
-            exit 1
-          fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_OPS_KEY=${OPS_KEY}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_PAGE_ID=${STATUSPAGE_PAGE_ID}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_API_KEY=${STATUSPAGE_API_KEY}" >> "$GITHUB_ENV"
+          echo "G2B_API_KEY=${G2B_API_KEY}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_API_BASE_URL=${VOICE_BRIEF_API_BASE_URL}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_API_BEARER_TOKEN=${VOICE_BRIEF_API_BEARER_TOKEN}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_TIMEOUT_SECONDS=${VOICE_BRIEF_TIMEOUT_SECONDS}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_RECORDING_ID=${VOICE_BRIEF_SMOKE_RECORDING_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_REVISION_ID=${VOICE_BRIEF_SMOKE_REVISION_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_TENANT_ID=${VOICE_BRIEF_SMOKE_TENANT_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_USERNAME=${VOICE_BRIEF_SMOKE_USERNAME}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_PASSWORD=${VOICE_BRIEF_SMOKE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_COPILOT_ENABLED=${PROCUREMENT_COPILOT_ENABLED}" >> "$GITHUB_ENV"
           echo "THROTTLE_BURST=${THROTTLE_BURST}" >> "$GITHUB_ENV"
           echo "THROTTLE_RATE=${THROTTLE_RATE}" >> "$GITHUB_ENV"
           echo "RESERVED_CONCURRENCY=${RESERVED_CONCURRENCY}" >> "$GITHUB_ENV"
@@ -152,8 +188,13 @@ jobs:
               DecisionDocApiKey=${{ secrets.DECISIONDOC_API_KEY }} \
               DecisionDocOpsKey=${DECISIONDOC_OPS_KEY} \
               DecisionDocMaintenance=${{ inputs.maintenance_mode }} \
+              DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED} \
               StatuspagePageId=${STATUSPAGE_PAGE_ID} \
               StatuspageApiKey=${STATUSPAGE_API_KEY} \
+              G2bApiKey="${G2B_API_KEY}" \
+              VoiceBriefApiBaseUrl="${VOICE_BRIEF_API_BASE_URL}" \
+              VoiceBriefApiBearerToken="${VOICE_BRIEF_API_BEARER_TOKEN}" \
+              VoiceBriefTimeoutSeconds=${VOICE_BRIEF_TIMEOUT_SECONDS} \
               ApiThrottlingBurstLimit=${THROTTLE_BURST} \
               ApiThrottlingRateLimit=${THROTTLE_RATE} \
               LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}
@@ -218,6 +259,44 @@ jobs:
           SMOKE_PROVIDER: ${{ inputs.provider }}
         run: |
           python scripts/smoke.py
+
+      - name: Validate Voice Brief smoke inputs
+        if: ${{ inputs.include_voice_brief_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          VOICE_BRIEF_API_BASE_URL: ${{ env.VOICE_BRIEF_API_BASE_URL }}
+          VOICE_BRIEF_SMOKE_RECORDING_ID: ${{ env.VOICE_BRIEF_SMOKE_RECORDING_ID }}
+        run: |
+          if [ -z "${SMOKE_BASE_URL}" ]; then
+            echo "Missing smoke base URL output"
+            exit 1
+          fi
+          if [ -z "${SMOKE_API_KEY}" ]; then
+            echo "Missing DECISIONDOC_API_KEY secret"
+            exit 1
+          fi
+          if [ -z "${VOICE_BRIEF_API_BASE_URL}" ]; then
+            echo "Voice Brief integration is not configured for this stage"
+            exit 1
+          fi
+          if [ -z "${VOICE_BRIEF_SMOKE_RECORDING_ID}" ]; then
+            echo "Missing Voice Brief smoke recording id variable"
+            exit 1
+          fi
+
+      - name: Run Voice Brief smoke
+        if: ${{ inputs.include_voice_brief_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          SMOKE_TENANT_ID: ${{ env.VOICE_BRIEF_SMOKE_TENANT_ID }}
+          VOICE_BRIEF_SMOKE_RECORDING_ID: ${{ env.VOICE_BRIEF_SMOKE_RECORDING_ID }}
+          VOICE_BRIEF_SMOKE_REVISION_ID: ${{ env.VOICE_BRIEF_SMOKE_REVISION_ID }}
+          VOICE_BRIEF_SMOKE_USERNAME: ${{ env.VOICE_BRIEF_SMOKE_USERNAME }}
+          VOICE_BRIEF_SMOKE_PASSWORD: ${{ env.VOICE_BRIEF_SMOKE_PASSWORD }}
+        run: |
+          python scripts/voice_brief_smoke.py
 
       - name: Resolve smoke role
         if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
