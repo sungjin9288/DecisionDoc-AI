@@ -56,7 +56,7 @@ jobs:
             BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_DEV }}"
             THROTTLE_BURST="5"
             THROTTLE_RATE="2"
-            RESERVED_CONCURRENCY="2"
+            RESERVED_CONCURRENCY=""
             G2B_API_KEY="${{ secrets.G2B_API_KEY_DEV }}"
             VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_DEV }}"
             VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_DEV }}"
@@ -142,8 +142,10 @@ jobs:
             "DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED}"
             "ApiThrottlingBurstLimit=${THROTTLE_BURST}"
             "ApiThrottlingRateLimit=${THROTTLE_RATE}"
-            "LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}"
           )
+          if [ -n "${RESERVED_CONCURRENCY}" ]; then
+            PARAM_OVERRIDES+=("LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}")
+          fi
           if [ -n "${STATUSPAGE_PAGE_ID}" ]; then
             PARAM_OVERRIDES+=("StatuspagePageId=${STATUSPAGE_PAGE_ID}")
           fi

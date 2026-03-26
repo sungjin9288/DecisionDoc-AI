@@ -63,8 +63,12 @@ Parameters:
     Type: Number
     Default: 2
   LambdaReservedConcurrentExecutions:
-    Type: Number
-    Default: 2
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[1-9][0-9]*$"
+
+Conditions:
+  HasReservedConcurrency: !Not [!Equals [!Ref LambdaReservedConcurrentExecutions, ""]]
 
 Resources:
   DecisionDocApi:
@@ -83,7 +87,10 @@ Resources:
       Runtime: python3.11
       Timeout: 30
       MemorySize: 512
-      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrentExecutions
+      ReservedConcurrentExecutions: !If
+        - HasReservedConcurrency
+        - !Ref LambdaReservedConcurrentExecutions
+        - !Ref AWS::NoValue
       Policies:
         - AWSLambdaBasicExecutionRole
         - S3CrudPolicy:
