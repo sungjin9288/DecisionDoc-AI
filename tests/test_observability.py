@@ -1,7 +1,10 @@
 import logging
 import json
+import sys
 
 from fastapi.testclient import TestClient
+
+from app.observability.logging import JsonLineFormatter
 
 
 def _create_client(tmp_path, monkeypatch, provider="mock"):
@@ -82,3 +85,24 @@ def test_logs_do_not_contain_sensitive_tokens(tmp_path, monkeypatch, caplog):
     assert sentinel not in all_logs
     assert "OPENAI_API_KEY" not in all_logs
     assert "GEMINI_API_KEY" not in all_logs
+
+
+def test_json_formatter_includes_traceback_for_exception_records():
+    formatter = JsonLineFormatter()
+    try:
+        raise RuntimeError("formatter boom")
+    except RuntimeError:
+        record = logging.getLogger("decisiondoc.test").makeRecord(
+            name="decisiondoc.test",
+            level=logging.ERROR,
+            fn=__file__,
+            lno=0,
+            msg="Unhandled error during test",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    payload = json.loads(formatter.format(record))
+    assert payload["message"] == "Unhandled error during test"
+    assert "traceback" in payload
+    assert "RuntimeError: formatter boom" in payload["traceback"]
