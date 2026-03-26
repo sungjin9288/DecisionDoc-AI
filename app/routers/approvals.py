@@ -22,7 +22,6 @@ from app.schemas import (
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
-from app.services.pdf_service import build_pdf
 
 router = APIRouter(tags=["approvals"])
 
@@ -54,6 +53,17 @@ def _resolve_gov_options(gov_options_dict: dict | None) -> GovDocOptions | None:
         return GovDocOptions(**gov_options_dict)
     except (TypeError, ValueError):
         return None
+
+
+def _load_pdf_builder():
+    try:
+        from app.services.pdf_service import build_pdf as _build_pdf
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export is not available in this deployment.",
+        ) from exc
+    return _build_pdf
 
 
 def _sync_project_document_approval_state(
@@ -341,6 +351,7 @@ async def download_approved_doc_endpoint(approval_id: str, fmt: str, request: Re
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
     elif fmt_lower == "pdf":
+        build_pdf = _load_pdf_builder()
         content = await build_pdf(docs, title=title, gov_options=gov_opts)
         media_type = "application/pdf"
         ext = "pdf"

@@ -28,7 +28,6 @@ from app.schemas import (
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
-from app.services.pdf_service import build_pdf
 from app.services.voice_brief_import_service import (
     VoiceBriefImportBlockedError,
     VoiceBriefRemoteError,
@@ -90,6 +89,17 @@ def _ensure_procurement_copilot_enabled(request: Request) -> None:
             "message": "Public Procurement Go/No-Go Copilot is disabled in this environment.",
         },
     )
+
+
+def _load_pdf_builder():
+    try:
+        from app.services.pdf_service import build_pdf as _build_pdf
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export is not available in this deployment.",
+        ) from exc
+    return _build_pdf
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -553,6 +563,7 @@ async def download_project_doc_endpoint(
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
     elif fmt_lower == "pdf":
+        build_pdf = _load_pdf_builder()
         content = await build_pdf(docs, title=title, gov_options=gov_opts)
         media_type = "application/pdf"
         ext = "pdf"

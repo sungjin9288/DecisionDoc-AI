@@ -69,7 +69,6 @@ from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.generation_service import BundleNotSupportedError
 from app.services.hwp_service import build_hwp
-from app.services.pdf_service import build_pdf
 from app.services.pptx_service import build_pptx
 
 logger = logging.getLogger("decisiondoc.generate")
@@ -116,6 +115,17 @@ def _get_low_rating_threshold() -> int:
             "LOW_RATING_THRESHOLD is not a valid integer; using default 3"
         )
         return 3
+
+
+def _load_pdf_builder():
+    try:
+        from app.services.pdf_service import build_pdf as _build_pdf
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export is not available in this deployment.",
+        ) from exc
+    return _build_pdf
 
 
 def _auto_improve_if_needed(
@@ -735,6 +745,7 @@ async def generate_pdf_endpoint(
 
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
+    build_pdf = _load_pdf_builder()
     pdf_bytes = await build_pdf(result["docs"], title=payload.title, gov_options=None)
 
     return Response(
@@ -854,6 +865,7 @@ async def generate_export_edited_endpoint(
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
     elif fmt == "pdf":
+        build_pdf = _load_pdf_builder()
         content = await build_pdf(docs, title=title, gov_options=gov_opts)
         media_type = "application/pdf"
         ext = "pdf"
@@ -1350,6 +1362,7 @@ def export_zip(request: Request, request_id: str, formats: str = "docx"):
                     content = build_docx(docs, title=title)
                     zf.writestr(f"{title or 'document'}.docx", content)
                 elif fmt == "pdf":
+                    from app.services.pdf_service import build_pdf
                     content = asyncio.get_event_loop().run_until_complete(build_pdf(docs, title=title))
                     zf.writestr(f"{title or 'document'}.pdf", content)
                 elif fmt == "xlsx":

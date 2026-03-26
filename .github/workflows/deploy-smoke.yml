@@ -164,6 +164,10 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Prepare Lambda manifest
+        run: |
+          cp requirements-lambda.txt requirements.txt
+
       - name: SAM build
         run: |
           sam build --template-file infra/sam/template.yaml
