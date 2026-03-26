@@ -440,6 +440,12 @@ When these files exist, read them before making changes:
 - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
 - `docs/specs/public_procurement_copilot/STATUS.md`
 
+Current repository state:
+- the initial milestone plan is complete
+- project-detail procurement UI, structured decision state, `bid_decision_kr`, and downstream handoff are implemented
+- latest closeout and rollout hardening status lives in `docs/specs/public_procurement_copilot/STATUS.md`
+- new procurement work should be treated as follow-up tuning or extension work, not as incomplete baseline implementation
+
 ### 14.2 Scope rules
 
 Build this capability **inside DecisionDoc AI**.
@@ -497,9 +503,9 @@ Avoid:
 Prefer additive rollout behind:
 - `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`
 
-Work milestone-by-milestone when a plan/status file exists.
+When extending this area, work milestone-by-milestone if a plan/status file exists for the follow-up task.
 
-After each milestone:
+For follow-up milestones or significant changes:
 - run targeted validation
 - run `pytest tests/ -q`
 - update the relevant `STATUS.md`
