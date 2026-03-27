@@ -67,8 +67,8 @@ jobs:
             -o bandit-report.json
           bandit -r app/ -x app/providers/mock_provider.py -ll
 
-      - name: Run Safety (dependency vulnerabilities)
-        run: safety check -r requirements.txt
+      - name: Run Safety legacy check (scan requires auth)
+        run: HOME=/tmp safety check -r requirements.txt
 
       - name: Upload security reports
         uses: actions/upload-artifact@v4
