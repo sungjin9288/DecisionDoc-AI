@@ -28,6 +28,12 @@ _G2B_ALLOWED_DOMAINS = {
     "www.kstnet.or.kr",
 }
 
+_G2B_SEARCH_ENDPOINTS = (
+    "getBidPblancListInfoServc",
+    "getBidPblancListInfoThng",
+    "getBidPblancListInfoCnstwk",
+)
+
 
 def _validate_scrape_url(url: str) -> None:
     """Validate URL before fetching — prevents SSRF attacks."""
@@ -204,6 +210,8 @@ async def fetch_announcement_detail(
     # Try API first if key available
     if api_key and bid_number:
         announcement = await _fetch_via_api(bid_number, api_key)
+        if announcement is None:
+            announcement = await _search_announcement_by_bid_number(bid_number, api_key)
         if announcement:
             scraped_text = await _scrape_announcement_text(announcement.detail_url)
             announcement.raw_text = scraped_text
@@ -274,6 +282,74 @@ async def _fetch_via_api(bid_number: str, api_key: str) -> G2BAnnouncement | Non
         return None
 
 
+async def _search_announcement_by_bid_number(
+    bid_number: str,
+    api_key: str,
+) -> G2BAnnouncement | None:
+    """Search recent announcements by identifier across G2B categories.
+
+    Some active announcements use alphanumeric identifiers such as
+    ``R26BK01398367`` and are not returned by the detail endpoint used for
+    numeric-style bid numbers. For those cases, fall back to recent keyword
+    search and filter by exact bid number.
+    """
+    from datetime import datetime, timedelta
+
+    end_dt = datetime.now()
+    start_dt = end_dt - timedelta(days=7)
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            for endpoint_name in _G2B_SEARCH_ENDPOINTS:
+                params: dict = {
+                    "serviceKey": api_key,
+                    "type": "json",
+                    "numOfRows": 20,
+                    "pageNo": 1,
+                    "inqryDiv": 1,
+                    "inqryBgnDt": start_dt.strftime("%Y%m%d0000"),
+                    "inqryEndDt": end_dt.strftime("%Y%m%d2359"),
+                    "bidNtceNm": bid_number,
+                }
+                endpoint = f"{G2B_API_BASE}/{endpoint_name}"
+                res = await client.get(endpoint, params=params)
+                res.raise_for_status()
+                data = res.json()
+
+                items = (
+                    data.get("response", {})
+                    .get("body", {})
+                    .get("items")
+                    or []
+                )
+                if isinstance(items, dict):
+                    items = [items]
+
+                for item in items:
+                    if item.get("bidNtceNo", "") != bid_number:
+                        continue
+                    return G2BAnnouncement(
+                        bid_number=bid_number,
+                        title=item.get("bidNtceNm", ""),
+                        issuer=item.get("ntceInsttNm", ""),
+                        budget=_format_budget(item.get("asignBdgtAmt", "")),
+                        announcement_date=item.get("bidNtceDt", ""),
+                        deadline=item.get("bidClseDt", ""),
+                        bid_type=item.get("bidMthdNm", ""),
+                        category=item.get("ntceKindNm", ""),
+                        detail_url=_build_detail_url(bid_number),
+                        attachments=[],
+                        raw_text="",
+                        source="api",
+                    )
+    except Exception as exc:
+        _log.error("[G2B] API search fallback failed for %s: %s", bid_number, exc)
+
+    return None
+
+
 async def _scrape_announcement_text(url: str) -> str:
     """Scrape announcement page text via Playwright."""
     try:
@@ -313,6 +389,7 @@ async def _scrape_announcement_text(url: str) -> str:
 
 def _extract_bid_number(url_or_number: str) -> str:
     """Extract bid number from URL or return as-is."""
+    raw = url_or_number.strip()
     # Pattern: 20250317001-00 (12+ digits dash 2 digits)
     match = re.search(r"\d{12,}-\d{2}", url_or_number)
     if match:
@@ -321,9 +398,11 @@ def _extract_bid_number(url_or_number: str) -> str:
     match = re.search(r"bidNtceNo=([^&]+)", url_or_number)
     if match:
         return match.group(1)
-    # Raw bid number (10+ digits)
-    if re.match(r"^\d{10,}", url_or_number.strip()):
-        return url_or_number.strip()
+    # Raw bid number:
+    # - legacy numeric-only style (10+ digits)
+    # - newer alphanumeric registration style such as R26BK01398367
+    if re.match(r"^[A-Za-z0-9]{8,}(?:-\d{2})?$", raw) and re.search(r"\d", raw):
+        return raw
     return ""
 
 

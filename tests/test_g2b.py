@@ -12,10 +12,8 @@ Coverage:
 """
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.async_helper import run_async
@@ -48,6 +46,9 @@ class TestExtractBidNumber:
 
     def test_direct_number_long(self):
         assert self._call("20250317001-00") == "20250317001-00"
+
+    def test_direct_alphanumeric_bid_number(self):
+        assert self._call("R26BK01398367") == "R26BK01398367"
 
     def test_raw_digits_only(self):
         # 10+ digits treated as a bid number
@@ -304,6 +305,43 @@ class TestFetchAnnouncementDetail:
         assert result.title == "API 연동 테스트 사업"
         assert result.budget == "10억원"
         assert result.raw_text == "스크래핑된 공고 전문"
+
+    def test_alphanumeric_bid_number_with_api_key_uses_search_fallback(self):
+        from app.services.g2b_collector import G2BAnnouncement, fetch_announcement_detail
+
+        fallback = G2BAnnouncement(
+            bid_number="R26BK01398367",
+            title="2026년 국가유산청 5급 승진후보자 등 직원 역량강화 사업",
+            issuer="국가유산청",
+            budget="8500만원",
+            announcement_date="2026-03-21",
+            deadline="2026-03-31 10:00:00",
+            bid_type="전자입찰",
+            category="등록공고",
+            detail_url="https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367",
+            attachments=[],
+            raw_text="",
+            source="api",
+        )
+
+        with patch(
+            "app.services.g2b_collector._fetch_via_api",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "app.services.g2b_collector._search_announcement_by_bid_number",
+            new=AsyncMock(return_value=fallback),
+        ), patch(
+            "app.services.g2b_collector._scrape_announcement_text",
+            new=AsyncMock(return_value=""),
+        ):
+            result = run_async(
+                fetch_announcement_detail("R26BK01398367", api_key="test-key")
+            )
+
+        assert result is not None
+        assert result.bid_number == "R26BK01398367"
+        assert result.issuer == "국가유산청"
+        assert result.source == "api"
 
 
 # ── /g2b/status ───────────────────────────────────────────────────────────────
