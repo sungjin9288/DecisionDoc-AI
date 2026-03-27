@@ -10,7 +10,7 @@ import os
 import secrets as _secrets
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.auth.api_key import require_api_key

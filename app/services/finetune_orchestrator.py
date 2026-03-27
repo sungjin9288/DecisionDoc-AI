@@ -20,7 +20,6 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 _log = logging.getLogger("decisiondoc.finetune.orchestrator")
 
@@ -122,7 +121,6 @@ class FineTuneOrchestrator:
         # Compute avg score before training
         avg_score_before = stats.get("avg_heuristic") or 0.0
         if bundle_id:
-            per_bundle = stats.get("per_bundle_count", {})
             # Try to get bundle-specific average from eval store
             try:
                 from app.eval.eval_store import get_eval_store
@@ -453,7 +451,6 @@ class FineTuneOrchestrator:
             from app.domain.schema import build_bundle_prompt
             from app.eval.bundle_eval import evaluate_bundle_docs
             from app.providers.openai_provider import OpenAIProvider
-            from app.services.generation_service import _call_provider_with_schema
 
             bundle_spec = get_bundle_spec(bundle_id)
             if bundle_spec is None:
@@ -463,7 +460,6 @@ class FineTuneOrchestrator:
             sample_records = history[:3]
             scores: list[float] = []
 
-            api_key = self._get_api_key()
             provider = OpenAIProvider(model_override=model_id)
 
             for record in sample_records:

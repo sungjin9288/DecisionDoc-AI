@@ -5,8 +5,6 @@ Tries onelogin/python3-saml first; falls back to basic XML parsing if unavailabl
 from __future__ import annotations
 
 import base64
-import hashlib
-import os
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass

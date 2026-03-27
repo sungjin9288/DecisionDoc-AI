@@ -7,9 +7,8 @@ Thread-safe via a single threading.Lock per store instance.
 from __future__ import annotations
 
 import json
-import threading
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path

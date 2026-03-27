@@ -122,8 +122,6 @@ def dashboard_bundle_performance(request: Request) -> list[dict]:
 @router.get("/improvement-history")
 def dashboard_improvement_history(request: Request) -> list[dict]:
     """AI 성능 대시보드 — AI 자기개선 이력 (시간순)."""
-    from app.storage.ab_test_store import ABTestStore
-
     prompt_override_store = request.app.state.prompt_override_store
     data_dir = request.app.state.data_dir
 
@@ -139,7 +137,6 @@ def dashboard_improvement_history(request: Request) -> list[dict]:
             "score_after": None,
         })
 
-    ab_store = ABTestStore(data_dir)
     all_ab: list[dict] = []
     try:
         ab_data = _json.loads((data_dir / "ab_tests.json").read_text(encoding="utf-8")) if (data_dir / "ab_tests.json").exists() else {}

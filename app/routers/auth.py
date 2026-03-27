@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
-from app.dependencies import get_tenant_id, require_auth, require_admin
+from app.dependencies import get_tenant_id
 from app.schemas import (
     ChangePasswordRequest,
     CreateUserRequest,

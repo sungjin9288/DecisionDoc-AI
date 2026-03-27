@@ -212,7 +212,6 @@ def _render_html(
 ) -> str:
     """Build a full HTML document from docs list."""
     css = _build_css(opts)
-    font_name = opts.font_name if opts else "맑은 고딕"
 
     # Playwright header/footer templates use separate HTML via API options;
     # these are injected there, not into the page HTML.
@@ -297,9 +296,6 @@ async def build_pdf(
     right_mm  = opts.right_margin_mm  if opts else 20
 
     html_content = _render_html(docs, title, opts)
-
-    # Extra header/footer room when gov format
-    header_footer_margin = "12mm" if (opts and (opts.org_name or opts.classification)) else "8mm"
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()

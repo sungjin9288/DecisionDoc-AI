@@ -6,6 +6,7 @@ Falls back to SYSTEM_TENANT_ID when the header is absent.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,14 +16,13 @@ from app.tenant import SYSTEM_TENANT_ID
 _log = logging.getLogger("decisiondoc.middleware.tenant")
 
 
-def install_tenant_middleware(app: FastAPI, tenant_store: "Any") -> None:
+def install_tenant_middleware(app: FastAPI, tenant_store: Any) -> None:
     """Register tenant resolution middleware on the FastAPI app.
 
     Args:
         app: The FastAPI application instance.
         tenant_store: A TenantStore instance used to validate tenant IDs.
     """
-    from typing import Any  # local to avoid circular
 
     @app.middleware("http")
     async def tenant_middleware(request: Request, call_next):  # type: ignore[override]

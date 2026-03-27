@@ -1,11 +1,10 @@
-import logging
 import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +18,6 @@ from app.config import (
     get_voice_brief_timeout_seconds,
     is_enabled,
 )
-from app.maintenance.mode import is_maintenance_mode
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
 from app.observability.logging import setup_logging
@@ -71,7 +69,6 @@ def create_app() -> FastAPI:
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
     provider_names = [n.strip() for n in configured_provider.split(",") if n.strip()]
-    configured_stage = os.getenv("DECISIONDOC_ENV", "dev").lower()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
 

@@ -17,7 +17,7 @@ import logging
 import re
 import socket
 from urllib.parse import urlparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _log = logging.getLogger("decisiondoc.g2b")
 

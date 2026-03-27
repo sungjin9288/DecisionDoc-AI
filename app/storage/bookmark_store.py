@@ -3,7 +3,6 @@
 Stored as JSON per tenant: data/tenants/{tenant_id}/g2b_bookmarks.json
 """
 import logging
-import threading
 from datetime import datetime
 from pathlib import Path
 

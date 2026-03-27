@@ -1,8 +1,7 @@
 """tenant.py — Multi-tenant data model and constants."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 SYSTEM_TENANT_ID = "system"  # default tenant for single-tenant mode
 

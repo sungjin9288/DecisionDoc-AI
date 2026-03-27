@@ -6,9 +6,6 @@ Supports:
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import secrets
 import urllib.parse
 

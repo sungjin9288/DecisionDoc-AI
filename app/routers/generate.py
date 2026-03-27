@@ -262,21 +262,30 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
 
 
 def _score_to_grade(score: int) -> str:
-    if score >= 90: return "S"
-    if score >= 80: return "A"
-    if score >= 70: return "B"
-    if score >= 60: return "C"
+    if score >= 90:
+        return "S"
+    if score >= 80:
+        return "A"
+    if score >= 70:
+        return "B"
+    if score >= 60:
+        return "C"
     return "D"
 
 
 def _heuristic_score(content: str) -> int:
     """Simple heuristic scoring based on content characteristics."""
     score = 50
-    if len(content) > 500: score += 10
-    if len(content) > 1500: score += 10
-    if "##" in content or "# " in content: score += 10  # Has headings
-    if any(c in content for c in ["목표", "배경", "결정", "Goal", "Background"]): score += 10
-    if len(content.split("\n")) > 10: score += 10  # Multi-line
+    if len(content) > 500:
+        score += 10
+    if len(content) > 1500:
+        score += 10
+    if "##" in content or "# " in content:
+        score += 10  # Has headings
+    if any(c in content for c in ["목표", "배경", "결정", "Goal", "Background"]):
+        score += 10
+    if len(content.split("\n")) > 10:
+        score += 10  # Multi-line
     return min(score, 95)
 
 
@@ -993,8 +1002,6 @@ def generate_refine_endpoint(payload: dict, request: Request) -> dict:
     section_content = (payload.get("section_content") or "").strip()
     instruction = (payload.get("instruction") or "").strip()
     context = (payload.get("context") or "").strip()
-    bundle_type = (payload.get("bundle_type") or "tech_decision").strip()
-
     if not section_content:
         raise HTTPException(status_code=422, detail="section_content는 필수입니다.")
     if not instruction:

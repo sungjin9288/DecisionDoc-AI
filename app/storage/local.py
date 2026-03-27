@@ -1,8 +1,6 @@
 import json
 import logging
-import os
 from pathlib import Path
-from uuid import uuid4
 from typing import Any
 
 from app.storage.base import Storage, StorageFailedError, atomic_write_text

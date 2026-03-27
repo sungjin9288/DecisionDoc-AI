@@ -6,7 +6,6 @@ requirements (title, goal, context) so the output shows meaningful document
 direction — including slide-by-slide PPT construction guides — even without
 a real API key.
 """
-import json
 from typing import Any
 
 from app.providers.base import Provider
@@ -167,9 +166,6 @@ class MockProvider(Provider):
 
         # Default: sketch prompt
         is_ppt = "ppt_slides" in prompt and '"page"' in prompt
-        # Extract bundle id from prompt if possible
-        bundle_line = next((l for l in prompt.splitlines() if l.startswith("bundle=")), "bundle=unknown")
-        bundle_id = bundle_line.split("=", 1)[-1].strip()
 
         sections = [
             {"heading": "## 개요 및 배경", "bullets": ["현황 분석 결과 핵심 과제 3가지 도출", "목표 달성을 위한 우선순위 설정", "기대 효과 및 성과 지표 정의"]},

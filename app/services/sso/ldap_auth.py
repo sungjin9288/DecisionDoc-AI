@@ -5,7 +5,6 @@ Uses ldap3 library (optional dependency — ImportError handled gracefully).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from app.storage.sso_store import LDAPConfig
 

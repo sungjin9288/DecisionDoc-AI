@@ -345,7 +345,6 @@ def build_sketch_prompt(
 
     Used by POST /generate/sketch for fast 2-3 second preview before full generation.
     """
-    from app.bundle_catalog.spec import DocumentSpec  # noqa: avoid circular import
 
     doc_keys = bundle_spec.doc_keys
     lang = getattr(bundle_spec, "prompt_language", "ko")

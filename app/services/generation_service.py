@@ -19,7 +19,7 @@ from app.config import env_is_enabled
 from app.domain.schema import SCHEMA_VERSION
 from app.eval.lints import lint_docs
 from app.observability.timing import Timer
-from app.providers.base import Provider, ProviderError
+from app.providers.base import Provider
 from app.providers.stabilizer import stabilize_bundle, strip_internal_bundle_fields
 from app.schemas import GenerateRequest
 from app.storage.base import Storage

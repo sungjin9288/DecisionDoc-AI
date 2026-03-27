@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
 from app.config import get_jwt_secret_key
-from app.dependencies import get_tenant_id, require_admin, require_auth
+from app.dependencies import get_tenant_id, require_admin
 
 router = APIRouter(tags=["sso"])
 
