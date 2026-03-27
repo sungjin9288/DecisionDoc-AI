@@ -9,6 +9,7 @@ REPO=""
 ENVIRONMENT_SCOPE=""
 ENABLE_VOICE_BRIEF=0
 ENABLE_VOICE_BRIEF_SMOKE=0
+ENABLE_PROCUREMENT_SMOKE=0
 NON_EMPTY_TENANT=0
 ENSURE_ENVIRONMENT=0
 DRY_RUN=0
@@ -23,15 +24,16 @@ Options:
   --ensure-environment      Create the target GitHub environment first when --environment is used
   --voice-brief             Apply Voice Brief runtime settings for the stage
   --voice-brief-smoke       Apply Voice Brief smoke settings for the stage
+  --procurement-smoke       Apply procurement smoke settings for the stage
   --non-empty-tenant        Require/apply smoke username/password for the stage
   --dry-run                 Print what would be applied without calling GitHub
   -h, --help                Show this help message
 
 Examples:
-  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --voice-brief --voice-brief-smoke --dry-run
-  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --voice-brief --voice-brief-smoke
-  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --environment dev --ensure-environment --voice-brief --voice-brief-smoke
-  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --voice-brief --voice-brief-smoke --non-empty-tenant
+  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke --dry-run
+  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke
+  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --environment dev --ensure-environment --procurement-smoke --voice-brief --voice-brief-smoke
+  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke --non-empty-tenant
 EOF
 }
 
@@ -78,6 +80,10 @@ while [[ $# -gt 0 ]]; do
     --voice-brief-smoke)
       ENABLE_VOICE_BRIEF=1
       ENABLE_VOICE_BRIEF_SMOKE=1
+      shift
+      ;;
+    --procurement-smoke)
+      ENABLE_PROCUREMENT_SMOKE=1
       shift
       ;;
     --non-empty-tenant)
@@ -133,6 +139,9 @@ fi
 if [[ "$ENABLE_VOICE_BRIEF_SMOKE" -eq 1 ]]; then
   check_args+=(--voice-brief-smoke)
 fi
+if [[ "$ENABLE_PROCUREMENT_SMOKE" -eq 1 ]]; then
+  check_args+=(--procurement-smoke)
+fi
 if [[ "$NON_EMPTY_TENANT" -eq 1 ]]; then
   check_args+=(--non-empty-tenant)
 fi
@@ -163,6 +172,10 @@ voice_brief_smoke_revision_name="VOICE_BRIEF_SMOKE_REVISION_ID_${STAGE_UPPER}"
 voice_brief_smoke_tenant_name="VOICE_BRIEF_SMOKE_TENANT_ID_${STAGE_UPPER}"
 voice_brief_smoke_username_name="VOICE_BRIEF_SMOKE_USERNAME_${STAGE_UPPER}"
 voice_brief_smoke_password_name="VOICE_BRIEF_SMOKE_PASSWORD_${STAGE_UPPER}"
+procurement_smoke_url_name="PROCUREMENT_SMOKE_URL_OR_NUMBER_${STAGE_UPPER}"
+procurement_smoke_tenant_name="PROCUREMENT_SMOKE_TENANT_ID_${STAGE_UPPER}"
+procurement_smoke_username_name="PROCUREMENT_SMOKE_USERNAME_${STAGE_UPPER}"
+procurement_smoke_password_name="PROCUREMENT_SMOKE_PASSWORD_${STAGE_UPPER}"
 
 variables+=("$procurement_flag_name")
 
@@ -198,6 +211,17 @@ if [[ "$ENABLE_VOICE_BRIEF_SMOKE" -eq 1 ]]; then
   if [[ "$NON_EMPTY_TENANT" -eq 1 ]] || has_value "$voice_brief_smoke_username_name" || has_value "$voice_brief_smoke_password_name"; then
     secrets+=("$voice_brief_smoke_username_name")
     secrets+=("$voice_brief_smoke_password_name")
+  fi
+fi
+
+if [[ "$ENABLE_PROCUREMENT_SMOKE" -eq 1 ]]; then
+  variables+=("$procurement_smoke_url_name")
+  if has_value "$procurement_smoke_tenant_name"; then
+    variables+=("$procurement_smoke_tenant_name")
+  fi
+  if has_value "$procurement_smoke_username_name" || has_value "$procurement_smoke_password_name"; then
+    secrets+=("$procurement_smoke_username_name")
+    secrets+=("$procurement_smoke_password_name")
   fi
 fi
 

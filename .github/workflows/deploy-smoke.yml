@@ -49,6 +49,14 @@ on:
         options:
           - "false"
           - "true"
+      include_procurement_smoke:
+        description: "Run procurement post-deploy smoke when a stage URL or bid number is configured"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   deploy:
@@ -252,18 +260,48 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt boto3
 
-      - name: Resolve smoke role
+      - name: Resolve smoke stage settings
         run: |
           if [ "${{ inputs.stage }}" = "dev" ]; then
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
+            PROCUREMENT_SMOKE_URL_OR_NUMBER="${{ vars.PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV }}"
+            PROCUREMENT_SMOKE_TENANT_ID="${{ vars.PROCUREMENT_SMOKE_TENANT_ID_DEV }}"
+            PROCUREMENT_SMOKE_USERNAME="${{ secrets.PROCUREMENT_SMOKE_USERNAME_DEV }}"
+            PROCUREMENT_SMOKE_PASSWORD="${{ secrets.PROCUREMENT_SMOKE_PASSWORD_DEV }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_DEV }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_DEV }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_DEV }}"
           else
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
+            PROCUREMENT_SMOKE_URL_OR_NUMBER="${{ vars.PROCUREMENT_SMOKE_URL_OR_NUMBER_PROD }}"
+            PROCUREMENT_SMOKE_TENANT_ID="${{ vars.PROCUREMENT_SMOKE_TENANT_ID_PROD }}"
+            PROCUREMENT_SMOKE_USERNAME="${{ secrets.PROCUREMENT_SMOKE_USERNAME_PROD }}"
+            PROCUREMENT_SMOKE_PASSWORD="${{ secrets.PROCUREMENT_SMOKE_PASSWORD_PROD }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_PROD }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_PROD }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_PROD }}"
           fi
           if [ -z "${ROLE_ARN}" ]; then
             echo "Missing stage role secret"
             exit 1
           fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_SMOKE_URL_OR_NUMBER=${PROCUREMENT_SMOKE_URL_OR_NUMBER}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_SMOKE_TENANT_ID=${PROCUREMENT_SMOKE_TENANT_ID}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_SMOKE_USERNAME=${PROCUREMENT_SMOKE_USERNAME}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_SMOKE_PASSWORD=${PROCUREMENT_SMOKE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_API_BASE_URL=${VOICE_BRIEF_API_BASE_URL}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_RECORDING_ID=${VOICE_BRIEF_SMOKE_RECORDING_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_REVISION_ID=${VOICE_BRIEF_SMOKE_REVISION_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_TENANT_ID=${VOICE_BRIEF_SMOKE_TENANT_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_USERNAME=${VOICE_BRIEF_SMOKE_USERNAME}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_PASSWORD=${VOICE_BRIEF_SMOKE_PASSWORD}" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials for smoke (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -304,11 +342,36 @@ jobs:
             exit 1
           fi
 
+      - name: Validate procurement smoke inputs
+        if: ${{ inputs.include_procurement_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          PROCUREMENT_SMOKE_URL_OR_NUMBER: ${{ env.PROCUREMENT_SMOKE_URL_OR_NUMBER }}
+        run: |
+          if [ -z "${SMOKE_BASE_URL}" ]; then
+            echo "Missing smoke base URL output"
+            exit 1
+          fi
+          if [ -z "${SMOKE_API_KEY}" ]; then
+            echo "Missing DECISIONDOC_API_KEY secret"
+            exit 1
+          fi
+          if [ -z "${PROCUREMENT_SMOKE_URL_OR_NUMBER}" ]; then
+            echo "Missing PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE> variable"
+            exit 1
+          fi
+
       - name: Run smoke
         env:
           SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
           SMOKE_PROVIDER: ${{ inputs.provider }}
+          SMOKE_INCLUDE_PROCUREMENT: ${{ inputs.include_procurement_smoke == 'true' && '1' || '0' }}
+          SMOKE_PROCUREMENT_URL_OR_NUMBER: ${{ env.PROCUREMENT_SMOKE_URL_OR_NUMBER }}
+          SMOKE_TENANT_ID: ${{ env.PROCUREMENT_SMOKE_TENANT_ID }}
+          PROCUREMENT_SMOKE_USERNAME: ${{ env.PROCUREMENT_SMOKE_USERNAME }}
+          PROCUREMENT_SMOKE_PASSWORD: ${{ env.PROCUREMENT_SMOKE_PASSWORD }}
         run: |
           python scripts/smoke.py
 

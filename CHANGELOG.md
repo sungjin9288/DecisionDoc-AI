@@ -11,12 +11,16 @@ and this project follows Semantic Versioning.
 - **Public Procurement Go/No-Go Copilot** — 프로젝트 상세 화면에서 공고 attach/import → deterministic 평가 → bid-readiness checklist → `bid_decision_kr` 생성 → `rfp_analysis_kr` / `proposal_kr` / `performance_plan_kr` downstream handoff까지 닫히는 project-scoped procurement workflow 추가
 - **Project-scoped procurement state** — opportunity, hard-filter result, soft-fit scoring, recommendation, checklist, raw snapshot을 기존 `ProjectDocument`와 분리된 structured state로 저장
 - **Procurement feature flag** — `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`와 `/version.features.procurement_copilot` 노출 추가
+- **Procurement rollout smoke** — `deploy-smoke`에서 optional procurement smoke를 공식화하고, known opportunity 기준으로 attach/import → evaluate → recommend → `bid_decision_kr` generate → project document auto-link → approval/share route availability까지 검증하는 post-deploy lane 추가
+- **Procurement regression fixture set** — labeled procurement evaluation fixtures와 offline regression test를 추가해 deterministic recommendation drift를 fixture 기반으로 확인할 수 있게 함
 
 ### Changed
 - **Live dev runtime hardening** — Lambda local `/tmp` state 의존을 S3-backed durable state로 옮기고, login/bootstrap/UI shell 동작을 정리해 project/procurement flow가 실제 dev 배포에서 안정적으로 동작하도록 개선
 - **Project detail integration** — procurement 문서가 기존 `/generate/stream`, project documents, approval, share, history 흐름을 그대로 재사용하도록 연결
 - **CI alignment** — full `pytest tests/ -q --tb=short` 경로를 기본 test lane으로 고정하고, lint/security job은 advisory lane으로 정리
 - **Dependency policy** — tracked `requirements.txt` / `requirements-lambda.txt`를 검증된 exact version으로 pinning하고 LDAP optional dependency `ldap3==2.9.1`까지 반영
+- **Notification polling lifecycle** — unauth/login 화면, logout, hidden tab에서는 unread-count polling을 멈추고, visible tab 복귀 시 SSE 유무에 따라 single refresh 또는 polling restart만 수행하도록 frontend bootstrap을 정리
+- **Procurement observability** — 기존 request/generate structured logs에 procurement action, recommendation, score status, hard-failure/checklist counts, downstream handoff usage를 추가해 별도 analytics subsystem 없이 운영 데이터 추적이 가능해짐
 
 ### Security
 - `bandit` 주요 finding을 모두 해소하고 SAML fallback parser를 fail-closed extractor로 교체
@@ -28,7 +32,7 @@ and this project follows Semantic Versioning.
 - E2E 고정 포트, websocket warning, password-form/autocomplete console noise 제거
 
 ### Tests
-- procurement API / handoff / project-detail E2E / audit / deploy-smoke 경로를 포함한 full suite 기준 `1613 passed, 3 skipped`
+- procurement API / handoff / project-detail E2E / audit / deploy-smoke / procurement regression fixture 경로를 포함한 full suite 기준 `1629 passed, 3 skipped`
 - warning-free test suite 복구 및 optional LDAP path regression coverage 유지
 
 ## [1.0.0] — 2026-03-18

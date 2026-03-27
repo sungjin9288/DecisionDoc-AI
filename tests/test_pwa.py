@@ -325,3 +325,29 @@ def test_index_html_has_mobile_bottom_nav():
     content = open("app/static/index.html").read()
     assert "mobile-bottom-nav" in content
     assert "mobile-nav-btn" in content
+
+
+def test_index_html_stops_notification_polling_on_login_screen():
+    content = open("app/static/index.html").read()
+    start = content.index("function showLoginScreen()")
+    end = content.index("function showRegisterScreen")
+    login_screen_block = content[start:end]
+    assert "stopNotifPolling();" in login_screen_block
+    assert "stopSSE();" in login_screen_block
+
+
+def test_index_html_restarts_notification_polling_on_visibility_change():
+    content = open("app/static/index.html").read()
+    assert "document.addEventListener('visibilitychange'" in content
+    assert "document.visibilityState === 'hidden'" in content
+    assert "if (_sse) {" in content
+    assert "startNotifPolling();" in content
+
+
+def test_index_html_stops_notification_polling_on_logout():
+    content = open("app/static/index.html").read()
+    start = content.index("function logout()")
+    end = content.index("function toggleUserMenu")
+    logout_block = content[start:end]
+    assert "stopNotifPolling();" in logout_block
+    assert "stopSSE();" in logout_block
