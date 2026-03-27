@@ -30,10 +30,12 @@ and this project follows Semantic Versioning.
 - authenticated browser session이 API-key-gated route와 충돌하던 live UI blocker 수정
 - CSP / favicon / login-shell bootstrap / PWA public endpoint `HEAD` 호환성 문제 수정
 - E2E 고정 포트, websocket warning, password-form/autocomplete console noise 제거
+- **Procurement smoke upstream drift hardening** — optional procurement smoke가 stale G2B bid/detail target으로 `404`를 반복할 때 raw 번호, detail URL, live discovery fallback을 모두 시도한 뒤에도 `404`만 남으면 `SKIP`으로 종료하고 deploy 자체는 유지하도록 정리; 반대로 non-`404` procurement failure는 계속 hard-fail 유지
 
 ### Tests
-- procurement API / handoff / project-detail E2E / audit / deploy-smoke / procurement regression fixture 경로를 포함한 full suite 기준 `1629 passed, 3 skipped`
+- procurement API / handoff / project-detail E2E / audit / deploy-smoke / procurement regression fixture 경로를 포함한 full suite 기준 `1637 passed, 3 skipped`
 - warning-free test suite 복구 및 optional LDAP path regression coverage 유지
+- `main` 기준 dev/prod `deploy-smoke`를 `include_procurement_smoke=true`로 재검증해 release line에서 optional procurement lane이 정상 동작함을 확인
 
 ## [1.0.0] — 2026-03-18
 
