@@ -366,6 +366,7 @@ jobs:
         env:
           SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          G2B_API_KEY: ${{ env.G2B_API_KEY }}
           SMOKE_PROVIDER: ${{ inputs.provider }}
           SMOKE_INCLUDE_PROCUREMENT: ${{ inputs.include_procurement_smoke == 'true' && '1' || '0' }}
           SMOKE_PROCUREMENT_URL_OR_NUMBER: ${{ env.PROCUREMENT_SMOKE_URL_OR_NUMBER }}
