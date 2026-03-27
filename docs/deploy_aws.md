@@ -292,6 +292,10 @@ If the target tenant already has users, also set:
 - `VOICE_BRIEF_SMOKE_USERNAME_<STAGE>`
 - `VOICE_BRIEF_SMOKE_PASSWORD_<STAGE>`
 
+Reserved concurrency note:
+- `deploy` / `deploy-smoke` no longer force a default reserved concurrency for `prod`.
+- If you need reserved concurrency in production, set `LambdaReservedConcurrentExecutions` intentionally in a follow-up change after confirming account-level unreserved concurrency headroom.
+
 If no smoke credentials are provided, the script attempts `POST /auth/register` and only succeeds on an empty tenant.
 
 ## Kill Switch (Maintenance Mode)
