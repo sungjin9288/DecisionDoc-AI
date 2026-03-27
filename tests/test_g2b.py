@@ -12,6 +12,8 @@ Coverage:
 """
 from __future__ import annotations
 
+import builtins
+import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -342,6 +344,190 @@ class TestFetchAnnouncementDetail:
         assert result.bid_number == "R26BK01398367"
         assert result.issuer == "국가유산청"
         assert result.source == "api"
+
+    def test_url_scrape_path_falls_back_to_http_when_playwright_missing(self):
+        from app.services.g2b_collector import _scrape_announcement_text
+
+        html_body = """
+        <html>
+          <body>
+            <h1>AI 기반 공공서비스 구축 사업</h1>
+            <p>공고기관: 행정안전부</p>
+            <p>추정가격: 3억원</p>
+          </body>
+        </html>
+        """
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.text = html_body
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        original_import = builtins.__import__
+
+        def import_side_effect(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "playwright.async_api":
+                raise ImportError("playwright missing")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=import_side_effect), patch(
+            "httpx.AsyncClient",
+            return_value=mock_client,
+        ):
+            text = run_async(
+                _scrape_announcement_text(
+                    "https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367"
+                )
+            )
+
+        assert "AI 기반 공공서비스 구축 사업" in text
+        assert "공고기관: 행정안전부" in text
+
+    def test_url_with_api_key_uses_http_scrape_fallback_when_api_lookup_fails(self):
+        from app.services.g2b_collector import fetch_announcement_detail
+
+        html_body = """
+        <html>
+          <body>
+            <h1>AI 기반 공공서비스 구축 사업</h1>
+            <p>공고기관: 행정안전부</p>
+            <p>추정가격: 3억원</p>
+            <p>입찰마감: 2025-12-31 18:00</p>
+          </body>
+        </html>
+        """
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.text = html_body
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        original_import = builtins.__import__
+
+        def import_side_effect(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "playwright.async_api":
+                raise ImportError("playwright missing")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=import_side_effect), patch(
+            "httpx.AsyncClient",
+            return_value=mock_client,
+        ), patch(
+            "app.services.g2b_collector._fetch_via_api",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "app.services.g2b_collector._search_announcement_by_bid_number",
+            new=AsyncMock(return_value=None),
+        ):
+            result = run_async(
+                fetch_announcement_detail(
+                    "https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367",
+                    api_key="test-key",
+                )
+            )
+
+        assert result is not None
+        assert result.source == "scrape"
+        assert result.issuer == "행정안전부"
+        assert result.budget == "3억원"
+
+    def test_bid_number_with_api_key_retries_transient_502_before_success(self):
+        from app.services.g2b_collector import fetch_announcement_detail
+
+        request = httpx.Request("GET", "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk")
+        transient = httpx.Response(502, request=request, text="Bad Gateway")
+        success = httpx.Response(
+            200,
+            request=request,
+            json={
+                "response": {
+                    "body": {
+                        "item": {
+                            "bidNtceNm": "API 재시도 테스트 사업",
+                            "ntceInsttNm": "조달청",
+                            "asignBdgtAmt": "300000000",
+                            "bidNtceDt": "2026-03-27",
+                            "bidClseDt": "2026-04-03",
+                            "bidMthdNm": "전자입찰",
+                            "ntceKindNm": "용역",
+                        }
+                    }
+                }
+            },
+        )
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[transient, success])
+
+        with patch("httpx.AsyncClient", return_value=mock_client), patch(
+            "app.services.g2b_collector._scrape_announcement_text",
+            new=AsyncMock(return_value="스크래핑 전문"),
+        ), patch(
+            "app.services.g2b_collector.asyncio.sleep",
+            new=AsyncMock(),
+        ) as sleep_mock:
+            result = run_async(fetch_announcement_detail("20260327001-00", api_key="test-key"))
+
+        assert result is not None
+        assert result.title == "API 재시도 테스트 사업"
+        assert result.raw_text == "스크래핑 전문"
+        assert mock_client.get.await_count == 2
+        sleep_mock.assert_awaited_once()
+
+    def test_alphanumeric_search_fallback_retries_transient_502_before_match(self):
+        from app.services.g2b_collector import _search_announcement_by_bid_number
+
+        request = httpx.Request("GET", "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServc")
+        transient = httpx.Response(502, request=request, text="Bad Gateway")
+        success = httpx.Response(
+            200,
+            request=request,
+            json={
+                "response": {
+                    "body": {
+                        "items": [
+                            {
+                                "bidNtceNo": "R26BK01398367",
+                                "bidNtceNm": "2026년 국가유산청 5급 승진후보자 등 직원 역량강화 사업",
+                                "ntceInsttNm": "국가유산청",
+                                "asignBdgtAmt": "85000000",
+                                "bidNtceDt": "2026-03-21",
+                                "bidClseDt": "2026-03-31 10:00:00",
+                                "bidMthdNm": "전자입찰",
+                                "ntceKindNm": "등록공고",
+                            }
+                        ]
+                    }
+                }
+            },
+        )
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[transient, success])
+
+        with patch("httpx.AsyncClient", return_value=mock_client), patch(
+            "app.services.g2b_collector.asyncio.sleep",
+            new=AsyncMock(),
+        ) as sleep_mock:
+            result = run_async(_search_announcement_by_bid_number("R26BK01398367", "test-key"))
+
+        assert result is not None
+        assert result.bid_number == "R26BK01398367"
+        assert result.issuer == "국가유산청"
+        assert mock_client.get.await_count == 2
+        sleep_mock.assert_awaited_once()
 
 
 # ── /g2b/status ───────────────────────────────────────────────────────────────

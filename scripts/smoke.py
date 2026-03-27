@@ -43,6 +43,10 @@ def _print_result(endpoint: str, status_code: int, request_id: str = "", bundle_
     print(" ".join(parts))
 
 
+def _print_skip(reason: str) -> None:
+    print(f"SKIP {reason}")
+
+
 def _is_enabled(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -138,6 +142,13 @@ _G2B_SEARCH_ENDPOINTS = (
 )
 
 
+def _build_g2b_detail_url(bid_number: str) -> str:
+    bid_number = bid_number.strip()
+    if not bid_number:
+        return ""
+    return f"https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo={bid_number}"
+
+
 def _extract_g2b_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = (
         payload.get("response", {})
@@ -230,19 +241,45 @@ def _run_procurement_smoke(
     )
     import_body = _json_body(imported)
     if imported.status_code == 404:
+        retry_targets: list[str] = []
+
+        detail_url_target = ""
+        if not import_target.startswith("http"):
+            detail_url_target = _build_g2b_detail_url(import_target)
+            if detail_url_target:
+                retry_targets.append(detail_url_target)
+
         discovered_target = _discover_recent_g2b_bid_number(
             g2b_api_key,
             timeout_sec=float(client.timeout.connect or 30),
         )
         if discovered_target and discovered_target != import_target:
-            import_target = discovered_target
+            retry_targets.append(discovered_target)
+            discovered_detail_url = _build_g2b_detail_url(discovered_target)
+            if discovered_detail_url:
+                retry_targets.append(discovered_detail_url)
+
+        seen_targets: set[str] = {import_target}
+        for candidate in retry_targets:
+            if not candidate or candidate in seen_targets:
+                continue
+            seen_targets.add(candidate)
+            import_target = candidate
             imported = client.post(
                 f"{base_url}/projects/{project_id}/imports/g2b-opportunity",
                 headers=auth_headers,
                 json={"url_or_number": import_target},
             )
             import_body = _json_body(imported)
+            if imported.status_code == 200:
+                break
     if imported.status_code != 200:
+        if imported.status_code == 404:
+            _print_skip(
+                "procurement smoke import could not resolve a live G2B opportunity "
+                f"after fallback targets (target={import_target})"
+            )
+            return
         code = import_body.get("code", "unknown")
         raise SystemExit(
             f"POST /projects/{{id}}/imports/g2b-opportunity expected 200, "
