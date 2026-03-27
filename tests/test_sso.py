@@ -235,6 +235,64 @@ def test_parse_saml_response_invalid_returns_none():
     assert result is None
 
 
+def test_parse_saml_response_basic_success_returns_user():
+    from app.services.sso.saml_auth import parse_saml_response
+    from app.storage.sso_store import SAMLConfig
+    import base64
+
+    cfg = SAMLConfig(
+        attribute_username="email",
+        attribute_display_name="displayName",
+        attribute_role="role",
+    )
+    xml = """
+    <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                    xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
+      <samlp:Status>
+        <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
+      </samlp:Status>
+      <saml:Assertion>
+        <saml:Subject>
+          <saml:NameID>user@example.com</saml:NameID>
+        </saml:Subject>
+        <saml:AttributeStatement>
+          <saml:Attribute Name="displayName">
+            <saml:AttributeValue>홍길동</saml:AttributeValue>
+          </saml:Attribute>
+          <saml:Attribute Name="email">
+            <saml:AttributeValue>user@example.com</saml:AttributeValue>
+          </saml:Attribute>
+          <saml:Attribute Name="role">
+            <saml:AttributeValue>admin</saml:AttributeValue>
+          </saml:Attribute>
+        </saml:AttributeStatement>
+      </saml:Assertion>
+    </samlp:Response>
+    """.strip()
+
+    result = parse_saml_response(cfg, base64.b64encode(xml.encode()).decode())
+
+    assert result is not None
+    assert result.username == "user@example.com"
+    assert result.display_name == "홍길동"
+    assert result.email == "user@example.com"
+    assert result.role == "admin"
+
+
+def test_parse_saml_response_basic_doctype_is_rejected():
+    from app.services.sso.saml_auth import parse_saml_response
+    from app.storage.sso_store import SAMLConfig
+    import base64
+
+    xml = """<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+    <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"></samlp:Response>
+    """.strip()
+
+    result = parse_saml_response(SAMLConfig(), base64.b64encode(xml.encode()).decode())
+
+    assert result is None
+
+
 def test_build_sp_metadata_contains_entity_id():
     from app.services.sso.saml_auth import build_sp_metadata
     from app.storage.sso_store import SAMLConfig

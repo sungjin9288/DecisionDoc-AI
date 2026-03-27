@@ -5,12 +5,15 @@ Tries onelogin/python3-saml first; falls back to basic XML parsing if unavailabl
 from __future__ import annotations
 
 import base64
+import html
+import re
 import uuid
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.storage.sso_store import SAMLConfig
+
+_MAX_SAML_RESPONSE_BYTES = 1024 * 1024
 
 
 @dataclass
@@ -145,30 +148,43 @@ def _build_basic_authn_request(config: SAMLConfig, relay_state: str) -> tuple[st
 
 def _parse_basic(config: SAMLConfig, saml_response_b64: str) -> SAMLUser | None:
     try:
-        xml_bytes = base64.b64decode(saml_response_b64)
-        root = ET.fromstring(xml_bytes)
-        ns = {
-            "saml": "urn:oasis:names:tc:SAML:2.0:assertion",
-            "samlp": "urn:oasis:names:tc:SAML:2.0:protocol",
-        }
+        xml_bytes = base64.b64decode(saml_response_b64, validate=True)
+        if len(xml_bytes) > _MAX_SAML_RESPONSE_BYTES:
+            return None
+        xml_text = xml_bytes.decode("utf-8", errors="replace")
+        if "<" not in xml_text or ">" not in xml_text:
+            return None
+        upper_xml = xml_text.upper()
+        if "<!DOCTYPE" in upper_xml or "<!ENTITY" in upper_xml:
+            return None
+
         # Check status
-        status_code = root.find(".//samlp:StatusCode", ns)
-        if status_code is not None:
-            val = status_code.get("Value", "")
-            if "Success" not in val:
-                return None
+        status_code = re.search(
+            r"<(?:\w+:)?StatusCode\b[^>]*\bValue=(['\"])(.*?)\1",
+            xml_text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if status_code is not None and "Success" not in status_code.group(2):
+            return None
 
-        # Get NameID
-        name_id = root.find(".//saml:NameID", ns)
-        username = name_id.text if name_id is not None else ""
+        username = _extract_xml_text(
+            xml_text,
+            r"<(?:\w+:)?NameID\b[^>]*>(.*?)</(?:\w+:)?NameID>",
+        )
 
-        # Get attributes
         attrs: dict[str, str] = {}
-        for attr in root.findall(".//saml:Attribute", ns):
-            name = attr.get("Name", "")
-            val_el = attr.find("saml:AttributeValue", ns)
-            if val_el is not None and val_el.text:
-                attrs[name] = val_el.text
+        for attr_match in re.finditer(
+            r"<(?:\w+:)?Attribute\b[^>]*\bName=(['\"])(.*?)\1[^>]*>(.*?)</(?:\w+:)?Attribute>",
+            xml_text,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            attr_name = attr_match.group(2).strip()
+            attr_value = _extract_xml_text(
+                attr_match.group(3),
+                r"<(?:\w+:)?AttributeValue\b[^>]*>(.*?)</(?:\w+:)?AttributeValue>",
+            )
+            if attr_name and attr_value:
+                attrs[attr_name] = attr_value
 
         display_name = attrs.get(config.attribute_display_name) or attrs.get("displayName") or username
         email = attrs.get(config.attribute_username) or attrs.get("email") or username
@@ -197,3 +213,11 @@ def _first_attr(attrs: dict, key: str) -> str:
     if isinstance(val, list):
         return val[0] if val else ""
     return str(val)
+
+
+def _extract_xml_text(xml_fragment: str, pattern: str) -> str:
+    match = re.search(pattern, xml_fragment, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    raw = re.sub(r"<[^>]+>", "", match.group(1))
+    return html.unescape(raw).strip()
