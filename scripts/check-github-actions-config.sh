@@ -6,6 +6,7 @@ STAGE=""
 ENV_FILE=""
 ENABLE_VOICE_BRIEF=0
 ENABLE_VOICE_BRIEF_SMOKE=0
+ENABLE_PROCUREMENT_SMOKE=0
 NON_EMPTY_TENANT=0
 
 usage() {
@@ -16,13 +17,14 @@ Options:
   --env-file <path>         Load values from a dotenv-formatted file
   --voice-brief             Require Voice Brief runtime settings for the stage
   --voice-brief-smoke       Require Voice Brief smoke settings for the stage
+  --procurement-smoke       Require procurement smoke settings for the stage
   --non-empty-tenant        Require smoke username/password for the stage
   -h, --help                Show this help message
 
 Examples:
   bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env
-  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --voice-brief --voice-brief-smoke
-  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --voice-brief --voice-brief-smoke --non-empty-tenant
+  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke
+  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke --non-empty-tenant
 EOF
 }
 
@@ -43,6 +45,10 @@ while [[ $# -gt 0 ]]; do
     --voice-brief-smoke)
       ENABLE_VOICE_BRIEF=1
       ENABLE_VOICE_BRIEF_SMOKE=1
+      shift
+      ;;
+    --procurement-smoke)
+      ENABLE_PROCUREMENT_SMOKE=1
       shift
       ;;
     --non-empty-tenant)
@@ -106,6 +112,13 @@ fi
 optional+=("G2B_API_KEY_${STAGE_UPPER}")
 optional+=("STATUSPAGE_PAGE_ID")
 optional+=("STATUSPAGE_API_KEY")
+
+if [[ "$ENABLE_PROCUREMENT_SMOKE" -eq 1 ]]; then
+  required+=("PROCUREMENT_SMOKE_URL_OR_NUMBER_${STAGE_UPPER}")
+  optional+=("PROCUREMENT_SMOKE_TENANT_ID_${STAGE_UPPER}")
+  optional+=("PROCUREMENT_SMOKE_USERNAME_${STAGE_UPPER}")
+  optional+=("PROCUREMENT_SMOKE_PASSWORD_${STAGE_UPPER}")
+fi
 
 if [[ "$ENABLE_VOICE_BRIEF_SMOKE" -eq 1 ]]; then
   required+=("VOICE_BRIEF_SMOKE_RECORDING_ID_${STAGE_UPPER}")

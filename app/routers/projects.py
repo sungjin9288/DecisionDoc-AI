@@ -82,6 +82,7 @@ def _build_g2b_structured_context(announcement) -> str:
 def _ensure_procurement_copilot_enabled(request: Request) -> None:
     if getattr(request.app.state, "procurement_copilot_enabled", False):
         return
+    request.state.error_code = "FEATURE_DISABLED"
     raise HTTPException(
         status_code=403,
         detail={
@@ -89,6 +90,43 @@ def _ensure_procurement_copilot_enabled(request: Request) -> None:
             "message": "Public Procurement Go/No-Go Copilot is disabled in this environment.",
         },
     )
+
+
+def _apply_procurement_observability(
+    request: Request,
+    *,
+    action: str,
+    project_id: str,
+    operation: str | None = None,
+    source_kind: str | None = None,
+    source_id: str | None = None,
+    record=None,
+    hard_failures: list[dict] | None = None,
+) -> None:
+    request.state.procurement_action = action
+    request.state.procurement_project_id = project_id
+    request.state.procurement_operation = operation
+    request.state.procurement_source_kind = source_kind
+    request.state.procurement_source_id = source_id
+
+    if record is None:
+        return
+
+    request.state.procurement_soft_fit_score = record.soft_fit_score
+    request.state.procurement_soft_fit_status = record.soft_fit_status
+    request.state.procurement_missing_data_count = len(record.missing_data)
+    request.state.procurement_recommendation = (
+        record.recommendation.value if record.recommendation else None
+    )
+    request.state.procurement_checklist_action_count = sum(
+        1 for item in record.checklist_items if item.status in {"action_needed", "blocked"}
+    )
+    if hard_failures is not None:
+        request.state.procurement_hard_failure_count = len(hard_failures)
+    else:
+        request.state.procurement_hard_failure_count = sum(
+            1 for item in record.hard_filters if item.blocking and item.status == "fail"
+        )
 
 
 def _load_pdf_builder():
@@ -344,6 +382,11 @@ async def import_project_procurement_g2b_endpoint(
     from app.services.rfp_parser import parse_rfp_fields
 
     _ensure_procurement_copilot_enabled(request)
+    _apply_procurement_observability(
+        request,
+        action="import",
+        project_id=project_id,
+    )
     tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     project = project_store.get(project_id, tenant_id=tenant_id)
@@ -408,10 +451,20 @@ async def import_project_procurement_g2b_endpoint(
             notes=payload.notes if payload.notes else (existing.notes if existing else ""),
         )
     )
+    operation = "updated" if existing else "created"
+    _apply_procurement_observability(
+        request,
+        action="import",
+        project_id=project_id,
+        operation=operation,
+        source_kind="g2b",
+        source_id=record.opportunity.source_id if record.opportunity else None,
+        record=record,
+    )
 
     return {
         "project_id": project_id,
-        "operation": "updated" if existing else "created",
+        "operation": operation,
         "project_name": project.name,
         "opportunity": record.opportunity.model_dump(mode="json") if record.opportunity else None,
         "decision": record.model_dump(mode="json"),
@@ -426,6 +479,11 @@ async def import_project_procurement_g2b_endpoint(
 def get_project_procurement_endpoint(project_id: str, request: Request) -> dict:
     """Return the current project-scoped procurement decision state."""
     _ensure_procurement_copilot_enabled(request)
+    _apply_procurement_observability(
+        request,
+        action="read",
+        project_id=project_id,
+    )
     tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     project = project_store.get(project_id, tenant_id=tenant_id)
@@ -434,6 +492,13 @@ def get_project_procurement_endpoint(project_id: str, request: Request) -> dict:
 
     procurement_store = request.app.state.procurement_store
     record = procurement_store.get(project_id, tenant_id=tenant_id)
+    if record is not None:
+        _apply_procurement_observability(
+            request,
+            action="read",
+            project_id=project_id,
+            record=record,
+        )
     return {
         "project_id": project_id,
         "project_name": project.name,
@@ -450,6 +515,11 @@ def evaluate_project_procurement_endpoint(project_id: str, request: Request) -> 
     from app.services.procurement_decision_service import ProcurementDecisionService
 
     _ensure_procurement_copilot_enabled(request)
+    _apply_procurement_observability(
+        request,
+        action="evaluate",
+        project_id=project_id,
+    )
     tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     project = project_store.get(project_id, tenant_id=tenant_id)
@@ -464,6 +534,7 @@ def evaluate_project_procurement_endpoint(project_id: str, request: Request) -> 
         record = service.evaluate_project(project_id=project_id, tenant_id=tenant_id)
     except KeyError as exc:
         if str(exc).strip("'") == "procurement_opportunity_not_attached":
+            request.state.error_code = "procurement_opportunity_not_attached"
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -478,6 +549,13 @@ def evaluate_project_procurement_endpoint(project_id: str, request: Request) -> 
         for item in record.hard_filters
         if item.blocking and item.status == "fail"
     ]
+    _apply_procurement_observability(
+        request,
+        action="evaluate",
+        project_id=project_id,
+        record=record,
+        hard_failures=hard_failures,
+    )
     return {
         "project_id": project_id,
         "project_name": project.name,
@@ -495,6 +573,11 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
     from app.services.procurement_decision_service import ProcurementDecisionService
 
     _ensure_procurement_copilot_enabled(request)
+    _apply_procurement_observability(
+        request,
+        action="recommend",
+        project_id=project_id,
+    )
     tenant_id = get_tenant_id(request)
     project_store = request.app.state.project_store
     project = project_store.get(project_id, tenant_id=tenant_id)
@@ -509,6 +592,7 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
         record = service.recommend_project(project_id=project_id, tenant_id=tenant_id)
     except KeyError as exc:
         if str(exc).strip("'") == "procurement_opportunity_not_attached":
+            request.state.error_code = "procurement_opportunity_not_attached"
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -517,6 +601,12 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
                 },
             ) from exc
         raise
+    _apply_procurement_observability(
+        request,
+        action="recommend",
+        project_id=project_id,
+        record=record,
+    )
 
     return {
         "project_id": project_id,

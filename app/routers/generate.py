@@ -234,6 +234,7 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.render_ms = timings.get("render_ms")
     request.state.lints_ms = timings.get("lints_ms")
     request.state.validator_ms = timings.get("validator_ms")
+    request.state.procurement_handoff_used = metadata.get("procurement_handoff_used")
 
 
 def _build_generate_log_event(request: Request, result: dict, request_id: str, template_version: str) -> dict:
@@ -258,6 +259,7 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
         "render_ms": request.state.render_ms,
         "lints_ms": request.state.lints_ms,
         "validator_ms": request.state.validator_ms,
+        "procurement_handoff_used": request.state.procurement_handoff_used,
     }
 
 

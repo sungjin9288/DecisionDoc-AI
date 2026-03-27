@@ -7322,6 +7322,8 @@
   }
 
   function showLoginScreen() {
+    stopNotifPolling();
+    stopSSE();
     setAppShellAuthenticated(false);
     const existing = document.getElementById('login-screen');
     if (existing) return;
@@ -7461,6 +7463,7 @@
   }
 
   function logout() {
+    stopNotifPolling();
     stopSSE();
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
@@ -7550,9 +7553,22 @@
   /* ── Notifications ──────────────────────────────────────────────── */
   let _notifPollTimer = null;
 
+  function stopNotifPolling() {
+    if (_notifPollTimer) {
+      clearInterval(_notifPollTimer);
+      _notifPollTimer = null;
+    }
+  }
+
   function startNotifPolling() {
+    const token = localStorage.getItem('dd_access_token') || '';
+    if (!token) {
+      stopNotifPolling();
+      return;
+    }
+    stopNotifPolling();
+    if (document.visibilityState === 'hidden') return;
     loadUnreadCount();
-    if (_notifPollTimer) clearInterval(_notifPollTimer);
     _notifPollTimer = setInterval(loadUnreadCount, 30000);
   }
 
@@ -7624,6 +7640,23 @@
     if (_sse) { _sse.close(); _sse = null; }
     if (_sseReconnectTimer) { clearTimeout(_sseReconnectTimer); _sseReconnectTimer = null; }
   }
+
+  document.addEventListener('visibilitychange', () => {
+    const token = localStorage.getItem('dd_access_token') || '';
+    if (!token) {
+      stopNotifPolling();
+      return;
+    }
+    if (document.visibilityState === 'hidden') {
+      stopNotifPolling();
+      return;
+    }
+    if (_sse) {
+      loadUnreadCount();
+      return;
+    }
+    startNotifPolling();
+  });
 
   async function loadUnreadCount() {
     try {

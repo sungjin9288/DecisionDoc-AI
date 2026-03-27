@@ -8,6 +8,38 @@ from app.observability.logging import log_event
 logger = logging.getLogger("decisiondoc.observability")
 
 
+OPTIONAL_STATE_KEYS = [
+    "provider",
+    "template_version",
+    "maintenance",
+    "schema_version",
+    "cache_hit",
+    "bundle_type",
+    "doc_count",
+    "llm_prompt_tokens",
+    "llm_output_tokens",
+    "llm_total_tokens",
+    "error_code",
+    "provider_ms",
+    "render_ms",
+    "lints_ms",
+    "validator_ms",
+    "export_ms",
+    "procurement_action",
+    "procurement_project_id",
+    "procurement_operation",
+    "procurement_source_kind",
+    "procurement_source_id",
+    "procurement_soft_fit_score",
+    "procurement_soft_fit_status",
+    "procurement_missing_data_count",
+    "procurement_hard_failure_count",
+    "procurement_checklist_action_count",
+    "procurement_recommendation",
+    "procurement_handoff_used",
+]
+
+
 def install_observability_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def observability_middleware(request: Request, call_next):  # type: ignore[override]
@@ -27,6 +59,10 @@ def install_observability_middleware(app: FastAPI) -> None:
                 "latency_ms": latency_ms,
                 "error_code": getattr(request.state, "error_code", "INTERNAL_ERROR"),
             }
+            for key in OPTIONAL_STATE_KEYS:
+                value = getattr(request.state, key, None)
+                if value is not None:
+                    failed_event[key] = value
             log_event(logger, failed_event)
             raise
 
@@ -40,25 +76,7 @@ def install_observability_middleware(app: FastAPI) -> None:
             "latency_ms": latency_ms,
         }
 
-        optional_keys = [
-            "provider",
-            "template_version",
-            "maintenance",
-            "schema_version",
-            "cache_hit",
-            "bundle_type",
-            "doc_count",
-            "llm_prompt_tokens",
-            "llm_output_tokens",
-            "llm_total_tokens",
-            "error_code",
-            "provider_ms",
-            "render_ms",
-            "lints_ms",
-            "validator_ms",
-            "export_ms",
-        ]
-        for key in optional_keys:
+        for key in OPTIONAL_STATE_KEYS:
             value = getattr(request.state, key, None)
             if value is not None:
                 completed_event[key] = value

@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -45,6 +46,62 @@ def _is_enabled(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _tenant_headers() -> dict[str, str]:
+    tenant_id = os.getenv("SMOKE_TENANT_ID", "").strip()
+    if not tenant_id or tenant_id == "system":
+        return {}
+    return {"X-Tenant-ID": tenant_id}
+
+
+def _auth_headers(api_key: str, token: str) -> dict[str, str]:
+    return {
+        "X-DecisionDoc-Api-Key": api_key,
+        "Authorization": f"Bearer {token}",
+        **_tenant_headers(),
+    }
+
+
+def _register_or_login(client: httpx.Client, base_url: str) -> tuple[str, str]:
+    username = os.getenv("PROCUREMENT_SMOKE_USERNAME", "").strip()
+    password = os.getenv("PROCUREMENT_SMOKE_PASSWORD", "").strip()
+    public_headers = _tenant_headers()
+
+    if username and password:
+        login = client.post(
+            f"{base_url}/auth/login",
+            headers=public_headers,
+            json={"username": username, "password": password},
+        )
+        body = _assert_status("POST /auth/login", login, 200)
+        token = str(body.get("access_token", "")).strip()
+        if not token:
+            raise SystemExit("POST /auth/login missing access_token")
+        return token, username
+
+    generated_username = f"proc_smoke_{uuid4().hex[:10]}"
+    generated_password = f"ProcurementSmoke1!{uuid4().hex[:8]}"
+    register = client.post(
+        f"{base_url}/auth/register",
+        headers=public_headers,
+        json={
+            "username": generated_username,
+            "display_name": "Procurement Smoke",
+            "email": f"{generated_username}@example.invalid",
+            "password": generated_password,
+        },
+    )
+    if register.status_code == 403:
+        raise SystemExit(
+            "Procurement smoke could not bootstrap a user because the tenant already has users. "
+            "Set PROCUREMENT_SMOKE_USERNAME and PROCUREMENT_SMOKE_PASSWORD for this stage."
+        )
+    body = _assert_status("POST /auth/register", register, 200)
+    token = str(body.get("access_token", "")).strip()
+    if not token:
+        raise SystemExit("POST /auth/register missing access_token")
+    return token, generated_username
+
+
 def _read_stream_complete(response: httpx.Response) -> dict[str, Any]:
     buffer = ""
     for chunk in response.iter_text():
@@ -76,10 +133,12 @@ def _run_procurement_smoke(
     client: httpx.Client,
     *,
     base_url: str,
-    auth_headers: dict[str, str],
+    api_key: str,
     provider: str,
     url_or_number: str,
 ) -> None:
+    token, username = _register_or_login(client, base_url)
+    auth_headers = _auth_headers(api_key, token)
     version = client.get(f"{base_url}/version")
     version_body = _assert_status("GET /version", version, 200)
     if not bool(version_body.get("features", {}).get("procurement_copilot")):
@@ -161,12 +220,56 @@ def _run_procurement_smoke(
     project_detail = client.get(f"{base_url}/projects/{project_id}", headers=auth_headers)
     project_detail_body = _assert_status("GET /projects/{id}", project_detail, 200)
     documents = project_detail_body.get("documents") or []
-    if not any(doc.get("bundle_id") == "bid_decision_kr" for doc in documents):
+    decision_doc = next((doc for doc in documents if doc.get("bundle_id") == "bid_decision_kr"), None)
+    if decision_doc is None:
         raise SystemExit("Procurement smoke generated bid_decision_kr but project detail did not auto-link the document")
     _print_result(
         "GET /projects/{id}",
         project_detail.status_code,
         extra=f"documents={len(documents)}",
+    )
+    try:
+        approval_docs = json.loads(decision_doc.get("doc_snapshot") or "[]")
+    except ValueError as exc:
+        raise SystemExit("Procurement smoke could not parse project document snapshot for approval flow") from exc
+
+    approval = client.post(
+        f"{base_url}/approvals",
+        headers=auth_headers,
+        json={
+            "request_id": decision_doc.get("request_id", ""),
+            "bundle_id": decision_doc.get("bundle_id", ""),
+            "title": decision_doc.get("title", "") or "Procurement Smoke Approval",
+            "drafter": username,
+            "docs": approval_docs,
+            "gov_options": decision_doc.get("gov_options"),
+        },
+    )
+    approval_body = _assert_status("POST /approvals", approval, 200)
+    _print_result(
+        "POST /approvals",
+        approval.status_code,
+        extra=f"approval_id={approval_body.get('approval_id', '')}",
+    )
+
+    share = client.post(
+        f"{base_url}/share",
+        headers=auth_headers,
+        json={
+            "request_id": decision_doc.get("request_id", ""),
+            "title": decision_doc.get("title", "") or "Procurement Smoke Share",
+            "bundle_id": decision_doc.get("bundle_id", ""),
+            "expires_days": 1,
+        },
+    )
+    share_body = _assert_status("POST /share", share, 200)
+    share_url = str(share_body.get("share_url", "")).strip()
+    if not share_url.startswith("/shared/"):
+        raise SystemExit("POST /share returned an invalid share_url for procurement smoke")
+    _print_result(
+        "POST /share",
+        share.status_code,
+        extra=f"share_id={share_body.get('share_id', '')}",
     )
 
 
@@ -199,8 +302,8 @@ def main() -> int:
             request_id=str(no_auth_body.get("request_id", "")),
         )
 
-        auth_headers = {"X-DecisionDoc-Api-Key": api_key}
-        generate = client.post(f"{base_url}/generate", headers=auth_headers, json=payload)
+        api_key_headers = {"X-DecisionDoc-Api-Key": api_key}
+        generate = client.post(f"{base_url}/generate", headers=api_key_headers, json=payload)
         generate_body = _assert_status("POST /generate (auth)", generate, 200)
         generate_bundle_id = str(generate_body.get("bundle_id", ""))
         generate_request_id = str(generate_body.get("request_id", ""))
@@ -213,7 +316,7 @@ def main() -> int:
             bundle_id=generate_bundle_id,
         )
 
-        export = client.post(f"{base_url}/generate/export", headers=auth_headers, json=payload)
+        export = client.post(f"{base_url}/generate/export", headers=api_key_headers, json=payload)
         export_body = _assert_status("POST /generate/export (auth)", export, 200)
         export_bundle_id = str(export_body.get("bundle_id", ""))
         export_request_id = str(export_body.get("request_id", ""))
@@ -236,7 +339,7 @@ def main() -> int:
             _run_procurement_smoke(
                 client,
                 base_url=base_url,
-                auth_headers=auth_headers,
+                api_key=api_key,
                 provider=provider,
                 url_or_number=procurement_url_or_number,
             )

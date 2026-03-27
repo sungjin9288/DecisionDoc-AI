@@ -222,6 +222,7 @@ class GenerationService:
             tenant_id=tenant_id,
             request_id=request_id,
         )
+        procurement_handoff_used = bool(payload.get("_procurement_context"))
 
         provider = self._safe_get_provider(bundle_type=bundle_type, tenant_id=tenant_id)
         timer = Timer()
@@ -382,6 +383,7 @@ class GenerationService:
                 "bundle_id": bundle_id,
                 "bundle_type": bundle_type,
                 "doc_count": len(docs),
+                "procurement_handoff_used": procurement_handoff_used,
                 "timings_ms": timer.durations_ms,
                 "llm_prompt_tokens": (usage_tokens or {}).get("prompt_tokens"),
                 "llm_output_tokens": (usage_tokens or {}).get("output_tokens"),

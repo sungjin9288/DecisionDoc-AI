@@ -274,7 +274,11 @@ None — initiative complete
 - Lambda-local state drift was removed from the live dev path by moving core tenant/user/project/procurement state stores onto the shared S3-backed state backend when `DECISIONDOC_STORAGE=s3`
 - Live auth/bootstrap blockers were closed so authenticated browser sessions can use project and procurement routes without falling back to API-key-only access
 - The login shell no longer emits the earlier `addSSOLoginButtons`, favicon, password-form, autocomplete, service-worker, or CDN console errors/warnings observed during dev rollout hardening
+- Notification unread-count polling now stays off on unauth/login screens, stops on logout and hidden tabs, and only resumes on visible restore according to the existing SSE/polling fallback rules
 - Public shell and PWA routes now support `HEAD` as well as `GET`, which keeps browser/probe/header-only checks off the earlier `405` path
+- `deploy-smoke` now has an optional procurement smoke lane that reuses the existing procurement endpoints plus the existing `/approvals` and `/share` routes to verify post-deploy procurement flow closure
+- Existing structured logs now carry procurement-specific action, score, recommendation, checklist, and downstream handoff signals so post-launch quality analysis can start from current observability paths without adding a new analytics subsystem
+- A labeled procurement regression fixture set now exists to guard deterministic recommendation drift offline
 - Test verification is now warning-free: JWT short-key fixtures, `datetime.utcnow()` fixture usage, deprecated uvicorn websocket startup in the E2E fixture, and fixed-port E2E server binding have all been cleaned up
 - Latest verified branch closeout commits:
   - `6974114` — public shell `HEAD` support
@@ -288,6 +292,8 @@ None — initiative complete
 
 - Initiative complete:
   future work, if any, should be tracked as post-launch tuning or follow-up tasks rather than new milestone work inside this plan
+- Current post-launch direction:
+  stabilization is prioritized over feature expansion; the shipped follow-up work now covers notification polling closeout, repeatable procurement smoke, and procurement decision observability/regression guards
 
 ---
 
