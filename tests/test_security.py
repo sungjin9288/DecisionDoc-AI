@@ -483,6 +483,16 @@ def test_ssrf_aws_metadata_blocked():
         _validate_scrape_url("http://169.254.169.254/latest/meta-data/")
 
 
+def test_ssrf_unspecified_ip_blocked():
+    """Unspecified/bind-all IPs should be blocked."""
+    try:
+        from app.services.g2b_collector import _validate_scrape_url
+    except ImportError:
+        pytest.skip("_validate_scrape_url not found in g2b_collector")
+    with pytest.raises((ValueError, Exception)):
+        _validate_scrape_url("http://0.0.0.0/admin")
+
+
 def test_ssrf_valid_g2b_url_passes():
     """Valid G2B domain URL should pass SSRF validation."""
     try:

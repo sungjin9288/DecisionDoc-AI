@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 _JUDGE_PROMPT = """당신은 문서 품질 평가 전문가입니다. 아래 문서를 4개 차원에서 1~5점으로 평가하세요.
@@ -60,8 +62,6 @@ class LLMJudgeResult:
 
 def _call_openai_judge(prompt: str, model: str, api_key: str) -> dict[str, Any]:
     """Call OpenAI-compatible API. Returns parsed JSON dict."""
-    import urllib.request
-
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -69,18 +69,17 @@ def _call_openai_judge(prompt: str, model: str, api_key: str) -> dict[str, Any]:
         "max_tokens": 300,
         "response_format": {"type": "json_object"},
     }
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=data,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+        response.raise_for_status()
+        result = response.json()
     content = result["choices"][0]["message"]["content"]
     return json.loads(content)
 

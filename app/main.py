@@ -1,4 +1,5 @@
 import os
+import tempfile
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,7 +48,7 @@ def _resolve_data_dir(*, explicit_data_dir: str = "") -> Path:
     if configured:
         return Path(configured)
     if os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
-        return Path("/tmp/decisiondoc")
+        return Path(tempfile.gettempdir()) / "decisiondoc"
     configured = (os.getenv("DATA_DIR") or "").strip()
     if configured:
         return Path(configured)

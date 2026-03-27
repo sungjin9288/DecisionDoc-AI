@@ -27,6 +27,23 @@ def test_eval_lints_ok_for_fixture(tmp_path, monkeypatch):
     assert len(result["docs"]) == 4
 
 
+def test_generation_service_autoescape_is_html_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+    monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "0")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    from app.providers.factory import get_provider
+
+    service = GenerationService(
+        provider_factory=get_provider,
+        template_dir=Path("app/templates/v1"),
+        data_dir=Path(tmp_path),
+    )
+
+    assert service.env.autoescape("sample.md.j2") is False
+    assert service.env.autoescape("sample.html") is True
+
+
 def test_cache_corruption_is_cache_miss(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "1")

@@ -1,4 +1,5 @@
 from pathlib import Path
+import tempfile
 
 from fastapi.testclient import TestClient
 
@@ -19,7 +20,7 @@ def test_create_app_defaults_data_dir_to_tmp_in_lambda(monkeypatch):
     app = create_app()
     client = TestClient(app, raise_server_exceptions=False)
 
-    assert app.state.service.data_dir == Path("/tmp/decisiondoc")
+    assert app.state.service.data_dir == Path(tempfile.gettempdir()) / "decisiondoc"
     assert client.get("/health").status_code == 200
 
 

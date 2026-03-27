@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.bundle_catalog.registry import get_bundle_spec
 from app.bundle_catalog.spec import BundleSpec
@@ -179,7 +179,11 @@ class GenerationService:
         self.storage = storage
         self.env = Environment(
             loader=FileSystemLoader(str(template_dir)),
-            autoescape=False,
+            autoescape=select_autoescape(
+                enabled_extensions=("html", "htm", "xml"),
+                default_for_string=False,
+                default=False,
+            ),
             trim_blocks=True,
             lstrip_blocks=True,
         )

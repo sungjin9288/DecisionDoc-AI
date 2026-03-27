@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from app.eval.llm_judge import (
+    _call_openai_judge,
     judge_document,
     judge_bundle_docs,
     LLMJudgeResult,
@@ -80,3 +81,28 @@ def test_judge_bundle_docs_empty():
     """Empty docs returns empty list."""
     results = judge_bundle_docs([], api_key="sk-test")
     assert results == []
+
+
+def test_call_openai_judge_uses_httpx_client():
+    response = MagicMock()
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"context_alignment": 4, "specificity": 4, "coherence": 4, "actionability": 4, "brief_feedback": "ok"}'
+                }
+            }
+        ]
+    }
+    response.raise_for_status = MagicMock()
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.__exit__.return_value = False
+    client.post.return_value = response
+
+    with patch("app.eval.llm_judge.httpx.Client", return_value=client):
+        result = _call_openai_judge("prompt", "gpt-4o-mini", "sk-test")
+
+    assert result["context_alignment"] == 4
+    client.post.assert_called_once()

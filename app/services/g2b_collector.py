@@ -38,11 +38,21 @@ def _validate_scrape_url(url: str) -> None:
         hostname = (parsed.hostname or "").lower()
         if not hostname:
             raise ValueError("URL에 호스트명이 없습니다.")
-        # Block localhost/loopback
-        if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        if hostname == "localhost":
             raise ValueError("내부 주소로의 접근이 차단되었습니다.")
-        # Block AWS/GCP metadata endpoints
-        if hostname in ("169.254.169.254", "metadata.google.internal"):
+        try:
+            literal_ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            literal_ip = None
+        if literal_ip is not None:
+            if (
+                literal_ip.is_private
+                or literal_ip.is_loopback
+                or literal_ip.is_link_local
+                or literal_ip.is_unspecified
+            ):
+                raise ValueError("내부 주소로의 접근이 차단되었습니다.")
+        if hostname == "metadata.google.internal":
             raise ValueError("클라우드 메타데이터 주소가 차단되었습니다.")
         # Allow only known G2B domains
         if not any(
@@ -54,7 +64,7 @@ def _validate_scrape_url(url: str) -> None:
         try:
             resolved_ip = socket.gethostbyname(hostname)
             ip = ipaddress.ip_address(resolved_ip)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified:
                 raise ValueError(f"내부 IP 주소가 차단되었습니다: {resolved_ip}")
         except socket.gaierror:
             pass  # Can't resolve — allow (may be valid in cloud environments)
