@@ -23,7 +23,11 @@ def get_history_favorites(request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.history_store import HistoryStore
-    store = HistoryStore(tenant_id)
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     entries = store.get_favorites(user_id)
     return {"favorites": entries, "count": len(entries)}
 
@@ -40,7 +44,11 @@ def get_history(
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.history_store import HistoryStore
-    store = HistoryStore(tenant_id)
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     if starred:
         entries = store.get_favorites(user_id)[:limit]
     elif q:
@@ -56,7 +64,11 @@ def delete_history_entry(entry_id: str, request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.history_store import HistoryStore
-    store = HistoryStore(tenant_id)
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     store.delete(entry_id, user_id)
     return {"status": "deleted"}
 
@@ -68,7 +80,11 @@ def toggle_history_star(entry_id: str, request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.history_store import HistoryStore
-    store = HistoryStore(tenant_id)
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     starred = store.toggle_favorite(entry_id, user_id)
     return {"entry_id": entry_id, "starred": starred}
 
@@ -81,7 +97,11 @@ def get_g2b_bookmarks(request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.bookmark_store import BookmarkStore
-    store = BookmarkStore(tenant_id)
+    store = BookmarkStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     bookmarks = store.get_for_user(user_id)
     return {"bookmarks": bookmarks}
 
@@ -92,7 +112,11 @@ def add_g2b_bookmark(request: Request, payload: dict):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.bookmark_store import BookmarkStore
-    store = BookmarkStore(tenant_id)
+    store = BookmarkStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     result = store.add(user_id, payload)
     return {"bookmark": result}
 
@@ -103,7 +127,11 @@ def remove_g2b_bookmark(bid_number: str, request: Request):
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
     from app.storage.bookmark_store import BookmarkStore
-    store = BookmarkStore(tenant_id)
+    store = BookmarkStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
     store.remove(user_id, bid_number)
     return {"status": "removed"}
 

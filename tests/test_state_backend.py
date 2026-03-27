@@ -7,6 +7,9 @@ from app.schemas import (
     ProcurementDecisionUpsert,
 )
 from app.storage.approval_store import ApprovalStore
+from app.storage.bookmark_store import BookmarkStore
+from app.storage.history_store import HistoryEntry, HistoryStore
+from app.storage.notification_store import NotificationStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.share_store import ShareStore
@@ -167,3 +170,59 @@ def test_share_store_persists_to_s3_state_backend():
     reloaded = ShareStore("alpha", backend=backend).get(link.share_id)
     assert reloaded is not None
     assert reloaded["bundle_id"] == "proposal_kr"
+
+
+def test_history_store_persists_to_s3_state_backend():
+    backend, client = _backend()
+    store = HistoryStore("alpha", base_dir="/virtual/data", backend=backend)
+
+    store.add(
+        HistoryEntry(
+            entry_id="entry-1",
+            tenant_id="alpha",
+            user_id="user-1",
+            bundle_id="bid_decision_kr",
+            bundle_name="입찰 참여 의사결정 패키지",
+            title="History Entry",
+            request_id="req-1",
+            created_at="2026-03-27T00:00:00+00:00",
+        )
+    )
+
+    assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/history.jsonl") in client.objects
+    reloaded = HistoryStore("alpha", base_dir="/virtual/data", backend=backend).get_for_user("user-1")
+    assert len(reloaded) == 1
+    assert reloaded[0]["title"] == "History Entry"
+
+
+def test_bookmark_store_persists_to_s3_state_backend():
+    backend, client = _backend()
+    store = BookmarkStore("alpha", base_dir="/virtual/data", backend=backend)
+
+    store.add("user-1", {"bid_number": "R26BK01398367", "title": "공고", "issuer": "기관"})
+
+    assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/g2b_bookmarks.json") in client.objects
+    reloaded = BookmarkStore("alpha", base_dir="/virtual/data", backend=backend).get_for_user("user-1")
+    assert len(reloaded) == 1
+    assert reloaded[0]["bid_number"] == "R26BK01398367"
+
+
+def test_notification_store_persists_to_s3_state_backend():
+    backend, client = _backend()
+    store = NotificationStore("alpha", data_dir=Path("/virtual/data"), backend=backend)
+
+    notif = store.create(
+        tenant_id="alpha",
+        recipient_id="user-1",
+        event_type="system",
+        title="알림",
+        body="본문",
+        context_type="system",
+        context_id="ctx-1",
+    )
+
+    assert notif.notification_id
+    assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/notifications.json") in client.objects
+    reloaded = NotificationStore("alpha", data_dir=Path("/virtual/data"), backend=backend).get_for_user("user-1")
+    assert len(reloaded) == 1
+    assert reloaded[0].title == "알림"

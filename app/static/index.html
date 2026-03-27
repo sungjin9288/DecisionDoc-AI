@@ -3779,6 +3779,7 @@
     version: '1.0.0',
     features: {
       procurement_copilot: false,
+      realtime_events: true,
     },
   };
   let _serverVersionInfoPromise = null;
@@ -4478,6 +4479,10 @@
 
   function isProcurementCopilotEnabled() {
     return Boolean(_serverVersionInfo?.features?.procurement_copilot);
+  }
+
+  function isRealtimeEventsEnabled() {
+    return _serverVersionInfo?.features?.realtime_events !== false;
   }
 
   /* ── Category filter ───────────────────────────────────────────── */
@@ -7968,7 +7973,7 @@
     setAppShellAuthenticated(true);
     renderUserInfo();
     loadFormDraft();
-    loadServerVersionInfo();
+    const versionInfoPromise = loadServerVersionInfo();
     loadBundles().then(() => restoreShareState());
     loadProjectSelector();
     attachStarListeners();
@@ -7983,7 +7988,9 @@
     const bell = $id('notif-bell');
     if (bell) bell.style.display = 'flex';
     startNotifPolling();
-    startSSE();
+    versionInfoPromise.finally(() => {
+      if (isRealtimeEventsEnabled()) startSSE();
+    });
     // Handle PWA manifest shortcut actions
     handleStartupAction();
     // Accessibility: ensure clickable non-button elements are keyboard-accessible

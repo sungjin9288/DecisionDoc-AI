@@ -1,5 +1,4 @@
 """Tests for GET /version and POST /generate/validate endpoints."""
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -50,6 +49,7 @@ def test_version_features_is_dict(tmp_path, monkeypatch):
     assert "search" in features
     assert "cache" in features
     assert "procurement_copilot" in features
+    assert "realtime_events" in features
 
 
 def test_version_procurement_flag_defaults_to_false(tmp_path, monkeypatch):
@@ -62,6 +62,20 @@ def test_version_procurement_flag_reflects_env(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch, procurement_enabled=True)
     data = client.get("/version").json()
     assert data["features"]["procurement_copilot"] is True
+
+
+def test_version_realtime_events_enabled_by_default_in_dev(tmp_path, monkeypatch):
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    client = _create_client(tmp_path, monkeypatch)
+    data = client.get("/version").json()
+    assert data["features"]["realtime_events"] is True
+
+
+def test_version_realtime_events_disabled_by_default_on_lambda(tmp_path, monkeypatch):
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "decisiondoc-ai-prod")
+    client = _create_client(tmp_path, monkeypatch)
+    data = client.get("/version").json()
+    assert data["features"]["realtime_events"] is False
 
 
 def test_version_is_public_even_when_users_exist(tmp_path, monkeypatch):

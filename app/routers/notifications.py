@@ -24,7 +24,11 @@ async def get_notifications(
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    store = get_notification_store(tenant_id)
+    store = get_notification_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     notifications = store.get_for_user(user_id, unread_only=unread_only, limit=limit)
     return {"notifications": [asdict(n) for n in notifications]}
 
@@ -36,7 +40,11 @@ async def get_unread_count(request: Request):
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    store = get_notification_store(tenant_id)
+    store = get_notification_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     count = store.get_unread_count(user_id)
     return {"count": count}
 
@@ -48,7 +56,11 @@ async def mark_notification_read(request: Request, notification_id: str):
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    store = get_notification_store(tenant_id)
+    store = get_notification_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     found = store.mark_read(notification_id, user_id)
     if not found:
         raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다.")
@@ -62,6 +74,10 @@ async def mark_all_notifications_read(request: Request):
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    store = get_notification_store(tenant_id)
+    store = get_notification_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     count = store.mark_all_read(user_id)
     return {"updated": count}

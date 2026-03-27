@@ -15,6 +15,7 @@ from app.config import (
     get_local_llm_base_url,
     is_enabled,
     is_procurement_copilot_enabled,
+    is_realtime_events_enabled,
 )
 from app.maintenance.mode import is_maintenance_mode
 from app.schemas import HealthResponse
@@ -142,5 +143,6 @@ def version_endpoint(request: Request) -> dict:
                 "procurement_copilot_enabled",
                 is_procurement_copilot_enabled(),
             ),
+            "realtime_events": is_realtime_events_enabled(),
         },
     }
