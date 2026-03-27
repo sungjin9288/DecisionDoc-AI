@@ -7,6 +7,30 @@ and this project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- **Public Procurement Go/No-Go Copilot** — 프로젝트 상세 화면에서 공고 attach/import → deterministic 평가 → bid-readiness checklist → `bid_decision_kr` 생성 → `rfp_analysis_kr` / `proposal_kr` / `performance_plan_kr` downstream handoff까지 닫히는 project-scoped procurement workflow 추가
+- **Project-scoped procurement state** — opportunity, hard-filter result, soft-fit scoring, recommendation, checklist, raw snapshot을 기존 `ProjectDocument`와 분리된 structured state로 저장
+- **Procurement feature flag** — `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`와 `/version.features.procurement_copilot` 노출 추가
+
+### Changed
+- **Live dev runtime hardening** — Lambda local `/tmp` state 의존을 S3-backed durable state로 옮기고, login/bootstrap/UI shell 동작을 정리해 project/procurement flow가 실제 dev 배포에서 안정적으로 동작하도록 개선
+- **Project detail integration** — procurement 문서가 기존 `/generate/stream`, project documents, approval, share, history 흐름을 그대로 재사용하도록 연결
+- **CI alignment** — full `pytest tests/ -q --tb=short` 경로를 기본 test lane으로 고정하고, lint/security job은 advisory lane으로 정리
+- **Dependency policy** — tracked `requirements.txt` / `requirements-lambda.txt`를 검증된 exact version으로 pinning하고 LDAP optional dependency `ldap3==2.9.1`까지 반영
+
+### Security
+- `bandit` 주요 finding을 모두 해소하고 SAML fallback parser를 fail-closed extractor로 교체
+- dependency scan 기준에서 tracked requirements의 `0 vulnerabilities reported`, `0 vulnerabilities ignored` 상태를 확보
+
+### Fixed
+- authenticated browser session이 API-key-gated route와 충돌하던 live UI blocker 수정
+- CSP / favicon / login-shell bootstrap / PWA public endpoint `HEAD` 호환성 문제 수정
+- E2E 고정 포트, websocket warning, password-form/autocomplete console noise 제거
+
+### Tests
+- procurement API / handoff / project-detail E2E / audit / deploy-smoke 경로를 포함한 full suite 기준 `1613 passed, 3 skipped`
+- warning-free test suite 복구 및 optional LDAP path regression coverage 유지
+
 ## [1.0.0] — 2026-03-18
 
 ### Added
