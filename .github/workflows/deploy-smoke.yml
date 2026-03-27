@@ -264,6 +264,7 @@ jobs:
         run: |
           if [ "${{ inputs.stage }}" = "dev" ]; then
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_DEV }}"
             PROCUREMENT_SMOKE_URL_OR_NUMBER="${{ vars.PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV }}"
             PROCUREMENT_SMOKE_TENANT_ID="${{ vars.PROCUREMENT_SMOKE_TENANT_ID_DEV }}"
             PROCUREMENT_SMOKE_USERNAME="${{ secrets.PROCUREMENT_SMOKE_USERNAME_DEV }}"
@@ -276,6 +277,7 @@ jobs:
             VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_DEV }}"
           else
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_PROD }}"
             PROCUREMENT_SMOKE_URL_OR_NUMBER="${{ vars.PROCUREMENT_SMOKE_URL_OR_NUMBER_PROD }}"
             PROCUREMENT_SMOKE_TENANT_ID="${{ vars.PROCUREMENT_SMOKE_TENANT_ID_PROD }}"
             PROCUREMENT_SMOKE_USERNAME="${{ secrets.PROCUREMENT_SMOKE_USERNAME_PROD }}"
@@ -292,6 +294,7 @@ jobs:
             exit 1
           fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+          echo "G2B_API_KEY=${G2B_API_KEY}" >> "$GITHUB_ENV"
           echo "PROCUREMENT_SMOKE_URL_OR_NUMBER=${PROCUREMENT_SMOKE_URL_OR_NUMBER}" >> "$GITHUB_ENV"
           echo "PROCUREMENT_SMOKE_TENANT_ID=${PROCUREMENT_SMOKE_TENANT_ID}" >> "$GITHUB_ENV"
           echo "PROCUREMENT_SMOKE_USERNAME=${PROCUREMENT_SMOKE_USERNAME}" >> "$GITHUB_ENV"
