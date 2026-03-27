@@ -12,12 +12,14 @@ Method B: URL scraping via Playwright
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import re
 import socket
 from urllib.parse import urlparse
 from dataclasses import dataclass
+from typing import Any
 
 _log = logging.getLogger("decisiondoc.g2b")
 
@@ -33,6 +35,9 @@ _G2B_SEARCH_ENDPOINTS = (
     "getBidPblancListInfoThng",
     "getBidPblancListInfoCnstwk",
 )
+_G2B_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+_G2B_MAX_ATTEMPTS = 3
+_G2B_RETRY_BASE_DELAY_SECONDS = 0.4
 
 
 def _validate_scrape_url(url: str) -> None:
@@ -80,6 +85,41 @@ def _validate_scrape_url(url: str) -> None:
         raise ValueError(f"URL 검증 실패: {e}") from e
 
 G2B_API_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
+
+
+async def _request_g2b_json(
+    client,
+    endpoint: str,
+    *,
+    params: dict[str, object],
+    log_context: str,
+) -> dict[str, Any]:
+    import httpx
+
+    last_error: Exception | None = None
+    for attempt in range(1, _G2B_MAX_ATTEMPTS + 1):
+        response = await client.get(endpoint, params=params)
+        try:
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {}
+        except Exception as exc:
+            last_error = exc
+            status_code = getattr(response, "status_code", 0)
+            if status_code in _G2B_RETRY_STATUS_CODES and attempt < _G2B_MAX_ATTEMPTS:
+                _log.warning(
+                    "[G2B] %s attempt %d/%d returned %s; retrying",
+                    log_context,
+                    attempt,
+                    _G2B_MAX_ATTEMPTS,
+                    status_code,
+                )
+                await asyncio.sleep(_G2B_RETRY_BASE_DELAY_SECONDS * attempt)
+                continue
+            raise
+    if last_error is not None:
+        raise last_error
+    raise httpx.HTTPError(f"[G2B] {log_context} failed without a response")
 
 
 @dataclass
@@ -140,9 +180,12 @@ async def search_announcements(
         import httpx
 
         async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.get(endpoint, params=params)
-            res.raise_for_status()
-            data = res.json()
+            data = await _request_g2b_json(
+                client,
+                endpoint,
+                params=params,
+                log_context="API search",
+            )
 
             # G2B API error envelope (e.g. error code 07 = date range exceeded)
             if isinstance(data, dict) and "nkoneps.com.response.ResponseError" in data:
@@ -253,8 +296,12 @@ async def _fetch_via_api(bid_number: str, api_key: str) -> G2BAnnouncement | Non
         import httpx
 
         async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.get(endpoint, params=params)
-            data = res.json()
+            data = await _request_g2b_json(
+                client,
+                endpoint,
+                params=params,
+                log_context=f"API detail fetch for {bid_number}",
+            )
             item = (
                 data.get("response", {})
                     .get("body", {})
@@ -314,9 +361,12 @@ async def _search_announcement_by_bid_number(
                     "bidNtceNm": bid_number,
                 }
                 endpoint = f"{G2B_API_BASE}/{endpoint_name}"
-                res = await client.get(endpoint, params=params)
-                res.raise_for_status()
-                data = res.json()
+                data = await _request_g2b_json(
+                    client,
+                    endpoint,
+                    params=params,
+                    log_context=f"API search fallback for {bid_number} via {endpoint_name}",
+                )
 
                 items = (
                     data.get("response", {})
