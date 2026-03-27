@@ -17,7 +17,7 @@ openpyxl==3.1.5
 PyJWT==2.12.1
 bcrypt==5.0.0
 cryptography==46.0.5
-ldap3>=2.9.0
+ldap3==2.9.1
 python-multipart==0.0.22
 boto3==1.42.76
 psutil==7.2.2

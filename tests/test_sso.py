@@ -18,6 +18,11 @@ from fastapi.testclient import TestClient
 TEST_JWT_SECRET_KEY = "test-secret-key-for-sso-testing-32chars!!"
 TEST_SSO_STORE_SECRET_KEY = "test-key-32chars-padding-padding!!"
 
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:tagMap is deprecated\\. Please use TAG_MAP instead\\.:DeprecationWarning"),
+    pytest.mark.filterwarnings("ignore:typeMap is deprecated\\. Please use TYPE_MAP instead\\.:DeprecationWarning"),
+]
+
 
 # ── module-level cache cleanup ────────────────────────────────────────────────
 
