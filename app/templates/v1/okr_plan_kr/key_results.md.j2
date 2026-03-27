@@ -1,0 +1,26 @@
+# 핵심 결과: {{ title }}
+
+## KR 목록
+{% for kr in key_results %}
+- {{ kr }}
+{% endfor %}
+
+## 현재값 (Baseline)
+{% for b in baseline_values %}
+- {{ b }}
+{% endfor %}
+
+## 목표값 (Target)
+{% for t in target_values %}
+- {{ t }}
+{% endfor %}
+
+## 측정 방법
+{% for m in measurement_method %}
+- {{ m }}
+{% endfor %}
+
+## 데이터 소스
+{% for d in data_sources %}
+- {{ d }}
+{% endfor %}

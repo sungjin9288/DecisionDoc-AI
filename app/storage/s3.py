@@ -1,8 +1,32 @@
 import json
+import logging
 import os
 from typing import Any
 
 from app.storage.base import Storage, StorageFailedError
+
+_log = logging.getLogger("decisiondoc.storage.s3")
+
+
+def _describe_storage_exception(exc: Exception) -> str:
+    parts = [type(exc).__name__]
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error", {})
+        code = error.get("Code")
+        message = error.get("Message")
+        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if code:
+            parts.append(f"code={code}")
+        if status:
+            parts.append(f"http_status={status}")
+        if message:
+            parts.append(f"message={message}")
+    else:
+        text = str(exc).strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts)
 
 
 class S3Storage(Storage):
@@ -21,12 +45,12 @@ class S3Storage(Storage):
         return "s3"
 
     @property
-    def client(self):
+    def client(self) -> Any:
         if self._s3_client is not None:
             return self._s3_client
         try:
             import boto3  # type: ignore
-        except Exception as exc:
+        except ImportError as exc:
             raise StorageFailedError("Storage operation failed.") from exc
         self._s3_client = boto3.client("s3")
         return self._s3_client
@@ -46,8 +70,16 @@ class S3Storage(Storage):
             obj = self.client.get_object(Bucket=self.bucket, Key=self._bundle_key(bundle_id))
             raw = obj["Body"].read().decode("utf-8")
             return json.loads(raw)
-        except Exception:
-            return None
+        except Exception as exc:
+            # boto3 ClientError: NoSuchKey means the bundle doesn't exist yet (cache miss).
+            # Any other error (network, permissions, malformed JSON, …) is a real failure.
+            error_code = ""
+            response = getattr(exc, "response", None)
+            if isinstance(response, dict):
+                error_code = response.get("Error", {}).get("Code", "")
+            if error_code == "NoSuchKey":
+                return None
+            raise StorageFailedError("Storage operation failed.") from exc
 
     def save_export(self, bundle_id: str, doc_type: str, markdown: str) -> None:
         body = markdown.encode("utf-8")
@@ -59,12 +91,31 @@ class S3Storage(Storage):
     def get_export_dir(self, bundle_id: str) -> str:
         return f"s3://{self.bucket}/{self.prefix}exports/{bundle_id}/"
 
+    def health_check(self) -> dict:
+        """Return {"ok": True} if the bucket is reachable, raise StorageFailedError otherwise."""
+        try:
+            self.client.head_bucket(Bucket=self.bucket)
+            return {"ok": True}
+        except Exception as exc:
+            _log.warning(
+                "S3 health check failed for bucket=%s detail=%s",
+                self.bucket,
+                _describe_storage_exception(exc),
+            )
+            raise StorageFailedError("Storage operation failed.") from exc
+
     def _put(self, key: str, body: bytes, content_type: str) -> None:
         try:
             if not self.bucket:
                 raise StorageFailedError("Storage operation failed.")
             self.client.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=content_type)
         except Exception as exc:
+            _log.warning(
+                "S3 put failed bucket=%s key=%s detail=%s",
+                self.bucket,
+                key,
+                _describe_storage_exception(exc),
+            )
             raise StorageFailedError("Storage operation failed.") from exc
 
 

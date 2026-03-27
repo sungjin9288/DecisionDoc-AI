@@ -1,0 +1,18 @@
+# 계약 조건: {{ title }}
+
+## 대금 지급 조건
+{{ payment_terms }}
+
+## 납품 조건
+{% for term in delivery_terms %}
+- {{ term }}
+{% endfor %}
+
+## 하자 보증
+{{ warranty }}
+
+## 비밀 유지
+{{ confidentiality }}
+
+## 계약 해지
+{{ termination_clause }}

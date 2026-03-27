@@ -2,6 +2,7 @@ import logging
 
 import pytest
 from fastapi.testclient import TestClient
+from app.services.auth_service import create_access_token
 
 
 def _create_client(tmp_path, monkeypatch, *, cors_enabled="0", cors_allow_origins=None):
@@ -85,6 +86,47 @@ def test_auth_accepts_any_key_from_decisiondoc_api_keys(tmp_path, monkeypatch):
     assert response_k2.status_code == 200
     assert response_wrong.status_code == 401
     assert response_wrong.json()["code"] == "UNAUTHORIZED"
+
+
+def test_authenticated_ui_session_bypasses_api_key_gate(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+    token = create_access_token("user-1", "system", "admin", "ui_admin")
+
+    response = client.post(
+        "/projects",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "UI Project", "description": "created from browser session"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "UI Project"
+
+
+def test_generate_with_api_key_still_works_after_users_exist(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "expected-key")
+
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert register.status_code == 200
+
+    response = client.post(
+        "/generate",
+        headers={"X-DecisionDoc-Api-Key": "expected-key"},
+        json={"title": "t", "goal": "g"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
 
 
 def test_generate_export_requires_api_key_when_configured(tmp_path, monkeypatch):

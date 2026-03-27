@@ -3,12 +3,16 @@
 ## Goal
 {{ goal }}
 
+{% if context %}
 ## Context
 {{ context }}
 
+{% endif %}
+{% if constraints %}
 ## Constraints
 {{ constraints }}
 
+{% endif %}
 ## Decision
 {{ decision }}
 

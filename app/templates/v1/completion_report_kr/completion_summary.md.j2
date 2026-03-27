@@ -1,0 +1,25 @@
+# 준공보고서: {{ title }}
+
+## 사업 이행 실적
+{{ project_info }}
+
+## 납품물 목록
+{% if deliverables_list %}{% for item in deliverables_list %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 성과 측정 결과
+{% if performance_results %}{% for result in performance_results %}
+- {{ result }}
+{% endfor %}{% endif %}
+
+## 이슈 해결 내역
+{% if issues_resolved %}{% for issue in issues_resolved %}
+- {{ issue }}
+{% endfor %}{% else %}
+(발생 이슈 없음)
+{% endif %}
+
+## 하자보수 계획
+{% if warranty_plan %}{{ warranty_plan }}
+{% endif %}

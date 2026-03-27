@@ -3,12 +3,6 @@
 ## Goal
 Pick
 
-## Context
-
-
-## Constraints
-
-
 ## Decision
 Use FastAPI API-only service with schema-first provider bundle generation.
 

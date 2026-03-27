@@ -1,0 +1,37 @@
+# 커리큘럼: {{ title }}
+
+## 교과목 구성
+{% if subject_structure %}{% for subject in subject_structure %}
+- {{ subject }}
+{% endfor %}{% endif %}
+
+## 주차별 계획
+{% if weekly_plan %}{% for week in weekly_plan %}
+- {{ week }}
+{% endfor %}{% endif %}
+
+## 특별 활동
+{% if special_activities %}{% for activity in special_activities %}
+- {{ activity }}
+{% endfor %}{% endif %}
+
+## 교재 및 도구
+{% if materials_and_tools %}{% for material in materials_and_tools %}
+- {{ material }}
+{% endfor %}{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

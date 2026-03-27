@@ -1,21 +1,21 @@
 # Ops Checklist: {{ title }}
 
 ## Security
-{% for item in security %}
-- [ ] {{ item }}
-{% endfor %}
+{% if security %}{% for item in security %}
+- {{ item }}
+{% endfor %}{% endif %}
 
 ## Reliability
-{% for item in reliability %}
-- [ ] {{ item }}
-{% endfor %}
+{% if reliability %}{% for item in reliability %}
+- {{ item }}
+{% endfor %}{% endif %}
 
 ## Cost
-{% for item in cost %}
-- [ ] {{ item }}
-{% endfor %}
+{% if cost %}{% for item in cost %}
+- {{ item }}
+{% endfor %}{% endif %}
 
 ## Operations
-{% for item in operations %}
-- [ ] {{ item }}
-{% endfor %}
+{% if operations %}{% for item in operations %}
+- {{ item }}
+{% endfor %}{% endif %}

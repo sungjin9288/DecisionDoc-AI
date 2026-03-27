@@ -29,10 +29,30 @@ Parameters:
     AllowedValues:
       - "0"
       - "1"
+  DecisionDocProcurementCopilotEnabled:
+    Type: String
+    Default: "0"
+    AllowedValues:
+      - "0"
+      - "1"
   StatuspagePageId:
     Type: String
     Default: ""
   StatuspageApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  VoiceBriefApiBaseUrl:
+    Type: String
+    Default: ""
+  VoiceBriefApiBearerToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+  VoiceBriefTimeoutSeconds:
+    Type: String
+    Default: "10.0"
+  G2bApiKey:
     Type: String
     NoEcho: true
     Default: ""
@@ -43,8 +63,12 @@ Parameters:
     Type: Number
     Default: 2
   LambdaReservedConcurrentExecutions:
-    Type: Number
-    Default: 2
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[1-9][0-9]*$"
+
+Conditions:
+  HasReservedConcurrency: !Not [!Equals [!Ref LambdaReservedConcurrentExecutions, ""]]
 
 Resources:
   DecisionDocApi:
@@ -58,12 +82,15 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub decisiondoc-ai-${Stage}
-      CodeUri: ../
+      CodeUri: ../../
       Handler: app.aws_lambda.handler
       Runtime: python3.11
       Timeout: 30
       MemorySize: 512
-      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrentExecutions
+      ReservedConcurrentExecutions: !If
+        - HasReservedConcurrency
+        - !Ref LambdaReservedConcurrentExecutions
+        - !Ref AWS::NoValue
       Policies:
         - AWSLambdaBasicExecutionRole
         - S3CrudPolicy:
@@ -79,10 +106,14 @@ Resources:
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
           DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
           DECISIONDOC_MAINTENANCE: !Ref DecisionDocMaintenance
-          DECISIONDOC_HTTP_API_ID: !Ref DecisionDocApi
+          DECISIONDOC_PROCUREMENT_COPILOT_ENABLED: !Ref DecisionDocProcurementCopilotEnabled
           DECISIONDOC_LAMBDA_FUNCTION_NAME: !Sub decisiondoc-ai-${Stage}
           STATUSPAGE_PAGE_ID: !Ref StatuspagePageId
           STATUSPAGE_API_KEY: !Ref StatuspageApiKey
+          G2B_API_KEY: !Ref G2bApiKey
+          VOICE_BRIEF_API_BASE_URL: !Ref VoiceBriefApiBaseUrl
+          VOICE_BRIEF_API_BEARER_TOKEN: !Ref VoiceBriefApiBearerToken
+          VOICE_BRIEF_TIMEOUT_SECONDS: !Ref VoiceBriefTimeoutSeconds
       Events:
         Root:
           Type: HttpApi

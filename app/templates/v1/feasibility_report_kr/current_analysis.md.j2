@@ -1,0 +1,20 @@
+# 현황 분석: {{ title }}
+
+## 검토 배경
+{{ background }}
+
+## 현황
+{{ current_status }}
+
+## 문제 도출
+{% for problem in identified_problems %}
+- {{ problem }}
+{% endfor %}
+
+## 분석 목적
+{% for obj in analysis_objectives %}
+- {{ obj }}
+{% endfor %}
+
+## 분석 범위 및 방법론
+{{ scope_and_methodology }}

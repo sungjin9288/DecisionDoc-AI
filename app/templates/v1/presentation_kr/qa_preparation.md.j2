@@ -1,0 +1,21 @@
+# Q&A 대비: {{ title }}
+
+## 예상 질문
+{% if anticipated_questions %}{% for q in anticipated_questions %}
+- {{ q }}
+{% endfor %}{% endif %}
+
+## 답변 준비
+{% if answers %}{% for ans in answers %}
+{{ loop.index }}. {{ ans }}
+{% endfor %}{% endif %}
+
+## 어려운 질문
+{% if difficult_questions %}{% for dq in difficult_questions %}
+- {{ dq }}
+{% endfor %}{% endif %}
+
+## 발표 팁
+{% if presentation_tips %}{% for tip in presentation_tips %}
+- {{ tip }}
+{% endfor %}{% endif %}

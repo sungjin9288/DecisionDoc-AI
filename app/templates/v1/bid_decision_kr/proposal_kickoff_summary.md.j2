@@ -1,0 +1,24 @@
+# 제안 착수 요약: {{ title }}
+
+## 결정 요약
+{{ handoff_summary }}
+
+## RFP 분석 인풋
+{% if rfp_analysis_inputs %}{% for item in rfp_analysis_inputs %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 제안서 인풋
+{% if proposal_inputs %}{% for item in proposal_inputs %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 수행계획 인풋
+{% if performance_plan_inputs %}{% for item in performance_plan_inputs %}
+- {{ item }}
+{% endfor %}{% endif %}
+
+## 다음 단계
+{% if next_steps %}{% for item in next_steps %}
+- {{ item }}
+{% endfor %}{% endif %}

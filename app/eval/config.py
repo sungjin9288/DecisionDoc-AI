@@ -1,7 +1,7 @@
 EVAL_VERSION = "v1"
 
 EVAL_REQUIRED_HEADINGS: dict[str, list[str]] = {
-    "adr": ["## Context", "## Decision", "## Options"],
+    "adr": ["## Decision", "## Options"],
     "onepager": ["## Problem", "## Recommendation", "## Impact"],
     "eval_plan": ["## Metrics", "## Test cases", "## Monitoring"],
     "ops_checklist": ["## Security", "## Reliability", "## Operations"],

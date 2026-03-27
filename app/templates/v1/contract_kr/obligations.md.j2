@@ -1,0 +1,17 @@
+# 의무 및 책임: {{ title }}
+
+## 발주처 의무
+{% for ob in party_a_obligations %}
+- {{ ob }}
+{% endfor %}
+
+## 수급인 의무
+{% for ob in party_b_obligations %}
+- {{ ob }}
+{% endfor %}
+
+## 손해배상 및 책임
+{{ liabilities }}
+
+## 분쟁 해결
+{{ dispute_resolution }}

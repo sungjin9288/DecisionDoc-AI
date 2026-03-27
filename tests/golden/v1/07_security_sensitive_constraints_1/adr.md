@@ -3,9 +3,6 @@
 ## Goal
 Document how to handle secrets safely
 
-## Context
-
-
 ## Constraints
 Never log tokens, API keys, or passwords; redact at source
 

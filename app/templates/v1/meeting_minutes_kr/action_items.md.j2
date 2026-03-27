@@ -1,0 +1,19 @@
+# 액션 아이템: {{ title }}
+
+## 전체 액션 목록
+{% for item in items %}
+- {{ item }}
+{% endfor %}
+
+## 우선순위 액션
+{% for action in priority_actions %}
+- {{ action }}
+{% endfor %}
+
+## 차단 이슈
+{% for blocker in blockers %}
+- {{ blocker }}
+{% endfor %}
+
+## 점검일
+{{ review_date }}

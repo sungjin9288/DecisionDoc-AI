@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from app.storage.base import StorageFailedError
 from app.storage.local import LocalStorage
 from app.storage.s3 import S3Storage
 
@@ -68,3 +71,46 @@ def test_s3_storage_put_object_key_scheme_and_bytes():
     assert isinstance(first["Body"], bytes)
     assert second["Key"] == "decisiondoc-ai/exports/abc123/adr.md"
     assert isinstance(second["Body"], bytes)
+
+
+class FakeS3ClientNotFound:
+    """S3 client that raises a NoSuchKey ClientError on get_object."""
+
+    def get_object(self, **kwargs):
+        exc = Exception("NoSuchKey")
+        exc.response = {"Error": {"Code": "NoSuchKey", "Message": "The specified key does not exist."}}
+        raise exc
+
+
+class FakeS3ClientNetworkError:
+    """S3 client that raises a non-NotFound error on get_object."""
+
+    def get_object(self, **kwargs):
+        exc = Exception("Connection reset")
+        exc.response = {"Error": {"Code": "InternalError", "Message": "We encountered an internal error."}}
+        raise exc
+
+
+def test_s3_load_bundle_returns_none_on_no_such_key():
+    """NoSuchKey → bundle not found → return None (cache miss)."""
+    storage = S3Storage(bucket="unit-bucket", prefix="decisiondoc-ai/", s3_client=FakeS3ClientNotFound())
+    assert storage.load_bundle("missing-bundle") is None
+
+
+def test_s3_load_bundle_raises_storage_failed_on_other_errors():
+    """Non-NoSuchKey errors → StorageFailedError (real failure, not cache miss)."""
+    storage = S3Storage(bucket="unit-bucket", prefix="decisiondoc-ai/", s3_client=FakeS3ClientNetworkError())
+    with pytest.raises(StorageFailedError):
+        storage.load_bundle("some-bundle")
+
+
+def test_atomic_write_json_raises_storage_failed_on_non_serializable(tmp_path):
+    storage = LocalStorage(data_dir=tmp_path / "data", exports_dir=tmp_path / "exports")
+    path = tmp_path / "data" / "test.json"
+
+    # datetime objects are not JSON-serializable — _atomic_write_json must convert
+    # the TypeError into StorageFailedError rather than letting it propagate raw.
+    from datetime import datetime
+
+    with pytest.raises(StorageFailedError):
+        storage._atomic_write_json(path, {"ts": datetime(2026, 1, 1)})

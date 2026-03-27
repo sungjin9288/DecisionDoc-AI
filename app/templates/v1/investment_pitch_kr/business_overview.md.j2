@@ -1,0 +1,20 @@
+# 사업 개요: {{ title }}
+
+## 회사 소개
+{{ company_summary }}
+
+## 문제 정의
+{{ problem_statement }}
+
+## 솔루션
+{{ solution_description }}
+
+## 팀 소개
+{% for member in team_highlights %}
+- {{ member }}
+{% endfor %}
+
+## 성과 지표
+{% for metric in traction_metrics %}
+- {{ metric }}
+{% endfor %}

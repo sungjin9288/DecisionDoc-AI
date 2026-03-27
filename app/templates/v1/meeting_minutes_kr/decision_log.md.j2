@@ -1,0 +1,17 @@
+# 의사결정 기록: {{ title }}
+
+## 결정 사항
+{% for decision in decisions %}
+- {{ decision }}
+{% endfor %}
+
+## 결정 배경
+{{ rationale }}
+
+## 검토한 대안
+{% for alt in alternatives_considered %}
+- {{ alt }}
+{% endfor %}
+
+## 영향도 평가
+{{ impact_assessment }}

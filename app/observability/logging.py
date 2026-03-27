@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import traceback
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,12 @@ class JsonLineFormatter(logging.Formatter):
             payload = dict(record.msg)
         else:
             payload = {"message": record.getMessage()}
+
+        if record.exc_info:
+            payload.setdefault(
+                "traceback",
+                "".join(traceback.format_exception(*record.exc_info)).strip(),
+            )
 
         payload.setdefault("ts", datetime.now(timezone.utc).isoformat())
         payload.setdefault("level", record.levelname)

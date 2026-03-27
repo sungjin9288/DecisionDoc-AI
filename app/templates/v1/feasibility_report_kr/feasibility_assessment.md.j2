@@ -1,0 +1,20 @@
+# 타당성 평가: {{ title }}
+
+## 기술적 타당성
+{{ technical_feasibility }}
+
+## 경제적 타당성
+{{ economic_feasibility }}
+
+## 운영적 타당성
+{{ operational_feasibility }}
+
+## 리스크 분석
+{% for risk in risk_analysis %}
+- {{ risk }}
+{% endfor %}
+
+## 대안 비교
+{% for alt in alternative_comparison %}
+- {{ alt }}
+{% endfor %}

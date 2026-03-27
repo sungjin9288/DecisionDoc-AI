@@ -6,9 +6,6 @@ Validate output with very short context
 ## Context
 .
 
-## Constraints
-
-
 ## Decision
 Use FastAPI API-only service with schema-first provider bundle generation.
 

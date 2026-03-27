@@ -86,6 +86,31 @@ def test_ops_investigate_auth_401_and_200(tmp_path, monkeypatch):
     assert service.calls[-1]["notify"] is False
 
 
+def test_ops_investigate_with_ops_key_still_works_after_users_exist(tmp_path, monkeypatch):
+    service = _FakeOpsService()
+    client = _create_client(tmp_path, monkeypatch, service)
+
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert register.status_code == 200
+
+    response = client.post(
+        "/ops/investigate",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+        json={"window_minutes": 15, "reason": "ops smoke", "notify": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["incident_id"] == "incident-123"
+
+
 class _FakeCloudWatchClient:
     def __init__(self):
         self.calls = 0
@@ -103,6 +128,34 @@ class _FakeCloudWatchClient:
                 {"Id": "api_4xx", "Values": [5]},
                 {"Id": "api_5xx", "Values": [2]},
                 {"Id": "api_integration_latency_p95", "Values": [180.0]},
+            ]
+        }
+
+
+class _QueryAwareCloudWatchClient:
+    def __init__(self):
+        self.calls = 0
+        self.last_query_ids: list[str] = []
+
+    def get_metric_data(self, **kwargs):  # noqa: ANN003
+        self.calls += 1
+        queries = kwargs.get("MetricDataQueries", [])
+        self.last_query_ids = [str(item.get("Id", "")) for item in queries if isinstance(item, dict)]
+        values = {
+            "lambda_invocations": 12,
+            "lambda_errors": 3,
+            "lambda_throttles": 1,
+            "lambda_duration_p95": 245.4,
+            "api_count": 20,
+            "api_4xx": 5,
+            "api_5xx": 2,
+            "api_integration_latency_p95": 180.0,
+        }
+        return {
+            "MetricDataResults": [
+                {"Id": query_id, "Values": [values[query_id]]}
+                for query_id in self.last_query_ids
+                if query_id in values
             ]
         }
 
@@ -267,6 +320,41 @@ def test_investigate_deduped_returns_cached_without_collectors(monkeypatch):
     assert fake_logs.calls == 0
     assert fake_status.create_calls == 0
     assert fake_status.update_calls == 0
+
+
+def test_collect_metrics_without_api_id_skips_api_gateway_queries(monkeypatch):
+    now = datetime(2026, 2, 20, 12, 34, 56, tzinfo=UTC)
+    fake_s3 = _FakeS3Client()
+    fake_cw = _QueryAwareCloudWatchClient()
+    fake_logs = _FakeLogsClient()
+    fake_status = _FakeStatuspageClient()
+    service = _ops_service(
+        monkeypatch,
+        now=now,
+        fake_s3=fake_s3,
+        fake_cw=fake_cw,
+        fake_logs=fake_logs,
+        fake_statuspage=fake_status,
+    )
+    monkeypatch.delenv("DECISIONDOC_HTTP_API_ID", raising=False)
+
+    result = service._collect_metrics(start=now - timedelta(minutes=30), end=now, stage="dev")
+
+    assert fake_cw.calls == 1
+    assert fake_cw.last_query_ids == [
+        "lambda_invocations",
+        "lambda_errors",
+        "lambda_throttles",
+        "lambda_duration_p95",
+    ]
+    assert result["lambda"]["invocations"] == 12
+    assert result["lambda"]["errors"] == 3
+    assert result["api_gateway"] == {
+        "count": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "integration_latency_p95_ms": None,
+    }
 
 
 def test_investigate_force_bypasses_dedupe_and_writes_new_report(monkeypatch):
@@ -523,3 +611,90 @@ def test_ops_report_contains_no_sensitive_strings(monkeypatch):
     assert sentinel_api_key not in stored_blob
     assert "requirements=" not in stored_blob
     assert "output_text" not in stored_blob
+
+
+def test_investigate_response_includes_report_md_key(monkeypatch):
+    now = datetime(2026, 2, 20, 12, 34, 56, tzinfo=UTC)
+    fake_s3 = _FakeS3Client()
+    fake_cw = _FakeCloudWatchClient()
+    fake_logs = _FakeLogsClient()
+    fake_status = _FakeStatuspageClient()
+    service = _ops_service(
+        monkeypatch,
+        now=now,
+        fake_s3=fake_s3,
+        fake_cw=fake_cw,
+        fake_logs=fake_logs,
+        fake_statuspage=fake_status,
+    )
+
+    # New (non-deduped) investigation
+    result = service.investigate(
+        window_minutes=30,
+        reason="latency spike",
+        stage="prod",
+        request_id="md-req-1",
+        force=False,
+        notify=False,
+    )
+
+    assert result["deduped"] is False
+    assert "report_md_key" in result
+    assert result["report_md_key"] is not None
+    assert result["report_md_key"].endswith("/report.md")
+    assert result["report_s3_key"].endswith("/report.json")
+    # Both keys should share the same prefix (same report run directory)
+    assert result["report_md_key"].rsplit("/", 1)[0] == result["report_s3_key"].rsplit("/", 1)[0]
+
+
+def test_investigate_deduped_response_includes_report_md_key(monkeypatch):
+    now = datetime(2026, 2, 20, 12, 34, 56, tzinfo=UTC)
+    fake_s3 = _FakeS3Client()
+    fake_cw = _FakeCloudWatchClient()
+    fake_logs = _FakeLogsClient()
+    fake_status = _FakeStatuspageClient()
+    service = _ops_service(
+        monkeypatch,
+        now=now,
+        fake_s3=fake_s3,
+        fake_cw=fake_cw,
+        fake_logs=fake_logs,
+        fake_statuspage=fake_status,
+    )
+
+    incident_key = _incident_key(stage="prod", window_minutes=30, bucket_seconds=300, now=now, reason="cache test")
+    index_key = f"decisiondoc-ai/reports/incidents/index/{incident_key}.json"
+    latest_prefix = f"decisiondoc-ai/reports/incidents/{incident_key}/20260220-120000-abcd/"
+    fake_s3.objects[index_key] = json.dumps(
+        {
+            "incident_key": incident_key,
+            "stage": "prod",
+            "window_minutes": 30,
+            "reason": "cache test",
+            "updated_at": _iso_utc(now - timedelta(seconds=30)),
+            "ttl_seconds": 300,
+            "latest_report_prefix": latest_prefix,
+            "summary": {"counts": {"lambda_errors": 5}},
+            "statuspage": {
+                "incident_id": "",
+                "incident_url": "",
+                "last_state": "investigating",
+                "last_update_at": _iso_utc(now - timedelta(seconds=30)),
+            },
+        }
+    )
+
+    result = service.investigate(
+        window_minutes=30,
+        reason="cache test",
+        stage="prod",
+        request_id="md-dedup-req",
+        force=False,
+        notify=False,
+    )
+
+    assert result["deduped"] is True
+    assert "report_md_key" in result
+    assert result["report_md_key"] is not None
+    assert result["report_md_key"] == f"{latest_prefix}report.md"
+    assert result["report_s3_key"] == f"{latest_prefix}report.json"

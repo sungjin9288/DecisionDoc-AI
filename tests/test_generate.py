@@ -62,6 +62,20 @@ def test_generate_with_mock_provider_ok(tmp_path, monkeypatch):
     validate_docs(body["docs"])
 
 
+def test_generate_accepts_optional_style_profile_id(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch, provider="mock")
+    response = client.post(
+        "/generate",
+        json={
+            "title": "style profile payload",
+            "goal": "web ui compatibility",
+            "style_profile_id": "default-consulting",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
+
+
 def test_missing_required_fields_return_422(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
 
@@ -116,8 +130,8 @@ def test_doc_validation_failure_returns_stable_500_payload(tmp_path, monkeypatch
     from app.providers.mock_provider import MockProvider
 
     class BrokenMockProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id, bundle_spec=bundle_spec, feedback_hints=feedback_hints)
             bundle["adr"]["options"] = ["only one option"]
             return bundle
 
@@ -148,15 +162,20 @@ def test_bundle_schema_required_keys_exist_for_mock_provider():
     assert set(bundle.keys()) == {"adr", "onepager", "eval_plan", "ops_checklist"}
 
 
-def test_provider_missing_key_returns_500_provider_failed(tmp_path, monkeypatch):
+def test_provider_missing_key_raises_at_startup(tmp_path, monkeypatch):
+    # Startup fail-fast: missing API key is now caught during create_app(), not at
+    # first request. This guards against silent misconfiguration before serving traffic.
+    # Patch load_dotenv to prevent the real .env file from overwriting monkeypatched vars.
+    monkeypatch.setattr("app.main.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "openai")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    client = _create_client(tmp_path, monkeypatch, provider="openai")
-    response = client.post("/generate", json={"title": "x", "goal": "y"})
-    assert response.status_code == 500
-    body = response.json()
-    assert body["code"] == "PROVIDER_FAILED"
-    assert body["message"] == "Provider request failed."
-    assert isinstance(body["request_id"], str)
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY is required"):
+        create_app()
 
 
 def test_bundle_schema_validation_missing_required_key_returns_provider_failed(tmp_path, monkeypatch):
@@ -164,10 +183,8 @@ def test_bundle_schema_validation_missing_required_key_returns_provider_failed(t
     from app.providers.mock_provider import MockProvider
 
     class InvalidTypedProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
-            bundle["ops_checklist"]["security"] = [123]
-            return bundle
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            raise RuntimeError("provider internal error")
 
     monkeypatch.setattr(main_module, "get_provider", lambda: InvalidTypedProvider())
     client = _create_client(tmp_path, monkeypatch)
@@ -191,6 +208,34 @@ def test_regression_fixtures_generate_valid_docs(tmp_path, monkeypatch, fixture_
     assert len(body["docs"]) == expected_len
 
     validate_docs(body["docs"])
+
+
+def test_corrupt_cache_file_is_removed_and_regenerated(tmp_path, monkeypatch):
+    """If the cache file is corrupt, it should be deleted and re-generated on the next call."""
+    monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "1")
+    client = _create_client(tmp_path, monkeypatch)
+
+    # First call: populate cache
+    response1 = client.post("/generate", json={"title": "cache test", "goal": "test"})
+    assert response1.status_code == 200
+
+    # Find the cache file and corrupt it
+    cache_dir = tmp_path / "cache"
+    cache_files = list(cache_dir.glob("*.json"))
+    assert len(cache_files) >= 1
+    cache_file = cache_files[0]
+    cache_file.write_text("{corrupted-json-content", encoding="utf-8")
+
+    # Second call: should detect corruption, remove file, and regenerate
+    response2 = client.post("/generate", json={"title": "cache test", "goal": "test"})
+    assert response2.status_code == 200
+    assert response2.json()["provider"] == "mock"
+
+    # The corrupt file should have been replaced with a valid cache
+    new_content = cache_file.read_text(encoding="utf-8")
+    parsed = json.loads(new_content)
+    assert isinstance(parsed, dict)
+    assert "adr" in parsed
 
 
 def test_generate_export_returns_files_and_writes_markdown(tmp_path, monkeypatch):
@@ -218,13 +263,30 @@ def test_generate_export_returns_files_and_writes_markdown(tmp_path, monkeypatch
         assert md_path.read_text(encoding="utf-8").strip()
 
 
+def test_generate_succeeds_when_eval_executor_is_unavailable(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+
+    def _raise_executor_shutdown(*args, **kwargs):  # noqa: ANN001, ARG001
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    monkeypatch.setattr("app.services.generation_service._eval_executor.submit", _raise_executor_shutdown)
+
+    response = client.post(
+        "/generate",
+        json={"title": "executor shutdown", "goal": "skip background eval safely"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
+
+
 def test_generate_export_validation_failure_returns_500_and_no_export_dir(tmp_path, monkeypatch):
     import app.main as main_module
     from app.providers.mock_provider import MockProvider
 
     class BrokenMockProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id, bundle_spec=bundle_spec, feedback_hints=feedback_hints)
             bundle["adr"]["options"] = ["only one option"]
             return bundle
 

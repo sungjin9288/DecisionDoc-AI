@@ -41,6 +41,14 @@ on:
         options:
           - "false"
           - "true"
+      include_voice_brief_smoke:
+        description: "Run Voice Brief import smoke when integration is configured"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   deploy:
@@ -48,8 +56,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    outputs:
-      smoke_base_url: ${{ steps.stack_outputs.outputs.smoke_base_url }}
     env:
       CI: "true"
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -66,7 +72,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt boto3
 
       - name: Resolve stage secrets
         run: |
@@ -75,18 +81,44 @@ jobs:
             BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_DEV }}"
             THROTTLE_BURST="5"
             THROTTLE_RATE="2"
-            RESERVED_CONCURRENCY="2"
+            RESERVED_CONCURRENCY=""
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_DEV }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_DEV }}"
+            VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_DEV }}"
+            VOICE_BRIEF_TIMEOUT_SECONDS="${{ vars.VOICE_BRIEF_TIMEOUT_SECONDS_DEV }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_DEV }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_DEV }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_DEV }}"
+            PROCUREMENT_COPILOT_ENABLED="${{ vars.DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV }}"
           else
             ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
             BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_PROD }}"
             THROTTLE_BURST="20"
             THROTTLE_RATE="10"
             RESERVED_CONCURRENCY="5"
+            G2B_API_KEY="${{ secrets.G2B_API_KEY_PROD }}"
+            VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_PROD }}"
+            VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_PROD }}"
+            VOICE_BRIEF_TIMEOUT_SECONDS="${{ vars.VOICE_BRIEF_TIMEOUT_SECONDS_PROD }}"
+            VOICE_BRIEF_SMOKE_RECORDING_ID="${{ vars.VOICE_BRIEF_SMOKE_RECORDING_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_REVISION_ID="${{ vars.VOICE_BRIEF_SMOKE_REVISION_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_TENANT_ID="${{ vars.VOICE_BRIEF_SMOKE_TENANT_ID_PROD }}"
+            VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_PROD }}"
+            VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_PROD }}"
+            PROCUREMENT_COPILOT_ENABLED="${{ vars.DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_PROD }}"
           fi
           API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
           OPS_KEY="${{ secrets.DECISIONDOC_OPS_KEY }}"
           STATUSPAGE_PAGE_ID="${{ secrets.STATUSPAGE_PAGE_ID }}"
           STATUSPAGE_API_KEY="${{ secrets.STATUSPAGE_API_KEY }}"
+          if [ -z "${VOICE_BRIEF_TIMEOUT_SECONDS}" ]; then
+            VOICE_BRIEF_TIMEOUT_SECONDS="10.0"
+          fi
+          if [ -z "${PROCUREMENT_COPILOT_ENABLED}" ]; then
+            PROCUREMENT_COPILOT_ENABLED="0"
+          fi
           if [ -z "${AWS_REGION}" ]; then
             echo "Missing AWS_REGION secret"
             exit 1
@@ -107,19 +139,21 @@ jobs:
             echo "Missing DECISIONDOC_OPS_KEY secret"
             exit 1
           fi
-          if [ -z "${STATUSPAGE_PAGE_ID}" ]; then
-            echo "Missing STATUSPAGE_PAGE_ID secret"
-            exit 1
-          fi
-          if [ -z "${STATUSPAGE_API_KEY}" ]; then
-            echo "Missing STATUSPAGE_API_KEY secret"
-            exit 1
-          fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_OPS_KEY=${OPS_KEY}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_PAGE_ID=${STATUSPAGE_PAGE_ID}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_API_KEY=${STATUSPAGE_API_KEY}" >> "$GITHUB_ENV"
+          echo "G2B_API_KEY=${G2B_API_KEY}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_API_BASE_URL=${VOICE_BRIEF_API_BASE_URL}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_API_BEARER_TOKEN=${VOICE_BRIEF_API_BEARER_TOKEN}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_TIMEOUT_SECONDS=${VOICE_BRIEF_TIMEOUT_SECONDS}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_RECORDING_ID=${VOICE_BRIEF_SMOKE_RECORDING_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_REVISION_ID=${VOICE_BRIEF_SMOKE_REVISION_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_TENANT_ID=${VOICE_BRIEF_SMOKE_TENANT_ID}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_USERNAME=${VOICE_BRIEF_SMOKE_USERNAME}" >> "$GITHUB_ENV"
+          echo "VOICE_BRIEF_SMOKE_PASSWORD=${VOICE_BRIEF_SMOKE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "PROCUREMENT_COPILOT_ENABLED=${PROCUREMENT_COPILOT_ENABLED}" >> "$GITHUB_ENV"
           echo "THROTTLE_BURST=${THROTTLE_BURST}" >> "$GITHUB_ENV"
           echo "THROTTLE_RATE=${THROTTLE_RATE}" >> "$GITHUB_ENV"
           echo "RESERVED_CONCURRENCY=${RESERVED_CONCURRENCY}" >> "$GITHUB_ENV"
@@ -130,12 +164,49 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Prepare Lambda manifest
+        run: |
+          cp requirements-lambda.txt requirements.txt
+
       - name: SAM build
         run: |
           sam build --template-file infra/sam/template.yaml
 
       - name: SAM deploy
         run: |
+          PARAM_OVERRIDES=(
+            "Stage=${{ inputs.stage }}"
+            "TemplateVersion=${{ inputs.template_version }}"
+            "S3BucketName=${DECISIONDOC_S3_BUCKET}"
+            "S3Prefix=decisiondoc-ai/"
+            "DecisionDocApiKey=${{ secrets.DECISIONDOC_API_KEY }}"
+            "DecisionDocOpsKey=${DECISIONDOC_OPS_KEY}"
+            "DecisionDocMaintenance=${{ inputs.maintenance_mode }}"
+            "DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED}"
+            "ApiThrottlingBurstLimit=${THROTTLE_BURST}"
+            "ApiThrottlingRateLimit=${THROTTLE_RATE}"
+          )
+          if [ -n "${RESERVED_CONCURRENCY}" ]; then
+            PARAM_OVERRIDES+=("LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}")
+          fi
+          if [ -n "${STATUSPAGE_PAGE_ID}" ]; then
+            PARAM_OVERRIDES+=("StatuspagePageId=${STATUSPAGE_PAGE_ID}")
+          fi
+          if [ -n "${STATUSPAGE_API_KEY}" ]; then
+            PARAM_OVERRIDES+=("StatuspageApiKey=${STATUSPAGE_API_KEY}")
+          fi
+          if [ -n "${G2B_API_KEY}" ]; then
+            PARAM_OVERRIDES+=("G2bApiKey=${G2B_API_KEY}")
+          fi
+          if [ -n "${VOICE_BRIEF_API_BASE_URL}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefApiBaseUrl=${VOICE_BRIEF_API_BASE_URL}")
+          fi
+          if [ -n "${VOICE_BRIEF_API_BEARER_TOKEN}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefApiBearerToken=${VOICE_BRIEF_API_BEARER_TOKEN}")
+          fi
+          if [ -n "${VOICE_BRIEF_TIMEOUT_SECONDS}" ]; then
+            PARAM_OVERRIDES+=("VoiceBriefTimeoutSeconds=${VOICE_BRIEF_TIMEOUT_SECONDS}")
+          fi
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name decisiondoc-ai-${{ inputs.stage }} \
@@ -144,19 +215,7 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3 \
-            --parameter-overrides \
-              Stage=${{ inputs.stage }} \
-              TemplateVersion=${{ inputs.template_version }} \
-              S3BucketName=${DECISIONDOC_S3_BUCKET} \
-              S3Prefix=decisiondoc-ai/ \
-              DecisionDocApiKey=${{ secrets.DECISIONDOC_API_KEY }} \
-              DecisionDocOpsKey=${DECISIONDOC_OPS_KEY} \
-              DecisionDocMaintenance=${{ inputs.maintenance_mode }} \
-              StatuspagePageId=${STATUSPAGE_PAGE_ID} \
-              StatuspageApiKey=${STATUSPAGE_API_KEY} \
-              ApiThrottlingBurstLimit=${THROTTLE_BURST} \
-              ApiThrottlingRateLimit=${THROTTLE_RATE} \
-              LambdaReservedConcurrentExecutions=${RESERVED_CONCURRENCY}
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
       - name: Resolve API endpoint
         id: stack_outputs
@@ -191,11 +250,45 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt boto3
+
+      - name: Resolve smoke role
+        run: |
+          if [ "${{ inputs.stage }}" = "dev" ]; then
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
+          else
+            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
+          fi
+          if [ -z "${ROLE_ARN}" ]; then
+            echo "Missing stage role secret"
+            exit 1
+          fi
+          echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials for smoke (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve smoke base URL from stack output
+        env:
+          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
+        run: |
+          SMOKE_BASE_URL="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`HttpApiUrl`].OutputValue' \
+            --output text)"
+          if [ -z "${SMOKE_BASE_URL}" ] || [ "${SMOKE_BASE_URL}" = "None" ]; then
+            echo "Missing HttpApiUrl stack output"
+            exit 1
+          fi
+          echo "SMOKE_BASE_URL=${SMOKE_BASE_URL}" >> "$GITHUB_ENV"
 
       - name: Validate smoke inputs
         env:
-          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
         run: |
           if [ -z "${SMOKE_BASE_URL}" ]; then
@@ -213,32 +306,49 @@ jobs:
 
       - name: Run smoke
         env:
-          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
           SMOKE_PROVIDER: ${{ inputs.provider }}
         run: |
           python scripts/smoke.py
 
-      - name: Resolve smoke role
-        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
+      - name: Validate Voice Brief smoke inputs
+        if: ${{ inputs.include_voice_brief_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          VOICE_BRIEF_API_BASE_URL: ${{ env.VOICE_BRIEF_API_BASE_URL }}
+          VOICE_BRIEF_SMOKE_RECORDING_ID: ${{ env.VOICE_BRIEF_SMOKE_RECORDING_ID }}
         run: |
-          if [ "${{ inputs.stage }}" = "dev" ]; then
-            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_DEV }}"
-          else
-            ROLE_ARN="${{ secrets.AWS_ROLE_ARN_PROD }}"
-          fi
-          if [ -z "${ROLE_ARN}" ]; then
-            echo "Missing stage role secret"
+          if [ -z "${SMOKE_BASE_URL}" ]; then
+            echo "Missing smoke base URL output"
             exit 1
           fi
-          echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
+          if [ -z "${SMOKE_API_KEY}" ]; then
+            echo "Missing DECISIONDOC_API_KEY secret"
+            exit 1
+          fi
+          if [ -z "${VOICE_BRIEF_API_BASE_URL}" ]; then
+            echo "Voice Brief integration is not configured for this stage"
+            exit 1
+          fi
+          if [ -z "${VOICE_BRIEF_SMOKE_RECORDING_ID}" ]; then
+            echo "Missing Voice Brief smoke recording id variable"
+            exit 1
+          fi
 
-      - name: Configure AWS credentials for ops smoke (OIDC)
-        if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+      - name: Run Voice Brief smoke
+        if: ${{ inputs.include_voice_brief_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          SMOKE_TENANT_ID: ${{ env.VOICE_BRIEF_SMOKE_TENANT_ID }}
+          VOICE_BRIEF_SMOKE_RECORDING_ID: ${{ env.VOICE_BRIEF_SMOKE_RECORDING_ID }}
+          VOICE_BRIEF_SMOKE_REVISION_ID: ${{ env.VOICE_BRIEF_SMOKE_REVISION_ID }}
+          VOICE_BRIEF_SMOKE_USERNAME: ${{ env.VOICE_BRIEF_SMOKE_USERNAME }}
+          VOICE_BRIEF_SMOKE_PASSWORD: ${{ env.VOICE_BRIEF_SMOKE_PASSWORD }}
+        run: |
+          python scripts/voice_brief_smoke.py
 
       - name: Resolve ops smoke S3 bucket from stack parameters
         if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
@@ -267,7 +377,7 @@ jobs:
       - name: Validate ops smoke inputs
         if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
         env:
-          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_OPS_KEY: ${{ secrets.DECISIONDOC_OPS_KEY }}
         run: |
           if [ -z "${SMOKE_BASE_URL}" ]; then
@@ -290,7 +400,7 @@ jobs:
       - name: Run ops smoke
         if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
         env:
-          SMOKE_BASE_URL: ${{ needs.deploy.outputs.smoke_base_url }}
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_OPS_KEY: ${{ secrets.DECISIONDOC_OPS_KEY }}
           SMOKE_S3_BUCKET: ${{ env.SMOKE_S3_BUCKET }}
           SMOKE_S3_PREFIX: ${{ env.SMOKE_S3_PREFIX }}

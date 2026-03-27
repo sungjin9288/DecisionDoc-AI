@@ -1,0 +1,38 @@
+# 사업이해서: {{ title }}
+
+## 사업 배경
+{{ project_background }}
+
+## 현황 및 문제점
+{% for issue in current_issues %}
+- {{ issue }}
+{% endfor %}
+
+## 사업 목표
+{% for obj in project_objectives %}
+- {{ obj }}
+{% endfor %}
+
+## 대상 사용자
+{% for user in target_users %}
+- {{ user }}
+{% endfor %}
+
+## 사업 범위
+{{ scope_summary }}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+
+{% for slide in slide_outline %}
+### 슬라이드 {{ slide.page }} — {{ slide.title }}
+
+**📋 핵심 내용**: {{ slide.key_content }}
+
+**🎨 디자인 팁**: {{ slide.design_tip }}
+
+{% endfor %}
+{% endif %}

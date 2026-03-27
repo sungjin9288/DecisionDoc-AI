@@ -3,12 +3,6 @@
 ## Goal
 Generate all decision docs with default settings
 
-## Context
-
-
-## Constraints
-
-
 ## Decision
 Use FastAPI API-only service with schema-first provider bundle generation.
 

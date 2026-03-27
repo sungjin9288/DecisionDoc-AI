@@ -1,0 +1,26 @@
+# 진행 현황 보고: {{ title }}
+
+## 마일스톤 현황
+{% for ms in milestone_status %}
+- {{ ms }}
+{% endfor %}
+
+## 산출물 목록
+{% for d in deliverables %}
+- {{ d }}
+{% endfor %}
+
+## 해결된 이슈
+{% for issue in issues_resolved %}
+- {{ issue }}
+{% endfor %}
+
+## 미결 항목
+{% for item in pending_items %}
+- {{ item }}
+{% endfor %}
+
+## KPI 추적
+{% for kpi in kpi_tracking %}
+- {{ kpi }}
+{% endfor %}

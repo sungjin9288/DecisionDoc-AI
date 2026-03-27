@@ -1,0 +1,24 @@
+# 품질·리스크 관리계획: {{ title }}
+
+## 품질 기준
+{% if quality_standards %}{% for std in quality_standards %}
+- {{ std }}
+{% endfor %}{% endif %}
+
+## 검수 기준
+{% if inspection_criteria %}{% for criterion in inspection_criteria %}
+- {{ criterion }}
+{% endfor %}{% endif %}
+
+## 리스크 매트릭스
+{% if risk_matrix %}{% for risk in risk_matrix %}
+- {{ risk }}
+{% endfor %}{% endif %}
+
+## 변경 관리
+{% if change_management %}{{ change_management }}
+{% endif %}
+
+## 보고 체계
+{% if reporting_structure %}{{ reporting_structure }}
+{% endif %}

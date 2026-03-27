@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import sys
 from typing import Any
@@ -40,11 +41,142 @@ def _print_result(endpoint: str, status_code: int, request_id: str = "", bundle_
     print(" ".join(parts))
 
 
+def _is_enabled(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_stream_complete(response: httpx.Response) -> dict[str, Any]:
+    buffer = ""
+    for chunk in response.iter_text():
+        buffer += chunk
+        while "\n\n" in buffer:
+            part, buffer = buffer.split("\n\n", 1)
+            event_type = ""
+            payload_raw = ""
+            for line in part.splitlines():
+                if line.startswith("event: "):
+                    event_type = line[7:].strip()
+                elif line.startswith("data: "):
+                    payload_raw += line[6:]
+            if not payload_raw:
+                continue
+            try:
+                payload = json.loads(payload_raw)
+            except ValueError:
+                continue
+            if event_type == "complete":
+                return payload if isinstance(payload, dict) else {}
+            if event_type == "error":
+                message = payload.get("message", "stream generation failed") if isinstance(payload, dict) else "stream generation failed"
+                raise SystemExit(f"POST /generate/stream procurement smoke failed: {message}")
+    raise SystemExit("POST /generate/stream procurement smoke ended without a complete event")
+
+
+def _run_procurement_smoke(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    auth_headers: dict[str, str],
+    provider: str,
+    url_or_number: str,
+) -> None:
+    version = client.get(f"{base_url}/version")
+    version_body = _assert_status("GET /version", version, 200)
+    if not bool(version_body.get("features", {}).get("procurement_copilot")):
+        raise SystemExit("Procurement smoke requested but /version.features.procurement_copilot is false")
+
+    project = client.post(
+        f"{base_url}/projects",
+        headers=auth_headers,
+        json={"name": "Procurement Smoke", "fiscal_year": 2026},
+    )
+    project_body = _assert_status("POST /projects", project, 200)
+    project_id = str(project_body.get("project_id", ""))
+    if not project_id:
+        raise SystemExit("POST /projects missing project_id for procurement smoke")
+    _print_result("POST /projects", project.status_code, extra=f"project_id={project_id}")
+
+    imported = client.post(
+        f"{base_url}/projects/{project_id}/imports/g2b-opportunity",
+        headers=auth_headers,
+        json={"url_or_number": url_or_number},
+    )
+    import_body = _assert_status("POST /projects/{id}/imports/g2b-opportunity", imported, 200)
+    opportunity = import_body.get("opportunity") or {}
+    _print_result(
+        "POST /projects/{id}/imports/g2b-opportunity",
+        imported.status_code,
+        extra=f"title={opportunity.get('title', '')}",
+    )
+
+    evaluated = client.post(
+        f"{base_url}/projects/{project_id}/procurement/evaluate",
+        headers=auth_headers,
+    )
+    evaluated_body = _assert_status("POST /projects/{id}/procurement/evaluate", evaluated, 200)
+    _print_result(
+        "POST /projects/{id}/procurement/evaluate",
+        evaluated.status_code,
+        extra=f"soft_fit_score={evaluated_body.get('decision', {}).get('soft_fit_score', '')}",
+    )
+
+    recommended = client.post(
+        f"{base_url}/projects/{project_id}/procurement/recommend",
+        headers=auth_headers,
+    )
+    recommended_body = _assert_status("POST /projects/{id}/procurement/recommend", recommended, 200)
+    recommendation = recommended_body.get("recommendation") or {}
+    _print_result(
+        "POST /projects/{id}/procurement/recommend",
+        recommended.status_code,
+        extra=f"recommendation={recommendation.get('value', '')}",
+    )
+
+    with client.stream(
+        "POST",
+        f"{base_url}/generate/stream",
+        headers=auth_headers,
+        json={
+            "title": opportunity.get("title") or "Procurement Smoke",
+            "goal": "입찰 참여 여부 판단 및 handoff 준비",
+            "bundle_type": "bid_decision_kr",
+            "project_id": project_id,
+            "context": f"provider={provider}",
+        },
+    ) as streamed:
+        if streamed.status_code != 200:
+            body = _json_body(streamed)
+            code = body.get("code", "unknown")
+            raise SystemExit(
+                f"POST /generate/stream procurement smoke expected 200, got {streamed.status_code} (code={code})"
+            )
+        completed = _read_stream_complete(streamed)
+    _print_result(
+        "POST /generate/stream procurement",
+        200,
+        request_id=str(completed.get("request_id", "")),
+        bundle_id=str(completed.get("bundle_id", "")),
+    )
+
+    project_detail = client.get(f"{base_url}/projects/{project_id}", headers=auth_headers)
+    project_detail_body = _assert_status("GET /projects/{id}", project_detail, 200)
+    documents = project_detail_body.get("documents") or []
+    if not any(doc.get("bundle_id") == "bid_decision_kr" for doc in documents):
+        raise SystemExit("Procurement smoke generated bid_decision_kr but project detail did not auto-link the document")
+    _print_result(
+        "GET /projects/{id}",
+        project_detail.status_code,
+        extra=f"documents={len(documents)}",
+    )
+
+
 def main() -> int:
     base_url = _required_env("SMOKE_BASE_URL").rstrip("/")
     api_key = _required_env("SMOKE_API_KEY")
     provider = os.getenv("SMOKE_PROVIDER", "mock").strip() or "mock"
     timeout_sec = float(os.getenv("SMOKE_TIMEOUT_SEC", "30"))
+    include_procurement = _is_enabled(os.getenv("SMOKE_INCLUDE_PROCUREMENT", "0"))
+    procurement_url_or_number = os.getenv("SMOKE_PROCUREMENT_URL_OR_NUMBER", "").strip()
 
     payload = {
         "title": "Smoke Check",
@@ -97,6 +229,17 @@ def main() -> int:
             bundle_id=export_bundle_id,
             extra=f"files={len(files)}",
         )
+
+        if include_procurement:
+            if not procurement_url_or_number:
+                raise SystemExit("Missing required environment variable: SMOKE_PROCUREMENT_URL_OR_NUMBER")
+            _run_procurement_smoke(
+                client,
+                base_url=base_url,
+                auth_headers=auth_headers,
+                provider=provider,
+                url_or_number=procurement_url_or_number,
+            )
 
     print("Smoke completed.")
     return 0

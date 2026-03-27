@@ -1,0 +1,20 @@
+# 경영진 요약: {{ title }}
+
+## 프로젝트 개요
+{{ project_overview }}
+
+## 목표 달성 현황
+{% for obj in objectives_achieved %}
+- {{ obj }}
+{% endfor %}
+
+## 핵심 성과
+{% for outcome in key_outcomes %}
+- {{ outcome }}
+{% endfor %}
+
+## 예산 요약
+{{ budget_summary }}
+
+## 일정 요약
+{{ timeline_summary }}

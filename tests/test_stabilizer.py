@@ -31,8 +31,8 @@ def test_internal_marker_does_not_leak_to_cache_or_render(tmp_path, monkeypatch)
     monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "1")
 
     class MarkerProvider(MockProvider):
-        def generate_bundle(self, requirements, *, schema_version, request_id):  # noqa: ANN001
-            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id)
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            bundle = super().generate_bundle(requirements, schema_version=schema_version, request_id=request_id, bundle_spec=bundle_spec, feedback_hints=feedback_hints)
             bundle["_stabilized"] = {"patched": ["forced"]}
             return bundle
 

@@ -9,6 +9,7 @@ from time import perf_counter
 from typing import Any, Callable
 from uuid import uuid4
 
+from app.config import is_enabled
 from app.observability.logging import log_event
 from app.ops.statuspage import StatuspageClient
 
@@ -123,12 +124,7 @@ class OpsInvestigationService:
         ttl_seconds = _env_int("DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS", 300)
         bucket_seconds = _env_int("DECISIONDOC_INVESTIGATE_BUCKET_SECONDS", 300)
         status_update_min_seconds = _env_int("DECISIONDOC_INVESTIGATE_STATUSPAGE_UPDATE_MIN_SECONDS", 600)
-        statuspage_strict = os.getenv("DECISIONDOC_OPS_STATUSPAGE_STRICT", "0").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
+        statuspage_strict = is_enabled(os.getenv("DECISIONDOC_OPS_STATUSPAGE_STRICT", "0"))
 
         incident_key = self._build_incident_key(
             stage=stage,
@@ -176,6 +172,7 @@ class OpsInvestigationService:
                 except Exception:
                     statuspage_ms += self._elapsed_ms(status_started)
                     status_error = "Status page notification failed."
+                    logger.warning("Statuspage update failed (dedup path)", exc_info=True)
                     self._emit_kpi_log(
                         request_id=request_id,
                         incident_key=incident_key,
@@ -200,6 +197,7 @@ class OpsInvestigationService:
                 summary = {}
             latest_prefix = index_data.get("latest_report_prefix", "")
             report_key = f"{latest_prefix}report.json" if isinstance(latest_prefix, str) and latest_prefix else ""
+            report_md_key_dedup = f"{latest_prefix}report.md" if isinstance(latest_prefix, str) and latest_prefix else None
             response = {
                 "incident_id": incident_key,
                 "incident_key": incident_key,
@@ -208,6 +206,7 @@ class OpsInvestigationService:
                 "statuspage_incident_url": status_url,
                 "report_s3_key": report_key,
                 "report_json_key": report_key,
+                "report_md_key": report_md_key_dedup,
                 "statuspage_posted": status_posted,
                 "statuspage_skipped": status_skipped,
                 "statuspage_error": status_error,
@@ -241,6 +240,7 @@ class OpsInvestigationService:
         run_id = self._build_run_id(now)
         report_prefix = self._report_prefix(incident_key=incident_key, run_id=run_id)
         report_json_key = f"{report_prefix}report.json"
+        report_md_key_new = f"{report_prefix}report.md"
 
         status = self._index_status(index_data)
         status_url = status.get("incident_url")
@@ -267,6 +267,7 @@ class OpsInvestigationService:
             except Exception:
                 statuspage_ms = self._elapsed_ms(status_started)
                 status_error = "Status page notification failed."
+                logger.warning("Statuspage notification failed (new investigation)", exc_info=True)
                 if statuspage_strict:
                     self._emit_kpi_log(
                         request_id=request_id,
@@ -343,6 +344,7 @@ class OpsInvestigationService:
             "statuspage_incident_url": status_url,
             "report_s3_key": report_json_key,
             "report_json_key": report_json_key,
+            "report_md_key": report_md_key_new,
             "statuspage_posted": status_posted,
             "statuspage_skipped": status_skipped,
             "statuspage_error": status_error,
@@ -613,6 +615,7 @@ class OpsInvestigationService:
             )
             return result
         except Exception:
+            logger.warning("CloudWatch metrics collection failed", exc_info=True)
             return result
 
     def _collect_logs(self, *, start: datetime, end: datetime) -> dict[str, Any]:
@@ -689,7 +692,7 @@ class OpsInvestigationService:
                 token_output_sum += output_tokens or 0
                 token_total_sum += total_tokens or 0
         except Exception:
-            pass
+            logger.warning("CloudWatch Logs collection failed", exc_info=True)
 
         avg_total = int(round(token_total_sum / usage_samples)) if usage_samples > 0 else 0
         return {
@@ -825,7 +828,7 @@ class OpsInvestigationService:
             return self._cloudwatch_client
         try:
             import boto3  # type: ignore
-        except Exception as exc:  # pragma: no cover - runtime dependent
+        except ImportError as exc:  # pragma: no cover - runtime dependent
             raise RuntimeError("AWS SDK unavailable.") from exc
         self._cloudwatch_client = boto3.client("cloudwatch")
         return self._cloudwatch_client
@@ -835,7 +838,7 @@ class OpsInvestigationService:
             return self._logs_client
         try:
             import boto3  # type: ignore
-        except Exception as exc:  # pragma: no cover - runtime dependent
+        except ImportError as exc:  # pragma: no cover - runtime dependent
             raise RuntimeError("AWS SDK unavailable.") from exc
         self._logs_client = boto3.client("logs")
         return self._logs_client
@@ -845,7 +848,7 @@ class OpsInvestigationService:
             return self._s3_client
         try:
             import boto3  # type: ignore
-        except Exception as exc:  # pragma: no cover - runtime dependent
+        except ImportError as exc:  # pragma: no cover - runtime dependent
             raise RuntimeError("AWS SDK unavailable.") from exc
         self._s3_client = boto3.client("s3")
         return self._s3_client

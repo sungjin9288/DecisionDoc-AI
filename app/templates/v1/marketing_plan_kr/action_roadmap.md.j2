@@ -1,0 +1,26 @@
+# 실행 로드맵: {{ title }}
+
+## 분기별 목표
+{% for goal in quarterly_goals %}
+- {{ goal }}
+{% endfor %}
+
+## 월별 활동 계획
+{% for activity in monthly_activities %}
+- {{ activity }}
+{% endfor %}
+
+## KPI 목표
+{% for kpi in kpi_targets %}
+- {{ kpi }}
+{% endfor %}
+
+## 필요 리소스
+{% for resource in resource_requirements %}
+- {{ resource }}
+{% endfor %}
+
+## 성과 측정 지표
+{% for metric in success_metrics %}
+- {{ metric }}
+{% endfor %}

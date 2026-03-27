@@ -1,0 +1,20 @@
+# 계약 개요: {{ title }}
+
+> ⚠️ 이 문서는 AI가 생성한 계약서 초안으로, 반드시 법률 전문가의 검토가 필요합니다.
+
+## 계약 당사자
+{{ parties }}
+
+## 계약 목적
+{{ purpose }}
+
+## 계약 범위
+{% for s in scope %}
+- {{ s }}
+{% endfor %}
+
+## 계약 기간
+{{ contract_period }}
+
+## 계약 금액
+{{ contract_amount }}

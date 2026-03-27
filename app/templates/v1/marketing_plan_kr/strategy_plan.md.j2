@@ -1,0 +1,22 @@
+# 마케팅 전략: {{ title }}
+
+## 포지셔닝
+{{ positioning }}
+
+## 핵심 가치 제안
+{{ value_proposition }}
+
+## 채널 전략
+{% for channel in channel_strategy %}
+- {{ channel }}
+{% endfor %}
+
+## 메시지 프레임워크
+{% for msg in messaging_framework %}
+- {{ msg }}
+{% endfor %}
+
+## 예산 배분
+{% for item in budget_allocation %}
+- {{ item }}
+{% endfor %}

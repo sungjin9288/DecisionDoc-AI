@@ -1,0 +1,22 @@
+# 복리후생 & 조직문화: {{ title }}
+
+## 보상 & 급여
+{{ compensation }}
+
+## 복리후생
+{% for b in benefits %}
+- {{ b }}
+{% endfor %}
+
+## 조직 문화
+{% for c in culture_values %}
+- {{ c }}
+{% endfor %}
+
+## 근무 환경
+{{ work_environment }}
+
+## 특별 혜택
+{% for p in unique_perks %}
+- {{ p }}
+{% endfor %}

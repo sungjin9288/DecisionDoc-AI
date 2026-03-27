@@ -3,9 +3,6 @@
 ## Goal
 Keep monthly spend within strict cap
 
-## Context
-
-
 ## Constraints
 Monthly budget must remain under USD 20
 

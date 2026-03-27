@@ -1,0 +1,24 @@
+# 재무 계획: {{ title }}
+
+## 매출 전망
+{% for item in revenue_forecast %}
+- {{ item }}
+{% endfor %}
+
+## Unit Economics
+{% for item in unit_economics %}
+- {{ item }}
+{% endfor %}
+
+## 투자 요청
+{{ funding_ask }}
+
+## 투자금 사용처
+{% for item in use_of_funds %}
+- {{ item }}
+{% endfor %}
+
+## 주요 마일스톤
+{% for milestone in milestones %}
+- {{ milestone }}
+{% endfor %}
