@@ -134,3 +134,39 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
         "R26BK01398367",
         "https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367",
     ]
+
+
+def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(monkeypatch, capsys):
+    smoke = _load_smoke_module()
+    requested_targets: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/version":
+            return httpx.Response(200, json={"features": {"procurement_copilot": True}})
+        if path == "/auth/register":
+            return httpx.Response(200, json={"access_token": "token-123"})
+        if path == "/projects":
+            return httpx.Response(200, json={"project_id": "project-123"})
+        if path.endswith("/imports/g2b-opportunity"):
+            payload = smoke._json_body(httpx.Response(200, content=request.content))
+            requested_targets.append(payload["url_or_number"])
+            return httpx.Response(404, json={"code": "not_found"})
+        raise AssertionError(f"Unhandled request: {request.method} {request.url}")
+
+    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
+    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+
+    smoke._run_procurement_smoke(
+        client,
+        base_url="https://example.com",
+        api_key="api-key",
+        provider="mock",
+        url_or_number="R26BK01398367",
+    )
+
+    assert requested_targets == [
+        "R26BK01398367",
+        "https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367",
+    ]
+    assert "SKIP procurement smoke import could not resolve a live G2B opportunity" in capsys.readouterr().out

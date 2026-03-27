@@ -43,6 +43,10 @@ def _print_result(endpoint: str, status_code: int, request_id: str = "", bundle_
     print(" ".join(parts))
 
 
+def _print_skip(reason: str) -> None:
+    print(f"SKIP {reason}")
+
+
 def _is_enabled(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -270,6 +274,12 @@ def _run_procurement_smoke(
             if imported.status_code == 200:
                 break
     if imported.status_code != 200:
+        if imported.status_code == 404:
+            _print_skip(
+                "procurement smoke import could not resolve a live G2B opportunity "
+                f"after fallback targets (target={import_target})"
+            )
+            return
         code = import_body.get("code", "unknown")
         raise SystemExit(
             f"POST /projects/{{id}}/imports/g2b-opportunity expected 200, "
