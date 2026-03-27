@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -129,6 +130,71 @@ def _read_stream_complete(response: httpx.Response) -> dict[str, Any]:
     raise SystemExit("POST /generate/stream procurement smoke ended without a complete event")
 
 
+_G2B_API_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
+_G2B_SEARCH_ENDPOINTS = (
+    "getBidPblancListInfoServc",
+    "getBidPblancListInfoThng",
+    "getBidPblancListInfoCnstwk",
+)
+
+
+def _extract_g2b_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = (
+        payload.get("response", {})
+        .get("body", {})
+        .get("items")
+        or []
+    )
+    if isinstance(items, dict):
+        return [items]
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _discover_recent_g2b_bid_number(
+    api_key: str,
+    *,
+    timeout_sec: float,
+    now: datetime | None = None,
+    client: httpx.Client | None = None,
+) -> str | None:
+    if not api_key:
+        return None
+
+    end_dt = now or datetime.now()
+    start_dt = end_dt - timedelta(days=7)
+    created_client = client is None
+    active_client = client or httpx.Client(timeout=timeout_sec)
+
+    try:
+        for endpoint_name in _G2B_SEARCH_ENDPOINTS:
+            params = {
+                "serviceKey": api_key,
+                "type": "json",
+                "numOfRows": 10,
+                "pageNo": 1,
+                "inqryDiv": 1,
+                "inqryBgnDt": start_dt.strftime("%Y%m%d0000"),
+                "inqryEndDt": end_dt.strftime("%Y%m%d2359"),
+            }
+            response = active_client.get(f"{_G2B_API_BASE}/{endpoint_name}", params=params)
+            response.raise_for_status()
+            try:
+                payload = response.json()
+            except ValueError:
+                continue
+            for item in _extract_g2b_items(payload):
+                bid_number = str(item.get("bidNtceNo", "")).strip()
+                if bid_number:
+                    return bid_number
+    except Exception:
+        return None
+    finally:
+        if created_client:
+            active_client.close()
+
+    return None
+
+
 def _run_procurement_smoke(
     client: httpx.Client,
     *,
@@ -139,6 +205,7 @@ def _run_procurement_smoke(
 ) -> None:
     token, username = _register_or_login(client, base_url)
     auth_headers = _auth_headers(api_key, token)
+    g2b_api_key = os.getenv("G2B_API_KEY", "").strip()
     version = client.get(f"{base_url}/version")
     version_body = _assert_status("GET /version", version, 200)
     if not bool(version_body.get("features", {}).get("procurement_copilot")):
@@ -155,17 +222,37 @@ def _run_procurement_smoke(
         raise SystemExit("POST /projects missing project_id for procurement smoke")
     _print_result("POST /projects", project.status_code, extra=f"project_id={project_id}")
 
+    import_target = url_or_number
     imported = client.post(
         f"{base_url}/projects/{project_id}/imports/g2b-opportunity",
         headers=auth_headers,
-        json={"url_or_number": url_or_number},
+        json={"url_or_number": import_target},
     )
-    import_body = _assert_status("POST /projects/{id}/imports/g2b-opportunity", imported, 200)
+    import_body = _json_body(imported)
+    if imported.status_code == 404:
+        discovered_target = _discover_recent_g2b_bid_number(
+            g2b_api_key,
+            timeout_sec=float(client.timeout.connect or 30),
+        )
+        if discovered_target and discovered_target != import_target:
+            import_target = discovered_target
+            imported = client.post(
+                f"{base_url}/projects/{project_id}/imports/g2b-opportunity",
+                headers=auth_headers,
+                json={"url_or_number": import_target},
+            )
+            import_body = _json_body(imported)
+    if imported.status_code != 200:
+        code = import_body.get("code", "unknown")
+        raise SystemExit(
+            f"POST /projects/{{id}}/imports/g2b-opportunity expected 200, "
+            f"got {imported.status_code} (code={code})"
+        )
     opportunity = import_body.get("opportunity") or {}
     _print_result(
         "POST /projects/{id}/imports/g2b-opportunity",
         imported.status_code,
-        extra=f"title={opportunity.get('title', '')}",
+        extra=f"title={opportunity.get('title', '')} target={import_target}",
     )
 
     evaluated = client.post(
