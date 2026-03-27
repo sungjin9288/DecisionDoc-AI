@@ -277,14 +277,17 @@ None — initiative complete
 - Notification unread-count polling now stays off on unauth/login screens, stops on logout and hidden tabs, and only resumes on visible restore according to the existing SSE/polling fallback rules
 - Public shell and PWA routes now support `HEAD` as well as `GET`, which keeps browser/probe/header-only checks off the earlier `405` path
 - `deploy-smoke` now has an optional procurement smoke lane that reuses the existing procurement endpoints plus the existing `/approvals` and `/share` routes to verify post-deploy procurement flow closure
+- The optional procurement smoke lane now retries stale G2B bid/detail targets through raw-number, detail-URL, and live-discovery fallbacks, and downgrades exhausted all-`404` upstream drift to `SKIP` instead of failing the whole deploy lane
 - Existing structured logs now carry procurement-specific action, score, recommendation, checklist, and downstream handoff signals so post-launch quality analysis can start from current observability paths without adding a new analytics subsystem
 - A labeled procurement regression fixture set now exists to guard deterministic recommendation drift offline
 - Test verification is now warning-free: JWT short-key fixtures, `datetime.utcnow()` fixture usage, deprecated uvicorn websocket startup in the E2E fixture, and fixed-port E2E server binding have all been cleaned up
+- `main` release-line verification now includes both dev and prod `deploy-smoke` runs with `include_procurement_smoke=true`, and prod `/version` continues to expose `features.procurement_copilot=true`
 - Latest verified branch closeout commits:
   - `6974114` — public shell `HEAD` support
   - `163214f` — JWT/UTC test warning cleanup
   - `f2d18e6` — E2E websocket warning cleanup
   - `fe4a695` — dynamic E2E port allocation
+  - `91a2840` — optional procurement smoke G2B upstream-drift skip hardening
 
 ---
 
@@ -432,6 +435,26 @@ None — initiative complete
   local targeted regression, warning cleanup, E2E, and full suite all passed (`1608 passed, 3 skipped`) with warning summary reduced to zero; live dev `HEAD /` and `HEAD /favicon.ico` both returned `200`; `deploy-smoke` run `23603114976` completed successfully
 - notes:
   post-Milestone 6 hardening closed live Lambda state drift, public shell bootstrap noise, favicon/public asset regressions, public `HEAD` compatibility, JWT/UTC test warnings, deprecated E2E websocket startup, and fixed-port E2E collision risk without reopening procurement scope
+- date/time:
+  2026-03-28 00:20:00 KST
+- milestone:
+  Post-launch follow-up — procurement smoke release-line hardening
+- commands run:
+  `python3 -m py_compile scripts/smoke.py tests/test_smoke_script.py`
+  `.venv/bin/pytest -q tests/test_smoke_script.py`
+  `.venv/bin/pytest tests/ -q --tb=short`
+  GitHub Actions `deploy-smoke` run `23658292888` on `codex/g2b-upstream-retry-hardening`
+  GitHub Actions `deploy-smoke` run `23658635203` on `main` (`stage=dev`, `include_procurement_smoke=true`)
+  GitHub Actions `deploy-smoke` run `23659665533` on `main` (`stage=prod`, `include_procurement_smoke=true`)
+  `curl -i -s https://m06niff7bj.execute-api.ap-northeast-2.amazonaws.com/health`
+  `curl -s https://m06niff7bj.execute-api.ap-northeast-2.amazonaws.com/version`
+- result:
+  targeted procurement smoke regression tests passed (`4 passed`)
+  full suite passed (`1637 passed, 3 skipped`)
+  branch and `main` release-line `deploy-smoke` verification passed on both `dev` and `prod`
+  prod `/health` returned `200`, and prod `/version` confirmed `features.procurement_copilot=true`
+- notes:
+  hardened optional procurement smoke against external G2B fixture drift without masking non-`404` regressions, then verified the merged behavior on both dev and prod release lines
 
 ---
 
