@@ -97,7 +97,7 @@ jobs:
             BUCKET="${{ secrets.DECISIONDOC_S3_BUCKET_PROD }}"
             THROTTLE_BURST="20"
             THROTTLE_RATE="10"
-            RESERVED_CONCURRENCY="5"
+            RESERVED_CONCURRENCY=""
             G2B_API_KEY="${{ secrets.G2B_API_KEY_PROD }}"
             VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_PROD }}"
             VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_PROD }}"
