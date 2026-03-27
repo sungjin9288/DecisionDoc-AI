@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 
 from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
 
 _log = logging.getLogger("decisiondoc.notification_store")
 
@@ -82,28 +83,41 @@ def _notif_from_dict(d: dict) -> Notification:
 class NotificationStore:
     """Thread-safe, file-backed notification store scoped to a single tenant."""
 
-    def __init__(self, tenant_id: str) -> None:
-        data_dir = Path(os.getenv("DATA_DIR", "./data"))
-        tenant_dir = data_dir / "tenants" / tenant_id
-        tenant_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        tenant_id: str,
+        *,
+        data_dir: Path | None = None,
+        backend: StateBackend | None = None,
+    ) -> None:
+        resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+        self._backend = backend or get_state_backend(data_dir=resolved_data_dir)
+        tenant_dir = resolved_data_dir / "tenants" / tenant_id
         self._path = tenant_dir / "notifications.json"
+        self._relative_path = str(Path("tenants") / tenant_id / "notifications.json")
         self._lock = threading.Lock()
-        if not self._path.exists():
+        if self._backend.kind == "local":
+            tenant_dir.mkdir(parents=True, exist_ok=True)
+        if not self._backend.exists(self._relative_path):
             self._write([])
 
     # ── internal helpers ───────────────────────────────────────────────────
 
     def _read(self) -> list[dict]:
         try:
-            return json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, FileNotFoundError):
+            raw = self._backend.read_text(self._relative_path)
+            if raw is None or not raw.strip():
+                return []
+            return json.loads(raw)
+        except (json.JSONDecodeError, FileNotFoundError, ValueError):
             return []
 
     def _write(self, data: list[dict]) -> None:
-        atomic_write_text(
-            self._path,
-            json.dumps(data, ensure_ascii=False, indent=2),
-        )
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        if self._backend.kind == "local":
+            atomic_write_text(self._path, payload)
+            return
+        self._backend.write_text(self._relative_path, payload)
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -249,13 +263,29 @@ class NotificationStore:
 
 # ── per-tenant singleton factory ───────────────────────────────────────────────
 
-_notification_stores: dict[str, NotificationStore] = {}
-_ns_lock = threading.Lock()
+def get_notification_store(
+    tenant_id: str,
+    *,
+    data_dir: Path | None = None,
+    backend: StateBackend | None = None,
+) -> NotificationStore:
+    """Return a notification store for the given tenant."""
+    if backend is not None:
+        return NotificationStore(tenant_id, data_dir=data_dir, backend=backend)
 
+    resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data")).resolve()
+    storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv("DECISIONDOC_STORAGE", "local")
+    bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv("DECISIONDOC_S3_BUCKET", "")
+    prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX") or os.getenv("DECISIONDOC_S3_PREFIX", "")
+    cache_key = (tenant_id, str(resolved_data_dir), storage_kind, bucket, prefix)
 
-def get_notification_store(tenant_id: str) -> NotificationStore:
-    """Return a shared NotificationStore instance for the given tenant."""
     with _ns_lock:
-        if tenant_id not in _notification_stores:
-            _notification_stores[tenant_id] = NotificationStore(tenant_id)
-        return _notification_stores[tenant_id]
+        store = _notification_stores.get(cache_key)
+        if store is None:
+            store = NotificationStore(tenant_id, data_dir=resolved_data_dir)
+            _notification_stores[cache_key] = store
+        return store
+
+
+_notification_stores: dict[tuple[str, str, str, str, str], NotificationStore] = {}
+_ns_lock = threading.Lock()

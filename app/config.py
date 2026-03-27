@@ -50,6 +50,12 @@ def is_procurement_copilot_enabled() -> bool:
     return env_is_enabled("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "0")
 
 
+def is_realtime_events_enabled() -> bool:
+    """Whether the browser should attempt SSE real-time event streaming."""
+    default = "0" if os.getenv("AWS_LAMBDA_FUNCTION_NAME") else "1"
+    return env_is_enabled("DECISIONDOC_REALTIME_EVENTS_ENABLED", default)
+
+
 def get_auto_expand_threshold() -> int:
     """Minimum number of unmatched requests before auto bundle expansion triggers.
 

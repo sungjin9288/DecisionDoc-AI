@@ -2,6 +2,8 @@
 
 Max 50 entries per user, stored as JSONL per tenant.
 """
+from __future__ import annotations
+
 import json
 import logging
 import threading
@@ -9,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
 
 _log = logging.getLogger("decisiondoc.history")
 
@@ -30,29 +33,46 @@ class HistoryEntry:
 
 
 class HistoryStore:
-    def __init__(self, tenant_id: str) -> None:
+    def __init__(
+        self,
+        tenant_id: str,
+        base_dir: str = "data",
+        *,
+        backend: StateBackend | None = None,
+    ) -> None:
         self.tenant_id = tenant_id
         self._lock = threading.Lock()
-        self._path = Path("data") / "tenants" / tenant_id / "history.jsonl"
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._base = Path(base_dir)
+        self._backend = backend or get_state_backend(data_dir=self._base)
+        self._path = self._base / "tenants" / tenant_id / "history.jsonl"
+        self._relative_path = str(Path("tenants") / tenant_id / "history.jsonl")
+        if self._backend.kind == "local":
+            self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> list[dict]:
-        if not self._path.exists():
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None or not raw.strip():
             return []
         entries: list[dict] = []
-        with open(self._path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        entries.append(json.loads(line))
-                    except Exception:
-                        pass
+        for line in raw.splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
         return entries
 
     def _save(self, entries: list[dict]) -> None:
         text = "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
-        atomic_write_text(self._path, text)
+        if self._backend.kind == "local":
+            atomic_write_text(self._path, text)
+            return
+        self._backend.write_text(
+            self._relative_path,
+            text,
+            content_type="application/x-ndjson; charset=utf-8",
+        )
 
     def add(self, entry: HistoryEntry) -> None:
         with self._lock:
