@@ -306,7 +306,16 @@ No API keys or secrets are stored in source files.
    - project document auto-link
    - `/approvals` and `/share` route availability
    - if the smoke output says `SKIP`, treat it as upstream-fixture drift rather than deploy failure and refresh `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` before the next release
-6. If Voice Brief integration is enabled, verify one happy-path import manually:
+6. Run one manual web sanity check on the deployed environment:
+   - log in through the web UI
+   - open a project detail page
+   - confirm the procurement panel is visible
+   - import `R26BK01398367` or a known-good detail URL
+   - click `판단 갱신`
+   - click `의사결정 문서 생성`
+   - confirm the generated procurement document shows `결재 요청` and `공유`
+   - confirm `/version` reports the intended app version and `features.procurement_copilot=true`
+7. If Voice Brief integration is enabled, verify one happy-path import manually:
    - open a project in the web UI
    - import a known-good `recording_id` and optional `revision_id`
    - confirm a `voice_brief_import` document appears in project detail

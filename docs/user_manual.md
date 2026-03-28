@@ -228,6 +228,28 @@ project detail 문서 목록에서 기존 workflow를 그대로 재사용할 수
 - 공고번호 입력 방식은 운영 환경의 `G2B_API_KEY` 설정 여부에 따라 실패할 수 있습니다.
   URL 입력 방식은 스크래핑이 가능하면 API 키 없이도 사용할 수 있습니다.
 
+### 5.9 v1.1.0 웹 검증 체크리스트
+`v1.1.0` 배포 직후에는 아래 순서로 실제 사용자 흐름을 한 번 확인하는 것을 권장합니다.
+
+1. 운영 URL에 접속하고 로그인합니다.
+2. 기존 프로젝트를 열거나 새 프로젝트를 하나 만듭니다.
+3. 프로젝트 상세에서 **Public Procurement Go/No-Go Copilot** 카드가 보이는지 확인합니다.
+4. `URL / 공고번호` 입력란에 `R26BK01398367` 를 넣고 **공고 가져오기** 를 누릅니다.
+5. summary 영역에 공고명, 발주기관, recommendation, score 요약이 채워지는지 확인합니다.
+6. **판단 갱신** 을 눌러 recommendation badge 와 checklist 요약이 갱신되는지 확인합니다.
+7. **의사결정 문서 생성** 을 눌러 `bid_decision_kr` 문서가 프로젝트 문서 목록에 추가되는지 확인합니다.
+8. 생성된 문서 row에 **결재 요청** 과 **공유** 버튼이 모두 보이는지 확인합니다.
+9. 필요하면 `/version` 엔드포인트를 열어 아래 값이 맞는지 확인합니다.
+   - `version: 1.1.0`
+   - `features.procurement_copilot: true`
+
+실패 시 함께 확인하면 좋은 항목:
+
+- 브라우저 console error
+- 실패한 network request path 와 status code
+- import 에 사용한 입력값이 bid number 인지, detail URL 인지
+- 프로젝트가 비어 있는 새 프로젝트인지, 기존 문서가 많은 프로젝트인지
+
 ---
 
 ## 6. 스타일 설정
