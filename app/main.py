@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.exception_handlers import install_exception_handlers
 from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys
 from app.config import (
+    APP_VERSION,
     is_procurement_copilot_enabled,
     get_voice_brief_api_base_url,
     get_voice_brief_api_bearer_token,
@@ -149,7 +150,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="DecisionDoc AI",
-        version="0.1.0",
+        version=APP_VERSION,
         lifespan=_lifespan,
         docs_url=None if environment == "prod" else "/docs",
         redoc_url=None if environment == "prod" else "/redoc",

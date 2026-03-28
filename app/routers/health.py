@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from app.config import (
+    APP_VERSION,
     get_local_llm_api_key,
     get_local_llm_base_url,
     is_enabled,
@@ -125,7 +126,7 @@ def version_endpoint(request: Request) -> dict:
     try:
         ver = importlib.metadata.version("decisiondoc-ai")
     except importlib.metadata.PackageNotFoundError:
-        ver = "1.0.0"
+        ver = APP_VERSION
     environment = request.app.state.environment
     return {
         "version": ver,
