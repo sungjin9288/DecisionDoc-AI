@@ -3776,7 +3776,7 @@
   let _currentProjectDetail = null;
   let _approvalRequestSource = null;
   let _serverVersionInfo = {
-    version: '1.0.0',
+    version: '1.1.0',
     features: {
       procurement_copilot: false,
       realtime_events: true,
@@ -4469,7 +4469,7 @@
         };
         const footerVersion = document.getElementById('footer-version');
         if (footerVersion) {
-          footerVersion.textContent = `DecisionDoc AI v${_serverVersionInfo.version || '1.0.0'}`;
+          footerVersion.textContent = `DecisionDoc AI v${_serverVersionInfo.version || '1.1.0'}`;
         }
         return _serverVersionInfo;
       })
