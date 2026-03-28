@@ -4797,8 +4797,8 @@
       return `
       <div style="display:flex;align-items:flex-start;gap:4px">
         <div class="g2b-result-item g2b-result-info" style="flex:1" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectG2BResult(${JSON.stringify(r.bid_number)});}"
-             onclick="selectG2BResult(${JSON.stringify(r.bid_number)})">
+             onkeydown='if(event.key==="Enter"||event.key===" "){event.preventDefault();selectG2BResult(${JSON.stringify(r.bid_number)});}'
+             onclick='selectG2BResult(${JSON.stringify(r.bid_number)})'>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="g2b-result-title">${escapeHtml(r.title || '—')}</span>
             ${badge}
@@ -4810,9 +4810,9 @@
           </div>
         </div>
         <button class="g2b-oneclick-btn" title="이 공고로 제안서 바로 생성"
-                onclick="event.stopPropagation();oneClickProposal(${JSON.stringify(r.bid_number)})">⚡ 제안서</button>
+                onclick='event.stopPropagation();oneClickProposal(${JSON.stringify(r.bid_number)})'>⚡ 제안서</button>
         <button class="g2b-bookmark-btn" data-bookmarked="0" title="북마크 추가"
-                onclick="event.stopPropagation();toggleG2BBookmark(${JSON.stringify(r.bid_number)}, this)">☆</button>
+                onclick='event.stopPropagation();toggleG2BBookmark(${JSON.stringify(r.bid_number)}, this)'>☆</button>
       </div>`;
     }).join('');
   }

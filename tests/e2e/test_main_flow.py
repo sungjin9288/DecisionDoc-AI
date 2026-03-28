@@ -303,3 +303,55 @@ def test_project_detail_shows_procurement_panel_and_doc_actions(page, live_serve
     assert page.locator("text=의사결정 문서 생성").count() >= 1
     assert page.locator("text=결재 요청").count() >= 1
     assert page.locator("text=공유").count() >= 1
+
+
+def test_g2b_search_result_click_selects_announcement(page):
+    page.evaluate(
+        """() => {
+          const g2bContent = document.getElementById('g2b-content');
+          const searchTab = document.getElementById('g2b-search-tab');
+          if (g2bContent) g2bContent.style.display = 'block';
+          if (searchTab) searchTab.style.display = 'block';
+          _g2bLastResults = [{
+            bid_number: '20250317001-00',
+            title: 'AI 기반 공공서비스 구축',
+            issuer: '조달청',
+            budget: '3억원',
+            deadline: '2026-04-01',
+            detail_url: 'https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=20250317001-00',
+          }];
+          _renderG2BSearchResults(_g2bLastResults);
+        }"""
+    )
+
+    page.wait_for_selector("#g2b-search-results .g2b-result-item", state="visible", timeout=10000)
+    page.locator("#g2b-search-results .g2b-result-item").first.click()
+
+    assert page.input_value("#f-title") == "AI 기반 공공서비스 구축"
+    assert "20250317001-00" in page.input_value("#f-context")
+
+
+def test_g2b_oneclick_proposal_button_handles_hyphenated_bid_number(page):
+    page.evaluate(
+        """() => {
+          const g2bContent = document.getElementById('g2b-content');
+          const searchTab = document.getElementById('g2b-search-tab');
+          if (g2bContent) g2bContent.style.display = 'block';
+          if (searchTab) searchTab.style.display = 'block';
+          _g2bLastResults = [{
+            bid_number: '20250317001-00',
+            title: 'AI 기반 공공서비스 구축',
+            issuer: '조달청',
+            budget: '3억원',
+            deadline: '2026-04-01',
+            detail_url: 'https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=20250317001-00',
+          }];
+          _renderG2BSearchResults(_g2bLastResults);
+        }"""
+    )
+
+    page.wait_for_selector("#g2b-search-results .g2b-oneclick-btn", state="visible", timeout=10000)
+    page.locator("#g2b-search-results .g2b-oneclick-btn").first.click()
+
+    assert page.input_value("#f-title") == "AI 기반 공공서비스 구축"
+    assert "20250317001-00" in page.input_value("#f-context")
