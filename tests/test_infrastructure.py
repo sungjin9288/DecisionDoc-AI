@@ -11,6 +11,7 @@ Coverage (12 tests):
 """
 from __future__ import annotations
 
+import re
 import os
 import time
 import pytest
@@ -73,6 +74,11 @@ def test_root_html_avoids_external_cdn_scripts(client):
     assert "cdn.jsdelivr.net" not in res.text
     assert "tailwindcss.com" not in res.text
     assert "fonts.googleapis.com" not in res.text
+
+
+def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None
 
 
 def test_favicon_stays_public_even_after_user_registration(client):
