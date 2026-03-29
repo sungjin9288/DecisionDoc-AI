@@ -5713,7 +5713,7 @@
     if (existing) existing.remove();
 
     const itemsHtml = data.related.map(r => `
-      <div onclick="window._applyRelatedBundle(${JSON.stringify(r.bundle_id)})" style="padding:.9rem 1rem;border:1.5px solid var(--border,#e5e7eb);border-radius:10px;cursor:pointer;transition:all .15s;margin-bottom:.6rem;"
+      <div onclick='window._applyRelatedBundle(${JSON.stringify(r.bundle_id)})' style="padding:.9rem 1rem;border:1.5px solid var(--border,#e5e7eb);border-radius:10px;cursor:pointer;transition:all .15s;margin-bottom:.6rem;"
            onmouseover="this.style.borderColor='var(--p1,#6366f1)';this.style.background='var(--p-light,#ede9fe)'"
            onmouseout="this.style.borderColor='var(--border,#e5e7eb)';this.style.background=''">
         <div style="font-weight:600;font-size:.92rem;">${escapeHtml(r.name_ko)}</div>
@@ -6028,16 +6028,16 @@
               · ${item.created_at ? new Date(item.created_at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}
             </div>
           </div>
-          <button onclick="toggleHistoryStar(${JSON.stringify(item.entry_id)}, this)"
+          <button onclick='toggleHistoryStar(${JSON.stringify(item.entry_id)}, this)'
             style="background:none;border:none;cursor:pointer;font-size:.95rem;padding:2px 4px;
                    opacity:${item.starred?1:.35};transition:opacity .2s;flex-shrink:0;"
             title="${item.starred?'즐겨찾기 해제':'즐겨찾기'}">${item.starred?'⭐':'☆'}</button>
-          <button onclick="reuseHistoryEntry(${JSON.stringify(item).replace(/'/g,'&#39;')})"
+          <button onclick='reuseHistoryEntry(${JSON.stringify(item).replace(/'/g,"&#39;")})'
             style="padding:.2rem .55rem;border-radius:6px;background:var(--p-light);color:var(--p1);
                    border:1px solid var(--p-ring);font-size:.75rem;cursor:pointer;font-weight:600;flex-shrink:0;">
             재사용
           </button>
-          <button onclick="deleteServerHistory(${JSON.stringify(item.entry_id)})"
+          <button onclick='deleteServerHistory(${JSON.stringify(item.entry_id)})'
             style="background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--muted);flex-shrink:0;"
             title="삭제">✕</button>
         </div>
@@ -6193,9 +6193,9 @@
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0">
             <button class="btn-primary" style="padding:.2rem .5rem;font-size:.75rem"
-                    onclick="selectG2BResult(${JSON.stringify(r.bid_number)})">선택</button>
+                    onclick='selectG2BResult(${JSON.stringify(r.bid_number)})'>선택</button>
             <button style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:.8rem"
-                    onclick="removeG2BBookmark(${JSON.stringify(r.bid_number)}, this)">✕</button>
+                    onclick='removeG2BBookmark(${JSON.stringify(r.bid_number)}, this)'>✕</button>
           </div>
         </div>
       `).join('');
