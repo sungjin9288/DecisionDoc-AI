@@ -1985,3 +1985,19 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - `pass`
 - remaining boundary
   - actual deployed smoke still depends on live AWS access, valid stage credentials, and a current procurement target; this change only removes the extra local wrapper step
+
+## 2026-04-06 — Full Local Regression Gate Refreshed After Stage Smoke Helper Closeout
+
+- shipped
+  - reran the full local pytest suite after the deployed-stage procurement smoke helper stack was folded into the runner
+  - this was a verification-only closeout step; no product/runtime behavior changed in this pass
+- file path
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - helper work accumulated across exporter, stack-output resolution, and one-command runner integration, so the strongest remaining local gate was to refresh the full suite rather than rely only on targeted smoke-helper tests
+- validation
+  - `.venv/bin/pytest -q tests/ --tb=short`
+    - `1753 passed, 3 skipped in 196.85s (0:03:16)`
+- remaining boundary
+  - local verification is now refreshed end-to-end
+  - the only real remaining external step is an actual deployed-stage procurement smoke run with live AWS access, stage credentials, and a current procurement target
