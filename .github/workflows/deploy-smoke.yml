@@ -172,6 +172,53 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Preflight stack state and Lambda update mutability
+        env:
+          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
+          FUNCTION_NAME: decisiondoc-ai-${{ inputs.stage }}
+        run: |
+          STACK_STATUS_OUTPUT="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>&1)" && STACK_STATUS_EXIT=0 || STACK_STATUS_EXIT=$?
+          if [ "${STACK_STATUS_EXIT}" -ne 0 ]; then
+            if printf '%s\n' "${STACK_STATUS_OUTPUT}" | grep -q 'does not exist'; then
+              echo "Stack ${STACK_NAME} does not exist yet; continuing because this may be a first deploy"
+            else
+              printf '%s\n' "${STACK_STATUS_OUTPUT}"
+              exit "${STACK_STATUS_EXIT}"
+            fi
+          elif [ "${STACK_STATUS_OUTPUT}" = "UPDATE_ROLLBACK_FAILED" ]; then
+            echo "Stack ${STACK_NAME} is UPDATE_ROLLBACK_FAILED. Recover the stack before rerunning deploy-smoke."
+            exit 1
+          fi
+
+          TMPDIR="$(mktemp -d)"
+          printf 'preflight\n' > "${TMPDIR}/bootstrap.txt"
+          (
+            cd "${TMPDIR}"
+            zip -q code.zip bootstrap.txt
+          )
+          DRY_RUN_OUTPUT="$(aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --region "${AWS_REGION}" \
+            --zip-file "fileb://${TMPDIR}/code.zip" \
+            --dry-run 2>&1)" && DRY_RUN_EXIT=0 || DRY_RUN_EXIT=$?
+          rm -rf "${TMPDIR}"
+
+          if [ "${DRY_RUN_EXIT}" -ne 0 ]; then
+            printf '%s\n' "${DRY_RUN_OUTPUT}"
+            if printf '%s\n' "${DRY_RUN_OUTPUT}" | grep -q 'ResourceNotFoundException'; then
+              echo "Function ${FUNCTION_NAME} does not exist yet; continuing because this may be a first deploy."
+              exit 0
+            fi
+            if printf '%s\n' "${DRY_RUN_OUTPUT}" | grep -q 'AccessDeniedException'; then
+              echo "Lambda UpdateFunctionCode dry-run is denied for ${FUNCTION_NAME}. Stop reruns and investigate AWS-side Lambda update restrictions before redeploying."
+            fi
+            exit "${DRY_RUN_EXIT}"
+          fi
+
       - name: Prepare Lambda manifest
         run: |
           cp requirements-lambda.txt requirements.txt

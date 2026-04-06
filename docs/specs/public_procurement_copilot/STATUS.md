@@ -2095,3 +2095,66 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - prod stack is currently `UPDATE_ROLLBACK_FAILED`, so the next live rerun still needs:
     - `aws cloudformation continue-update-rollback --stack-name decisiondoc-ai-prod --region ap-northeast-2`
   - after rollback recovery, `deploy-smoke` must be rerun from the latest merged `main` to verify the stage-bucket artifact path actually clears the prior Lambda update failure
+
+## 2026-04-06 — Prod Lambda Update Blocker Classified As AWS-Side Restriction And Week-1 Operating Docs Added
+
+- shipped
+  - added long-term operating guidance in `docs/operating_model_roadmap.md` with a concrete 4-week execution plan centered on environment separation, stage-first release discipline, immutable deploy preference, and smoke/operator isolation
+  - updated `docs/deploy_aws.md` with a deploy ownership map, prod rerun gate, and explicit recovery/diagnostic commands so operators stop treating repeated `deploy-smoke` reruns as a normal incident response
+  - updated `docs/deployment/prod_checklist.md` so production deployment now calls out ownership boundaries, rerun stop conditions, and the known `DecisionDocFunction` access-denied pattern
+- file path
+  - `docs/operating_model_roadmap.md`
+  - `docs/deploy_aws.md`
+  - `docs/deployment/prod_checklist.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - after the stage-owned artifact bucket mitigation landed, the remaining production blocker was still `DecisionDocFunction` update failure with Lambda `AccessDeniedException`
+  - the next question was no longer “how to rerun deploy-smoke” but “how to prevent operators from repeatedly using the wrong recovery move while the underlying AWS restriction remains unresolved”
+  - a durable operating model was needed because the repo is now large enough that deployment discipline, smoke identity separation, and environment roles matter as much as feature correctness
+- validation
+  - `aws cloudformation describe-stacks --stack-name decisiondoc-ai-prod --region ap-northeast-2 --query 'Stacks[0].[StackStatus,StackStatusReason]' --output text`
+    - stack failure remained isolated to `DecisionDocFunction`
+  - `aws iam get-role-policy --role-name decisiondoc-github-actions-deploy-prod --policy-name decisiondoc-github-actions-deploy-prod`
+    - deploy role inline policy still included broad `lambda:*`, `s3:*`, and `cloudformation:*`
+  - `aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::217139788460:role/decisiondoc-github-actions-deploy-prod --action-names lambda:UpdateFunctionCode ...`
+    - IAM simulation result was `allowed`
+  - `aws iam list-attached-user-policies --user-name community_`
+    - local admin user had `AdministratorAccess`
+  - `aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::217139788460:user/community_ --action-names lambda:UpdateFunctionCode ...`
+    - local admin IAM simulation result was also `allowed`
+  - `aws lambda update-function-code --function-name decisiondoc-ai-prod --region ap-northeast-2 --s3-bucket decisiondoc-ai-prod-217139788460-apne2 --s3-key sam-artifacts/prod//d2ee02e06f0045f866cc6eb4efd0ce26 --dry-run`
+    - still failed with `AccessDeniedException`
+  - `aws lambda update-function-code --function-name decisiondoc-ai-prod --region ap-northeast-2 --zip-file fileb://... --dry-run`
+    - inline zip dry-run also failed with `AccessDeniedException`
+  - `aws organizations list-policies-for-target --target-id 217139788460 --filter SERVICE_CONTROL_POLICY`
+    - returned `AWSOrganizationsNotInUseException`, so SCP was ruled out
+  - `git diff --check -- README.md docs/deploy_aws.md docs/deployment/prod_checklist.md docs/operating_model_roadmap.md docs/specs/public_procurement_copilot/STATUS.md`
+    - pass
+- remaining boundary
+  - current evidence points away from repo code, workflow artifact path, ordinary IAM allow, or Organizations SCP
+  - the remaining blocker is an AWS-side Lambda update restriction that still prevents `UpdateFunctionCode`, even for a local admin user with `AdministratorAccess`
+  - until that restriction is resolved, `prod deploy-smoke` reruns should remain paused and `prod` should be treated as a recovery/diagnosis target rather than a feature-validation environment
+
+## 2026-04-06 — Deploy-Smoke Fail-Fast Guard Added For Broken Prod Stack And Lambda Dry-Run Deny
+
+- shipped
+  - updated `.github/workflows/deploy-smoke.yml` so the deploy job now checks stack mutability before `SAM build` and `SAM deploy`
+  - the new preflight stops immediately when the target stack is already `UPDATE_ROLLBACK_FAILED`
+  - the same preflight also runs `aws lambda update-function-code --dry-run` against the target function and fails fast when Lambda code update is blocked
+  - aligned `docs/deploy_aws.md` and `docs/deployment/prod_checklist.md` with the same fail-fast semantics
+- file path
+  - `.github/workflows/deploy-smoke.yml`
+  - `docs/deploy_aws.md`
+  - `docs/deployment/prod_checklist.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - the current prod failure mode is not a normal application regression but an AWS-side Lambda update restriction, and repeated `deploy-smoke` reruns only recreate `UPDATE_ROLLBACK_FAILED`
+  - a release workflow should surface that state before trying `SAM deploy`, not after another failed stack update
+- validation
+  - `git diff --check -- .github/workflows/deploy-smoke.yml docs/deploy_aws.md docs/deployment/prod_checklist.md docs/specs/public_procurement_copilot/STATUS.md`
+    - pass
+  - `.venv/bin/pytest -q tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py tests/test_smoke_script.py --tb=short`
+    - planned as touched-area regression gate for deploy/procurement smoke helpers
+- remaining boundary
+  - this guardrail reduces operator error and repeated failed deploy attempts, but it does not resolve the underlying AWS-side Lambda update restriction
+  - production redeploy still remains blocked until that AWS-side restriction is cleared

@@ -94,6 +94,8 @@ Inspect the real repository before making cross-cutting changes.
 Important rules:
 - `mock` provider must remain usable and deterministic for development and test flows.
 - Local filesystem and S3 storage abstractions must both be preserved unless an explicit architecture change is requested.
+- Long-term operating direction and environment hardening roadmap:
+  - `docs/operating_model_roadmap.md`
 
 ---
 
