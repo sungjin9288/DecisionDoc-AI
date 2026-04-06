@@ -222,7 +222,8 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --resolve-s3 \
+            --s3-bucket "${DECISIONDOC_S3_BUCKET}" \
+            --s3-prefix "sam-artifacts/${{ inputs.stage }}/" \
             --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
       - name: Resolve API endpoint
