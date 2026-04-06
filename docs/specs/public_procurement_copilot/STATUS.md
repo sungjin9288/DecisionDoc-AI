@@ -1911,3 +1911,29 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - expected fail-fast in the current shell when required deployed-stage env is missing
 - remaining boundary
   - the helper is ready, but an actual deployed-stage procurement smoke run still depends on a real `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `G2B_API_KEY`, and live `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+
+## 2026-04-06 — GitHub Actions Env Exporter for Stage Procurement Smoke Added
+
+- shipped
+  - added an exporter that turns `.github-actions.env` stage values into the exact deployed-stage smoke env file expected by `scripts/run_stage_procurement_smoke.py`
+  - kept the deployed endpoint explicit through `--base-url`, while reusing repo-level stage secrets/vars for API key, ops key, procurement target, and optional smoke login context
+- file path
+  - `scripts/export_stage_procurement_smoke_env.py`
+  - `tests/test_export_stage_procurement_smoke_env.py`
+  - `README.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - after adding the deployed-stage runner, operators still had to re-copy values that already existed in `.github-actions.env`
+  - the exporter closes that last local handoff gap and makes the deployed verification flow `import -> export -> preflight -> run`
+- validation
+  - `PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile scripts/export_stage_procurement_smoke_env.py tests/test_export_stage_procurement_smoke_env.py`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_export_stage_procurement_smoke_env.py tests/test_stage_procurement_smoke_run.py tests/test_smoke_script.py -k 'procurement or council or stage_procurement_smoke or export_stage_procurement_smoke_env' --tb=short`
+    - `pass`
+- remaining boundary
+  - the exporter removes repo-env remapping work, but a real deployed smoke still needs:
+    - a current stage `base_url`
+    - live stage credentials
+    - a live procurement target that has not drifted out of the upstream G2B window

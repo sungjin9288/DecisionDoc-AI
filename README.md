@@ -645,6 +645,28 @@ $EDITOR /tmp/stage_procurement_smoke.env
   - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
   - run `./.venv/bin/python scripts/run_stage_procurement_smoke.py --print-env-template` for a copy-paste export block when you do not want to edit a file first
 
+GitHub Actions env to stage smoke env:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --base-url https://your-dev-stage.example.com \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+- this helper maps stage-scoped GitHub Actions values into the exact env names expected by `run_stage_procurement_smoke.py`
+- it reuses:
+  - `DECISIONDOC_API_KEY` -> `SMOKE_API_KEY`
+  - `DECISIONDOC_OPS_KEY` -> `SMOKE_OPS_KEY`
+  - `G2B_API_KEY_<STAGE>` -> `G2B_API_KEY`
+  - `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` -> `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+  - `PROCUREMENT_SMOKE_TENANT_ID_<STAGE>` / `PROCUREMENT_SMOKE_USERNAME_<STAGE>` / `PROCUREMENT_SMOKE_PASSWORD_<STAGE>` -> deployed smoke login context
+- only `--base-url` stays explicit because the deployed endpoint is resolved outside the repository env scaffold
+
 - manual path when you want separate control over server, seed, and verify:
 - use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy
 - start the app on the same port already used by `.claude/launch.json`

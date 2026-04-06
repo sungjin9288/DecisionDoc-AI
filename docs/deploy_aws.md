@@ -358,6 +358,21 @@ Optional env:
 - `SMOKE_TENANT_ID`
 - `PROCUREMENT_SMOKE_USERNAME`
 - `PROCUREMENT_SMOKE_PASSWORD`
+
+If you already maintain `.github-actions.env`, you can export the stage-specific deployed smoke file instead of filling every value manually:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --base-url https://your-dev-stage.example.com \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+This exporter reuses the same repository-level stage values already prepared for `deploy-smoke`, and only asks for the deployed `base_url` explicitly.
 8. If Voice Brief integration is enabled, verify one happy-path import manually:
    - open a project in the web UI
    - import a known-good `recording_id` and optional `revision_id`

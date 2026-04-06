@@ -338,6 +338,24 @@ Notes:
   - `PROCUREMENT_SMOKE_USERNAME`
   - `PROCUREMENT_SMOKE_PASSWORD`
 
+GitHub Actions env -> deployed stage smoke env:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --base-url https://your-dev-stage.example.com \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+Notes:
+- use this when your repo already maintains `.github-actions.env` through `import-github-actions-env-file.sh`
+- the exporter only remaps stage-scoped repository values into the exact `SMOKE_*` names required by the deployed-stage wrapper
+- `--base-url` remains explicit because the deployed endpoint is not stored in `.github-actions.env`
+
 Manual split runbook:
 
 Runbook:
