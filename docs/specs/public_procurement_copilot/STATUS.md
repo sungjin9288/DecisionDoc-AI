@@ -1937,3 +1937,27 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - a current stage `base_url`
     - live stage credentials
     - a live procurement target that has not drifted out of the upstream G2B window
+
+## 2026-04-06 — Stage Smoke Exporter Now Resolves Base URL From Stack Output
+
+- shipped
+  - extended `scripts/export_stage_procurement_smoke_env.py` so it can resolve `SMOKE_BASE_URL` directly from the deployed stack's `HttpApiUrl` output
+  - mirrored the same `aws cloudformation describe-stacks` lookup already used in `.github/workflows/deploy-smoke.yml`
+  - kept manual `--base-url` support and added `--stack-name` / `--aws-region` overrides for non-default stacks or shells that do not already expose region
+- file path
+  - `scripts/export_stage_procurement_smoke_env.py`
+  - `tests/test_export_stage_procurement_smoke_env.py`
+  - `README.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - after the GitHub Actions env exporter landed, the last repeated manual input was still the deployed `base_url`
+  - reusing the stack output path closes that final local operator lookup step when AWS credentials are already available
+- validation
+  - `PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile scripts/export_stage_procurement_smoke_env.py tests/test_export_stage_procurement_smoke_env.py`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_export_stage_procurement_smoke_env.py tests/test_stage_procurement_smoke_run.py tests/test_smoke_script.py -k 'procurement or council or stage_procurement_smoke or export_stage_procurement_smoke_env' --tb=short`
+    - `pass`
+- remaining boundary
+  - real deployed-stage smoke still needs valid AWS access, live stage credentials, and a current procurement target; this change only removes the manual base URL lookup step

@@ -356,6 +356,25 @@ Notes:
 - the exporter only remaps stage-scoped repository values into the exact `SMOKE_*` names required by the deployed-stage wrapper
 - `--base-url` remains explicit because the deployed endpoint is not stored in `.github-actions.env`
 
+CloudFormation stack-output variant:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --resolve-base-url-from-stack \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+Notes:
+- this path reuses the same `HttpApiUrl` stack output lookup already used in `.github/workflows/deploy-smoke.yml`
+- default stack names are `decisiondoc-ai-dev` and `decisiondoc-ai-prod`
+- use `--stack-name` when the deployed stack name differs
+- use `--aws-region` when `AWS_REGION` is not already available in `.github-actions.env` or the shell
+
 Manual split runbook:
 
 Runbook:

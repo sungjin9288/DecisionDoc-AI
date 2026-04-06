@@ -373,6 +373,24 @@ If you already maintain `.github-actions.env`, you can export the stage-specific
 ```
 
 This exporter reuses the same repository-level stage values already prepared for `deploy-smoke`, and only asks for the deployed `base_url` explicitly.
+
+If your AWS CLI session can already describe the deployed stack, you can also skip manual base URL lookup and reuse the same CloudFormation output path that `deploy-smoke` uses:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --resolve-base-url-from-stack \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+Notes:
+- default stack names are `decisiondoc-ai-dev` and `decisiondoc-ai-prod`
+- pass `--stack-name` when you are checking a non-default stack name such as blue/green variants
+- `AWS_REGION` can come from `.github-actions.env`, the shell, or `--aws-region`
 8. If Voice Brief integration is enabled, verify one happy-path import manually:
    - open a project in the web UI
    - import a known-good `recording_id` and optional `revision_id`

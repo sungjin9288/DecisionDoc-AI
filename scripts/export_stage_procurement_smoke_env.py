@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -11,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_ENV_FILE = REPO_ROOT / ".github-actions.env"
 DEFAULT_PROVIDER = "mock"
 DEFAULT_TIMEOUT_SEC = "30"
+DEFAULT_STACK_NAME_PREFIX = "decisiondoc-ai-"
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -71,12 +73,82 @@ def _resolve_optional_cli_or_env(cli_value: str, env_name: str, *, default: str 
     return default
 
 
+def _resolve_required_cli_env_or_loaded(cli_value: str, env_name: str, loaded_env: dict[str, str]) -> str:
+    normalized = str(cli_value or "").strip()
+    if normalized:
+        return normalized
+    env_value = os.getenv(env_name, "").strip()
+    if env_value:
+        return env_value
+    loaded_value = str(loaded_env.get(env_name, "")).strip()
+    if loaded_value:
+        return loaded_value
+    raise SystemExit(
+        f"Missing required stage smoke export prerequisite: {env_name}. "
+        "Set it in the CLI, process environment, or env file."
+    )
+
+
+def _resolve_optional_cli_env_or_loaded(
+    cli_value: str,
+    env_name: str,
+    loaded_env: dict[str, str],
+    *,
+    default: str = "",
+) -> str:
+    normalized = str(cli_value or "").strip()
+    if normalized:
+        return normalized
+    env_value = os.getenv(env_name, "").strip()
+    if env_value:
+        return env_value
+    loaded_value = str(loaded_env.get(env_name, "")).strip()
+    if loaded_value:
+        return loaded_value
+    return default
+
+
 def _get_loaded_required(loaded_env: dict[str, str], name: str) -> str:
     return _resolve_required(name, loaded_env.get(name, ""))
 
 
 def _get_loaded_optional(loaded_env: dict[str, str], name: str) -> str:
     return str(loaded_env.get(name, "")).strip()
+
+
+def _resolve_base_url_from_stack(*, stack_name: str, aws_region: str) -> str:
+    command = [
+        "aws",
+        "cloudformation",
+        "describe-stacks",
+        "--stack-name",
+        stack_name,
+        "--region",
+        aws_region,
+        "--query",
+        "Stacks[0].Outputs[?OutputKey==`HttpApiUrl`].OutputValue",
+        "--output",
+        "text",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise SystemExit(
+            f"Failed to resolve HttpApiUrl from stack {stack_name} in {aws_region}: "
+            f"{detail or f'aws exited with code {completed.returncode}'}"
+        )
+    resolved = str(completed.stdout or "").strip()
+    if not resolved or resolved == "None":
+        raise SystemExit(
+            f"Missing HttpApiUrl stack output for {stack_name} in {aws_region}"
+        )
+    return resolved.rstrip("/")
 
 
 def _render_output_lines(
@@ -150,6 +222,9 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--env-file", default=str(DEFAULT_INPUT_ENV_FILE))
     parser.add_argument("--output", default="")
     parser.add_argument("--base-url", default="")
+    parser.add_argument("--resolve-base-url-from-stack", action="store_true")
+    parser.add_argument("--stack-name", default="")
+    parser.add_argument("--aws-region", default="")
     parser.add_argument("--provider", default="")
     parser.add_argument("--timeout-sec", default="")
     return parser.parse_args(list(argv))
@@ -160,11 +235,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(active_argv)
     stage = str(args.stage).strip().lower()
     input_env_file = Path(str(args.env_file).strip()).expanduser()
+    loaded_env = _load_env_file(input_env_file)
     output_env_file = Path(
         str(args.output).strip()
         or f"/tmp/stage_procurement_smoke.{stage}.env"
     ).expanduser()
-    resolved_base_url = _resolve_required_cli_or_env(str(args.base_url).strip(), "SMOKE_BASE_URL")
+    if bool(args.resolve_base_url_from_stack):
+        resolved_stack_name = _resolve_optional_cli_env_or_loaded(
+            str(args.stack_name).strip(),
+            "SMOKE_STACK_NAME",
+            loaded_env,
+            default=f"{DEFAULT_STACK_NAME_PREFIX}{stage}",
+        )
+        resolved_region = _resolve_required_cli_env_or_loaded(
+            str(args.aws_region).strip(),
+            "AWS_REGION",
+            loaded_env,
+        )
+        resolved_base_url = _resolve_base_url_from_stack(
+            stack_name=resolved_stack_name,
+            aws_region=resolved_region,
+        )
+    else:
+        resolved_base_url = _resolve_required_cli_env_or_loaded(
+            str(args.base_url).strip(),
+            "SMOKE_BASE_URL",
+            loaded_env,
+        )
     resolved_provider = _resolve_optional_cli_or_env(
         str(args.provider).strip(),
         "SMOKE_PROVIDER",
