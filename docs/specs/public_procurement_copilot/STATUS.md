@@ -1884,3 +1884,30 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - `pass`
   - `JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars /Users/sungjin/dev/personal/DecisionDoc-AI/.venv/bin/python /Users/sungjin/dev/personal/DecisionDoc-AI/scripts/run_local_procurement_smoke.py --env-file /tmp/local_procurement_smoke.clean.env --data-dir /tmp/decisiondoc-local-procurement-smoke-cleancheck`
     - runner reached the live procurement smoke lane end-to-end and completed successfully against the local app
+
+## 2026-04-06 — Deployed Stage Procurement Smoke Helper Added
+
+- shipped
+  - added a thin deployed-stage helper that runs the existing `scripts/smoke.py` procurement lane against an already deployed base URL
+  - added `--env-file`, `--preflight`, and `--print-env-template` so the remaining external-bound verification path is copy-edit-run instead of hand-composed `SMOKE_*` exports
+  - kept runtime, auth, provider, storage, and deploy workflow semantics unchanged; this is wrapper/doc/test work only
+- file path
+  - `scripts/run_stage_procurement_smoke.py`
+  - `scripts/stage_procurement_smoke.env.example`
+  - `tests/test_stage_procurement_smoke_run.py`
+  - `README.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - local verification is already closed, but the remaining deployed procurement smoke lane still required operators to manually compose `SMOKE_BASE_URL`, `SMOKE_API_KEY`, procurement target, and optional tenant/login values
+  - the new helper makes that external stage path repeatable without broadening product/runtime scope
+- validation
+  - `PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile scripts/run_stage_procurement_smoke.py tests/test_stage_procurement_smoke_run.py`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_stage_procurement_smoke_run.py tests/test_smoke_script.py -k 'procurement or council or stage_procurement_smoke' --tb=short`
+    - `pass`
+  - `.venv/bin/python scripts/run_stage_procurement_smoke.py --preflight`
+    - expected fail-fast in the current shell when required deployed-stage env is missing
+- remaining boundary
+  - the helper is ready, but an actual deployed-stage procurement smoke run still depends on a real `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `G2B_API_KEY`, and live `SMOKE_PROCUREMENT_URL_OR_NUMBER`

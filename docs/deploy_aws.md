@@ -336,7 +336,29 @@ No API keys or secrets are stored in source files.
    - save an override reason and retry one downstream bundle to confirm the same queue item lands in `열람 후 해소`
    - confirm the generated procurement document shows `결재 요청` and `공유`
    - confirm `/version` reports the intended app version and `features.procurement_copilot=true`
-7. If Voice Brief integration is enabled, verify one happy-path import manually:
+7. When you want to rerun only the deployed procurement lane outside GitHub Actions, use the thin stage wrapper:
+
+```bash
+cp scripts/stage_procurement_smoke.env.example /tmp/stage_procurement_smoke.env
+$EDITOR /tmp/stage_procurement_smoke.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env
+```
+
+Required env for this ad hoc deployed-stage path:
+- `SMOKE_BASE_URL`
+- `SMOKE_API_KEY`
+- `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+- `G2B_API_KEY`
+
+Optional env:
+- `SMOKE_OPS_KEY`
+- `SMOKE_PROVIDER`
+- `SMOKE_TIMEOUT_SEC`
+- `SMOKE_TENANT_ID`
+- `PROCUREMENT_SMOKE_USERNAME`
+- `PROCUREMENT_SMOKE_PASSWORD`
+8. If Voice Brief integration is enabled, verify one happy-path import manually:
    - open a project in the web UI
    - import a known-good `recording_id` and optional `revision_id`
    - confirm a `voice_brief_import` document appears in project detail

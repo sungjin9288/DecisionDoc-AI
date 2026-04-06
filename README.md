@@ -627,6 +627,24 @@ JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
   - run `./.venv/bin/python scripts/run_local_procurement_smoke.py --print-env-template` for a copy-paste export block
   - pass `--env-file /path/to/local_procurement_smoke.env` to the Python runner together with the inline `JWT_SECRET_KEY=...` prefix
 
+Deployed stage procurement live smoke:
+
+```bash
+cp scripts/stage_procurement_smoke.env.example /tmp/stage_procurement_smoke.env
+$EDITOR /tmp/stage_procurement_smoke.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env
+```
+
+- this helper:
+  - does not boot a local app
+  - runs the existing `scripts/smoke.py` procurement lane against an already deployed `SMOKE_BASE_URL`
+  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `SMOKE_PROCUREMENT_URL_OR_NUMBER`, and `G2B_API_KEY`
+- optional:
+  - set `SMOKE_OPS_KEY` if you want the remediation summary path to prefer the ops-key route on the deployed environment
+  - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
+  - run `./.venv/bin/python scripts/run_stage_procurement_smoke.py --print-env-template` for a copy-paste export block when you do not want to edit a file first
+
 - manual path when you want separate control over server, seed, and verify:
 - use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy
 - start the app on the same port already used by `.claude/launch.json`

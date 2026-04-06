@@ -313,6 +313,31 @@ Notes:
 - the Python runner still accepts `--env-file`, and the env file continues to carry the procurement target and optional smoke credentials
 - the runner defaults `JWT_SECRET_KEY` to a validated local secret and still lets the shell or env file override it when a different local auth context is needed
 
+Deployed stage procurement smoke helper:
+
+```bash
+cp scripts/stage_procurement_smoke.env.example /tmp/stage_procurement_smoke.env
+$EDITOR /tmp/stage_procurement_smoke.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env
+```
+
+Notes:
+- this helper does not change deploy/runtime behavior; it is a thin wrapper around `scripts/smoke.py`
+- use it when you already have a deployed base URL and stage API key, but want the same proposal-first procurement lane without re-composing all `SMOKE_*` exports by hand
+- required values:
+  - `SMOKE_BASE_URL`
+  - `SMOKE_API_KEY`
+  - `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+  - `G2B_API_KEY`
+- optional values:
+  - `SMOKE_OPS_KEY`
+  - `SMOKE_PROVIDER`
+  - `SMOKE_TIMEOUT_SEC`
+  - `SMOKE_TENANT_ID`
+  - `PROCUREMENT_SMOKE_USERNAME`
+  - `PROCUREMENT_SMOKE_PASSWORD`
+
 Manual split runbook:
 
 Runbook:
