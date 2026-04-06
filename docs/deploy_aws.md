@@ -215,6 +215,13 @@ deployment_suffix = -green
 - function: `decisiondoc-ai-dev-green`
 - run title: `deploy-smoke [dev-green] @ main`
 
+fresh-stack preflight contract:
+
+- `decisiondoc-ai-<stage><suffix>` stack이 아직 없으면 `deploy-smoke` 는 이를 first deploy로 간주한다.
+- 이 경우 preflight는 `lambda update-function-code --dry-run` 을 건너뛰고 바로 `SAM build` / `SAM deploy` create path로 진행한다.
+- 반대로 stack이 이미 존재하면 기존대로 `UpdateFunctionCode` dry-run으로 mutability를 확인한다.
+- 따라서 `dev-green` 같은 새 suffix path는 "기존 Lambda update가 deny돼도 fresh create는 가능한가"를 확인하는 우회 검증 경로로 해석해야 한다.
+
 ### 6. 실패 시 우선 확인할 항목
 
 | 증상 | 먼저 확인할 값 |

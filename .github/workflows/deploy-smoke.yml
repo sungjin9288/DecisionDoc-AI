@@ -278,6 +278,7 @@ jobs:
 
       - name: Preflight stack state and Lambda update mutability
         run: |
+          STACK_EXISTS=1
           STACK_STATUS_OUTPUT="$(aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}" \
             --region "${AWS_REGION}" \
@@ -286,6 +287,7 @@ jobs:
           if [ "${STACK_STATUS_EXIT}" -ne 0 ]; then
             if printf '%s\n' "${STACK_STATUS_OUTPUT}" | grep -q 'does not exist'; then
               echo "Stack ${STACK_NAME} does not exist yet; continuing because this may be a first deploy"
+              STACK_EXISTS=0
             else
               printf '%s\n' "${STACK_STATUS_OUTPUT}"
               exit "${STACK_STATUS_EXIT}"
@@ -293,6 +295,11 @@ jobs:
           elif [ "${STACK_STATUS_OUTPUT}" = "UPDATE_ROLLBACK_FAILED" ]; then
             echo "Stack ${STACK_NAME} is UPDATE_ROLLBACK_FAILED. Recover the stack before rerunning deploy-smoke."
             exit 1
+          fi
+
+          if [ "${STACK_EXISTS}" -eq 0 ]; then
+            echo "Skipping Lambda UpdateFunctionCode dry-run because ${STACK_NAME} is a fresh-stack create path."
+            exit 0
           fi
 
           TMPDIR="$(mktemp -d)"
