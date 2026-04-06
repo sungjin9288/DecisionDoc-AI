@@ -167,6 +167,11 @@ HOME=/tmp safety check -r requirements.txt
 
 기존 stack을 덮어쓰지 않고 우회 검증이 필요하면 `deployment_suffix` 입력으로 별도 stack/function 이름을 만들 수 있습니다. 예: `decisiondoc-ai-dev-green`, `decisiondoc-ai-prod-green`.
 
+fresh-stack preflight note:
+
+- suffix를 붙인 새 stack이 아직 존재하지 않으면 `deploy-smoke` preflight는 이를 create path로 판단하고 `UpdateFunctionCode` dry-run을 생략한다.
+- 즉 `dev-green` 검증은 "in-place update 가능 여부"가 아니라 "new stack/function create 가능 여부"를 보는 단계다.
+
 ## 8. 운영 모니터링
 
 - `/health` — 전체 헬스체크

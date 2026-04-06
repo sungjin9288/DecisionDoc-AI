@@ -200,6 +200,19 @@ The feature should:
 
 None — initiative complete
 
+### 2026-04-06 — Fresh-stack preflight corrected for create-path validation
+
+- Background:
+  - `deployment_suffix=-green` fresh-stack workaround was already merged, but `deploy-smoke [dev-green]` still failed in preflight because the workflow always executed `lambda UpdateFunctionCode --dry-run` even when the suffixed stack did not exist yet.
+  - In practice this blocked the intended "new stack/function create" validation path and reduced fresh-stack deploys back to the same AWS-side Lambda update restriction seen on in-place stage stacks.
+- What changed:
+  - updated `.github/workflows/deploy-smoke.yml` so the preflight records whether the stack exists
+  - when `decisiondoc-ai-<stage><suffix>` does not exist, the workflow now skips `UpdateFunctionCode` dry-run and proceeds directly to `SAM build` / `SAM deploy`
+  - documented the corrected fresh-stack contract in deploy/prod runbooks
+- Impact:
+  - `deploy-smoke [dev-green]` and other suffixed first-deploy runs now validate the actual create path instead of failing early on an update-only API
+  - existing non-suffixed or already-created stack behavior is unchanged: stack rollback state is still checked first and mutability dry-run still applies to existing stacks
+
 ---
 
 ## Smallest valid persistence default for Milestone 1
