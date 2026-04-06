@@ -225,6 +225,112 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
     assert generated_bundles == ["bid_decision_kr", "proposal_kr"]
 
 
+def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monkeypatch):
+    smoke = _load_smoke_module()
+    requested_targets: list[str] = []
+    generated_bundles: list[str] = []
+    council_response = _decision_council_response(direction="proceed")
+    state = {"proposal_generated": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/version":
+            return httpx.Response(200, json={"features": {"procurement_copilot": True}})
+        if path == "/auth/register":
+            return httpx.Response(200, json={"access_token": "token-123"})
+        if path == "/projects":
+            return httpx.Response(200, json={"project_id": "project-123"})
+        if path.endswith("/imports/g2b-opportunity"):
+            payload = smoke._json_body(httpx.Response(200, content=request.content))
+            requested_targets.append(payload["url_or_number"])
+            return httpx.Response(200, json={"opportunity": {"title": "Discovered announcement"}})
+        if path.endswith("/procurement/evaluate"):
+            return httpx.Response(200, json={"decision": {"soft_fit_score": 61.0}})
+        if path.endswith("/procurement/recommend"):
+            return httpx.Response(200, json={"recommendation": {"value": "GO"}})
+        if path.endswith("/decision-council/run"):
+            return httpx.Response(200, json=council_response)
+        if path == "/generate/stream":
+            payload = smoke._json_body(httpx.Response(200, content=request.content))
+            generated_bundles.append(payload["bundle_type"])
+            if payload["bundle_type"] == "proposal_kr":
+                state["proposal_generated"] = True
+            bundle_id = payload["bundle_type"]
+            request_id = "req-1" if bundle_id == "bid_decision_kr" else "req-2"
+            body = f'event: complete\ndata: {{"request_id":"{request_id}","bundle_id":"{bundle_id}"}}\n\n'
+            return httpx.Response(200, text=body)
+        if path == "/projects/project-123":
+            documents = [
+                {
+                    "request_id": "req-1",
+                    "bundle_id": "bid_decision_kr",
+                    "title": "Discovered announcement",
+                    "doc_snapshot": "[]",
+                    "source_decision_council_session_id": council_response["session_id"],
+                    "source_decision_council_session_revision": council_response["session_revision"],
+                    "source_decision_council_direction": "proceed",
+                }
+            ]
+            if state["proposal_generated"]:
+                documents.append(
+                    {
+                        "request_id": "req-2",
+                        "bundle_id": "proposal_kr",
+                        "title": "Discovered announcement proposal",
+                        "doc_snapshot": "[]",
+                        "source_decision_council_session_id": council_response["session_id"],
+                        "source_decision_council_session_revision": council_response["session_revision"],
+                        "source_decision_council_direction": "proceed",
+                    }
+                )
+            return httpx.Response(200, json={"documents": documents})
+        if path == "/approvals":
+            return httpx.Response(200, json={"approval_id": "approval-1"})
+        if path == "/share":
+            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
+        raise AssertionError(f"Unhandled request: {request.method} {request.url}")
+
+    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: "R26BK01455555")
+    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    smoke._run_procurement_smoke(
+        client,
+        base_url="https://example.com",
+        api_key="api-key",
+        provider="mock",
+        url_or_number="",
+    )
+
+    assert requested_targets == ["R26BK01455555"]
+    assert generated_bundles == ["bid_decision_kr", "proposal_kr"]
+
+
+def test_run_procurement_smoke_skips_when_no_target_is_configured_and_discovery_finds_nothing(monkeypatch, capsys):
+    smoke = _load_smoke_module()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/version":
+            return httpx.Response(200, json={"features": {"procurement_copilot": True}})
+        if path == "/auth/register":
+            return httpx.Response(200, json={"access_token": "token-123"})
+        if path == "/projects":
+            return httpx.Response(200, json={"project_id": "project-123"})
+        raise AssertionError(f"Unhandled request: {request.method} {request.url}")
+
+    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
+    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+
+    smoke._run_procurement_smoke(
+        client,
+        base_url="https://example.com",
+        api_key="api-key",
+        provider="mock",
+        url_or_number="",
+    )
+
+    assert "SKIP procurement smoke could not discover a recent live G2B opportunity" in capsys.readouterr().out
+
+
 def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(monkeypatch, capsys):
     smoke = _load_smoke_module()
     requested_targets: list[str] = []

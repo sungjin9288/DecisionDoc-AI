@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / "scripts" / "stage_procurement_smoke.env.example"
+DEFAULT_GITHUB_ACTIONS_ENV_FILE = REPO_ROOT / ".github-actions.env"
 
 DEFAULT_PROVIDER = "mock"
 DEFAULT_TIMEOUT_SEC = 30.0
@@ -17,10 +19,10 @@ DEFAULT_TIMEOUT_SEC = 30.0
 REQUIRED_STAGE_PREREQS = (
     "SMOKE_BASE_URL",
     "SMOKE_API_KEY",
-    "SMOKE_PROCUREMENT_URL_OR_NUMBER",
     "G2B_API_KEY",
 )
 OPTIONAL_STAGE_PREREQS = (
+    "SMOKE_PROCUREMENT_URL_OR_NUMBER",
     "SMOKE_OPS_KEY",
     "SMOKE_PROVIDER",
     "SMOKE_TIMEOUT_SEC",
@@ -28,6 +30,22 @@ OPTIONAL_STAGE_PREREQS = (
     "PROCUREMENT_SMOKE_USERNAME",
     "PROCUREMENT_SMOKE_PASSWORD",
 )
+
+
+def _load_stage_exporter_module():
+    try:
+        from scripts import export_stage_procurement_smoke_env as stage_exporter_module
+    except ModuleNotFoundError:
+        module_path = REPO_ROOT / "scripts" / "export_stage_procurement_smoke_env.py"
+        spec = importlib.util.spec_from_file_location("decisiondoc_stage_smoke_exporter", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        return module
+    return stage_exporter_module
+
+
+stage_exporter = _load_stage_exporter_module()
 
 
 def _required_value(name: str, value: str) -> str:
@@ -102,14 +120,40 @@ def _resolve_optional_env(
     return default
 
 
-def _suggested_command(*, env_file: Path | None = None) -> str:
+def _suggested_command(
+    *,
+    env_file: Path | None = None,
+    github_actions_env_file: Path | None = None,
+    stage: str = "",
+    base_url: str = "",
+    resolve_base_url_from_stack: bool = False,
+    stack_name: str = "",
+    aws_region: str = "",
+) -> str:
+    if github_actions_env_file is not None:
+        parts = [
+            ".venv/bin/python",
+            "scripts/run_stage_procurement_smoke.py",
+            "--github-actions-env-file",
+            str(Path(github_actions_env_file).expanduser()),
+            "--stage",
+            stage or "dev",
+        ]
+        if resolve_base_url_from_stack:
+            parts.append("--resolve-base-url-from-stack")
+        elif base_url:
+            parts.extend(["--base-url", base_url])
+        if stack_name:
+            parts.extend(["--stack-name", stack_name])
+        if aws_region:
+            parts.extend(["--aws-region", aws_region])
+        return " ".join(parts)
     if env_file is not None:
         return f".venv/bin/python scripts/run_stage_procurement_smoke.py --env-file {Path(env_file).expanduser()}"
     return (
         "SMOKE_BASE_URL=https://your-stage.example.com \\\n"
         "SMOKE_API_KEY=your-stage-api-key \\\n"
         "G2B_API_KEY=your-data-go-kr-key \\\n"
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \\\n"
         ".venv/bin/python scripts/run_stage_procurement_smoke.py"
     )
 
@@ -119,9 +163,9 @@ def _print_env_template(*, env_file: Path | None = None) -> None:
     print("export SMOKE_BASE_URL=https://your-stage.example.com", flush=True)
     print("export SMOKE_API_KEY=your-stage-api-key", flush=True)
     print("export G2B_API_KEY=your-data-go-kr-key", flush=True)
-    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("", flush=True)
     print("# Optional", flush=True)
+    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("export SMOKE_OPS_KEY=", flush=True)
     print(f"export SMOKE_PROVIDER={DEFAULT_PROVIDER}", flush=True)
     print(f"export SMOKE_TIMEOUT_SEC={DEFAULT_TIMEOUT_SEC}", flush=True)
@@ -137,6 +181,34 @@ def _print_env_template(*, env_file: Path | None = None) -> None:
         print(f"# example file: {Path(env_file).expanduser()}", flush=True)
 
 
+def _build_env_overrides_from_github_actions(
+    *,
+    github_actions_env_file: Path,
+    stage: str,
+    base_url: str,
+    resolve_base_url_from_stack: bool,
+    stack_name: str,
+    aws_region: str,
+    provider: str,
+    timeout_sec: str,
+) -> dict[str, str]:
+    normalized_stage = str(stage or "").strip().lower()
+    if normalized_stage not in {"dev", "prod"}:
+        raise SystemExit(
+            "Missing required stage procurement smoke prerequisite: --stage dev|prod is required when --github-actions-env-file is used."
+        )
+    return stage_exporter.build_stage_procurement_smoke_env_values(
+        stage=normalized_stage,
+        input_env_file=github_actions_env_file,
+        base_url=base_url,
+        resolve_base_url_from_stack=resolve_base_url_from_stack,
+        stack_name=stack_name,
+        aws_region=aws_region,
+        provider=provider or DEFAULT_PROVIDER,
+        timeout_sec=timeout_sec or str(DEFAULT_TIMEOUT_SEC),
+    )
+
+
 def _run_preflight(
     *,
     base_url: str,
@@ -145,6 +217,12 @@ def _run_preflight(
     g2b_api_key: str,
     env_overrides: dict[str, str],
     env_file: Path | None = None,
+    github_actions_env_file: Path | None = None,
+    stage: str = "",
+    base_url_for_suggested_command: str = "",
+    resolve_base_url_from_stack: bool = False,
+    stack_name: str = "",
+    aws_region: str = "",
 ) -> int:
     resolved_values = {
         "SMOKE_BASE_URL": str(base_url or "").strip() or _lookup_env("SMOKE_BASE_URL", env_overrides),
@@ -170,7 +248,18 @@ def _run_preflight(
         print(f"[info] {env_name}={status}", flush=True)
     print("", flush=True)
     print("Suggested command", flush=True)
-    print(_suggested_command(env_file=env_file), flush=True)
+    print(
+        _suggested_command(
+            env_file=env_file,
+            github_actions_env_file=github_actions_env_file,
+            stage=stage,
+            base_url=base_url_for_suggested_command,
+            resolve_base_url_from_stack=resolve_base_url_from_stack,
+            stack_name=stack_name,
+            aws_region=aws_region,
+        ),
+        flush=True,
+    )
     return 1 if missing_required else 0
 
 
@@ -195,7 +284,10 @@ def _build_smoke_env(
     env["SMOKE_PROVIDER"] = provider
     env["SMOKE_TIMEOUT_SEC"] = str(timeout_sec)
     env["SMOKE_INCLUDE_PROCUREMENT"] = "1"
-    env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    if procurement_url_or_number:
+        env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    else:
+        env.pop("SMOKE_PROCUREMENT_URL_OR_NUMBER", None)
     env["G2B_API_KEY"] = g2b_api_key
     if ops_key:
         env["SMOKE_OPS_KEY"] = ops_key
@@ -225,7 +317,7 @@ def run_stage_procurement_smoke(
     active_env_overrides = dict(env_overrides or {})
     resolved_base_url = _required_value("base_url", base_url).rstrip("/")
     resolved_api_key = _required_value("api_key", api_key)
-    resolved_procurement_target = _required_value("procurement_url_or_number", procurement_url_or_number)
+    resolved_procurement_target = str(procurement_url_or_number or "").strip()
     resolved_g2b_api_key = _required_value("g2b_api_key", g2b_api_key)
     resolved_provider = _required_value("provider", provider)
     smoke_env = _build_smoke_env(
@@ -243,7 +335,10 @@ def run_stage_procurement_smoke(
     )
     smoke_command = [sys.executable, "scripts/smoke.py"]
     print(f"Running stage procurement smoke against {resolved_base_url}", flush=True)
-    print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    if resolved_procurement_target:
+        print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    else:
+        print("Procurement target: auto-discover recent live G2B opportunity", flush=True)
     completed = subprocess.run(smoke_command, cwd=REPO_ROOT, env=smoke_env, check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
@@ -267,6 +362,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--username", default="")
     parser.add_argument("--password", default="")
     parser.add_argument("--env-file", default="")
+    parser.add_argument("--github-actions-env-file", default="")
+    parser.add_argument("--stage", choices=["dev", "prod"], default="")
+    parser.add_argument("--resolve-base-url-from-stack", action="store_true")
+    parser.add_argument("--stack-name", default="")
+    parser.add_argument("--aws-region", default="")
     parser.add_argument(
         "--preflight",
         action="store_true",
@@ -284,7 +384,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     active_argv = list(argv if argv is not None else sys.argv[1:])
     args = _parse_args(active_argv)
     env_file = Path(str(args.env_file).strip()).expanduser() if str(args.env_file).strip() else None
+    github_actions_env_file = (
+        Path(str(args.github_actions_env_file).strip()).expanduser()
+        if str(args.github_actions_env_file).strip()
+        else None
+    )
     env_overrides = _load_env_file(env_file)
+    if github_actions_env_file is not None:
+        exported_env_overrides = _build_env_overrides_from_github_actions(
+            github_actions_env_file=github_actions_env_file,
+            stage=str(args.stage).strip().lower(),
+            base_url=str(args.base_url).strip(),
+            resolve_base_url_from_stack=bool(args.resolve_base_url_from_stack),
+            stack_name=str(args.stack_name).strip(),
+            aws_region=str(args.aws_region).strip(),
+            provider=str(args.provider).strip(),
+            timeout_sec="" if args.timeout_sec is None else str(args.timeout_sec),
+        )
+        env_overrides = {**exported_env_overrides, **env_overrides}
     if bool(args.print_env_template):
         _print_env_template(env_file=env_file or DEFAULT_ENV_FILE)
         return 0
@@ -296,6 +413,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             g2b_api_key=str(args.g2b_api_key).strip(),
             env_overrides=env_overrides,
             env_file=env_file,
+            github_actions_env_file=github_actions_env_file,
+            stage=str(args.stage).strip().lower(),
+            base_url_for_suggested_command=(
+                str(args.base_url).strip() or _lookup_env("SMOKE_BASE_URL", env_overrides)
+            ),
+            resolve_base_url_from_stack=bool(args.resolve_base_url_from_stack),
+            stack_name=str(args.stack_name).strip(),
+            aws_region=str(args.aws_region).strip(),
         )
     resolved_base_url = _resolve_required_env(
         str(args.base_url).strip(),
@@ -305,11 +430,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     resolved_api_key = _resolve_required_env(
         str(args.api_key).strip(),
         "SMOKE_API_KEY",
-        env_overrides,
-    )
-    resolved_procurement_target = _resolve_required_env(
-        str(args.procurement_url_or_number).strip(),
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER",
         env_overrides,
     )
     resolved_g2b_api_key = _resolve_required_env(
@@ -352,7 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     return run_stage_procurement_smoke(
         base_url=resolved_base_url,
         api_key=resolved_api_key,
-        procurement_url_or_number=resolved_procurement_target,
+        procurement_url_or_number=str(args.procurement_url_or_number).strip()
+        or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
         g2b_api_key=resolved_g2b_api_key,
         provider=resolved_provider,
         timeout_sec=float(resolved_timeout),

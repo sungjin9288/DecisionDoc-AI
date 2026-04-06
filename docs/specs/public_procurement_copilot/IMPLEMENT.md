@@ -290,7 +290,6 @@ Local procurement live smoke helper:
 ```bash
 G2B_API_KEY=... \
 JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \
 .venv/bin/python scripts/run_local_procurement_smoke.py
 ```
 
@@ -306,8 +305,10 @@ JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
 Notes:
 - this helper starts a fresh local app and then runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
 - it auto-wires a local API key and local ops key so the NO_GO remediation summary path can still be verified without requiring an admin smoke user
+- `SMOKE_PROCUREMENT_URL_OR_NUMBER` is now a preferred stable fixture, not a hard prerequisite; if it is absent and `G2B_API_KEY` is present, the smoke first auto-discovers a recent live G2B opportunity
+- the same contract now applies to `deploy-smoke` and `check-github-actions-config.sh`: `G2B_API_KEY_<STAGE>` is required for procurement smoke, while `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` remains optional stable fixture input
 - add `--keep-running` if you want the local app to remain up after the smoke pass
-- add `--preflight` when you want a fail-fast readiness check for `G2B_API_KEY` and `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+- add `--preflight` when you want a fail-fast readiness check for `G2B_API_KEY` and optional smoke context
 - add `--print-env-template` when you want a copy-paste export block plus the exact run command
 - keep the inline `JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars` prefix on the file-based path; that is the validated local launch form in this workspace
 - the Python runner still accepts `--env-file`, and the env file continues to carry the procurement target and optional smoke credentials
@@ -328,15 +329,55 @@ Notes:
 - required values:
   - `SMOKE_BASE_URL`
   - `SMOKE_API_KEY`
-  - `SMOKE_PROCUREMENT_URL_OR_NUMBER`
   - `G2B_API_KEY`
 - optional values:
+  - `SMOKE_PROCUREMENT_URL_OR_NUMBER`
   - `SMOKE_OPS_KEY`
   - `SMOKE_PROVIDER`
   - `SMOKE_TIMEOUT_SEC`
   - `SMOKE_TENANT_ID`
   - `PROCUREMENT_SMOKE_USERNAME`
   - `PROCUREMENT_SMOKE_PASSWORD`
+
+GitHub Actions env -> deployed stage smoke env:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --base-url https://your-dev-stage.example.com \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+Notes:
+- use this when your repo already maintains `.github-actions.env` through `import-github-actions-env-file.sh`
+- the exporter only remaps stage-scoped repository values into the exact `SMOKE_*` names required by the deployed-stage wrapper
+- `--base-url` remains explicit because the deployed endpoint is not stored in `.github-actions.env`
+
+CloudFormation stack-output variant:
+
+```bash
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack \
+  --preflight
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack
+```
+
+Notes:
+- this path reuses the same `HttpApiUrl` stack output lookup already used in `.github/workflows/deploy-smoke.yml`
+- default stack names are `decisiondoc-ai-dev` and `decisiondoc-ai-prod`
+- use `--stack-name` when the deployed stack name differs
+- use `--aws-region` when `AWS_REGION` is not already available in `.github-actions.env` or the shell
+- the runner now embeds the exporter path directly, so the operator-facing happy path is one command; the explicit exporter is still useful when you want to keep a generated env file for repeated checks
 
 Manual split runbook:
 

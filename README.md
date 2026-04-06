@@ -601,7 +601,6 @@ Local procurement live smoke when G2B env is available:
 ```bash
 G2B_API_KEY=... \
 JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \
 .venv/bin/python scripts/run_local_procurement_smoke.py
 ```
 
@@ -618,6 +617,7 @@ JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
   - starts a fresh local app with procurement copilot enabled
   - injects a local API key and ops key for the smoke lane
   - runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
+  - uses `SMOKE_PROCUREMENT_URL_OR_NUMBER` when provided, but can auto-discover a recent live G2B opportunity when only `G2B_API_KEY` is configured
 - optional:
   - add `--keep-running` if you want the local app to stay up after the smoke pass
   - set `PROCUREMENT_SMOKE_USERNAME` / `PROCUREMENT_SMOKE_PASSWORD` when the target tenant already has users
@@ -639,11 +639,58 @@ $EDITOR /tmp/stage_procurement_smoke.env
 - this helper:
   - does not boot a local app
   - runs the existing `scripts/smoke.py` procurement lane against an already deployed `SMOKE_BASE_URL`
-  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `SMOKE_PROCUREMENT_URL_OR_NUMBER`, and `G2B_API_KEY`
+  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, and `G2B_API_KEY`
+  - treats `SMOKE_PROCUREMENT_URL_OR_NUMBER` as a preferred stable fixture, not a hard requirement
 - optional:
   - set `SMOKE_OPS_KEY` if you want the remediation summary path to prefer the ops-key route on the deployed environment
   - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
   - run `./.venv/bin/python scripts/run_stage_procurement_smoke.py --print-env-template` for a copy-paste export block when you do not want to edit a file first
+
+GitHub Actions env to stage smoke env:
+
+```bash
+.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+  --stage dev \
+  --env-file .github-actions.env \
+  --base-url https://your-dev-stage.example.com \
+  --output /tmp/stage_procurement_smoke.dev.env
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+```
+
+- this helper maps stage-scoped GitHub Actions values into the exact env names expected by `run_stage_procurement_smoke.py`
+- it reuses:
+  - `DECISIONDOC_API_KEY` -> `SMOKE_API_KEY`
+  - `DECISIONDOC_OPS_KEY` -> `SMOKE_OPS_KEY`
+  - `G2B_API_KEY_<STAGE>` -> `G2B_API_KEY`
+  - `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` -> `SMOKE_PROCUREMENT_URL_OR_NUMBER` when a stable known target is available
+  - `PROCUREMENT_SMOKE_TENANT_ID_<STAGE>` / `PROCUREMENT_SMOKE_USERNAME_<STAGE>` / `PROCUREMENT_SMOKE_PASSWORD_<STAGE>` -> deployed smoke login context
+- `check-github-actions-config.sh --procurement-smoke` and `deploy-smoke` now require `G2B_API_KEY_<STAGE>` but only treat `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` as optional stable fixture input
+- only `--base-url` stays explicit because the deployed endpoint is resolved outside the repository env scaffold
+
+If AWS CLI credentials already point at the target account, you can skip manual `base_url` lookup and resolve it from the stage stack output:
+
+```bash
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack \
+  --preflight
+
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack
+```
+
+- default stack name:
+  - `decisiondoc-ai-dev`
+  - `decisiondoc-ai-prod`
+- optional:
+  - pass `--stack-name decisiondoc-ai-prod-blue` when the deployed stack name differs from the default convention
+  - pass `--aws-region ap-northeast-2` when you do not want to rely on `AWS_REGION` from `.github-actions.env` or the current shell
+- this path internally reuses the exporter logic, so the older `export_stage_procurement_smoke_env.py -> run_stage_procurement_smoke.py` two-step flow is still available when you want a persistent generated env file
 
 - manual path when you want separate control over server, seed, and verify:
 - use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy

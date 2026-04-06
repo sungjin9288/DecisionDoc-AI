@@ -20,8 +20,9 @@ DEFAULT_PORT = 8902
 DEFAULT_API_KEY = "local-procurement-smoke-api-key"
 DEFAULT_OPS_KEY = "local-procurement-smoke-ops-key"
 DEFAULT_JWT_SECRET = "test-local-procurement-smoke-secret-32chars"
-REQUIRED_PROCUREMENT_PREREQS = ("SMOKE_PROCUREMENT_URL_OR_NUMBER", "G2B_API_KEY")
+REQUIRED_PROCUREMENT_PREREQS = ("G2B_API_KEY",)
 OPTIONAL_PROCUREMENT_PREREQS = (
+    "SMOKE_PROCUREMENT_URL_OR_NUMBER",
     "SMOKE_TENANT_ID",
     "PROCUREMENT_SMOKE_USERNAME",
     "PROCUREMENT_SMOKE_PASSWORD",
@@ -93,7 +94,6 @@ def _suggested_command(*, port: int, data_dir: Path, env_file: Path | None = Non
     return (
         "G2B_API_KEY=... \\\n"
         f"JWT_SECRET_KEY={DEFAULT_JWT_SECRET} \\\n"
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \\\n"
         f".venv/bin/python scripts/run_local_procurement_smoke.py --port {int(port)} --data-dir {data_dir}"
     )
 
@@ -101,9 +101,9 @@ def _suggested_command(*, port: int, data_dir: Path, env_file: Path | None = Non
 def _print_env_template(*, port: int, data_dir: Path, env_file: Path | None = None) -> None:
     print("# Required", flush=True)
     print("export G2B_API_KEY=your-data-go-kr-key", flush=True)
-    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("", flush=True)
     print("# Optional", flush=True)
+    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("export SMOKE_TENANT_ID=system", flush=True)
     print("export PROCUREMENT_SMOKE_USERNAME=", flush=True)
     print("export PROCUREMENT_SMOKE_PASSWORD=", flush=True)
@@ -235,7 +235,10 @@ def _build_smoke_env(
     env["SMOKE_PROVIDER"] = provider
     env["SMOKE_TIMEOUT_SEC"] = str(timeout_sec)
     env["SMOKE_INCLUDE_PROCUREMENT"] = "1"
-    env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    if procurement_url_or_number:
+        env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    else:
+        env.pop("SMOKE_PROCUREMENT_URL_OR_NUMBER", None)
     env["SMOKE_OPS_KEY"] = ops_key
     env["G2B_API_KEY"] = g2b_api_key
     for optional_name in (
@@ -265,7 +268,7 @@ def run_local_procurement_smoke(
     env_overrides: dict[str, str] | None = None,
 ) -> int:
     active_env_overrides = dict(env_overrides or {})
-    resolved_procurement_target = _required_value("procurement_url_or_number", procurement_url_or_number)
+    resolved_procurement_target = str(procurement_url_or_number or "").strip()
     resolved_g2b_api_key = _required_value("g2b_api_key", g2b_api_key)
     resolved_provider = _required_value("provider", provider)
     resolved_api_key = _required_value("api_key", api_key)
@@ -304,7 +307,10 @@ def run_local_procurement_smoke(
 
     print(f"Starting local procurement smoke server on {resolved_base_url}", flush=True)
     print(f"DATA_DIR: {data_dir}", flush=True)
-    print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    if resolved_procurement_target:
+        print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    else:
+        print("Procurement target: auto-discover recent live G2B opportunity", flush=True)
     server_process = subprocess.Popen(server_command, cwd=REPO_ROOT, env=server_env)
     try:
         _wait_for_health(resolved_base_url, process=server_process)
@@ -375,17 +381,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             env_overrides=env_overrides,
             env_file=env_file,
         )
-    resolved_procurement_target = _resolve_required_env(
-        str(args.procurement_url_or_number).strip() or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER",
-    )
     resolved_g2b_api_key = _resolve_required_env(
         str(args.g2b_api_key).strip() or _lookup_env("G2B_API_KEY", env_overrides),
         "G2B_API_KEY",
     )
     return run_local_procurement_smoke(
         data_dir=data_dir,
-        procurement_url_or_number=resolved_procurement_target,
+        procurement_url_or_number=str(args.procurement_url_or_number).strip()
+        or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
         g2b_api_key=resolved_g2b_api_key,
         host=str(args.host).strip() or DEFAULT_HOST,
         port=int(args.port),

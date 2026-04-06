@@ -350,6 +350,7 @@ jobs:
         env:
           SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          G2B_API_KEY: ${{ env.G2B_API_KEY }}
           PROCUREMENT_SMOKE_URL_OR_NUMBER: ${{ env.PROCUREMENT_SMOKE_URL_OR_NUMBER }}
         run: |
           if [ -z "${SMOKE_BASE_URL}" ]; then
@@ -360,9 +361,12 @@ jobs:
             echo "Missing DECISIONDOC_API_KEY secret"
             exit 1
           fi
-          if [ -z "${PROCUREMENT_SMOKE_URL_OR_NUMBER}" ]; then
-            echo "Missing PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE> variable"
+          if [ -z "${G2B_API_KEY}" ]; then
+            echo "Missing G2B_API_KEY_<STAGE> secret"
             exit 1
+          fi
+          if [ -z "${PROCUREMENT_SMOKE_URL_OR_NUMBER}" ]; then
+            echo "No PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE> variable configured; smoke will auto-discover a recent live G2B opportunity"
           fi
 
       - name: Run smoke
