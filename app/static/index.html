@@ -6025,6 +6025,18 @@
   }
 
   let _pendingProjectSelectorFocus = false;
+  let _projectSelectorFocusRestoreTimer = null;
+
+  function queueProjectSelectorFocusRecovery() {
+    if (_projectSelectorFocusRestoreTimer) {
+      clearTimeout(_projectSelectorFocusRestoreTimer);
+      _projectSelectorFocusRestoreTimer = null;
+    }
+    requestAnimationFrame(() => focusProjectSelectorSoon(12));
+    _projectSelectorFocusRestoreTimer = window.setTimeout(() => {
+      focusProjectSelectorSoon(12);
+    }, 180);
+  }
 
   function focusProjectSelectorSoon(attempts = 8) {
     const row = $id('project-selector-row');
@@ -6035,9 +6047,25 @@
     const tryFocus = remaining => {
       const target = $id('project-select');
       if (!target) return;
-      target.focus();
+      const isVisible = target.offsetParent !== null && target.getClientRects().length > 0;
+      if (!isVisible) {
+        if (remaining <= 0) return;
+        requestAnimationFrame(() => {
+          setTimeout(() => tryFocus(remaining - 1), 50);
+        });
+        return;
+      }
+      try {
+        target.focus({ preventScroll: true });
+      } catch (_) {
+        target.focus();
+      }
       if (document.activeElement === target) {
         _pendingProjectSelectorFocus = false;
+        if (_projectSelectorFocusRestoreTimer) {
+          clearTimeout(_projectSelectorFocusRestoreTimer);
+          _projectSelectorFocusRestoreTimer = null;
+        }
         return;
       }
       if (remaining <= 0) return;
@@ -6265,8 +6293,9 @@
         this.applyPresets();
         _pendingProjectSelectorFocus = true;
         switchPage('generate');
-        requestAnimationFrame(() => {
-          focusProjectSelectorSoon();
+        queueProjectSelectorFocusRecovery();
+        Promise.resolve(loadProjectSelector()).finally(() => {
+          queueProjectSelectorFocusRecovery();
         });
         showNotification('프로젝트 연결과 지식 문서를 먼저 확인해 수행 적합도를 점검하세요.', 'info');
       },
@@ -10881,7 +10910,7 @@
         sel.value = previousValue;
       }
       if (shouldRestoreFocus) {
-        requestAnimationFrame(() => focusProjectSelectorSoon(4));
+        queueProjectSelectorFocusRecovery();
       }
     } catch(e) { /* optional feature, ignore errors */ }
   }
