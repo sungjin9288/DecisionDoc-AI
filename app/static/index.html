@@ -6025,24 +6025,30 @@
   }
 
   let _pendingProjectSelectorFocus = false;
-  let _projectSelectorFocusRestoreTimer = null;
+  let _projectSelectorFocusRestoreTimers = [];
+
+  function clearProjectSelectorFocusRecovery() {
+    if (_projectSelectorFocusRestoreTimers.length === 0) return;
+    _projectSelectorFocusRestoreTimers.forEach(timerId => clearTimeout(timerId));
+    _projectSelectorFocusRestoreTimers = [];
+  }
 
   function queueProjectSelectorFocusRecovery() {
-    if (_projectSelectorFocusRestoreTimer) {
-      clearTimeout(_projectSelectorFocusRestoreTimer);
-      _projectSelectorFocusRestoreTimer = null;
-    }
-    requestAnimationFrame(() => focusProjectSelectorSoon(12));
-    _projectSelectorFocusRestoreTimer = window.setTimeout(() => {
-      focusProjectSelectorSoon(12);
-    }, 180);
+    clearProjectSelectorFocusRecovery();
+    focusProjectSelectorSoon(20);
+    [0, 140, 320, 640].forEach(delay => {
+      const timerId = window.setTimeout(() => {
+        requestAnimationFrame(() => focusProjectSelectorSoon(20));
+      }, delay);
+      _projectSelectorFocusRestoreTimers.push(timerId);
+    });
   }
 
   function focusProjectSelectorSoon(attempts = 8) {
     const row = $id('project-selector-row');
     const sel = $id('project-select');
     if (!row || !sel) return;
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.scrollIntoView({ block: 'center' });
 
     const tryFocus = remaining => {
       const target = $id('project-select');
@@ -6062,10 +6068,7 @@
       }
       if (document.activeElement === target) {
         _pendingProjectSelectorFocus = false;
-        if (_projectSelectorFocusRestoreTimer) {
-          clearTimeout(_projectSelectorFocusRestoreTimer);
-          _projectSelectorFocusRestoreTimer = null;
-        }
+        clearProjectSelectorFocusRecovery();
         return;
       }
       if (remaining <= 0) return;
@@ -10910,6 +10913,7 @@
         sel.value = previousValue;
       }
       if (shouldRestoreFocus) {
+        focusProjectSelectorSoon(20);
         queueProjectSelectorFocusRecovery();
       }
     } catch(e) { /* optional feature, ignore errors */ }
