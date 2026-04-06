@@ -104,6 +104,7 @@ AWS SAM 배포 시 필요한 secret/variable은 [../deploy_aws.md](../deploy_aws
 - `prod`는 feature 실험 환경이 아니라 promote target
 - console edit는 정상 배포 경로가 아니라 예외 복구 수단
 - `UPDATE_ROLLBACK_FAILED` 상태에서는 재배포보다 recovery와 root-cause 분리가 먼저
+- `prod deploy-smoke` 는 같은 `main` SHA에 대해 성공한 `dev` deploy-smoke evidence가 있을 때만 정상 경로로 허용
 
 ## 6.2 현재 알려진 prod blocker 패턴
 
@@ -161,6 +162,8 @@ HOME=/tmp safety check -r requirements.txt
 4. AWS-side restriction 해소 전에는 rerun 금지
 
 현재 `deploy-smoke` workflow도 같은 기준을 deploy preflight로 먼저 검사하도록 맞췄습니다. 즉, stack이 이미 깨져 있거나 Lambda code update dry-run이 막혀 있으면 `SAM deploy` 전에 fail-fast로 종료됩니다.
+
+또한 `prod` dispatch는 같은 `main` SHA에 성공한 `deploy-smoke [dev]` run이 있어야 합니다. 이 evidence가 없으면 `SAM deploy` 전에 멈추고, 정말 예외적인 운영 복구일 때만 `break_glass_reason` 입력으로 override 할 수 있습니다.
 
 ## 8. 운영 모니터링
 

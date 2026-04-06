@@ -1,5 +1,7 @@
 name: deploy-smoke
 
+run-name: deploy-smoke [${{ inputs.stage }}] @ ${{ github.ref_name }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -57,6 +59,11 @@ on:
         options:
           - "false"
           - "true"
+      break_glass_reason:
+        description: "Optional prod override reason when no successful dev deploy-smoke exists for the same main SHA"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   deploy:
@@ -64,6 +71,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
     env:
       CI: "true"
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -74,6 +82,79 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Enforce dev-first gate for prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_REF_NAME: ${{ github.ref_name }}
+          BREAK_GLASS_REASON: ${{ inputs.break_glass_reason }}
+        run: |
+          if [ "${{ inputs.stage }}" != "prod" ]; then
+            echo "Non-prod deploy; skipping dev-first gate."
+            exit 0
+          fi
+
+          if [ "${CURRENT_REF_NAME}" != "main" ]; then
+            echo "Prod deploy-smoke is only allowed from main. Current ref: ${CURRENT_REF_NAME}"
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          repo = os.environ["REPO"]
+          current_sha = os.environ["CURRENT_SHA"]
+          current_run_id = int(os.environ["CURRENT_RUN_ID"])
+          break_glass_reason = os.environ.get("BREAK_GLASS_REASON", "").strip()
+
+          output = subprocess.check_output(
+              [
+                  "gh",
+                  "api",
+                  f"repos/{repo}/actions/workflows/deploy-smoke.yml/runs?branch=main&status=success&per_page=100",
+              ],
+              text=True,
+          )
+          payload = json.loads(output)
+          runs = payload.get("workflow_runs", [])
+
+          matching_dev_run = None
+          for run in runs:
+              if run.get("id") == current_run_id:
+                  continue
+              if run.get("head_sha") != current_sha:
+                  continue
+              title = run.get("display_title") or ""
+              if "[dev]" not in title:
+                  continue
+              matching_dev_run = run
+              break
+
+          if matching_dev_run:
+              print(
+                  "Found successful dev deploy-smoke gate:",
+                  matching_dev_run.get("html_url", matching_dev_run.get("url")),
+              )
+              sys.exit(0)
+
+          if break_glass_reason:
+              print("No successful dev deploy-smoke found for this main SHA.")
+              print("Proceeding with prod break-glass override reason:")
+              print(break_glass_reason)
+              sys.exit(0)
+
+          print(
+              "Missing successful dev deploy-smoke for the same main SHA. "
+              "Run dev first or provide workflow_dispatch input break_glass_reason."
+          )
+          sys.exit(1)
+          PY
 
       - uses: aws-actions/setup-sam@v2
 

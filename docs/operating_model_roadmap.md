@@ -143,10 +143,18 @@ release 검증은 빠른 층과 느린 층을 분리해야 한다.
   - 필요 시 `prod` deploy-smoke`
 - `stage` procurement smoke를 daily/weekly 운영 체크로 사용할지 결정
 
+현재 repo 현실에서는 dedicated `stage` stack이 아직 없으므로, 우선 `dev`를 stage-equivalent gate로 사용한다. 즉, `prod` deploy-smoke 이전에 같은 `main` SHA 기준 성공한 `dev` deploy-smoke evidence를 요구하는 방식으로 first guardrail을 건다.
+
 완료 기준:
 
 - feature merge 후 first deployment target이 항상 `stage`
 - `prod`는 stage pass 이후에만 실행
+
+진행 상태:
+
+- first workflow guardrail is in progress
+  - `prod` deploy-smoke 는 같은 `main` SHA에 성공한 `dev` deploy-smoke run이 없으면 기본적으로 멈춘다
+  - 예외 경로는 `break_glass_reason` 입력을 명시한 운영 복구 상황으로 제한한다
 
 ## Week 3 — Immutable release path
 

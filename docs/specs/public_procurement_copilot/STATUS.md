@@ -2158,3 +2158,30 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
 - remaining boundary
   - this guardrail reduces operator error and repeated failed deploy attempts, but it does not resolve the underlying AWS-side Lambda update restriction
   - production redeploy still remains blocked until that AWS-side restriction is cleared
+
+## 2026-04-06 — Dev-First Release Gate Added To Deploy-Smoke For Prod Promotion Discipline
+
+- shipped
+  - updated `.github/workflows/deploy-smoke.yml` so `prod` dispatch now requires `main` plus an already successful `deploy-smoke [dev]` run for the same `head_sha`
+  - added optional `workflow_dispatch` input `break_glass_reason` so true incident recovery can still override the gate with an explicit operator reason
+  - aligned `docs/deploy_aws.md`, `docs/deployment/prod_checklist.md`, and `docs/operating_model_roadmap.md` with the new stage-first semantics
+- file path
+  - `.github/workflows/deploy-smoke.yml`
+  - `docs/deploy_aws.md`
+  - `docs/deployment/prod_checklist.md`
+  - `docs/operating_model_roadmap.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - the previous fail-fast guard only stopped obviously broken prod reruns after stack or Lambda mutability checks, but it still allowed operators to treat `prod` as the first deployment target for a newly merged `main` SHA
+  - the Week 2 operating-model goal was to make stage-first promotion a workflow-enforced contract, not just a documentation preference
+  - because a dedicated `stage` stack does not exist yet, `dev` is temporarily used as the stage-equivalent release gate
+- validation
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/deploy-smoke.yml"); puts "yaml-ok"'`
+    - pass
+  - `.venv/bin/pytest -q tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py tests/test_smoke_script.py --tb=short`
+    - pass
+  - `git diff --check -- .github/workflows/deploy-smoke.yml docs/deploy_aws.md docs/deployment/prod_checklist.md docs/operating_model_roadmap.md docs/specs/public_procurement_copilot/STATUS.md`
+    - planned as final formatting gate for the touched workflow/docs set
+- remaining boundary
+  - this gate improves release discipline, but it does not create a real dedicated `stage` stack yet
+  - `break_glass_reason` remains an operator override, not a substitute for solving the AWS-side Lambda update restriction that still blocks normal prod redeploy
