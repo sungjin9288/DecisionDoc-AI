@@ -25,8 +25,13 @@ class ShareLink:
     created_at: str
     expires_at: str        # ISO datetime
     access_count: int = 0
+    last_accessed_at: str = ""
     is_active: bool = True
     bundle_id: str = ""
+    decision_council_document_status: str = ""
+    decision_council_document_status_tone: str = ""
+    decision_council_document_status_copy: str = ""
+    decision_council_document_status_summary: str = ""
 
 
 class ShareStore(BaseJsonStore):
@@ -72,6 +77,10 @@ class ShareStore(BaseJsonStore):
         created_by: str,
         bundle_id: str = "",
         expires_days: int = 7,
+        decision_council_document_status: str = "",
+        decision_council_document_status_tone: str = "",
+        decision_council_document_status_copy: str = "",
+        decision_council_document_status_summary: str = "",
     ) -> ShareLink:
         share_id = secrets.token_urlsafe(16)
         expires_at = (
@@ -87,6 +96,10 @@ class ShareStore(BaseJsonStore):
             created_at=datetime.now().isoformat(),
             expires_at=expires_at,
             bundle_id=bundle_id,
+            decision_council_document_status=decision_council_document_status,
+            decision_council_document_status_tone=decision_council_document_status_tone,
+            decision_council_document_status_copy=decision_council_document_status_copy,
+            decision_council_document_status_summary=decision_council_document_status_summary,
         )
 
         with self._lock:
@@ -100,8 +113,13 @@ class ShareStore(BaseJsonStore):
                 "created_at": link.created_at,
                 "expires_at": expires_at,
                 "access_count": 0,
+                "last_accessed_at": "",
                 "is_active": True,
                 "bundle_id": bundle_id,
+                "decision_council_document_status": decision_council_document_status,
+                "decision_council_document_status_tone": decision_council_document_status_tone,
+                "decision_council_document_status_copy": decision_council_document_status_copy,
+                "decision_council_document_status_summary": decision_council_document_status_summary,
             }
             self._save(data)
 
@@ -125,15 +143,16 @@ class ShareStore(BaseJsonStore):
                 data[share_id]["access_count"] = (
                     data[share_id].get("access_count", 0) + 1
                 )
+                data[share_id]["last_accessed_at"] = datetime.now().isoformat()
                 self._save(data)
 
-    def revoke(self, share_id: str, user_id: str) -> bool:
+    def revoke(self, share_id: str, user_id: str, *, allow_admin_override: bool = False) -> bool:
         with self._lock:
             data = self._load()
             link = data.get(share_id)
             if not link:
                 return False
-            if link.get("created_by") != user_id:
+            if link.get("created_by") != user_id and not allow_admin_override:
                 return False
             data[share_id]["is_active"] = False
             self._save(data)

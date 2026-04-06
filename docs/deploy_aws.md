@@ -226,11 +226,21 @@ Smoke validates:
   - calls `POST /projects/{project_id}/imports/g2b-opportunity`
   - calls `POST /projects/{project_id}/procurement/evaluate`
   - calls `POST /projects/{project_id}/procurement/recommend`
+  - calls `POST /projects/{project_id}/decision-council/run`
   - calls `POST /generate/stream` with `bundle_type=bid_decision_kr`
   - verifies the generated decision document is auto-linked back into project documents
+  - verifies the project-linked `bid_decision_kr` document keeps Decision Council provenance when the council step ran successfully
+  - when the recommendation is `GO` or `CONDITIONAL_GO`, also calls `POST /generate/stream` with `bundle_type=proposal_kr`
+  - verifies the auto-linked `proposal_kr` document keeps the same Decision Council provenance and applied-bundle metadata
   - verifies the generated procurement document can enter existing `/approvals` and `/share` routes
+  - when the recommendation is `NO_GO`, also verifies the release-closeout remediation path:
+    - downstream `proposal_kr` generation is blocked until an override reason is saved
+    - remediation link copy/open audit endpoints accept the existing blocked-event context
+    - procurement quality summary moves the same case through `shared_not_opened` → `opened_unresolved` → `opened_resolved`
+    - override 저장 후 retry된 `proposal_kr` document가 council provenance를 유지하는지 확인
   - retries raw bid/detail variants plus live discovery candidates when the configured target has drifted out of the live G2B upstream
   - logs `SKIP` instead of failing the whole optional smoke lane when every procurement import candidate still returns `404`
+  - prefers the ops-key tenant summary route when `SMOKE_OPS_KEY` is available, and logs `SKIP` only when the live recommendation is not `NO_GO` or neither admin summary access nor ops-key access is available
   - still fails the smoke job on non-`404` procurement errors so runtime/auth regressions remain visible
 - optional Voice Brief smoke:
   - creates or logs in a smoke user
@@ -302,17 +312,28 @@ No API keys or secrets are stored in source files.
    - `imports/g2b-opportunity`
    - `procurement/evaluate`
    - `procurement/recommend`
+   - `decision-council/run`
    - `generate/stream` with `bid_decision_kr`
+   - if recommendation is `GO` or `CONDITIONAL_GO`, `generate/stream` with `proposal_kr`
    - project document auto-link
+   - Decision Council provenance on the auto-linked `bid_decision_kr` / `proposal_kr` row
    - `/approvals` and `/share` route availability
    - if the smoke output says `SKIP`, treat it as upstream-fixture drift rather than deploy failure and refresh `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` before the next release
 6. Run one manual web sanity check on the deployed environment:
    - log in through the web UI
+   - open `거점 관리 -> 조달 품질` and confirm blocked attempt / remediation handoff / recent activity render without errors
    - open a project detail page
    - confirm the procurement panel is visible
    - import `R26BK01398367` or a known-good detail URL
    - click `판단 갱신`
+   - enter a council goal in `Decision Council v1` and click `Decision Council 실행`
+   - confirm the panel now shows latest direction, risks, disagreements, role cards, and council-assisted generate CTAs for `의사결정 문서 생성` and `제안서 생성`
    - click `의사결정 문서 생성`
+   - confirm the generated `bid_decision_kr` row shows council provenance (`Council v1`, revision, direction)
+   - if recommendation is `GO` or `CONDITIONAL_GO`, click `제안서 생성` and confirm the generated `proposal_kr` row shows the same council freshness/provenance contract
+   - if the recommendation is `NO_GO`, confirm downstream without override reason is blocked and the project detail remediation strip guides override input
+   - copy one remediation link from the summary and open it once to confirm the summary queue moves through `공유됨, 아직 미열람` -> `열람됨, 미해소`
+   - save an override reason and retry one downstream bundle to confirm the same queue item lands in `열람 후 해소`
    - confirm the generated procurement document shows `결재 요청` and `공유`
    - confirm `/version` reports the intended app version and `features.procurement_copilot=true`
 7. If Voice Brief integration is enabled, verify one happy-path import manually:

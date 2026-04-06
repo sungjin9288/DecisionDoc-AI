@@ -25,11 +25,13 @@ from app.middleware.request_id import install_request_id_middleware
 from app.observability.logging import setup_logging
 from app.ops.factory import get_ops_service
 from app.services.search_service import SearchService
+from app.services.decision_council_service import DecisionCouncilService
 from app.services.voice_brief_import_service import VoiceBriefImportService
 from app.providers.factory import get_provider
 from app.services.generation_service import GenerationService
 from app.storage.factory import get_storage
 from app.storage.approval_store import ApprovalStore
+from app.storage.decision_council_store import DecisionCouncilStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.feedback_store import FeedbackStore
@@ -106,6 +108,7 @@ def create_app() -> FastAPI:
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
     _finetune_store = _FineTuneStore(data_dir)
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
+    decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
     service = GenerationService(
         provider_factory=get_provider,
@@ -113,11 +116,15 @@ def create_app() -> FastAPI:
         data_dir=data_dir,
         storage=storage,
         procurement_store=procurement_store,
+        decision_council_store=decision_council_store,
         procurement_copilot_enabled=procurement_copilot_enabled,
         feedback_store=feedback_store,
         eval_store=_eval_store,
         search_service=_search_service,
         finetune_store=_finetune_store,
+    )
+    decision_council_service = DecisionCouncilService(
+        decision_council_store=decision_council_store,
     )
     ops_service = get_ops_service()
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
@@ -185,6 +192,8 @@ def create_app() -> FastAPI:
     app.state.template_version = template_version
     app.state.approval_store = approval_store
     app.state.procurement_store = procurement_store
+    app.state.decision_council_store = decision_council_store
+    app.state.decision_council_service = decision_council_service
     app.state.procurement_copilot_enabled = procurement_copilot_enabled
     app.state.project_store = project_store
     app.state.voice_brief_import_service = voice_brief_import_service

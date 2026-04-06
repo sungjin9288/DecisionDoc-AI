@@ -473,7 +473,7 @@ class TestFetchAnnouncementDetail:
             "app.services.g2b_collector._scrape_announcement_text",
             new=AsyncMock(return_value="스크래핑 전문"),
         ), patch(
-            "app.services.g2b_collector.asyncio.sleep",
+            "app.services.g2b_collector._retry_sleep",
             new=AsyncMock(),
         ) as sleep_mock:
             result = run_async(fetch_announcement_detail("20260327001-00", api_key="test-key"))
@@ -518,7 +518,7 @@ class TestFetchAnnouncementDetail:
         mock_client.get = AsyncMock(side_effect=[transient, success])
 
         with patch("httpx.AsyncClient", return_value=mock_client), patch(
-            "app.services.g2b_collector.asyncio.sleep",
+            "app.services.g2b_collector._retry_sleep",
             new=AsyncMock(),
         ) as sleep_mock:
             result = run_async(_search_announcement_by_bid_number("R26BK01398367", "test-key"))

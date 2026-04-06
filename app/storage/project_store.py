@@ -11,7 +11,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.storage.base import BaseJsonStore, atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
@@ -41,6 +41,9 @@ class ProjectDocument:
     source_sync_status: str | None = None
     source_use_case: str | None = None
     source_audio_url: str | None = None
+    source_decision_council_session_id: str | None = None
+    source_decision_council_session_revision: int | None = None
+    source_decision_council_direction: str | None = None
 
 
 @dataclass
@@ -116,6 +119,9 @@ class ProjectStore(BaseJsonStore):
             source_sync_status=d.get("source_sync_status"),
             source_use_case=d.get("source_use_case"),
             source_audio_url=d.get("source_audio_url"),
+            source_decision_council_session_id=d.get("source_decision_council_session_id"),
+            source_decision_council_session_revision=d.get("source_decision_council_session_revision"),
+            source_decision_council_direction=d.get("source_decision_council_direction"),
         )
 
     @staticmethod
@@ -263,6 +269,9 @@ class ProjectStore(BaseJsonStore):
         tags: list[str] | None = None,
         gov_options: dict | None = None,
         tenant_id: str | None = None,
+        source_decision_council_session_id: str | None = None,
+        source_decision_council_session_revision: int | None = None,
+        source_decision_council_direction: str | None = None,
     ) -> ProjectDocument:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
@@ -278,6 +287,9 @@ class ProjectStore(BaseJsonStore):
             doc_snapshot=docs_json,
             gov_options=gov_options,
             file_size_chars=file_size,
+            source_decision_council_session_id=source_decision_council_session_id,
+            source_decision_council_session_revision=source_decision_council_session_revision,
+            source_decision_council_direction=source_decision_council_direction,
         )
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)
@@ -304,7 +316,7 @@ class ProjectStore(BaseJsonStore):
         source_sync_status: str | None = None,
         source_use_case: str | None = None,
         source_audio_url: str | None = None,
-    ) -> tuple[ProjectDocument, str]:
+    ) -> tuple[ProjectDocument, Literal["created", "updated"]]:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
         resolved_generated_at = generated_at or _now_iso()
@@ -323,6 +335,15 @@ class ProjectStore(BaseJsonStore):
                 ),
                 None,
             )
+            if existing is None:
+                existing = next(
+                    (
+                        doc for doc in reversed(proj.documents)
+                        if doc.source_kind == "voice_brief"
+                        and doc.source_recording_id == source_recording_id
+                    ),
+                    None,
+                )
 
             if existing is None:
                 doc = ProjectDocument(

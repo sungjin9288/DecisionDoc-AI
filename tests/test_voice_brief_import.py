@@ -105,6 +105,10 @@ class TestVoiceBriefImportService:
         )
 
         assert result.operation == "created"
+        assert result.outcome == "created"
+        assert result.document_id == result.document.doc_id
+        assert result.source_recording_id == "rec_123"
+        assert result.source_summary_revision_id == "summary_123"
         imported = store.get(project_id, tenant_id="default")
         assert imported is not None
         assert len(imported.documents) == 1
@@ -146,9 +150,52 @@ class TestVoiceBriefImportService:
         assert project is not None
         assert first.operation == "created"
         assert second.operation == "updated"
+        assert first.document_id == second.document_id
+        assert second.source_recording_id == "rec_123"
+        assert second.source_summary_revision_id == "summary_123"
         assert len(project.documents) == 1
         assert project.documents[0].doc_id == first.document.doc_id
         assert "수정된 버전" in project.documents[0].doc_snapshot
+
+    def test_import_updates_existing_document_when_same_recording_gets_new_revision(self, tmp_path):
+        store = _store(tmp_path)
+        project_id = _create_project(store)
+        service = _service_with_packages(
+            _build_document_package(
+                summary_revision_id="summary_123",
+                markdown="# Summary\n\n첫 번째 승인 버전",
+            ),
+            _build_document_package(
+                summary_revision_id="summary_124",
+                markdown="# Summary\n\n두 번째 승인 버전",
+            ),
+        )
+
+        first = service.import_into_project(
+            project_store=store,
+            project_id=project_id,
+            tenant_id="default",
+            recording_id="rec_123",
+        )
+        second = service.import_into_project(
+            project_store=store,
+            project_id=project_id,
+            tenant_id="default",
+            recording_id="rec_123",
+        )
+
+        project = store.get(project_id, tenant_id="default")
+        assert project is not None
+        assert first.operation == "created"
+        assert second.operation == "updated"
+        assert first.document_id == second.document_id
+        assert second.source_recording_id == "rec_123"
+        assert second.source_summary_revision_id == "summary_124"
+        assert len(project.documents) == 1
+        assert project.documents[0].doc_id == first.document.doc_id
+        assert project.documents[0].source_summary_revision_id == "summary_124"
+        assert project.documents[0].request_id == "rec_123:summary_124"
+        assert "두 번째 승인 버전" in project.documents[0].doc_snapshot
 
     @pytest.mark.parametrize(
         ("review_status", "sync_status", "expected_code"),
@@ -215,6 +262,37 @@ class TestVoiceBriefImportApi:
         assert response.status_code == 503
         assert response.json()["detail"]["code"] == "voice_brief_not_configured"
 
+    def test_import_endpoint_returns_explicit_metadata_for_first_import(self, client: TestClient):
+        create_project_response = client.post(
+            "/projects",
+            json={"name": "Voice Brief explicit metadata", "fiscal_year": 2026},
+        )
+        project_id = create_project_response.json()["project_id"]
+        client.app.state.voice_brief_import_service = _service_with_packages(
+            _build_document_package(
+                recording_id="rec_meta_123",
+                summary_revision_id="summary_meta_123",
+                markdown="# Summary\n\n메타데이터 검증",
+            ),
+        )
+
+        response = client.post(
+            f"/projects/{project_id}/imports/voice-brief",
+            json={"recording_id": "rec_meta_123", "revision_id": "summary_meta_123"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["project_id"] == project_id
+        assert payload["operation"] == "created"
+        assert payload["import_outcome"] == "created"
+        assert payload["source_key"] == "rec_meta_123:summary_meta_123"
+        assert payload["document_id"] == payload["document"]["doc_id"]
+        assert payload["source_recording_id"] == "rec_meta_123"
+        assert payload["source_summary_revision_id"] == "summary_meta_123"
+        assert payload["voice_brief"]["recording_id"] == "rec_meta_123"
+        assert payload["voice_brief"]["summary_revision_id"] == "summary_meta_123"
+
     def test_import_endpoint_creates_then_updates_same_project_document(self, client: TestClient):
         create_project_response = client.post(
             "/projects",
@@ -239,10 +317,60 @@ class TestVoiceBriefImportApi:
         assert first.status_code == 200
         assert second.status_code == 200
         assert first.json()["operation"] == "created"
+        assert first.json()["import_outcome"] == "created"
+        assert first.json()["source_recording_id"] == "rec_123"
+        assert first.json()["source_summary_revision_id"] == "summary_123"
+        assert first.json()["document_id"] == first.json()["document"]["doc_id"]
         assert second.json()["operation"] == "updated"
+        assert second.json()["import_outcome"] == "updated"
+        assert second.json()["source_recording_id"] == "rec_123"
+        assert second.json()["source_summary_revision_id"] == "summary_123"
+        assert second.json()["document_id"] == first.json()["document_id"]
         assert len(project["documents"]) == 1
         assert project["documents"][0]["source_recording_id"] == "rec_123"
         assert "다시 가져온 문서" in project["documents"][0]["doc_snapshot"]
+
+    def test_import_endpoint_updates_same_document_for_new_revision_of_same_recording(self, client: TestClient):
+        create_project_response = client.post(
+            "/projects",
+            json={"name": "Voice Brief 새 리비전 반영", "fiscal_year": 2026},
+        )
+        project_id = create_project_response.json()["project_id"]
+        client.app.state.voice_brief_import_service = _service_with_packages(
+            _build_document_package(
+                summary_revision_id="summary_123",
+                markdown="# Summary\n\n초기 승인 버전",
+            ),
+            _build_document_package(
+                summary_revision_id="summary_124",
+                markdown="# Summary\n\n최신 승인 버전",
+            ),
+        )
+
+        first = client.post(
+            f"/projects/{project_id}/imports/voice-brief",
+            json={"recording_id": "rec_123", "revision_id": "summary_123"},
+        )
+        second = client.post(
+            f"/projects/{project_id}/imports/voice-brief",
+            json={"recording_id": "rec_123", "revision_id": "summary_124"},
+        )
+        project = client.get(f"/projects/{project_id}").json()
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["operation"] == "created"
+        assert first.json()["import_outcome"] == "created"
+        assert first.json()["document_id"] == first.json()["document"]["doc_id"]
+        assert second.json()["operation"] == "updated"
+        assert second.json()["import_outcome"] == "updated"
+        assert second.json()["document_id"] == first.json()["document_id"]
+        assert second.json()["source_recording_id"] == "rec_123"
+        assert second.json()["source_summary_revision_id"] == "summary_124"
+        assert len(project["documents"]) == 1
+        assert project["documents"][0]["source_summary_revision_id"] == "summary_124"
+        assert project["documents"][0]["request_id"] == "rec_123:summary_124"
+        assert "최신 승인 버전" in project["documents"][0]["doc_snapshot"]
 
     def test_import_endpoint_returns_404_when_voice_brief_recording_is_missing(self, client: TestClient):
         create_project_response = client.post(

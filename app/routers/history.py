@@ -143,6 +143,21 @@ def create_share_link(payload: CreateShareRequest, request: Request):
     require_auth(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
+    request.state.bundle_type = payload.bundle_id or ""
+    request.state.procurement_project_id = payload.project_id or ""
+    request.state.share_project_document_id = payload.project_document_id or ""
+    request.state.share_decision_council_document_status = (
+        payload.decision_council_document_status or ""
+    )
+    request.state.share_decision_council_document_status_tone = (
+        payload.decision_council_document_status_tone or ""
+    )
+    request.state.share_decision_council_document_status_copy = (
+        payload.decision_council_document_status_copy or ""
+    )
+    request.state.share_decision_council_document_status_summary = (
+        payload.decision_council_document_status_summary or ""
+    )
     from app.storage.share_store import ShareStore
     store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
     link = store.create(
@@ -152,6 +167,10 @@ def create_share_link(payload: CreateShareRequest, request: Request):
         created_by=user_id,
         bundle_id=payload.bundle_id,
         expires_days=payload.expires_days,
+        decision_council_document_status=payload.decision_council_document_status,
+        decision_council_document_status_tone=payload.decision_council_document_status_tone,
+        decision_council_document_status_copy=payload.decision_council_document_status_copy,
+        decision_council_document_status_summary=payload.decision_council_document_status_summary,
     )
     return {
         "share_id": link.share_id,
@@ -193,7 +212,13 @@ def view_shared_document(share_id: str, request: Request):
                     pass
             if not doc_html:
                 doc_html = '<p style="color:#6b7280">문서 내용을 불러올 수 없습니다.</p>'
-            return HTMLResponse(_render_shared_page(title, doc_html))
+            return HTMLResponse(
+                _render_shared_page(
+                    title,
+                    doc_html,
+                    decision_council_warning=_render_shared_decision_council_warning(link),
+                )
+            )
     raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
 
 
@@ -225,7 +250,31 @@ def _md_to_html(md: str) -> str:
     return "\n".join(out)
 
 
-def _render_shared_page(title: str, doc_html: str) -> str:
+def _render_shared_decision_council_warning(link: dict) -> str:
+    import html as _html
+
+    status = str(link.get("decision_council_document_status") or "").strip()
+    if not status or status == "current":
+        return ""
+    tone = str(link.get("decision_council_document_status_tone") or "").strip() or "warning"
+    title = str(link.get("decision_council_document_status_copy") or "").strip() or "이전 council 기준"
+    summary = (
+        str(link.get("decision_council_document_status_summary") or "").strip()
+        or "이 공유 문서는 현재 최신 council/procurement 기준과 다를 수 있습니다."
+    )
+    safe_status = _html.escape(status)
+    safe_tone = _html.escape(tone)
+    safe_title = _html.escape(title)
+    safe_summary = _html.escape(summary)
+    return (
+        f'<div class="share-warning {safe_tone}" data-shared-decision-council-warning="{safe_status}">'
+        f'<strong>{safe_title}</strong>'
+        f'<span>{safe_summary}</span>'
+        f"</div>"
+    )
+
+
+def _render_shared_page(title: str, doc_html: str, *, decision_council_warning: str = "") -> str:
     import html as _html
     safe_title = _html.escape(title)
     return f"""<!DOCTYPE html>
@@ -240,6 +289,13 @@ def _render_shared_page(title: str, doc_html: str) -> str:
   .share-header{{border-bottom:2px solid #6366f1;padding-bottom:.75rem;margin-bottom:2rem}}
   .share-header h1{{color:#6366f1;margin:0 0 .25rem;font-size:1.5rem}}
   .share-meta{{font-size:.8rem;color:#6b7280}}
+  .share-warning{{display:flex;flex-direction:column;gap:.45rem;
+                  margin:0 0 1.25rem;padding:.9rem 1rem;border-radius:14px;
+                  border:1px solid #f59e0b;background:#fff7ed;color:#7c2d12}}
+  .share-warning.warning{{border-color:#f59e0b;background:#fff7ed;color:#9a3412}}
+  .share-warning.danger{{border-color:#ef4444;background:#fef2f2;color:#991b1b}}
+  .share-warning strong{{font-size:.95rem}}
+  .share-warning span{{font-size:.85rem;line-height:1.6}}
   .doc-section{{margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid #e5e7eb}}
   .doc-section:last-child{{border-bottom:none}}
   h1,h2,h3{{color:#1f2937;margin-top:1.5rem}}
@@ -258,6 +314,7 @@ def _render_shared_page(title: str, doc_html: str) -> str:
   <h1>📄 {safe_title} <span class="dd-badge">공유 문서</span></h1>
   <div class="share-meta">DecisionDoc AI로 생성된 문서입니다.</div>
 </div>
+{decision_council_warning}
 {doc_html}
 </body>
 </html>"""
@@ -268,9 +325,14 @@ def revoke_share_link(share_id: str, request: Request):
     require_auth(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
+    user_role = getattr(request.state, "user_role", "unknown") or "unknown"
     from app.storage.share_store import ShareStore
     store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
-    success = store.revoke(share_id, user_id)
+    success = store.revoke(
+        share_id,
+        user_id,
+        allow_admin_override=(user_role == "admin"),
+    )
     if not success:
         raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
     return {"message": "공유 링크가 비활성화되었습니다.", "share_id": share_id}

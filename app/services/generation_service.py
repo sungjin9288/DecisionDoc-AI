@@ -22,6 +22,10 @@ from app.observability.timing import Timer
 from app.providers.base import Provider
 from app.providers.stabilizer import stabilize_bundle, strip_internal_bundle_fields
 from app.schemas import GenerateRequest
+from app.services.decision_council_service import (
+    build_procurement_council_generation_context,
+    describe_procurement_council_binding,
+)
 from app.storage.base import Storage
 from app.services.validator import validate_docs
 
@@ -30,6 +34,10 @@ if TYPE_CHECKING:
     from app.storage.finetune_store import FineTuneStore
 
 _log = logging.getLogger("decisiondoc.generate")
+_DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {
+    "bid_decision_kr",
+    "proposal_kr",
+}
 
 
 def _record_usage_sync(
@@ -159,6 +167,7 @@ class GenerationService:
         data_dir: Path,
         storage: Storage | None = None,
         procurement_store: Any | None = None,
+        decision_council_store: Any | None = None,
         procurement_copilot_enabled: bool = False,
         feedback_store: FeedbackStore | None = None,
         eval_store: Any | None = None,
@@ -170,6 +179,7 @@ class GenerationService:
         self._eval_store = eval_store
         self._search_service = search_service
         self._procurement_store = procurement_store
+        self._decision_council_store = decision_council_store
         self._procurement_copilot_enabled = procurement_copilot_enabled
         self._finetune_store = finetune_store
         self.data_dir = Path(data_dir)
@@ -223,6 +233,16 @@ class GenerationService:
             request_id=request_id,
         )
         procurement_handoff_used = bool(payload.get("_procurement_context"))
+        decision_council_handoff_used = bool(payload.get("_decision_council_context"))
+        decision_council_handoff_skipped_reason = (
+            str(payload.get("_decision_council_handoff_skipped_reason") or "").strip() or None
+        )
+        decision_council_session_id = str(payload.get("_decision_council_session_id") or "").strip() or None
+        decision_council_session_revision = payload.get("_decision_council_session_revision")
+        decision_council_direction = str(payload.get("_decision_council_direction") or "").strip() or None
+        decision_council_use_case = str(payload.get("_decision_council_use_case") or "").strip() or None
+        decision_council_target_bundle = str(payload.get("_decision_council_target_bundle") or "").strip() or None
+        decision_council_applied_bundle = str(payload.get("_decision_council_applied_bundle") or "").strip() or None
 
         provider = self._safe_get_provider(bundle_type=bundle_type, tenant_id=tenant_id)
         timer = Timer()
@@ -382,8 +402,17 @@ class GenerationService:
                 "request_id": request_id,
                 "bundle_id": bundle_id,
                 "bundle_type": bundle_type,
+                "project_id": payload.get("project_id"),
                 "doc_count": len(docs),
                 "procurement_handoff_used": procurement_handoff_used,
+                "decision_council_handoff_used": decision_council_handoff_used,
+                "decision_council_handoff_skipped_reason": decision_council_handoff_skipped_reason,
+                "decision_council_session_id": decision_council_session_id,
+                "decision_council_session_revision": decision_council_session_revision,
+                "decision_council_direction": decision_council_direction,
+                "decision_council_use_case": decision_council_use_case,
+                "decision_council_target_bundle": decision_council_target_bundle,
+                "decision_council_applied_bundle": decision_council_applied_bundle,
                 "timings_ms": timer.durations_ms,
                 "llm_prompt_tokens": (usage_tokens or {}).get("prompt_tokens"),
                 "llm_output_tokens": (usage_tokens or {}).get("output_tokens"),
@@ -562,18 +591,71 @@ class GenerationService:
             or bundle_type not in self._PROCUREMENT_HANDOFF_BUNDLE_IDS
             or self._procurement_store is None
         ):
+            procurement_ctx = ""
+        else:
+            procurement_ctx = self._build_procurement_context(project_id=project_id, tenant_id=tenant_id)
+            if procurement_ctx:
+                payload["_procurement_context"] = procurement_ctx
+                _log.info(
+                    "[Procurement] Injected handoff context project=%s bundle=%s len=%d request_id=%s",
+                    project_id,
+                    bundle_type,
+                    len(procurement_ctx),
+                    request_id,
+                )
+
+        if (
+            not self._procurement_copilot_enabled
+            or bundle_type not in _DECISION_COUNCIL_APPLIED_BUNDLE_IDS
+            or self._decision_council_store is None
+        ):
             return
 
-        procurement_ctx = self._build_procurement_context(project_id=project_id, tenant_id=tenant_id)
-        if procurement_ctx:
-            payload["_procurement_context"] = procurement_ctx
+        council_session = self._decision_council_store.get_latest(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            use_case="public_procurement",
+            target_bundle_type="bid_decision_kr",
+        )
+        if council_session is None:
+            return
+        if not self._current_procurement_record_matches_council_session(
+            project_id=project_id,
+            tenant_id=tenant_id,
+            council_session=council_session,
+        ):
+            payload["_decision_council_handoff_skipped_reason"] = "stale_procurement_context"
             _log.info(
-                "[Procurement] Injected handoff context project=%s bundle=%s len=%d request_id=%s",
+                "[DecisionCouncil] Skipped stale handoff context project=%s bundle=%s session=%s request_id=%s",
                 project_id,
                 bundle_type,
-                len(procurement_ctx),
+                council_session.session_id,
                 request_id,
             )
+            return
+
+        council_context = self._build_decision_council_context(
+            council_session,
+            bundle_type=bundle_type,
+        )
+        if not council_context:
+            return
+
+        payload["_decision_council_context"] = council_context
+        payload["_decision_council_session_id"] = council_session.session_id
+        payload["_decision_council_session_revision"] = council_session.session_revision
+        payload["_decision_council_direction"] = council_session.consensus.recommended_direction
+        payload["_decision_council_use_case"] = council_session.use_case
+        payload["_decision_council_target_bundle"] = council_session.target_bundle_type
+        payload["_decision_council_applied_bundle"] = bundle_type
+        _log.info(
+            "[DecisionCouncil] Injected handoff context project=%s bundle=%s session=%s revision=%s request_id=%s",
+            project_id,
+            bundle_type,
+            council_session.session_id,
+            council_session.session_revision,
+            request_id,
+        )
 
     def _build_procurement_context(self, *, project_id: str, tenant_id: str) -> str:
         record = self._procurement_store.get(project_id, tenant_id=tenant_id)
@@ -676,6 +758,28 @@ class GenerationService:
                     lines.append(structured_context[:2000])
 
         return "\n".join(lines).strip()
+
+    def _current_procurement_record_matches_council_session(
+        self,
+        *,
+        project_id: str,
+        tenant_id: str,
+        council_session: Any,
+    ) -> bool:
+        record = None
+        if self._procurement_store is not None:
+            record = self._procurement_store.get(project_id, tenant_id=tenant_id)
+        binding = describe_procurement_council_binding(
+            session=council_session,
+            procurement_record=record,
+        )
+        return binding["status"] == "current"
+
+    def _build_decision_council_context(self, session: Any, *, bundle_type: str) -> str:
+        return build_procurement_council_generation_context(
+            session,
+            bundle_type=bundle_type,
+        )
 
     def _build_feedback_hints(self, bundle_type: str, title: str = "") -> str:
         """Build structured few-shot hints from high-rated feedback examples.

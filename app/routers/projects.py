@@ -9,6 +9,7 @@ import logging
 import re
 import urllib.parse
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
@@ -19,13 +20,21 @@ from app.dependencies import get_tenant_id, get_user_id, require_admin
 from app.schemas import (
     AddDocumentToProjectRequest,
     CreateProjectRequest,
+    DecisionCouncilRunRequest,
+    DecisionCouncilSessionResponse,
     ImportProjectProcurementOpportunityRequest,
     ImportVoiceBriefDocumentRequest,
     NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
+    RecordProjectProcurementRemediationLinkCopyRequest,
+    RecordProjectProcurementRemediationLinkOpenRequest,
+    UpdateProjectProcurementOverrideReasonRequest,
     UpdateProjectRequest,
 )
 from app.services.docx_service import build_docx
+from app.services.decision_council_service import (
+    describe_procurement_council_document_status,
+)
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 from app.services.voice_brief_import_service import (
@@ -79,6 +88,23 @@ def _build_g2b_structured_context(announcement) -> str:
     )
 
 
+def _append_procurement_override_reason(
+    existing_notes: str,
+    *,
+    username: str,
+    reason: str,
+) -> str:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    block = (
+        f"[override_reason ts={timestamp} actor={username}]\n"
+        f"{reason.strip()}\n"
+        "[/override_reason]"
+    )
+    if not existing_notes.strip():
+        return block
+    return f"{existing_notes.rstrip()}\n\n{block}"
+
+
 def _ensure_procurement_copilot_enabled(request: Request) -> None:
     if getattr(request.app.state, "procurement_copilot_enabled", False):
         return
@@ -127,6 +153,109 @@ def _apply_procurement_observability(
         request.state.procurement_hard_failure_count = sum(
             1 for item in record.hard_filters if item.blocking and item.status == "fail"
         )
+
+
+def _load_decision_council_procurement_context_or_raise(
+    request: Request,
+    *,
+    project_id: str,
+    tenant_id: str,
+):
+    project_store = request.app.state.project_store
+    project = project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+    procurement_store = request.app.state.procurement_store
+    record = procurement_store.get(project_id, tenant_id=tenant_id)
+    if record is None or record.opportunity is None or record.recommendation is None:
+        request.state.error_code = "decision_council_procurement_context_required"
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "decision_council_procurement_context_required",
+                "message": (
+                    "Decision Council v1은 procurement opportunity 연결과 recommendation 생성이 완료된 "
+                    "project에서만 실행할 수 있습니다."
+                ),
+                "project_id": project_id,
+                "required_steps": [
+                    "imports/g2b-opportunity",
+                    "procurement/evaluate",
+                    "procurement/recommend",
+                ],
+            },
+        )
+    return project, record
+
+
+def _apply_decision_council_observability(
+    request: Request,
+    *,
+    project_id: str,
+    session: DecisionCouncilSessionResponse,
+) -> None:
+    request.state.decision_council_session_id = session.session_id
+    request.state.decision_council_session_revision = session.session_revision
+    request.state.decision_council_project_id = project_id
+    request.state.decision_council_use_case = session.use_case
+    request.state.decision_council_target_bundle = session.target_bundle_type
+    request.state.decision_council_direction = session.consensus.recommended_direction
+    request.state.decision_council_binding_status = session.current_procurement_binding_status
+
+
+def _attach_decision_council_binding(
+    request: Request,
+    *,
+    session: DecisionCouncilSessionResponse,
+    record,
+) -> DecisionCouncilSessionResponse:
+    service = request.app.state.decision_council_service
+    return service.attach_procurement_binding(
+        session=session,
+        procurement_record=record,
+    )
+
+
+def _serialize_project_detail(
+    request: Request,
+    *,
+    tenant_id: str,
+    project,
+) -> dict:
+    payload = asdict(project)
+    if not getattr(request.app.state, "procurement_copilot_enabled", False):
+        return payload
+
+    service = getattr(request.app.state, "decision_council_service", None)
+    procurement_store = getattr(request.app.state, "procurement_store", None)
+    if service is None or procurement_store is None:
+        return payload
+
+    latest_session = service.get_latest_procurement_council(
+        tenant_id=tenant_id,
+        project_id=project.project_id,
+    )
+    if latest_session is not None:
+        latest_session = service.attach_procurement_binding(
+            session=latest_session,
+            procurement_record=procurement_store.get(project.project_id, tenant_id=tenant_id),
+        )
+
+    for doc in payload.get("documents", []):
+        status_meta = describe_procurement_council_document_status(
+            bundle_id=str(doc.get("bundle_id") or ""),
+            source_session_id=doc.get("source_decision_council_session_id"),
+            source_session_revision=doc.get("source_decision_council_session_revision"),
+            latest_session=latest_session,
+        )
+        if not status_meta:
+            continue
+        doc["decision_council_document_status"] = status_meta["status"]
+        doc["decision_council_document_status_tone"] = status_meta["tone"]
+        doc["decision_council_document_status_copy"] = status_meta["copy"]
+        doc["decision_council_document_status_summary"] = status_meta["summary"]
+    return payload
 
 
 def _load_pdf_builder():
@@ -222,7 +351,7 @@ def get_project_endpoint(project_id: str, request: Request) -> dict:
     proj = project_store.get(project_id, tenant_id=tenant_id)
     if proj is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
-    return asdict(proj)
+    return _serialize_project_detail(request, tenant_id=tenant_id, project=proj)
 
 
 @router.patch("/projects/{project_id}", dependencies=[Depends(require_api_key)])
@@ -356,11 +485,15 @@ def import_voice_brief_document_endpoint(
     return {
         "project_id": project_id,
         "operation": result.operation,
+        "import_outcome": result.outcome,
         "source_key": result.source_key,
+        "document_id": result.document_id,
+        "source_recording_id": result.source_recording_id,
+        "source_summary_revision_id": result.source_summary_revision_id,
         "document": asdict(result.document),
         "voice_brief": {
-            "recording_id": result.voice_brief_document.get("recordingId"),
-            "summary_revision_id": result.voice_brief_document.get("summaryRevisionId"),
+            "recording_id": result.source_recording_id,
+            "summary_revision_id": result.source_summary_revision_id,
             "summary_review_status": result.voice_brief_document.get("summaryReviewStatus"),
             "summary_sync_status": result.voice_brief_document.get("summarySyncStatus"),
         },
@@ -614,6 +747,238 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
         "decision": record.model_dump(mode="json"),
         "recommendation": record.recommendation.model_dump(mode="json") if record.recommendation else None,
         "checklist_items": [item.model_dump(mode="json") for item in record.checklist_items],
+    }
+
+
+@router.post(
+    "/projects/{project_id}/decision-council/run",
+    response_model=DecisionCouncilSessionResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def run_project_decision_council_endpoint(
+    project_id: str,
+    payload: DecisionCouncilRunRequest,
+    request: Request,
+) -> DecisionCouncilSessionResponse:
+    """Run the procurement-scoped deterministic Decision Council v1."""
+    _ensure_procurement_copilot_enabled(request)
+    tenant_id = get_tenant_id(request)
+    _, record = _load_decision_council_procurement_context_or_raise(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+    )
+
+    service = request.app.state.decision_council_service
+    session = service.run_procurement_council(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        goal=payload.goal,
+        context=payload.context,
+        constraints=payload.constraints,
+        procurement_record=record,
+    )
+    session = _attach_decision_council_binding(
+        request,
+        session=session,
+        record=record,
+    )
+    _apply_decision_council_observability(
+        request,
+        project_id=project_id,
+        session=session,
+    )
+    return session
+
+
+@router.get(
+    "/projects/{project_id}/decision-council",
+    response_model=DecisionCouncilSessionResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def get_project_decision_council_endpoint(
+    project_id: str,
+    request: Request,
+) -> DecisionCouncilSessionResponse:
+    """Return the latest canonical Decision Council session for the project."""
+    _ensure_procurement_copilot_enabled(request)
+    tenant_id = get_tenant_id(request)
+    _, record = _load_decision_council_procurement_context_or_raise(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+    )
+
+    service = request.app.state.decision_council_service
+    session = service.get_latest_procurement_council(
+        tenant_id=tenant_id,
+        project_id=project_id,
+    )
+    if session is None:
+        request.state.error_code = "decision_council_not_found"
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "decision_council_not_found",
+                "message": "프로젝트에 저장된 Decision Council session이 없습니다.",
+                "project_id": project_id,
+            },
+        )
+
+    session = _attach_decision_council_binding(
+        request,
+        session=session,
+        record=record,
+    )
+    _apply_decision_council_observability(
+        request,
+        project_id=project_id,
+        session=session,
+    )
+    return session
+
+
+@router.post(
+    "/projects/{project_id}/procurement/override-reason",
+    dependencies=[Depends(require_api_key)],
+)
+def update_project_procurement_override_reason_endpoint(
+    project_id: str,
+    payload: UpdateProjectProcurementOverrideReasonRequest,
+    request: Request,
+) -> dict:
+    """Append a structured override / disagreement note to the procurement record."""
+    _ensure_procurement_copilot_enabled(request)
+    _apply_procurement_observability(
+        request,
+        action="override_reason",
+        project_id=project_id,
+    )
+    tenant_id = get_tenant_id(request)
+    project_store = request.app.state.project_store
+    project = project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+    procurement_store = request.app.state.procurement_store
+    existing = procurement_store.get(project_id, tenant_id=tenant_id)
+    if existing is None or existing.opportunity is None:
+        request.state.error_code = "procurement_opportunity_not_attached"
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "procurement_opportunity_not_attached",
+                "message": "프로젝트에 override reason을 남길 공공조달 기회가 연결되어 있지 않습니다.",
+            },
+        )
+
+    username = (
+        getattr(request.state, "username", None)
+        or getattr(request.state, "user_id", None)
+        or "api_key_client"
+    )
+    updated = procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project_id,
+            tenant_id=tenant_id,
+            schema_version=existing.schema_version,
+            opportunity=existing.opportunity,
+            capability_profile=existing.capability_profile,
+            hard_filters=list(existing.hard_filters),
+            score_breakdown=list(existing.score_breakdown),
+            soft_fit_score=existing.soft_fit_score,
+            soft_fit_status=existing.soft_fit_status,
+            missing_data=list(existing.missing_data),
+            checklist_items=list(existing.checklist_items),
+            recommendation=existing.recommendation,
+            source_snapshots=list(existing.source_snapshots),
+            notes=_append_procurement_override_reason(
+                existing.notes,
+                username=username,
+                reason=payload.reason,
+            ),
+        )
+    )
+    _apply_procurement_observability(
+        request,
+        action="override_reason",
+        project_id=project_id,
+        operation="updated",
+        record=updated,
+    )
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "decision": updated.model_dump(mode="json"),
+        "override_reason_saved": True,
+    }
+
+
+@router.post(
+    "/projects/{project_id}/procurement/remediation-link-copy",
+    dependencies=[Depends(require_api_key)],
+)
+def record_project_procurement_remediation_link_copy_endpoint(
+    project_id: str,
+    payload: RecordProjectProcurementRemediationLinkCopyRequest,
+    request: Request,
+) -> dict:
+    """Record that an operator copied a project-scoped remediation handoff link."""
+    _ensure_procurement_copilot_enabled(request)
+    tenant_id = get_tenant_id(request)
+    project_store = request.app.state.project_store
+    project = project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+    request.state.procurement_action = "remediation_link_copied"
+    request.state.procurement_project_id = project_id
+    request.state.procurement_operation = payload.source
+    request.state.procurement_context_kind = payload.context_kind
+    request.state.procurement_recommendation = payload.recommendation.strip() or None
+    request.state.bundle_type = payload.bundle_type.strip() or None
+    request.state.procurement_error_code = payload.error_code.strip() or None
+
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "logged": True,
+        "source": payload.source,
+        "context_kind": payload.context_kind,
+    }
+
+
+@router.post(
+    "/projects/{project_id}/procurement/remediation-link-open",
+    dependencies=[Depends(require_api_key)],
+)
+def record_project_procurement_remediation_link_open_endpoint(
+    project_id: str,
+    payload: RecordProjectProcurementRemediationLinkOpenRequest,
+    request: Request,
+) -> dict:
+    """Record that a project-scoped remediation handoff link was opened/restored."""
+    _ensure_procurement_copilot_enabled(request)
+    tenant_id = get_tenant_id(request)
+    project_store = request.app.state.project_store
+    project = project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+    request.state.procurement_action = "remediation_link_opened"
+    request.state.procurement_project_id = project_id
+    request.state.procurement_operation = payload.source
+    request.state.procurement_context_kind = payload.context_kind
+    request.state.procurement_recommendation = payload.recommendation.strip() or None
+    request.state.bundle_type = payload.bundle_type.strip() or None
+    request.state.procurement_error_code = payload.error_code.strip() or None
+
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "logged": True,
+        "source": payload.source,
+        "context_kind": payload.context_kind,
     }
 
 

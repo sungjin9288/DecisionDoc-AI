@@ -41,6 +41,10 @@ _G2B_MAX_ATTEMPTS = 3
 _G2B_RETRY_BASE_DELAY_SECONDS = 0.4
 
 
+async def _retry_sleep(delay_seconds: float) -> None:
+    await asyncio.sleep(delay_seconds)
+
+
 def _validate_scrape_url(url: str) -> None:
     """Validate URL before fetching — prevents SSRF attacks."""
     try:
@@ -115,7 +119,7 @@ async def _request_g2b_json(
                     _G2B_MAX_ATTEMPTS,
                     status_code,
                 )
-                await asyncio.sleep(_G2B_RETRY_BASE_DELAY_SECONDS * attempt)
+                await _retry_sleep(_G2B_RETRY_BASE_DELAY_SECONDS * attempt)
                 continue
             raise
     if last_error is not None:
