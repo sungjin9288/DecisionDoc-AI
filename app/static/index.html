@@ -6024,6 +6024,31 @@
     setTimeout(() => { if (notif.parentNode) notif.remove(); }, 5000);
   }
 
+  let _pendingProjectSelectorFocus = false;
+
+  function focusProjectSelectorSoon(attempts = 8) {
+    const row = $id('project-selector-row');
+    const sel = $id('project-select');
+    if (!row || !sel) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const tryFocus = remaining => {
+      const target = $id('project-select');
+      if (!target) return;
+      target.focus();
+      if (document.activeElement === target) {
+        _pendingProjectSelectorFocus = false;
+        return;
+      }
+      if (remaining <= 0) return;
+      requestAnimationFrame(() => {
+        setTimeout(() => tryFocus(remaining - 1), 50);
+      });
+    };
+
+    tryFocus(attempts);
+  }
+
   /* ── Post-download prompt (UJ-7) ───────────────────────────────── */
   function showPostDownloadPrompt(format) {
     const btnStyle = 'margin-left:5px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:2px 8px;cursor:pointer;color:inherit;font-size:.76rem;font-family:inherit;';
@@ -6238,11 +6263,10 @@
       },
       runAction() {
         this.applyPresets();
+        _pendingProjectSelectorFocus = true;
         switchPage('generate');
         requestAnimationFrame(() => {
-          const row = $id('project-selector-row');
-          row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          $id('project-select')?.focus();
+          focusProjectSelectorSoon();
         });
         showNotification('프로젝트 연결과 지식 문서를 먼저 확인해 수행 적합도를 점검하세요.', 'info');
       },
@@ -10847,10 +10871,18 @@
       const { projects } = await res.json();
       const sel = document.getElementById('project-select');
       if (!sel) return;
+      const previousValue = sel.value;
+      const shouldRestoreFocus = _pendingProjectSelectorFocus || document.activeElement === sel;
       sel.innerHTML = '<option value="">연결 안 함</option>' +
         projects.map(p =>
           `<option value="${p.project_id}">${p.name} (${p.fiscal_year}년)</option>`
         ).join('');
+      if (previousValue && projects.some(p => String(p.project_id) === previousValue)) {
+        sel.value = previousValue;
+      }
+      if (shouldRestoreFocus) {
+        requestAnimationFrame(() => focusProjectSelectorSoon(4));
+      }
     } catch(e) { /* optional feature, ignore errors */ }
   }
 
