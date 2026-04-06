@@ -179,6 +179,8 @@ DecisionDoc AI 현재 구조 기준으로는,
 - custom domain 또는 API endpoint cutover 지점을 정의
 - rollback 절차를 “stack 상태 복구”가 아니라 “previous green stack으로 복귀”로 바꾸기
 
+현재 repo의 first implementation은 full blue/green cutover까지는 아니고, `deployment_suffix` 기반 fresh-stack workaround를 허용하는 수준이다. 예를 들어 `-green` suffix로 `decisiondoc-ai-dev-green` / `decisiondoc-ai-prod-green` 을 띄우고, 같은 suffix의 `dev` evidence를 `prod` promote gate에 연결한다.
+
 완료 기준:
 
 - `prod` rollback이 기존 function update rollback에 의존하지 않음

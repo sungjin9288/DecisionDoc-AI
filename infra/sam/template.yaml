@@ -9,6 +9,10 @@ Parameters:
     AllowedValues:
       - dev
       - prod
+  DeploymentSuffix:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^-[a-z0-9-]+$"
   TemplateVersion:
     Type: String
     Default: v1
@@ -81,7 +85,7 @@ Resources:
   DecisionDocFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub decisiondoc-ai-${Stage}
+      FunctionName: !Sub decisiondoc-ai-${Stage}${DeploymentSuffix}
       CodeUri: ../../
       Handler: app.aws_lambda.handler
       Runtime: python3.11
@@ -107,7 +111,7 @@ Resources:
           DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
           DECISIONDOC_MAINTENANCE: !Ref DecisionDocMaintenance
           DECISIONDOC_PROCUREMENT_COPILOT_ENABLED: !Ref DecisionDocProcurementCopilotEnabled
-          DECISIONDOC_LAMBDA_FUNCTION_NAME: !Sub decisiondoc-ai-${Stage}
+          DECISIONDOC_LAMBDA_FUNCTION_NAME: !Sub decisiondoc-ai-${Stage}${DeploymentSuffix}
           STATUSPAGE_PAGE_ID: !Ref StatuspagePageId
           STATUSPAGE_API_KEY: !Ref StatuspageApiKey
           G2B_API_KEY: !Ref G2bApiKey

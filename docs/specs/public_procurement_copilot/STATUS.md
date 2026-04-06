@@ -2185,3 +2185,31 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
 - remaining boundary
   - this gate improves release discipline, but it does not create a real dedicated `stage` stack yet
   - `break_glass_reason` remains an operator override, not a substitute for solving the AWS-side Lambda update restriction that still blocks normal prod redeploy
+
+## 2026-04-06 — Fresh-Stack Deployment Suffix Added For Lambda Update Restriction Workaround
+
+- shipped
+  - added optional `DeploymentSuffix` support to `infra/sam/template.yaml` so Lambda function names can move from `decisiondoc-ai-<stage>` to `decisiondoc-ai-<stage><suffix>` without changing the default path
+  - updated `.github/workflows/deploy.yml` and `.github/workflows/deploy-smoke.yml` so manual dispatch can supply `deployment_suffix` and deploy a separate stack/function pair instead of overwriting the currently blocked stage stack
+  - made the `prod` dev-first gate suffix-aware, so `prod` with `deployment_suffix=-green` now requires a successful `deploy-smoke [dev-green]` run for the same `main` SHA
+  - documented the same fresh-stack workaround in deploy/prod operating docs
+- file path
+  - `infra/sam/template.yaml`
+  - `.github/workflows/deploy.yml`
+  - `.github/workflows/deploy-smoke.yml`
+  - `docs/deploy_aws.md`
+  - `docs/deployment/prod_checklist.md`
+  - `docs/operating_model_roadmap.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - `decisiondoc-ai-dev` and `decisiondoc-ai-prod` both now fail `aws lambda update-function-code --dry-run` with `AccessDeniedException`, so normal in-place update is blocked before any application smoke can run
+  - the next smallest repo-level mitigation is to support a fresh stack/function name so deployment can test whether `CreateFunction` or new-stack provisioning is still allowed even while updates to the old function stay denied
+  - because `prod` promotion discipline must survive this workaround too, the same suffix has to propagate into the dev-first release gate rather than creating an untracked side path
+- validation
+  - planned local verification:
+    - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/deploy.yml"); YAML.load_file(".github/workflows/deploy-smoke.yml"); puts "yaml-ok"'`
+    - `.venv/bin/pytest -q tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py tests/test_smoke_script.py --tb=short`
+    - `git diff --check -- infra/sam/template.yaml .github/workflows/deploy.yml .github/workflows/deploy-smoke.yml docs/deploy_aws.md docs/deployment/prod_checklist.md docs/operating_model_roadmap.md docs/specs/public_procurement_copilot/STATUS.md`
+- remaining boundary
+  - this workaround only creates a fresh naming path; it does not prove that the AWS account will allow a new `CreateFunction` or new stack create
+  - the next live check still has to be `deploy-smoke [dev-green]` or a similar suffixed `dev` run before any suffixed `prod` promotion is considered
