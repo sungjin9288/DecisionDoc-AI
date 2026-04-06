@@ -2060,3 +2060,38 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - `pass`
 - remaining boundary
   - GitHub Actions workflow semantics are now aligned locally, but the actual deployed `deploy-smoke` run still requires live AWS access and a valid `G2B_API_KEY_<STAGE>`
+
+## 2026-04-06 — Prod Deploy-Smoke Lambda AccessDenied Narrowed And Artifact Bucket Path Hardened
+
+- shipped
+  - reran `deploy-smoke` on the latest merged `main` after PR #17 and confirmed the workflow reached `SAM deploy` before failing, so the remaining blocker is no longer local CI, local smoke helpers, or application test coverage
+  - inspected the live prod stack, Lambda function configuration, deploy role policy, artifact objects, and CloudTrail management events to separate application regressions from infrastructure-path failures
+  - updated `.github/workflows/deploy-smoke.yml` so `sam deploy` now uploads artifacts into the stage-owned `DECISIONDOC_S3_BUCKET_<STAGE>` under `sam-artifacts/<stage>/` instead of the SAM CLI managed default source bucket
+  - documented the same mitigation and the required stack recovery command for environments already left in `UPDATE_ROLLBACK_FAILED`
+- file path
+  - `.github/workflows/deploy-smoke.yml`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - GitHub Actions run `24017366147` failed at `SAM deploy`, and CloudFormation showed `DecisionDocFunction` update failing with Lambda `AccessDeniedException` before any post-deploy smoke ran
+  - live inspection showed the GitHub OIDC deploy role still has broad `cloudformation:*`, `iam:*`, `lambda:*`, and `s3:*` permissions, the prod Lambda execution role trust is still valid, and both the previous and newly uploaded SAM artifacts exist in S3 with `AES256` object encryption
+  - given that evidence, the smallest practical mitigation is to remove one more external dependency from deploy time and pin artifact uploads to the stage-owned bucket already managed by the application stack
+- validation
+  - `gh api 'repos/sungjin9288/DecisionDoc-AI/actions/runs/24017366147/jobs'`
+    - `deploy` failed, `smoke` skipped
+  - `gh api -i 'repos/sungjin9288/DecisionDoc-AI/actions/jobs/70039282183/logs'`
+    - `SAM deploy` failed while CloudFormation was updating `DecisionDocFunction`
+  - `aws cloudformation describe-stack-events --stack-name decisiondoc-ai-prod --region ap-northeast-2 --max-items 20`
+    - stack status confirmed as `UPDATE_ROLLBACK_FAILED`
+  - `aws lambda get-function-configuration --function-name decisiondoc-ai-prod --region ap-northeast-2`
+    - current prod Lambda still reflects the March 28 successful deployment
+  - `aws iam get-role-policy --role-name decisiondoc-github-actions-deploy-prod --policy-name decisiondoc-github-actions-deploy-prod`
+    - deploy role still allows broad CloudFormation/Lambda/S3 actions
+  - `aws s3api head-object --bucket aws-sam-cli-managed-default-samclisourcebucket-gy2eizrxryln --key f9f70fe09e95717d845a21b5e66154a9`
+    - previous artifact exists
+  - `aws s3api head-object --bucket aws-sam-cli-managed-default-samclisourcebucket-gy2eizrxryln --key 6234372955d514664bcd7d42961d14cd`
+    - failing-run artifact also exists
+- remaining boundary
+  - prod stack is currently `UPDATE_ROLLBACK_FAILED`, so the next live rerun still needs:
+    - `aws cloudformation continue-update-rollback --stack-name decisiondoc-ai-prod --region ap-northeast-2`
+  - after rollback recovery, `deploy-smoke` must be rerun from the latest merged `main` to verify the stage-bucket artifact path actually clears the prior Lambda update failure
