@@ -359,14 +359,16 @@ Notes:
 CloudFormation stack-output variant:
 
 ```bash
-.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
   --stage dev \
-  --env-file .github-actions.env \
   --resolve-base-url-from-stack \
-  --output /tmp/stage_procurement_smoke.dev.env
+  --preflight
 
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack
 ```
 
 Notes:
@@ -374,6 +376,7 @@ Notes:
 - default stack names are `decisiondoc-ai-dev` and `decisiondoc-ai-prod`
 - use `--stack-name` when the deployed stack name differs
 - use `--aws-region` when `AWS_REGION` is not already available in `.github-actions.env` or the shell
+- the runner now embeds the exporter path directly, so the operator-facing happy path is one command; the explicit exporter is still useful when you want to keep a generated env file for repeated checks
 
 Manual split runbook:
 

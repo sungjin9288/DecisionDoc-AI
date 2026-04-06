@@ -670,14 +670,16 @@ GitHub Actions env to stage smoke env:
 If AWS CLI credentials already point at the target account, you can skip manual `base_url` lookup and resolve it from the stage stack output:
 
 ```bash
-.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
   --stage dev \
-  --env-file .github-actions.env \
   --resolve-base-url-from-stack \
-  --output /tmp/stage_procurement_smoke.dev.env
+  --preflight
 
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py \
+  --github-actions-env-file .github-actions.env \
+  --stage dev \
+  --resolve-base-url-from-stack
 ```
 
 - default stack name:
@@ -686,6 +688,7 @@ If AWS CLI credentials already point at the target account, you can skip manual 
 - optional:
   - pass `--stack-name decisiondoc-ai-prod-blue` when the deployed stack name differs from the default convention
   - pass `--aws-region ap-northeast-2` when you do not want to rely on `AWS_REGION` from `.github-actions.env` or the current shell
+- this path internally reuses the exporter logic, so the older `export_stage_procurement_smoke_env.py -> run_stage_procurement_smoke.py` two-step flow is still available when you want a persistent generated env file
 
 - manual path when you want separate control over server, seed, and verify:
 - use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy

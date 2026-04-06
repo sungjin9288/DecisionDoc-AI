@@ -1961,3 +1961,27 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
     - `pass`
 - remaining boundary
   - real deployed-stage smoke still needs valid AWS access, live stage credentials, and a current procurement target; this change only removes the manual base URL lookup step
+
+## 2026-04-06 — Stage Runner Now Embeds GitHub Actions Export Path
+
+- shipped
+  - extended `scripts/run_stage_procurement_smoke.py` so it can consume `.github-actions.env` directly through `--github-actions-env-file`
+  - the runner now reuses the stage exporter internally, including `--resolve-base-url-from-stack`, `--stack-name`, and `--aws-region`
+  - this makes the operator-facing deployed smoke path one command instead of `export -> run`
+- file path
+  - `scripts/run_stage_procurement_smoke.py`
+  - `tests/test_stage_procurement_smoke_run.py`
+  - `README.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - after the exporter and stack-output lookup shipped, the remaining friction was procedural: operators still had to run two commands to get from `.github-actions.env` to a deployed procurement smoke run
+  - embedding the export path in the runner closes that last local orchestration gap without changing smoke semantics
+- validation
+  - `PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile scripts/run_stage_procurement_smoke.py tests/test_stage_procurement_smoke_run.py`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py tests/test_smoke_script.py -k 'procurement or council or stage_procurement_smoke or export_stage_procurement_smoke_env' --tb=short`
+    - `pass`
+- remaining boundary
+  - actual deployed smoke still depends on live AWS access, valid stage credentials, and a current procurement target; this change only removes the extra local wrapper step

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from scripts import run_stage_procurement_smoke as runner
 
@@ -134,3 +135,139 @@ def test_preflight_uses_env_file_values(tmp_path: Path, capsys) -> None:
     assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
     assert "[info] SMOKE_TENANT_ID=set" in captured
     assert f"--env-file {env_file}" in captured
+
+
+def test_preflight_can_use_github_actions_env_exporter(tmp_path: Path, monkeypatch, capsys) -> None:
+    github_actions_env_file = tmp_path / "github-actions.env"
+    github_actions_env_file.write_text("DECISIONDOC_API_KEY=repo-api-key\n", encoding="utf-8")
+
+    def _fake_build(**kwargs):
+        _ = kwargs
+        return {
+            "SMOKE_BASE_URL": "https://stack-output.example.com",
+            "SMOKE_API_KEY": "repo-api-key",
+            "G2B_API_KEY": "g2b-live-test-key",
+            "SMOKE_PROCUREMENT_URL_OR_NUMBER": "20260405001-00",
+            "SMOKE_PROVIDER": "mock",
+            "SMOKE_TIMEOUT_SEC": "30",
+            "SMOKE_OPS_KEY": "ops-key",
+            "SMOKE_TENANT_ID": "tenant-dev",
+            "PROCUREMENT_SMOKE_USERNAME": "dev-user",
+            "PROCUREMENT_SMOKE_PASSWORD": "dev-pass",
+        }
+
+    monkeypatch.setattr(runner.stage_exporter, "build_stage_procurement_smoke_env_values", _fake_build)
+
+    result = runner.main(
+        [
+            "--preflight",
+            "--github-actions-env-file",
+            str(github_actions_env_file),
+            "--stage",
+            "dev",
+            "--resolve-base-url-from-stack",
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert "[ok] SMOKE_BASE_URL" in captured
+    assert "[ok] SMOKE_API_KEY" in captured
+    assert "[ok] G2B_API_KEY" in captured
+    assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
+    assert "--github-actions-env-file" in captured
+    assert "--resolve-base-url-from-stack" in captured
+    assert "--base-url https://stack-output.example.com" not in captured
+
+
+def test_main_can_run_with_github_actions_env_exporter(tmp_path: Path, monkeypatch) -> None:
+    github_actions_env_file = tmp_path / "github-actions.env"
+    github_actions_env_file.write_text("DECISIONDOC_API_KEY=repo-api-key\n", encoding="utf-8")
+    smoke_calls: list[dict[str, object]] = []
+
+    def _fake_build(**kwargs):
+        _ = kwargs
+        return {
+            "SMOKE_BASE_URL": "https://stack-output.example.com",
+            "SMOKE_API_KEY": "repo-api-key",
+            "G2B_API_KEY": "g2b-live-test-key",
+            "SMOKE_PROCUREMENT_URL_OR_NUMBER": "20260405001-00",
+            "SMOKE_PROVIDER": "mock",
+            "SMOKE_TIMEOUT_SEC": "30",
+            "SMOKE_OPS_KEY": "ops-key",
+            "SMOKE_TENANT_ID": "tenant-dev",
+            "PROCUREMENT_SMOKE_USERNAME": "dev-user",
+            "PROCUREMENT_SMOKE_PASSWORD": "dev-pass",
+        }
+
+    def _fake_run(command, cwd=None, env=None, check=False):
+        smoke_calls.append(
+            {
+                "command": list(command),
+                "cwd": cwd,
+                "env": dict(env or {}),
+                "check": check,
+            }
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(runner.stage_exporter, "build_stage_procurement_smoke_env_values", _fake_build)
+    monkeypatch.setattr(runner.subprocess, "run", _fake_run)
+
+    result = runner.main(
+        [
+            "--github-actions-env-file",
+            str(github_actions_env_file),
+            "--stage",
+            "dev",
+            "--resolve-base-url-from-stack",
+        ]
+    )
+
+    assert result == 0
+    assert len(smoke_calls) == 1
+    smoke_env = smoke_calls[0]["env"]
+    assert smoke_env["SMOKE_BASE_URL"] == "https://stack-output.example.com"
+    assert smoke_env["SMOKE_API_KEY"] == "repo-api-key"
+    assert smoke_env["G2B_API_KEY"] == "g2b-live-test-key"
+    assert smoke_env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] == "20260405001-00"
+    assert smoke_env["SMOKE_OPS_KEY"] == "ops-key"
+    assert smoke_env["SMOKE_TENANT_ID"] == "tenant-dev"
+
+
+def test_preflight_suggested_command_includes_base_url_for_github_actions_env_path(tmp_path: Path, monkeypatch, capsys) -> None:
+    github_actions_env_file = tmp_path / "github-actions.env"
+    github_actions_env_file.write_text("DECISIONDOC_API_KEY=repo-api-key\n", encoding="utf-8")
+
+    def _fake_build(**kwargs):
+        _ = kwargs
+        return {
+            "SMOKE_BASE_URL": "https://manual-base.example.com",
+            "SMOKE_API_KEY": "repo-api-key",
+            "G2B_API_KEY": "g2b-live-test-key",
+            "SMOKE_PROCUREMENT_URL_OR_NUMBER": "20260405001-00",
+            "SMOKE_PROVIDER": "mock",
+            "SMOKE_TIMEOUT_SEC": "30",
+            "SMOKE_OPS_KEY": "",
+            "SMOKE_TENANT_ID": "",
+            "PROCUREMENT_SMOKE_USERNAME": "",
+            "PROCUREMENT_SMOKE_PASSWORD": "",
+        }
+
+    monkeypatch.setattr(runner.stage_exporter, "build_stage_procurement_smoke_env_values", _fake_build)
+
+    result = runner.main(
+        [
+            "--preflight",
+            "--github-actions-env-file",
+            str(github_actions_env_file),
+            "--stage",
+            "dev",
+            "--base-url",
+            "https://manual-base.example.com",
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert "--base-url https://manual-base.example.com" in captured
