@@ -211,6 +211,30 @@ def _discover_recent_g2b_bid_number(
     return None
 
 
+def _resolve_initial_procurement_import_target(
+    *,
+    configured_target: str,
+    g2b_api_key: str,
+    timeout_sec: float,
+) -> str:
+    normalized_target = str(configured_target or "").strip()
+    if normalized_target:
+        return normalized_target
+
+    discovered_target = _discover_recent_g2b_bid_number(
+        g2b_api_key,
+        timeout_sec=timeout_sec,
+    )
+    if discovered_target:
+        return discovered_target
+
+    _print_skip(
+        "procurement smoke could not discover a recent live G2B opportunity "
+        "because no configured target was provided"
+    )
+    return ""
+
+
 def _find_procurement_handoff_queue_item(
     summary_body: dict[str, Any],
     *,
@@ -350,7 +374,15 @@ def _run_procurement_smoke(
         raise SystemExit("POST /projects missing project_id for procurement smoke")
     _print_result("POST /projects", project.status_code, extra=f"project_id={project_id}")
 
-    import_target = url_or_number
+    client_timeout = float(client.timeout.connect or 30)
+    import_target = _resolve_initial_procurement_import_target(
+        configured_target=url_or_number,
+        g2b_api_key=g2b_api_key,
+        timeout_sec=client_timeout,
+    )
+    if not import_target:
+        return
+
     imported = client.post(
         f"{base_url}/projects/{project_id}/imports/g2b-opportunity",
         headers=auth_headers,
@@ -368,7 +400,7 @@ def _run_procurement_smoke(
 
         discovered_target = _discover_recent_g2b_bid_number(
             g2b_api_key,
-            timeout_sec=float(client.timeout.connect or 30),
+            timeout_sec=client_timeout,
         )
         if discovered_target and discovered_target != import_target:
             retry_targets.append(discovered_target)
@@ -810,8 +842,6 @@ def main() -> int:
         )
 
         if include_procurement:
-            if not procurement_url_or_number:
-                raise SystemExit("Missing required environment variable: SMOKE_PROCUREMENT_URL_OR_NUMBER")
             _run_procurement_smoke(
                 client,
                 base_url=base_url,

@@ -2001,3 +2001,62 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
 - remaining boundary
   - local verification is now refreshed end-to-end
   - the only real remaining external step is an actual deployed-stage procurement smoke run with live AWS access, stage credentials, and a current procurement target
+
+## 2026-04-06 — Procurement Smoke Now Supports Discovery-First Live Target Selection
+
+- shipped
+  - extended `scripts/smoke.py` so the optional procurement lane can start from recent live G2B discovery when `SMOKE_PROCUREMENT_URL_OR_NUMBER` is absent
+  - preserved the existing preferred-fixture path when a known URL or bid number is configured, and kept the existing raw-number/detail-url/discovery retry ladder for stale fixed targets
+  - relaxed local/stage smoke helpers and the GitHub Actions env exporter so `G2B_API_KEY` remains the only hard procurement prerequisite while the fixed target becomes optional operator context
+- file path
+  - `scripts/smoke.py`
+  - `scripts/run_local_procurement_smoke.py`
+  - `scripts/run_stage_procurement_smoke.py`
+  - `scripts/export_stage_procurement_smoke_env.py`
+  - `tests/test_smoke_script.py`
+  - `tests/test_local_procurement_smoke_run.py`
+  - `tests/test_stage_procurement_smoke_run.py`
+  - `tests/test_export_stage_procurement_smoke_env.py`
+  - `scripts/local_procurement_smoke.env.example`
+  - `scripts/stage_procurement_smoke.env.example`
+  - `README.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - requiring a hand-maintained `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` made the deployed procurement smoke lane more brittle than the actual product path, which already supports search and live G2B selection
+  - the new behavior keeps stable fixtures available for repeatability but stops treating upstream result drift as a manual operator prerequisite before every smoke pass
+- validation
+  - `PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile scripts/smoke.py scripts/run_local_procurement_smoke.py scripts/run_stage_procurement_smoke.py scripts/export_stage_procurement_smoke_env.py tests/test_smoke_script.py tests/test_local_procurement_smoke_run.py tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_smoke_script.py tests/test_local_procurement_smoke_run.py tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py --tb=short`
+    - `pass`
+- remaining boundary
+  - deployed procurement smoke still depends on real AWS access, a valid `G2B_API_KEY`, and live upstream G2B availability
+  - fixed fixture variables remain recommended when you want the release lane pinned to one known procurement record
+
+## 2026-04-06 — Deploy Workflow And GitHub Actions Checker Aligned With Discovery-First Smoke
+
+- shipped
+  - updated `.github/workflows/deploy-smoke.yml` so the procurement precheck now requires `G2B_API_KEY_<STAGE>` and only logs an informational note when `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` is blank
+  - updated `scripts/check-github-actions-config.sh` with the same contract so repo-level config checks no longer fail when operators intentionally rely on discovery-first smoke
+  - documented the same behavior in the GitHub Actions env scaffold and deploy runbook
+- file path
+  - `.github/workflows/deploy-smoke.yml`
+  - `scripts/check-github-actions-config.sh`
+  - `scripts/github-actions.env.example`
+  - `tests/test_check_github_actions_config.py`
+  - `README.md`
+  - `docs/deploy_aws.md`
+  - `docs/specs/public_procurement_copilot/IMPLEMENT.md`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - after the smoke runtime and local/stage runners were relaxed, the remaining inconsistency lived in GitHub Actions prechecks and operator config validation
+  - without this alignment, deployed smoke would still fail before reaching the new discovery-first import path
+- validation
+  - `bash -n scripts/check-github-actions-config.sh`
+    - `pass`
+  - `.venv/bin/pytest -q tests/test_check_github_actions_config.py tests/test_smoke_script.py tests/test_local_procurement_smoke_run.py tests/test_stage_procurement_smoke_run.py tests/test_export_stage_procurement_smoke_env.py --tb=short`
+    - `pass`
+- remaining boundary
+  - GitHub Actions workflow semantics are now aligned locally, but the actual deployed `deploy-smoke` run still requires live AWS access and a valid `G2B_API_KEY_<STAGE>`

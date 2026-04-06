@@ -74,6 +74,34 @@ def test_export_stage_procurement_smoke_env_requires_stage_specific_values(tmp_p
     assert "G2B_API_KEY_DEV" in message
 
 
+def test_export_stage_procurement_smoke_env_allows_missing_stage_specific_target(tmp_path: Path) -> None:
+    input_env = tmp_path / "github-actions.env"
+    output_env = tmp_path / "stage-proc.env"
+    input_env.write_text(
+        "\n".join(
+            [
+                "DECISIONDOC_API_KEY=repo-api-key",
+                "DECISIONDOC_OPS_KEY=repo-ops-key",
+                "G2B_API_KEY_PROD=prod-g2b-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    path = exporter.export_stage_procurement_smoke_env(
+        stage="prod",
+        input_env_file=input_env,
+        output_env_file=output_env,
+        base_url="https://prod.example.com",
+    )
+
+    assert path == output_env
+    contents = output_env.read_text(encoding="utf-8")
+    assert "G2B_API_KEY=prod-g2b-key" in contents
+    assert "SMOKE_PROCUREMENT_URL_OR_NUMBER=\n" in contents
+
+
 def test_main_uses_cli_and_defaults(tmp_path: Path, monkeypatch) -> None:
     input_env = tmp_path / "github-actions.env"
     output_env = tmp_path / "stage-proc.env"

@@ -232,7 +232,7 @@ def build_stage_procurement_smoke_env_values(
         "SMOKE_BASE_URL": resolved_base_url.rstrip("/"),
         "SMOKE_API_KEY": _get_loaded_required(loaded_env, "DECISIONDOC_API_KEY"),
         "G2B_API_KEY": _get_loaded_required(loaded_env, f"G2B_API_KEY_{stage_upper}"),
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER": _get_loaded_required(
+        "SMOKE_PROCUREMENT_URL_OR_NUMBER": _get_loaded_optional(
             loaded_env,
             f"PROCUREMENT_SMOKE_URL_OR_NUMBER_{stage_upper}",
         ),

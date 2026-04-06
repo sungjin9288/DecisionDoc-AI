@@ -601,7 +601,6 @@ Local procurement live smoke when G2B env is available:
 ```bash
 G2B_API_KEY=... \
 JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \
 .venv/bin/python scripts/run_local_procurement_smoke.py
 ```
 
@@ -618,6 +617,7 @@ JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
   - starts a fresh local app with procurement copilot enabled
   - injects a local API key and ops key for the smoke lane
   - runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
+  - uses `SMOKE_PROCUREMENT_URL_OR_NUMBER` when provided, but can auto-discover a recent live G2B opportunity when only `G2B_API_KEY` is configured
 - optional:
   - add `--keep-running` if you want the local app to stay up after the smoke pass
   - set `PROCUREMENT_SMOKE_USERNAME` / `PROCUREMENT_SMOKE_PASSWORD` when the target tenant already has users
@@ -639,7 +639,8 @@ $EDITOR /tmp/stage_procurement_smoke.env
 - this helper:
   - does not boot a local app
   - runs the existing `scripts/smoke.py` procurement lane against an already deployed `SMOKE_BASE_URL`
-  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `SMOKE_PROCUREMENT_URL_OR_NUMBER`, and `G2B_API_KEY`
+  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, and `G2B_API_KEY`
+  - treats `SMOKE_PROCUREMENT_URL_OR_NUMBER` as a preferred stable fixture, not a hard requirement
 - optional:
   - set `SMOKE_OPS_KEY` if you want the remediation summary path to prefer the ops-key route on the deployed environment
   - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
@@ -663,8 +664,9 @@ GitHub Actions env to stage smoke env:
   - `DECISIONDOC_API_KEY` -> `SMOKE_API_KEY`
   - `DECISIONDOC_OPS_KEY` -> `SMOKE_OPS_KEY`
   - `G2B_API_KEY_<STAGE>` -> `G2B_API_KEY`
-  - `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` -> `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+  - `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` -> `SMOKE_PROCUREMENT_URL_OR_NUMBER` when a stable known target is available
   - `PROCUREMENT_SMOKE_TENANT_ID_<STAGE>` / `PROCUREMENT_SMOKE_USERNAME_<STAGE>` / `PROCUREMENT_SMOKE_PASSWORD_<STAGE>` -> deployed smoke login context
+- `check-github-actions-config.sh --procurement-smoke` and `deploy-smoke` now require `G2B_API_KEY_<STAGE>` but only treat `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` as optional stable fixture input
 - only `--base-url` stays explicit because the deployed endpoint is resolved outside the repository env scaffold
 
 If AWS CLI credentials already point at the target account, you can skip manual `base_url` lookup and resolve it from the stage stack output:

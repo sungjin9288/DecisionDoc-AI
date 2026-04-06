@@ -38,6 +38,10 @@ def test_run_local_procurement_smoke_starts_server_and_runs_smoke(tmp_path: Path
     smoke_calls: list[dict[str, object]] = []
     fake_process = _FakeProcess()
 
+    # CI injects JWT_SECRET_KEY for the pytest process; this test verifies the
+    # local runner's default fallback path instead of inheriting parent env.
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
     def _fake_popen(command, cwd=None, env=None):
         launched.append(
             {
@@ -108,7 +112,6 @@ def test_run_local_procurement_smoke_starts_server_and_runs_smoke(tmp_path: Path
 
 
 def test_main_requires_procurement_smoke_env(monkeypatch) -> None:
-    monkeypatch.delenv("SMOKE_PROCUREMENT_URL_OR_NUMBER", raising=False)
     monkeypatch.delenv("G2B_API_KEY", raising=False)
 
     try:
@@ -118,7 +121,7 @@ def test_main_requires_procurement_smoke_env(monkeypatch) -> None:
     else:  # pragma: no cover
         raise AssertionError("Expected SystemExit when procurement smoke env is missing")
 
-    assert "SMOKE_PROCUREMENT_URL_OR_NUMBER" in message
+    assert "G2B_API_KEY" in message
 
 
 def test_preflight_reports_missing_required_env(monkeypatch, capsys, tmp_path: Path) -> None:
@@ -140,13 +143,12 @@ def test_preflight_reports_missing_required_env(monkeypatch, capsys, tmp_path: P
 
     captured = capsys.readouterr().out
     assert result == 1
-    assert "[missing] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
     assert "[missing] G2B_API_KEY" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=unset" in captured
     assert "--port 8892" in captured
 
 
 def test_preflight_passes_when_required_env_is_present(monkeypatch, capsys, tmp_path: Path) -> None:
-    monkeypatch.setenv("SMOKE_PROCUREMENT_URL_OR_NUMBER", "20260405001-00")
     monkeypatch.setenv("G2B_API_KEY", "g2b-live-test-key")
     monkeypatch.setenv("SMOKE_TENANT_ID", "system")
 
@@ -160,8 +162,8 @@ def test_preflight_passes_when_required_env_is_present(monkeypatch, capsys, tmp_
 
     captured = capsys.readouterr().out
     assert result == 0
-    assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
     assert "[ok] G2B_API_KEY" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=unset" in captured
     assert "[info] SMOKE_TENANT_ID=set" in captured
 
 
@@ -210,11 +212,45 @@ def test_preflight_uses_env_file_values(tmp_path: Path, capsys) -> None:
 
     captured = capsys.readouterr().out
     assert result == 0
-    assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
     assert "[ok] G2B_API_KEY" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=set" in captured
     assert "[info] SMOKE_TENANT_ID=set" in captured
     assert f"JWT_SECRET_KEY={runner.DEFAULT_JWT_SECRET}" in captured
     assert f"--env-file {env_file}" in captured
+
+
+def test_run_local_procurement_smoke_can_omit_configured_target(tmp_path: Path, monkeypatch) -> None:
+    launched: list[dict[str, object]] = []
+    waited: list[str] = []
+    smoke_calls: list[dict[str, object]] = []
+    fake_process = _FakeProcess()
+
+    def _fake_popen(command, cwd=None, env=None):
+        launched.append({"command": list(command), "cwd": cwd, "env": dict(env or {})})
+        return fake_process
+
+    def _fake_wait(base_url: str, *, process=None, timeout_seconds: float = 20.0, interval_seconds: float = 0.5):
+        waited.append(base_url)
+        assert process is fake_process
+
+    def _fake_run(command, cwd=None, env=None, check=False):
+        smoke_calls.append({"command": list(command), "cwd": cwd, "env": dict(env or {}), "check": check})
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(runner.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(runner.subprocess, "run", _fake_run)
+    monkeypatch.setattr(runner, "_wait_for_health", _fake_wait)
+
+    result = runner.run_local_procurement_smoke(
+        data_dir=tmp_path / "proc-smoke-data",
+        procurement_url_or_number="",
+        g2b_api_key="g2b-live-test-key",
+        port=8877,
+    )
+
+    assert result == 0
+    smoke_env = smoke_calls[0]["env"]
+    assert "SMOKE_PROCUREMENT_URL_OR_NUMBER" not in smoke_env
 
 
 def test_run_local_procurement_smoke_uses_env_file_optional_values(tmp_path: Path, monkeypatch) -> None:

@@ -61,7 +61,6 @@ def test_run_stage_procurement_smoke_runs_smoke_with_expected_env(monkeypatch) -
 def test_main_requires_stage_smoke_env(monkeypatch) -> None:
     monkeypatch.delenv("SMOKE_BASE_URL", raising=False)
     monkeypatch.delenv("SMOKE_API_KEY", raising=False)
-    monkeypatch.delenv("SMOKE_PROCUREMENT_URL_OR_NUMBER", raising=False)
     monkeypatch.delenv("G2B_API_KEY", raising=False)
 
     try:
@@ -86,8 +85,8 @@ def test_preflight_reports_missing_required_env(monkeypatch, capsys) -> None:
     assert result == 1
     assert "[missing] SMOKE_BASE_URL" in captured
     assert "[missing] SMOKE_API_KEY" in captured
-    assert "[missing] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
     assert "[missing] G2B_API_KEY" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=unset" in captured
 
 
 def test_print_env_template_outputs_copy_paste_command(capsys) -> None:
@@ -132,7 +131,7 @@ def test_preflight_uses_env_file_values(tmp_path: Path, capsys) -> None:
     assert "[ok] SMOKE_BASE_URL" in captured
     assert "[ok] SMOKE_API_KEY" in captured
     assert "[ok] G2B_API_KEY" in captured
-    assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=set" in captured
     assert "[info] SMOKE_TENANT_ID=set" in captured
     assert f"--env-file {env_file}" in captured
 
@@ -174,7 +173,7 @@ def test_preflight_can_use_github_actions_env_exporter(tmp_path: Path, monkeypat
     assert "[ok] SMOKE_BASE_URL" in captured
     assert "[ok] SMOKE_API_KEY" in captured
     assert "[ok] G2B_API_KEY" in captured
-    assert "[ok] SMOKE_PROCUREMENT_URL_OR_NUMBER" in captured
+    assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=set" in captured
     assert "--github-actions-env-file" in captured
     assert "--resolve-base-url-from-stack" in captured
     assert "--base-url https://stack-output.example.com" not in captured
@@ -233,6 +232,35 @@ def test_main_can_run_with_github_actions_env_exporter(tmp_path: Path, monkeypat
     assert smoke_env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] == "20260405001-00"
     assert smoke_env["SMOKE_OPS_KEY"] == "ops-key"
     assert smoke_env["SMOKE_TENANT_ID"] == "tenant-dev"
+
+
+def test_run_stage_procurement_smoke_can_omit_configured_target(monkeypatch) -> None:
+    smoke_calls: list[dict[str, object]] = []
+
+    def _fake_run(command, cwd=None, env=None, check=False):
+        smoke_calls.append(
+            {
+                "command": list(command),
+                "cwd": cwd,
+                "env": dict(env or {}),
+                "check": check,
+            }
+        )
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(runner.subprocess, "run", _fake_run)
+
+    result = runner.run_stage_procurement_smoke(
+        base_url="https://stage.example.com/",
+        api_key="stage-api-key",
+        procurement_url_or_number="",
+        g2b_api_key="g2b-live-test-key",
+        provider="mock",
+    )
+
+    assert result == 0
+    smoke_env = smoke_calls[0]["env"]
+    assert "SMOKE_PROCUREMENT_URL_OR_NUMBER" not in smoke_env
 
 
 def test_preflight_suggested_command_includes_base_url_for_github_actions_env_path(tmp_path: Path, monkeypatch, capsys) -> None:

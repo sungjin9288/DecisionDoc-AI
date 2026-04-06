@@ -290,7 +290,6 @@ Local procurement live smoke helper:
 ```bash
 G2B_API_KEY=... \
 JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \
 .venv/bin/python scripts/run_local_procurement_smoke.py
 ```
 
@@ -306,8 +305,10 @@ JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
 Notes:
 - this helper starts a fresh local app and then runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
 - it auto-wires a local API key and local ops key so the NO_GO remediation summary path can still be verified without requiring an admin smoke user
+- `SMOKE_PROCUREMENT_URL_OR_NUMBER` is now a preferred stable fixture, not a hard prerequisite; if it is absent and `G2B_API_KEY` is present, the smoke first auto-discovers a recent live G2B opportunity
+- the same contract now applies to `deploy-smoke` and `check-github-actions-config.sh`: `G2B_API_KEY_<STAGE>` is required for procurement smoke, while `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` remains optional stable fixture input
 - add `--keep-running` if you want the local app to remain up after the smoke pass
-- add `--preflight` when you want a fail-fast readiness check for `G2B_API_KEY` and `SMOKE_PROCUREMENT_URL_OR_NUMBER`
+- add `--preflight` when you want a fail-fast readiness check for `G2B_API_KEY` and optional smoke context
 - add `--print-env-template` when you want a copy-paste export block plus the exact run command
 - keep the inline `JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars` prefix on the file-based path; that is the validated local launch form in this workspace
 - the Python runner still accepts `--env-file`, and the env file continues to carry the procurement target and optional smoke credentials
@@ -328,9 +329,9 @@ Notes:
 - required values:
   - `SMOKE_BASE_URL`
   - `SMOKE_API_KEY`
-  - `SMOKE_PROCUREMENT_URL_OR_NUMBER`
   - `G2B_API_KEY`
 - optional values:
+  - `SMOKE_PROCUREMENT_URL_OR_NUMBER`
   - `SMOKE_OPS_KEY`
   - `SMOKE_PROVIDER`
   - `SMOKE_TIMEOUT_SEC`

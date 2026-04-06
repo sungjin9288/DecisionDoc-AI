@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "check-github-actions-config.sh"
+
+
+def _write_env_file(path: Path, *, include_g2b: bool = True, include_target: bool = False) -> None:
+    lines = [
+        "AWS_REGION=ap-northeast-2",
+        "DECISIONDOC_API_KEY=repo-api-key",
+        "DECISIONDOC_OPS_KEY=repo-ops-key",
+        "AWS_ROLE_ARN_DEV=arn:aws:iam::123456789012:role/dev",
+        "DECISIONDOC_S3_BUCKET_DEV=decisiondoc-dev",
+        "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV=1",
+    ]
+    if include_g2b:
+        lines.append("G2B_API_KEY_DEV=dev-g2b-key")
+    if include_target:
+        lines.append("PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV=20260405001-00")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_check_github_actions_config_allows_procurement_smoke_without_fixed_target(tmp_path: Path) -> None:
+    env_file = tmp_path / "github-actions.env"
+    _write_env_file(env_file, include_g2b=True, include_target=False)
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "--stage", "dev", "--env-file", str(env_file), "--procurement-smoke"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "OK     G2B_API_KEY_DEV" in completed.stdout
+    assert "EMPTY  PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV" in completed.stdout
+    assert "All required entries are present." in completed.stdout
+
+
+def test_check_github_actions_config_requires_g2b_key_for_procurement_smoke(tmp_path: Path) -> None:
+    env_file = tmp_path / "github-actions.env"
+    _write_env_file(env_file, include_g2b=False, include_target=False)
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "--stage", "dev", "--env-file", str(env_file), "--procurement-smoke"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "MISSING G2B_API_KEY_DEV" in completed.stdout
+    assert "EMPTY  PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV" in completed.stdout
+    assert "Missing required entries (1):" in completed.stdout
+    assert "  - G2B_API_KEY_DEV" in completed.stdout

@@ -19,10 +19,10 @@ DEFAULT_TIMEOUT_SEC = 30.0
 REQUIRED_STAGE_PREREQS = (
     "SMOKE_BASE_URL",
     "SMOKE_API_KEY",
-    "SMOKE_PROCUREMENT_URL_OR_NUMBER",
     "G2B_API_KEY",
 )
 OPTIONAL_STAGE_PREREQS = (
+    "SMOKE_PROCUREMENT_URL_OR_NUMBER",
     "SMOKE_OPS_KEY",
     "SMOKE_PROVIDER",
     "SMOKE_TIMEOUT_SEC",
@@ -154,7 +154,6 @@ def _suggested_command(
         "SMOKE_BASE_URL=https://your-stage.example.com \\\n"
         "SMOKE_API_KEY=your-stage-api-key \\\n"
         "G2B_API_KEY=your-data-go-kr-key \\\n"
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \\\n"
         ".venv/bin/python scripts/run_stage_procurement_smoke.py"
     )
 
@@ -164,9 +163,9 @@ def _print_env_template(*, env_file: Path | None = None) -> None:
     print("export SMOKE_BASE_URL=https://your-stage.example.com", flush=True)
     print("export SMOKE_API_KEY=your-stage-api-key", flush=True)
     print("export G2B_API_KEY=your-data-go-kr-key", flush=True)
-    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("", flush=True)
     print("# Optional", flush=True)
+    print("export SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00", flush=True)
     print("export SMOKE_OPS_KEY=", flush=True)
     print(f"export SMOKE_PROVIDER={DEFAULT_PROVIDER}", flush=True)
     print(f"export SMOKE_TIMEOUT_SEC={DEFAULT_TIMEOUT_SEC}", flush=True)
@@ -285,7 +284,10 @@ def _build_smoke_env(
     env["SMOKE_PROVIDER"] = provider
     env["SMOKE_TIMEOUT_SEC"] = str(timeout_sec)
     env["SMOKE_INCLUDE_PROCUREMENT"] = "1"
-    env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    if procurement_url_or_number:
+        env["SMOKE_PROCUREMENT_URL_OR_NUMBER"] = procurement_url_or_number
+    else:
+        env.pop("SMOKE_PROCUREMENT_URL_OR_NUMBER", None)
     env["G2B_API_KEY"] = g2b_api_key
     if ops_key:
         env["SMOKE_OPS_KEY"] = ops_key
@@ -315,7 +317,7 @@ def run_stage_procurement_smoke(
     active_env_overrides = dict(env_overrides or {})
     resolved_base_url = _required_value("base_url", base_url).rstrip("/")
     resolved_api_key = _required_value("api_key", api_key)
-    resolved_procurement_target = _required_value("procurement_url_or_number", procurement_url_or_number)
+    resolved_procurement_target = str(procurement_url_or_number or "").strip()
     resolved_g2b_api_key = _required_value("g2b_api_key", g2b_api_key)
     resolved_provider = _required_value("provider", provider)
     smoke_env = _build_smoke_env(
@@ -333,7 +335,10 @@ def run_stage_procurement_smoke(
     )
     smoke_command = [sys.executable, "scripts/smoke.py"]
     print(f"Running stage procurement smoke against {resolved_base_url}", flush=True)
-    print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    if resolved_procurement_target:
+        print(f"Procurement target: {resolved_procurement_target}", flush=True)
+    else:
+        print("Procurement target: auto-discover recent live G2B opportunity", flush=True)
     completed = subprocess.run(smoke_command, cwd=REPO_ROOT, env=smoke_env, check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
@@ -427,11 +432,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "SMOKE_API_KEY",
         env_overrides,
     )
-    resolved_procurement_target = _resolve_required_env(
-        str(args.procurement_url_or_number).strip(),
-        "SMOKE_PROCUREMENT_URL_OR_NUMBER",
-        env_overrides,
-    )
     resolved_g2b_api_key = _resolve_required_env(
         str(args.g2b_api_key).strip(),
         "G2B_API_KEY",
@@ -472,7 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     return run_stage_procurement_smoke(
         base_url=resolved_base_url,
         api_key=resolved_api_key,
-        procurement_url_or_number=resolved_procurement_target,
+        procurement_url_or_number=str(args.procurement_url_or_number).strip()
+        or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
         g2b_api_key=resolved_g2b_api_key,
         provider=resolved_provider,
         timeout_sec=float(resolved_timeout),

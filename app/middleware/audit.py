@@ -73,7 +73,6 @@ async def audit_middleware(request: Request, call_next):
     path = request.url.path
     status_code = response.status_code
     error_code = getattr(request.state, "error_code", "")
-    procurement_error_code = getattr(request.state, "procurement_error_code", "") or error_code
     procurement_action = getattr(request.state, "procurement_action", "")
     decision_council_handoff_used = bool(
         getattr(request.state, "decision_council_handoff_used", False)
