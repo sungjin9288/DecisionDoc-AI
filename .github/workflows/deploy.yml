@@ -1,5 +1,7 @@
 name: deploy
 
+run-name: deploy [${{ inputs.stage }}${{ inputs.deployment_suffix }}] @ ${{ github.ref_name }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -15,6 +17,11 @@ on:
         description: "Template version"
         required: true
         default: v1
+        type: string
+      deployment_suffix:
+        description: "Optional fresh-stack suffix (example: -green)"
+        required: false
+        default: ""
         type: string
       maintenance_mode:
         description: "Maintenance mode (1 blocks /generate*)"
@@ -41,6 +48,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Resolve deployment naming
+        run: |
+          DEPLOYMENT_SUFFIX="${{ inputs.deployment_suffix }}"
+          if [ -n "${DEPLOYMENT_SUFFIX}" ] && ! printf '%s\n' "${DEPLOYMENT_SUFFIX}" | grep -Eq '^-[a-z0-9-]+$'; then
+            echo "deployment_suffix must be empty or match ^-[a-z0-9-]+$"
+            exit 1
+          fi
+          STACK_NAME="decisiondoc-ai-${{ inputs.stage }}${DEPLOYMENT_SUFFIX}"
+          echo "DEPLOYMENT_SUFFIX=${DEPLOYMENT_SUFFIX}" >> "$GITHUB_ENV"
+          echo "STACK_NAME=${STACK_NAME}" >> "$GITHUB_ENV"
 
       - uses: aws-actions/setup-sam@v2
 
@@ -159,6 +177,9 @@ jobs:
           if [ -n "${G2B_API_KEY}" ]; then
             PARAM_OVERRIDES+=("G2bApiKey=${G2B_API_KEY}")
           fi
+          if [ -n "${DEPLOYMENT_SUFFIX}" ]; then
+            PARAM_OVERRIDES+=("DeploymentSuffix=${DEPLOYMENT_SUFFIX}")
+          fi
           if [ -n "${VOICE_BRIEF_API_BASE_URL}" ]; then
             PARAM_OVERRIDES+=("VoiceBriefApiBaseUrl=${VOICE_BRIEF_API_BASE_URL}")
           fi
@@ -170,7 +191,7 @@ jobs:
           fi
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
-            --stack-name decisiondoc-ai-${{ inputs.stage }} \
+            --stack-name "${STACK_NAME}" \
             --region "${AWS_REGION}" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \

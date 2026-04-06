@@ -1,6 +1,6 @@
 name: deploy-smoke
 
-run-name: deploy-smoke [${{ inputs.stage }}] @ ${{ github.ref_name }}
+run-name: deploy-smoke [${{ inputs.stage }}${{ inputs.deployment_suffix }}] @ ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
@@ -26,6 +26,11 @@ on:
         description: "Template version"
         required: true
         default: v1
+        type: string
+      deployment_suffix:
+        description: "Optional fresh-stack suffix (example: -green)"
+        required: false
+        default: ""
         type: string
       maintenance_mode:
         description: "Maintenance mode (1 blocks /generate*)"
@@ -83,6 +88,23 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Resolve deployment naming
+        run: |
+          DEPLOYMENT_SUFFIX="${{ inputs.deployment_suffix }}"
+          if [ -n "${DEPLOYMENT_SUFFIX}" ] && ! printf '%s\n' "${DEPLOYMENT_SUFFIX}" | grep -Eq '^-[a-z0-9-]+$'; then
+            echo "deployment_suffix must be empty or match ^-[a-z0-9-]+$"
+            exit 1
+          fi
+          STACK_NAME="decisiondoc-ai-${{ inputs.stage }}${DEPLOYMENT_SUFFIX}"
+          FUNCTION_NAME="${STACK_NAME}"
+          DEV_STAGE_LABEL="dev${DEPLOYMENT_SUFFIX}"
+          REQUIRED_DEV_TITLE_FRAGMENT="[${DEV_STAGE_LABEL}]"
+          echo "DEPLOYMENT_SUFFIX=${DEPLOYMENT_SUFFIX}" >> "$GITHUB_ENV"
+          echo "STACK_NAME=${STACK_NAME}" >> "$GITHUB_ENV"
+          echo "FUNCTION_NAME=${FUNCTION_NAME}" >> "$GITHUB_ENV"
+          echo "DEV_STAGE_LABEL=${DEV_STAGE_LABEL}" >> "$GITHUB_ENV"
+          echo "REQUIRED_DEV_TITLE_FRAGMENT=${REQUIRED_DEV_TITLE_FRAGMENT}" >> "$GITHUB_ENV"
+
       - name: Enforce dev-first gate for prod
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,6 +134,7 @@ jobs:
           current_sha = os.environ["CURRENT_SHA"]
           current_run_id = int(os.environ["CURRENT_RUN_ID"])
           break_glass_reason = os.environ.get("BREAK_GLASS_REASON", "").strip()
+          required_dev_title_fragment = os.environ["REQUIRED_DEV_TITLE_FRAGMENT"]
 
           output = subprocess.check_output(
               [
@@ -131,7 +154,7 @@ jobs:
               if run.get("head_sha") != current_sha:
                   continue
               title = run.get("display_title") or ""
-              if "[dev]" not in title:
+              if required_dev_title_fragment not in title:
                   continue
               matching_dev_run = run
               break
@@ -150,7 +173,7 @@ jobs:
               sys.exit(0)
 
           print(
-              "Missing successful dev deploy-smoke for the same main SHA. "
+              f"Missing successful {required_dev_title_fragment} deploy-smoke for the same main SHA. "
               "Run dev first or provide workflow_dispatch input break_glass_reason."
           )
           sys.exit(1)
@@ -254,9 +277,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Preflight stack state and Lambda update mutability
-        env:
-          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
-          FUNCTION_NAME: decisiondoc-ai-${{ inputs.stage }}
         run: |
           STACK_STATUS_OUTPUT="$(aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}" \
@@ -334,6 +354,9 @@ jobs:
           if [ -n "${G2B_API_KEY}" ]; then
             PARAM_OVERRIDES+=("G2bApiKey=${G2B_API_KEY}")
           fi
+          if [ -n "${DEPLOYMENT_SUFFIX}" ]; then
+            PARAM_OVERRIDES+=("DeploymentSuffix=${DEPLOYMENT_SUFFIX}")
+          fi
           if [ -n "${VOICE_BRIEF_API_BASE_URL}" ]; then
             PARAM_OVERRIDES+=("VoiceBriefApiBaseUrl=${VOICE_BRIEF_API_BASE_URL}")
           fi
@@ -345,7 +368,7 @@ jobs:
           fi
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
-            --stack-name decisiondoc-ai-${{ inputs.stage }} \
+            --stack-name "${STACK_NAME}" \
             --region "${AWS_REGION}" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
@@ -358,7 +381,7 @@ jobs:
         id: stack_outputs
         run: |
           BASE_URL="$(aws cloudformation describe-stacks \
-            --stack-name decisiondoc-ai-${{ inputs.stage }} \
+            --stack-name "${STACK_NAME}" \
             --region "${AWS_REGION}" \
             --query 'Stacks[0].Outputs[?OutputKey==`HttpApiUrl`].OutputValue' \
             --output text)"
@@ -383,6 +406,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Resolve deployment naming
+        run: |
+          DEPLOYMENT_SUFFIX="${{ inputs.deployment_suffix }}"
+          if [ -n "${DEPLOYMENT_SUFFIX}" ] && ! printf '%s\n' "${DEPLOYMENT_SUFFIX}" | grep -Eq '^-[a-z0-9-]+$'; then
+            echo "deployment_suffix must be empty or match ^-[a-z0-9-]+$"
+            exit 1
+          fi
+          STACK_NAME="decisiondoc-ai-${{ inputs.stage }}${DEPLOYMENT_SUFFIX}"
+          echo "STACK_NAME=${STACK_NAME}" >> "$GITHUB_ENV"
 
       - name: Install deps
         run: |
@@ -442,8 +475,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve smoke base URL from stack output
-        env:
-          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
         run: |
           SMOKE_BASE_URL="$(aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}" \
@@ -553,8 +584,6 @@ jobs:
 
       - name: Resolve ops smoke S3 bucket from stack parameters
         if: ${{ inputs.stage == 'dev' || inputs.include_ops_smoke == 'true' }}
-        env:
-          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
         run: |
           SMOKE_S3_BUCKET="$(aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}" \

@@ -163,7 +163,9 @@ HOME=/tmp safety check -r requirements.txt
 
 현재 `deploy-smoke` workflow도 같은 기준을 deploy preflight로 먼저 검사하도록 맞췄습니다. 즉, stack이 이미 깨져 있거나 Lambda code update dry-run이 막혀 있으면 `SAM deploy` 전에 fail-fast로 종료됩니다.
 
-또한 `prod` dispatch는 같은 `main` SHA에 성공한 `deploy-smoke [dev]` run이 있어야 합니다. 이 evidence가 없으면 `SAM deploy` 전에 멈추고, 정말 예외적인 운영 복구일 때만 `break_glass_reason` 입력으로 override 할 수 있습니다.
+또한 `prod` dispatch는 같은 `main` SHA에 성공한 `deploy-smoke [dev]` run이 있어야 합니다. `deployment_suffix=-green` 같이 fresh-stack 경로를 쓰면 `deploy-smoke [dev-green]` evidence가 필요합니다. 이 evidence가 없으면 `SAM deploy` 전에 멈추고, 정말 예외적인 운영 복구일 때만 `break_glass_reason` 입력으로 override 할 수 있습니다.
+
+기존 stack을 덮어쓰지 않고 우회 검증이 필요하면 `deployment_suffix` 입력으로 별도 stack/function 이름을 만들 수 있습니다. 예: `decisiondoc-ai-dev-green`, `decisiondoc-ai-prod-green`.
 
 ## 8. 운영 모니터링
 
