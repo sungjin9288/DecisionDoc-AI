@@ -45,6 +45,8 @@ def test_create_share_link_authenticated():
 
 def test_shared_view_returns_html():
     """Create a link then view it without auth — should return HTML."""
+    from app.storage.share_store import ShareStore
+
     token = _token()
     create_res = client.post(
         "/share",
@@ -58,6 +60,38 @@ def test_shared_view_returns_html():
     assert view_res.status_code == 200
     assert "text/html" in view_res.headers["content-type"]
     assert "공유 HTML 테스트" in view_res.text
+    link = ShareStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).get(share_id)
+    assert link is not None
+    assert link["access_count"] == 1
+    assert link["last_accessed_at"]
+
+
+def test_shared_view_renders_decision_council_warning_when_present():
+    token = _token()
+    create_res = client.post(
+        "/share",
+        json={
+            "request_id": "req-shared-council-warning",
+            "title": "Stale Council 공유 테스트",
+            "decision_council_document_status": "stale_procurement",
+            "decision_council_document_status_tone": "danger",
+            "decision_council_document_status_copy": "현재 procurement 대비 이전 council 기준",
+            "decision_council_document_status_summary": "이 공유 문서는 최신 procurement recommendation을 반영하지 않았습니다.",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert create_res.status_code == 200
+    share_id = create_res.json()["share_id"]
+
+    view_res = client.get(f"/shared/{share_id}")
+    assert view_res.status_code == 200
+    assert 'data-shared-decision-council-warning="stale_procurement"' in view_res.text
+    assert "현재 procurement 대비 이전 council 기준" in view_res.text
+    assert "최신 procurement recommendation을 반영하지 않았습니다." in view_res.text
 
 
 def test_revoke_share_link():
@@ -72,6 +106,25 @@ def test_revoke_share_link():
     revoke_res = client.delete(
         f"/share/{share_id}",
         headers={"Authorization": f"Bearer {token}"},
+    )
+    assert revoke_res.status_code == 200
+    assert "비활성화" in revoke_res.json()["message"]
+
+
+def test_admin_can_revoke_share_created_by_another_user():
+    member_token = _token(user="member-user", role="member")
+    admin_token = _token(user="admin-user", role="admin")
+    create_res = client.post(
+        "/share",
+        json={"request_id": "req-admin-revoke", "title": "관리자 취소 대상 문서"},
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert create_res.status_code == 200
+    share_id = create_res.json()["share_id"]
+
+    revoke_res = client.delete(
+        f"/share/{share_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert revoke_res.status_code == 200
     assert "비활성화" in revoke_res.json()["message"]
@@ -98,16 +151,24 @@ def test_share_store_create_and_get():
         created_by="user1",
         bundle_id="proposal_kr",
         expires_days=7,
+        decision_council_document_status="stale_procurement",
+        decision_council_document_status_tone="danger",
+        decision_council_document_status_copy="현재 procurement 대비 이전 council 기준",
+        decision_council_document_status_summary="이 공유 문서는 최신 procurement recommendation을 반영하지 않았습니다.",
     )
     assert link.share_id
     assert link.title == "테스트 문서"
     assert link.bundle_id == "proposal_kr"
     assert link.is_active is True
+    assert link.decision_council_document_status == "stale_procurement"
 
     retrieved = store.get(link.share_id)
     assert retrieved is not None
     assert retrieved["title"] == "테스트 문서"
     assert retrieved["is_active"] is True
+    assert retrieved["last_accessed_at"] == ""
+    assert retrieved["decision_council_document_status"] == "stale_procurement"
+    assert retrieved["decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
 
 
 def test_share_store_revoke():
@@ -131,10 +192,13 @@ def test_share_store_revoke():
     )
     fail = store.revoke(link2.share_id, "user2")
     assert fail is False
+    admin_override = store.revoke(link2.share_id, "admin-user", allow_admin_override=True)
+    assert admin_override is True
 
 
 def test_share_store_access_count():
     from app.storage.share_store import ShareStore
+    from datetime import datetime
     store = ShareStore("test-access-tenant")
     link = store.create(
         tenant_id="test-access-tenant",
@@ -147,6 +211,8 @@ def test_share_store_access_count():
 
     retrieved = store.get(link.share_id)
     assert retrieved["access_count"] == 2
+    assert retrieved["last_accessed_at"]
+    datetime.fromisoformat(retrieved["last_accessed_at"])
 
 
 def test_share_store_list_by_user():

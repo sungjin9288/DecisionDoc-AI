@@ -93,7 +93,7 @@ def _clean_requirements_for_prompt(requirements: dict[str, Any]) -> dict[str, An
     - Empty strings and empty lists (no informational value, waste tokens)
     """
     SKIP_KEYS = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
-                 "_knowledge_context", "_style_context", "_procurement_context", "project_id",
+                 "_knowledge_context", "_style_context", "_procurement_context", "_decision_council_context", "project_id",
                  "pdf_source", "pdf_sections"}
     return {
         k: v
@@ -163,6 +163,7 @@ def build_bundle_prompt(
     knowledge_context = requirements.get("_knowledge_context", "") if isinstance(requirements, dict) else ""
     style_context = requirements.get("_style_context", "") if isinstance(requirements, dict) else ""
     procurement_context = requirements.get("_procurement_context", "") if isinstance(requirements, dict) else ""
+    decision_council_context = requirements.get("_decision_council_context", "") if isinstance(requirements, dict) else ""
 
     # doc_tone 지시
     _TONE_MAP = {
@@ -215,6 +216,11 @@ def build_bundle_prompt(
         prompt += (
             "\n\n[프로젝트 공공조달 의사결정 상태 — 아래 structured state를 source of truth로 사용하세요]\n"
             f"{procurement_context}"
+        )
+    if decision_council_context:
+        prompt += (
+            "\n\n[Decision Council v1 handoff — 아래 council 합의 방향을 추가 source of truth로 사용하세요]\n"
+            f"{decision_council_context}"
         )
 
     # Task 4: PromptOverrideStore에서 저평점 패턴 기반 개선 지시 주입
@@ -380,7 +386,7 @@ def build_sketch_prompt(
 
     # Clean requirements: strip internal/noisy keys
     SKETCH_SKIP = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
-                   "_knowledge_context", "_style_context", "_procurement_context", "project_id",
+                   "_knowledge_context", "_style_context", "_procurement_context", "_decision_council_context", "project_id",
                    "pdf_source", "pdf_sections"}
     clean_req = {k: v for k, v in requirements.items() if k not in SKETCH_SKIP and v not in ("", [], None)}
 

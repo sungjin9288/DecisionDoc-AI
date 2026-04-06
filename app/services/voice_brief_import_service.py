@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin
 
 import httpx
@@ -47,10 +47,20 @@ class VoiceBriefRemoteError(VoiceBriefImportError):
 
 @dataclass
 class VoiceBriefImportResult:
-    operation: str
+    outcome: Literal["created", "updated"]
     source_key: str
     document: ProjectDocument
     voice_brief_document: dict[str, Any]
+    source_recording_id: str
+    source_summary_revision_id: str
+
+    @property
+    def operation(self) -> Literal["created", "updated"]:
+        return self.outcome
+
+    @property
+    def document_id(self) -> str:
+        return self.document.doc_id
 
 
 class VoiceBriefImportService:
@@ -139,10 +149,12 @@ class VoiceBriefImportService:
         )
 
         return VoiceBriefImportResult(
-            operation=operation,
+            outcome=operation,
             source_key=source_key,
             document=document,
             voice_brief_document=voice_brief_document,
+            source_recording_id=source_recording_id,
+            source_summary_revision_id=summary_revision_id,
         )
 
     def get_document_package(

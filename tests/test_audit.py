@@ -276,6 +276,95 @@ def test_audit_store_corrupted_line_recovery(tmp_path):
     assert "user.login" in actions
 
 
+def test_audit_store_find_latest_entry_bypasses_query_cap(tmp_path):
+    os.environ["DATA_DIR"] = str(tmp_path)
+    from app.storage.audit_store import AuditLog, AuditStore
+
+    store = AuditStore("t1")
+    store.append(
+        AuditLog(
+            log_id="log-project-a",
+            tenant_id="t1",
+            timestamp="2026-03-31T00:00:00+00:00",
+            user_id="u1",
+            username="alice",
+            user_role="member",
+            ip_address="1.2.3.4",
+            user_agent="test-agent",
+            action="procurement.import",
+            resource_type="procurement",
+            resource_id="project-a",
+            resource_name="Focused project",
+            result="success",
+            detail={},
+            session_id="sess1",
+        )
+    )
+    for index in range(1001):
+        store.append(
+            AuditLog(
+                log_id=f"log-{index}",
+                tenant_id="t1",
+                timestamp=f"2026-03-31T01:{index // 60:02d}:{index % 60:02d}+00:00",
+                user_id="u1",
+                username="alice",
+                user_role="member",
+                ip_address="1.2.3.4",
+                user_agent="test-agent",
+                action="procurement.evaluate",
+                resource_type="procurement",
+                resource_id=f"project-{index + 1}",
+                resource_name="Busy project",
+                result="success",
+                detail={},
+                session_id="sess1",
+            )
+        )
+
+    capped_results = store.query("t1")
+    assert len(capped_results) == 1000
+    assert all(entry["resource_id"] != "project-a" for entry in capped_results)
+
+    latest_entry = store.find_latest_entry(
+        "t1",
+        actions={"procurement.import", "procurement.evaluate"},
+        resource_ids={"project-a"},
+    )
+    assert latest_entry is not None
+    assert latest_entry["action"] == "procurement.import"
+    assert latest_entry["resource_id"] == "project-a"
+
+
+def test_audit_store_query_all_is_not_capped(tmp_path):
+    os.environ["DATA_DIR"] = str(tmp_path)
+    from app.storage.audit_store import AuditLog, AuditStore
+
+    store = AuditStore("t1")
+    for index in range(1002):
+        store.append(
+            AuditLog(
+                log_id=f"log-{index}",
+                tenant_id="t1",
+                timestamp=f"2026-03-31T01:{index // 60:02d}:{index % 60:02d}+00:00",
+                user_id="u1",
+                username="alice",
+                user_role="member",
+                ip_address="1.2.3.4",
+                user_agent="test-agent",
+                action="procurement.evaluate",
+                resource_type="procurement",
+                resource_id=f"project-{index}",
+                resource_name="Busy project",
+                result="success",
+                detail={},
+                session_id="sess1",
+            )
+        )
+
+    assert len(store.query("t1")) == 1000
+    assert len(store.query_all("t1")) == 1002
+
+
 # ── Middleware helper unit tests ───────────────────────────────────────────────
 
 
@@ -322,6 +411,75 @@ def test_resolve_action_procurement_evaluate():
 def test_resolve_action_procurement_recommend():
     from app.middleware.audit import _resolve_action
     assert _resolve_action("POST", "/projects/proj-1/procurement/recommend", 200) == "procurement.recommend"
+
+
+def test_resolve_action_decision_council_run():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action("POST", "/projects/proj-1/decision-council/run", 200) == "decision_council.run"
+
+
+def test_resolve_action_procurement_override_reason():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action("POST", "/projects/proj-1/procurement/override-reason", 200) == "procurement.override_reason"
+
+
+def test_resolve_action_procurement_remediation_link_copied():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/projects/proj-1/procurement/remediation-link-copy",
+        200,
+    ) == "procurement.remediation_link_copied"
+
+
+def test_resolve_action_procurement_remediation_link_opened():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/projects/proj-1/procurement/remediation-link-open",
+        200,
+    ) == "procurement.remediation_link_opened"
+
+
+def test_resolve_action_procurement_downstream_blocked():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/generate/stream",
+        409,
+        error_code="procurement_override_reason_required",
+    ) == "procurement.downstream_blocked"
+
+
+def test_resolve_action_procurement_downstream_resolved():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/generate/stream",
+        200,
+        procurement_action="downstream_resolved",
+    ) == "doc.generate"
+
+
+def test_resolve_action_decision_council_handoff_used():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/generate/stream",
+        200,
+        decision_council_handoff_used=True,
+    ) == "doc.generate"
+
+
+def test_resolve_supplemental_actions_for_generate_success():
+    from app.middleware.audit import _resolve_supplemental_actions
+    assert _resolve_supplemental_actions(
+        "POST",
+        "/generate/stream",
+        200,
+        procurement_action="downstream_resolved",
+        decision_council_handoff_used=True,
+    ) == ["procurement.downstream_resolved", "decision_council.handoff_used"]
 
 
 def test_resolve_action_share_create():
@@ -434,6 +592,12 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
             "title": "공유 감사 로그 테스트",
             "bundle_id": "bid_decision_kr",
             "expires_days": 7,
+            "project_id": "proj-share-audit",
+            "project_document_id": "doc-share-audit",
+            "decision_council_document_status": "stale_procurement",
+            "decision_council_document_status_tone": "danger",
+            "decision_council_document_status_copy": "현재 procurement 대비 이전 council 기준",
+            "decision_council_document_status_summary": "현재 procurement recommendation 또는 checklist가 바뀌어 이 공유 문서는 최신 council/procurement 기준과 일치하지 않습니다.",
         },
     )
     assert created.status_code == 200
@@ -444,7 +608,15 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    assert len(store.query("system", filters={"action": "share.create"})) >= 1
+    create_entries = store.query("system", filters={"action": "share.create"})
+    assert len(create_entries) >= 1
+    latest_create = create_entries[0]
+    assert latest_create["detail"]["bundle_type"] == "bid_decision_kr"
+    assert latest_create["detail"]["project_id"] == "proj-share-audit"
+    assert latest_create["detail"]["share_project_document_id"] == "doc-share-audit"
+    assert latest_create["detail"]["share_decision_council_document_status"] == "stale_procurement"
+    assert latest_create["detail"]["share_decision_council_document_status_tone"] == "danger"
+    assert latest_create["detail"]["share_decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
     assert len(store.query("system", filters={"action": "share.revoke"})) >= 1
 
 
@@ -486,6 +658,586 @@ def test_audit_procurement_import_logged(tmp_path, monkeypatch):
     entries = store.query("system", filters={"action": "procurement.import"})
     assert len(entries) >= 1
     assert entries[0]["result"] == "success"
+
+
+def test_audit_procurement_downstream_block_logged_with_project_link(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementHardFilterResult,
+        ProcurementRecommendation,
+    )
+
+    project_store = client.app.state.project_store
+    procurement_store = client.app.state.procurement_store
+    project = project_store.create("system", "차단 감사 로그 프로젝트")
+    procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-AUDIT-001",
+                title="차단 감사 로그 사업",
+                issuer="조달청",
+            ),
+            hard_filters=[
+                ProcurementHardFilterResult(
+                    code="eligibility_gap",
+                    label="참여 자격",
+                    status="fail",
+                    blocking=True,
+                    reason="필수 실적 미충족",
+                )
+            ],
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="override reason 없이는 downstream 진행 불가",
+            ),
+        )
+    )
+
+    response = client.post(
+        "/generate/stream",
+        json={
+            "title": "blocked proposal",
+            "goal": "감사 로그 확인",
+            "context": "NO_GO downstream 차단 감사를 확인한다.",
+            "bundle_type": "proposal_kr",
+            "project_id": project.project_id,
+        },
+    )
+    assert response.status_code == 409
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    entries = store.query("system", filters={"action": "procurement.downstream_blocked"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "failure"
+    assert latest["resource_type"] == "procurement"
+    assert latest["resource_id"] == project.project_id
+    assert latest["detail"]["error_code"] == "procurement_override_reason_required"
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["bundle_type"] == "proposal_kr"
+    assert latest["detail"]["recommendation"] == "NO_GO"
+
+
+def test_audit_logs_procurement_downstream_resolved_after_override_reason(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementHardFilterResult,
+        ProcurementRecommendation,
+    )
+
+    project = client.app.state.project_store.create(
+        "system",
+        "해소 감사 로그 사업",
+        fiscal_year=2026,
+    )
+    procurement_store = client.app.state.procurement_store
+    procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-AUDIT-002",
+                title="해소 감사 로그 사업",
+                issuer="조달청",
+            ),
+            hard_filters=[
+                ProcurementHardFilterResult(
+                    code="eligibility_gap",
+                    label="참여 자격",
+                    status="fail",
+                    blocking=True,
+                    reason="필수 실적 미충족",
+                )
+            ],
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="override reason 저장 후 downstream 진행 가능",
+            ),
+        )
+    )
+
+    override_response = client.post(
+        f"/projects/{project.project_id}/procurement/override-reason",
+        json={"reason": "전략 고객 유지 목적상 proposal 초안까지 진행"},
+        headers=_auth(login),
+    )
+    assert override_response.status_code == 200
+
+    with client.stream(
+        "POST",
+        "/generate/stream",
+        json={
+            "title": "resolved proposal",
+            "goal": "감사 로그 해소 확인",
+            "context": "NO_GO override 이후 downstream 해소 감사를 확인한다.",
+            "bundle_type": "proposal_kr",
+            "project_id": project.project_id,
+        },
+        headers=_auth(login),
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_lines())
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    assert len(generate_entries) >= 1
+    assert generate_entries[0]["detail"]["project_id"] == project.project_id
+    assert generate_entries[0]["detail"]["procurement_operation"] == "override_reason_present"
+    entries = store.query("system", filters={"action": "procurement.downstream_resolved"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "success"
+    assert latest["resource_type"] == "procurement"
+    assert latest["resource_id"] == project.project_id
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["bundle_type"] == "proposal_kr"
+    assert latest["detail"]["recommendation"] == "NO_GO"
+    assert latest["detail"]["procurement_operation"] == "override_reason_present"
+
+
+def test_audit_logs_procurement_remediation_link_copy(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+
+    project = client.app.state.project_store.create(
+        "system",
+        "공유 감사 로그 사업",
+        fiscal_year=2026,
+    )
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-AUDIT-003",
+                title="공유 감사 로그 사업",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="blocked remediation link copy audit 확인",
+            ),
+        )
+    )
+
+    response = client.post(
+        f"/projects/{project.project_id}/procurement/remediation-link-copy",
+        json={
+            "source": "location_summary",
+            "context_kind": "blocked_event",
+            "bundle_type": "proposal_kr",
+            "error_code": "procurement_override_reason_required",
+            "recommendation": "NO_GO",
+        },
+        headers=_auth(login),
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": project.project_id,
+        "project_name": "공유 감사 로그 사업",
+        "logged": True,
+        "source": "location_summary",
+        "context_kind": "blocked_event",
+    }
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    entries = store.query("system", filters={"action": "procurement.remediation_link_copied"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "success"
+    assert latest["resource_type"] == "procurement"
+    assert latest["resource_id"] == project.project_id
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["bundle_type"] == "proposal_kr"
+    assert latest["detail"]["error_code"] == "procurement_override_reason_required"
+    assert latest["detail"]["recommendation"] == "NO_GO"
+    assert latest["detail"]["procurement_operation"] == "location_summary"
+    assert latest["detail"]["procurement_context_kind"] == "blocked_event"
+
+
+def test_audit_logs_procurement_remediation_link_open(tmp_path, monkeypatch):
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    project = client.app.state.project_store.create(
+        "system",
+        "열람 감사 로그 사업",
+        fiscal_year=2026,
+    )
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-AUDIT-004",
+                title="열람 감사 로그 사업",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="shared remediation link restore audit 확인",
+            ),
+        )
+    )
+
+    response = client.post(
+        f"/projects/{project.project_id}/procurement/remediation-link-open",
+        json={
+            "source": "url_restore",
+            "context_kind": "blocked_event",
+            "bundle_type": "proposal_kr",
+            "error_code": "procurement_override_reason_required",
+            "recommendation": "NO_GO",
+        },
+        headers=_auth(login),
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": project.project_id,
+        "project_name": "열람 감사 로그 사업",
+        "logged": True,
+        "source": "url_restore",
+        "context_kind": "blocked_event",
+    }
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    entries = store.query("system", filters={"action": "procurement.remediation_link_opened"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "success"
+    assert latest["resource_type"] == "procurement"
+    assert latest["resource_id"] == project.project_id
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["bundle_type"] == "proposal_kr"
+    assert latest["detail"]["error_code"] == "procurement_override_reason_required"
+    assert latest["detail"]["recommendation"] == "NO_GO"
+    assert latest["detail"]["procurement_operation"] == "url_restore"
+    assert latest["detail"]["procurement_context_kind"] == "blocked_event"
+
+
+def test_audit_logs_decision_council_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    project = client.app.state.project_store.create(
+        "system",
+        "Decision Council 감사 로그 사업",
+        fiscal_year=2026,
+    )
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-COUNCIL-AUDIT-001",
+                title="Decision Council 감사 로그 사업",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="CONDITIONAL_GO",
+                summary="보완 후 진행 가능",
+            ),
+        )
+    )
+
+    response = client.post(
+        f"/projects/{project.project_id}/decision-council/run",
+        json={"goal": "입찰 방향을 정리한다."},
+    )
+    assert response.status_code == 200
+    session = response.json()
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    entries = store.query("system", filters={"action": "decision_council.run"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "success"
+    assert latest["resource_type"] == "decision_council"
+    assert latest["resource_id"] == session["session_id"]
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["decision_council_session_id"] == session["session_id"]
+    assert latest["detail"]["decision_council_target_bundle"] == "bid_decision_kr"
+    assert latest["detail"]["decision_council_direction"] == "proceed_with_conditions"
+
+
+def test_audit_logs_decision_council_handoff_used_on_generate(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    project = client.app.state.project_store.create(
+        "system",
+        "Decision Council handoff 감사 로그",
+        fiscal_year=2026,
+    )
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-COUNCIL-AUDIT-002",
+                title="Decision Council handoff 감사 로그",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="GO",
+                summary="즉시 진행 가능한 상태",
+            ),
+        )
+    )
+
+    council = client.post(
+        f"/projects/{project.project_id}/decision-council/run",
+        json={"goal": "bid_decision_kr handoff를 확인한다."},
+    )
+    assert council.status_code == 200
+    session = council.json()
+
+    with client.stream(
+        "POST",
+        "/generate/stream",
+        json={
+            "title": "Decision Council handoff 감사",
+            "goal": "Council handoff 감사 로그 확인",
+            "bundle_type": "bid_decision_kr",
+            "project_id": project.project_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_lines())
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    assert len(generate_entries) >= 1
+    assert generate_entries[0]["detail"]["decision_council_handoff_used"] is True
+    entries = store.query("system", filters={"action": "decision_council.handoff_used"})
+    assert len(entries) >= 1
+    latest = entries[0]
+    assert latest["result"] == "success"
+    assert latest["resource_type"] == "decision_council"
+    assert latest["resource_id"] == session["session_id"]
+    assert latest["detail"]["project_id"] == project.project_id
+    assert latest["detail"]["bundle_type"] == "bid_decision_kr"
+    assert latest["detail"]["decision_council_handoff_used"] is True
+    assert latest["detail"]["decision_council_session_revision"] == session["session_revision"]
+    assert latest["detail"]["decision_council_direction"] == "proceed"
+    assert latest["detail"]["decision_council_target_bundle"] == "bid_decision_kr"
+    assert latest["detail"]["decision_council_applied_bundle"] == "bid_decision_kr"
+
+
+def test_audit_logs_stale_decision_council_skip_reason_on_generate(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    project = client.app.state.project_store.create(
+        "system",
+        "Decision Council stale skip 감사 로그",
+        fiscal_year=2026,
+    )
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+
+    initial = client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-COUNCIL-AUDIT-STALE-001",
+                title="Decision Council stale skip 감사 로그",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="GO",
+                summary="초기 recommendation",
+            ),
+        )
+    )
+
+    council = client.post(
+        f"/projects/{project.project_id}/decision-council/run",
+        json={"goal": "stale council skip를 확인한다."},
+    )
+    assert council.status_code == 200
+
+    updated = client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-COUNCIL-AUDIT-STALE-001",
+                title="Decision Council stale skip 감사 로그",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="업데이트 이후 recommendation",
+            ),
+        )
+    )
+    assert updated.updated_at != initial.updated_at
+
+    with client.stream(
+        "POST",
+        "/generate/stream",
+        json={
+            "title": "Decision Council stale skip 감사",
+            "goal": "stale council skip reason 감사 로그 확인",
+            "bundle_type": "bid_decision_kr",
+            "project_id": project.project_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_lines())
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    assert len(generate_entries) >= 1
+    matching = [
+        entry for entry in generate_entries
+        if entry["detail"].get("decision_council_handoff_skipped_reason") == "stale_procurement_context"
+    ]
+    assert len(matching) >= 1
+    latest = matching[0]
+    assert latest["detail"].get("decision_council_handoff_used") is not True
+
+
+def test_audit_logs_decision_council_handoff_used_on_proposal_generate(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    project = client.app.state.project_store.create(
+        "system",
+        "Decision Council proposal 감사 로그",
+        fiscal_year=2026,
+    )
+
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id="system",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-COUNCIL-AUDIT-PROPOSAL-001",
+                title="Decision Council proposal 감사 로그",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="CONDITIONAL_GO",
+                summary="보완 후 proposal 진행 가능",
+            ),
+        )
+    )
+
+    council = client.post(
+        f"/projects/{project.project_id}/decision-council/run",
+        json={"goal": "proposal_kr handoff를 확인한다."},
+    )
+    assert council.status_code == 200
+    session = council.json()
+
+    with client.stream(
+        "POST",
+        "/generate/stream",
+        json={
+            "title": "Decision Council proposal 감사",
+            "goal": "Council handoff proposal 감사 로그 확인",
+            "bundle_type": "proposal_kr",
+            "project_id": project.project_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_lines())
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    matching_generate = [
+        entry for entry in generate_entries
+        if entry["detail"].get("project_id") == project.project_id
+        and entry["detail"].get("bundle_type") == "proposal_kr"
+    ]
+    assert matching_generate
+    assert matching_generate[0]["detail"]["decision_council_handoff_used"] is True
+    assert matching_generate[0]["detail"]["decision_council_target_bundle"] == "bid_decision_kr"
+    assert matching_generate[0]["detail"]["decision_council_applied_bundle"] == "proposal_kr"
+
+    entries = store.query("system", filters={"action": "decision_council.handoff_used"})
+    matching = [
+        entry for entry in entries
+        if entry["detail"].get("project_id") == project.project_id
+        and entry["detail"].get("bundle_type") == "proposal_kr"
+    ]
+    assert matching
+    latest = matching[0]
+    assert latest["resource_type"] == "decision_council"
+    assert latest["resource_id"] == session["session_id"]
+    assert latest["detail"]["decision_council_target_bundle"] == "bid_decision_kr"
+    assert latest["detail"]["decision_council_applied_bundle"] == "proposal_kr"
 
 
 # ── API endpoint tests ─────────────────────────────────────────────────────────

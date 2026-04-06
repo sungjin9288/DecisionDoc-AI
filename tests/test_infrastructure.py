@@ -76,6 +76,59 @@ def test_root_html_avoids_external_cdn_scripts(client):
     assert "fonts.googleapis.com" not in res.text
 
 
+def test_root_html_includes_ai_rank_roster(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'id="ai-rank-roster"' in res.text
+    assert "프로젝트를 닫는 3계층 AI 팀" in res.text
+    assert "Executive Approver" in res.text
+    assert "Proposal / BD Lead" in res.text
+    assert "Delivery Lead / PM" in res.text
+    assert 'id="ai-rank-status-action"' in res.text
+    assert "직급별 AI briefing" in res.text
+    assert 'data-procurement-brief-action="' in res.text
+    assert "procurement-role-brief-avatar" in res.text
+    assert "Recent Activity" in res.text
+    assert "procurement-role-brief-log-time" in res.text
+    assert 'id="project-procurement-override-reason"' in res.text
+    assert 'id="project-procurement-override-submit"' in res.text
+    assert "Override / 예외 진행 사유" in res.text
+    assert "quality loop input" in res.text
+    assert "Recent override history" in res.text
+    assert "이전 사유를 다시 쓰려면 항목을 클릭하세요." in res.text
+    assert "procurement-override-history-list" in res.text
+    assert "useProcurementOverrideHistoryItem" in res.text
+    assert "procurement-override-guidance" in res.text
+    assert "focusProcurementOverrideReason" in res.text
+    assert 'data-procurement-override-history-index="' in res.text
+    assert 'class="ai-rank-card proposal_bd"' in res.text
+    assert 'class="ai-rank-card delivery_pm"' in res.text
+    assert 'id="sketch-again-btn"' in res.text
+    assert 'id="ppt-doc-btn"' in res.text
+    assert 'id="sketch-pages"' in res.text
+    assert 'id="sketch-page-cards"' in res.text
+    assert 'id="results-storyboard"' in res.text
+    assert 'id="results-storyboard-cards"' in res.text
+    assert 'id="storyboard-refresh-btn"' in res.text
+    assert 'id="storyboard-ppt-btn"' in res.text
+    assert "slide-card is-clickable" in res.text
+    assert "slide-card-badges" in res.text
+    assert "slide-card-badge kind" in res.text
+    assert "slide-card-badge readiness" in res.text
+    assert "slide-card-meter" in res.text
+    assert "slide-card-meter-fill" in res.text
+    assert "slide-card-coverage-note" in res.text
+    assert "coverage" in res.text
+    assert "왜 이 점수인가?" in res.text
+    assert "핵심어" in res.text
+    assert "본문 반영" in res.text
+    assert "연결 확인" in res.text
+    assert "초안 기준" in res.text
+    assert "doc-section-focus" in res.text
+    assert "PPT 문서로 재구성" in res.text
+    assert "페이지 스케치" in res.text
+
+
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None

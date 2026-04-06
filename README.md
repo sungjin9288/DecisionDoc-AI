@@ -136,7 +136,14 @@ pytest tests/test_voice_brief_import.py -q
 python scripts/smoke.py
 python scripts/ops_smoke.py
 python scripts/voice_brief_smoke.py
+python scripts/openspace_smoke.py
 ```
+
+### OpenSpace integration
+
+- integration guide: `docs/openspace_integration.md`
+- wiring smoke: `python scripts/openspace_smoke.py`
+- current expectation: local skill discovery and MCP wiring should pass; end-to-end `execute_task` may still be blocked or time out depending on host-side LLM auth/session exposure
 
 ### Eval
 
@@ -443,6 +450,7 @@ When these files exist, read them before making changes:
 Current repository state:
 - the initial milestone plan is complete
 - project-detail procurement UI, structured decision state, `bid_decision_kr`, and downstream handoff are implemented
+- `Decision Council v1` now exists as a project-scoped, procurement-only pre-generation step for `bid_decision_kr` and `proposal_kr`
 - latest closeout and rollout hardening status lives in `docs/specs/public_procurement_copilot/STATUS.md`
 - new procurement work should be treated as follow-up tuning or extension work, not as incomplete baseline implementation
 
@@ -510,7 +518,224 @@ For follow-up milestones or significant changes:
 - run `pytest tests/ -q`
 - update the relevant `STATUS.md`
 - stop if validation fails
-### 14.7 Downstream handoff target
+
+### 14.7 Decision Council v1
+
+Current proposal-first slice:
+- procurement/G2B projects only
+- API-first
+- deterministic synthesis only
+- one canonical latest council session per `project_id + use_case + target_bundle_type`
+- the stored canonical council session remains keyed to `target_bundle_type=bid_decision_kr`
+- the same council handoff is reused for both `bid_decision_kr` and `proposal_kr` generation
+- stored council sessions are treated as historical artifacts until they are revalidated against the current procurement record
+- `GET /projects/{project_id}/decision-council` now returns explicit procurement-binding metadata so callers can distinguish:
+  - current council handoff
+  - stale council handoff that must be rerun before `bid_decision_kr` or `proposal_kr`
+  - `supported_bundle_types=["bid_decision_kr","proposal_kr"]`
+- stale council responses now also expose the source council baseline and current procurement drift summary:
+  - source recommendation / missing-data / checklist counts at council run time
+  - current recommendation / missing-data / checklist counts at read time
+  - source council timestamp vs current procurement `updated_at` so callers can see when the council became stale
+- generation metadata now distinguishes:
+  - `decision_council_handoff_used=true` when the latest council handoff was actually injected
+  - `decision_council_handoff_used=false` plus `decision_council_handoff_skipped_reason=stale_procurement_context` when a saved council session exists but was skipped because current procurement state no longer matches it
+  - `decision_council_target_bundle=bid_decision_kr` for the canonical stored session source
+  - `decision_council_applied_bundle` for the actual current generation target (`bid_decision_kr` or `proposal_kr`)
+
+Current routes:
+- `POST /projects/{project_id}/decision-council/run`
+- `GET /projects/{project_id}/decision-council`
+
+Local manual verification:
+- fastest path: run the all-in-one local launcher on a fresh `DATA_DIR`
+
+```bash
+.venv/bin/python scripts/run_procurement_stale_share_demo.py
+```
+
+- default behavior:
+  - starts the app on `http://127.0.0.1:8765`
+  - seeds one deterministic stale-share demo with the same council session linked to `bid_decision_kr` and `proposal_kr`
+  - makes the stale public share target `proposal_kr` so the Decision Council v1 proposal-first path is directly visible
+  - verifies the live app against that seeded state
+  - writes `/tmp/decisiondoc-stale-share-demo/procurement-stale-share-demo.json`
+  - keeps the server running for manual checks until `Ctrl-C`
+- optional browser assist:
+
+```bash
+.venv/bin/python scripts/run_procurement_stale_share_demo.py --open-browser
+```
+
+- this opens:
+  - the focused internal stale-share review URL
+  - the exact public `/shared/{id}` URL
+- optional browser playtest:
+
+```bash
+.venv/bin/python scripts/run_procurement_stale_share_demo.py --playtest-ui --exit-after-verify
+```
+
+- this headless Playwright helper is useful for local debugging and unit-covered flow checks:
+  - logs in with the seeded admin account
+  - opens the stale-share review from the authenticated app shell for a more deterministic browser path
+  - if that flow still loses state, it retries through re-login and modal-visibility fallbacks instead of failing immediately
+  - verifies the stale `proposal_kr` review card, the Decision Council panel, the disabled proposal regenerate CTA, and the public `/shared/{id}` warning
+- current note:
+  - the local live `--playtest-ui` path is now green in this workspace and can be used as the fast browser gate for the seeded stale-share demo
+  - `--open-browser` is still useful when you want to inspect the focused review surface and public share page manually after the automated browser pass
+- visual debug path:
+
+```bash
+.venv/bin/python scripts/run_procurement_stale_share_demo.py --playtest-ui --playtest-headed --open-browser
+```
+
+- CI-style quick check:
+
+```bash
+.venv/bin/python scripts/run_procurement_stale_share_demo.py --port 8876 --data-dir /tmp/decisiondoc-stale-share-demo-ci --exit-after-verify
+```
+
+Local procurement live smoke when G2B env is available:
+
+```bash
+G2B_API_KEY=... \
+JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
+SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00 \
+.venv/bin/python scripts/run_local_procurement_smoke.py
+```
+
+Env-file path:
+
+```bash
+cp scripts/local_procurement_smoke.env.example /tmp/local_procurement_smoke.env
+$EDITOR /tmp/local_procurement_smoke.env
+JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
+.venv/bin/python scripts/run_local_procurement_smoke.py --env-file /tmp/local_procurement_smoke.env
+```
+
+- this helper:
+  - starts a fresh local app with procurement copilot enabled
+  - injects a local API key and ops key for the smoke lane
+  - runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
+- optional:
+  - add `--keep-running` if you want the local app to stay up after the smoke pass
+  - set `PROCUREMENT_SMOKE_USERNAME` / `PROCUREMENT_SMOKE_PASSWORD` when the target tenant already has users
+  - keep the inline `JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars` prefix on the file-based path; that is the validated local launch form in this workspace
+  - the runner defaults `JWT_SECRET_KEY` to a validated local secret; override it in the current shell or the env file only when you need a different local auth context
+  - run `./.venv/bin/python scripts/run_local_procurement_smoke.py --preflight` to see which required env is still missing and print the exact suggested command
+  - run `./.venv/bin/python scripts/run_local_procurement_smoke.py --print-env-template` for a copy-paste export block
+  - pass `--env-file /path/to/local_procurement_smoke.env` to the Python runner together with the inline `JWT_SECRET_KEY=...` prefix
+
+Deployed stage procurement live smoke:
+
+```bash
+cp scripts/stage_procurement_smoke.env.example /tmp/stage_procurement_smoke.env
+$EDITOR /tmp/stage_procurement_smoke.env
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env --preflight
+.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env
+```
+
+- this helper:
+  - does not boot a local app
+  - runs the existing `scripts/smoke.py` procurement lane against an already deployed `SMOKE_BASE_URL`
+  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, `SMOKE_PROCUREMENT_URL_OR_NUMBER`, and `G2B_API_KEY`
+- optional:
+  - set `SMOKE_OPS_KEY` if you want the remediation summary path to prefer the ops-key route on the deployed environment
+  - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
+  - run `./.venv/bin/python scripts/run_stage_procurement_smoke.py --print-env-template` for a copy-paste export block when you do not want to edit a file first
+
+- manual path when you want separate control over server, seed, and verify:
+- use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy
+- start the app on the same port already used by `.claude/launch.json`
+
+```bash
+DEMO_DIR=/tmp/decisiondoc-stale-share-demo
+DATA_DIR="$DEMO_DIR" DECISIONDOC_PROCUREMENT_COPILOT_ENABLED=1 .venv/bin/uvicorn app.main:app --port 8765 --reload
+```
+
+- in a second shell, seed one deterministic stale-share demo:
+
+```bash
+DEMO_DIR=/tmp/decisiondoc-stale-share-demo
+DATA_DIR="$DEMO_DIR" .venv/bin/python scripts/seed_procurement_stale_share_demo.py --data-dir "$DEMO_DIR" --base-url http://127.0.0.1:8765
+```
+
+- once seeded, run the narrow verifier:
+
+```bash
+.venv/bin/python scripts/check_procurement_stale_share_demo.py --base-url http://127.0.0.1:8765
+```
+
+- the script prints:
+  - seeded admin credentials
+  - focused internal stale-share review URL
+  - tenant-wide stale-share review URL
+  - exact public `/shared/{id}` URL
+  - shared bundle id and both linked project document ids
+- the verifier checks:
+  - seeded admin login works
+  - locations overview exposes active stale-share risk
+  - focused procurement summary resolves the same stale share
+  - the top stale share is the council-backed `proposal_kr` document
+  - latest Decision Council is marked stale against current procurement
+  - the public `/shared/{id}` page still renders the stale warning
+- manual click-path after login:
+  - open the focused review URL and confirm the procurement summary lands on `share.create` stale-share review with the seeded project focused
+  - switch to locations overview and confirm the top risk card shows stale public exposure plus `공유 링크 열기`, `공유 링크 복사`, `공유 링크 비활성화`, `위험 문서 review`, and review-link actions
+  - open the printed public share URL, then revoke it from the card or modal and confirm the same `/shared/{id}` URL becomes `404`
+
+Current UI expectation:
+- reuse the existing project-detail procurement panel
+- accept a user goal before council-assisted `bid_decision_kr` / `proposal_kr` generation
+- show structured role opinions, risks, disagreements, and recommended direction
+- show when the latest saved council is stale relative to the current procurement recommendation/checklist, and block council-assisted generation until rerun
+- mark council-backed `bid_decision_kr` and `proposal_kr` rows in the existing project document list as:
+  - `현재 council 기준`
+  - `이전 council revision`
+  - `현재 procurement 대비 이전 council 기준`
+- expose the same document freshness contract from `GET /projects/{project_id}` for council-backed `bid_decision_kr` / `proposal_kr` rows:
+  - `decision_council_document_status`
+  - `decision_council_document_status_tone`
+  - `decision_council_document_status_copy`
+  - `decision_council_document_status_summary`
+- stale council-backed `bid_decision_kr` / `proposal_kr` rows now also:
+  - show a follow-up CTA (`Council 다시 실행`, `최신 기준으로 재생성`, or `현재 council 확인`)
+  - warn before `결재 요청` or `공유` continues on an outdated council-backed document
+  - keep the same outdated-state warning visible inside the approval-request modal, with a direct follow-up CTA back to the relevant council action
+  - keep the same outdated-state warning visible inside the share-link modal for stale council-backed project documents
+  - carry the same outdated-state warning into the public shared-document page when a stale council-backed project document is shared
+- `share.create` audit entries now also preserve stale council freshness metadata when a council-backed project document is shared, so operators can trace whether an external share started from a current or outdated council basis
+- admin procurement quality summary now treats stale council-backed `share.create` as a reviewable activity signal, so operators can see outdated external shares in the same recent-events/activity-filter surface instead of digging through raw audit logs
+- admin procurement quality summary now also exposes an `외부 공유 review` preset that jumps straight to stale external share activity using the existing activity-filter state model
+- admin procurement quality summary now also derives an `외부 공유 재확인 queue` from stale council-backed external shares, so operators can review the latest outdated public shares by project/document, latest sharer, and stale-share count without opening raw audit logs
+- the preset label now follows unique queue count, while the queue header keeps raw stale `share.create` event volume as a separate context metric
+- stale external share queue items now also expose live share-link state (`share_id`, public `share_url`, active/inactive, access count, expiry) and a direct `공유 링크 열기` CTA, so operators can inspect the current public link without leaving the existing review loop
+- the same stale external share surfaces now also expose `공유 링크 복사`, which copies the exact public `/shared/{id}` URL for incident follow-up or operator handoff without leaving the queue
+- the stale external share queue now prioritizes still-active public links first and exposes active/inactive/missing-record counts in the queue header, so operators can focus on live external exposure before historical noise
+- stale external share queue items now also show the latest public access timestamp when available, so operators can tell whether a stale public link is merely still active or has been opened recently
+- among active stale links, the queue now lifts `최근 public 열람 있음` items ahead of untouched links and shows accessed-vs-unaccessed counts in the header, so operators can review externally-seen stale documents before dormant exposure
+- when any active stale public link remains, the procurement summary modal now raises a top-level exposure alert with an `외부 공유 review 열기` CTA, so operators can jump into stale-share triage without first finding the preset bar
+- the locations overview card now also pulls a compact procurement stale-share risk snapshot via `/admin/locations?include_procurement=1` and shows a direct `외부 공유 review` CTA when active stale public exposure remains, so operators can jump into stale-share triage before opening the full modal
+- that locations overview snapshot is now built through a dedicated stale-share aggregation path instead of re-running the full tenant procurement summary per card, so the overview keeps the same contract with lower backend work
+- the same locations overview now sorts cards with active stale public exposure ahead of normal tenants, and among risky tenants lifts recently accessed public stale links first so urgent exposure is visible before operators scan the whole grid
+- the same locations overview card now also surfaces the top stale shared document and direct `공유 링크 열기` / `공유 링크 복사` actions, so operators can inspect or hand off the exact public URL without entering the modal first
+- the same card now also shows who last created that stale external share, when it happened, and how many stale-share events accumulated for that document, so incident follow-up does not require opening the modal first
+- the same card now also exposes `외부 공유 review 링크`, which copies the tenant-wide stale-share review URL with the existing `share.create` activity filter preserved for operator handoff
+- active stale public links can now be revoked directly from the locations overview card and the stale-share review modal by reusing the existing `DELETE /share/{share_id}` flow, and admin operators can revoke links even when another user originally created them
+- the same card now also exposes `위험 문서 review`, which opens the procurement summary already focused on that exact stale shared project while keeping the existing `share.create` review filter active
+- the same card now also exposes `위험 문서 review 링크`, which copies the exact internal procurement-summary review URL with tenant, focused project, and stale-share activity filter preserved for operator handoff
+- `scripts/smoke.py` now also validates the proposal-first lane:
+  - `GO` / `CONDITIONAL_GO` recommendation이면 council-backed `proposal_kr` generation과 provenance를 확인
+  - `NO_GO` recommendation이면 override 이후 retry된 `proposal_kr` provenance를 확인
+- preserve provenance through project docs, audit, approval/share/export
+
+Do not extend this into:
+- generic multi-agent chat
+- a separate orchestration shell
+- a new approval or export flow
+
+### 14.8 Downstream handoff target
 
 When implemented, the procurement decision flow should hand off cleanly to existing document workflows such as:
 - `rfp_analysis_kr`

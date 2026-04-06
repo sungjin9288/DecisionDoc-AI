@@ -104,6 +104,7 @@ class MockProvider(Provider):
         ctx_parts = [
             str(requirements.get("context") or "").strip(),
             str(requirements.get("_procurement_context") or "").strip(),
+            str(requirements.get("_decision_council_context") or "").strip(),
         ]
         ctx = "\n\n".join(part for part in ctx_parts if part)
         bundle_id = bundle_spec.id
@@ -513,7 +514,7 @@ def _proposal_expected_impact(title: str, goal: str, ctx: str) -> dict:
 # ===========================================================================
 
 def _bid_decision_opportunity_brief(title: str, goal: str, ctx: str) -> dict:
-    excerpt = _ctx_excerpt(ctx, 520)
+    excerpt = _ctx_excerpt(ctx, 1200)
     return {
         "opportunity_summary": (
             f"{title} 공고에 대해 {goal} 관점에서 초기 입찰 검토를 수행합니다. "
@@ -537,7 +538,7 @@ def _bid_decision_opportunity_brief(title: str, goal: str, ctx: str) -> dict:
 
 
 def _bid_decision_go_no_go_memo(title: str, goal: str, ctx: str) -> dict:
-    excerpt = _ctx_excerpt(ctx, 520)
+    excerpt = _ctx_excerpt(ctx, 1200)
     return {
         "recommendation_decision": (
             f"{title}에 대한 현재 Go/No-Go 판단은 structured state를 기준으로 정리합니다. "
@@ -563,7 +564,7 @@ def _bid_decision_go_no_go_memo(title: str, goal: str, ctx: str) -> dict:
 
 
 def _bid_decision_checklist(title: str, goal: str, ctx: str) -> dict:
-    excerpt = _ctx_excerpt(ctx, 520)
+    excerpt = _ctx_excerpt(ctx, 1200)
     return {
         "blocking_items": [
             "즉시 입찰 참여를 막는 자격·인증·기한 이슈가 있는지 먼저 확인합니다.",
@@ -586,7 +587,7 @@ def _bid_decision_checklist(title: str, goal: str, ctx: str) -> dict:
 
 
 def _bid_decision_handoff(title: str, goal: str, ctx: str) -> dict:
-    excerpt = _ctx_excerpt(ctx, 520)
+    excerpt = _ctx_excerpt(ctx, 1200)
     return {
         "handoff_summary": (
             f"{title} 의사결정 결과를 downstream bundle로 넘기기 위한 착수 요약입니다. "

@@ -75,6 +75,18 @@ logger = logging.getLogger("decisiondoc.generate")
 
 router = APIRouter(tags=["generate"])
 
+_PROCUREMENT_OVERRIDE_REQUIRED_BUNDLE_IDS = {
+    "rfp_analysis_kr",
+    "proposal_kr",
+    "performance_plan_kr",
+}
+_PROCUREMENT_BUNDLE_LABELS = {
+    "rfp_analysis_kr": "RFP 분석",
+    "proposal_kr": "제안서",
+    "performance_plan_kr": "수행계획",
+}
+_DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {"bid_decision_kr", "proposal_kr"}
+
 
 # ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -226,6 +238,7 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.schema_version = metadata["schema_version"]
     request.state.cache_hit = metadata["cache_hit"]
     request.state.bundle_type = metadata.get("bundle_type")
+    request.state.decision_council_project_id = metadata.get("project_id")
     request.state.doc_count = metadata.get("doc_count")
     request.state.llm_prompt_tokens = metadata.get("llm_prompt_tokens")
     request.state.llm_output_tokens = metadata.get("llm_output_tokens")
@@ -235,6 +248,14 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.lints_ms = timings.get("lints_ms")
     request.state.validator_ms = timings.get("validator_ms")
     request.state.procurement_handoff_used = metadata.get("procurement_handoff_used")
+    request.state.decision_council_handoff_used = metadata.get("decision_council_handoff_used")
+    request.state.decision_council_handoff_skipped_reason = metadata.get("decision_council_handoff_skipped_reason")
+    request.state.decision_council_session_id = metadata.get("decision_council_session_id")
+    request.state.decision_council_session_revision = metadata.get("decision_council_session_revision")
+    request.state.decision_council_direction = metadata.get("decision_council_direction")
+    request.state.decision_council_use_case = metadata.get("decision_council_use_case")
+    request.state.decision_council_target_bundle = metadata.get("decision_council_target_bundle")
+    request.state.decision_council_applied_bundle = metadata.get("decision_council_applied_bundle")
 
 
 def _build_generate_log_event(request: Request, result: dict, request_id: str, template_version: str) -> dict:
@@ -251,6 +272,7 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
         "schema_version": metadata["schema_version"],
         "cache_hit": metadata["cache_hit"],
         "bundle_type": metadata.get("bundle_type"),
+        "project_id": metadata.get("project_id"),
         "doc_count": metadata.get("doc_count"),
         "llm_prompt_tokens": request.state.llm_prompt_tokens,
         "llm_output_tokens": request.state.llm_output_tokens,
@@ -260,6 +282,14 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
         "lints_ms": request.state.lints_ms,
         "validator_ms": request.state.validator_ms,
         "procurement_handoff_used": request.state.procurement_handoff_used,
+        "decision_council_handoff_used": request.state.decision_council_handoff_used,
+        "decision_council_handoff_skipped_reason": request.state.decision_council_handoff_skipped_reason,
+        "decision_council_session_id": request.state.decision_council_session_id,
+        "decision_council_session_revision": request.state.decision_council_session_revision,
+        "decision_council_direction": request.state.decision_council_direction,
+        "decision_council_use_case": request.state.decision_council_use_case,
+        "decision_council_target_bundle": request.state.decision_council_target_bundle,
+        "decision_council_applied_bundle": request.state.decision_council_applied_bundle,
     }
 
 
@@ -305,6 +335,144 @@ def _ensure_procurement_bundle_enabled(bundle_type: str, request: Request) -> No
     )
 
 
+def _extract_latest_procurement_override_reason(notes: str) -> str | None:
+    text = str(notes or "").strip()
+    if not text:
+        return None
+    matches = list(
+        re.finditer(
+            r"\[override_reason ts=(?P<timestamp>[^\s]+) actor=(?P<actor>[^\]]+)\]\n(?P<reason>.*?)\n\[/override_reason\]",
+            text,
+            flags=re.DOTALL,
+        )
+    )
+    if not matches:
+        return None
+    reason = matches[-1].group("reason").strip()
+    return reason or None
+
+
+def _ensure_procurement_override_reason_for_downstream(
+    payload: GenerateRequest,
+    request: Request,
+    *,
+    tenant_id: str,
+) -> None:
+    if payload.bundle_type not in _PROCUREMENT_OVERRIDE_REQUIRED_BUNDLE_IDS:
+        return
+    project_id = payload.project_id or ""
+    if not project_id:
+        return
+    if not getattr(request.app.state, "procurement_copilot_enabled", False):
+        return
+
+    procurement_store = getattr(request.app.state, "procurement_store", None)
+    if procurement_store is None:
+        return
+
+    record = procurement_store.get(project_id, tenant_id=tenant_id)
+    if record is None or record.recommendation is None:
+        return
+    if record.recommendation.value != "NO_GO":
+        return
+    if _extract_latest_procurement_override_reason(record.notes):
+        return
+
+    request.state.error_code = "procurement_override_reason_required"
+    request.state.bundle_type = payload.bundle_type
+    request.state.procurement_action = "downstream_blocked"
+    request.state.procurement_project_id = project_id
+    request.state.procurement_operation = "override_reason_required"
+    request.state.procurement_recommendation = "NO_GO"
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "procurement_override_reason_required",
+            "message": (
+                f"현재 recommendation이 NO_GO이므로 "
+                f"{_PROCUREMENT_BUNDLE_LABELS.get(payload.bundle_type, payload.bundle_type)} 생성을 진행하려면 "
+                "project detail의 procurement panel에서 override 사유를 먼저 저장하세요."
+            ),
+            "project_id": project_id,
+            "bundle_type": payload.bundle_type,
+            "recommendation": "NO_GO",
+            "required_action": "save_override_reason",
+            "focus_field": "project-procurement-override-reason",
+        },
+    )
+
+
+def _mark_procurement_downstream_resolved_context(
+    payload: GenerateRequest,
+    request: Request,
+    *,
+    tenant_id: str,
+) -> None:
+    if payload.bundle_type not in _PROCUREMENT_OVERRIDE_REQUIRED_BUNDLE_IDS:
+        return
+    project_id = payload.project_id or ""
+    if not project_id:
+        return
+    if not getattr(request.app.state, "procurement_copilot_enabled", False):
+        return
+
+    procurement_store = getattr(request.app.state, "procurement_store", None)
+    if procurement_store is None:
+        return
+
+    record = procurement_store.get(project_id, tenant_id=tenant_id)
+    if record is None or record.recommendation is None:
+        return
+    if record.recommendation.value != "NO_GO":
+        return
+    if not _extract_latest_procurement_override_reason(record.notes):
+        return
+
+    request.state.bundle_type = payload.bundle_type
+    request.state.procurement_action = "downstream_resolved"
+    request.state.procurement_project_id = project_id
+    request.state.procurement_operation = "override_reason_present"
+    request.state.procurement_recommendation = "NO_GO"
+
+
+def _mark_decision_council_handoff_context(
+    payload: GenerateRequest,
+    request: Request,
+    *,
+    tenant_id: str,
+) -> None:
+    if payload.bundle_type not in _DECISION_COUNCIL_APPLIED_BUNDLE_IDS:
+        return
+    project_id = payload.project_id or ""
+    if not project_id:
+        return
+    if not getattr(request.app.state, "procurement_copilot_enabled", False):
+        return
+
+    decision_council_store = getattr(request.app.state, "decision_council_store", None)
+    if decision_council_store is None:
+        return
+
+    session = decision_council_store.get_latest(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        use_case="public_procurement",
+        target_bundle_type="bid_decision_kr",
+    )
+    if session is None:
+        return
+
+    request.state.decision_council_handoff_used = True
+    request.state.bundle_type = payload.bundle_type
+    request.state.decision_council_project_id = project_id
+    request.state.decision_council_session_id = session.session_id
+    request.state.decision_council_session_revision = session.session_revision
+    request.state.decision_council_direction = session.consensus.recommended_direction
+    request.state.decision_council_use_case = session.use_case
+    request.state.decision_council_target_bundle = session.target_bundle_type
+    request.state.decision_council_applied_bundle = payload.bundle_type
+
+
 # ── Shared generate core ──────────────────────────────────────────────────────
 
 def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
@@ -320,6 +488,9 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
             status_code=403,
             detail=f"Bundle '{req.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(req, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(req, request, tenant_id=tenant_id)
+    _mark_decision_council_handoff_context(req, request, tenant_id=tenant_id)
     result = service.generate_documents(req, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
@@ -510,6 +681,8 @@ def generate_export(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     docs = result["docs"]
     bundle_id = result["metadata"]["bundle_id"]
@@ -571,6 +744,8 @@ def generate_pptx_endpoint(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
@@ -610,6 +785,9 @@ async def generate_stream(
     tenant = getattr(request.state, "tenant", None)
     if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
         raise HTTPException(status_code=403, detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.")
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
+    _mark_decision_council_handoff_context(payload, request, tenant_id=tenant_id)
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
 
@@ -674,6 +852,9 @@ async def generate_stream(
                             docs=result["docs"],
                             approval_id=None,
                             tags=[],
+                            source_decision_council_session_id=metadata.get("decision_council_session_id"),
+                            source_decision_council_session_revision=metadata.get("decision_council_session_revision"),
+                            source_decision_council_direction=metadata.get("decision_council_direction"),
                         )
                     except Exception:
                         pass  # project link is non-critical
@@ -710,6 +891,8 @@ def generate_docx_endpoint(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
@@ -750,6 +933,8 @@ async def generate_pdf_endpoint(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
@@ -791,6 +976,8 @@ def generate_excel_endpoint(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
@@ -831,6 +1018,8 @@ def generate_hwp_endpoint(
             status_code=403,
             detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
         )
+    _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
+    _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))

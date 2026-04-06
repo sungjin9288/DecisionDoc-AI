@@ -36,6 +36,16 @@ ACTION_TYPES: dict[str, str] = {
     "doc.edit": "문서 편집",
     "doc.delete": "문서 삭제",
     "doc.view": "문서 열람",
+    # Procurement
+    "procurement.import": "조달 공고 연결",
+    "procurement.evaluate": "조달 적합도 평가",
+    "procurement.recommend": "조달 권고안 생성",
+    "procurement.override_reason": "조달 override 사유 기록",
+    "procurement.remediation_link_copied": "조달 remediation 링크 공유",
+    "procurement.remediation_link_opened": "조달 remediation 링크 열람",
+    "procurement.downstream_resolved": "조달 override 이후 downstream 완료",
+    "decision_council.run": "Decision Council 실행",
+    "decision_council.handoff_used": "Decision Council handoff 반영 생성",
     # Approval
     "approval.create": "결재 요청",
     "approval.submit": "검토 요청",
@@ -164,13 +174,18 @@ class AuditStore:
         Filter keys: user_id, action, resource_type, result,
                      date_from (ISO), date_to (ISO), ip_address
         """
+        return self.query_all(tenant_id, filters=filters)[:1000]
+
+    def query_all(
+        self,
+        tenant_id: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict]:
+        """Return all filtered log entries, newest first, without the query() cap."""
         filters = filters or {}
         entries = self._read_all()
 
-        # Filter by tenant
         result: list[dict] = [e for e in entries if e.get("tenant_id") == tenant_id]
-
-        # Apply filters
         if filters.get("user_id"):
             result = [e for e in result if e.get("user_id") == filters["user_id"]]
         if filters.get("action"):
@@ -186,9 +201,44 @@ class AuditStore:
         if filters.get("date_to"):
             result = [e for e in result if e.get("timestamp", "") <= filters["date_to"]]
 
-        # Sort newest first
         result.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-        return result[:1000]
+        return result
+
+    def find_latest_entry(
+        self,
+        tenant_id: str,
+        *,
+        actions: tuple[str, ...] | list[str] | set[str] | None = None,
+        resource_ids: tuple[str, ...] | list[str] | set[str] | None = None,
+        detail_filters: dict[str, Any] | None = None,
+        result: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the newest matching entry without applying the query() 1000-row cap."""
+        action_set = {str(value) for value in (actions or ()) if str(value)}
+        resource_id_set = {str(value) for value in (resource_ids or ()) if str(value)}
+        normalized_detail_filters = {
+            str(key): value
+            for key, value in (detail_filters or {}).items()
+            if str(key).strip()
+        }
+
+        for entry in reversed(self._read_all()):
+            if entry.get("tenant_id") != tenant_id:
+                continue
+            if action_set and str(entry.get("action", "")) not in action_set:
+                continue
+            if result is not None and str(entry.get("result", "")) != result:
+                continue
+            if resource_id_set and str(entry.get("resource_id", "")) not in resource_id_set:
+                continue
+            if normalized_detail_filters:
+                detail = entry.get("detail", {})
+                if not isinstance(detail, dict):
+                    continue
+                if any(detail.get(key) != value for key, value in normalized_detail_filters.items()):
+                    continue
+            return entry
+        return None
 
     def get_session_activity(self, session_id: str) -> list[dict]:
         """Return all log entries for a given session_id, newest first."""

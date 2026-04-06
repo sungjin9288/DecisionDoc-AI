@@ -19,6 +19,8 @@ FIXTURE_PATH = (
     / "procurement"
     / "procurement_eval_regression_cases.json"
 )
+ALLOWED_RECOMMENDATIONS = {"GO", "CONDITIONAL_GO", "NO_GO"}
+ALLOWED_SCORE_STATUS = {"scored", "insufficient_data"}
 
 
 def _fixed_now() -> datetime:
@@ -39,6 +41,57 @@ def _service(tmp_path) -> ProcurementDecisionService:
 
 def _load_cases() -> list[dict]:
     return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def test_procurement_eval_regression_fixture_contract():
+    cases = _load_cases()
+
+    case_ids = [case["case_id"] for case in cases]
+    assert len(case_ids) == len(set(case_ids))
+
+    for case in cases:
+        assert case["expected_recommendation"] in ALLOWED_RECOMMENDATIONS
+        assert case["expected_score_status"] in ALLOWED_SCORE_STATUS
+        assert isinstance(case.get("key_requirements", []), list)
+        assert isinstance(case.get("expected_missing", []), list)
+        assert isinstance(case.get("slice_tags", []), list)
+        assert case.get("slice_tags"), f"slice_tags missing for {case['case_id']}"
+        assert all(":" in tag for tag in case["slice_tags"])
+
+        expected_hard_failure = case.get("expected_hard_failure")
+        if expected_hard_failure is not None:
+            assert isinstance(expected_hard_failure, str)
+
+
+def test_procurement_eval_regression_fixture_has_minimum_slice_coverage():
+    cases = _load_cases()
+
+    assert len(cases) >= 12
+
+    recommendation_counts: dict[str, int] = {}
+    slice_tags: set[str] = set()
+    for case in cases:
+        recommendation = case["expected_recommendation"]
+        recommendation_counts[recommendation] = recommendation_counts.get(recommendation, 0) + 1
+        slice_tags.update(case.get("slice_tags", []))
+
+    assert recommendation_counts.get("GO", 0) >= 3
+    assert recommendation_counts.get("CONDITIONAL_GO", 0) >= 4
+    assert recommendation_counts.get("NO_GO", 0) >= 3
+
+    required_slices = {
+        "domain:ai",
+        "domain:data",
+        "domain:security",
+        "issuer:central_government",
+        "issuer:local_government",
+        "budget:large",
+        "budget:mid",
+        "data:sparse",
+        "risk:hard_fail",
+        "risk:missing_data",
+    }
+    assert required_slices <= slice_tags
 
 
 def _seed_case(tmp_path, case: dict) -> str:

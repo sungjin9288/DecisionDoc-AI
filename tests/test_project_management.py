@@ -34,6 +34,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.schemas import (
     GenerateRequest,
+    NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
     ProcurementRecommendation,
     ProcurementRecommendationValue,
@@ -941,6 +942,146 @@ class TestProjectProcurementApi:
         assert retrieval.json()["decision"]["recommendation"]["value"] == data["recommendation"]["value"]
         assert retrieval.json()["decision"]["checklist_items"]
 
+    def test_decision_council_run_requires_procurement_recommendation(self, client):
+        pid = self._pid(client)
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-REQ-001",
+                    title="조달 council 추천 전 상태",
+                    issuer="행정안전부",
+                ),
+            )
+        )
+
+        res = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "입찰 참여 여부를 정리한다."},
+            headers=HEADERS,
+        )
+
+        assert res.status_code == 409
+        detail = res.json()["detail"]
+        assert detail["code"] == "decision_council_procurement_context_required"
+        assert detail["project_id"] == pid
+        assert detail["required_steps"] == [
+            "imports/g2b-opportunity",
+            "procurement/evaluate",
+            "procurement/recommend",
+        ]
+
+    def test_decision_council_run_and_get_latest_return_canonical_session(self, client):
+        pid = self._pid(client)
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-001",
+                    title="조건부 진행 council 테스트",
+                    issuer="행정안전부",
+                    budget="4억원",
+                    deadline="2026-05-30 18:00",
+                ),
+                missing_data=["핵심 레퍼런스 최신본"],
+                recommendation=ProcurementRecommendation(
+                    value="CONDITIONAL_GO",
+                    summary="보완 항목 정리 후 진행 가능",
+                    evidence=["공공 레퍼런스 존재", "증빙 최신화 필요"],
+                ),
+            )
+        )
+
+        created = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={
+                "goal": "bid_decision_kr 작성 전 방향을 정리한다.",
+                "context": "대외 proposal로 바로 확장하지 않는다.",
+                "constraints": "근거 없는 GO 표현 금지",
+            },
+            headers=HEADERS,
+        )
+        assert created.status_code == 200
+        created_session = created.json()
+        assert created_session["operation"] == "created"
+        assert created_session["project_id"] == pid
+        assert created_session["target_bundle_type"] == "bid_decision_kr"
+        assert created_session["current_procurement_binding_status"] == "current"
+        assert created_session["current_procurement_binding_reason_code"] == ""
+        assert created_session["source_procurement_recommendation_value"] == "CONDITIONAL_GO"
+        assert created_session["source_procurement_missing_data_count"] == 1
+        assert created_session["consensus"]["recommended_direction"] == "proceed_with_conditions"
+        assert len(created_session["role_opinions"]) == 5
+
+        retrieved = client.get(f"/projects/{pid}/decision-council", headers=HEADERS)
+        assert retrieved.status_code == 200
+        latest_session = retrieved.json()
+        assert latest_session["operation"] is None
+        assert latest_session["session_id"] == created_session["session_id"]
+        assert latest_session["session_revision"] == 1
+        assert latest_session["current_procurement_binding_status"] == "current"
+        assert latest_session["current_procurement_binding_reason_code"] == ""
+        assert latest_session["handoff"]["target_bundle_type"] == "bid_decision_kr"
+        assert latest_session["handoff"]["recommended_direction"] == "proceed_with_conditions"
+
+    def test_override_reason_appends_structured_note(self, client):
+        from app.services.g2b_collector import G2BAnnouncement
+
+        pid = self._pid(client)
+        fake = G2BAnnouncement(
+            bid_number="20260325006-00",
+            title="보안 관제 고도화",
+            issuer="행정안전부",
+            budget="5억원",
+            announcement_date="2026-03-25",
+            deadline="2026-05-30 17:00",
+            bid_type="일반경쟁",
+            category="용역",
+            detail_url="https://www.g2b.go.kr/notice/20260325006-00",
+            attachments=[],
+            raw_text="필수 인증 보유 필요.",
+            source="scrape",
+        )
+        with patch(
+            "app.services.g2b_collector.fetch_announcement_detail",
+            new=AsyncMock(return_value=fake),
+        ):
+            imported = client.post(
+                f"/projects/{pid}/imports/g2b-opportunity",
+                json={"url_or_number": "20260325006-00"},
+                headers=HEADERS,
+            )
+        assert imported.status_code == 200
+
+        res = client.post(
+            f"/projects/{pid}/procurement/override-reason",
+            json={"reason": "기존 전략 고객 확보 목적상 예외적으로 proposal 작성 진행"},
+            headers=HEADERS,
+        )
+        assert res.status_code == 200
+        decision = res.json()["decision"]
+        assert "[override_reason ts=" in decision["notes"]
+        assert "actor=api_key_client" in decision["notes"]
+        assert "기존 전략 고객 확보 목적상 예외적으로 proposal 작성 진행" in decision["notes"]
+
+        retrieval = client.get(f"/projects/{pid}/procurement", headers=HEADERS)
+        assert retrieval.status_code == 200
+        assert "기존 전략 고객 확보 목적상 예외적으로 proposal 작성 진행" in retrieval.json()["decision"]["notes"]
+
+    def test_override_reason_without_opportunity_returns_409(self, client):
+        pid = self._pid(client)
+        res = client.post(
+            f"/projects/{pid}/procurement/override-reason",
+            json={"reason": "추가 메모"},
+            headers=HEADERS,
+        )
+        assert res.status_code == 409
+        assert res.json()["detail"]["code"] == "procurement_opportunity_not_attached"
+
 
 class TestProjectProcurementFeatureFlag:
     def test_procurement_routes_return_feature_disabled_when_flag_is_off(self, tmp_path, monkeypatch):
@@ -1119,6 +1260,494 @@ class TestAutoLink:
         with client.stream("POST", "/generate/stream", json=gen_payload, headers=HEADERS) as resp:
             events = [line for line in resp.iter_lines() if line.startswith("event: complete")]
             assert len(events) == 1
+
+    def test_generate_stream_blocks_no_go_downstream_without_override_reason(self, client):
+        pid = client.post("/projects", json={
+            "name": "NO_GO 하류 생성 차단", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-BLOCK-001",
+                    title="보안 운영 고도화",
+                    issuer="행정안전부",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="NO_GO",
+                    summary="필수 capability gap으로 downstream 진행 전 override 검토 필요",
+                ),
+            )
+        )
+
+        gen_payload = {
+            "title": "차단 대상 proposal",
+            "goal": "NO_GO downstream policy 확인",
+            "bundle_type": "proposal_kr",
+            "project_id": pid,
+        }
+        resp = client.post("/generate/stream", json=gen_payload, headers=HEADERS)
+
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["code"] == "procurement_override_reason_required"
+        assert detail["project_id"] == pid
+        assert detail["bundle_type"] == "proposal_kr"
+        assert detail["recommendation"] == "NO_GO"
+        assert detail["required_action"] == "save_override_reason"
+        assert detail["focus_field"] == "project-procurement-override-reason"
+
+    def test_generate_stream_allows_no_go_downstream_after_override_reason_saved(self, client):
+        pid = client.post("/projects", json={
+            "name": "NO_GO override 이후 진행", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-ALLOW-001",
+                    title="데이터 통합 운영",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="NO_GO",
+                    summary="예외 승인 없이는 downstream 진행 불가",
+                ),
+            )
+        )
+
+        override_res = client.post(
+            f"/projects/{pid}/procurement/override-reason",
+            json={"reason": "기존 전략 고객 유지 목적상 proposal 선행 검토"},
+            headers=HEADERS,
+        )
+        assert override_res.status_code == 200
+
+        gen_payload = {
+            "title": "override 이후 proposal",
+            "goal": "override 저장 후 downstream 허용 확인",
+            "bundle_type": "proposal_kr",
+            "project_id": pid,
+        }
+        with client.stream("POST", "/generate/stream", json=gen_payload, headers=HEADERS) as resp:
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("event: complete")]
+            assert len(events) == 1
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        assert any(doc["bundle_id"] == "proposal_kr" for doc in project["documents"])
+
+    def test_bid_decision_generation_uses_decision_council_handoff_and_project_provenance(self, client):
+        pid = client.post("/projects", json={
+            "name": "Decision Council 자동 연결", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-HANDOFF-001",
+                    title="입찰 참여 검토 대상 사업",
+                    issuer="조달청",
+                    budget="3억원",
+                    deadline="2026-06-10 17:00",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="GO",
+                    summary="즉시 진행 가능한 기회",
+                    evidence=["필수 자격 충족", "유사 실적 확보"],
+                ),
+            )
+        )
+
+        council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "bid_decision_kr에 사용할 Go 판단 근거를 정리한다."},
+            headers=HEADERS,
+        )
+        assert council.status_code == 200
+        council_session = council.json()
+
+        result = client.app.state.service.generate_documents(
+            GenerateRequest(
+                title="Council handoff metadata",
+                goal="Council handoff metadata 확인",
+                bundle_type="bid_decision_kr",
+                project_id=pid,
+            ),
+            request_id="req-decision-council-metadata",
+            tenant_id="system",
+        )
+        assert result["metadata"]["decision_council_handoff_used"] is True
+        assert result["metadata"]["decision_council_handoff_skipped_reason"] is None
+        assert result["metadata"]["decision_council_session_id"] == council_session["session_id"]
+        assert result["metadata"]["decision_council_direction"] == "proceed"
+        assert result["metadata"]["decision_council_target_bundle"] == "bid_decision_kr"
+        assert result["metadata"]["decision_council_applied_bundle"] == "bid_decision_kr"
+
+        with client.stream(
+            "POST",
+            "/generate/stream",
+            json={
+                "title": "Decision Council 적용 문서",
+                "goal": "Council provenance project auto-link 확인",
+                "bundle_type": "bid_decision_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        ) as resp:
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("event: complete")]
+            assert len(events) == 1
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        latest_doc = project["documents"][-1]
+        assert latest_doc["bundle_id"] == "bid_decision_kr"
+        assert latest_doc["source_decision_council_session_id"] == council_session["session_id"]
+        assert latest_doc["source_decision_council_session_revision"] == council_session["session_revision"]
+        assert latest_doc["source_decision_council_direction"] == "proceed"
+        assert latest_doc["decision_council_document_status"] == "current"
+        assert latest_doc["decision_council_document_status_tone"] == "success"
+        assert latest_doc["decision_council_document_status_copy"] == "현재 council 기준"
+
+    def test_proposal_generation_uses_decision_council_handoff_and_project_provenance(self, client):
+        pid = client.post("/projects", json={
+            "name": "Decision Council proposal 자동 연결", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-PROPOSAL-001",
+                    title="제안서 handoff 대상 사업",
+                    issuer="조달청",
+                    budget="7억원",
+                    deadline="2026-07-10 17:00",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="CONDITIONAL_GO",
+                    summary="조건부 진행 가능한 기회",
+                    evidence=["핵심 역량은 충분", "제안서에서 조건/리스크 명시 필요"],
+                ),
+            )
+        )
+
+        council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "proposal_kr에 사용할 전략 방향과 리스크를 정리한다."},
+            headers=HEADERS,
+        )
+        assert council.status_code == 200
+        council_session = council.json()
+        assert council_session["supported_bundle_types"] == ["bid_decision_kr", "proposal_kr"]
+
+        result = client.app.state.service.generate_documents(
+            GenerateRequest(
+                title="Council proposal metadata",
+                goal="Council handoff proposal metadata 확인",
+                bundle_type="proposal_kr",
+                project_id=pid,
+            ),
+            request_id="req-decision-council-proposal-metadata",
+            tenant_id="system",
+        )
+        assert result["metadata"]["decision_council_handoff_used"] is True
+        assert result["metadata"]["decision_council_handoff_skipped_reason"] is None
+        assert result["metadata"]["decision_council_session_id"] == council_session["session_id"]
+        assert result["metadata"]["decision_council_direction"] == "proceed_with_conditions"
+        assert result["metadata"]["decision_council_target_bundle"] == "bid_decision_kr"
+        assert result["metadata"]["decision_council_applied_bundle"] == "proposal_kr"
+
+        with client.stream(
+            "POST",
+            "/generate/stream",
+            json={
+                "title": "Decision Council 적용 제안서",
+                "goal": "Council provenance proposal auto-link 확인",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        ) as resp:
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("event: complete")]
+            assert len(events) == 1
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        latest_doc = project["documents"][-1]
+        assert latest_doc["bundle_id"] == "proposal_kr"
+        assert latest_doc["source_decision_council_session_id"] == council_session["session_id"]
+        assert latest_doc["source_decision_council_session_revision"] == council_session["session_revision"]
+        assert latest_doc["source_decision_council_direction"] == "proceed_with_conditions"
+        assert latest_doc["decision_council_document_status"] == "current"
+        assert latest_doc["decision_council_document_status_tone"] == "success"
+        assert latest_doc["decision_council_document_status_copy"] == "현재 council 기준"
+
+    def test_bid_decision_generation_skips_stale_decision_council_handoff_after_procurement_update(self, client):
+        pid = client.post("/projects", json={
+            "name": "Decision Council stale guard", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        initial = client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-STALE-001",
+                    title="Council stale guard 사업",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="GO",
+                    summary="초기 recommendation",
+                ),
+            )
+        )
+
+        council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "현재 recommendation을 기준으로 handoff를 만든다."},
+            headers=HEADERS,
+        )
+        assert council.status_code == 200
+        council_session = council.json()
+        assert council_session["source_procurement_decision_id"] == initial.decision_id
+        assert council_session["source_procurement_updated_at"] == initial.updated_at
+
+        with client.stream(
+            "POST",
+            "/generate/stream",
+            json={
+                "title": "Council stale baseline",
+                "goal": "stale 이전 기준의 bid decision 문서를 만든다.",
+                "bundle_type": "bid_decision_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        ) as resp:
+            assert resp.status_code == 200
+            list(resp.iter_lines())
+
+        updated = client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-STALE-001",
+                    title="Council stale guard 사업",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="NO_GO",
+                    summary="업데이트 이후 recommendation",
+                ),
+                missing_data=["필수 reference 재확인"],
+            )
+        )
+        assert updated.decision_id == initial.decision_id
+        assert updated.updated_at != initial.updated_at
+
+        latest = client.get(f"/projects/{pid}/decision-council", headers=HEADERS)
+        assert latest.status_code == 200
+        latest_session = latest.json()
+        assert latest_session["session_id"] == council_session["session_id"]
+        assert latest_session["current_procurement_binding_status"] == "stale"
+        assert latest_session["current_procurement_binding_reason_code"] == "procurement_updated"
+        assert latest_session["current_procurement_updated_at"] == updated.updated_at
+        assert latest_session["source_procurement_recommendation_value"] == "GO"
+        assert latest_session["current_procurement_recommendation_value"] == "NO_GO"
+        assert latest_session["current_procurement_missing_data_count"] == 1
+        assert "다시 실행해야" in latest_session["current_procurement_binding_summary"]
+        assert "GO → NO_GO" in latest_session["current_procurement_binding_summary"]
+
+        result = client.app.state.service.generate_documents(
+            GenerateRequest(
+                title="Council stale guard",
+                goal="stale council handoff가 주입되지 않아야 한다.",
+                bundle_type="bid_decision_kr",
+                project_id=pid,
+            ),
+            request_id="req-decision-council-stale",
+            tenant_id="system",
+        )
+        assert result["metadata"]["decision_council_handoff_used"] is False
+        assert result["metadata"]["decision_council_handoff_skipped_reason"] == "stale_procurement_context"
+        assert result["metadata"]["decision_council_session_id"] is None
+        assert result["metadata"]["decision_council_direction"] is None
+        assert result["metadata"]["decision_council_applied_bundle"] is None
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        latest_doc = project["documents"][-1]
+        assert latest_doc["source_decision_council_session_id"] == council_session["session_id"]
+        assert latest_doc["decision_council_document_status"] == "stale_procurement"
+        assert latest_doc["decision_council_document_status_tone"] == "danger"
+        assert latest_doc["decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
+
+    def test_proposal_generation_skips_stale_decision_council_handoff_after_procurement_update(self, client):
+        pid = client.post("/projects", json={
+            "name": "Decision Council stale proposal guard", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        initial = client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-STALE-PROPOSAL-001",
+                    title="Council stale proposal guard 사업",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="GO",
+                    summary="초기 recommendation",
+                ),
+            )
+        )
+
+        council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "proposal_kr 기준 handoff를 만든다."},
+            headers=HEADERS,
+        )
+        assert council.status_code == 200
+        council_session = council.json()
+
+        with client.stream(
+            "POST",
+            "/generate/stream",
+            json={
+                "title": "Council stale proposal baseline",
+                "goal": "stale 이전 기준의 proposal 문서를 만든다.",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        ) as resp:
+            assert resp.status_code == 200
+            list(resp.iter_lines())
+
+        updated = client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-STALE-PROPOSAL-001",
+                    title="Council stale proposal guard 사업",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="NO_GO",
+                    summary="업데이트 이후 recommendation",
+                ),
+                missing_data=["필수 reference 재확인"],
+            )
+        )
+        assert updated.decision_id == initial.decision_id
+        assert updated.updated_at != initial.updated_at
+
+        result = client.app.state.service.generate_documents(
+            GenerateRequest(
+                title="Council stale proposal guard",
+                goal="stale council handoff가 proposal에 주입되지 않아야 한다.",
+                bundle_type="proposal_kr",
+                project_id=pid,
+            ),
+            request_id="req-decision-council-stale-proposal",
+            tenant_id="system",
+        )
+        assert result["metadata"]["decision_council_handoff_used"] is False
+        assert result["metadata"]["decision_council_handoff_skipped_reason"] == "stale_procurement_context"
+        assert result["metadata"]["decision_council_session_id"] is None
+        assert result["metadata"]["decision_council_direction"] is None
+        assert result["metadata"]["decision_council_applied_bundle"] is None
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        latest_doc = project["documents"][-1]
+        assert latest_doc["bundle_id"] == "proposal_kr"
+        assert latest_doc["source_decision_council_session_id"] == council_session["session_id"]
+        assert latest_doc["decision_council_document_status"] == "stale_procurement"
+        assert latest_doc["decision_council_document_status_tone"] == "danger"
+        assert latest_doc["decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
+
+    def test_project_detail_marks_older_bid_decision_doc_as_previous_council_revision(self, client):
+        pid = client.post("/projects", json={
+            "name": "Decision Council revision drift", "fiscal_year": YEAR
+        }, headers=HEADERS).json()["project_id"]
+        record = client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-COUNCIL-REV-001",
+                    title="Council revision drift 사업",
+                    issuer="조달청",
+                ),
+                recommendation=ProcurementRecommendation(
+                    value="GO",
+                    summary="초기 recommendation",
+                ),
+            )
+        )
+
+        first_council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "첫 번째 council handoff를 만든다."},
+            headers=HEADERS,
+        )
+        assert first_council.status_code == 200
+        first_session = first_council.json()
+
+        client.app.state.service.generate_documents(
+            GenerateRequest(
+                title="Council revision doc",
+                goal="첫 council 기준의 bid decision 문서를 만든다.",
+                bundle_type="bid_decision_kr",
+                project_id=pid,
+            ),
+            request_id="req-decision-council-revision-1",
+            tenant_id="system",
+        )
+        with client.stream(
+            "POST",
+            "/generate/stream",
+            json={
+                "title": "Council revision doc",
+                "goal": "첫 council 기준의 bid decision 문서를 만든다.",
+                "bundle_type": "bid_decision_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        ) as resp:
+            assert resp.status_code == 200
+            list(resp.iter_lines())
+
+        rerun = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "같은 procurement 기준에서 council revision을 올린다."},
+            headers=HEADERS,
+        )
+        assert rerun.status_code == 200
+        latest_session = rerun.json()
+        assert latest_session["session_id"] == first_session["session_id"]
+        assert latest_session["session_revision"] == 2
+        assert latest_session["source_procurement_decision_id"] == record.decision_id
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        latest_doc = project["documents"][-1]
+        assert latest_doc["source_decision_council_session_id"] == first_session["session_id"]
+        assert latest_doc["source_decision_council_session_revision"] == 1
+        assert latest_doc["decision_council_document_status"] == "stale_revision"
+        assert latest_doc["decision_council_document_status_tone"] == "warning"
+        assert latest_doc["decision_council_document_status_copy"] == "이전 council revision (r1)"
 
 
 class TestProjectDocumentReuseFlows:
