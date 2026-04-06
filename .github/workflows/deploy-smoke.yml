@@ -1,5 +1,7 @@
 name: deploy-smoke
 
+run-name: deploy-smoke [${{ inputs.stage }}] @ ${{ github.ref_name }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -57,6 +59,11 @@ on:
         options:
           - "false"
           - "true"
+      break_glass_reason:
+        description: "Optional prod override reason when no successful dev deploy-smoke exists for the same main SHA"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   deploy:
@@ -64,6 +71,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
     env:
       CI: "true"
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -74,6 +82,79 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Enforce dev-first gate for prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_REF_NAME: ${{ github.ref_name }}
+          BREAK_GLASS_REASON: ${{ inputs.break_glass_reason }}
+        run: |
+          if [ "${{ inputs.stage }}" != "prod" ]; then
+            echo "Non-prod deploy; skipping dev-first gate."
+            exit 0
+          fi
+
+          if [ "${CURRENT_REF_NAME}" != "main" ]; then
+            echo "Prod deploy-smoke is only allowed from main. Current ref: ${CURRENT_REF_NAME}"
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          repo = os.environ["REPO"]
+          current_sha = os.environ["CURRENT_SHA"]
+          current_run_id = int(os.environ["CURRENT_RUN_ID"])
+          break_glass_reason = os.environ.get("BREAK_GLASS_REASON", "").strip()
+
+          output = subprocess.check_output(
+              [
+                  "gh",
+                  "api",
+                  f"repos/{repo}/actions/workflows/deploy-smoke.yml/runs?branch=main&status=success&per_page=100",
+              ],
+              text=True,
+          )
+          payload = json.loads(output)
+          runs = payload.get("workflow_runs", [])
+
+          matching_dev_run = None
+          for run in runs:
+              if run.get("id") == current_run_id:
+                  continue
+              if run.get("head_sha") != current_sha:
+                  continue
+              title = run.get("display_title") or ""
+              if "[dev]" not in title:
+                  continue
+              matching_dev_run = run
+              break
+
+          if matching_dev_run:
+              print(
+                  "Found successful dev deploy-smoke gate:",
+                  matching_dev_run.get("html_url", matching_dev_run.get("url")),
+              )
+              sys.exit(0)
+
+          if break_glass_reason:
+              print("No successful dev deploy-smoke found for this main SHA.")
+              print("Proceeding with prod break-glass override reason:")
+              print(break_glass_reason)
+              sys.exit(0)
+
+          print(
+              "Missing successful dev deploy-smoke for the same main SHA. "
+              "Run dev first or provide workflow_dispatch input break_glass_reason."
+          )
+          sys.exit(1)
+          PY
 
       - uses: aws-actions/setup-sam@v2
 
@@ -171,6 +252,53 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Preflight stack state and Lambda update mutability
+        env:
+          STACK_NAME: decisiondoc-ai-${{ inputs.stage }}
+          FUNCTION_NAME: decisiondoc-ai-${{ inputs.stage }}
+        run: |
+          STACK_STATUS_OUTPUT="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>&1)" && STACK_STATUS_EXIT=0 || STACK_STATUS_EXIT=$?
+          if [ "${STACK_STATUS_EXIT}" -ne 0 ]; then
+            if printf '%s\n' "${STACK_STATUS_OUTPUT}" | grep -q 'does not exist'; then
+              echo "Stack ${STACK_NAME} does not exist yet; continuing because this may be a first deploy"
+            else
+              printf '%s\n' "${STACK_STATUS_OUTPUT}"
+              exit "${STACK_STATUS_EXIT}"
+            fi
+          elif [ "${STACK_STATUS_OUTPUT}" = "UPDATE_ROLLBACK_FAILED" ]; then
+            echo "Stack ${STACK_NAME} is UPDATE_ROLLBACK_FAILED. Recover the stack before rerunning deploy-smoke."
+            exit 1
+          fi
+
+          TMPDIR="$(mktemp -d)"
+          printf 'preflight\n' > "${TMPDIR}/bootstrap.txt"
+          (
+            cd "${TMPDIR}"
+            zip -q code.zip bootstrap.txt
+          )
+          DRY_RUN_OUTPUT="$(aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --region "${AWS_REGION}" \
+            --zip-file "fileb://${TMPDIR}/code.zip" \
+            --dry-run 2>&1)" && DRY_RUN_EXIT=0 || DRY_RUN_EXIT=$?
+          rm -rf "${TMPDIR}"
+
+          if [ "${DRY_RUN_EXIT}" -ne 0 ]; then
+            printf '%s\n' "${DRY_RUN_OUTPUT}"
+            if printf '%s\n' "${DRY_RUN_OUTPUT}" | grep -q 'ResourceNotFoundException'; then
+              echo "Function ${FUNCTION_NAME} does not exist yet; continuing because this may be a first deploy."
+              exit 0
+            fi
+            if printf '%s\n' "${DRY_RUN_OUTPUT}" | grep -q 'AccessDeniedException'; then
+              echo "Lambda UpdateFunctionCode dry-run is denied for ${FUNCTION_NAME}. Stop reruns and investigate AWS-side Lambda update restrictions before redeploying."
+            fi
+            exit "${DRY_RUN_EXIT}"
+          fi
 
       - name: Prepare Lambda manifest
         run: |
