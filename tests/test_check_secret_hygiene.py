@@ -275,6 +275,48 @@ def test_secret_hygiene_flags_powershell_env_assignment_patterns(tmp_path: Path)
     assert "scripts/env.ps1:3: credential assignment pattern detected" in completed.stderr
 
 
+def test_secret_hygiene_flags_windows_set_env_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "scripts/env.bat",
+        (
+            f'set AWS_ACCESS_KEY_ID="{ACCESS_KEY_ID}"\n'
+            f'set AWS_SECRET_ACCESS_KEY="{SECRET_ACCESS_KEY}"\n'
+            f'set AWS_SESSION_TOKEN="{SESSION_TOKEN}"\n'
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"scripts/env.bat:1: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "scripts/env.bat:1: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.bat:2: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.bat:3: credential assignment pattern detected" in completed.stderr
+
+
+def test_secret_hygiene_flags_setx_env_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "scripts/env.cmd",
+        (
+            f'setx AWS_ACCESS_KEY_ID "{ACCESS_KEY_ID}"\n'
+            f'setx AWS_SECRET_ACCESS_KEY "{SECRET_ACCESS_KEY}"\n'
+            f'setx AWS_SESSION_TOKEN "{SESSION_TOKEN}"\n'
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"scripts/env.cmd:1: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "scripts/env.cmd:1: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.cmd:2: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.cmd:3: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_flags_inline_env_command_patterns(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
