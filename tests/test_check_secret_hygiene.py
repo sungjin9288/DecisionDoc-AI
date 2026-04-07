@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_secret_hygiene.py"
 ACCESS_KEY_ID = "AKIA" + "1234567890ABCDEF"
 SECRET_ACCESS_KEY = "abcd" * 10
+SESSION_TOKEN = "token" * 8
 
 
 def _init_git_repo(path: Path) -> None:
@@ -66,6 +67,20 @@ def test_secret_hygiene_flags_secret_assignment_patterns(tmp_path: Path) -> None
 
     assert completed.returncode == 1
     assert ".env.example:1: credential assignment pattern detected" in completed.stderr
+
+
+def test_secret_hygiene_flags_session_token_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        ".env.runtime",
+        f'AWS_SESSION_TOKEN="{SESSION_TOKEN}"\n',
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert ".env.runtime:1: credential assignment pattern detected" in completed.stderr
 
 
 def test_secret_hygiene_flags_lowercase_yaml_assignment_patterns(tmp_path: Path) -> None:
