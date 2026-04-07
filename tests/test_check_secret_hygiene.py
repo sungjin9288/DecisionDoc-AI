@@ -68,6 +68,25 @@ def test_secret_hygiene_flags_secret_assignment_patterns(tmp_path: Path) -> None
     assert ".env.example:1: credential assignment pattern detected" in completed.stderr
 
 
+def test_secret_hygiene_flags_lowercase_yaml_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "config/aws.yml",
+        (
+            f'aws_access_key_id: "{ACCESS_KEY_ID}"\n'
+            f"aws_secret_access_key: {SECRET_ACCESS_KEY}\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"config/aws.yml:1: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "config/aws.yml:1: credential assignment pattern detected" in completed.stderr
+    assert "config/aws.yml:2: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_ignores_untracked_secret_files(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "README.md", "# tracked clean file\n")
