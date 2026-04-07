@@ -216,6 +216,38 @@ def test_secret_hygiene_flags_dockerfile_env_assignment_patterns(tmp_path: Path)
     assert "Dockerfile:4: credential assignment pattern detected" in completed.stderr
 
 
+def test_secret_hygiene_flags_kubernetes_env_name_value_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "deployment.yaml",
+        (
+            "apiVersion: apps/v1\n"
+            "kind: Deployment\n"
+            "spec:\n"
+            "  template:\n"
+            "    spec:\n"
+            "      containers:\n"
+            "        - name: api\n"
+            "          env:\n"
+            "            - name: AWS_ACCESS_KEY_ID\n"
+            f'              value: "{ACCESS_KEY_ID}"\n'
+            "            - name: AWS_SECRET_ACCESS_KEY\n"
+            f'              value: "{SECRET_ACCESS_KEY}"\n'
+            "            - name: AWS_SESSION_TOKEN\n"
+            f'              value: "{SESSION_TOKEN}"\n'
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"deployment.yaml:10: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "deployment.yaml:9: credential assignment pattern detected" in completed.stderr
+    assert "deployment.yaml:11: credential assignment pattern detected" in completed.stderr
+    assert "deployment.yaml:13: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_flags_tracked_access_key_id(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "app/config.py", f'AWS_ACCESS_KEY_ID = "{ACCESS_KEY_ID}"\n')

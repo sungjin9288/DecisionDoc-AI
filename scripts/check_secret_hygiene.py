@@ -13,6 +13,7 @@ ACCESS_KEY_ID_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 SECRET_ASSIGNMENT_RES = [
     re.compile(r"(?:export\s+|\$[Ee]nv:)?[\"']?AWS_SECRET_ACCESS_KEY[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
     re.compile(r"(?:export\s+)?[\"']?aws[-_]secret[-_]access[-_]key[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
+    re.compile(r"name:\s*AWS_SECRET_ACCESS_KEY\s*\n\s*value:\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
     re.compile(r"ENV\s+AWS_SECRET_ACCESS_KEY\s*=\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
     re.compile(r"aws\s+configure\s+set\s+aws_secret_access_key\s+[\"']?([A-Za-z0-9/+=]{40})\b"),
     re.compile(r"set\s+AWS_SECRET_ACCESS_KEY\s*=\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
@@ -21,6 +22,7 @@ SECRET_ASSIGNMENT_RES = [
 SESSION_TOKEN_ASSIGNMENT_RES = [
     re.compile(r"(?:export\s+|\$[Ee]nv:)?[\"']?AWS_SESSION_TOKEN[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{16,})\b"),
     re.compile(r"(?:export\s+)?[\"']?aws[-_]session[-_]token[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{16,})\b"),
+    re.compile(r"name:\s*AWS_SESSION_TOKEN\s*\n\s*value:\s*[\"']?([A-Za-z0-9/+=]{16,})\b"),
     re.compile(r"ENV\s+AWS_SESSION_TOKEN\s*=\s*[\"']?([A-Za-z0-9/+=]{16,})\b"),
     re.compile(r"aws\s+configure\s+set\s+aws_session_token\s+[\"']?([A-Za-z0-9/+=]{16,})\b"),
     re.compile(r"set\s+AWS_SESSION_TOKEN\s*=\s*[\"']?([A-Za-z0-9/+=]{16,})\b"),
@@ -29,6 +31,7 @@ SESSION_TOKEN_ASSIGNMENT_RES = [
 ACCESS_KEY_ASSIGNMENT_RES = [
     re.compile(r"(?:export\s+|\$[Ee]nv:)?[\"']?AWS_ACCESS_KEY_ID[\"']?\s*[:=]\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
     re.compile(r"(?:export\s+)?[\"']?aws[-_]access[-_]key[-_]id[\"']?\s*[:=]\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
+    re.compile(r"name:\s*AWS_ACCESS_KEY_ID\s*\n\s*value:\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
     re.compile(r"ENV\s+AWS_ACCESS_KEY_ID\s*=\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
     re.compile(r"aws\s+configure\s+set\s+aws_access_key_id\s+[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
     re.compile(r"set\s+AWS_ACCESS_KEY_ID\s*=\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
