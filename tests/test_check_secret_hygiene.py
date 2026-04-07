@@ -83,6 +83,27 @@ def test_secret_hygiene_flags_session_token_assignment_patterns(tmp_path: Path) 
     assert ".env.runtime:1: credential assignment pattern detected" in completed.stderr
 
 
+def test_secret_hygiene_flags_exported_shell_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "scripts/env.sh",
+        (
+            f'export AWS_ACCESS_KEY_ID="{ACCESS_KEY_ID}"\n'
+            f"export AWS_SECRET_ACCESS_KEY={SECRET_ACCESS_KEY}\n"
+            f"export AWS_SESSION_TOKEN={SESSION_TOKEN}\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"scripts/env.sh:1: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "scripts/env.sh:1: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.sh:2: credential assignment pattern detected" in completed.stderr
+    assert "scripts/env.sh:3: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_flags_lowercase_yaml_assignment_patterns(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
