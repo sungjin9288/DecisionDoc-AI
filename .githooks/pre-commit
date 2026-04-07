@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+echo "Running secret hygiene check..."
+python3 scripts/check_secret_hygiene.py
