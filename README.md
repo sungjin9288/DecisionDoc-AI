@@ -108,8 +108,11 @@ Use the real repository commands if they differ, but these are the default expec
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
+bash scripts/install_git_hooks.sh
 python -m uvicorn app.main:app --reload
 ```
+
+`bash scripts/install_git_hooks.sh` configures a local `pre-commit` hook that runs `python3 scripts/check_secret_hygiene.py` before each commit, so tracked AWS credentials are blocked before they ever reach CI.
 
 ### Docker
 
