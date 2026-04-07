@@ -18,8 +18,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install targeted test dependency
+        run: pip install pytest
+
       - name: Scan tracked files for static AWS credentials
         run: python scripts/check_secret_hygiene.py
+
+      - name: Run secret hygiene regression tests
+        run: pytest tests/test_check_secret_hygiene.py -q --tb=short
 
   test:
     name: Test (Python ${{ matrix.python-version }})
