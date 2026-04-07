@@ -191,6 +191,31 @@ fresh-stack preflight note:
 
 상세 checklist와 reply template은 [./account_security_incident_checklist.md](./account_security_incident_checklist.md) 에 정리한다.
 
+## 7.3 운영 smoke가 필요한 변경 vs 필요 없는 변경
+
+`prod` 또는 `dev` deploy-smoke는 "변경이 실제 서비스 동작 또는 배포 경로를 바꿨는가"를 기준으로 결정한다.
+
+운영 smoke가 필요한 변경:
+
+- `app/` 아래 runtime code
+- `infra/sam/template.yaml`
+- `.github/workflows/deploy.yml`
+- `.github/workflows/deploy-smoke.yml`
+- smoke script 자체 변경 (`scripts/smoke.py`, `scripts/ops_smoke.py`, `scripts/voice_brief_smoke.py` 등)
+- stage/prod env contract 또는 IAM/OIDC deploy path 변경
+
+운영 smoke가 필요 없는 변경:
+
+- `tests/test_check_secret_hygiene.py` 같은 test-only regression 추가
+- `scripts/check_secret_hygiene.py` 와 local pre-commit hook처럼 repo secret guard만 강화하는 변경
+- 운영 배포와 무관한 docs-only update
+
+권장 판단 순서:
+
+1. 변경이 deploy artifact 또는 runtime path를 바꾸면 `dev` smoke를 포함한다.
+2. 변경이 scanner/test/docs 경계에만 머물면 local/CI verification으로 닫는다.
+3. test-only secret hygiene PR은 micro-PR 체인으로 무한 확장하지 말고, 관련 safe-path / fail-path coverage가 충분해지면 통합 검증 후 종료한다.
+
 ## 8. 운영 모니터링
 
 - `/health` — 전체 헬스체크
