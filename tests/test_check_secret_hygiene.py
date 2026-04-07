@@ -89,6 +89,35 @@ def test_secret_hygiene_allows_github_actions_secret_references(tmp_path: Path) 
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_flags_github_actions_hardcoded_credentials(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        ".github/workflows/example.yml",
+        (
+            "jobs:\n"
+            "  deploy:\n"
+            "    steps:\n"
+            "      - name: Configure AWS credentials\n"
+            "        env:\n"
+            f'          AWS_ACCESS_KEY_ID: "{ACCESS_KEY_ID}"\n'
+            f'          AWS_SECRET_ACCESS_KEY: "{SECRET_ACCESS_KEY}"\n'
+            f'          AWS_SESSION_TOKEN: "{SESSION_TOKEN}"\n'
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert "Secret hygiene check failed." in completed.stderr
+    assert (
+        f".github/workflows/example.yml:6: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    )
+    assert ".github/workflows/example.yml:6: credential assignment pattern detected" in completed.stderr
+    assert ".github/workflows/example.yml:7: credential assignment pattern detected" in completed.stderr
+    assert ".github/workflows/example.yml:8: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_allows_compose_env_interpolation_references(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
