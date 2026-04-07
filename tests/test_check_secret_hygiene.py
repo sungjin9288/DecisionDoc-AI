@@ -378,6 +378,34 @@ def test_secret_hygiene_allows_kubernetes_env_from_config_map_ref_patterns(
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_allows_kubernetes_env_from_config_map_ref_with_prefix_patterns(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "deployment.yaml",
+        (
+            "apiVersion: apps/v1\n"
+            "kind: Deployment\n"
+            "spec:\n"
+            "  template:\n"
+            "    spec:\n"
+            "      containers:\n"
+            "        - name: api\n"
+            "          envFrom:\n"
+            "            - prefix: AWS_\n"
+            "              configMapRef:\n"
+            "                name: runtime-config\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 0
+    assert "Secret hygiene check passed." in completed.stdout
+
+
 def test_secret_hygiene_allows_kubernetes_env_from_secret_ref_with_prefix_patterns(
     tmp_path: Path,
 ) -> None:
