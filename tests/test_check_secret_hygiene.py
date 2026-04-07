@@ -193,6 +193,29 @@ def test_secret_hygiene_allows_compose_env_interpolation_references(tmp_path: Pa
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_flags_dockerfile_env_assignment_patterns(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "Dockerfile",
+        (
+            "FROM python:3.12-slim\n"
+            f'ENV AWS_ACCESS_KEY_ID="{ACCESS_KEY_ID}"\n'
+            f'ENV AWS_SECRET_ACCESS_KEY="{SECRET_ACCESS_KEY}"\n'
+            f'ENV AWS_SESSION_TOKEN="{SESSION_TOKEN}"\n'
+            "RUN python app.py\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"Dockerfile:2: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "Dockerfile:2: credential assignment pattern detected" in completed.stderr
+    assert "Dockerfile:3: credential assignment pattern detected" in completed.stderr
+    assert "Dockerfile:4: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_flags_tracked_access_key_id(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "app/config.py", f'AWS_ACCESS_KEY_ID = "{ACCESS_KEY_ID}"\n')
