@@ -204,3 +204,34 @@ def test_decision_council_binding_marks_session_stale_after_procurement_update(t
     assert refreshed.current_procurement_missing_data_count == 1
     assert refreshed.current_procurement_action_needed_count == 0
     assert "다시 실행해야" in refreshed.current_procurement_binding_summary
+
+
+def test_decision_council_binding_stays_current_for_notes_only_override_update(tmp_path):
+    store = DecisionCouncilStore(base_dir=str(tmp_path))
+    procurement_store = ProcurementDecisionStore(base_dir=str(tmp_path))
+    service = DecisionCouncilService(decision_council_store=store)
+    record = _build_procurement_record(tmp_path, project_id="proj-council-5", recommendation_value="NO_GO")
+
+    session = service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-council-5",
+        goal="override reason 이후에도 같은 procurement 판단 기준을 유지한다.",
+        procurement_record=record,
+    )
+
+    updated_record = procurement_store.update_notes(
+        project_id="proj-council-5",
+        tenant_id="default",
+        notes="notes-only override reason",
+    )
+
+    refreshed = service.attach_procurement_binding(
+        session=session,
+        procurement_record=updated_record,
+    )
+
+    assert updated_record.updated_at == record.updated_at
+    assert refreshed.current_procurement_binding_status == "current"
+    assert refreshed.current_procurement_binding_reason_code == ""
+    assert refreshed.current_procurement_updated_at == updated_record.updated_at
+    assert refreshed.current_procurement_recommendation_value == "NO_GO"

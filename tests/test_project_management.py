@@ -1320,12 +1320,29 @@ class TestAutoLink:
             )
         )
 
+        council = client.post(
+            f"/projects/{pid}/decision-council/run",
+            json={"goal": "override 이후에도 proposal_kr handoff provenance를 유지한다."},
+            headers=HEADERS,
+        )
+        assert council.status_code == 200
+        council_session = council.json()
+        assert council_session["current_procurement_binding_status"] == "current"
+
         override_res = client.post(
             f"/projects/{pid}/procurement/override-reason",
             json={"reason": "기존 전략 고객 유지 목적상 proposal 선행 검토"},
             headers=HEADERS,
         )
         assert override_res.status_code == 200
+        updated_decision = override_res.json()["decision"]
+        assert updated_decision["updated_at"] == council_session["source_procurement_updated_at"]
+
+        latest_session = client.get(f"/projects/{pid}/decision-council", headers=HEADERS)
+        assert latest_session.status_code == 200
+        latest_body = latest_session.json()
+        assert latest_body["current_procurement_binding_status"] == "current"
+        assert latest_body["current_procurement_binding_reason_code"] == ""
 
         gen_payload = {
             "title": "override 이후 proposal",
@@ -1339,7 +1356,12 @@ class TestAutoLink:
             assert len(events) == 1
 
         project = client.get(f"/projects/{pid}", headers=HEADERS).json()
-        assert any(doc["bundle_id"] == "proposal_kr" for doc in project["documents"])
+        proposal_docs = [doc for doc in project["documents"] if doc["bundle_id"] == "proposal_kr"]
+        assert proposal_docs
+        latest_doc = proposal_docs[-1]
+        assert latest_doc["source_decision_council_session_id"] == council_session["session_id"]
+        assert latest_doc["source_decision_council_session_revision"] == council_session["session_revision"]
+        assert latest_doc["source_decision_council_direction"] == "do_not_proceed"
 
     def test_bid_decision_generation_uses_decision_council_handoff_and_project_provenance(self, client):
         pid = client.post("/projects", json={

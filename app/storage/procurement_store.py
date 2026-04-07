@@ -156,6 +156,23 @@ class ProcurementDecisionStore(BaseJsonStore):
             result = self._find(project_id, tenant_id=tenant_id)
             return result[3] if result else None
 
+    def update_notes(
+        self,
+        *,
+        project_id: str,
+        tenant_id: str,
+        notes: str,
+    ) -> ProcurementDecisionRecord:
+        """Update operator notes without invalidating procurement decision freshness."""
+        with self._lock:
+            result = self._find(project_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+            resolved_tenant_id, records, idx, existing = result
+            record = existing.model_copy(update={"notes": notes})
+            return self._flush(resolved_tenant_id, records, idx, record)
+
     def list_by_tenant(self, tenant_id: str) -> list[ProcurementDecisionRecord]:
         with self._lock:
             records = [self._from_dict(item) for item in self._load(tenant_id)]

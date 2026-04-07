@@ -172,6 +172,21 @@ class TestProcurementDecisionStore:
         assert tenant_b.opportunity is not None
         assert tenant_a.opportunity.title != tenant_b.opportunity.title
 
+    def test_update_notes_preserves_procurement_updated_at(self, tmp_path):
+        store = ProcurementDecisionStore(base_dir=str(tmp_path))
+        saved = store.upsert(_sample_upsert())
+
+        updated = store.update_notes(
+            project_id="proj-001",
+            tenant_id="tenant-a",
+            notes="override reason appended",
+        )
+
+        assert updated.decision_id == saved.decision_id
+        assert updated.created_at == saved.created_at
+        assert updated.updated_at == saved.updated_at
+        assert updated.notes == "override reason appended"
+
     def test_save_source_snapshot_round_trip(self, tmp_path):
         store = ProcurementDecisionStore(base_dir=str(tmp_path))
         metadata = store.save_source_snapshot(
