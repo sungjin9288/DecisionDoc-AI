@@ -104,6 +104,27 @@ def test_secret_hygiene_flags_exported_shell_assignment_patterns(tmp_path: Path)
     assert "scripts/env.sh:3: credential assignment pattern detected" in completed.stderr
 
 
+def test_secret_hygiene_flags_aws_configure_set_commands(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "scripts/bootstrap.sh",
+        (
+            f'aws configure set aws_access_key_id "{ACCESS_KEY_ID}" --profile default\n'
+            f"aws configure set aws_secret_access_key {SECRET_ACCESS_KEY} --profile default\n"
+            f'aws configure set aws_session_token "{SESSION_TOKEN}" --profile default\n'
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 1
+    assert f"scripts/bootstrap.sh:1: possible AWS access key id {ACCESS_KEY_ID}" in completed.stderr
+    assert "scripts/bootstrap.sh:1: credential assignment pattern detected" in completed.stderr
+    assert "scripts/bootstrap.sh:2: credential assignment pattern detected" in completed.stderr
+    assert "scripts/bootstrap.sh:3: credential assignment pattern detected" in completed.stderr
+
+
 def test_secret_hygiene_flags_json_assignment_patterns(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
