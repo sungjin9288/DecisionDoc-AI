@@ -12,11 +12,11 @@ TRACKED_FILE_CMD = ["git", "ls-files", "-z"]
 ACCESS_KEY_ID_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 SECRET_ASSIGNMENT_RES = [
     re.compile(r"AWS_SECRET_ACCESS_KEY\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
-    re.compile(r"aws_secret_access_key\s*=\s*([A-Za-z0-9/+=]{40})\b"),
+    re.compile(r"aws_secret_access_key\s*[:=]\s*[\"']?([A-Za-z0-9/+=]{40})\b"),
 ]
 ACCESS_KEY_ASSIGNMENT_RES = [
     re.compile(r"AWS_ACCESS_KEY_ID\s*[:=]\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
-    re.compile(r"aws_access_key_id\s*=\s*((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
+    re.compile(r"aws_access_key_id\s*[:=]\s*[\"']?((?:AKIA|ASIA)[0-9A-Z]{16})\b"),
 ]
 
 
