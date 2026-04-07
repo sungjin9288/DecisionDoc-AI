@@ -5,6 +5,7 @@ This runbook covers manual deployment with GitHub Actions `workflow_dispatch`.
 Long-term environment separation, immutable release preference, and operating-model hardening guidance lives in:
 
 - `docs/operating_model_roadmap.md`
+- `docs/deployment/account_security_incident_checklist.md`
 
 ## Prerequisites
 
@@ -160,6 +161,7 @@ Security note:
 - `.github-actions.env` is a local-only secret file and must remain untracked.
 - Do not store raw AWS IAM access keys in `.github-actions.env`; GitHub Actions deploy paths in this repo use OIDC `role-to-assume`, not static AWS credentials.
 - For local AWS CLI work, prefer a named profile in `~/.aws/credentials` or temporary session credentials rather than copying long-lived keys into repo-adjacent files.
+- If AWS Support opens a suspicious-activity case or Lambda APIs start failing with account-wide `AccessDeniedException`, follow `docs/deployment/account_security_incident_checklist.md` before retrying deploy workflows.
 
 GitHub에 실제 반영할 때는 `gh` CLI가 로그인된 상태에서 아래처럼 적용할 수 있습니다.
 
@@ -227,6 +229,25 @@ fresh-stack preflight contract:
 - 이 경우 preflight는 `lambda update-function-code --dry-run` 을 건너뛰고 바로 `SAM build` / `SAM deploy` create path로 진행한다.
 - 반대로 stack이 이미 존재하면 기존대로 `UpdateFunctionCode` dry-run으로 mutability를 확인한다.
 - 따라서 `dev-green` 같은 새 suffix path는 "기존 Lambda update가 deny돼도 fresh create는 가능한가"를 확인하는 우회 검증 경로로 해석해야 한다.
+
+### 6.1 Security incident escalation path
+
+아래 조건 중 하나라도 보이면 application bug triage보다 account security incident 절차를 먼저 탄다.
+
+- AWS Support가 `Suspicious activity in your AWS account` 케이스를 열었음
+- leaked access key suffix가 명시적으로 통보됨
+- local admin user와 GitHub Actions role이 모두 Lambda `CreateFunction` / `UpdateFunctionCode` 에서 `AccessDeniedException` 을 반환함
+- Lambda console 수동 생성도 `UnknownError` 또는 동일한 deny로 실패함
+
+이 경우:
+
+1. leaked key rotation / deletion
+2. suspicious-activity case reply
+3. restriction lifted 확인
+4. Lambda dry-run check
+5. `dev-green -> dev -> prod` recovery deploy
+
+세부 절차와 reply template은 `docs/deployment/account_security_incident_checklist.md` 를 기준으로 한다.
 
 ### 6. 실패 시 우선 확인할 항목
 

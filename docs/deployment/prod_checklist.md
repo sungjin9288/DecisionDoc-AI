@@ -90,6 +90,7 @@ Docker server CD 필수 GitHub Secrets:
 - `GHCR_TOKEN` (GitHub Container Registry)
 
 AWS SAM 배포 시 필요한 secret/variable은 [../deploy_aws.md](../deploy_aws.md)를 기준으로 설정합니다.
+계정 보안 incident와 access key rotation 대응은 [./account_security_incident_checklist.md](./account_security_incident_checklist.md)를 기준으로 합니다.
 
 ## 6.1 프로덕션 배포 ownership
 
@@ -171,6 +172,24 @@ fresh-stack preflight note:
 
 - suffix를 붙인 새 stack이 아직 존재하지 않으면 `deploy-smoke` preflight는 이를 create path로 판단하고 `UpdateFunctionCode` dry-run을 생략한다.
 - 즉 `dev-green` 검증은 "in-place update 가능 여부"가 아니라 "new stack/function create 가능 여부"를 보는 단계다.
+
+## 7.2 보안 incident 시 우선 순서
+
+아래 상황이면 배포 runbook보다 account security runbook이 먼저다.
+
+- AWS Support suspicious-activity case open
+- leaked IAM access key notification 수신
+- local admin user / GitHub Actions role / console 수동 생성이 모두 Lambda `AccessDeniedException` 으로 막힘
+
+이 경우에는:
+
+1. leaked key rotation / deletion
+2. CloudTrail IAM / STS review
+3. Support case reply
+4. restriction lifted 확인
+5. 그 다음에만 `dev-green -> dev -> prod`
+
+상세 checklist와 reply template은 [./account_security_incident_checklist.md](./account_security_incident_checklist.md) 에 정리한다.
 
 ## 8. 운영 모니터링
 
