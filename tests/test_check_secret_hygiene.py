@@ -89,6 +89,27 @@ def test_secret_hygiene_allows_github_actions_secret_references(tmp_path: Path) 
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_allows_compose_env_interpolation_references(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "docker-compose.yml",
+        (
+            "services:\n"
+            "  app:\n"
+            "    environment:\n"
+            "      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}\n"
+            "      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}\n"
+            "      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN}\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 0
+    assert "Secret hygiene check passed." in completed.stdout
+
+
 def test_secret_hygiene_flags_tracked_access_key_id(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "app/config.py", f'AWS_ACCESS_KEY_ID = "{ACCESS_KEY_ID}"\n')
