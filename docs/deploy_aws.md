@@ -155,6 +155,12 @@ bash scripts/check-github-actions-config.sh \
   --voice-brief-smoke
 ```
 
+Security note:
+
+- `.github-actions.env` is a local-only secret file and must remain untracked.
+- Do not store raw AWS IAM access keys in `.github-actions.env`; GitHub Actions deploy paths in this repo use OIDC `role-to-assume`, not static AWS credentials.
+- For local AWS CLI work, prefer a named profile in `~/.aws/credentials` or temporary session credentials rather than copying long-lived keys into repo-adjacent files.
+
 GitHub에 실제 반영할 때는 `gh` CLI가 로그인된 상태에서 아래처럼 적용할 수 있습니다.
 
 ```bash

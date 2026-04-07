@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.local
+.github-actions.env
 
 # Python
 .venv/
