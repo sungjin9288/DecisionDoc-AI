@@ -877,27 +877,14 @@ def update_project_procurement_override_reason_endpoint(
         or getattr(request.state, "user_id", None)
         or "api_key_client"
     )
-    updated = procurement_store.upsert(
-        ProcurementDecisionUpsert(
-            project_id=project_id,
-            tenant_id=tenant_id,
-            schema_version=existing.schema_version,
-            opportunity=existing.opportunity,
-            capability_profile=existing.capability_profile,
-            hard_filters=list(existing.hard_filters),
-            score_breakdown=list(existing.score_breakdown),
-            soft_fit_score=existing.soft_fit_score,
-            soft_fit_status=existing.soft_fit_status,
-            missing_data=list(existing.missing_data),
-            checklist_items=list(existing.checklist_items),
-            recommendation=existing.recommendation,
-            source_snapshots=list(existing.source_snapshots),
-            notes=_append_procurement_override_reason(
-                existing.notes,
-                username=username,
-                reason=payload.reason,
-            ),
-        )
+    updated = procurement_store.update_notes(
+        project_id=project_id,
+        tenant_id=tenant_id,
+        notes=_append_procurement_override_reason(
+            existing.notes,
+            username=username,
+            reason=payload.reason,
+        ),
     )
     _apply_procurement_observability(
         request,
