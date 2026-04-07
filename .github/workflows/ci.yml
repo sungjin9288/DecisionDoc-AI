@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  secret-hygiene:
+    name: Secret Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Scan tracked files for static AWS credentials
+        run: python scripts/check_secret_hygiene.py
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
