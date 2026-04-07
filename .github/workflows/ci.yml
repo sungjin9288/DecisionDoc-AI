@@ -25,7 +25,7 @@ jobs:
         run: python scripts/check_secret_hygiene.py
 
       - name: Run secret hygiene regression tests
-        run: pytest tests/test_check_secret_hygiene.py -q --tb=short
+        run: pytest --noconftest tests/test_check_secret_hygiene.py -q --tb=short
 
   test:
     name: Test (Python ${{ matrix.python-version }})
