@@ -274,7 +274,6 @@ def test_secret_hygiene_flags_powershell_env_assignment_patterns(tmp_path: Path)
     assert "scripts/env.ps1:2: credential assignment pattern detected" in completed.stderr
     assert "scripts/env.ps1:3: credential assignment pattern detected" in completed.stderr
 
-
 def test_secret_hygiene_flags_setx_env_assignment_patterns(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
@@ -294,8 +293,6 @@ def test_secret_hygiene_flags_setx_env_assignment_patterns(tmp_path: Path) -> No
     assert "scripts/env.cmd:1: credential assignment pattern detected" in completed.stderr
     assert "scripts/env.cmd:2: credential assignment pattern detected" in completed.stderr
     assert "scripts/env.cmd:3: credential assignment pattern detected" in completed.stderr
-
-
 def test_secret_hygiene_flags_inline_env_command_patterns(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(
