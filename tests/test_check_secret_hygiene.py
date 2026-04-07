@@ -43,6 +43,29 @@ def test_secret_hygiene_passes_for_clean_tracked_files(tmp_path: Path) -> None:
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_allows_placeholder_and_env_reference_snippets(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        "docs/setup.md",
+        (
+            "Run the following commands with your own credentials:\n"
+            "aws configure set aws_access_key_id <YOUR_ACCESS_KEY_ID> --profile default\n"
+            "aws configure set aws_secret_access_key <YOUR_SECRET_ACCESS_KEY> --profile default\n"
+            'aws configure set aws_session_token \"$AWS_SESSION_TOKEN\" --profile default\n'
+            'AWS_ACCESS_KEY_ID=\"$AWS_ACCESS_KEY_ID\" '
+            'AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\" '
+            'AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\" '
+            "python app.py\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 0
+    assert "Secret hygiene check passed." in completed.stdout
+
+
 def test_secret_hygiene_flags_tracked_access_key_id(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "app/config.py", f'AWS_ACCESS_KEY_ID = "{ACCESS_KEY_ID}"\n')
