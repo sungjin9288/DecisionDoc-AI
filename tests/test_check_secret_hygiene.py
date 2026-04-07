@@ -66,6 +66,29 @@ def test_secret_hygiene_allows_placeholder_and_env_reference_snippets(tmp_path: 
     assert "Secret hygiene check passed." in completed.stdout
 
 
+def test_secret_hygiene_allows_github_actions_secret_references(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _track_file(
+        tmp_path,
+        ".github/workflows/example.yml",
+        (
+            "jobs:\n"
+            "  deploy:\n"
+            "    steps:\n"
+            "      - name: Configure AWS credentials\n"
+            "        env:\n"
+            "          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}\n"
+            "          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}\n"
+            "          AWS_SESSION_TOKEN: ${{ vars.AWS_SESSION_TOKEN }}\n"
+        ),
+    )
+
+    completed = _run_secret_hygiene(tmp_path)
+
+    assert completed.returncode == 0
+    assert "Secret hygiene check passed." in completed.stdout
+
+
 def test_secret_hygiene_flags_tracked_access_key_id(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
     _track_file(tmp_path, "app/config.py", f'AWS_ACCESS_KEY_ID = "{ACCESS_KEY_ID}"\n')
