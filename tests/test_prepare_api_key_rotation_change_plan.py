@@ -221,6 +221,10 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
             "api-key-v1",
             "--new-key-label",
             "api-key-v2",
+            "--finalize-time",
+            "2026-04-08 21:30 KST",
+            "--old-key-deleted",
+            "pending",
             "--output",
             str(output_path),
         ]
@@ -249,5 +253,9 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
     assert rendered.count("| `Run smoke` | `success` |") == 2
     assert "Dev validation run: https://github.com/example/dev" in rendered
     assert "Prod validation run: https://github.com/example/prod" in rendered
+    assert "| Finalize time | `2026-04-08 21:30 KST` |" in rendered
+    assert "| Old key deleted | `pending` |" in rendered
+    assert "Finalize time: 2026-04-08 21:30 KST" in rendered
+    assert "Old key deleted: pending" in rendered
     captured = capsys.readouterr()
     assert "wrote plan to" in captured.err
