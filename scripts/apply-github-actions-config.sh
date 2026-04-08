@@ -184,6 +184,10 @@ procurement_smoke_password_name="PROCUREMENT_SMOKE_PASSWORD_${STAGE_UPPER}"
 
 variables+=("$procurement_flag_name")
 
+if has_value "DECISIONDOC_API_KEYS"; then
+  secrets+=("DECISIONDOC_API_KEYS")
+fi
+
 if has_value "$openai_api_key_name"; then
   secrets+=("$openai_api_key_name")
 fi

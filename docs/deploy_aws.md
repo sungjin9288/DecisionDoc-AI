@@ -17,6 +17,7 @@ Long-term environment separation, immutable release preference, and operating-mo
   - `AWS_ROLE_ARN_DEV`, `AWS_ROLE_ARN_PROD`
   - `DECISIONDOC_S3_BUCKET_DEV`, `DECISIONDOC_S3_BUCKET_PROD`
   - `DECISIONDOC_API_KEY`
+  - optional: `DECISIONDOC_API_KEYS` (comma-separated runtime overlap rotation list; if set, include `DECISIONDOC_API_KEY`)
   - `DECISIONDOC_OPS_KEY`
   - optional: `STATUSPAGE_PAGE_ID`, `STATUSPAGE_API_KEY` (for automated Investigating posts)
 - Optional for Voice Brief import:
@@ -74,6 +75,7 @@ Long-term environment separation, immutable release preference, and operating-mo
 |------|------|-----------|------|
 | Secret | `AWS_REGION` | 필수 | 예: `ap-northeast-2` |
 | Secret | `DECISIONDOC_API_KEY` | 필수 | 앱 smoke와 runtime auth에 사용 |
+| Secret | `DECISIONDOC_API_KEYS` | 선택 | comma-separated runtime auth keys. 비어 있으면 workflow가 `DECISIONDOC_API_KEY` 단일 값을 runtime fallback으로 사용 |
 | Secret | `DECISIONDOC_OPS_KEY` | 필수 | ops smoke와 `/ops/*` 보호에 사용 |
 | Secret | `STATUSPAGE_PAGE_ID` | 선택 | ops investigate notify 경로 |
 | Secret | `STATUSPAGE_API_KEY` | 선택 | Statuspage API 인증 |
@@ -437,6 +439,7 @@ Deployment template sets:
 - `DECISIONDOC_S3_PREFIX=decisiondoc-ai/`
 - `DECISIONDOC_ENV=<stage>`
 - `DECISIONDOC_API_KEY=<GitHub secret>`
+- `DECISIONDOC_API_KEYS=<GitHub secret or DECISIONDOC_API_KEY fallback>`
 - `DECISIONDOC_OPS_KEY=<GitHub secret>`
 - `DECISIONDOC_MAINTENANCE=<0|1>`
 - `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED=<GitHub variable or 0 default>`
@@ -454,7 +457,8 @@ Notes:
 - Statuspage integration is optional for deploy and smoke. If `STATUSPAGE_PAGE_ID` / `STATUSPAGE_API_KEY` are empty, `/ops/investigate` still works with `notify=false`, but automated incident posting is skipped.
 - `G2B_API_KEY` is optional, but bid-number import without a full URL depends on it. URL import continues to work without the key when scraping succeeds.
 - Voice Brief integration remains optional. If `VOICE_BRIEF_API_BASE_URL` is empty, the project import UI stays visible but import calls return `voice_brief_not_configured`.
-- For key rotation, you can migrate to `DECISIONDOC_API_KEYS` (comma-separated) while keeping legacy `DECISIONDOC_API_KEY` support.
+- AWS manual deploy path now passes `DECISIONDOC_API_KEYS` when the repo secret exists, and otherwise falls back to the single `DECISIONDOC_API_KEY` value.
+- Because `deploy-smoke` still uses `DECISIONDOC_API_KEY` as the header value for smoke calls, any overlap rotation list in `DECISIONDOC_API_KEYS` should include the current `DECISIONDOC_API_KEY` until smoke callers are intentionally moved.
 - Investigation reports are written to S3 under `reports/incidents/<incident_key>/<run_id>/`.
 - Investigation dedupe uses deterministic `incident_key` + time bucket:
   - `DECISIONDOC_INVESTIGATE_DEDUP_TTL_SECONDS` (default `300`)
@@ -634,7 +638,7 @@ Use maintenance mode when you need to immediately block write traffic:
 ### Cost spike / abuse response
 
 1. Enable maintenance mode (`maintenance_mode=1`) and redeploy.
-2. Rotate API keys (`DECISIONDOC_API_KEYS` preferred; keep temporary overlap).
+2. Rotate API keys by updating `DECISIONDOC_API_KEYS` first and keeping the current `DECISIONDOC_API_KEY` included during overlap.
 3. Lower safety rails:
    - HTTP API throttling (`ApiThrottlingBurstLimit`, `ApiThrottlingRateLimit`)
    - Lambda reserved concurrency (`LambdaReservedConcurrentExecutions`)
@@ -643,6 +647,6 @@ Use maintenance mode when you need to immediately block write traffic:
 
 ### Key rotation (summary)
 
-1. Deploy with both old and new keys in `DECISIONDOC_API_KEYS`.
+1. Deploy with both old and new keys in `DECISIONDOC_API_KEYS`, while keeping `DECISIONDOC_API_KEY` set to one of the allowed runtime keys used by smoke callers.
 2. Move clients to the new key.
 3. Redeploy removing the old key.

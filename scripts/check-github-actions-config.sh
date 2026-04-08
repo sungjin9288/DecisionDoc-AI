@@ -98,6 +98,7 @@ required=(
 optional=()
 invalid=()
 
+optional+=("DECISIONDOC_API_KEYS")
 optional+=("OPENAI_API_KEY_${STAGE_UPPER}")
 optional+=("OPENAI_API_BASE_URL_${STAGE_UPPER}")
 optional+=("MEETING_RECORDING_TRANSCRIPTION_MODEL_${STAGE_UPPER}")

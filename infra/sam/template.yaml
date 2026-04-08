@@ -24,6 +24,10 @@ Parameters:
   DecisionDocApiKey:
     Type: String
     NoEcho: true
+  DecisionDocApiKeys:
+    Type: String
+    NoEcho: true
+    Default: ""
   DecisionDocOpsKey:
     Type: String
     NoEcho: true
@@ -124,6 +128,7 @@ Resources:
           DECISIONDOC_PROVIDER: mock
           DECISIONDOC_ENV: !Ref Stage
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
+          DECISIONDOC_API_KEYS: !Ref DecisionDocApiKeys
           DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
           OPENAI_API_KEY: !Ref OpenAIApiKey
           OPENAI_API_BASE_URL: !Ref OpenAiApiBaseUrl
