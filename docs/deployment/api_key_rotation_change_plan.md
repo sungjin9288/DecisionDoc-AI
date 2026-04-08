@@ -23,6 +23,7 @@ python3 scripts/prepare_api_key_rotation_change_plan.py \
 
 - script는 current git SHA와 최근 성공한 `deploy-smoke [dev]` / `deploy-smoke [prod]` evidence를 자동으로 넣는다.
 - script는 GitHub Actions secret 이름도 조회해서 `OPENAI_API_KEY_<STAGE>` 또는 repo-level `OPENAI_API_KEY` fallback 존재 여부를 자동으로 적는다.
+- current SHA 기준 same-SHA run이 있으면 `Validation sequence`의 dev/prod run URL과 `Run smoke` / `Run meeting recording smoke` / `Run ops smoke` 결과도 자동으로 채운다.
 - script 기본값은 `direct` cutover 다. external caller 가 있으면 `--cutover-mode overlap` 또는 `--cutover-mode smoke-first` 로 바꿔서 쓴다.
 - 나머지 owner, change window, rollout readiness는 운영자가 직접 채운다.
 - `gh` auth가 없거나 GitHub Actions run 조회가 실패하면 script는 non-zero exit로 종료한다.

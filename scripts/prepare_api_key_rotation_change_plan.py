@@ -100,6 +100,17 @@ def _stage_matches(run: dict[str, Any], stage: str) -> bool:
     return f"deploy-smoke [{stage}]" in title
 
 
+def _same_sha_run(runs: list[dict[str, Any]], *, stage: str, head_sha: str) -> dict[str, Any] | None:
+    for run in runs:
+        if (
+            run.get("conclusion") == "success"
+            and run.get("head_sha") == head_sha
+            and _stage_matches(run, stage)
+        ):
+            return run
+    return None
+
+
 def _select_run_url(runs: list[dict[str, Any]], *, stage: str, head_sha: str) -> str:
     successful = [
         run for run in runs if run.get("conclusion") == "success" and _stage_matches(run, stage)
@@ -122,14 +133,49 @@ def _select_run_url(runs: list[dict[str, Any]], *, stage: str, head_sha: str) ->
 
 
 def _same_sha_run_url(runs: list[dict[str, Any]], *, stage: str, head_sha: str) -> str | None:
-    for run in runs:
-        if (
-            run.get("conclusion") == "success"
-            and run.get("head_sha") == head_sha
-            and _stage_matches(run, stage)
-            and run.get("html_url")
-        ):
-            return str(run["html_url"])
+    run = _same_sha_run(runs, stage=stage, head_sha=head_sha)
+    if run and run.get("html_url"):
+        return str(run["html_url"])
+    return None
+
+
+def _run_id(run: dict[str, Any]) -> str | None:
+    run_id = run.get("id")
+    if run_id is None:
+        return None
+    return str(run_id)
+
+
+def _fetch_run_jobs(repo_slug: str, *, run_id: str) -> list[dict[str, Any]]:
+    payload = _run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo_slug}/actions/runs/{run_id}/jobs",
+        ]
+    )
+    data = json.loads(payload)
+    jobs = data.get("jobs")
+    if not isinstance(jobs, list):
+        return []
+    return [job for job in jobs if isinstance(job, dict)]
+
+
+def _extract_step_conclusion(jobs: list[dict[str, Any]], *, step_name: str) -> str | None:
+    for job in jobs:
+        steps = job.get("steps")
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            if step.get("name") == step_name:
+                conclusion = step.get("conclusion")
+                if isinstance(conclusion, str) and conclusion.strip():
+                    return conclusion.strip()
+                status = step.get("status")
+                if isinstance(status, str) and status.strip():
+                    return status.strip()
     return None
 
 
@@ -148,6 +194,47 @@ def _describe_openai_availability(stage: str, secret_names: set[str]) -> str:
     if "OPENAI_API_KEY" in secret_names:
         return "yes — repo-level `OPENAI_API_KEY` fallback present"
     return f"no — missing `{stage_key}` and repo-level `OPENAI_API_KEY`"
+
+
+def _validation_defaults(
+    repo_slug: str,
+    runs: list[dict[str, Any]],
+    *,
+    stage: str,
+    head_sha: str,
+) -> dict[str, str]:
+    placeholder_run = "<RUN_ID_OR_URL>" if stage == "dev" else "<RUN_ID_OR_URL_OR_NA>"
+    result = {
+        "run_url": placeholder_run,
+        "run_smoke": "success / fail",
+        "meeting_recording_smoke": "success / fail",
+        "ops_smoke": "success / fail",
+    }
+
+    run = _same_sha_run(runs, stage=stage, head_sha=head_sha)
+    if not run:
+        return result
+
+    html_url = run.get("html_url")
+    if isinstance(html_url, str) and html_url.strip():
+        result["run_url"] = html_url.strip()
+
+    run_id = _run_id(run)
+    if not run_id:
+        return result
+
+    try:
+        jobs = _fetch_run_jobs(repo_slug, run_id=run_id)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return result
+
+    result["run_smoke"] = _extract_step_conclusion(jobs, step_name="Run smoke") or result["run_smoke"]
+    result["meeting_recording_smoke"] = (
+        _extract_step_conclusion(jobs, step_name="Run meeting recording smoke")
+        or result["meeting_recording_smoke"]
+    )
+    result["ops_smoke"] = _extract_step_conclusion(jobs, step_name="Run ops smoke") or result["ops_smoke"]
+    return result
 
 
 def _derive_defaults(args: argparse.Namespace, *, secret_names: set[str]) -> dict[str, str]:
@@ -224,6 +311,13 @@ def _render_plan(
     owner = _placeholder(args.owner, "<OWNER_NAME>")
     same_sha_dev_evidence = _describe_same_sha_evidence(runs, stage="dev", head_sha=head_sha)
     same_sha_prod_evidence = _describe_same_sha_evidence(runs, stage="prod", head_sha=head_sha)
+    dev_validation = _validation_defaults(repo_slug, runs, stage="dev", head_sha=head_sha)
+    prod_validation = _validation_defaults(repo_slug, runs, stage="prod", head_sha=head_sha)
+    additional_dev_validation_run = (
+        "N/A (direct cutover)"
+        if defaults["cutover_mode"] == "direct"
+        else "<RUN_ID_OR_NA>"
+    )
     secret_staging = _render_secret_staging(repo_slug, cutover_mode=defaults["cutover_mode"])
 
     return f"""# API Key Rotation Change Plan
@@ -266,14 +360,30 @@ Generated by `python3 scripts/prepare_api_key_rotation_change_plan.py --stage {s
 
 ## 4. Validation log
 
+### 4.1 Dev validation
+
 | 항목 | 값 |
 |------|----|
-| `deploy-smoke [dev]` rerun | `<RUN_ID_OR_URL>` |
-| `Run smoke` | `success / fail` |
-| `Run meeting recording smoke` | `success / fail` |
-| `Run ops smoke` | `success / fail` |
+| `deploy-smoke [dev]` rerun | `{dev_validation["run_url"]}` |
+| `Run smoke` | `{dev_validation["run_smoke"]}` |
+| `Run meeting recording smoke` | `{dev_validation["meeting_recording_smoke"]}` |
+| `Run ops smoke` | `{dev_validation["ops_smoke"]}` |
+
+### 4.2 Caller cutover
+
+| 항목 | 값 |
+|------|----|
 | Caller cutover 방식 | `{defaults["cutover_mode"]}` |
-| `deploy-smoke [prod]` rerun | `<RUN_ID_OR_URL_OR_NA>` |
+| 추가 dev validation run | `{additional_dev_validation_run}` |
+
+### 4.3 Prod validation
+
+| 항목 | 값 |
+|------|----|
+| `deploy-smoke [prod]` rerun | `{prod_validation["run_url"]}` |
+| `Run smoke` | `{prod_validation["run_smoke"]}` |
+| `Run meeting recording smoke` | `{prod_validation["meeting_recording_smoke"]}` |
+| `Run ops smoke` | `{prod_validation["ops_smoke"]}` |
 
 ## 5. Finalize / Rollback
 
@@ -288,8 +398,8 @@ API key rotation completed.
 - Main SHA: {head_sha}
 - Old key label: {defaults["old_key_label"]}
 - New key label: {defaults["new_key_label"]}
-- Dev validation run: <DEV_RUN_URL>
-- Prod validation run: <PROD_RUN_URL_OR_NA>
+- Dev validation run: {dev_validation["run_url"]}
+- Prod validation run: {prod_validation["run_url"]}
 - Finalize time: <TIME>
 - Old key deleted: <YES_OR_NO>
 - Owner: {owner}

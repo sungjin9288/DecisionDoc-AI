@@ -120,6 +120,50 @@ def test_describe_openai_availability_prefers_stage_secret_then_repo_fallback():
     )
 
 
+def test_validation_defaults_extract_same_sha_run_url_and_step_results(monkeypatch):
+    script = _load_script_module(
+        "decisiondoc_prepare_api_key_rotation_change_plan_validation_defaults",
+        "scripts/prepare_api_key_rotation_change_plan.py",
+    )
+
+    monkeypatch.setattr(
+        script,
+        "_fetch_run_jobs",
+        lambda repo_slug, run_id: [
+            {
+                "name": "smoke",
+                "steps": [
+                    {"name": "Run smoke", "conclusion": "success"},
+                    {"name": "Run meeting recording smoke", "conclusion": "success"},
+                    {"name": "Run ops smoke", "conclusion": "success"},
+                ],
+            }
+        ],
+    )
+
+    defaults = script._validation_defaults(
+        "sungjin9288/DecisionDoc-AI",
+        [
+            {
+                "id": 123,
+                "display_title": "deploy-smoke [prod] @ main",
+                "conclusion": "success",
+                "head_sha": "abc123",
+                "html_url": "https://github.com/example/prod",
+            }
+        ],
+        stage="prod",
+        head_sha="abc123",
+    )
+
+    assert defaults == {
+        "run_url": "https://github.com/example/prod",
+        "run_smoke": "success",
+        "meeting_recording_smoke": "success",
+        "ops_smoke": "success",
+    }
+
+
 def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, capsys):
     script = _load_script_module(
         "decisiondoc_prepare_api_key_rotation_change_plan_main",
@@ -133,12 +177,14 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
         "_fetch_workflow_runs",
         lambda repo_slug: [
             {
+                "id": 101,
                 "display_title": "deploy-smoke [dev] @ main",
                 "conclusion": "success",
                 "head_sha": "abc123",
                 "html_url": "https://github.com/example/dev",
             },
             {
+                "id": 202,
                 "display_title": "deploy-smoke [prod] @ main",
                 "conclusion": "success",
                 "head_sha": "abc123",
@@ -147,6 +193,20 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
         ],
     )
     monkeypatch.setattr(script, "_fetch_actions_secret_names", lambda repo_slug: {"OPENAI_API_KEY"})
+    monkeypatch.setattr(
+        script,
+        "_fetch_run_jobs",
+        lambda repo_slug, run_id: [
+            {
+                "name": "smoke",
+                "steps": [
+                    {"name": "Run smoke", "conclusion": "success"},
+                    {"name": "Run meeting recording smoke", "conclusion": "success"},
+                    {"name": "Run ops smoke", "conclusion": "success"},
+                ],
+            }
+        ],
+    )
     output_path = tmp_path / "rotation-plan.md"
 
     exit_code = script.main(
@@ -180,7 +240,14 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
     assert "Same-SHA `deploy-smoke [prod]` evidence for current `main` | `ready — deploy-smoke [prod] run prod succeeded on abc123`" in rendered
     assert "ad-hoc (no fixed maintenance window)" in rendered
     assert "Caller cutover 방식 | `direct`" in rendered
+    assert "추가 dev validation run | `N/A (direct cutover)`" in rendered
     assert "yes — external caller 없음, repo 내부 smoke/deploy 경로만 사용" in rendered
     assert "yes — repo-level `OPENAI_API_KEY` fallback present" in rendered
+    assert "### 4.1 Dev validation" in rendered
+    assert "| `deploy-smoke [dev]` rerun | `https://github.com/example/dev` |" in rendered
+    assert "| `deploy-smoke [prod]` rerun | `https://github.com/example/prod` |" in rendered
+    assert rendered.count("| `Run smoke` | `success` |") == 2
+    assert "Dev validation run: https://github.com/example/dev" in rendered
+    assert "Prod validation run: https://github.com/example/prod" in rendered
     captured = capsys.readouterr()
     assert "wrote plan to" in captured.err
