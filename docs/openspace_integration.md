@@ -344,13 +344,7 @@ DecisionDoc AI에는 OpenSpace를 "자율 문서 생성 서비스 엔진"으로 
 
 현재 repo release contract에서 required한 OpenSpace 검증은 repo-local skill 존재와 문서 정합성까지다.
 
-선택적 host integration smoke가 필요하면:
-
-```bash
-python3 scripts/openspace_smoke.py
-```
-
-다만 이 smoke는 현재 제품 런타임의 필수 검증이 아니다. 결과는 host-side credential/session 조건에 의존할 수 있으므로, release gate 해석은 다음 순서를 따른다.
+선택적 host integration smoke가 필요하더라도 현재 repo는 별도 smoke 스크립트를 유지하지 않는다. 이 검증은 host-side credential/session 조건에 크게 의존하므로, release gate 해석은 다음 순서를 따른다.
 - repo-local skill files 존재
 - skill docs가 current procurement / Decision Council / eval boundaries와 맞는지
 - optional host integration smoke는 참고 증거로만 사용

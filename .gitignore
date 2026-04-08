@@ -29,6 +29,8 @@ output/
 .agents/skills/repo-intake
 .agents/skills/task-ledger-sync
 .agents/skills/verify-gate
+.agents/skills/delegate-task
+.agents/skills/skill-discovery
 
 # Local TLS materials
 nginx/ssl/*.pem

@@ -148,13 +148,11 @@ pytest tests/test_voice_brief_import.py -q
 python scripts/smoke.py
 python scripts/ops_smoke.py
 python scripts/voice_brief_smoke.py
-python scripts/openspace_smoke.py
 ```
 
 ### OpenSpace integration
 
 - integration guide: `docs/openspace_integration.md`
-- wiring smoke: `python scripts/openspace_smoke.py`
 - current expectation: local skill discovery and MCP wiring should pass; end-to-end `execute_task` may still be blocked or time out depending on host-side LLM auth/session exposure
 
 ### Eval
