@@ -700,3 +700,4 @@ Use maintenance mode when you need to immediately block write traffic:
 - `DECISIONDOC_API_KEY` 는 현재 smoke script나 일부 caller가 실제로 헤더에 넣는 단일 key다.
 - 따라서 overlap 기간에는 `DECISIONDOC_API_KEY` 값이 항상 `DECISIONDOC_API_KEYS` 안에 포함되어 있어야 한다.
 - native meeting recording smoke를 같이 돌릴 때는 `OPENAI_API_KEY_<STAGE>` 또는 repo-level `OPENAI_API_KEY` fallback도 유효해야 한다.
+- 실제 change window에서 사용할 실행 템플릿은 [./deployment/api_key_rotation_change_plan.md](./deployment/api_key_rotation_change_plan.md) 를 따른다.

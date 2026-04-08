@@ -118,6 +118,7 @@ API key rotation 시 운영자 체크:
 - `deploy-smoke [dev]` 성공 후에만 `prod deploy-smoke` 로 넘어간다.
 - 모든 caller cutover가 끝난 뒤에만 `DECISIONDOC_API_KEYS=new`, `DECISIONDOC_API_KEY=new` 로 finalize 한다.
 - 상세 순서와 rollback 규칙은 [../deploy_aws.md#key-rotation-operator-checklist](../deploy_aws.md#key-rotation-operator-checklist) 를 따른다.
+- change window용 기록 템플릿은 [./api_key_rotation_change_plan.md](./api_key_rotation_change_plan.md) 를 사용한다.
 
 ## 6.2 현재 알려진 prod blocker 패턴
 
