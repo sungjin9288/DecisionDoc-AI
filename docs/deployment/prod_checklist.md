@@ -87,7 +87,10 @@ git push origin v1.0.0
 Docker server CD 필수 GitHub Secrets:
 - `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`
 - `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`
-- `GHCR_TOKEN` (GitHub Container Registry)
+
+참고:
+- GHCR 로그인은 현재 `.github/workflows/cd.yml`에서 built-in `GITHUB_TOKEN`과 `packages:write` 권한으로 처리한다.
+- 별도 `GHCR_TOKEN` secret은 현재 workflow contract의 필수값이 아니다.
 
 AWS SAM 배포 시 필요한 secret/variable은 [../deploy_aws.md](../deploy_aws.md)를 기준으로 설정합니다.
 native meeting recording을 prod에서 실제로 열려면 `OPENAI_API_KEY_PROD` 와 선택적 `MEETING_RECORDING_*_PROD` variable도 같은 runbook에 맞춰 설정합니다.
