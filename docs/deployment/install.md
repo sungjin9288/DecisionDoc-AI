@@ -18,7 +18,7 @@
 ```bash
 # 1. 저장소 클론
 git clone https://github.com/sungjin9288/DecisionDoc-AI.git
-cd decisiondoc-ai
+cd DecisionDoc-AI
 
 # 2. 초기 설정 (자동)
 chmod +x scripts/*.sh
