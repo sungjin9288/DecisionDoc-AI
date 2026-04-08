@@ -663,6 +663,13 @@ Use maintenance mode when you need to immediately block write traffic:
 - `main` 기준 `deploy-smoke [dev]` 실행 권한
 - prod rotation일 경우 같은 SHA에서 먼저 성공한 `deploy-smoke [dev]` evidence
 
+용어 정리:
+
+- `key label` 은 secret value 가 아니라 사람이 old / new 를 구분하는 이름표다.
+- `change window` 는 "서비스를 닫는 시간"이 아니라 작업 기록 시각이다.
+  - 상시 운영이면 `ad-hoc` 으로 적어도 된다.
+- `external caller` 는 이 repo 밖에서 `X-DecisionDoc-Api-Key` 로 DecisionDoc API 를 호출하는 다른 시스템을 뜻한다.
+
 #### Safe rollout order
 
 1. Update overlap allowlist first.
@@ -686,6 +693,22 @@ Use maintenance mode when you need to immediately block write traffic:
    - 누가
    - 언제
    - 어떤 old key를 제거했는지 운영 로그나 ticket에 남긴다.
+
+#### Direct cutover when there are no external callers
+
+아래 조건이 모두 맞으면 overlap 대신 direct cutover 가 더 단순하다.
+
+- 이 repo 밖에서 기존 API key 를 쓰는 caller 가 없다.
+- repo 내부 smoke / deploy 경로만 새 key 로 바로 검증하면 충분하다.
+
+순서:
+
+1. `DECISIONDOC_API_KEYS=new`
+2. `DECISIONDOC_API_KEY=new`
+3. `deploy-smoke [dev]`
+4. `deploy-smoke [prod]`
+
+이번 방식은 기존 key 를 유지해야 하는 외부 시스템이 없을 때만 사용한다.
 
 #### Rollback rule
 

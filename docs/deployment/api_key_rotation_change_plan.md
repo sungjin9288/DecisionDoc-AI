@@ -25,6 +25,18 @@ python3 scripts/prepare_api_key_rotation_change_plan.py \
 - 나머지 owner, change window, rollout readiness는 운영자가 직접 채운다.
 - `gh` auth가 없거나 GitHub Actions run 조회가 실패하면 script는 non-zero exit로 종료한다.
 
+빠르게 이해해야 하는 용어:
+
+- `Change window start/end` 는 서비스 중단 시간을 뜻하지 않는다.
+  - 단순히 "이 rotation 작업을 언제 시작했고 언제 끝냈는지" 남기는 기록 칸이다.
+  - 상시 운영 환경이면 `ad-hoc` 또는 `close when validation completes` 같이 적어도 된다.
+- `Old key label` / `New key label` 은 secret value 자체가 아니다.
+  - 사람이 old 와 new 를 구분하려고 붙이는 이름표다.
+  - 예: `decisiondoc-api-current`, `decisiondoc-api-next-2026-04-08`
+- `Client rollout 대상 목록 확인` 은 "이 repo 밖에서 이 API key 를 실제로 쓰는 caller 가 있는가"를 뜻한다.
+  - 없으면 `yes — external caller 없음` 으로 적고 direct cutover 를 고려할 수 있다.
+  - 있으면 그 caller 들이 새 key 로 넘어가는 순서를 따로 관리해야 한다.
+
 ## 1. Change metadata
 
 아래 항목은 실행 전에 채운다.
@@ -41,6 +53,12 @@ python3 scripts/prepare_api_key_rotation_change_plan.py \
 | New key label | `<NEW_KEY_LABEL>` |
 | Client rollout owner | `<CLIENT_OWNER>` |
 | Rollback owner | `<ROLLBACK_OWNER>` |
+
+간단한 기본값:
+
+- 별도 운영 티켓이 없으면 `manual-YYYY-MM-DD-api-key-rotation`
+- owner / approver / rollback owner 가 같으면 같은 이름을 반복해도 된다.
+- 외부 caller 가 없으면 `Client rollout owner` 는 실제 secret 변경 담당자와 같아도 된다.
 
 ## 2. Preconditions
 
@@ -64,10 +82,20 @@ python3 scripts/prepare_api_key_rotation_change_plan.py \
 
 ## 3. Secret staging
 
-실행 순서는 항상 overlap-first다.
+기본 원칙은 overlap-first다. 다만 외부 caller 가 전혀 없고 repo 내부 smoke / deploy 경로만 존재하면
+direct cutover 로 단순화할 수 있다.
 
 1. `DECISIONDOC_API_KEYS=old,new`
 2. `DECISIONDOC_API_KEY=old`
+
+direct cutover 를 택하는 경우:
+
+1. `DECISIONDOC_API_KEYS=new`
+2. `DECISIONDOC_API_KEY=new`
+3. `deploy-smoke [dev]`
+4. `deploy-smoke [prod]`
+
+이 경로는 "기존 key 를 계속 써야 하는 외부 caller 가 없음"이 확인됐을 때만 쓴다.
 
 GitHub CLI 예시:
 
@@ -124,11 +152,18 @@ cutover 방식은 둘 중 하나를 선택한다.
 - `DECISIONDOC_API_KEY=new` 로 바꾼다.
 - `deploy-smoke [dev]` 를 다시 실행해 new caller key가 runtime allowlist에서 통과하는지 확인한다.
 
+#### Option C. Direct cutover
+
+- 외부 caller 가 전혀 없을 때만 사용한다.
+- `DECISIONDOC_API_KEYS=new`
+- `DECISIONDOC_API_KEY=new`
+- `deploy-smoke [dev]` 와 `deploy-smoke [prod]` 로 바로 검증한다.
+
 기록:
 
 | 항목 | 값 |
 |------|----|
-| 선택한 cutover 방식 | `external-first` / `smoke-first` |
+| 선택한 cutover 방식 | `external-first` / `smoke-first` / `direct-cutover` |
 | Caller cutover 완료 시간 | `<HH:MM>` |
 | 추가 dev validation run | `<RUN_ID_OR_NA>` |
 
