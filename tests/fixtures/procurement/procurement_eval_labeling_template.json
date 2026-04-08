@@ -1,0 +1,30 @@
+[
+  {
+    "case_id": "replace_with_stable_case_id",
+    "title": "공고명",
+    "issuer": "발주기관",
+    "budget": "예산 문자열 그대로",
+    "deadline": "YYYY-MM-DD HH:MM 또는 원문",
+    "raw_text": "입찰참가자격, 인증, 지역제한, 공동수급 등 판단 근거가 되는 원문 요약",
+    "key_requirements": [
+      "핵심 요구사항 1",
+      "핵심 요구사항 2"
+    ],
+    "capability_text": "해당 회사의 capability profile 또는 knowledge 요약",
+    "expected_recommendation": "GO",
+    "expected_score_status": "scored",
+    "expected_score_min": 75.0,
+    "expected_score_max": 100.0,
+    "expected_hard_failure": "",
+    "expected_missing": [],
+    "slice_tags": [
+      "domain:ai",
+      "issuer:central_government",
+      "budget:mid",
+      "data:complete",
+      "recommendation:go"
+    ],
+    "label_source": "human_review",
+    "review_notes": "왜 이 라벨을 줬는지, 논쟁 포인트가 무엇인지 간단히 기록"
+  }
+]

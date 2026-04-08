@@ -1,0 +1,4 @@
+interface:
+  display_name: "DecisionDoc Procurement Eval"
+  short_description: "Handle procurement copilot and G2B evaluation work"
+  default_prompt: "Work on DecisionDoc procurement evaluation flows and verify the right tests."
