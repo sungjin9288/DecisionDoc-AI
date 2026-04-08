@@ -6,6 +6,25 @@
 상세 배포 배경과 workflow contract는 [../deploy_aws.md](../deploy_aws.md),
 prod 운영 기본 규칙은 [./prod_checklist.md](./prod_checklist.md)를 함께 본다.
 
+## Quick start
+
+현재 `main` SHA와 최근 성공한 `deploy-smoke` run URL을 먼저 채운 초안을 만들려면:
+
+```bash
+python3 scripts/prepare_api_key_rotation_change_plan.py \
+  --stage prod \
+  --ticket CHG-2026-0410 \
+  --owner "<OWNER_NAME>" \
+  --approver "<APPROVER_NAME>" \
+  --old-key-label "api-key-v1" \
+  --new-key-label "api-key-v2" \
+  --output /tmp/api-key-rotation-plan.md
+```
+
+- script는 current git SHA와 최근 성공한 `deploy-smoke [dev]` / `deploy-smoke [prod]` evidence를 자동으로 넣는다.
+- 나머지 owner, change window, rollout readiness는 운영자가 직접 채운다.
+- `gh` auth가 없거나 GitHub Actions run 조회가 실패하면 script는 non-zero exit로 종료한다.
+
 ## 1. Change metadata
 
 아래 항목은 실행 전에 채운다.
