@@ -309,14 +309,14 @@ pytest tests/ -m live
 |------|----------|
 | `test_generate.py` | 전체 generate 파이프라인, 캐싱 |
 | `test_auth_api_key.py` | API 키 검증, HMAC, OPTIONS bypass |
-| `test_storage.py` | LocalStorage / S3Storage (moto 사용) |
+| `test_storage.py` | LocalStorage / S3Storage (fake S3 client 기반) |
 | `test_stabilizer.py` | 번들 안정화 로직 |
 | `test_ops_investigate.py` | Ops 조사 엔드포인트 |
 | `test_golden_snapshots.py` | 골든 스냅샷 비교 |
 | `test_observability.py` | 구조화 로그 필드 검증 |
 | `test_maintenance_mode.py` | 유지보수 모드 차단 |
 
-**Fixtures**: `tests/fixtures/` — 10개 JSON 시나리오 (정상, 미완성, 보안 민감, 비용 제약 등)
+**Fixtures**: `tests/fixtures/` — 기본 10개 JSON 시나리오 + procurement fixture 2개
 
 ---
 
@@ -328,7 +328,7 @@ pytest tests/ -m live
 
 ### AWS 관련
 - `DECISIONDOC_S3_BUCKET` 없이 `DECISIONDOC_STORAGE=s3` 설정 시 런타임 오류
-- boto3는 `requirements.txt`에 없음 — S3 스토리지 사용 시 별도 설치 필요 (Lambda Layer 또는 SAM 빌드)
+- boto3는 `requirements.txt`에 포함되어 있다. S3 스토리지는 런타임에서 lazy import 패턴을 유지한다.
 - SAM 배포 전 `DECISIONDOC_API_KEY` 또는 `DECISIONDOC_API_KEYS` 파라미터 필수 (`prod` 환경)
 - CloudWatch 조사(`/ops/investigate`) 기능은 `DECISIONDOC_OPS_KEY` 없으면 인증 실패
 
