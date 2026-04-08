@@ -305,6 +305,4 @@ pytest tests/ -m live
 - Provider 추가 시: `Provider` ABC 상속 → `UsageTokenMixin` mixin → `factory.py`에 분기 추가
 
 ### 미완료 항목 (아키텍처 부채)
-- `BaseJsonStore` 추상 클래스 추출 미완료
-- `app/main.py`의 나머지 엔드포인트들 `app/routers/`로 분리 미완료
-- CSP Nonce 미적용
+- CSP Nonce 미적용 (`security_headers.py`는 현재 `script-src 'unsafe-inline'`에 의존)
