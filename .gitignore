@@ -14,8 +14,17 @@ __pycache__/
 data/
 exports/
 reports/
+output/
+.playwright-cli/
 
 # IDE
 .idea/
 .vscode/
 *.swp
+
+# Local agent / assistant overlays
+.ai/
+.claude/
+
+# Local TLS materials
+nginx/ssl/*.pem
