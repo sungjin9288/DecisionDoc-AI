@@ -43,7 +43,6 @@ app/
 │   ├── factory.py           # get_storage() — local / s3 선택
 │   ├── local.py             # 파일 기반 스토리지, atomic write
 │   ├── s3.py                # AWS S3 스토리지 (boto3 lazy import)
-│   └── file_repo.py         # ⚠️ 레거시 — 사용 안 함, 삭제 예정
 ├── services/
 │   └── generation_service.py  # 핵심 파이프라인 오케스트레이션
 ├── domain/
@@ -196,9 +195,6 @@ app.state.service = service  # create_app() 내부
 
 ### DON'T
 
-- `services/providers/` 하위에 새 파일 추가 금지 — 구 계층, 미사용 (삭제 대상)
-- `storage/file_repo.py` 수정 금지 — 레거시 잔재
-- `app/main.py`에 `_is_enabled()` 같은 유틸을 중복 정의하지 말 것 — `app.config`의 `is_enabled()` 참조
 - `os.getenv` 직접 호출을 라우트 핸들러 내부에 넣지 말 것 — `create_app()` 시점에 수집
 - `json.loads(response.text)` 직접 파싱 금지 — Provider 구현체 내부에서 처리
 - `boto3` 최상위 import 금지 — s3 스토리지에서 lazy import
@@ -288,10 +284,9 @@ pytest tests/ -m live
 
 ## 주의사항
 
-### Dead Code / 레거시
-- `app/storage/file_repo.py` — 삭제 예정. 수정하거나 참조 추가 금지
-- `app/services/providers/` — 구 Provider 계층 잔재. 새 기능 추가 금지
-- `app/main.py`의 `_is_enabled()` — `app.config.is_enabled()`와 중복 존재. 신규 코드는 후자 사용
+### Legacy Compatibility
+- `DECISIONDOC_API_KEY`는 단일 키 fallback으로만 유지한다. 신규 설정은 `DECISIONDOC_API_KEYS`를 우선한다.
+- `app.storage.tenant_store.migrate_legacy_data()`는 flat data에서 tenant 경로로 올리는 호환 레일이다. 앱 초기화에서 이 흐름을 우회하지 말 것.
 
 ### AWS 관련
 - `DECISIONDOC_S3_BUCKET` 없이 `DECISIONDOC_STORAGE=s3` 설정 시 런타임 오류
