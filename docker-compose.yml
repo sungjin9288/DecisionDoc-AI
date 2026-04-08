@@ -1,0 +1,45 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "3300:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DECISIONDOC_STORAGE=local
+      - DECISIONDOC_PROVIDER=${DECISIONDOC_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-change-in-production-32c}
+      - ALLOWED_ORIGINS=http://localhost:8000,http://localhost:3300
+      - G2B_API_KEY=${G2B_API_KEY}
+      - DECISIONDOC_TEMPLATE_VERSION=${DECISIONDOC_TEMPLATE_VERSION:-v1}
+    volumes:
+      - ./app:/app/app          # hot reload in dev
+      - decisiondoc_data:/app/data
+    command: >
+      python -m uvicorn app.main:app
+      --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Local Ollama for on-premises LLM (optional)
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    profiles:
+      - local-llm
+
+volumes:
+  decisiondoc_data:
+  ollama_models:
