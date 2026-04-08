@@ -85,7 +85,7 @@ Inspect the real repository before making cross-cutting changes.
 - Storage modes:
   - local filesystem
   - AWS S3
-- Provider modes may include:
+- Currently supported provider modes:
   - `openai`
   - `gemini`
   - `local`
@@ -93,6 +93,7 @@ Inspect the real repository before making cross-cutting changes.
 
 Important rules:
 - `mock` provider must remain usable and deterministic for development and test flows.
+- `DECISIONDOC_PROVIDER` may be a single provider or a comma-separated fallback chain such as `openai,gemini`.
 - Local filesystem and S3 storage abstractions must both be preserved unless an explicit architecture change is requested.
 - Long-term operating direction and environment hardening roadmap:
   - `docs/operating_model_roadmap.md`
@@ -184,6 +185,8 @@ Important environment groups include:
 - `DECISIONDOC_ENV`
 - `ENVIRONMENT`
 - `DECISIONDOC_TEMPLATE_VERSION`
+- `OPENAI_API_BASE_URL`
+- `LOCAL_LLM_*`
 
 ### Auth / Security
 - `DECISIONDOC_API_KEY`
@@ -204,22 +207,30 @@ Important environment groups include:
 ### Search / LLM / Retrieval
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
-- `LOCAL_LLM_*`
 - `DECISIONDOC_SEARCH_ENABLED`
 - `SERPER_API_KEY`
 - `BRAVE_API_KEY`
 - `TAVILY_API_KEY`
 
 ### Enterprise integrations
+- `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`
 - `G2B_API_KEY`
+- `G2B_SEARCH_DAYS`
+- `G2B_MAX_RESULTS`
 - `STRIPE_*`
-- `STATUSPAGE_*`
+- `STATUSPAGE_PAGE_ID`
+- `STATUSPAGE_API_KEY`
 - `SSO_ENCRYPTION_KEY`
 
 ### Voice Brief
 - `VOICE_BRIEF_API_BASE_URL`
 - `VOICE_BRIEF_API_BEARER_TOKEN`
 - `VOICE_BRIEF_TIMEOUT_SECONDS`
+
+### Meeting recording
+- `MEETING_RECORDING_TRANSCRIPTION_MODEL`
+- `MEETING_RECORDING_MAX_UPLOAD_BYTES`
+- `MEETING_RECORDING_CONTEXT_CHAR_LIMIT`
 
 Rules:
 - Do not scatter raw `os.getenv(...)` calls through route handlers.
@@ -359,8 +370,8 @@ When introducing substantial new capability:
 ## 9) Do-not rules
 
 Do NOT:
-- add new code to deprecated or legacy provider layers
-- modify or revive legacy storage paths such as deprecated file-repo code without explicit instruction
+- spread provider-selection branches outside the established provider factory path
+- bypass tenant migration or compatibility rails such as `migrate_legacy_data(...)` without explicit instruction
 - duplicate existing config helpers such as enable/disable utility functions when a shared config helper already exists
 - call `os.getenv(...)` directly inside route handlers unless there is a compelling local-only reason
 - top-level import `boto3` in modules where lazy import is the established pattern
@@ -422,8 +433,7 @@ When adding a new feature:
 ## 12) Legacy and hot spots
 
 Be careful around these areas:
-- deprecated provider paths
-- deprecated file-repo style storage code
+- compatibility rails around legacy flat-data migration
 - duplicated config helpers
 - old architectural seams left for backward compatibility
 - production-mode behavior such as docs/openapi disablement
