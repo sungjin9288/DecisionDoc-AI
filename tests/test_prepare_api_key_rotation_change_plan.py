@@ -84,10 +84,40 @@ def test_describe_same_sha_evidence_reports_missing_when_dev_run_absent():
                 "html_url": "https://example.com/prod",
             }
         ],
+        stage="dev",
         head_sha="target-sha",
     )
 
     assert evidence == "missing — run deploy-smoke [dev] on target-sha first"
+
+
+def test_describe_openai_availability_prefers_stage_secret_then_repo_fallback():
+    script = _load_script_module(
+        "decisiondoc_prepare_api_key_rotation_change_plan_openai",
+        "scripts/prepare_api_key_rotation_change_plan.py",
+    )
+
+    assert (
+        script._describe_openai_availability(
+            "prod",
+            {"OPENAI_API_KEY_PROD", "OPENAI_API_KEY"},
+        )
+        == "yes — stage secret `OPENAI_API_KEY_PROD` present"
+    )
+    assert (
+        script._describe_openai_availability(
+            "dev",
+            {"OPENAI_API_KEY"},
+        )
+        == "yes — repo-level `OPENAI_API_KEY` fallback present"
+    )
+    assert (
+        script._describe_openai_availability(
+            "prod",
+            set(),
+        )
+        == "no — missing `OPENAI_API_KEY_PROD` and repo-level `OPENAI_API_KEY`"
+    )
 
 
 def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, capsys):
@@ -116,6 +146,7 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
             },
         ],
     )
+    monkeypatch.setattr(script, "_fetch_actions_secret_names", lambda repo_slug: {"OPENAI_API_KEY"})
     output_path = tmp_path / "rotation-plan.md"
 
     exit_code = script.main(
@@ -145,9 +176,11 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
     assert 'gh secret set DECISIONDOC_API_KEYS -R sungjin9288/DecisionDoc-AI --body "NEW_KEY"' in rendered
     assert "Old key label | api-key-v1" in rendered
     assert "New key label | api-key-v2" in rendered
-    assert "Same-SHA `deploy-smoke` evidence for current `main` | `ready — deploy-smoke [dev] run dev succeeded on abc123`" in rendered
+    assert "Same-SHA `deploy-smoke [dev]` evidence for current `main` | `ready — deploy-smoke [dev] run dev succeeded on abc123`" in rendered
+    assert "Same-SHA `deploy-smoke [prod]` evidence for current `main` | `ready — deploy-smoke [prod] run prod succeeded on abc123`" in rendered
     assert "ad-hoc (no fixed maintenance window)" in rendered
     assert "Caller cutover 방식 | `direct`" in rendered
     assert "yes — external caller 없음, repo 내부 smoke/deploy 경로만 사용" in rendered
+    assert "yes — repo-level `OPENAI_API_KEY` fallback present" in rendered
     captured = capsys.readouterr()
     assert "wrote plan to" in captured.err
