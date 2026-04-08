@@ -616,7 +616,6 @@ jobs:
         env:
           SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
-          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
         run: |
           if [ -z "${SMOKE_BASE_URL}" ]; then
             echo "Missing smoke base URL output"
@@ -624,10 +623,6 @@ jobs:
           fi
           if [ -z "${SMOKE_API_KEY}" ]; then
             echo "Missing DECISIONDOC_API_KEY secret"
-            exit 1
-          fi
-          if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "Missing OPENAI_API_KEY runtime secret"
             exit 1
           fi
 
