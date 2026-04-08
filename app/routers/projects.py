@@ -163,6 +163,49 @@ def _apply_procurement_observability(
         )
 
 
+def _set_error_code(request: Request, code: str) -> None:
+    request.state.error_code = code
+
+
+def _apply_meeting_recording_observability(
+    request: Request,
+    *,
+    action: str,
+    project_id: str,
+    recording_id: str | None = None,
+    file_size_bytes: int | None = None,
+    recording=None,
+    generated_documents: list[dict] | None = None,
+) -> None:
+    request.state.meeting_recording_action = action
+    request.state.meeting_recording_project_id = project_id
+
+    resolved_recording_id = recording_id
+    if recording is not None:
+        resolved_recording_id = recording.recording_id
+    request.state.meeting_recording_recording_id = resolved_recording_id
+
+    if file_size_bytes is not None:
+        request.state.meeting_recording_file_size_bytes = file_size_bytes
+    elif recording is not None:
+        request.state.meeting_recording_file_size_bytes = recording.file_size_bytes
+
+    if recording is not None:
+        request.state.meeting_recording_transcription_status = recording.transcription_status
+        request.state.meeting_recording_approval_status = recording.approval_status
+        request.state.meeting_recording_transcript_language = recording.transcript_language
+        request.state.meeting_recording_transcript_model = recording.transcript_model
+
+    if generated_documents is not None:
+        bundle_types = [
+            str(item.get("bundle_type"))
+            for item in generated_documents
+            if item.get("bundle_type")
+        ]
+        request.state.meeting_recording_generated_bundle_count = len(bundle_types)
+        request.state.meeting_recording_generated_bundle_types = bundle_types
+
+
 def _load_decision_council_procurement_context_or_raise(
     request: Request,
     *,
@@ -537,21 +580,36 @@ async def upload_project_meeting_recording_endpoint(
     """Upload a native meeting recording for later transcription and document generation."""
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    raw = await file.read()
+    _apply_meeting_recording_observability(
+        request,
+        action="upload",
+        project_id=project_id,
+        file_size_bytes=len(raw),
+    )
     try:
         recording = service.upload_recording(
             tenant_id=tenant_id,
             project_id=project_id,
             filename=file.filename or "recording",
             content_type=file.content_type,
-            raw=await file.read(),
+            raw=raw,
         )
     except KeyError as exc:
+        _set_error_code(request, "project_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MeetingRecordingUploadError as exc:
+        _set_error_code(request, "meeting_recording_upload_invalid")
         raise HTTPException(
             status_code=422,
             detail={"code": "meeting_recording_upload_invalid", "message": str(exc)},
         ) from exc
+    _apply_meeting_recording_observability(
+        request,
+        action="upload",
+        project_id=project_id,
+        recording=recording,
+    )
     return {
         "project_id": project_id,
         "recording": _serialize_meeting_recording_summary(recording),
@@ -565,8 +623,14 @@ async def upload_project_meeting_recording_endpoint(
 def list_project_meeting_recordings_endpoint(project_id: str, request: Request) -> dict:
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    _apply_meeting_recording_observability(
+        request,
+        action="list",
+        project_id=project_id,
+    )
     project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
     if project is None:
+        _set_error_code(request, "project_not_found")
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
     recordings = service.list_recordings(tenant_id=tenant_id, project_id=project_id)
     return {
@@ -586,6 +650,12 @@ def get_project_meeting_recording_endpoint(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    _apply_meeting_recording_observability(
+        request,
+        action="get",
+        project_id=project_id,
+        recording_id=recording_id,
+    )
     try:
         recording = service.get_recording(
             tenant_id=tenant_id,
@@ -593,7 +663,14 @@ def get_project_meeting_recording_endpoint(
             recording_id=recording_id,
         )
     except KeyError as exc:
+        _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _apply_meeting_recording_observability(
+        request,
+        action="get",
+        project_id=project_id,
+        recording=recording,
+    )
     return {
         "project_id": project_id,
         "recording": asdict(recording),
@@ -612,6 +689,12 @@ def transcribe_project_meeting_recording_endpoint(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    _apply_meeting_recording_observability(
+        request,
+        action="transcribe",
+        project_id=project_id,
+        recording_id=recording_id,
+    )
     try:
         recording = service.transcribe_recording(
             tenant_id=tenant_id,
@@ -620,17 +703,26 @@ def transcribe_project_meeting_recording_endpoint(
             language=payload.language,
         )
     except KeyError as exc:
+        _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MeetingRecordingConfigError as exc:
+        _set_error_code(request, "meeting_recording_transcription_not_configured")
         raise HTTPException(
             status_code=503,
             detail={"code": "meeting_recording_transcription_not_configured", "message": str(exc)},
         ) from exc
     except MeetingRecordingTranscriptionError as exc:
+        _set_error_code(request, "meeting_recording_transcription_failed")
         raise HTTPException(
             status_code=502,
             detail={"code": "meeting_recording_transcription_failed", "message": str(exc)},
         ) from exc
+    _apply_meeting_recording_observability(
+        request,
+        action="transcribe",
+        project_id=project_id,
+        recording=recording,
+    )
     return {
         "project_id": project_id,
         "recording": asdict(recording),
@@ -648,6 +740,12 @@ def approve_project_meeting_recording_endpoint(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    _apply_meeting_recording_observability(
+        request,
+        action="approve",
+        project_id=project_id,
+        recording_id=recording_id,
+    )
     try:
         recording = service.approve_recording(
             tenant_id=tenant_id,
@@ -656,12 +754,20 @@ def approve_project_meeting_recording_endpoint(
             approved_by=get_username(request),
         )
     except KeyError as exc:
+        _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MeetingRecordingStateError as exc:
+        _set_error_code(request, "meeting_recording_not_ready_for_approval")
         raise HTTPException(
             status_code=409,
             detail={"code": "meeting_recording_not_ready_for_approval", "message": str(exc)},
         ) from exc
+    _apply_meeting_recording_observability(
+        request,
+        action="approve",
+        project_id=project_id,
+        recording=recording,
+    )
     return {
         "project_id": project_id,
         "recording": asdict(recording),
@@ -680,6 +786,12 @@ def generate_project_docs_from_meeting_recording_endpoint(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     service = request.app.state.meeting_recording_service
+    _apply_meeting_recording_observability(
+        request,
+        action="generate_documents",
+        project_id=project_id,
+        recording_id=recording_id,
+    )
     try:
         result = service.generate_documents_from_recording(
             tenant_id=tenant_id,
@@ -690,17 +802,32 @@ def generate_project_docs_from_meeting_recording_endpoint(
             context_note=payload.context_note,
         )
     except KeyError as exc:
+        _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        _set_error_code(request, "meeting_recording_bundle_invalid")
         raise HTTPException(
             status_code=422,
             detail={"code": "meeting_recording_bundle_invalid", "message": str(exc)},
         ) from exc
     except MeetingRecordingStateError as exc:
+        _set_error_code(request, "meeting_recording_not_ready_for_generation")
         raise HTTPException(
             status_code=409,
             detail={"code": "meeting_recording_not_ready_for_generation", "message": str(exc)},
         ) from exc
+    recording = service.get_recording(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        recording_id=recording_id,
+    )
+    _apply_meeting_recording_observability(
+        request,
+        action="generate_documents",
+        project_id=project_id,
+        recording=recording,
+        generated_documents=result["generated_documents"],
+    )
     return result
 
 

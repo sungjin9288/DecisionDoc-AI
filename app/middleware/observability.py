@@ -37,6 +37,16 @@ OPTIONAL_STATE_KEYS = [
     "procurement_checklist_action_count",
     "procurement_recommendation",
     "procurement_handoff_used",
+    "meeting_recording_action",
+    "meeting_recording_project_id",
+    "meeting_recording_recording_id",
+    "meeting_recording_file_size_bytes",
+    "meeting_recording_transcription_status",
+    "meeting_recording_approval_status",
+    "meeting_recording_transcript_language",
+    "meeting_recording_transcript_model",
+    "meeting_recording_generated_bundle_count",
+    "meeting_recording_generated_bundle_types",
 ]
 
 
