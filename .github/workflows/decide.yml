@@ -1,0 +1,84 @@
+name: decide
+
+# Automatically generate decision documents when a PR body contains
+# a <!-- decide ... --> marker and post them as a PR comment.
+#
+# Marker format (add to PR description):
+#
+#   <!-- decide
+#   title: Redis 세션 캐싱 도입
+#   goal: HTTP 세션 동기화 병목 해소
+#   context: 현재 동기 HTTP 호출 방식
+#   constraints: AWS 환경, 팀 내 Redis 경험 없음
+#   doc_types: adr,onepager
+#   -->
+#
+# Required GitHub Secrets (at least one LLM key, or falls back to mock):
+#   OPENAI_API_KEY   — OpenAI API key
+#   GEMINI_API_KEY   — Google Gemini API key (fallback)
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  decide:
+    # Only run when the PR body contains the decide marker
+    if: contains(github.event.pull_request.body, '<!-- decide')
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write   # required for gh pr comment
+      contents: read
+
+    env:
+      CI: "true"
+      DECISIONDOC_TEMPLATE_VERSION: "v1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve LLM provider
+        # Prefer OpenAI → Gemini → mock (if no secrets configured)
+        run: |
+          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "DECISIONDOC_PROVIDER=openai" >> "$GITHUB_ENV"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> "$GITHUB_ENV"
+          elif [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "DECISIONDOC_PROVIDER=gemini" >> "$GITHUB_ENV"
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> "$GITHUB_ENV"
+          else
+            echo "No LLM API key found — falling back to mock provider."
+            echo "DECISIONDOC_PROVIDER=mock" >> "$GITHUB_ENV"
+          fi
+
+      - name: Parse decide marker from PR body
+        id: parse
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python scripts/parse_decide_marker.py
+
+      - name: Generate decision documents
+        if: steps.parse.outputs.has_marker == 'true'
+        run: |
+          python scripts/decide.py \
+            --from-json /tmp/decide_args.json \
+            --output ./decide-output
+
+      - name: Post PR comment with generated documents
+        if: steps.parse.outputs.has_marker == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/format_pr_comment.py ./decide-output \
+            | gh pr comment "${{ github.event.pull_request.number }}" --body-file -
