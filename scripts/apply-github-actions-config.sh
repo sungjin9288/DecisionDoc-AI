@@ -165,6 +165,11 @@ secrets=(
 
 variables=()
 procurement_flag_name="DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_${STAGE_UPPER}"
+openai_api_key_name="OPENAI_API_KEY_${STAGE_UPPER}"
+openai_api_base_url_name="OPENAI_API_BASE_URL_${STAGE_UPPER}"
+meeting_recording_model_name="MEETING_RECORDING_TRANSCRIPTION_MODEL_${STAGE_UPPER}"
+meeting_recording_max_upload_name="MEETING_RECORDING_MAX_UPLOAD_BYTES_${STAGE_UPPER}"
+meeting_recording_context_limit_name="MEETING_RECORDING_CONTEXT_CHAR_LIMIT_${STAGE_UPPER}"
 g2b_api_key_name="G2B_API_KEY_${STAGE_UPPER}"
 voice_brief_bearer_name="VOICE_BRIEF_API_BEARER_TOKEN_${STAGE_UPPER}"
 voice_brief_timeout_name="VOICE_BRIEF_TIMEOUT_SECONDS_${STAGE_UPPER}"
@@ -178,6 +183,22 @@ procurement_smoke_username_name="PROCUREMENT_SMOKE_USERNAME_${STAGE_UPPER}"
 procurement_smoke_password_name="PROCUREMENT_SMOKE_PASSWORD_${STAGE_UPPER}"
 
 variables+=("$procurement_flag_name")
+
+if has_value "$openai_api_key_name"; then
+  secrets+=("$openai_api_key_name")
+fi
+if has_value "$openai_api_base_url_name"; then
+  variables+=("$openai_api_base_url_name")
+fi
+if has_value "$meeting_recording_model_name"; then
+  variables+=("$meeting_recording_model_name")
+fi
+if has_value "$meeting_recording_max_upload_name"; then
+  variables+=("$meeting_recording_max_upload_name")
+fi
+if has_value "$meeting_recording_context_limit_name"; then
+  variables+=("$meeting_recording_context_limit_name")
+fi
 
 if has_value "$g2b_api_key_name"; then
   secrets+=("$g2b_api_key_name")

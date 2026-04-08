@@ -11121,6 +11121,126 @@
     el.style.display = 'block';
   }
 
+  function getMeetingRecordingErrorMessage(code, fallbackMessage) {
+    const defaultMessage = fallbackMessage || '회의 녹음 처리에 실패했습니다.';
+    switch (code) {
+      case 'meeting_recording_upload_invalid':
+        return fallbackMessage || '지원하지 않는 파일 형식이거나 업로드 크기 제한을 초과했습니다.';
+      case 'meeting_recording_transcription_not_configured':
+        return '현재 환경에는 회의 녹음 전사(OpenAI) 설정이 없습니다. 관리자에게 OPENAI_API_KEY 구성을 요청하세요.';
+      case 'meeting_recording_transcription_failed':
+        return fallbackMessage || 'OpenAI 전사 요청이 실패했습니다. 잠시 후 다시 시도하세요.';
+      case 'meeting_recording_not_ready_for_approval':
+        return fallbackMessage || '전사가 완료된 녹음만 승인할 수 있습니다.';
+      case 'meeting_recording_not_ready_for_generation':
+        return fallbackMessage || '승인된 전사본만 회의록/보고서 생성에 사용할 수 있습니다.';
+      case 'meeting_recording_bundle_invalid':
+        return fallbackMessage || '지원하지 않는 문서 번들입니다.';
+      default:
+        return defaultMessage;
+    }
+  }
+
+  function setMeetingRecordingStatus(message, type = 'loading') {
+    const el = document.getElementById('meeting-recording-status');
+    if (!el) return;
+    if (!message) {
+      el.textContent = '';
+      el.className = 'project-import-status';
+      el.style.display = 'none';
+      return;
+    }
+    el.textContent = message;
+    el.className = `project-import-status ${type}`;
+    el.style.display = 'block';
+  }
+
+  function getMeetingRecordingTranscriptionMeta(status) {
+    switch (status) {
+      case 'completed':
+        return { copy: '전사 완료', tone: 'success' };
+      case 'processing':
+        return { copy: '전사 중', tone: 'loading' };
+      case 'failed':
+        return { copy: '전사 실패', tone: 'error' };
+      default:
+        return { copy: '업로드 완료', tone: 'muted' };
+    }
+  }
+
+  function getMeetingRecordingApprovalMeta(status) {
+    switch (status) {
+      case 'approved':
+        return { copy: '승인 완료', tone: 'success' };
+      default:
+        return { copy: '승인 대기', tone: 'muted' };
+    }
+  }
+
+  function renderProjectMeetingRecordingList(projectId, recordings) {
+    if (!recordings.length) {
+      return `
+        <div class="empty-state" style="margin-top:12px;">
+          <p>업로드된 회의 녹음이 없습니다. 녹음 파일을 올린 뒤 전사, 승인, 회의록/보고서 생성을 순서대로 진행하세요.</p>
+        </div>`;
+    }
+
+    return `
+      <div class="doc-list" style="margin-top:12px;">
+        ${recordings.map(recording => {
+          const transcriptionMeta = getMeetingRecordingTranscriptionMeta(recording.transcription_status);
+          const approvalMeta = getMeetingRecordingApprovalMeta(recording.approval_status);
+          const canApprove = recording.transcription_status === 'completed' && recording.has_transcript;
+          const canGenerate = recording.approval_status === 'approved';
+          const uploadedAt = (recording.uploaded_at || '').replace('T', ' ').slice(0, 16);
+          const transcriptPreview = recording.transcript_preview
+            ? escapeHtml(recording.transcript_preview)
+            : '아직 전사본이 없습니다.';
+          const transcriptError = recording.transcript_error
+            ? `<div class="muted-text" style="margin-top:6px;color:#b91c1c;">${escapeHtml(recording.transcript_error)}</div>`
+            : '';
+          return `
+            <div class="doc-item">
+              <div class="doc-item-left" style="display:block;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <span class="doc-bundle-badge">회의 녹음</span>
+                  <span class="doc-title">${escapeHtml(recording.filename || recording.recording_id)}</span>
+                  <span class="tag ${escapeHtml(transcriptionMeta.tone)}">${escapeHtml(transcriptionMeta.copy)}</span>
+                  <span class="tag ${escapeHtml(approvalMeta.tone)}">${escapeHtml(approvalMeta.copy)}</span>
+                </div>
+                <div class="muted-text" style="margin-top:6px;font-size:0.85rem;">
+                  업로드: ${escapeHtml(uploadedAt || '-')} · 크기: ${Number(recording.file_size_bytes || 0).toLocaleString()} bytes
+                </div>
+                <div class="muted-text" style="margin-top:8px;white-space:pre-wrap;line-height:1.5;">${transcriptPreview}</div>
+                ${transcriptError}
+              </div>
+              <div class="doc-item-right" style="min-width:220px;">
+                <div class="project-doc-actions" style="display:flex;flex-direction:column;gap:8px;">
+                  <button
+                    type="button"
+                    data-meeting-recording-transcribe="${escapeHtml(recording.recording_id)}"
+                    onclick="transcribeMeetingRecording('${projectId}','${recording.recording_id}')"
+                    ${recording.transcription_status === 'processing' ? 'disabled' : ''}
+                  >전사 실행</button>
+                  <button
+                    type="button"
+                    data-meeting-recording-approve="${escapeHtml(recording.recording_id)}"
+                    onclick="approveMeetingRecording('${projectId}','${recording.recording_id}')"
+                    ${canApprove ? '' : 'disabled'}
+                  >전사 승인</button>
+                  <button
+                    type="button"
+                    data-meeting-recording-generate="${escapeHtml(recording.recording_id)}"
+                    onclick="generateMeetingRecordingDocuments('${projectId}','${recording.recording_id}')"
+                    ${canGenerate ? '' : 'disabled'}
+                  >회의록/보고서 생성</button>
+                </div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }
+
   function setProcurementActionStatus(message, type = 'loading') {
     const el = document.getElementById('project-procurement-status');
     if (!el) return;
@@ -13139,6 +13259,147 @@
     }
   }
 
+  async function submitMeetingRecordingUpload(projectId) {
+    const fileInput = document.getElementById('meeting-recording-file');
+    const submitBtn = document.getElementById('meeting-recording-upload-submit');
+    if (!fileInput || !submitBtn) return;
+
+    const selectedFile = fileInput.files?.[0];
+    if (!selectedFile) {
+      setMeetingRecordingStatus('업로드할 회의 녹음 파일을 선택해주세요.', 'error');
+      fileInput.focus();
+      return;
+    }
+
+    submitBtn.disabled = true;
+    setMeetingRecordingStatus('회의 녹음 파일을 업로드하는 중입니다...', 'loading');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const res = await fetch(`/projects/${encodeURIComponent(projectId)}/recordings`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const data = await res.json();
+      await loadProjectDetail(projectId);
+      setMeetingRecordingStatus(`업로드 완료: ${data.recording?.filename || selectedFile.name}`, 'success');
+      showNotification(`회의 녹음 업로드 완료: ${data.recording?.filename || selectedFile.name}`, 'success');
+    } catch (e) {
+      const message = getMeetingRecordingErrorMessage(e.code, e.message);
+      setMeetingRecordingStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (fileInput) fileInput.value = '';
+      submitBtn.disabled = false;
+    }
+  }
+
+  async function transcribeMeetingRecording(projectId, recordingId) {
+    const languageInput = document.getElementById('meeting-recording-language');
+    const button = document.querySelector(`[data-meeting-recording-transcribe="${recordingId}"]`);
+    if (button) button.disabled = true;
+    setMeetingRecordingStatus('회의 녹음 전사를 요청하는 중입니다...', 'loading');
+
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/recordings/${encodeURIComponent(recordingId)}/transcribe`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ language: languageInput?.value.trim() || 'ko' }),
+        }
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const data = await res.json();
+      await loadProjectDetail(projectId);
+      setMeetingRecordingStatus(`전사 완료: ${data.recording?.filename || recordingId}`, 'success');
+      showNotification(`회의 전사 완료: ${data.recording?.filename || recordingId}`, 'success');
+    } catch (e) {
+      const message = getMeetingRecordingErrorMessage(e.code, e.message);
+      setMeetingRecordingStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function approveMeetingRecording(projectId, recordingId) {
+    const button = document.querySelector(`[data-meeting-recording-approve="${recordingId}"]`);
+    if (button) button.disabled = true;
+    setMeetingRecordingStatus('전사본 승인 상태를 갱신하는 중입니다...', 'loading');
+
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/recordings/${encodeURIComponent(recordingId)}/approve`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      await loadProjectDetail(projectId);
+      setMeetingRecordingStatus('전사본을 승인했습니다. 이제 회의록/보고서를 생성할 수 있습니다.', 'success');
+      showNotification('전사본 승인 완료', 'success');
+    } catch (e) {
+      const message = getMeetingRecordingErrorMessage(e.code, e.message);
+      setMeetingRecordingStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function generateMeetingRecordingDocuments(projectId, recordingId) {
+    const contextNote = document.getElementById('meeting-recording-context-note')?.value.trim() || '';
+    const button = document.querySelector(`[data-meeting-recording-generate="${recordingId}"]`);
+    if (button) button.disabled = true;
+    setMeetingRecordingStatus('승인된 전사본으로 회의록/보고서를 생성하는 중입니다...', 'loading');
+
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/recordings/${encodeURIComponent(recordingId)}/generate-documents`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            bundle_types: ['meeting_minutes_kr', 'project_report_kr'],
+            context_note: contextNote,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const data = await res.json();
+      await loadProjectDetail(projectId);
+      setMeetingRecordingStatus(`문서 생성 완료: ${(data.generated_documents || []).length}건`, 'success');
+      showNotification(`회의록/보고서 생성 완료 (${(data.generated_documents || []).length}건)`, 'success');
+    } catch (e) {
+      const message = getMeetingRecordingErrorMessage(e.code, e.message);
+      setMeetingRecordingStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   async function loadProjectDetail(projectId) {
     try {
       await loadServerVersionInfo();
@@ -13197,6 +13458,7 @@
     const container = document.getElementById('project-detail');
     if (!container) return;
     const docs = p.documents || [];
+    const recordings = p.meeting_recordings || [];
     const previousProjectId = _currentProjectDetail?.project?.project_id;
     const procurementEnabled = Boolean(options.procurementEnabled);
     const decisionCouncilSession = options.decisionCouncilSession || null;
@@ -13254,6 +13516,31 @@
         ${p.description ? `<p class="muted-text" style="margin:0;">${p.description}</p>` : ''}
       </div>
       <div class="bundle-breakdown">${_renderBundleBreakdown(docs)}</div>
+      <div class="project-import-panel">
+        <div class="project-import-header">
+          <div>
+            <h4 class="project-import-title">🎧 회의 녹음 업로드</h4>
+            <p class="project-import-help">회의 녹음 파일을 프로젝트에 올리고, OpenAI transcription으로 전사한 뒤 승인 상태를 거쳐 회의록/보고서를 생성합니다.</p>
+          </div>
+        </div>
+        <div class="project-import-form">
+          <label>
+            녹음 파일
+            <input id="meeting-recording-file" type="file" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,audio/*,video/webm">
+          </label>
+          <label>
+            전사 언어
+            <input id="meeting-recording-language" type="text" value="ko" placeholder="ko" autocomplete="off">
+          </label>
+          <button id="meeting-recording-upload-submit" class="project-import-submit" onclick="submitMeetingRecordingUpload('${p.project_id}')">업로드</button>
+        </div>
+        <label style="display:block;margin-top:12px;">
+          문서 생성 메모 (선택)
+          <textarea id="meeting-recording-context-note" rows="3" placeholder="예: 이번 회의는 API 안정화와 운영 리스크를 중심으로 요약해주세요." style="width:100%;margin-top:6px;border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:10px;background:#fff;color:inherit;"></textarea>
+        </label>
+        <div id="meeting-recording-status" class="project-import-status" aria-live="polite"></div>
+        ${renderProjectMeetingRecordingList(p.project_id, recordings)}
+      </div>
       <div class="project-import-panel">
         <div class="project-import-header">
           <div>

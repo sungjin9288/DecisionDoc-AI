@@ -9,6 +9,7 @@ from app.schemas import (
 from app.storage.approval_store import ApprovalStore
 from app.storage.bookmark_store import BookmarkStore
 from app.storage.history_store import HistoryEntry, HistoryStore
+from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.notification_store import NotificationStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
@@ -115,6 +116,38 @@ def test_project_and_approval_stores_persist_to_s3_state_backend():
     assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/approvals.json") in client.objects
     assert ProjectStore(base_dir="/virtual/data", backend=backend).get(project.project_id, tenant_id="alpha") is not None
     assert ApprovalStore(base_dir="/virtual/data", backend=backend).get(approval.approval_id, tenant_id="alpha") is not None
+
+
+def test_meeting_recording_store_persists_metadata_and_audio_to_s3_state_backend():
+    backend, client = _backend()
+    store = MeetingRecordingStore(base_dir="/virtual/data", backend=backend)
+
+    recording = store.create(
+        tenant_id="alpha",
+        project_id="proj-audio-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"RIFF....fakewav",
+    )
+
+    metadata_key = (
+        "unit-bucket",
+        f"decisiondoc-ai/state/tenants/alpha/meeting_recordings/proj-audio-1/{recording.recording_id}/metadata.json",
+    )
+    audio_key = (
+        "unit-bucket",
+        f"decisiondoc-ai/state/tenants/alpha/meeting_recordings/proj-audio-1/{recording.recording_id}/audio.wav",
+    )
+    assert metadata_key in client.objects
+    assert audio_key in client.objects
+    reloaded = store.get(
+        tenant_id="alpha",
+        project_id="proj-audio-1",
+        recording_id=recording.recording_id,
+    )
+    assert reloaded is not None
+    assert reloaded.filename == "meeting.wav"
+    assert store.read_audio_bytes(reloaded) == b"RIFF....fakewav"
 
 
 def test_procurement_store_persists_record_and_snapshot_to_s3_state_backend():

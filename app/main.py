@@ -26,12 +26,14 @@ from app.observability.logging import setup_logging
 from app.ops.factory import get_ops_service
 from app.services.search_service import SearchService
 from app.services.decision_council_service import DecisionCouncilService
+from app.services.meeting_recording_service import MeetingRecordingService
 from app.services.voice_brief_import_service import VoiceBriefImportService
 from app.providers.factory import get_provider
 from app.services.generation_service import GenerationService
 from app.storage.factory import get_storage
 from app.storage.approval_store import ApprovalStore
 from app.storage.decision_council_store import DecisionCouncilStore
+from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.feedback_store import FeedbackStore
@@ -129,6 +131,7 @@ def create_app() -> FastAPI:
     ops_service = get_ops_service()
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
     project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
+    meeting_recording_store = MeetingRecordingStore(base_dir=str(data_dir), backend=state_backend)
     voice_brief_base_url = get_voice_brief_api_base_url()
     voice_brief_import_service = (
         VoiceBriefImportService(
@@ -138,6 +141,11 @@ def create_app() -> FastAPI:
         )
         if voice_brief_base_url
         else None
+    )
+    meeting_recording_service = MeetingRecordingService(
+        recording_store=meeting_recording_store,
+        project_store=project_store,
+        generation_service=service,
     )
 
     @asynccontextmanager
@@ -196,6 +204,8 @@ def create_app() -> FastAPI:
     app.state.decision_council_service = decision_council_service
     app.state.procurement_copilot_enabled = procurement_copilot_enabled
     app.state.project_store = project_store
+    app.state.meeting_recording_store = meeting_recording_store
+    app.state.meeting_recording_service = meeting_recording_service
     app.state.voice_brief_import_service = voice_brief_import_service
     app.state.feedback_store = feedback_store
     app.state.prompt_override_store = _prompt_override_store

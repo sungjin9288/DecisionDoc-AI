@@ -98,6 +98,12 @@ required=(
 optional=()
 invalid=()
 
+optional+=("OPENAI_API_KEY_${STAGE_UPPER}")
+optional+=("OPENAI_API_BASE_URL_${STAGE_UPPER}")
+optional+=("MEETING_RECORDING_TRANSCRIPTION_MODEL_${STAGE_UPPER}")
+optional+=("MEETING_RECORDING_MAX_UPLOAD_BYTES_${STAGE_UPPER}")
+optional+=("MEETING_RECORDING_CONTEXT_CHAR_LIMIT_${STAGE_UPPER}")
+
 is_local_only_url() {
   local value=$1
   [[ "$value" =~ ^https?://(localhost|127\.[0-9]+\.[0-9]+\.[0-9]+|0\.0\.0\.0)(:[0-9]+)?([/?#].*)?$ ]]
@@ -175,6 +181,15 @@ if [[ "$ENABLE_VOICE_BRIEF" -eq 1 ]]; then
     echo "  INVALID $voice_brief_base_url_name (loopback URLs do not work from GitHub-hosted runners)"
     invalid+=("$voice_brief_base_url_name")
   fi
+fi
+
+openai_base_url_name="OPENAI_API_BASE_URL_${STAGE_UPPER}"
+openai_base_url_value=${!openai_base_url_name-}
+if [[ -n "$openai_base_url_value" ]] && is_local_only_url "$openai_base_url_value"; then
+  echo
+  echo "Invalid entries:"
+  echo "  INVALID $openai_base_url_name (loopback URLs do not work from Lambda runtime)"
+  invalid+=("$openai_base_url_name")
 fi
 
 echo

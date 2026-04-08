@@ -27,6 +27,22 @@ Parameters:
   DecisionDocOpsKey:
     Type: String
     NoEcho: true
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  OpenAiApiBaseUrl:
+    Type: String
+    Default: ""
+  MeetingRecordingTranscriptionModel:
+    Type: String
+    Default: "gpt-4o-mini-transcribe"
+  MeetingRecordingMaxUploadBytes:
+    Type: String
+    Default: "26214400"
+  MeetingRecordingContextCharLimit:
+    Type: String
+    Default: "12000"
   DecisionDocMaintenance:
     Type: String
     Default: "0"
@@ -109,6 +125,11 @@ Resources:
           DECISIONDOC_ENV: !Ref Stage
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
           DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
+          OPENAI_API_KEY: !Ref OpenAIApiKey
+          OPENAI_API_BASE_URL: !Ref OpenAiApiBaseUrl
+          MEETING_RECORDING_TRANSCRIPTION_MODEL: !Ref MeetingRecordingTranscriptionModel
+          MEETING_RECORDING_MAX_UPLOAD_BYTES: !Ref MeetingRecordingMaxUploadBytes
+          MEETING_RECORDING_CONTEXT_CHAR_LIMIT: !Ref MeetingRecordingContextCharLimit
           DECISIONDOC_MAINTENANCE: !Ref DecisionDocMaintenance
           DECISIONDOC_PROCUREMENT_COPILOT_ENABLED: !Ref DecisionDocProcurementCopilotEnabled
           DECISIONDOC_LAMBDA_FUNCTION_NAME: !Sub decisiondoc-ai-${Stage}${DeploymentSuffix}

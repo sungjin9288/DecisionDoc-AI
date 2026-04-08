@@ -41,6 +41,27 @@ def atomic_write_text(path: Path, text: str) -> None:
                 pass
 
 
+def atomic_write_bytes(path: Path, raw: bytes) -> None:
+    """Write *raw* bytes to *path* atomically via tmp-file + os.replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex[:12]}")
+    try:
+        with tmp.open("wb") as f:
+            f.write(raw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        _log.warning("Atomic byte write failed for %s", path, exc_info=True)
+        raise
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 class BaseJsonStore:
     """Thread-safe JSON file store with atomic writes.
 
