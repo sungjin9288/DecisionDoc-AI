@@ -69,6 +69,27 @@ def test_select_run_url_falls_back_to_placeholder_when_missing():
     assert selected == "<RUN_ID_OR_URL>"
 
 
+def test_describe_same_sha_evidence_reports_missing_when_dev_run_absent():
+    script = _load_script_module(
+        "decisiondoc_prepare_api_key_rotation_change_plan_same_sha_missing",
+        "scripts/prepare_api_key_rotation_change_plan.py",
+    )
+
+    evidence = script._describe_same_sha_evidence(
+        [
+            {
+                "display_title": "deploy-smoke [prod] @ main",
+                "conclusion": "success",
+                "head_sha": "other-sha",
+                "html_url": "https://example.com/prod",
+            }
+        ],
+        head_sha="target-sha",
+    )
+
+    assert evidence == "missing — run deploy-smoke [dev] on target-sha first"
+
+
 def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, capsys):
     script = _load_script_module(
         "decisiondoc_prepare_api_key_rotation_change_plan_main",
@@ -121,8 +142,12 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
     assert "abc123" in rendered
     assert "https://github.com/example/dev" in rendered
     assert "https://github.com/example/prod" in rendered
-    assert "gh secret set DECISIONDOC_API_KEYS -R sungjin9288/DecisionDoc-AI" in rendered
+    assert 'gh secret set DECISIONDOC_API_KEYS -R sungjin9288/DecisionDoc-AI --body "NEW_KEY"' in rendered
     assert "Old key label | api-key-v1" in rendered
     assert "New key label | api-key-v2" in rendered
+    assert "Same-SHA `deploy-smoke` evidence for current `main` | `ready — deploy-smoke [dev] run dev succeeded on abc123`" in rendered
+    assert "ad-hoc (no fixed maintenance window)" in rendered
+    assert "Caller cutover 방식 | `direct`" in rendered
+    assert "yes — external caller 없음, repo 내부 smoke/deploy 경로만 사용" in rendered
     captured = capsys.readouterr()
     assert "wrote plan to" in captured.err
