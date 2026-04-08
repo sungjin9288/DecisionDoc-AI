@@ -650,3 +650,53 @@ Use maintenance mode when you need to immediately block write traffic:
 1. Deploy with both old and new keys in `DECISIONDOC_API_KEYS`, while keeping `DECISIONDOC_API_KEY` set to one of the allowed runtime keys used by smoke callers.
 2. Move clients to the new key.
 3. Redeploy removing the old key.
+
+### Key rotation (operator checklist)
+
+이 섹션은 GitHub Actions secret 기준으로 `DECISIONDOC_API_KEYS` runtime allowlist와
+`DECISIONDOC_API_KEY` smoke / caller key를 안전하게 교체하는 절차를 정리한다.
+
+#### What you need to prepare
+
+- 새 client key 1개
+- 현재 운영 중인 old key 식별
+- `main` 기준 `deploy-smoke [dev]` 실행 권한
+- prod rotation일 경우 같은 SHA에서 먼저 성공한 `deploy-smoke [dev]` evidence
+
+#### Safe rollout order
+
+1. Update overlap allowlist first.
+   - `DECISIONDOC_API_KEYS=old,new`
+   - `DECISIONDOC_API_KEY=old`
+2. Run `deploy-smoke [dev]`.
+   - `Run smoke`
+   - `Run meeting recording smoke`
+   - `Run ops smoke`
+   위 세 단계가 모두 성공해야 다음으로 진행한다.
+3. Move smoke caller or external clients.
+   - smoke caller를 먼저 바꿀 경우 `DECISIONDOC_API_KEY=new`
+   - 외부 클라이언트를 먼저 바꿀 경우 `DECISIONDOC_API_KEYS=old,new` 상태를 유지한 채 rollout 한다.
+4. Run `deploy-smoke [prod]`.
+   - prod는 같은 `main` SHA에 성공한 `dev` smoke evidence가 있을 때만 진행한다.
+5. Finalize the rotation.
+   - 모든 caller가 new key를 사용 중임을 확인한 뒤
+   - `DECISIONDOC_API_KEYS=new`
+   - `DECISIONDOC_API_KEY=new`
+6. Record the cutover time and owner.
+   - 누가
+   - 언제
+   - 어떤 old key를 제거했는지 운영 로그나 ticket에 남긴다.
+
+#### Rollback rule
+
+- `deploy-smoke [dev]` 또는 `deploy-smoke [prod]` 가 실패하면 즉시 baseline으로 되돌린다.
+  - `DECISIONDOC_API_KEYS=old`
+  - `DECISIONDOC_API_KEY=old`
+- rollback 후에는 failure 원인을 정리하기 전까지 old key 삭제를 진행하지 않는다.
+
+#### Notes
+
+- `DECISIONDOC_API_KEYS` 는 runtime이 허용하는 key 목록이다.
+- `DECISIONDOC_API_KEY` 는 현재 smoke script나 일부 caller가 실제로 헤더에 넣는 단일 key다.
+- 따라서 overlap 기간에는 `DECISIONDOC_API_KEY` 값이 항상 `DECISIONDOC_API_KEYS` 안에 포함되어 있어야 한다.
+- native meeting recording smoke를 같이 돌릴 때는 `OPENAI_API_KEY_<STAGE>` 또는 repo-level `OPENAI_API_KEY` fallback도 유효해야 한다.

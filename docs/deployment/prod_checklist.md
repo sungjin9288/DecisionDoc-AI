@@ -111,6 +111,14 @@ native meeting recording을 prod에서 실제로 열려면 `OPENAI_API_KEY_PROD`
 - `UPDATE_ROLLBACK_FAILED` 상태에서는 재배포보다 recovery와 root-cause 분리가 먼저
 - `prod deploy-smoke` 는 같은 `main` SHA에 대해 성공한 `dev` deploy-smoke evidence가 있을 때만 정상 경로로 허용
 
+API key rotation 시 운영자 체크:
+
+- 먼저 `DECISIONDOC_API_KEYS=old,new` 로 overlap allowlist를 연다.
+- overlap 동안 `DECISIONDOC_API_KEY` 값은 반드시 `DECISIONDOC_API_KEYS` 안에 포함되게 유지한다.
+- `deploy-smoke [dev]` 성공 후에만 `prod deploy-smoke` 로 넘어간다.
+- 모든 caller cutover가 끝난 뒤에만 `DECISIONDOC_API_KEYS=new`, `DECISIONDOC_API_KEY=new` 로 finalize 한다.
+- 상세 순서와 rollback 규칙은 [../deploy_aws.md#key-rotation-operator-checklist](../deploy_aws.md#key-rotation-operator-checklist) 를 따른다.
+
 ## 6.2 현재 알려진 prod blocker 패턴
 
 `DecisionDocFunction` update가 `AccessDeniedException` 으로 실패하고, local admin의 `aws lambda update-function-code --dry-run` 도 동일하게 실패하면 다음처럼 해석합니다.
