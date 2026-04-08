@@ -186,6 +186,28 @@ def get_voice_brief_timeout_seconds() -> float:
     return _get_float("VOICE_BRIEF_TIMEOUT_SECONDS", 10.0)
 
 
+# ── Meeting recording / transcription config ────────────────────────────────
+
+def get_openai_api_base_url() -> str:
+    """Base URL for OpenAI REST API calls used outside the SDK."""
+    return (os.getenv("OPENAI_API_BASE_URL", "").strip() or "https://api.openai.com/v1").rstrip("/")
+
+
+def get_meeting_recording_max_upload_bytes() -> int:
+    """Maximum upload size for native meeting recordings."""
+    return _get_int("MEETING_RECORDING_MAX_UPLOAD_BYTES", 25 * 1024 * 1024)
+
+
+def get_meeting_recording_transcription_model() -> str:
+    """Default OpenAI transcription model for native meeting recordings."""
+    return os.getenv("MEETING_RECORDING_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
+
+
+def get_meeting_recording_context_char_limit() -> int:
+    """Maximum transcript chars injected into generation context."""
+    return _get_int("MEETING_RECORDING_CONTEXT_CHAR_LIMIT", 12_000)
+
+
 # ── 나라장터 (G2B) config ───────────────────────────────────────────────────────
 
 def get_g2b_api_key() -> str:

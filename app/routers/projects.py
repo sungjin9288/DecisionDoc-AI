@@ -11,29 +11,37 @@ import urllib.parse
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
 from app.config import get_g2b_api_key
-from app.dependencies import get_tenant_id, get_user_id, require_admin
+from app.dependencies import get_tenant_id, get_user_id, get_username, require_admin
 from app.schemas import (
     AddDocumentToProjectRequest,
     CreateProjectRequest,
     DecisionCouncilRunRequest,
     DecisionCouncilSessionResponse,
+    GenerateMeetingRecordingDocumentsRequest,
     ImportProjectProcurementOpportunityRequest,
     ImportVoiceBriefDocumentRequest,
     NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
     RecordProjectProcurementRemediationLinkCopyRequest,
     RecordProjectProcurementRemediationLinkOpenRequest,
+    TranscribeMeetingRecordingRequest,
     UpdateProjectProcurementOverrideReasonRequest,
     UpdateProjectRequest,
 )
 from app.services.docx_service import build_docx
 from app.services.decision_council_service import (
     describe_procurement_council_document_status,
+)
+from app.services.meeting_recording_service import (
+    MeetingRecordingConfigError,
+    MeetingRecordingStateError,
+    MeetingRecordingTranscriptionError,
+    MeetingRecordingUploadError,
 )
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
@@ -224,6 +232,15 @@ def _serialize_project_detail(
     project,
 ) -> dict:
     payload = asdict(project)
+    meeting_recording_store = getattr(request.app.state, "meeting_recording_store", None)
+    if meeting_recording_store is not None:
+        payload["meeting_recordings"] = [
+            _serialize_meeting_recording_summary(recording)
+            for recording in meeting_recording_store.list_by_project(
+                tenant_id=tenant_id,
+                project_id=project.project_id,
+            )
+        ]
     if not getattr(request.app.state, "procurement_copilot_enabled", False):
         return payload
 
@@ -255,6 +272,14 @@ def _serialize_project_detail(
         doc["decision_council_document_status_tone"] = status_meta["tone"]
         doc["decision_council_document_status_copy"] = status_meta["copy"]
         doc["decision_council_document_status_summary"] = status_meta["summary"]
+    return payload
+
+
+def _serialize_meeting_recording_summary(recording) -> dict:
+    payload = asdict(recording)
+    transcript = payload.pop("transcript_text", "") or ""
+    payload["transcript_preview"] = transcript[:400]
+    payload["has_transcript"] = bool(transcript.strip())
     return payload
 
 
@@ -498,6 +523,185 @@ def import_voice_brief_document_endpoint(
             "summary_sync_status": result.voice_brief_document.get("summarySyncStatus"),
         },
     }
+
+
+@router.post(
+    "/projects/{project_id}/recordings",
+    dependencies=[Depends(require_api_key)],
+)
+async def upload_project_meeting_recording_endpoint(
+    project_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+) -> dict:
+    """Upload a native meeting recording for later transcription and document generation."""
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    try:
+        recording = service.upload_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            filename=file.filename or "recording",
+            content_type=file.content_type,
+            raw=await file.read(),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MeetingRecordingUploadError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "meeting_recording_upload_invalid", "message": str(exc)},
+        ) from exc
+    return {
+        "project_id": project_id,
+        "recording": _serialize_meeting_recording_summary(recording),
+    }
+
+
+@router.get(
+    "/projects/{project_id}/recordings",
+    dependencies=[Depends(require_api_key)],
+)
+def list_project_meeting_recordings_endpoint(project_id: str, request: Request) -> dict:
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+    recordings = service.list_recordings(tenant_id=tenant_id, project_id=project_id)
+    return {
+        "project_id": project_id,
+        "recordings": [_serialize_meeting_recording_summary(recording) for recording in recordings],
+    }
+
+
+@router.get(
+    "/projects/{project_id}/recordings/{recording_id}",
+    dependencies=[Depends(require_api_key)],
+)
+def get_project_meeting_recording_endpoint(
+    project_id: str,
+    recording_id: str,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    try:
+        recording = service.get_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "project_id": project_id,
+        "recording": asdict(recording),
+    }
+
+
+@router.post(
+    "/projects/{project_id}/recordings/{recording_id}/transcribe",
+    dependencies=[Depends(require_api_key)],
+)
+def transcribe_project_meeting_recording_endpoint(
+    project_id: str,
+    recording_id: str,
+    payload: TranscribeMeetingRecordingRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    try:
+        recording = service.transcribe_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            language=payload.language,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MeetingRecordingConfigError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "meeting_recording_transcription_not_configured", "message": str(exc)},
+        ) from exc
+    except MeetingRecordingTranscriptionError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "meeting_recording_transcription_failed", "message": str(exc)},
+        ) from exc
+    return {
+        "project_id": project_id,
+        "recording": asdict(recording),
+    }
+
+
+@router.post(
+    "/projects/{project_id}/recordings/{recording_id}/approve",
+    dependencies=[Depends(require_api_key)],
+)
+def approve_project_meeting_recording_endpoint(
+    project_id: str,
+    recording_id: str,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    try:
+        recording = service.approve_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            approved_by=get_username(request),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MeetingRecordingStateError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "meeting_recording_not_ready_for_approval", "message": str(exc)},
+        ) from exc
+    return {
+        "project_id": project_id,
+        "recording": asdict(recording),
+    }
+
+
+@router.post(
+    "/projects/{project_id}/recordings/{recording_id}/generate-documents",
+    dependencies=[Depends(require_api_key)],
+)
+def generate_project_docs_from_meeting_recording_endpoint(
+    project_id: str,
+    recording_id: str,
+    payload: GenerateMeetingRecordingDocumentsRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    service = request.app.state.meeting_recording_service
+    try:
+        result = service.generate_documents_from_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            request_id=request.state.request_id,
+            bundle_types=payload.bundle_types,
+            context_note=payload.context_note,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "meeting_recording_bundle_invalid", "message": str(exc)},
+        ) from exc
+    except MeetingRecordingStateError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "meeting_recording_not_ready_for_generation", "message": str(exc)},
+        ) from exc
+    return result
 
 
 @router.post(

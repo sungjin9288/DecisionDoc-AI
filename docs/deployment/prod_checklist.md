@@ -90,6 +90,7 @@ Docker server CD 필수 GitHub Secrets:
 - `GHCR_TOKEN` (GitHub Container Registry)
 
 AWS SAM 배포 시 필요한 secret/variable은 [../deploy_aws.md](../deploy_aws.md)를 기준으로 설정합니다.
+native meeting recording을 prod에서 실제로 열려면 `OPENAI_API_KEY_PROD` 와 선택적 `MEETING_RECORDING_*_PROD` variable도 같은 runbook에 맞춰 설정합니다.
 계정 보안 incident와 access key rotation 대응은 [./account_security_incident_checklist.md](./account_security_incident_checklist.md)를 기준으로 합니다.
 
 ## 6.1 프로덕션 배포 ownership

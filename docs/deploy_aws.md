@@ -22,10 +22,16 @@ Long-term environment separation, immutable release preference, and operating-mo
 - Optional for Voice Brief import:
   - `VOICE_BRIEF_API_BASE_URL_DEV`, `VOICE_BRIEF_API_BASE_URL_PROD`
   - `VOICE_BRIEF_API_BEARER_TOKEN_DEV`, `VOICE_BRIEF_API_BEARER_TOKEN_PROD`
+- Optional for native meeting recording transcription:
+  - `OPENAI_API_KEY_DEV`, `OPENAI_API_KEY_PROD`
 - Optional for procurement opportunity import by bid number:
   - `G2B_API_KEY_DEV`, `G2B_API_KEY_PROD`
 - Optional GitHub repository/environment variables:
   - `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV`, `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_PROD`
+  - `OPENAI_API_BASE_URL_DEV`, `OPENAI_API_BASE_URL_PROD`
+  - `MEETING_RECORDING_TRANSCRIPTION_MODEL_DEV`, `MEETING_RECORDING_TRANSCRIPTION_MODEL_PROD`
+  - `MEETING_RECORDING_MAX_UPLOAD_BYTES_DEV`, `MEETING_RECORDING_MAX_UPLOAD_BYTES_PROD`
+  - `MEETING_RECORDING_CONTEXT_CHAR_LIMIT_DEV`, `MEETING_RECORDING_CONTEXT_CHAR_LIMIT_PROD`
   - `PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV`, `PROCUREMENT_SMOKE_URL_OR_NUMBER_PROD`
   - `PROCUREMENT_SMOKE_TENANT_ID_DEV`, `PROCUREMENT_SMOKE_TENANT_ID_PROD`
   - `VOICE_BRIEF_TIMEOUT_SECONDS_DEV`, `VOICE_BRIEF_TIMEOUT_SECONDS_PROD`
@@ -80,6 +86,7 @@ Long-term environment separation, immutable release preference, and operating-mo
 |------|------|-----------------|-------------------|------|
 | Secret | `AWS_ROLE_ARN_DEV` / `AWS_ROLE_ARN_PROD` | 필수 | 필수 | GitHub OIDC가 assume할 IAM role |
 | Secret | `DECISIONDOC_S3_BUCKET_DEV` / `DECISIONDOC_S3_BUCKET_PROD` | 필수 | 필수 | bundle/export/report 저장 버킷 |
+| Secret | `OPENAI_API_KEY_DEV` / `OPENAI_API_KEY_PROD` | 선택 | 선택 | native meeting recording transcription runtime key. 비어 있으면 업로드는 가능하지만 전사는 `meeting_recording_transcription_not_configured` |
 | Secret | `G2B_API_KEY_DEV` / `G2B_API_KEY_PROD` | 선택 | 선택 | 공고번호 기반 import에 필요, URL import만 쓸 경우 생략 가능 |
 | Secret | `PROCUREMENT_SMOKE_USERNAME_DEV` / `PROCUREMENT_SMOKE_USERNAME_PROD` | 선택 | 선택 | procurement smoke가 기존 사용자가 있는 tenant에서 로그인해야 할 때 사용 |
 | Secret | `PROCUREMENT_SMOKE_PASSWORD_DEV` / `PROCUREMENT_SMOKE_PASSWORD_PROD` | 선택 | 선택 | procurement smoke 로그인 비밀번호 |
@@ -95,6 +102,10 @@ Long-term environment separation, immutable release preference, and operating-mo
 | 타입 | 이름 | dev 최초 deploy | Voice Brief smoke | 설명 |
 |------|------|-----------------|-------------------|------|
 | Variable | `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV` / `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_PROD` | 필수 | 선택 | `1`이면 project detail procurement UI/API 활성화, 비어 있으면 기본 `0` |
+| Variable | `OPENAI_API_BASE_URL_DEV` / `OPENAI_API_BASE_URL_PROD` | 선택 | 선택 | OpenAI-compatible transcription endpoint override. 비어 있으면 `https://api.openai.com/v1` 사용 |
+| Variable | `MEETING_RECORDING_TRANSCRIPTION_MODEL_DEV` / `MEETING_RECORDING_TRANSCRIPTION_MODEL_PROD` | 선택 | 선택 | 기본값 `gpt-4o-mini-transcribe` |
+| Variable | `MEETING_RECORDING_MAX_UPLOAD_BYTES_DEV` / `MEETING_RECORDING_MAX_UPLOAD_BYTES_PROD` | 선택 | 선택 | 기본값 `26214400` (25MB) |
+| Variable | `MEETING_RECORDING_CONTEXT_CHAR_LIMIT_DEV` / `MEETING_RECORDING_CONTEXT_CHAR_LIMIT_PROD` | 선택 | 선택 | 회의록/보고서 생성 prompt에 주입할 transcript 최대 길이 |
 | Variable | `PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV` / `PROCUREMENT_SMOKE_URL_OR_NUMBER_PROD` | 선택 | 선택 | known 공고 URL 또는 공고번호 1건. 없으면 smoke가 최근 live G2B 결과를 자동 탐색 |
 | Variable | `PROCUREMENT_SMOKE_TENANT_ID_DEV` / `PROCUREMENT_SMOKE_TENANT_ID_PROD` | 선택 | 선택 | procurement smoke 대상 tenant가 `system` 이 아닐 때 사용 |
 | Variable | `VOICE_BRIEF_TIMEOUT_SECONDS_DEV` / `VOICE_BRIEF_TIMEOUT_SECONDS_PROD` | 선택 | 선택 | 비어 있으면 기본값 `10.0` 사용 |
@@ -133,6 +144,7 @@ Voice Brief smoke까지 포함해서 `dev` 환경을 처음 올릴 때 필요한
 
 - `STATUSPAGE_PAGE_ID`
 - `STATUSPAGE_API_KEY`
+- `OPENAI_API_KEY_DEV`
 
 tenant가 비어 있으면 `scripts/voice_brief_smoke.py` 가 `POST /auth/register` 로 smoke 사용자를 직접 생성하려고 시도합니다. tenant에 이미 사용자가 있으면 위 username/password를 반드시 넣어야 합니다.
 

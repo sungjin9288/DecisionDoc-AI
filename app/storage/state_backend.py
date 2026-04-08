@@ -28,12 +28,26 @@ class StateBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def read_bytes(self, relative_path: str) -> bytes | None:
+        raise NotImplementedError
+
+    @abstractmethod
     def write_text(
         self,
         relative_path: str,
         text: str,
         *,
         content_type: str = "application/json; charset=utf-8",
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_bytes(
+        self,
+        relative_path: str,
+        raw: bytes,
+        *,
+        content_type: str = "application/octet-stream",
     ) -> None:
         raise NotImplementedError
 
@@ -65,6 +79,15 @@ class LocalStateBackend(StateBackend):
         except OSError as exc:
             raise StateBackendError(f"Failed to read state file: {path}") from exc
 
+    def read_bytes(self, relative_path: str) -> bytes | None:
+        path = self._path(relative_path)
+        if not path.exists():
+            return None
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise StateBackendError(f"Failed to read state bytes: {path}") from exc
+
     def write_text(
         self,
         relative_path: str,
@@ -78,6 +101,20 @@ class LocalStateBackend(StateBackend):
         path = self._path(relative_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, text)
+
+    def write_bytes(
+        self,
+        relative_path: str,
+        raw: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        _ = content_type
+        from app.storage.base import atomic_write_bytes
+
+        path = self._path(relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_bytes(path, raw)
 
     def list_prefix(self, relative_prefix: str) -> list[str]:
         prefix_path = self._path(relative_prefix)
@@ -148,6 +185,19 @@ class S3StateBackend(StateBackend):
                 return None
             raise StateBackendError(f"Failed to read state object: {relative_path}") from exc
 
+    def read_bytes(self, relative_path: str) -> bytes | None:
+        try:
+            obj = self.client.get_object(Bucket=self.bucket, Key=self._key(relative_path))
+            return obj["Body"].read()
+        except Exception as exc:
+            response = getattr(exc, "response", None)
+            error_code = ""
+            if isinstance(response, dict):
+                error_code = response.get("Error", {}).get("Code", "")
+            if error_code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise StateBackendError(f"Failed to read state bytes: {relative_path}") from exc
+
     def write_text(
         self,
         relative_path: str,
@@ -164,6 +214,23 @@ class S3StateBackend(StateBackend):
             )
         except Exception as exc:
             raise StateBackendError(f"Failed to write state object: {relative_path}") from exc
+
+    def write_bytes(
+        self,
+        relative_path: str,
+        raw: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=self._key(relative_path),
+                Body=raw,
+                ContentType=content_type,
+            )
+        except Exception as exc:
+            raise StateBackendError(f"Failed to write state bytes: {relative_path}") from exc
 
     def list_prefix(self, relative_prefix: str) -> list[str]:
         prefix = self._key(relative_prefix)

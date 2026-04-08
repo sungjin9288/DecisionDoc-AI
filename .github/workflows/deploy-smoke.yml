@@ -194,6 +194,11 @@ jobs:
             THROTTLE_BURST="5"
             THROTTLE_RATE="2"
             RESERVED_CONCURRENCY=""
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY_DEV }}"
+            OPENAI_API_BASE_URL="${{ vars.OPENAI_API_BASE_URL_DEV }}"
+            MEETING_RECORDING_TRANSCRIPTION_MODEL="${{ vars.MEETING_RECORDING_TRANSCRIPTION_MODEL_DEV }}"
+            MEETING_RECORDING_MAX_UPLOAD_BYTES="${{ vars.MEETING_RECORDING_MAX_UPLOAD_BYTES_DEV }}"
+            MEETING_RECORDING_CONTEXT_CHAR_LIMIT="${{ vars.MEETING_RECORDING_CONTEXT_CHAR_LIMIT_DEV }}"
             G2B_API_KEY="${{ secrets.G2B_API_KEY_DEV }}"
             VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_DEV }}"
             VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_DEV }}"
@@ -210,6 +215,11 @@ jobs:
             THROTTLE_BURST="20"
             THROTTLE_RATE="10"
             RESERVED_CONCURRENCY=""
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY_PROD }}"
+            OPENAI_API_BASE_URL="${{ vars.OPENAI_API_BASE_URL_PROD }}"
+            MEETING_RECORDING_TRANSCRIPTION_MODEL="${{ vars.MEETING_RECORDING_TRANSCRIPTION_MODEL_PROD }}"
+            MEETING_RECORDING_MAX_UPLOAD_BYTES="${{ vars.MEETING_RECORDING_MAX_UPLOAD_BYTES_PROD }}"
+            MEETING_RECORDING_CONTEXT_CHAR_LIMIT="${{ vars.MEETING_RECORDING_CONTEXT_CHAR_LIMIT_PROD }}"
             G2B_API_KEY="${{ secrets.G2B_API_KEY_PROD }}"
             VOICE_BRIEF_API_BASE_URL="${{ secrets.VOICE_BRIEF_API_BASE_URL_PROD }}"
             VOICE_BRIEF_API_BEARER_TOKEN="${{ secrets.VOICE_BRIEF_API_BEARER_TOKEN_PROD }}"
@@ -220,6 +230,9 @@ jobs:
             VOICE_BRIEF_SMOKE_USERNAME="${{ secrets.VOICE_BRIEF_SMOKE_USERNAME_PROD }}"
             VOICE_BRIEF_SMOKE_PASSWORD="${{ secrets.VOICE_BRIEF_SMOKE_PASSWORD_PROD }}"
             PROCUREMENT_COPILOT_ENABLED="${{ vars.DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_PROD }}"
+          fi
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
           fi
           API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
           OPS_KEY="${{ secrets.DECISIONDOC_OPS_KEY }}"
@@ -254,6 +267,11 @@ jobs:
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_OPS_KEY=${OPS_KEY}" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"
+          echo "OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}" >> "$GITHUB_ENV"
+          echo "MEETING_RECORDING_TRANSCRIPTION_MODEL=${MEETING_RECORDING_TRANSCRIPTION_MODEL}" >> "$GITHUB_ENV"
+          echo "MEETING_RECORDING_MAX_UPLOAD_BYTES=${MEETING_RECORDING_MAX_UPLOAD_BYTES}" >> "$GITHUB_ENV"
+          echo "MEETING_RECORDING_CONTEXT_CHAR_LIMIT=${MEETING_RECORDING_CONTEXT_CHAR_LIMIT}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_PAGE_ID=${STATUSPAGE_PAGE_ID}" >> "$GITHUB_ENV"
           echo "STATUSPAGE_API_KEY=${STATUSPAGE_API_KEY}" >> "$GITHUB_ENV"
           echo "G2B_API_KEY=${G2B_API_KEY}" >> "$GITHUB_ENV"
@@ -346,6 +364,9 @@ jobs:
             "DecisionDocOpsKey=${DECISIONDOC_OPS_KEY}"
             "DecisionDocMaintenance=${{ inputs.maintenance_mode }}"
             "DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED}"
+            "MeetingRecordingTranscriptionModel=${MEETING_RECORDING_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}"
+            "MeetingRecordingMaxUploadBytes=${MEETING_RECORDING_MAX_UPLOAD_BYTES:-26214400}"
+            "MeetingRecordingContextCharLimit=${MEETING_RECORDING_CONTEXT_CHAR_LIMIT:-12000}"
             "ApiThrottlingBurstLimit=${THROTTLE_BURST}"
             "ApiThrottlingRateLimit=${THROTTLE_RATE}"
           )
@@ -360,6 +381,12 @@ jobs:
           fi
           if [ -n "${G2B_API_KEY}" ]; then
             PARAM_OVERRIDES+=("G2bApiKey=${G2B_API_KEY}")
+          fi
+          if [ -n "${OPENAI_API_KEY}" ]; then
+            PARAM_OVERRIDES+=("OpenAIApiKey=${OPENAI_API_KEY}")
+          fi
+          if [ -n "${OPENAI_API_BASE_URL}" ]; then
+            PARAM_OVERRIDES+=("OpenAiApiBaseUrl=${OPENAI_API_BASE_URL}")
           fi
           if [ -n "${DEPLOYMENT_SUFFIX}" ]; then
             PARAM_OVERRIDES+=("DeploymentSuffix=${DEPLOYMENT_SUFFIX}")
