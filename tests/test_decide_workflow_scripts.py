@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,45 @@ def test_notion_push_markdown_conversion_preserves_structure():
     ]
     assert blocks[0]["heading_1"]["rich_text"][0]["text"]["content"] == "Title"
     assert blocks[2]["bulleted_list_item"]["rich_text"][0]["text"]["content"] == "bullet item"
+
+
+def test_decide_write_output_dir_persists_metadata_for_followup_workflows(tmp_path: Path):
+    decide = _load_script_module("decisiondoc_decide", "scripts/decide.py")
+    docs = [{"doc_type": "adr", "markdown": "# ADR\n"}]
+    metadata = {"provider": "mock", "bundle_id": "bundle-1234567890", "cache_hit": False}
+
+    decide._write_output_dir(tmp_path, docs, metadata, quiet=True)
+
+    assert (tmp_path / "adr.md").read_text(encoding="utf-8") == "# ADR\n"
+    assert json.loads((tmp_path / "_metadata.json").read_text(encoding="utf-8")) == metadata
+
+
+def test_notion_push_run_from_dir_reuses_output_metadata_provider(tmp_path: Path, monkeypatch):
+    notion_push = _load_script_module("decisiondoc_notion_push_with_provider", "scripts/notion_push.py")
+    (tmp_path / "adr.md").write_text("# ADR\n", encoding="utf-8")
+    (tmp_path / "_metadata.json").write_text('{"provider":"gemini"}', encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _fake_push_docs_to_notion(client, docs, title, parent_page_id, provider=""):
+        captured["client"] = client
+        captured["docs"] = docs
+        captured["title"] = title
+        captured["parent_page_id"] = parent_page_id
+        captured["provider"] = provider
+        return "https://notion.so/example"
+
+    monkeypatch.setattr(notion_push, "_push_docs_to_notion", _fake_push_docs_to_notion)
+
+    page_url = notion_push._run_from_dir_path(
+        tmp_path,
+        "Redis 도입",
+        "parent-page-id",
+        client=object(),
+    )
+
+    assert page_url == "https://notion.so/example"
+    assert captured["provider"] == "gemini"
+    assert captured["title"] == "Redis 도입"
 
 
 def test_decide_parse_doc_types_rejects_unknown_values():

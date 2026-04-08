@@ -40,6 +40,7 @@ from dotenv import load_dotenv
 VALID_DOC_TYPES = {"adr", "onepager", "eval_plan", "ops_checklist"}
 DEFAULT_DOC_TYPES = ["adr", "onepager", "eval_plan", "ops_checklist"]
 DOC_TYPE_ORDER = ["adr", "onepager", "eval_plan", "ops_checklist"]
+METADATA_FILENAME = "_metadata.json"
 
 
 # ---------------------------------------------------------------------------
@@ -164,8 +165,8 @@ def _build_request(args: argparse.Namespace):
 # Output helpers
 # ---------------------------------------------------------------------------
 
-def _write_output_dir(output_dir: Path, docs: list[dict], quiet: bool) -> None:
-    """Write each doc as {doc_type}.md to output_dir."""
+def _write_output_dir(output_dir: Path, docs: list[dict], metadata: dict, quiet: bool) -> None:
+    """Write docs and workflow metadata to output_dir."""
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -181,9 +182,19 @@ def _write_output_dir(output_dir: Path, docs: list[dict], quiet: bool) -> None:
         except OSError as e:
             raise SystemExit(f"Error: Cannot write {filename}: {e}") from e
 
+    meta_path = output_dir / METADATA_FILENAME
+    try:
+        meta_path.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        raise SystemExit(f"Error: Cannot write {meta_path}: {e}") from e
+
     if not quiet:
         for path in written:
             print(f"  wrote: {path}", file=sys.stderr)
+        print(f"  wrote: {meta_path}", file=sys.stderr)
 
 
 def _write_stdout(docs: list[dict]) -> None:
@@ -297,7 +308,7 @@ def main() -> int:
     # Output
     if args.output:
         output_dir = Path(args.output)
-        _write_output_dir(output_dir, docs, args.quiet)
+        _write_output_dir(output_dir, docs, metadata, args.quiet)
     else:
         _write_stdout(docs)
 

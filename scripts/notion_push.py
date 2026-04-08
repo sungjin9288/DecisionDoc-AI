@@ -50,6 +50,7 @@ DOC_TYPE_LABELS = {
     "eval_plan": "Evaluation Plan",
     "ops_checklist": "Operations Checklist",
 }
+METADATA_FILENAME = "_metadata.json"
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +193,19 @@ def _append_doc_section(client, page_id: str, doc_type: str, markdown_content: s
         _append_blocks_chunked(client, page_id, content_blocks)
 
 
+def _read_output_metadata(dir_path: Path) -> dict:
+    """Read optional metadata emitted by scripts/decide.py output mode."""
+    meta_path = dir_path / METADATA_FILENAME
+    if not meta_path.is_file():
+        return {}
+    try:
+        import json
+
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Execution modes
 # ---------------------------------------------------------------------------
@@ -280,6 +294,9 @@ def _run_from_dir_path(dir_path: Path, title: str, parent_page_id: str, client, 
 
     if not docs:
         raise SystemExit(f"Error: No markdown files found in {dir_path}")
+
+    if not provider:
+        provider = str(_read_output_metadata(dir_path).get("provider", "")).strip()
 
     return _push_docs_to_notion(client, docs, title, parent_page_id, provider=provider)
 
