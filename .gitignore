@@ -25,6 +25,10 @@ output/
 # Local agent / assistant overlays
 .ai/
 .claude/
+.agents/skills/release-evidence
+.agents/skills/repo-intake
+.agents/skills/task-ledger-sync
+.agents/skills/verify-gate
 
 # Local TLS materials
 nginx/ssl/*.pem
