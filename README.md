@@ -118,7 +118,7 @@ python -m uvicorn app.main:app --reload
 For `secret hygiene` work, keep the verification boundary proportional to the change:
 
 - test-only or scanner-only changes: run `python3 scripts/check_secret_hygiene.py` plus `.venv/bin/pytest --noconftest tests/test_check_secret_hygiene.py -q --tb=short`
-- deploy/runtime changes under `app/`, `infra/sam/template.yaml`, or `.github/workflows/deploy*.yml`: add the relevant smoke or deploy validation path
+- deploy/runtime changes under `app/`, `infra/sam/template.yaml`, [`.github/workflows/deploy.yml`](/Users/sungjin/dev/personal/DecisionDoc-AI/.github/workflows/deploy.yml), or [`.github/workflows/deploy-smoke.yml`](/Users/sungjin/dev/personal/DecisionDoc-AI/.github/workflows/deploy-smoke.yml): add the relevant smoke or deploy validation path
 
 In other words, do not require `deploy-smoke` for every secret-hygiene regression test PR. Reserve operational smoke for changes that actually modify service or deployment behavior.
 
