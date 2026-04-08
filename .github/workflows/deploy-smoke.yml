@@ -56,6 +56,14 @@ on:
         options:
           - "false"
           - "true"
+      include_meeting_recording_smoke:
+        description: "Run native meeting recording smoke when transcription runtime is configured"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
       include_procurement_smoke:
         description: "Run procurement post-deploy smoke when a stage URL or bid number is configured"
         required: true
@@ -602,6 +610,34 @@ jobs:
             echo "Missing Voice Brief smoke recording id variable"
             exit 1
           fi
+
+      - name: Validate meeting recording smoke inputs
+        if: ${{ inputs.include_meeting_recording_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+        run: |
+          if [ -z "${SMOKE_BASE_URL}" ]; then
+            echo "Missing smoke base URL output"
+            exit 1
+          fi
+          if [ -z "${SMOKE_API_KEY}" ]; then
+            echo "Missing DECISIONDOC_API_KEY secret"
+            exit 1
+          fi
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "Missing OPENAI_API_KEY runtime secret"
+            exit 1
+          fi
+
+      - name: Run meeting recording smoke
+        if: ${{ inputs.include_meeting_recording_smoke == 'true' }}
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_API_KEY: ${{ secrets.DECISIONDOC_API_KEY }}
+        run: |
+          python scripts/meeting_recording_smoke.py
 
       - name: Run Voice Brief smoke
         if: ${{ inputs.include_voice_brief_smoke == 'true' }}
