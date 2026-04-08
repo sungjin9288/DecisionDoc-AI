@@ -12,13 +12,15 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "sungjin9288/DecisionDoc-AI"
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _run(command: list[str], *, cwd: Path = REPO_ROOT) -> str:
@@ -161,6 +163,20 @@ def _fetch_run_jobs(repo_slug: str, *, run_id: str) -> list[dict[str, Any]]:
     return [job for job in jobs if isinstance(job, dict)]
 
 
+def _fetch_run_detail(repo_slug: str, *, run_id: str) -> dict[str, Any]:
+    payload = _run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo_slug}/actions/runs/{run_id}",
+        ]
+    )
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
 def _extract_step_conclusion(jobs: list[dict[str, Any]], *, step_name: str) -> str | None:
     for job in jobs:
         steps = job.get("steps")
@@ -194,6 +210,47 @@ def _describe_openai_availability(stage: str, secret_names: set[str]) -> str:
     if "OPENAI_API_KEY" in secret_names:
         return "yes — repo-level `OPENAI_API_KEY` fallback present"
     return f"no — missing `{stage_key}` and repo-level `OPENAI_API_KEY`"
+
+
+def _format_run_updated_at_kst(timestamp: str) -> str | None:
+    normalized = timestamp.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return parsed.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+
+
+def _default_finalize_time(repo_slug: str, runs: list[dict[str, Any]], *, stage: str, head_sha: str) -> str:
+    run = _same_sha_run(runs, stage=stage, head_sha=head_sha)
+    if not run:
+        return "<TIME>"
+
+    updated_at = run.get("updated_at")
+    if isinstance(updated_at, str):
+        formatted = _format_run_updated_at_kst(updated_at)
+        if formatted:
+            return formatted
+
+    run_id = _run_id(run)
+    if not run_id:
+        return "<TIME>"
+
+    try:
+        detail = _fetch_run_detail(repo_slug, run_id=run_id)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return "<TIME>"
+
+    updated_at = detail.get("updated_at")
+    if isinstance(updated_at, str):
+        formatted = _format_run_updated_at_kst(updated_at)
+        if formatted:
+            return formatted
+    return "<TIME>"
 
 
 def _validation_defaults(
@@ -237,7 +294,14 @@ def _validation_defaults(
     return result
 
 
-def _derive_defaults(args: argparse.Namespace, *, secret_names: set[str]) -> dict[str, str]:
+def _derive_defaults(
+    args: argparse.Namespace,
+    *,
+    repo_slug: str,
+    runs: list[dict[str, Any]],
+    secret_names: set[str],
+    head_sha: str,
+) -> dict[str, str]:
     today = date.today().isoformat()
     owner = _placeholder(args.owner, "<OWNER_NAME>")
     cutover_mode = args.cutover_mode
@@ -260,7 +324,10 @@ def _derive_defaults(args: argparse.Namespace, *, secret_names: set[str]) -> dic
             if cutover_mode == "direct"
             else "yes / no",
         ),
-        "finalize_time": _placeholder(args.finalize_time, "<TIME>"),
+        "finalize_time": _placeholder(
+            args.finalize_time,
+            _default_finalize_time(repo_slug, runs, stage=args.stage, head_sha=head_sha),
+        ),
         "old_key_deleted": _placeholder(args.old_key_deleted, "<YES_OR_NO>"),
         "cutover_mode": cutover_mode,
     }
@@ -309,7 +376,13 @@ def _render_plan(
 ) -> str:
     stage = args.stage
     stage_prod = "yes" if stage == "prod" else "no"
-    defaults = _derive_defaults(args, secret_names=secret_names)
+    defaults = _derive_defaults(
+        args,
+        repo_slug=repo_slug,
+        runs=runs,
+        secret_names=secret_names,
+        head_sha=head_sha,
+    )
     owner = _placeholder(args.owner, "<OWNER_NAME>")
     same_sha_dev_evidence = _describe_same_sha_evidence(runs, stage="dev", head_sha=head_sha)
     same_sha_prod_evidence = _describe_same_sha_evidence(runs, stage="prod", head_sha=head_sha)

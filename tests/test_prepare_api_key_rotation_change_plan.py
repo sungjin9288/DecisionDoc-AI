@@ -120,6 +120,31 @@ def test_describe_openai_availability_prefers_stage_secret_then_repo_fallback():
     )
 
 
+def test_default_finalize_time_uses_same_sha_run_updated_at_in_kst():
+    script = _load_script_module(
+        "decisiondoc_prepare_api_key_rotation_change_plan_finalize_time",
+        "scripts/prepare_api_key_rotation_change_plan.py",
+    )
+
+    finalize_time = script._default_finalize_time(
+        "sungjin9288/DecisionDoc-AI",
+        [
+            {
+                "id": 202,
+                "display_title": "deploy-smoke [prod] @ main",
+                "conclusion": "success",
+                "head_sha": "abc123",
+                "html_url": "https://github.com/example/prod",
+                "updated_at": "2026-04-08T12:49:10Z",
+            }
+        ],
+        stage="prod",
+        head_sha="abc123",
+    )
+
+    assert finalize_time == "2026-04-08 21:49:10 KST"
+
+
 def test_validation_defaults_extract_same_sha_run_url_and_step_results(monkeypatch):
     script = _load_script_module(
         "decisiondoc_prepare_api_key_rotation_change_plan_validation_defaults",
@@ -182,6 +207,7 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
                 "conclusion": "success",
                 "head_sha": "abc123",
                 "html_url": "https://github.com/example/dev",
+                "updated_at": "2026-04-08T03:45:11Z",
             },
             {
                 "id": 202,
@@ -189,6 +215,7 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
                 "conclusion": "success",
                 "head_sha": "abc123",
                 "html_url": "https://github.com/example/prod",
+                "updated_at": "2026-04-08T03:49:10Z",
             },
         ],
     )
@@ -221,8 +248,6 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
             "api-key-v1",
             "--new-key-label",
             "api-key-v2",
-            "--finalize-time",
-            "2026-04-08 21:30 KST",
             "--old-key-deleted",
             "pending",
             "--output",
@@ -253,9 +278,9 @@ def test_main_writes_output_with_discovered_runs(tmp_path: Path, monkeypatch, ca
     assert rendered.count("| `Run smoke` | `success` |") == 2
     assert "Dev validation run: https://github.com/example/dev" in rendered
     assert "Prod validation run: https://github.com/example/prod" in rendered
-    assert "| Finalize time | `2026-04-08 21:30 KST` |" in rendered
+    assert "| Finalize time | `2026-04-08 12:49:10 KST` |" in rendered
     assert "| Old key deleted | `pending` |" in rendered
-    assert "Finalize time: 2026-04-08 21:30 KST" in rendered
+    assert "Finalize time: 2026-04-08 12:49:10 KST" in rendered
     assert "Old key deleted: pending" in rendered
     captured = capsys.readouterr()
     assert "wrote plan to" in captured.err
