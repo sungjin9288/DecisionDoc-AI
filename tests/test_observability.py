@@ -3,9 +3,11 @@ import json
 import sys
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.observability.logging import JsonLineFormatter
+from app.services.meeting_recording_service import MeetingRecordingService
 
 
 def _create_client(tmp_path, monkeypatch, provider="mock", procurement_enabled=False):
@@ -54,6 +56,30 @@ def _captured_events(caplog, capsys) -> list[dict]:
         if isinstance(parsed, dict):
             events.append(parsed)
     return events
+
+
+def _create_project(client: TestClient) -> str:
+    response = client.post("/projects", json={"name": "observability project", "fiscal_year": 2026})
+    assert response.status_code == 200
+    return response.json()["project_id"]
+
+
+def _install_transcription_transport(
+    client: TestClient,
+    *,
+    transcript_text: str = "회의 전사본 본문",
+    language: str = "ko",
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/audio/transcriptions")
+        return httpx.Response(200, json={"text": transcript_text, "language": language})
+
+    client.app.state.meeting_recording_service = MeetingRecordingService(
+        recording_store=client.app.state.meeting_recording_store,
+        project_store=client.app.state.project_store,
+        generation_service=client.app.state.service,
+        transport=httpx.MockTransport(handler),
+    )
 
 
 def test_logs_emitted_for_generate(tmp_path, monkeypatch, caplog, capsys):
@@ -267,3 +293,122 @@ def test_generate_logs_procurement_handoff_usage(tmp_path, monkeypatch, caplog, 
     ]
     assert request_events
     assert request_events[-1]["procurement_handoff_used"] is True
+
+
+def test_meeting_recording_logs_include_operational_context(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _create_client(tmp_path, monkeypatch)
+    _install_transcription_transport(
+        client,
+        transcript_text="참석자: PM, 개발, 운영\n논의: 일정 조정과 위험 항목 점검\n액션: API 안정화, 회의록 배포",
+        language="ko",
+    )
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("weekly-sync.m4a", b"FAKEAUDIO", "audio/m4a")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        json={"language": "ko"},
+    )
+    assert transcribe.status_code == 200
+
+    approve = client.post(f"/projects/{project_id}/recordings/{recording_id}/approve")
+    assert approve.status_code == 200
+
+    generate = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/generate-documents",
+        json={"bundle_types": ["meeting_minutes_kr", "project_report_kr"]},
+    )
+    assert generate.status_code == 200
+
+    events = _captured_events(caplog, capsys)
+
+    upload_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings"
+        and event.get("meeting_recording_action") == "upload"
+    ]
+    assert upload_events
+    assert upload_events[-1]["meeting_recording_project_id"] == project_id
+    assert upload_events[-1]["meeting_recording_recording_id"] == recording_id
+    assert upload_events[-1]["meeting_recording_file_size_bytes"] == len(b"FAKEAUDIO")
+    assert upload_events[-1]["meeting_recording_transcription_status"] == "uploaded"
+    assert upload_events[-1]["meeting_recording_approval_status"] == "pending"
+
+    transcribe_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/transcribe"
+    ]
+    assert transcribe_events
+    assert transcribe_events[-1]["meeting_recording_action"] == "transcribe"
+    assert transcribe_events[-1]["meeting_recording_project_id"] == project_id
+    assert transcribe_events[-1]["meeting_recording_recording_id"] == recording_id
+    assert transcribe_events[-1]["meeting_recording_transcription_status"] == "completed"
+    assert transcribe_events[-1]["meeting_recording_transcript_language"] == "ko"
+    assert transcribe_events[-1]["meeting_recording_transcript_model"]
+
+    approve_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/approve"
+    ]
+    assert approve_events
+    assert approve_events[-1]["meeting_recording_action"] == "approve"
+    assert approve_events[-1]["meeting_recording_approval_status"] == "approved"
+
+    generate_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/generate-documents"
+    ]
+    assert generate_events
+    assert generate_events[-1]["meeting_recording_action"] == "generate_documents"
+    assert generate_events[-1]["meeting_recording_generated_bundle_count"] == 2
+    assert generate_events[-1]["meeting_recording_generated_bundle_types"] == [
+        "meeting_minutes_kr",
+        "project_report_kr",
+    ]
+    assert generate_events[-1]["meeting_recording_transcription_status"] == "completed"
+    assert generate_events[-1]["meeting_recording_approval_status"] == "approved"
+
+
+def test_meeting_recording_logs_capture_transcription_config_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    client = _create_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        json={},
+    )
+    assert response.status_code == 503
+
+    events = _captured_events(caplog, capsys)
+    transcribe_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/transcribe"
+    ]
+    assert transcribe_events
+    assert transcribe_events[-1]["status_code"] == 503
+    assert transcribe_events[-1]["error_code"] == "meeting_recording_transcription_not_configured"
+    assert transcribe_events[-1]["meeting_recording_action"] == "transcribe"
+    assert transcribe_events[-1]["meeting_recording_project_id"] == project_id
+    assert transcribe_events[-1]["meeting_recording_recording_id"] == recording_id
