@@ -97,13 +97,18 @@ openspace-mcp --help
 ```
 
 ### repo-local bridge skill
-이 레포는 이미 `.agents/skills/`를 사용하므로, 현재 OpenSpace 반영은 이 repo-local bridge skill까지만 포함한다.
+이 레포는 이미 `.agents/skills/`를 사용하므로, 현재 OpenSpace 반영은 OpenSpace bridge skill과 repo-local domain skill을 함께 두는 방식으로 정리한다.
 
 현재 유지 대상 디렉터리:
+- `.agents/skills/decisiondoc-procurement-eval/`
 - `.agents/skills/decisiondoc-openspace-bootstrap/`
 - `.agents/skills/decisiondoc-openspace-docgen/`
 - `.agents/skills/decisiondoc-openspace-eval/`
 - `.agents/skills/decisiondoc-openspace-ui/`
+
+구분:
+- `decisiondoc-openspace-*` 계열은 OpenSpace 보조 학습/복구 레이어를 위한 bridge skill이다.
+- `decisiondoc-procurement-eval`은 procurement/G2B/domain-specific 작업을 위한 repo-local task skill이며, OpenSpace bridge 자체를 대체하지 않는다.
 
 ## 프로젝트별 상세 이식안
 
@@ -213,15 +218,18 @@ DecisionDoc-AI/
 ### Phase 1: repo bootstrap 연결
 현재 반영 완료 범위.
 
+- `.agents/skills/decisiondoc-procurement-eval/SKILL.md`
 - `.agents/skills/decisiondoc-openspace-bootstrap/SKILL.md`
 - `.agents/skills/decisiondoc-openspace-docgen/SKILL.md`
 - `.agents/skills/decisiondoc-openspace-eval/SKILL.md`
 - `.agents/skills/decisiondoc-openspace-ui/SKILL.md`
 
-이 skill들은 다음 목적만 가진다.
-- repo contract first
-- procurement / Decision Council 문맥 유지
-- generation/eval/ui hardening 가이드 축적
+이 skill들의 현재 역할:
+- `decisiondoc-openspace-*` 계열:
+  - repo contract first
+  - generation/eval/ui hardening 가이드 축적
+- `decisiondoc-procurement-eval`:
+  - procurement / Decision Council / G2B / admin route 관련 domain 규칙 유지
 
 앱 runtime이나 request path에는 연결하지 않는다.
 
