@@ -741,3 +741,65 @@ def test_meeting_recording_logs_capture_get_missing_recording_errors(tmp_path, m
     assert get_events[-1]["error_code"] == "meeting_recording_not_found"
     assert get_events[-1]["meeting_recording_project_id"] == project_id
     assert get_events[-1]["meeting_recording_recording_id"] == "missing-recording"
+
+
+def test_meeting_recording_logs_capture_missing_recording_state_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _create_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/missing-recording/transcribe",
+        json={},
+    )
+    assert transcribe.status_code == 404
+
+    approve = client.post(
+        f"/projects/{project_id}/recordings/missing-recording/approve",
+    )
+    assert approve.status_code == 404
+
+    generate = client.post(
+        f"/projects/{project_id}/recordings/missing-recording/generate-documents",
+        json={},
+    )
+    assert generate.status_code == 404
+
+    events = _captured_events(caplog, capsys)
+
+    transcribe_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/missing-recording/transcribe"
+        and event.get("meeting_recording_action") == "transcribe"
+    ]
+    assert transcribe_events
+    assert transcribe_events[-1]["status_code"] == 404
+    assert transcribe_events[-1]["error_code"] == "meeting_recording_not_found"
+    assert transcribe_events[-1]["meeting_recording_project_id"] == project_id
+    assert transcribe_events[-1]["meeting_recording_recording_id"] == "missing-recording"
+
+    approve_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/missing-recording/approve"
+        and event.get("meeting_recording_action") == "approve"
+    ]
+    assert approve_events
+    assert approve_events[-1]["status_code"] == 404
+    assert approve_events[-1]["error_code"] == "meeting_recording_not_found"
+    assert approve_events[-1]["meeting_recording_project_id"] == project_id
+    assert approve_events[-1]["meeting_recording_recording_id"] == "missing-recording"
+
+    generate_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/missing-recording/generate-documents"
+        and event.get("meeting_recording_action") == "generate_documents"
+    ]
+    assert generate_events
+    assert generate_events[-1]["status_code"] == 404
+    assert generate_events[-1]["error_code"] == "meeting_recording_not_found"
+    assert generate_events[-1]["meeting_recording_project_id"] == project_id
+    assert generate_events[-1]["meeting_recording_recording_id"] == "missing-recording"
