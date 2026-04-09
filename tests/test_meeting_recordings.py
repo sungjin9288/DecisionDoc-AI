@@ -102,6 +102,18 @@ def test_upload_recording_endpoint_rejects_files_over_size_limit(tmp_path, monke
     assert response.json()["detail"]["code"] == "meeting_recording_upload_invalid"
 
 
+def test_upload_recording_endpoint_returns_404_for_missing_project(tmp_path, monkeypatch):
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/projects/missing-project/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.wav", b"1234", "audio/wav")},
+    )
+
+    assert response.status_code == 404
+
+
 def test_transcribe_endpoint_returns_503_without_openai_api_key(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     client = _build_client(tmp_path, monkeypatch)
@@ -260,6 +272,18 @@ def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, m
     assert payload["transcription_status"] == "failed"
     assert payload["approval_status"] == "pending"
     assert payload["transcript_error"] == "upstream transcription failed"
+
+
+def test_get_recording_endpoint_returns_404_for_missing_recording(tmp_path, monkeypatch):
+    client = _build_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    response = client.get(
+        f"/projects/{project_id}/recordings/missing-recording",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 404
 
 
 def test_root_page_contains_meeting_recording_controls(tmp_path, monkeypatch):
