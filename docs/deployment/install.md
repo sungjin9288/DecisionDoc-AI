@@ -56,7 +56,7 @@ curl http://localhost:3300/health
 
 AWS 배포 세부 절차는 [deploy_aws.md](../deploy_aws.md)를 따릅니다.
 
-여러 장소(사무실/회사 A/회사 B)로 분리 운영할 경우에는
+여러 환경(`admin` / `dawool`)으로 분리 운영할 경우에는
 [Multi-site 운영 가이드](multi_site_operations.md)를 먼저 확인하세요.
 
 ---

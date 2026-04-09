@@ -17,7 +17,7 @@
 
 - `internal_deployment_brief.md`
   - 내부 설치형 운영 방식
-  - 사무실/회사 A/회사 B 분리 운영 구조
+  - `admin` / `dawool` 분리 운영 구조
   - 보안, 권한, 로그, 운영 포인트
 
 ## 권장 사용 순서
