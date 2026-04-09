@@ -223,6 +223,44 @@ def test_recording_can_be_transcribed_approved_and_generate_documents(tmp_path, 
     assert all(doc["source_recording_id"] == recording_id for doc in project["documents"])
 
 
+def test_generate_documents_defaults_bundle_types_when_not_provided(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _build_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="기본 번들 테스트")
+    project_id = _create_project(client)
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("weekly-sync.m4a", b"FAKEAUDIO", "audio/m4a")},
+    )
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        headers=HEADERS,
+        json={},
+    )
+    assert transcribe.status_code == 200
+
+    approve = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/approve",
+        headers=HEADERS,
+    )
+    assert approve.status_code == 200
+
+    generate = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/generate-documents",
+        headers=HEADERS,
+        json={},
+    )
+    assert generate.status_code == 200
+    generated_documents = generate.json()["generated_documents"]
+    assert [item["bundle_type"] for item in generated_documents] == [
+        "meeting_minutes_kr",
+        "project_report_kr",
+    ]
+
+
 def test_generate_documents_requires_approved_transcript(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     client = _build_client(tmp_path, monkeypatch)

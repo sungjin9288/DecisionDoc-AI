@@ -399,6 +399,54 @@ def test_meeting_recording_logs_include_operational_context(tmp_path, monkeypatc
     assert generate_events[-1]["meeting_recording_approval_status"] == "approved"
 
 
+def test_meeting_recording_logs_capture_default_bundle_generation(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _create_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="기본 번들 테스트")
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("weekly-sync.m4a", b"FAKEAUDIO", "audio/m4a")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        json={},
+    )
+    assert transcribe.status_code == 200
+
+    approve = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/approve",
+    )
+    assert approve.status_code == 200
+
+    generate = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/generate-documents",
+        json={},
+    )
+    assert generate.status_code == 200
+
+    events = _captured_events(caplog, capsys)
+    generate_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/generate-documents"
+    ]
+    assert generate_events
+    assert generate_events[-1]["meeting_recording_action"] == "generate_documents"
+    assert generate_events[-1]["meeting_recording_generated_bundle_count"] == 2
+    assert generate_events[-1]["meeting_recording_generated_bundle_types"] == [
+        "meeting_minutes_kr",
+        "project_report_kr",
+    ]
+    assert generate_events[-1]["meeting_recording_transcription_status"] == "completed"
+    assert generate_events[-1]["meeting_recording_approval_status"] == "approved"
+
+
 def test_meeting_recording_logs_capture_upload_validation_errors(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     client = _create_client(tmp_path, monkeypatch)
