@@ -73,6 +73,39 @@ def test_upload_recording_endpoint_persists_recording_and_exposes_project_detail
     assert project["meeting_recordings"][0]["filename"] == "meeting.wav"
 
 
+def test_list_and_get_recording_endpoints_return_persisted_metadata(tmp_path, monkeypatch):
+    client = _build_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    listing = client.get(f"/projects/{project_id}/recordings", headers=HEADERS)
+    assert listing.status_code == 200
+    recordings = listing.json()["recordings"]
+    assert len(recordings) == 1
+    assert recordings[0]["recording_id"] == recording_id
+    assert recordings[0]["filename"] == "meeting.wav"
+    assert recordings[0]["transcription_status"] == "uploaded"
+
+    detail = client.get(
+        f"/projects/{project_id}/recordings/{recording_id}",
+        headers=HEADERS,
+    )
+    assert detail.status_code == 200
+    payload = detail.json()["recording"]
+    assert payload["recording_id"] == recording_id
+    assert payload["filename"] == "meeting.wav"
+    assert payload["file_size_bytes"] == len(b"RIFF....fakewav")
+    assert payload["transcription_status"] == "uploaded"
+    assert payload["approval_status"] == "pending"
+
+
 def test_upload_recording_endpoint_rejects_unsupported_extension(tmp_path, monkeypatch):
     client = _build_client(tmp_path, monkeypatch)
     project_id = _create_project(client)
@@ -110,6 +143,14 @@ def test_upload_recording_endpoint_returns_404_for_missing_project(tmp_path, mon
         headers=HEADERS,
         files={"file": ("meeting.wav", b"1234", "audio/wav")},
     )
+
+    assert response.status_code == 404
+
+
+def test_list_recordings_endpoint_returns_404_for_missing_project(tmp_path, monkeypatch):
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.get("/projects/missing-project/recordings", headers=HEADERS)
 
     assert response.status_code == 404
 

@@ -474,6 +474,69 @@ def test_meeting_recording_logs_capture_upload_missing_project_errors(tmp_path, 
     assert upload_events[-1]["meeting_recording_file_size_bytes"] == len(b"1234")
 
 
+def test_meeting_recording_logs_capture_list_and_get_success(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    client = _create_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    listing = client.get(f"/projects/{project_id}/recordings")
+    assert listing.status_code == 200
+
+    detail = client.get(f"/projects/{project_id}/recordings/{recording_id}")
+    assert detail.status_code == 200
+
+    events = _captured_events(caplog, capsys)
+    list_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings"
+        and event.get("meeting_recording_action") == "list"
+    ]
+    assert list_events
+    assert list_events[-1]["status_code"] == 200
+    assert list_events[-1]["meeting_recording_project_id"] == project_id
+
+    get_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}"
+        and event.get("meeting_recording_action") == "get"
+    ]
+    assert get_events
+    assert get_events[-1]["status_code"] == 200
+    assert get_events[-1]["meeting_recording_project_id"] == project_id
+    assert get_events[-1]["meeting_recording_recording_id"] == recording_id
+    assert get_events[-1]["meeting_recording_transcription_status"] == "uploaded"
+    assert get_events[-1]["meeting_recording_approval_status"] == "pending"
+
+
+def test_meeting_recording_logs_capture_list_missing_project_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.get("/projects/missing-project/recordings")
+    assert response.status_code == 404
+
+    events = _captured_events(caplog, capsys)
+    list_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == "/projects/missing-project/recordings"
+        and event.get("meeting_recording_action") == "list"
+    ]
+    assert list_events
+    assert list_events[-1]["status_code"] == 404
+    assert list_events[-1]["error_code"] == "project_not_found"
+    assert list_events[-1]["meeting_recording_project_id"] == "missing-project"
+
+
 def test_meeting_recording_logs_capture_transcription_config_errors(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     monkeypatch.setenv("OPENAI_API_KEY", "")
