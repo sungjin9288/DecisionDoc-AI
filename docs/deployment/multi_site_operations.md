@@ -78,8 +78,18 @@ OPENAI_API_KEY=<openai-api-key>
    - 단일 키로 운영하는 경우에도 각 장소의 사용량 모니터링 기준을 분리 관리
 
 5. `ALLOWED_ORIGINS`
-   - 프론트엔드 도메인 (예: https://decisiondoc.company-a.internal)
+   - 프론트엔드 도메인
+   - 현재 권장값:
+     - 사무실: `https://office.decisiondoc.kr`
+     - 회사 A: `https://company-a.decisiondoc.kr`
+     - 회사 B: `https://company-b.decisiondoc.kr`
    - 장소별 도메인을 정확히 지정
+
+6. DNS 레코드
+   - `office.decisiondoc.kr`
+   - `company-a.decisiondoc.kr`
+   - `company-b.decisiondoc.kr`
+   - 상세 절차: `docs/deployment/dns_setup_decisiondoc_kr.md`
 
 ---
 

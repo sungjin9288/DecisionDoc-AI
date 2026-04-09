@@ -26,6 +26,7 @@
 - AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
 - 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
 - Multi-site 운영 (사무실 + 회사 A/B): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
+- `decisiondoc.kr` DNS 설정: [DNS 설정 가이드](deployment/dns_setup_decisiondoc_kr.md)
 
 ## 세일즈/설명 패키지
 - [Sales Pack 인덱스](sales/README.md)

@@ -79,6 +79,10 @@ python3 scripts/smoke.py
 - `docs/deployment/env_templates/company_a.env`
 - `docs/deployment/env_templates/company_b.env`
 
+도메인/DNS 설정은 아래 문서를 기준으로 진행합니다.
+
+- `docs/deployment/dns_setup_decisiondoc_kr.md`
+
 ## 7. 운영자 관점의 장점
 
 - 고객사별 독립 운영이 쉬움
