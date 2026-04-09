@@ -208,7 +208,7 @@ async def _build_pdf_from_html(html_text: str) -> bytes:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build DecisionDoc AI executive intro PDF.")
+    parser = argparse.ArgumentParser(description="Build DecisionDoc AI sales PDF from markdown.")
     parser.add_argument(
         "--source",
         default="docs/sales/executive_intro.md",
@@ -229,6 +229,11 @@ def main() -> int:
         action="store_true",
         help="Only build the intermediate HTML file",
     )
+    parser.add_argument(
+        "--title",
+        default="DecisionDoc AI 소개서",
+        help="Document title shown in the rendered HTML/PDF",
+    )
     args = parser.parse_args()
 
     source_path = REPO_ROOT / args.source
@@ -236,7 +241,7 @@ def main() -> int:
     pdf_output = REPO_ROOT / args.pdf_output
 
     markdown = source_path.read_text(encoding="utf-8")
-    title = "DecisionDoc AI 소개서"
+    title = args.title
     html_text = _build_html(markdown, title=title)
     html_output.parent.mkdir(parents=True, exist_ok=True)
     html_output.write_text(html_text, encoding="utf-8")

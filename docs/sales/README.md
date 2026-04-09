@@ -16,6 +16,11 @@
   - `scripts/build_sales_intro_pdf.py`로 PDF 재생성 가능
   - 기본 산출 경로: `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
 
+- `meeting_onepager.md`
+  - 대표 미팅 직전 공유용 1장 요약본
+  - 아주 짧은 포지셔닝, 차별점, 도입 방식, 후속 제안 정리
+  - 같은 PDF 빌더 스크립트로 별도 PDF 생성 가능
+
 - `notebooklm_comparison.md`
   - NotebookLM과의 차이
   - 우리 제품의 강점
@@ -34,6 +39,7 @@
 ## 권장 사용 순서
 
 1. 첫 소개 미팅: `product_brief.md`
-2. 대표 시연 진행: `demo_runbook.md`
-3. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
-4. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
+2. 미팅 직전 1장 공유: `meeting_onepager.md`
+3. 대표 시연 진행: `demo_runbook.md`
+4. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
+5. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
