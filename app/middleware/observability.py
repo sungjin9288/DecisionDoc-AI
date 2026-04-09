@@ -45,6 +45,7 @@ OPTIONAL_STATE_KEYS = [
     "meeting_recording_approval_status",
     "meeting_recording_transcript_language",
     "meeting_recording_transcript_model",
+    "meeting_recording_transcript_error",
     "meeting_recording_generated_bundle_count",
     "meeting_recording_generated_bundle_types",
 ]

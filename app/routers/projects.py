@@ -195,6 +195,7 @@ def _apply_meeting_recording_observability(
         request.state.meeting_recording_approval_status = recording.approval_status
         request.state.meeting_recording_transcript_language = recording.transcript_language
         request.state.meeting_recording_transcript_model = recording.transcript_model
+        request.state.meeting_recording_transcript_error = recording.transcript_error
 
     if generated_documents is not None:
         bundle_types = [
@@ -204,6 +205,31 @@ def _apply_meeting_recording_observability(
         ]
         request.state.meeting_recording_generated_bundle_count = len(bundle_types)
         request.state.meeting_recording_generated_bundle_types = bundle_types
+
+
+def _apply_meeting_recording_error_observability(
+    request: Request,
+    *,
+    service,
+    tenant_id: str,
+    project_id: str,
+    recording_id: str,
+    action: str,
+) -> None:
+    try:
+        recording = service.get_recording(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+        )
+    except KeyError:
+        return
+    _apply_meeting_recording_observability(
+        request,
+        action=action,
+        project_id=project_id,
+        recording=recording,
+    )
 
 
 def _load_decision_council_procurement_context_or_raise(
@@ -706,12 +732,28 @@ def transcribe_project_meeting_recording_endpoint(
         _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MeetingRecordingConfigError as exc:
+        _apply_meeting_recording_error_observability(
+            request,
+            service=service,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            action="transcribe",
+        )
         _set_error_code(request, "meeting_recording_transcription_not_configured")
         raise HTTPException(
             status_code=503,
             detail={"code": "meeting_recording_transcription_not_configured", "message": str(exc)},
         ) from exc
     except MeetingRecordingTranscriptionError as exc:
+        _apply_meeting_recording_error_observability(
+            request,
+            service=service,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            action="transcribe",
+        )
         _set_error_code(request, "meeting_recording_transcription_failed")
         raise HTTPException(
             status_code=502,
@@ -757,6 +799,14 @@ def approve_project_meeting_recording_endpoint(
         _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MeetingRecordingStateError as exc:
+        _apply_meeting_recording_error_observability(
+            request,
+            service=service,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            action="approve",
+        )
         _set_error_code(request, "meeting_recording_not_ready_for_approval")
         raise HTTPException(
             status_code=409,
@@ -805,12 +855,28 @@ def generate_project_docs_from_meeting_recording_endpoint(
         _set_error_code(request, "meeting_recording_not_found")
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        _apply_meeting_recording_error_observability(
+            request,
+            service=service,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            action="generate_documents",
+        )
         _set_error_code(request, "meeting_recording_bundle_invalid")
         raise HTTPException(
             status_code=422,
             detail={"code": "meeting_recording_bundle_invalid", "message": str(exc)},
         ) from exc
     except MeetingRecordingStateError as exc:
+        _apply_meeting_recording_error_observability(
+            request,
+            service=service,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            action="generate_documents",
+        )
         _set_error_code(request, "meeting_recording_not_ready_for_generation")
         raise HTTPException(
             status_code=409,

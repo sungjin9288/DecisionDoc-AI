@@ -36,6 +36,24 @@ def _install_transcription_transport(client: TestClient, *, transcript_text: str
     )
 
 
+def _install_transcription_failure_transport(
+    client: TestClient,
+    *,
+    status_code: int = 500,
+    error_message: str = "upstream transcription failed",
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/audio/transcriptions")
+        return httpx.Response(status_code, json={"error": {"message": error_message}})
+
+    client.app.state.meeting_recording_service = MeetingRecordingService(
+        recording_store=client.app.state.meeting_recording_store,
+        project_store=client.app.state.project_store,
+        generation_service=client.app.state.service,
+        transport=httpx.MockTransport(handler),
+    )
+
+
 def test_upload_recording_endpoint_persists_recording_and_exposes_project_detail(tmp_path, monkeypatch):
     client = _build_client(tmp_path, monkeypatch)
     project_id = _create_project(client)
@@ -148,6 +166,38 @@ def test_generate_documents_requires_approved_transcript(tmp_path, monkeypatch):
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "meeting_recording_not_ready_for_generation"
+
+
+def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _build_client(tmp_path, monkeypatch)
+    _install_transcription_failure_transport(client, error_message="upstream transcription failed")
+    project_id = _create_project(client)
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        headers=HEADERS,
+        json={},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "meeting_recording_transcription_failed"
+
+    detail = client.get(
+        f"/projects/{project_id}/recordings/{recording_id}",
+        headers=HEADERS,
+    )
+    assert detail.status_code == 200
+    payload = detail.json()["recording"]
+    assert payload["transcription_status"] == "failed"
+    assert payload["approval_status"] == "pending"
+    assert payload["transcript_error"] == "upstream transcription failed"
 
 
 def test_root_page_contains_meeting_recording_controls(tmp_path, monkeypatch):
