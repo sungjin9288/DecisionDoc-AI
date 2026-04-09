@@ -35,6 +35,13 @@
 
 필수 값 생성/확인 방법은 다음 섹션에 정리되어 있습니다.
 
+가능하면 수동 편집보다 아래 bootstrap 스크립트를 먼저 사용합니다.
+
+```bash
+python3 scripts/bootstrap_prod_env.py --profile admin --output .env.prod --openai-api-key 'sk-...'
+python3 scripts/bootstrap_prod_env.py --profile dawool --output .env.prod --openai-api-key 'sk-...'
+```
+
 템플릿 샘플 파일:
 - `docs/deployment/env_templates/admin.env`
 - `docs/deployment/env_templates/dawool.env`

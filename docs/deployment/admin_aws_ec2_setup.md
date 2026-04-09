@@ -144,6 +144,17 @@ cd /opt/decisiondoc
 
 ## 9. `.env.prod` 생성
 
+권장 방식은 bootstrap 스크립트로 `.env.prod`를 바로 생성하는 것입니다.
+
+```bash
+python3 scripts/bootstrap_prod_env.py \
+  --profile admin \
+  --output .env.prod \
+  --openai-api-key 'sk-...'
+```
+
+수동으로 생성하려면 템플릿 복사 후 값을 직접 넣습니다.
+
 템플릿 복사:
 
 ```bash
@@ -164,7 +175,7 @@ openssl rand -hex 32
 - 두 번째: `DECISIONDOC_API_KEYS`
 - 세 번째: `DECISIONDOC_OPS_KEY`
 
-편집:
+수동 편집:
 
 ```bash
 vi .env.prod
