@@ -2,6 +2,7 @@
 
 ## 문서 구조
 - `docs/deployment/` — 설치, Docker, SSL, HA 운영 가이드
+- `docs/sales/` — 영업/고객 설명용 문서
 - `docs/deploy_aws.md` — AWS SAM 및 GitHub Actions 배포 runbook
 - `docs/architecture.md` — 시스템 아키텍처 개요
 - `docs/openspace_integration.md` — OpenSpace 및 `DESIGN.md` 도입 가이드
@@ -25,6 +26,12 @@
 - AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
 - 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
 - Multi-site 운영 (사무실 + 회사 A/B): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
+
+## 세일즈/설명 패키지
+- [Sales Pack 인덱스](sales/README.md)
+- [제품 소개서](sales/product_brief.md)
+- [NotebookLM 비교 설명서](sales/notebooklm_comparison.md)
+- [내부 설치형 도입 설명서](sales/internal_deployment_brief.md)
 
 ## 운영 스모크
 - `python3 scripts/smoke.py` — 기본 API smoke
