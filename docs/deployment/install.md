@@ -39,6 +39,25 @@ curl http://localhost:3300/health
 
 ---
 
+## 배포 경로 선택 기준 (Docker vs AWS SAM)
+
+| 구분 | Docker Compose | AWS SAM/Lambda |
+|------|----------------|----------------|
+| 운영 난이도 | 내부 서버 1~2대 기준 빠르게 운영 가능 | AWS 계정/IAM/OIDC 설정 필요 |
+| 배포 방식 | VM/서버에 `docker compose`로 배포 | GitHub Actions + SAM deploy |
+| 확장성 | 수평 확장은 운영자가 직접 구성 | Lambda 자동 확장 |
+| 로그/관측 | Docker logs/호스트 로그 | CloudWatch 기반 |
+| 권한 통제 | 서버 접근 권한 중심 | IAM 역할/정책 중심 |
+| 추천 상황 | 온프레미스/내부망, 빠른 PoC/내부 운영 | SaaS/다중 환경 운영, 배포 규율 필요 |
+
+선택 요약:
+- 내부망/간단 운영이면 Docker 경로가 가장 빠릅니다.
+- 배포 권한 분리, 자동 확장, stage/prod 분리 운영이 필요하면 AWS SAM 경로를 사용합니다.
+
+AWS 배포 세부 절차는 [deploy_aws.md](../deploy_aws.md)를 따릅니다.
+
+---
+
 ## 2. 최초 관리자 계정 생성
 
 ```bash
