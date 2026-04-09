@@ -24,6 +24,7 @@
 - Docker 운영 체크리스트: [Docker 배포](deployment/docker.md)
 - AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
 - 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
+- Multi-site 운영 (사무실 + 회사 A/B): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
 
 ## 운영 스모크
 - `python3 scripts/smoke.py` — 기본 API smoke

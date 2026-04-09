@@ -82,3 +82,5 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - 헬스체크: `curl http://localhost:3300/health` 또는 `http://localhost:8000/health`
 - smoke: `python scripts/smoke.py` (필요 시 `python scripts/ops_smoke.py`)
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
+
+여러 장소로 분리 운영할 때는 [Multi-site 운영 가이드](multi_site_operations.md)를 확인하세요.
