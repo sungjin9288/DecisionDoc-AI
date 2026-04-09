@@ -315,6 +315,37 @@ def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, m
     assert payload["transcript_error"] == "upstream transcription failed"
 
 
+def test_transcribe_rejects_empty_transcript(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _build_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="")
+    project_id = _create_project(client)
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        headers=HEADERS,
+        json={},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "meeting_recording_transcription_failed"
+
+    detail = client.get(
+        f"/projects/{project_id}/recordings/{recording_id}",
+        headers=HEADERS,
+    )
+    payload = detail.json()["recording"]
+    assert payload["transcription_status"] == "failed"
+    assert payload["approval_status"] == "pending"
+    assert payload["transcript_error"] == "OpenAI transcription response did not include transcript text."
+
+
 def test_get_recording_endpoint_returns_404_for_missing_recording(tmp_path, monkeypatch):
     client = _build_client(tmp_path, monkeypatch)
     project_id = _create_project(client)

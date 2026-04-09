@@ -606,6 +606,42 @@ def test_meeting_recording_logs_capture_transcription_failures(tmp_path, monkeyp
     assert transcribe_events[-1]["meeting_recording_transcript_error"] == "upstream transcription failed"
 
 
+def test_meeting_recording_logs_capture_empty_transcription_failures(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _create_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="")
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        json={},
+    )
+    assert response.status_code == 502
+
+    events = _captured_events(caplog, capsys)
+    transcribe_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/transcribe"
+    ]
+    assert transcribe_events
+    assert transcribe_events[-1]["status_code"] == 502
+    assert transcribe_events[-1]["error_code"] == "meeting_recording_transcription_failed"
+    assert transcribe_events[-1]["meeting_recording_transcription_status"] == "failed"
+    assert transcribe_events[-1]["meeting_recording_approval_status"] == "pending"
+    assert (
+        transcribe_events[-1]["meeting_recording_transcript_error"]
+        == "OpenAI transcription response did not include transcript text."
+    )
+
+
 def test_meeting_recording_logs_capture_approval_state_errors(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     client = _create_client(tmp_path, monkeypatch)
