@@ -205,12 +205,7 @@ curl -s https://dawool.decisiondoc.kr/health
 
 ```bash
 cd /opt/decisiondoc
-SMOKE_API_KEY="$(grep '^DECISIONDOC_API_KEYS=' .env.prod | cut -d= -f2- | cut -d, -f1)"
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec \
-  -e SMOKE_BASE_URL=https://dawool.decisiondoc.kr \
-  -e SMOKE_API_KEY="$SMOKE_API_KEY" \
-  -e SMOKE_PROVIDER=openai \
-  app python scripts/smoke.py
+python3 scripts/run_deployed_smoke.py --env-file .env.prod
 ```
 
 정상 기준:

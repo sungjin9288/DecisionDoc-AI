@@ -250,13 +250,11 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec nginx nginx 
 
 ## 12. 스모크 테스트
 
-로컬 또는 서버에서 아래처럼 실행합니다.
+배포 서버에서는 아래 helper로 실제 운영 환경 기준 smoke를 실행합니다.
 
 ```bash
-export SMOKE_BASE_URL=https://admin.decisiondoc.kr
-export SMOKE_API_KEY=<DECISIONDOC_API_KEYS에 넣은 값 중 하나>
-export SMOKE_PROVIDER=openai
-python3 scripts/smoke.py
+cd /opt/decisiondoc
+python3 scripts/run_deployed_smoke.py --env-file .env.prod
 ```
 
 이 스모크는 아래를 확인합니다.
@@ -273,7 +271,7 @@ python3 scripts/smoke.py
 1. `https://admin.decisiondoc.kr/health`
 2. `docker compose --env-file .env.prod -f docker-compose.prod.yml ps`
 3. `docker compose --env-file .env.prod -f docker-compose.prod.yml logs app --tail=100`
-4. `python3 scripts/smoke.py`
+4. `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
 
 ## 14. 지금 당장 필요한 것
 

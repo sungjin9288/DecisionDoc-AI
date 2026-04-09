@@ -40,7 +40,8 @@
 - [내부 설치형 도입 설명서](sales/internal_deployment_brief.md)
 
 ## 운영 스모크
-- `python3 scripts/smoke.py` — 기본 API smoke
+- `python3 scripts/smoke.py` — 로컬/직접 환경변수 주입용 기본 API smoke
+- `python3 scripts/run_deployed_smoke.py --env-file .env.prod` — 배포 서버 `.env.prod` 기준 API smoke
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke
 
