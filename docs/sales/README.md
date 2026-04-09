@@ -21,6 +21,11 @@
   - 아주 짧은 포지셔닝, 차별점, 도입 방식, 후속 제안 정리
   - 같은 PDF 빌더 스크립트로 별도 PDF 생성 가능
 
+- `talk_track.md`
+  - 대표 미팅용 말하기 스크립트
+  - 30초 / 2분 / 5분 버전으로 구성
+  - 설치형 구조, 차별점, 질문 대응 문구 포함
+
 - `notebooklm_comparison.md`
   - NotebookLM과의 차이
   - 우리 제품의 강점
@@ -40,6 +45,7 @@
 
 1. 첫 소개 미팅: `product_brief.md`
 2. 미팅 직전 1장 공유: `meeting_onepager.md`
-3. 대표 시연 진행: `demo_runbook.md`
-4. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
-5. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
+3. 대표 앞 설명 준비: `talk_track.md`
+4. 대표 시연 진행: `demo_runbook.md`
+5. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
+6. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
