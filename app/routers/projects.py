@@ -266,6 +266,18 @@ def _load_decision_council_procurement_context_or_raise(
     return project, record
 
 
+def _ensure_project_exists_for_meeting_recording(
+    request: Request,
+    *,
+    project_id: str,
+    tenant_id: str,
+) -> None:
+    project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        _set_error_code(request, "project_not_found")
+        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+
 def _apply_decision_council_observability(
     request: Request,
     *,
@@ -721,6 +733,11 @@ def transcribe_project_meeting_recording_endpoint(
         project_id=project_id,
         recording_id=recording_id,
     )
+    _ensure_project_exists_for_meeting_recording(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+    )
     try:
         recording = service.transcribe_recording(
             tenant_id=tenant_id,
@@ -788,6 +805,11 @@ def approve_project_meeting_recording_endpoint(
         project_id=project_id,
         recording_id=recording_id,
     )
+    _ensure_project_exists_for_meeting_recording(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+    )
     try:
         recording = service.approve_recording(
             tenant_id=tenant_id,
@@ -841,6 +863,11 @@ def generate_project_docs_from_meeting_recording_endpoint(
         action="generate_documents",
         project_id=project_id,
         recording_id=recording_id,
+    )
+    _ensure_project_exists_for_meeting_recording(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
     )
     try:
         result = service.generate_documents_from_recording(

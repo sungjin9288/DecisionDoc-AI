@@ -353,6 +353,34 @@ def test_recording_state_endpoints_return_404_for_missing_recording(tmp_path, mo
     assert generate.status_code == 404
 
 
+def test_recording_state_endpoints_return_404_for_missing_project(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _build_client(tmp_path, monkeypatch)
+
+    transcribe = client.post(
+        "/projects/missing-project/recordings/missing-recording/transcribe",
+        headers=HEADERS,
+        json={},
+    )
+    assert transcribe.status_code == 404
+    assert "프로젝트를 찾을 수 없습니다: missing-project" in transcribe.json()["detail"]
+
+    approve = client.post(
+        "/projects/missing-project/recordings/missing-recording/approve",
+        headers=HEADERS,
+    )
+    assert approve.status_code == 404
+    assert "프로젝트를 찾을 수 없습니다: missing-project" in approve.json()["detail"]
+
+    generate = client.post(
+        "/projects/missing-project/recordings/missing-recording/generate-documents",
+        headers=HEADERS,
+        json={},
+    )
+    assert generate.status_code == 404
+    assert "프로젝트를 찾을 수 없습니다: missing-project" in generate.json()["detail"]
+
+
 def test_root_page_contains_meeting_recording_controls(tmp_path, monkeypatch):
     client = _build_client(tmp_path, monkeypatch)
 
