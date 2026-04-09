@@ -535,3 +535,47 @@ def test_meeting_recording_logs_capture_generation_state_errors(tmp_path, monkey
     assert generate_events[-1]["error_code"] == "meeting_recording_not_ready_for_generation"
     assert generate_events[-1]["meeting_recording_transcription_status"] == "completed"
     assert generate_events[-1]["meeting_recording_approval_status"] == "pending"
+
+
+def test_meeting_recording_logs_capture_bundle_validation_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _create_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="간단한 전사")
+    project_id = _create_project(client)
+
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("meeting.wav", b"RIFF....fakewav", "audio/wav")},
+    )
+    assert upload.status_code == 200
+    recording_id = upload.json()["recording"]["recording_id"]
+
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        json={},
+    )
+    assert transcribe.status_code == 200
+
+    approve = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/approve",
+    )
+    assert approve.status_code == 200
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/generate-documents",
+        json={"bundle_types": ["unknown_bundle"]},
+    )
+    assert response.status_code == 422
+
+    events = _captured_events(caplog, capsys)
+    generate_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings/{recording_id}/generate-documents"
+    ]
+    assert generate_events
+    assert generate_events[-1]["status_code"] == 422
+    assert generate_events[-1]["error_code"] == "meeting_recording_bundle_invalid"
+    assert generate_events[-1]["meeting_recording_transcription_status"] == "completed"
+    assert generate_events[-1]["meeting_recording_approval_status"] == "approved"

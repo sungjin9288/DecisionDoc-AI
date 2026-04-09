@@ -168,6 +168,39 @@ def test_generate_documents_requires_approved_transcript(tmp_path, monkeypatch):
     assert response.json()["detail"]["code"] == "meeting_recording_not_ready_for_generation"
 
 
+def test_generate_documents_rejects_unknown_bundle_type(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    client = _build_client(tmp_path, monkeypatch)
+    _install_transcription_transport(client, transcript_text="간단한 전사")
+    project_id = _create_project(client)
+    upload = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.webm", b"FAKEAUDIO", "audio/webm")},
+    )
+    recording_id = upload.json()["recording"]["recording_id"]
+    transcribe = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/transcribe",
+        headers=HEADERS,
+        json={},
+    )
+    assert transcribe.status_code == 200
+    approve = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/approve",
+        headers=HEADERS,
+    )
+    assert approve.status_code == 200
+
+    response = client.post(
+        f"/projects/{project_id}/recordings/{recording_id}/generate-documents",
+        headers=HEADERS,
+        json={"bundle_types": ["unknown_bundle"]},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "meeting_recording_bundle_invalid"
+
+
 def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     client = _build_client(tmp_path, monkeypatch)
