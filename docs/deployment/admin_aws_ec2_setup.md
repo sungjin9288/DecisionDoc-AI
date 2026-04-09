@@ -183,6 +183,14 @@ DECISIONDOC_OPS_KEY=<generated-ops-key>
 OPENAI_API_KEY=<your-openai-key>
 ```
 
+작성 직후 preflight 검증:
+
+```bash
+python3 scripts/check_prod_env.py \
+  --env-file .env.prod \
+  --expected-origin https://admin.decisiondoc.kr
+```
+
 ## 10. 첫 부팅
 
 `scripts/setup.sh` 는 아래를 자동으로 해줍니다.

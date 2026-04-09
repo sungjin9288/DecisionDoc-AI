@@ -93,6 +93,10 @@ OPENAI_API_KEY=<openai-api-key>
    - `dawool.decisiondoc.kr`
    - 상세 절차: `docs/deployment/dns_setup_decisiondoc_kr.md`
 
+7. env preflight 검증
+   - `.env.prod` 작성 직후 `python3 scripts/check_prod_env.py --env-file .env.prod --expected-origin https://<site-domain>` 실행
+   - placeholder 미치환, OpenAI 키 오기입, API/OPS 키 중복, origin mismatch를 컷오버 전에 차단
+
 ---
 
 ## 배포 절차 (환경별 반복)

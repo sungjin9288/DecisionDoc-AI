@@ -121,6 +121,19 @@ DECISIONDOC_OPS_KEY=<generated-ops-key>
 OPENAI_API_KEY=<real-openai-key>
 ```
 
+작성 직후 preflight 검증:
+
+```bash
+python3 scripts/check_prod_env.py \
+  --env-file .env.prod \
+  --expected-origin https://dawool.decisiondoc.kr
+```
+
+정상 기준:
+
+- `PASS  Production env preflight passed.`
+- placeholder 미치환, OpenAI 키 오기입, origin mismatch, API/OPS 키 중복이 없어야 함
+
 ## 7. 첫 부팅
 
 초기 self-signed 인증서와 데이터 경로를 준비한 뒤 부팅합니다.
