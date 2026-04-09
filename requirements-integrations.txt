@@ -1,12 +1,8 @@
 # Optional dependencies for external integrations.
 # Install with: pip install -r requirements-integrations.txt
 #
-# Note: These are intentionally NOT in requirements.txt to keep the
-# main application dependency footprint minimal.
-
-# LLM providers (app/providers/openai_provider.py, gemini_provider.py)
-openai>=1.0.0
-google-genai>=1.0.0
+# Note: Core runtime provider SDKs live in requirements.txt because
+# production Docker/Lambda deployments may use OpenAI/Gemini directly.
 
 # Notion integration (scripts/notion_push.py)
 notion-client>=2.2.1
