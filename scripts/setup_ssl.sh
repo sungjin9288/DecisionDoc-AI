@@ -46,9 +46,6 @@ cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$APP_DIR/nginx/ssl/cert.pem"
 cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$APP_DIR/nginx/ssl/key.pem"
 chmod 600 "$APP_DIR/nginx/ssl/key.pem"
 
-# Update nginx.conf with actual domain
-sed -i "s/server_name _;/server_name $DOMAIN;/" "$APP_DIR/nginx/nginx.conf"
-
 # Setup auto-renewal cron
 (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --post-hook 'cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem $APP_DIR/nginx/ssl/cert.pem && cp /etc/letsencrypt/live/$DOMAIN/privkey.pem $APP_DIR/nginx/ssl/key.pem && cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE exec nginx nginx -s reload'") | crontab -
 
