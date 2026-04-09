@@ -179,6 +179,7 @@ release-complete 이후 procurement 운영 루프는 기존 `admin quality loop 
   - `python scripts/procurement_eval_summary.py --out-dir /tmp/procurement-eval-summary`
 - runtime ops view:
   - `GET /admin/tenants/{tenant_id}/procurement-quality-summary`
+  - `GET /admin/locations/{tenant_id}/procurement-quality-summary`
   - returns decision distribution, score status, blocking hard-filter counts, downstream bundle usage, approval status counts
   - also returns recommendation follow-through and `NO_GO` override candidate summary derived from project docs
   - also returns recent procurement / approval audit activity for investigation context

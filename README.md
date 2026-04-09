@@ -151,6 +151,17 @@ python scripts/ops_smoke.py
 python scripts/voice_brief_smoke.py
 ```
 
+Procurement smoke (optional) uses the same entrypoint:
+
+```bash
+SMOKE_INCLUDE_PROCUREMENT=1 \
+SMOKE_PROCUREMENT_URL_OR_NUMBER="R26BK01398367" \
+G2B_API_KEY="your-g2b-key" \
+python scripts/smoke.py
+```
+
+If `SMOKE_PROCUREMENT_URL_OR_NUMBER` is empty, the smoke runner attempts to discover a recent live G2B bid number using `G2B_API_KEY`.
+
 ### OpenSpace integration
 
 - integration guide: `docs/openspace_integration.md`
