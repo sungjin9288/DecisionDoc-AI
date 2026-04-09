@@ -19,6 +19,12 @@
 7. [GS인증 준비](compliance/gs_certification_checklist.md)
 8. [CSAP 준비](compliance/csap_checklist.md)
 
+## 내부 운영 패키지 (판매/내부 전개 기준)
+- 배포 경로 비교 및 선택 기준: [설치 가이드](deployment/install.md)
+- Docker 운영 체크리스트: [Docker 배포](deployment/docker.md)
+- AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
+- 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
+
 ## 운영 스모크
 - `python3 scripts/smoke.py` — 기본 API smoke
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke

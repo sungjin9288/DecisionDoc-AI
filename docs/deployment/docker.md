@@ -74,3 +74,11 @@ curl http://localhost:8000/health   # 프로덕션 Compose
 docker compose logs app --tail=100 -f
 docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 ```
+
+## 운영 체크리스트 (Docker)
+- `.env` / `.env.prod` 에 `JWT_SECRET_KEY`(32bytes 이상)와 `ALLOWED_ORIGINS` 를 반드시 설정
+- `DECISIONDOC_PROVIDER`와 provider API 키(`OPENAI_API_KEY` 등) 확인
+- `DECISIONDOC_STORAGE=local` 기준이면 `decisiondoc_data` 볼륨 백업 정책 수립
+- 헬스체크: `curl http://localhost:3300/health` 또는 `http://localhost:8000/health`
+- smoke: `python scripts/smoke.py` (필요 시 `python scripts/ops_smoke.py`)
+- 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨

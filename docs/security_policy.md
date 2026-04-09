@@ -29,6 +29,19 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 접근 로그: 90일 보존
 - 로그 무결성: Append-only, 삭제/수정 불가
 
+## 6.1 운영 권한/로그 정책 요약 (구현 기준)
+- 배포 권한
+  - AWS 경로는 GitHub OIDC deploy role로 `deploy` / `deploy-smoke` workflow만 허용
+  - 운영자 CLI/콘솔은 진단·복구 전용 (무분별한 prod 재배포 금지)
+- 런타임 인증 키
+  - `DECISIONDOC_API_KEY` / `DECISIONDOC_API_KEYS` (API 인증)
+  - `DECISIONDOC_OPS_KEY` (`/ops/*` 보호)
+- 감사 로그 저장
+  - 파일 저장 위치: `data/tenants/<tenant_id>/audit_logs.jsonl`
+  - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
+- 운영 로그
+  - 애플리케이션 구조화 로그는 stdout 기준 (Docker는 `docker logs`, AWS는 CloudWatch)
+
 ## 7. 취약점 관리
 - 정기 점검: 분기별 OWASP 점검
 - 의존성: 주간 Safety check (CI/CD)
