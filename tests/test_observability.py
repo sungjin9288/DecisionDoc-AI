@@ -743,6 +743,27 @@ def test_meeting_recording_logs_capture_get_missing_recording_errors(tmp_path, m
     assert get_events[-1]["meeting_recording_recording_id"] == "missing-recording"
 
 
+def test_meeting_recording_logs_capture_get_missing_project_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.get("/projects/missing-project/recordings/missing-recording")
+    assert response.status_code == 404
+
+    events = _captured_events(caplog, capsys)
+    get_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == "/projects/missing-project/recordings/missing-recording"
+        and event.get("meeting_recording_action") == "get"
+    ]
+    assert get_events
+    assert get_events[-1]["status_code"] == 404
+    assert get_events[-1]["error_code"] == "project_not_found"
+    assert get_events[-1]["meeting_recording_project_id"] == "missing-project"
+    assert get_events[-1]["meeting_recording_recording_id"] == "missing-recording"
+
+
 def test_meeting_recording_logs_capture_missing_recording_state_errors(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")

@@ -694,6 +694,11 @@ def get_project_meeting_recording_endpoint(
         project_id=project_id,
         recording_id=recording_id,
     )
+    _ensure_project_exists_for_meeting_recording(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+    )
     try:
         recording = service.get_recording(
             tenant_id=tenant_id,
