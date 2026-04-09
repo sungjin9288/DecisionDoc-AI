@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   app:
     image: ${DOCKER_IMAGE:-ghcr.io/sungjin9288/decisiondoc-ai:latest}
