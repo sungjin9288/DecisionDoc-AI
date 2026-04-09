@@ -424,6 +424,32 @@ def test_meeting_recording_logs_capture_upload_validation_errors(tmp_path, monke
     assert upload_events[-1]["meeting_recording_file_size_bytes"] == len(b"not-audio")
 
 
+def test_meeting_recording_logs_capture_upload_size_validation_errors(tmp_path, monkeypatch, caplog, capsys):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("MEETING_RECORDING_MAX_UPLOAD_BYTES", "4")
+    client = _create_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    response = client.post(
+        f"/projects/{project_id}/recordings",
+        files={"file": ("meeting.wav", b"12345", "audio/wav")},
+    )
+    assert response.status_code == 422
+
+    events = _captured_events(caplog, capsys)
+    upload_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == f"/projects/{project_id}/recordings"
+        and event.get("meeting_recording_action") == "upload"
+    ]
+    assert upload_events
+    assert upload_events[-1]["status_code"] == 422
+    assert upload_events[-1]["error_code"] == "meeting_recording_upload_invalid"
+    assert upload_events[-1]["meeting_recording_project_id"] == project_id
+    assert upload_events[-1]["meeting_recording_file_size_bytes"] == len(b"12345")
+
+
 def test_meeting_recording_logs_capture_transcription_config_errors(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     monkeypatch.setenv("OPENAI_API_KEY", "")

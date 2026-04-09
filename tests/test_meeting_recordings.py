@@ -87,6 +87,21 @@ def test_upload_recording_endpoint_rejects_unsupported_extension(tmp_path, monke
     assert response.json()["detail"]["code"] == "meeting_recording_upload_invalid"
 
 
+def test_upload_recording_endpoint_rejects_files_over_size_limit(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEETING_RECORDING_MAX_UPLOAD_BYTES", "4")
+    client = _build_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    response = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("meeting.wav", b"12345", "audio/wav")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "meeting_recording_upload_invalid"
+
+
 def test_transcribe_endpoint_returns_503_without_openai_api_key(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     client = _build_client(tmp_path, monkeypatch)
