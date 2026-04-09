@@ -42,6 +42,7 @@
 실제 고객 전용 배포 절차는 아래 문서를 함께 사용합니다.
 
 - `docs/deployment/dawool_rollout_runbook.md`
+- `docs/deployment/dawool_rollout_worksheet.md`
 
 ### 공통 템플릿
 
@@ -154,6 +155,7 @@ export ALLOWED_ORIGINS=<same-as-prod>
 - 키 로테이션 변경 계획: `docs/deployment/api_key_rotation_change_plan.md`
 - 운영 체크리스트(장애 대응 포함): `docs/deployment/prod_checklist.md`
 - 고객 전용 rollout 순서와 컷오버 점검표: `docs/deployment/dawool_rollout_runbook.md`
+- 고객 전용 입력값/진행 기록 시트: `docs/deployment/dawool_rollout_worksheet.md`
 
 ---
 

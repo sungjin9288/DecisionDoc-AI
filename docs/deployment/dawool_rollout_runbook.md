@@ -2,6 +2,10 @@
 
 이 문서는 `dawool.decisiondoc.kr` 를 고객 전용 환경으로 배포할 때 필요한 값, 실행 순서, 점검 항목, 컷오버 체크리스트를 한 번에 정리한 runbook입니다.
 
+실제 입력값과 실행 결과는 아래 worksheet에 같이 기록하는 것을 권장합니다.
+
+- `docs/deployment/dawool_rollout_worksheet.md`
+
 현재 기준은 아래를 전제로 합니다.
 
 - 공용 운영/데모 환경: `admin.decisiondoc.kr`
