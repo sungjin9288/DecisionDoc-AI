@@ -35,6 +35,11 @@
 
 필수 값 생성/확인 방법은 다음 섹션에 정리되어 있습니다.
 
+템플릿 샘플 파일:
+- `docs/deployment/env_templates/office.env`
+- `docs/deployment/env_templates/company_a.env`
+- `docs/deployment/env_templates/company_b.env`
+
 ### 공통 템플릿
 
 ```bash
@@ -146,4 +151,3 @@ export ALLOWED_ORIGINS=<same-as-prod>
 2. `DECISIONDOC_API_KEYS` / `DECISIONDOC_OPS_KEY`가 서로 다름
 3. `decisiondoc_data` 볼륨 공유 없음
 4. OpenAI API 사용량/계정 분리 정책 확정
-
