@@ -10,6 +10,12 @@
   - 주요 기능
   - 도입 효과
 
+- `executive_intro.md`
+  - 외부 대표 및 초기 미팅용 요약 소개서
+  - 제품 포지셔닝, 핵심 가치, 도입 방식, 기대 효과
+  - `scripts/build_sales_intro_pdf.py`로 PDF 재생성 가능
+  - 기본 산출 경로: `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
+
 - `notebooklm_comparison.md`
   - NotebookLM과의 차이
   - 우리 제품의 강점
