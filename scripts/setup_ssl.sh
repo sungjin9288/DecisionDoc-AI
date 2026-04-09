@@ -9,6 +9,13 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 ENV_FILE="$APP_DIR/.env.prod"
 
+cleanup() {
+  cd "$APP_DIR"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" start nginx 2>/dev/null || true
+}
+
+trap cleanup EXIT
+
 if [[ -z "$DOMAIN" || -z "$EMAIL" ]]; then
   echo "Usage: $0 <domain> <email>"
   echo "Example: $0 decisiondoc.company.kr admin@company.kr"
@@ -23,14 +30,15 @@ if ! command -v certbot &>/dev/null; then
   apt-get update -q && apt-get install -y certbot python3-certbot-nginx
 fi
 
+cd "$APP_DIR"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" stop nginx 2>/dev/null || true
+
 # Issue certificate
 certbot certonly --standalone \
   --non-interactive \
   --agree-tos \
   --email "$EMAIL" \
-  --domains "$DOMAIN" \
-  --pre-hook "cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE stop nginx 2>/dev/null || true" \
-  --post-hook "cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE start nginx 2>/dev/null || true"
+  --domains "$DOMAIN"
 
 # Copy to nginx ssl directory
 mkdir -p "$APP_DIR/nginx/ssl"
