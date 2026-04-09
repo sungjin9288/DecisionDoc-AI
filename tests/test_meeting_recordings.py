@@ -73,6 +73,20 @@ def test_upload_recording_endpoint_persists_recording_and_exposes_project_detail
     assert project["meeting_recordings"][0]["filename"] == "meeting.wav"
 
 
+def test_upload_recording_endpoint_rejects_unsupported_extension(tmp_path, monkeypatch):
+    client = _build_client(tmp_path, monkeypatch)
+    project_id = _create_project(client)
+
+    response = client.post(
+        f"/projects/{project_id}/recordings",
+        headers=HEADERS,
+        files={"file": ("notes.txt", b"not-audio", "text/plain")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "meeting_recording_upload_invalid"
+
+
 def test_transcribe_endpoint_returns_503_without_openai_api_key(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     client = _build_client(tmp_path, monkeypatch)
