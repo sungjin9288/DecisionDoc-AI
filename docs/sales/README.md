@@ -21,6 +21,11 @@
   - 우리 제품의 강점
   - 적합한 고객/시나리오
 
+- `demo_runbook.md`
+  - 외부 대표 및 초기 미팅용 시연 스크립트
+  - 현재 검증 완료 범위와 선택 시연 구간 구분
+  - 질문 대응 문구와 후속 액션 정리
+
 - `internal_deployment_brief.md`
   - 내부 설치형 운영 방식
   - `admin` / `dawool` 분리 운영 구조
@@ -29,5 +34,6 @@
 ## 권장 사용 순서
 
 1. 첫 소개 미팅: `product_brief.md`
-2. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
-3. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
+2. 대표 시연 진행: `demo_runbook.md`
+3. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
+4. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
