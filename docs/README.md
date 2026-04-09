@@ -23,6 +23,7 @@
 ## 내부 운영 패키지 (판매/내부 전개 기준)
 - 배포 경로 비교 및 선택 기준: [설치 가이드](deployment/install.md)
 - Docker 운영 체크리스트: [Docker 배포](deployment/docker.md)
+- `admin.decisiondoc.kr` AWS 구축: [AWS EC2 구축 가이드](deployment/admin_aws_ec2_setup.md)
 - AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
 - 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
 - Multi-site 운영 (`admin` + `dawool`): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
