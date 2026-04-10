@@ -36,22 +36,20 @@ vi .env.prod
 # OPENAI_API_KEY=sk-...
 
 # 2. 배포
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-prod-local
 
 # 3. 확인
-curl http://localhost:8000/health
-docker compose -f docker-compose.prod.yml ps
+python3 scripts/post_deploy_check.py --env-file .env.prod
 ```
 
 GHCR 이미지 태그를 명시적으로 배포할 때는 `scripts/deploy.sh` 를 사용할 수 있습니다.
 
 ```bash
-export JWT_SECRET_KEY=$(openssl rand -hex 32)
-export ALLOWED_ORIGINS=https://your-domain.com
 ./scripts/deploy.sh production v1.0.0
 ```
 
-- `scripts/deploy.sh` 는 `docker-compose.prod.yml` 를 사용하고, 내부적으로 health check까지 수행합니다.
+- `scripts/deploy.sh` 는 `.env.prod` 를 기준으로 `check_prod_env.py` preflight, compose rollout, `post_deploy_check.py` 까지 수행합니다.
+- local build 기준의 검증된 운영 경로는 `scripts/deploy_compose_local.py` 를 우선 사용합니다.
 - AWS Lambda/SAM 경로는 이 문서가 아니라 [../deploy_aws.md](../deploy_aws.md)를 사용합니다.
 
 ## 온프레미스 (로컬 LLM)
@@ -80,7 +78,7 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - `DECISIONDOC_PROVIDER`와 provider API 키(`OPENAI_API_KEY` 등) 확인
 - `DECISIONDOC_STORAGE=local` 기준이면 `decisiondoc_data` 볼륨 백업 정책 수립
 - 헬스체크: `curl http://localhost:3300/health` 또는 `http://localhost:8000/health`
-- smoke: `python scripts/smoke.py` (필요 시 `python scripts/ops_smoke.py`)
+- smoke: `python3 scripts/run_deployed_smoke.py --env-file .env.prod` (필요 시 `python3 scripts/ops_smoke.py`)
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
 
 여러 장소로 분리 운영할 때는 [Multi-site 운영 가이드](multi_site_operations.md)를 확인하세요.
