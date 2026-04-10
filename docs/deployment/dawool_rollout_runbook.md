@@ -170,9 +170,9 @@ curl http://localhost:8000/health
 
 ```bash
 cd /opt/decisiondoc
-export DOCKER_IMAGE=decisiondoc-dawool-local
-docker build -t "$DOCKER_IMAGE" .
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate
+python3 scripts/deploy_compose_local.py \
+  --env-file .env.prod \
+  --image decisiondoc-dawool-local
 ```
 
 이 방식의 장점:
@@ -180,6 +180,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-rec
 - `admin`과 동일한 소스 기준으로 맞추기 쉬움
 - 아직 registry 태그와 실제 운영 commit이 어긋나는 상황을 피하기 쉬움
 - 고객 환경 첫 배포에서 drift를 줄일 수 있음
+- 필요하면 `--post-check` 를 붙여 rollout 직후 health, compose 상태, nginx 설정, smoke까지 이어서 확인할 수 있음
 
 ## 9. SSL 적용
 

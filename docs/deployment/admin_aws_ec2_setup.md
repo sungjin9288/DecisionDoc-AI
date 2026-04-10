@@ -226,6 +226,15 @@ curl http://localhost:8000/health
 - `nginx` 컨테이너 `running`
 - `curl http://localhost:8000/health` 응답 200
 
+repo 최신 소스를 다시 빌드해서 재배포할 때는 아래 helper를 사용합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/deploy_compose_local.py \
+  --env-file .env.prod \
+  --image decisiondoc-admin-local
+```
+
 ## 11. SSL 적용
 
 DNS가 반영된 뒤 아래 명령을 실행합니다.

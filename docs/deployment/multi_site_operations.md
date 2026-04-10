@@ -118,7 +118,7 @@ cp .env.example .env.prod
 vi .env.prod  # 환경별 값 입력
 
 # 3. 배포
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local
 
 # 4. 헬스체크
 curl http://localhost:8000/health
@@ -132,6 +132,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 ## 점검 / 운영 체크리스트 (환경별)
 
 - 헬스체크: `curl http://localhost:8000/health`
+- local build rollout: `python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local`
 - API 스모크: `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
 - post-deploy check: `python3 scripts/post_deploy_check.py --env-file .env.prod`
 - ops 스모크: `python3 scripts/ops_smoke.py` (필요 시)
@@ -145,8 +146,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 ### 업데이트
 ```bash
 git pull
-docker compose -f docker-compose.prod.yml pull
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local
 python3 scripts/post_deploy_check.py --env-file .env.prod
 ```
 

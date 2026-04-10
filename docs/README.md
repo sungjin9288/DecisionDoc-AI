@@ -32,6 +32,7 @@
 - `dawool` 실제 입력값/점검 기록: [Dawool rollout worksheet](deployment/dawool_rollout_worksheet.md)
 - `.env.prod` 자동 생성: `python3 scripts/bootstrap_prod_env.py --profile <admin|dawool> --output .env.prod --openai-api-key 'sk-...'`
 - `.env.prod` 사전 검증: `python3 scripts/check_prod_env.py --env-file .env.prod --expected-origin https://<site-domain>`
+- local build rollout: `python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local`
 
 ## 세일즈/설명 패키지
 - [Sales Pack 인덱스](sales/README.md)
