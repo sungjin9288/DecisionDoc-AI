@@ -266,7 +266,14 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 
 ## 13. 운영 기본 체크
 
-배포 후 아래 4개를 확인합니다.
+배포 후 아래 helper를 한 번 실행하면 health, compose 상태, nginx 설정, deployed smoke를 묶어서 확인할 수 있습니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/post_deploy_check.py --env-file .env.prod
+```
+
+개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`
 2. `docker compose --env-file .env.prod -f docker-compose.prod.yml ps`

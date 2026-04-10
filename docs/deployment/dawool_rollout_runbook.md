@@ -215,6 +215,13 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 - `POST /generate (auth) -> 200`
 - `POST /generate/export (auth) -> 200`
 
+필요하면 아래 helper로 health, compose 상태, nginx 설정, smoke를 한 번에 확인합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/post_deploy_check.py --env-file .env.prod
+```
+
 ## 11. 컷오버 전 체크리스트
 
 아래 항목이 모두 맞아야 고객 환경을 열어도 됩니다.

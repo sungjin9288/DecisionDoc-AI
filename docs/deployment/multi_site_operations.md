@@ -133,6 +133,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 
 - 헬스체크: `curl http://localhost:8000/health`
 - API 스모크: `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
+- post-deploy check: `python3 scripts/post_deploy_check.py --env-file .env.prod`
 - ops 스모크: `python3 scripts/ops_smoke.py` (필요 시)
 - 감사 로그 위치: `data/tenants/<tenant_id>/audit_logs.jsonl`
 - 데이터 백업: `decisiondoc_data` 볼륨을 주기적으로 백업
@@ -146,7 +147,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 git pull
 docker compose -f docker-compose.prod.yml pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-python3 scripts/run_deployed_smoke.py --env-file .env.prod
+python3 scripts/post_deploy_check.py --env-file .env.prod
 ```
 
 ### 롤백

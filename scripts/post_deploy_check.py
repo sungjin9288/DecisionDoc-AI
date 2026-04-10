@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Sequence
+from urllib import error, request
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
+DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
+DEFAULT_APP_SERVICE = "app"
+DEFAULT_NGINX_SERVICE = "nginx"
+
+
+def _load_env_file(env_file: Path) -> dict[str, str]:
+    resolved = Path(env_file).expanduser()
+    if not resolved.exists():
+        raise SystemExit(f"Env file not found: {resolved}")
+    loaded: dict[str, str] = {}
+    for lineno, raw_line in enumerate(resolved.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            raise SystemExit(f"Invalid env file line {lineno}: {resolved}")
+        key, value = line.split("=", 1)
+        normalized_key = key.strip()
+        if not normalized_key:
+            raise SystemExit(f"Invalid env file line {lineno}: {resolved}")
+        normalized_value = value.strip()
+        if (
+            len(normalized_value) >= 2
+            and normalized_value[0] == normalized_value[-1]
+            and normalized_value[0] in {'"', "'"}
+        ):
+            normalized_value = normalized_value[1:-1]
+        loaded[normalized_key] = normalized_value
+    return loaded
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def _resolve_base_url(base_url: str, env_values: dict[str, str]) -> str:
+    normalized = str(base_url or "").strip()
+    if normalized:
+        return normalized.rstrip("/")
+    origins = _split_csv(env_values.get("ALLOWED_ORIGINS", ""))
+    if origins:
+        return origins[0].rstrip("/")
+    raise SystemExit("Missing base URL. Pass --base-url or set ALLOWED_ORIGINS in the env file.")
+
+
+def _run_command(command: list[str], *, label: str) -> None:
+    completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(f"{label} failed with exit code {completed.returncode}")
+
+
+def _fetch_health_json(base_url: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    health_url = f"{base_url.rstrip('/')}/health"
+    try:
+        with request.urlopen(health_url, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.URLError as exc:
+        raise SystemExit(f"Health check failed for {health_url}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Health check returned invalid JSON for {health_url}") from exc
+    if payload.get("status") != "ok":
+        raise SystemExit(f"Health check returned non-ok status for {health_url}: {payload}")
+    return payload
+
+
+def run_post_deploy_check(
+    *,
+    env_file: Path,
+    compose_file: Path,
+    app_service: str,
+    nginx_service: str,
+    base_url: str = "",
+    skip_smoke: bool = False,
+) -> int:
+    resolved_env_file = Path(env_file).expanduser()
+    resolved_compose_file = Path(compose_file).expanduser()
+    if not resolved_compose_file.exists():
+        raise SystemExit(f"Compose file not found: {resolved_compose_file}")
+
+    env_values = _load_env_file(resolved_env_file)
+    resolved_base_url = _resolve_base_url(base_url, env_values)
+    health_payload = _fetch_health_json(resolved_base_url)
+    print(f"PASS health {resolved_base_url}/health -> {health_payload}", flush=True)
+
+    compose_prefix = [
+        "docker",
+        "compose",
+        "--env-file",
+        str(resolved_env_file),
+        "-f",
+        str(resolved_compose_file),
+    ]
+    _run_command([*compose_prefix, "ps"], label="docker compose ps")
+    print("PASS docker compose ps", flush=True)
+
+    _run_command([*compose_prefix, "exec", "-T", nginx_service, "nginx", "-t"], label="nginx config test")
+    print("PASS nginx -t", flush=True)
+
+    if not skip_smoke:
+        _run_command(
+            [
+                sys.executable,
+                "scripts/run_deployed_smoke.py",
+                "--env-file",
+                str(resolved_env_file),
+                "--compose-file",
+                str(resolved_compose_file),
+                "--service",
+                app_service,
+                "--base-url",
+                resolved_base_url,
+            ],
+            label="deployed smoke",
+        )
+        print("PASS deployed smoke", flush=True)
+
+    print("PASS post-deploy check completed.", flush=True)
+    return 0
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run post-deploy verification for a DecisionDoc docker-compose environment.",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=str(DEFAULT_ENV_FILE),
+        help="Path to the deployment env file. Default: .env.prod in repo root",
+    )
+    parser.add_argument(
+        "--compose-file",
+        default=str(DEFAULT_COMPOSE_FILE),
+        help="Path to the docker compose file. Default: docker-compose.prod.yml",
+    )
+    parser.add_argument(
+        "--app-service",
+        default=DEFAULT_APP_SERVICE,
+        help="Compose service name that contains the app runtime. Default: app",
+    )
+    parser.add_argument(
+        "--nginx-service",
+        default=DEFAULT_NGINX_SERVICE,
+        help="Compose service name for nginx. Default: nginx",
+    )
+    parser.add_argument(
+        "--base-url",
+        default="",
+        help="Override deployed base URL. Defaults to the first ALLOWED_ORIGINS value in the env file.",
+    )
+    parser.add_argument(
+        "--skip-smoke",
+        action="store_true",
+        help="Skip the deployed smoke runner and only check health, compose status, and nginx config.",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
+    return run_post_deploy_check(
+        env_file=Path(args.env_file),
+        compose_file=Path(args.compose_file),
+        app_service=args.app_service,
+        nginx_service=args.nginx_service,
+        base_url=args.base_url,
+        skip_smoke=bool(args.skip_smoke),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
