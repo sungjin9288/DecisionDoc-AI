@@ -5,13 +5,12 @@
 | 변수 | 예시 값 | 설명 |
 |------|---------|------|
 | `DECISIONDOC_ENV` | `prod` | 프로덕션 모드 활성화 (Swagger UI 비활성, API 키 강제) |
-| `ENVIRONMENT` | `production` | 표준 환경 변수 |
 | `DECISIONDOC_PROVIDER` | `openai` | LLM 프로바이더 |
 | `OPENAI_API_KEY` | `sk-...` | OpenAI API 키 (`provider=openai` 시 필수) |
-| `DECISIONDOC_API_KEYS` | `key1,key2` | 클라이언트 인증 키 (콤마 구분) |
+| `DECISIONDOC_API_KEYS` | `generated-runtime-key` | 클라이언트 인증 키 (콤마 구분 가능) |
 | `DECISIONDOC_OPS_KEY` | `ops-secret-key` | `/ops/*` 엔드포인트 인증 키 |
 | `JWT_SECRET_KEY` | `openssl rand -hex 32` | JWT 서명 키 (32바이트 이상) |
-| `DATA_DIR` | `/data` | 파일 스토리지 경로 |
+| `ALLOWED_ORIGINS` | `https://your-domain.com` | 허용 오리진 |
 
 ## 2. 권장 환경변수
 
@@ -38,35 +37,39 @@
 | `VOICE_BRIEF_API_BASE_URL`, `VOICE_BRIEF_API_BEARER_TOKEN`, `VOICE_BRIEF_TIMEOUT_SECONDS` | 프로젝트 상세 Voice Brief import |
 | `SSO_ENCRYPTION_KEY` | SSO 시크릿 암호화 (별도 키 분리 시) |
 
-## 4. Docker 배포
+## 4. 프로덕션 서버 배포
 
 ```bash
-# 이미지 빌드
-docker build -t decisiondoc-ai:latest .
+# 1. .env.prod 생성
+python3 scripts/bootstrap_prod_env.py \
+  --profile admin \
+  --output .env.prod \
+  --openai-api-key 'sk-...'
 
-# 프로덕션 실행 (S3 스토리지)
-docker run -d \
-  -p 8000:8000 \
-  -e DECISIONDOC_ENV=prod \
-  -e ENVIRONMENT=production \
-  -e DECISIONDOC_PROVIDER=openai \
-  -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  -e DECISIONDOC_API_KEYS=$DECISIONDOC_API_KEYS \
-  -e DECISIONDOC_OPS_KEY=$DECISIONDOC_OPS_KEY \
-  -e JWT_SECRET_KEY=$JWT_SECRET \
-  -e DECISIONDOC_STORAGE=s3 \
-  -e DECISIONDOC_S3_BUCKET=$S3_BUCKET \
-  -e AWS_REGION=ap-northeast-2 \
-  decisiondoc-ai:latest
+# 2. preflight
+python3 scripts/check_prod_env.py \
+  --env-file .env.prod \
+  --expected-origin https://admin.decisiondoc.kr
 
-# 헬스체크 확인
-curl http://localhost:8000/health
+# 3. local build rollout
+python3 scripts/deploy_compose_local.py \
+  --env-file .env.prod \
+  --image decisiondoc-admin-local
+
+# 4. post-deploy check
+python3 scripts/post_deploy_check.py --env-file .env.prod
 ```
 
 ## 5. Docker Compose / HA
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+# 단일 서버 compose
+python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local
+
+# GHCR tag 기반 compose 배포
+./scripts/deploy.sh production v1.0.0
+
+# HA compose
 docker compose --env-file .env.prod -f docker-compose.ha.yml up -d
 ```
 
@@ -138,22 +141,25 @@ API key rotation 시 운영자 체크:
 # 1. 전체 테스트 통과 확인
 pytest tests/ --ignore=tests/e2e -q
 
-# 2. 도커 빌드 확인
-docker build -t decisiondoc-ai:test .
+# 2. 배포 env preflight
+python3 scripts/check_prod_env.py \
+  --env-file .env.prod \
+  --expected-origin https://your-domain.com
 
-# 3. 앱 smoke 테스트
-SMOKE_BASE_URL=http://localhost:8000 \
-SMOKE_API_KEY=your-api-key \
-python scripts/smoke.py
+# 3. 배포 smoke 테스트
+python3 scripts/run_deployed_smoke.py --env-file .env.prod
 
-# 4. ops smoke 테스트
+# 4. post-deploy check
+python3 scripts/post_deploy_check.py --env-file .env.prod
+
+# 5. ops smoke 테스트
 SMOKE_BASE_URL=http://localhost:8000 \
 SMOKE_OPS_KEY=your-ops-key \
 SMOKE_S3_BUCKET=your-bucket \
 AWS_REGION=ap-northeast-2 \
-python scripts/ops_smoke.py
+python3 scripts/ops_smoke.py
 
-# 5. 보안 스캔
+# 6. 보안 스캔
 pip install bandit safety
 bandit -r app/ -ll
 # Safety CLI v3의 `scan`은 auth/API key가 필요하므로,
