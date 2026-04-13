@@ -6,3 +6,6 @@
 
 # Notion integration (scripts/notion_push.py)
 notion-client>=2.2.1
+
+# MarkItDown document ingestion (scripts/markitdown_ingest.py)
+markitdown[all]>=0.1.0

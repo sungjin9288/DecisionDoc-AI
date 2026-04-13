@@ -8,6 +8,7 @@
 - `docs/openspace_integration.md` — OpenSpace 및 `DESIGN.md` 도입 가이드
 - `docs/user_manual.md` — 사용자/운영자 관점 기능 사용법
 - `docs/security_policy.md` — 정보보호 정책
+- `docs/ingestion_markitdown.md` — 문서 인제션 (MarkItDown)
 - `docs/compliance/` — GS인증, CSAP, BCP/DR 등 컴플라이언스 자료
 
 ## 빠른 시작
@@ -49,3 +50,4 @@
 
 ## 통합 가이드
 - repo-level OpenSpace / `DESIGN.md` 정리: `docs/openspace_integration.md`
+- 문서 인제션 하네스: `docs/ingestion_markitdown.md`
