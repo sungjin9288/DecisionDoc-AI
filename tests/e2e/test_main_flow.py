@@ -199,6 +199,32 @@ def test_export_flow(page):
     _wait_until_text_contains(page, "#export-btn", "완료", timeout_ms=5000)
 
 
+def test_generate_from_documents_modal_flow(page, tmp_path):
+    """JWT-authenticated browser session should generate docs from uploaded files."""
+    sample = tmp_path / "upload-notes.txt"
+    sample.write_text(
+        "Project title: E2E upload flow\n"
+        "Goal: Verify browser upload generation\n"
+        "Constraints: Preserve auditability.\n",
+        encoding="utf-8",
+    )
+
+    page.locator(".bundle-card").first.click()
+    page.get_by_role("button", name="📚 문서로 초안 생성").click()
+    page.wait_for_selector("#from-documents-modal", state="visible", timeout=5000)
+    page.set_input_files("#from-documents-file-input", str(sample))
+    page.fill("#from-documents-title", "업로드 기반 생성")
+    page.fill("#from-documents-goal", "브라우저에서 업로드 후 문서를 생성한다.")
+    page.click("#from-documents-submit-btn")
+
+    page.wait_for_selector("#from-documents-modal", state="hidden", timeout=30000)
+    page.wait_for_selector("#results", state="visible", timeout=30000)
+    assert page.locator("#tab-bar .tab-btn").count() == 2
+    assert page.locator("#tab-bar .tab-btn").nth(0).inner_text() == "adr"
+    assert page.locator("#tab-bar .tab-btn").nth(1).inner_text() == "onepager"
+    assert page.locator("#doc-pane").is_visible()
+
+
 def test_results_flow_can_reopen_page_sketch(page):
     _generate_to_results(page, "페이지 스케치 테스트", "문서 구성을 다시 확인")
     page.wait_for_selector("#results-storyboard", state="visible", timeout=30000)

@@ -58,11 +58,11 @@ def live_server(tmp_path_factory):
             "DATA_DIR": str(tmp),
             "DECISIONDOC_ENV": "dev",
             "DECISIONDOC_MAINTENANCE": "0",
+            "DECISIONDOC_API_KEYS": "e2e-global-api-key",
             "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED": "1",
         }
     )
     os.environ.pop("DECISIONDOC_API_KEY", None)
-    os.environ.pop("DECISIONDOC_API_KEYS", None)
 
     from app.main import create_app
 
