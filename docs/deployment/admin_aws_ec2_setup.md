@@ -276,7 +276,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 
 ## 13. 운영 기본 체크
 
-배포 후 아래 helper를 한 번 실행하면 health, compose 상태, nginx 설정, deployed smoke를 묶어서 확인할 수 있습니다.
+배포 후 아래 helper를 한 번 실행하면 health, compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶어서 확인할 수 있습니다.
 
 ```bash
 cd /opt/decisiondoc

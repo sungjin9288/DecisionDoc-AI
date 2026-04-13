@@ -100,6 +100,15 @@ def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypat
             "scripts/run_deployed_smoke.py",
             "--env-file",
             str(env_file),
+            "--base-url",
+            "https://admin.decisiondoc.kr",
+            "--preflight",
+        ],
+        [
+            checker.sys.executable,
+            "scripts/run_deployed_smoke.py",
+            "--env-file",
+            str(env_file),
             "--compose-file",
             str(compose_file),
             "--service",
@@ -144,6 +153,7 @@ def test_post_deploy_check_skips_smoke_when_requested(tmp_path: Path, monkeypatc
 
     captured = capsys.readouterr().out
     assert result == 0
+    assert "PASS deployed smoke preflight" not in captured
     assert "PASS post-deploy check completed." in captured
     assert len(calls) == 2
 

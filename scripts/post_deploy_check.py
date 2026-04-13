@@ -119,6 +119,20 @@ def run_post_deploy_check(
                 "scripts/run_deployed_smoke.py",
                 "--env-file",
                 str(resolved_env_file),
+                "--base-url",
+                resolved_base_url,
+                "--preflight",
+            ],
+            label="deployed smoke preflight",
+        )
+        print("PASS deployed smoke preflight", flush=True)
+
+        _run_command(
+            [
+                sys.executable,
+                "scripts/run_deployed_smoke.py",
+                "--env-file",
+                str(resolved_env_file),
                 "--compose-file",
                 str(resolved_compose_file),
                 "--service",
