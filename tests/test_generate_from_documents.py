@@ -66,3 +66,37 @@ def test_generate_from_documents_requires_api_key_when_enabled(tmp_path, monkeyp
     )
 
     assert response.status_code == 401
+
+
+def test_generate_from_documents_allows_bearer_auth_without_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("DECISIONDOC_API_KEYS", "valid-key-abc")
+
+    from app.main import create_app
+
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "upload-admin",
+            "display_name": "Upload Admin",
+            "email": "upload-admin@example.com",
+            "password": "UploadAdmin1!",
+        },
+    )
+
+    assert register.status_code == 200
+    token = register.json()["access_token"]
+
+    response = client.post(
+        "/generate/from-documents",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"doc_types": "adr,onepager"},
+        files={"files": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert [doc["doc_type"] for doc in response.json()["docs"]] == ["adr", "onepager"]

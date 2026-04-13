@@ -8,6 +8,12 @@ from uuid import uuid4
 
 import httpx
 
+_DOCUMENT_UPLOAD_SAMPLE = (
+    b"Project title: Smoke Upload\n"
+    b"Goal: Validate uploaded document generation\n"
+    b"Constraints: Keep auditability first.\n"
+)
+
 
 def _required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
@@ -137,6 +143,73 @@ def _read_stream_complete(response: httpx.Response) -> dict[str, Any]:
                 message = payload.get("message", "stream generation failed") if isinstance(payload, dict) else "stream generation failed"
                 raise SystemExit(f"POST /generate/stream procurement smoke failed: {message}")
     raise SystemExit("POST /generate/stream procurement smoke ended without a complete event")
+
+
+def _document_upload_files() -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [
+        (
+            "files",
+            (
+                "smoke-upload.txt",
+                _DOCUMENT_UPLOAD_SAMPLE,
+                "text/plain",
+            ),
+        )
+    ]
+
+
+def _run_document_upload_smoke(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    api_key: str,
+) -> None:
+    data = {
+        "doc_types": "adr,onepager",
+        "goal": "Verify uploaded document generation",
+    }
+
+    no_auth = client.post(
+        f"{base_url}/generate/from-documents",
+        data=data,
+        files=_document_upload_files(),
+    )
+    no_auth_body = _assert_status("POST /generate/from-documents (no key)", no_auth, 401)
+    if no_auth_body.get("code") != "UNAUTHORIZED":
+        raise SystemExit("POST /generate/from-documents (no key) did not return UNAUTHORIZED")
+    _print_result(
+        "POST /generate/from-documents (no key)",
+        no_auth.status_code,
+        request_id=str(no_auth_body.get("request_id", "")),
+    )
+
+    uploaded = client.post(
+        f"{base_url}/generate/from-documents",
+        headers={"X-DecisionDoc-Api-Key": api_key},
+        data=data,
+        files=_document_upload_files(),
+    )
+    uploaded_body = _assert_status("POST /generate/from-documents (auth)", uploaded, 200)
+    uploaded_bundle_id = str(uploaded_body.get("bundle_id", ""))
+    uploaded_request_id = str(uploaded_body.get("request_id", ""))
+    docs = uploaded_body.get("docs")
+    if not uploaded_bundle_id:
+        raise SystemExit("POST /generate/from-documents (auth) missing bundle_id")
+    if not isinstance(docs, list) or not docs:
+        raise SystemExit("POST /generate/from-documents (auth) missing docs")
+    actual_doc_types = [str(doc.get("doc_type", "")).strip() for doc in docs if isinstance(doc, dict)]
+    if actual_doc_types != ["adr", "onepager"]:
+        raise SystemExit(
+            "POST /generate/from-documents (auth) returned unexpected doc_types: "
+            f"{actual_doc_types!r}"
+        )
+    _print_result(
+        "POST /generate/from-documents (auth)",
+        uploaded.status_code,
+        request_id=uploaded_request_id,
+        bundle_id=uploaded_bundle_id,
+        extra=f"files=1 docs={len(docs)}",
+    )
 
 
 _G2B_API_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
@@ -839,6 +912,12 @@ def main() -> int:
             request_id=export_request_id,
             bundle_id=export_bundle_id,
             extra=f"files={len(files)}",
+        )
+
+        _run_document_upload_smoke(
+            client,
+            base_url=base_url,
+            api_key=api_key,
         )
 
         if include_procurement:

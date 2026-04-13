@@ -127,6 +127,41 @@ def test_discover_recent_g2b_bid_number_returns_none_when_no_items_exist():
     assert discovered is None
 
 
+def test_run_document_upload_smoke_validates_auth_and_success_paths(capsys):
+    smoke = _load_smoke_module()
+    seen_api_key_headers: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/generate/from-documents":
+            raise AssertionError(f"Unhandled request: {request.method} {request.url}")
+        seen_api_key_headers.append(request.headers.get("x-decisiondoc-api-key", ""))
+        if request.headers.get("x-decisiondoc-api-key") != "api-key":
+            return httpx.Response(401, json={"code": "UNAUTHORIZED", "request_id": "req-no-auth"})
+        return httpx.Response(
+            200,
+            json={
+                "request_id": "req-upload",
+                "bundle_id": "bundle-upload",
+                "docs": [
+                    {"doc_type": "adr", "markdown": "# ADR"},
+                    {"doc_type": "onepager", "markdown": "# One-pager"},
+                ],
+            },
+        )
+
+    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    smoke._run_document_upload_smoke(
+        client,
+        base_url="https://example.com",
+        api_key="api-key",
+    )
+
+    out = capsys.readouterr().out
+    assert "POST /generate/from-documents (no key) -> 401" in out
+    assert "POST /generate/from-documents (auth) -> 200" in out
+    assert seen_api_key_headers == ["", "api-key"]
+
+
 def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(monkeypatch):
     smoke = _load_smoke_module()
     requested_targets: list[str] = []

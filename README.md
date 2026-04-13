@@ -151,6 +151,14 @@ python scripts/ops_smoke.py
 python scripts/voice_brief_smoke.py
 ```
 
+The default smoke lane validates:
+
+- `/health`
+- unauthenticated `/generate` rejection
+- authenticated `/generate` success
+- authenticated `/generate/export` success
+- authenticated `/generate/from-documents` upload success
+
 Procurement smoke (optional) uses the same entrypoint:
 
 ```bash

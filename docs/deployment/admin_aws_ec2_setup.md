@@ -272,6 +272,7 @@ python3 scripts/run_deployed_smoke.py --env-file .env.prod
 - 인증 없는 `/generate` 차단
 - 인증 있는 `/generate` 성공
 - `/generate/export` 성공
+- `/generate/from-documents` 업로드 성공
 
 ## 13. 운영 기본 체크
 
