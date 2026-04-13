@@ -58,6 +58,11 @@ python3 scripts/deploy_compose_local.py \
 
 # 4. post-deploy check
 python3 scripts/post_deploy_check.py --env-file .env.prod
+
+# 4-1. shareable JSON report
+python3 scripts/post_deploy_check.py \
+  --env-file .env.prod \
+  --report-file ./reports/post-deploy.json
 ```
 
 ## 5. Docker Compose / HA

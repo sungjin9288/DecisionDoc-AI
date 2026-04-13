@@ -46,6 +46,7 @@
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod` — 배포 서버 `.env.prod` 기준 API smoke
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight` — 배포 smoke 입력값과 포함 라우트 확인
 - `python3 scripts/post_deploy_check.py --env-file .env.prod` — health, compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶은 post-deploy check
+- `python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json` — post-deploy check 결과를 JSON 리포트로 저장
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke
 - `python3 scripts/run_ingestion_harness.py <files...>` — 입력 문서 변환 + `/generate` 실행 하네스

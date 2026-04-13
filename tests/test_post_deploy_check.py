@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
-import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -117,6 +117,91 @@ def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypat
             "https://admin.decisiondoc.kr",
         ],
     ]
+
+
+def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_report", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_file = tmp_path / "reports" / "post-deploy.json"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse('{"status":"ok","provider":"openai"}')
+
+    def _fake_run(command, cwd=None, check=False):
+        _ = cwd, check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    result = checker.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--compose-file",
+            str(compose_file),
+            "--report-file",
+            str(report_file),
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert result == 0
+    assert "PASS report written" in captured
+    assert payload["status"] == "passed"
+    assert payload["base_url"] == "https://admin.decisiondoc.kr"
+    assert payload["checks"][0]["name"] == "health"
+    assert payload["checks"][-1]["name"] == "deployed smoke"
+
+
+def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_report_fail", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_file = tmp_path / "reports" / "post-deploy-fail.json"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        _ = url, timeout
+        return _FakeResponse('{"status":"ok"}')
+
+    def _fake_run(command, cwd=None, check=False):
+        _ = cwd, check
+        if list(command)[-1] == "ps":
+            return SimpleNamespace(returncode=17)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    try:
+        checker.main(
+            [
+                "--env-file",
+                str(env_file),
+                "--compose-file",
+                str(compose_file),
+                "--report-file",
+                str(report_file),
+            ]
+        )
+    except SystemExit as exc:
+        assert "docker compose ps failed with exit code 17" in str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for failing compose ps")
+
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["error"] == "docker compose ps failed with exit code 17"
+    assert payload["checks"][-1]["name"] == "docker compose ps"
+    assert payload["checks"][-1]["status"] == "failed"
 
 
 def test_post_deploy_check_skips_smoke_when_requested(tmp_path: Path, monkeypatch, capsys) -> None:

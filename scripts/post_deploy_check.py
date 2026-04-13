@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 from urllib import error, request
@@ -59,10 +61,28 @@ def _resolve_base_url(base_url: str, env_values: dict[str, str]) -> str:
     raise SystemExit("Missing base URL. Pass --base-url or set ALLOWED_ORIGINS in the env file.")
 
 
-def _run_command(command: list[str], *, label: str) -> None:
+def _append_step(report: dict[str, Any], *, name: str, status: str, **details: Any) -> None:
+    report.setdefault("checks", []).append({"name": name, "status": status, **details})
+
+
+def _run_command_with_report(report: dict[str, Any], command: list[str], *, label: str) -> None:
     completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
     if completed.returncode != 0:
+        _append_step(report, name=label, status="failed", command=command, exit_code=completed.returncode)
         raise SystemExit(f"{label} failed with exit code {completed.returncode}")
+    _append_step(report, name=label, status="passed", command=command, exit_code=completed.returncode)
+
+
+def _write_json_report(report_file: Path, payload: dict[str, Any]) -> None:
+    resolved = Path(report_file).expanduser()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = resolved.with_name(f"{resolved.name}.tmp")
+    with temp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp_path, resolved)
 
 
 def _fetch_health_json(base_url: str, *, timeout: float = 10.0) -> dict[str, Any]:
@@ -87,6 +107,7 @@ def run_post_deploy_check(
     nginx_service: str,
     base_url: str = "",
     skip_smoke: bool = False,
+    report_file: Path | None = None,
 ) -> int:
     resolved_env_file = Path(env_file).expanduser()
     resolved_compose_file = Path(compose_file).expanduser()
@@ -95,57 +116,95 @@ def run_post_deploy_check(
 
     env_values = _load_env_file(resolved_env_file)
     resolved_base_url = _resolve_base_url(base_url, env_values)
-    health_payload = _fetch_health_json(resolved_base_url)
-    print(f"PASS health {resolved_base_url}/health -> {health_payload}", flush=True)
+    report: dict[str, Any] = {
+        "status": "passed",
+        "base_url": resolved_base_url,
+        "env_file": str(resolved_env_file),
+        "compose_file": str(resolved_compose_file),
+        "app_service": app_service,
+        "nginx_service": nginx_service,
+        "skip_smoke": bool(skip_smoke),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "checks": [],
+    }
 
-    compose_prefix = [
-        "docker",
-        "compose",
-        "--env-file",
-        str(resolved_env_file),
-        "-f",
-        str(resolved_compose_file),
-    ]
-    _run_command([*compose_prefix, "ps"], label="docker compose ps")
-    print("PASS docker compose ps", flush=True)
-
-    _run_command([*compose_prefix, "exec", "-T", nginx_service, "nginx", "-t"], label="nginx config test")
-    print("PASS nginx -t", flush=True)
-
-    if not skip_smoke:
-        _run_command(
-            [
-                sys.executable,
-                "scripts/run_deployed_smoke.py",
-                "--env-file",
-                str(resolved_env_file),
-                "--base-url",
-                resolved_base_url,
-                "--preflight",
-            ],
-            label="deployed smoke preflight",
+    try:
+        health_payload = _fetch_health_json(resolved_base_url)
+        _append_step(
+            report,
+            name="health",
+            status="passed",
+            url=f"{resolved_base_url}/health",
+            response=health_payload,
         )
-        print("PASS deployed smoke preflight", flush=True)
+        print(f"PASS health {resolved_base_url}/health -> {health_payload}", flush=True)
 
-        _run_command(
-            [
-                sys.executable,
-                "scripts/run_deployed_smoke.py",
-                "--env-file",
-                str(resolved_env_file),
-                "--compose-file",
-                str(resolved_compose_file),
-                "--service",
-                app_service,
-                "--base-url",
-                resolved_base_url,
-            ],
-            label="deployed smoke",
+        compose_prefix = [
+            "docker",
+            "compose",
+            "--env-file",
+            str(resolved_env_file),
+            "-f",
+            str(resolved_compose_file),
+        ]
+        _run_command_with_report(report, [*compose_prefix, "ps"], label="docker compose ps")
+        print("PASS docker compose ps", flush=True)
+
+        _run_command_with_report(
+            report,
+            [*compose_prefix, "exec", "-T", nginx_service, "nginx", "-t"],
+            label="nginx config test",
         )
-        print("PASS deployed smoke", flush=True)
+        print("PASS nginx -t", flush=True)
 
-    print("PASS post-deploy check completed.", flush=True)
-    return 0
+        if not skip_smoke:
+            _run_command_with_report(
+                report,
+                [
+                    sys.executable,
+                    "scripts/run_deployed_smoke.py",
+                    "--env-file",
+                    str(resolved_env_file),
+                    "--base-url",
+                    resolved_base_url,
+                    "--preflight",
+                ],
+                label="deployed smoke preflight",
+            )
+            print("PASS deployed smoke preflight", flush=True)
+
+            _run_command_with_report(
+                report,
+                [
+                    sys.executable,
+                    "scripts/run_deployed_smoke.py",
+                    "--env-file",
+                    str(resolved_env_file),
+                    "--compose-file",
+                    str(resolved_compose_file),
+                    "--service",
+                    app_service,
+                    "--base-url",
+                    resolved_base_url,
+                ],
+                label="deployed smoke",
+            )
+            print("PASS deployed smoke", flush=True)
+
+        report["finished_at"] = datetime.now(timezone.utc).isoformat()
+        if report_file is not None:
+            _write_json_report(report_file, report)
+            print(f"PASS report written -> {Path(report_file).expanduser()}", flush=True)
+
+        print("PASS post-deploy check completed.", flush=True)
+        return 0
+    except SystemExit as exc:
+        report["status"] = "failed"
+        report["error"] = str(exc)
+        report["finished_at"] = datetime.now(timezone.utc).isoformat()
+        if report_file is not None:
+            _write_json_report(report_file, report)
+        raise
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -182,6 +241,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip the deployed smoke runner and only check health, compose status, and nginx config.",
     )
+    parser.add_argument(
+        "--report-file",
+        default="",
+        help="Optional path to write a JSON summary report for the post-deploy check.",
+    )
     return parser
 
 
@@ -194,6 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         nginx_service=args.nginx_service,
         base_url=args.base_url,
         skip_smoke=bool(args.skip_smoke),
+        report_file=Path(args.report_file).expanduser() if args.report_file else None,
     )
 
 

@@ -283,6 +283,13 @@ cd /opt/decisiondoc
 python3 scripts/post_deploy_check.py --env-file .env.prod
 ```
 
+점검 결과를 파일로 남기려면 아래처럼 JSON 리포트를 같이 저장할 수 있습니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json
+```
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`
