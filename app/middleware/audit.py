@@ -22,6 +22,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/auth/logout"): "user.logout",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
+    ("POST", "/generate/from-documents"): "doc.generate",
     ("POST", "/projects/{id}/imports/g2b-opportunity"): "procurement.import",
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",

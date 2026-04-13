@@ -49,6 +49,11 @@
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke
 - `python3 scripts/run_ingestion_harness.py <files...>` — 입력 문서 변환 + `/generate` 실행 하네스
 
+## 입력 하네스 / Upload Flow
+- Web UI: `📚 문서로 초안 생성` → `POST /generate/from-documents`
+- Web UI: `📄 PDF로 문서 생성` → `POST /generate/from-pdf`
+- CLI: `python3 scripts/run_ingestion_harness.py <files...>`
+
 ## 통합 가이드
 - repo-level OpenSpace / `DESIGN.md` 정리: `docs/openspace_integration.md`
 - 문서 인제션 하네스: `docs/ingestion_markitdown.md`

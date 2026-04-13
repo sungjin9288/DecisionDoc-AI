@@ -11,6 +11,7 @@ METERED_ENDPOINTS = {
     "POST /generate/stream",
     "POST /generate/sketch",
     "POST /generate/with-attachments",
+    "POST /generate/from-documents",
 }
 
 

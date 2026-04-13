@@ -64,7 +64,13 @@ from app.schemas import (
     OpsInvestigateResponse,
     SectionRewriteRequest,
 )
-from app.services.attachment_service import extract_multiple, extract_pdf_structured
+from app.services.attachment_service import (
+    AttachmentError,
+    MAX_TOTAL_CHARS,
+    extract_multiple,
+    extract_pdf_structured,
+    extract_text,
+)
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.generation_service import BundleNotSupportedError
@@ -102,6 +108,49 @@ def _resolve_gov_options(gov_options_dict: dict | None) -> GovDocOptions | None:
         return GovDocOptions(**gov_options_dict)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_uploaded_documents(files: list[UploadFile]) -> tuple[str, list[str]]:
+    """Extract uploaded files into one generation-ready context block.
+
+    Returns the merged text and a list of successfully parsed filenames.
+    Raises ``HTTPException`` when all files fail so the caller does not generate
+    docs from warning-only placeholders.
+    """
+    parts: list[str] = []
+    parsed_filenames: list[str] = []
+    total = 0
+    errors: list[str] = []
+
+    for upload in files:
+        filename = upload.filename or "attachment"
+        raw = upload.file.read()
+        if not raw:
+            continue
+
+        try:
+            text = extract_text(filename, raw)
+        except AttachmentError as exc:
+            errors.append(str(exc))
+            continue
+
+        remaining = MAX_TOTAL_CHARS - total
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            if remaining <= 500:
+                break
+            text = text[:remaining] + "\n...(이하 생략)"
+
+        parts.append(f"[첨부파일: {filename}]\n{text}")
+        parsed_filenames.append(filename)
+        total += len(text)
+
+    if not parsed_filenames:
+        detail = errors[0] if errors else "텍스트를 추출할 수 있는 파일이 없습니다."
+        raise HTTPException(status_code=422, detail=detail)
+
+    return "\n\n---\n\n".join(parts), parsed_filenames
 
 
 # ── ZIP export in-memory cache ────────────────────────────────────────────────
@@ -580,6 +629,63 @@ def generate_with_attachments(
 
 
 @router.post(
+    "/generate/from-documents",
+    response_model=GenerateResponse,
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+)
+def generate_from_documents(
+    request: Request,
+    files: list[UploadFile] = File(..., description="지원 문서 파일 목록"),
+    title: str = Form(default="", description="생성 문서 제목"),
+    goal: str = Form(
+        default="업로드 문서를 근거로 의사결정 문서를 작성합니다.",
+        description="생성 목표",
+    ),
+    context: str = Form(default="", description="추가 컨텍스트"),
+    doc_types: str = Form(
+        default="adr,onepager,eval_plan,ops_checklist",
+        description="생성할 문서 유형 (콤마 구분)",
+    ),
+    bundle_type: str = Form(default="tech_decision", description="번들 유형"),
+    tenant_id: str = Form(default="default", description="테넌트 ID"),
+) -> GenerateResponse:
+    """Upload one or more documents and generate a bundle directly from them."""
+    from app.schemas import GenerateRequest as _GenerateRequest
+
+    combined_text, parsed_filenames = _extract_uploaded_documents(files)
+    doc_types_list = [dt.strip() for dt in doc_types.split(",") if dt.strip()]
+    merged_context = combined_text + ("\n\n" + context if context else "")
+    first_name = parsed_filenames[0]
+    default_title = Path(first_name).stem
+
+    try:
+        req = _GenerateRequest(
+            title=title.strip() or default_title,
+            goal=goal,
+            context=merged_context,
+            doc_types=doc_types_list,
+            bundle_type=bundle_type,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"요청 생성 실패: {exc}") from exc
+
+    request.state.document_ingestion_files = parsed_filenames
+    log_event(
+        logger,
+        {
+            "event": "generate.from_documents.started",
+            "request_id": request.state.request_id,
+            "bundle_type": bundle_type,
+            "files_count": len(parsed_filenames),
+            "files": parsed_filenames,
+            "tenant_id": tenant_id,
+        },
+    )
+
+    return _run_generate(req, request)
+
+
+@router.post(
     "/generate/from-pdf",
     response_model=GenerateResponse,
     dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
@@ -607,7 +713,6 @@ def generate_from_pdf(
 
     # ── Structured extraction ──────────────────────────────────────────────────
     try:
-        from app.services.attachment_service import AttachmentError
         structured = extract_pdf_structured(raw, filename)
     except AttachmentError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -386,6 +386,7 @@ def test_billing_middleware_non_metered_endpoint_passes(tmp_path, monkeypatch):
     from app.middleware.billing import METERED_ENDPOINTS
     # Confirm only generation endpoints are metered
     assert "POST /generate/stream" in METERED_ENDPOINTS
+    assert "POST /generate/from-documents" in METERED_ENDPOINTS
     assert "GET /billing/status" not in METERED_ENDPOINTS
     assert "GET /billing/plans" not in METERED_ENDPOINTS
 

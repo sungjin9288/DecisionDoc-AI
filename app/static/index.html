@@ -4684,11 +4684,13 @@
     <div class="attachment-area">
       <div class="attachment-label">
         📎 참고 자료 첨부
-        <small>(선택 · .txt .md .pdf .docx .hwpx .xlsx .csv · 최대 12,000자/파일)</small>
+        <small>(선택 · .txt .md .pdf .docx .pptx .hwpx .xlsx .csv · 최대 12,000자/파일)</small>
       </div>
       <input type="file" id="f-attachments" multiple
-             accept=".txt,.md,.pdf,.docx,.hwpx,.hwp,.xlsx,.xls,.csv">
+             accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv">
       <label for="f-attachments" class="attachment-trigger">+ 파일 선택</label>
+      <button type="button" class="attachment-trigger" onclick="openFromDocumentsModal()"
+              style="background:linear-gradient(135deg,#2563eb,#38bdf8);border-color:transparent;color:#fff;margin-left:.4rem;">📚 문서로 초안 생성</button>
       <button type="button" class="attachment-trigger" onclick="openFromPdfModal()"
               style="background:linear-gradient(135deg,#e53e3e,#fc8181);border-color:transparent;color:#fff;margin-left:.4rem;">📄 PDF로 문서 생성</button>
       <div id="attachment-list"></div>
@@ -5251,6 +5253,64 @@
              background:var(--surface);cursor:pointer;font-size:.9rem;" title="즐겨찾기만 보기">☆</button>
   </div>
   <div id="history-list"></div>
+</div>
+
+<!-- ── 문서 → 초안 생성 모달 ───────────────────────────────────── -->
+<div id="from-documents-modal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeFromDocumentsModal()">
+  <div class="modal-box" style="background:var(--surface-solid,#fff);border-radius:12px;padding:0;max-width:560px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid var(--border);">
+      <h3 style="margin:0;font-size:1.05rem;font-weight:700;">📚 문서로 초안 생성</h3>
+      <button onclick="closeFromDocumentsModal()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--muted);">✕</button>
+    </div>
+    <div style="padding:20px 24px;">
+      <p style="color:var(--muted);font-size:.9rem;margin:0 0 16px">
+        Word, PowerPoint, Excel, Markdown, 텍스트, PDF를 바로 올려서 초안 번들을 생성합니다.
+      </p>
+
+      <div id="from-documents-dropzone"
+           style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px"
+           onclick="document.getElementById('from-documents-file-input').click()"
+           ondragover="event.preventDefault();this.style.borderColor='var(--p1)'"
+           ondragleave="this.style.borderColor='var(--border)'"
+           ondrop="fromDocumentsHandleDrop(event)">
+        <div style="font-size:2.3rem">📚</div>
+        <div style="margin-top:8px;font-weight:600">지원 문서를 드래그하거나 클릭하여 선택</div>
+        <div style="color:var(--muted);font-size:.85rem;margin-top:4px">.txt .md .pdf .docx .pptx .hwpx .xlsx .csv</div>
+        <div id="from-documents-filenames" style="margin-top:12px;color:var(--p1);font-weight:600;display:none"></div>
+      </div>
+      <input type="file" id="from-documents-file-input" multiple accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv" style="display:none" onchange="fromDocumentsFilesSelected(this)">
+
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label style="font-weight:600;display:block;margin-bottom:6px">제목 (선택)</label>
+          <input id="from-documents-title" type="text" placeholder="비워두면 첫 파일명으로 설정됩니다" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);">
+        </div>
+        <div>
+          <label style="font-weight:600;display:block;margin-bottom:6px">목표 (선택)</label>
+          <textarea id="from-documents-goal" rows="3" placeholder="예: 업로드 문서를 근거로 의사결정 초안을 생성한다" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);resize:vertical;"></textarea>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-weight:600;display:block;margin-bottom:8px">생성할 문서 유형</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <label class="doc-type-check"><input type="checkbox" name="from-documents-doctype" value="adr" checked> ADR</label>
+          <label class="doc-type-check"><input type="checkbox" name="from-documents-doctype" value="onepager" checked> One-pager</label>
+          <label class="doc-type-check"><input type="checkbox" name="from-documents-doctype" value="eval_plan"> Eval Plan</label>
+          <label class="doc-type-check"><input type="checkbox" name="from-documents-doctype" value="ops_checklist"> Ops Checklist</label>
+        </div>
+      </div>
+
+      <div id="from-documents-error" style="display:none;color:#e53e3e;font-size:.88rem;margin-bottom:12px;padding:8px 12px;background:#fff5f5;border-radius:8px"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid var(--border);">
+      <button class="btn-outline" onclick="closeFromDocumentsModal()">취소</button>
+      <button id="from-documents-submit-btn" class="btn-primary" onclick="submitFromDocuments()" disabled
+              style="background:linear-gradient(135deg,#2563eb,#38bdf8);border:none;">
+        📚 초안 생성
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- ── PDF → 문서 생성 모달 ─────────────────────────────────────── -->
@@ -17432,6 +17492,136 @@
     }).catch(e => showNotification('초대 실패: ' + e.message, 'error'));
   }
 
+  // ── 업로드 기반 생성 공통 처리 ────────────────────────────────────────────────
+  function applyGeneratedResponse(data, requestPayload = null) {
+    generatedDocs = data.docs || [];
+    lastMeta = data;
+    lastRequestPayload = requestPayload || {
+      title: data.title || '',
+      goal: '',
+      bundle_type: selectedBundle?.id || 'tech_decision',
+    };
+    setStatus('', '');
+    renderResults();
+    updateStepProgress(4);
+    resetFeedback();
+    saveHistory(data, generatedDocs, lastRequestPayload);
+    showQuickFeedback(data.request_id);
+    renderDownloadButtons(data.request_id, data.title);
+    loadServerHistory();
+    showApprovalRequestButton();
+    checkUsageWarning();
+    showNotification('✅ 문서가 성공적으로 생성되었습니다!', 'success');
+  }
+
+  // ── Documents → 문서 생성 ────────────────────────────────────────────────────
+  let _fromDocumentsFiles = [];
+
+  function openFromDocumentsModal() {
+    _fromDocumentsFiles = [];
+    document.getElementById('from-documents-filenames').style.display = 'none';
+    document.getElementById('from-documents-error').style.display = 'none';
+    document.getElementById('from-documents-submit-btn').disabled = true;
+    document.getElementById('from-documents-submit-btn').textContent = '📚 초안 생성';
+    document.getElementById('from-documents-file-input').value = '';
+    document.getElementById('from-documents-title').value = '';
+    document.getElementById('from-documents-goal').value = '';
+    document.getElementById('from-documents-modal').style.display = 'flex';
+  }
+
+  function closeFromDocumentsModal() {
+    document.getElementById('from-documents-modal').style.display = 'none';
+    _fromDocumentsFiles = [];
+  }
+
+  function fromDocumentsFilesSelected(input) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    _fromDocumentsFiles = files;
+    const el = document.getElementById('from-documents-filenames');
+    const names = files.map(file => file.name).join(', ');
+    el.textContent = `✅ ${files.length}개 파일 선택됨: ${names}`;
+    el.style.display = 'block';
+    document.getElementById('from-documents-error').style.display = 'none';
+    document.getElementById('from-documents-submit-btn').disabled = false;
+  }
+
+  function fromDocumentsHandleDrop(e) {
+    e.preventDefault();
+    document.getElementById('from-documents-dropzone').style.borderColor = 'var(--border)';
+    const files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) return;
+    const dt = new DataTransfer();
+    files.forEach(file => dt.items.add(file));
+    const input = document.getElementById('from-documents-file-input');
+    input.files = dt.files;
+    fromDocumentsFilesSelected(input);
+  }
+
+  function _showFromDocumentsError(msg) {
+    const el = document.getElementById('from-documents-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    document.getElementById('from-documents-submit-btn').disabled = true;
+    _fromDocumentsFiles = [];
+  }
+
+  async function submitFromDocuments() {
+    if (!_fromDocumentsFiles.length) return;
+
+    const checkedTypes = [...document.querySelectorAll('input[name="from-documents-doctype"]:checked')]
+      .map(cb => cb.value);
+    if (checkedTypes.length === 0) {
+      _showFromDocumentsError('생성할 문서 유형을 하나 이상 선택하세요.');
+      return;
+    }
+
+    const btn = document.getElementById('from-documents-submit-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ 처리 중...';
+
+    const title = document.getElementById('from-documents-title').value.trim();
+    const goal = document.getElementById('from-documents-goal').value.trim() || '업로드 문서를 근거로 의사결정 문서를 작성합니다.';
+    const bundleType = selectedBundle?.id || 'tech_decision';
+
+    const formData = new FormData();
+    _fromDocumentsFiles.forEach(file => formData.append('files', file));
+    formData.append('title', title);
+    formData.append('goal', goal);
+    formData.append('doc_types', checkedTypes.join(','));
+    formData.append('bundle_type', bundleType);
+    if (window._currentTenantId) formData.append('tenant_id', window._currentTenantId);
+
+    try {
+      const headers = typeof getAuthHeaders === 'function' ? getAuthHeaders() : {};
+      delete headers['Content-Type'];
+
+      const res = await fetch('/generate/from-documents', {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || `서버 오류 (${res.status})`);
+      }
+
+      const data = await res.json();
+      closeFromDocumentsModal();
+      applyGeneratedResponse(data, {
+        title: title || data.title || '',
+        goal,
+        bundle_type: bundleType,
+        doc_types: checkedTypes,
+      });
+    } catch (err) {
+      _showFromDocumentsError('생성 실패: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = '📚 초안 생성';
+    }
+  }
+
   // ── PDF → 문서 생성 ──────────────────────────────────────────────────────────
   let _fromPdfFile = null;
 
@@ -17526,17 +17716,14 @@
       }
 
       const data = await res.json();
+      const uploadedPdfName = _fromPdfFile.name;
       closeFromPdfModal();
-
-      // 기존 생성 결과 표시 함수 재사용
-      if (typeof renderGeneratedDocs === 'function') {
-        renderGeneratedDocs(data);
-      } else if (typeof showResult === 'function') {
-        showResult(data);
-      } else {
-        // fallback: 결과 페이지로 이동하거나 알림
-        alert('문서가 생성되었습니다! Bundle ID: ' + (data.bundle_id || data.request_id || ''));
-      }
+      applyGeneratedResponse(data, {
+        title: data.title || uploadedPdfName.replace(/\.pdf$/i, ''),
+        goal: `PDF 문서 '${uploadedPdfName}'의 내용을 기반으로 의사결정 문서를 작성합니다.`,
+        bundle_type: 'tech_decision',
+        doc_types: checkedTypes,
+      });
     } catch (err) {
       _showFromPdfError('생성 실패: ' + err.message);
       btn.disabled = false;

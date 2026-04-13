@@ -54,7 +54,8 @@ python3 scripts/markitdown_ingest.py ./samples/요구사항정의서.pdf \
 
 ## 3) 생성 하네스 실행
 
-문서 변환 후 바로 DecisionDoc `/generate` 또는 `/generate/from-pdf`까지 호출하려면:
+문서 변환 후 바로 DecisionDoc `/generate`, `/generate/from-pdf`, 또는 웹 UI의
+`문서로 초안 생성` 흐름까지 연결하려면:
 
 ```bash
 python3 scripts/run_ingestion_harness.py ./samples/요구사항정의서.docx \
@@ -72,6 +73,11 @@ python3 scripts/run_ingestion_harness.py ./samples/요구사항정의서.docx \
 
 단일 PDF 입력은 기본적으로 `POST /generate/from-pdf`를 사용하고,
 그 외 포맷은 Markdown으로 변환한 뒤 `POST /generate`로 전달한다.
+
+브라우저 UI에서는 다음 두 경로를 사용할 수 있다:
+
+- `📚 문서로 초안 생성` → `POST /generate/from-documents`
+- `📄 PDF로 문서 생성` → `POST /generate/from-pdf`
 
 ---
 
