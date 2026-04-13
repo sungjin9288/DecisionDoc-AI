@@ -632,6 +632,7 @@ def generate_from_pdf(
             title=requirements["title"],
             goal=f"PDF 문서 '{filename}'의 내용을 기반으로 의사결정 문서를 작성합니다.",
             context=structured["raw_text"][:3000],
+            doc_types=doc_types_list,
             bundle_type="tech_decision",
         )
     except Exception as exc:

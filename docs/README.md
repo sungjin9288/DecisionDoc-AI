@@ -47,6 +47,7 @@
 - `python3 scripts/post_deploy_check.py --env-file .env.prod` — health, compose 상태, nginx 설정, deployed smoke를 묶은 post-deploy check
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke
+- `python3 scripts/run_ingestion_harness.py <files...>` — 입력 문서 변환 + `/generate` 실행 하네스
 
 ## 통합 가이드
 - repo-level OpenSpace / `DESIGN.md` 정리: `docs/openspace_integration.md`

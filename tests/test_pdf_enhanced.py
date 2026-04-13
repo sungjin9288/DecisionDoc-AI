@@ -137,7 +137,8 @@ def test_from_pdf_endpoint_success(tmp_path, monkeypatch):
     assert "request_id" in body
     assert "bundle_id" in body
     assert "docs" in body
-    assert len(body["docs"]) > 0
+    assert len(body["docs"]) == 2
+    assert [doc["doc_type"] for doc in body["docs"]] == ["adr", "onepager"]
 
 
 # ── Test 4: rejects non-PDF files ─────────────────────────────────────────────

@@ -52,7 +52,30 @@ python3 scripts/markitdown_ingest.py ./samples/요구사항정의서.pdf \
 
 ---
 
-## 3) DecisionDoc에 반영하는 방법
+## 3) 생성 하네스 실행
+
+문서 변환 후 바로 DecisionDoc `/generate` 또는 `/generate/from-pdf`까지 호출하려면:
+
+```bash
+python3 scripts/run_ingestion_harness.py ./samples/요구사항정의서.docx \
+  --base-url https://admin.decisiondoc.kr \
+  --api-key '<your-api-key>' \
+  --title '의사결정 초안' \
+  --goal '외부 요구사항 문서를 바탕으로 검토용 번들을 생성한다'
+```
+
+출력:
+
+- `output/ingestion_harness/request.json`
+- `output/ingestion_harness/response.json`
+- `output/ingestion_harness/docs/*.md`
+
+단일 PDF 입력은 기본적으로 `POST /generate/from-pdf`를 사용하고,
+그 외 포맷은 Markdown으로 변환한 뒤 `POST /generate`로 전달한다.
+
+---
+
+## 4) DecisionDoc에 반영하는 방법
 
 1. 변환된 `.md`를 열어 핵심 요구사항/근거 섹션을 추린다.  
 2. DecisionDoc 요청 payload의 `requirements`에 붙여 넣는다.  
