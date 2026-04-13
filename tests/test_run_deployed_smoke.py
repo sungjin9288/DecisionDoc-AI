@@ -142,3 +142,27 @@ def test_preflight_uses_legacy_api_key_fallback(tmp_path: Path, capsys) -> None:
     assert "[ok] SMOKE_BASE_URL=https://admin.decisiondoc.kr" in captured
     assert "[ok] SMOKE_API_KEY=set" in captured
     assert "[ok] SMOKE_PROVIDER=openai" in captured
+    assert "- POST /generate/from-documents (auth) -> 200" in captured
+
+
+def test_print_env_template_lists_document_upload_smoke_checks(tmp_path: Path, capsys) -> None:
+    runner = _load_script_module("decisiondoc_run_deployed_smoke_env_template", "scripts/run_deployed_smoke.py")
+    env_file = tmp_path / ".env.prod"
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    result = runner.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--compose-file",
+            str(compose_file),
+            "--print-env-template",
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert "Smoke checks" in captured
+    assert "- POST /generate/from-documents (no key) -> 401" in captured
+    assert "- POST /generate/from-documents (auth) -> 200" in captured

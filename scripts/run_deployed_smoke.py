@@ -13,6 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_SERVICE = "app"
+DEFAULT_SMOKE_CHECKS = [
+    "GET /health",
+    "POST /generate (no key) -> 401",
+    "POST /generate (auth) -> 200",
+    "POST /generate/export (auth) -> 200",
+    "POST /generate/from-documents (no key) -> 401",
+    "POST /generate/from-documents (auth) -> 200",
+]
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -139,12 +147,20 @@ def _suggested_command(*, env_file: Path, compose_file: Path, service: str) -> s
     )
 
 
+def _print_smoke_checks() -> None:
+    print("Smoke checks", flush=True)
+    for item in DEFAULT_SMOKE_CHECKS:
+        print(f"- {item}", flush=True)
+    print("", flush=True)
+
+
 def _print_env_template(*, env_file: Path, compose_file: Path, service: str) -> None:
     print("# Required", flush=True)
     print("ALLOWED_ORIGINS=https://your-domain.example.com", flush=True)
     print("DECISIONDOC_API_KEYS=your-runtime-api-key", flush=True)
     print("DECISIONDOC_PROVIDER=openai", flush=True)
     print("", flush=True)
+    _print_smoke_checks()
     print("# Run", flush=True)
     print(_suggested_command(env_file=env_file, compose_file=compose_file, service=service), flush=True)
 
@@ -161,6 +177,7 @@ def _run_preflight(*, env_file: Path, base_url: str, api_key: str, provider: str
     print(f"[ok] SMOKE_API_KEY={'set' if resolved_api_key else 'missing'}", flush=True)
     print(f"[ok] SMOKE_PROVIDER={resolved_provider}", flush=True)
     print("", flush=True)
+    _print_smoke_checks()
     return 0
 
 

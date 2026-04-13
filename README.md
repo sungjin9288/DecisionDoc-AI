@@ -170,6 +170,12 @@ python scripts/smoke.py
 
 If `SMOKE_PROCUREMENT_URL_OR_NUMBER` is empty, the smoke runner attempts to discover a recent live G2B bid number using `G2B_API_KEY`.
 
+Preflight to confirm deployed smoke inputs and covered routes:
+
+```bash
+python scripts/run_deployed_smoke.py --env-file .env.prod --preflight
+```
+
 ### OpenSpace integration
 
 - integration guide: `docs/openspace_integration.md`

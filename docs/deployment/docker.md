@@ -78,6 +78,7 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - `DECISIONDOC_PROVIDER`와 provider API 키(`OPENAI_API_KEY` 등) 확인
 - `DECISIONDOC_STORAGE=local` 기준이면 `decisiondoc_data` 볼륨 백업 정책 수립
 - 헬스체크: `curl http://localhost:3300/health` 또는 `http://localhost:8000/health`
+- smoke preflight: `python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight`
 - smoke: `python3 scripts/run_deployed_smoke.py --env-file .env.prod` (필요 시 `python3 scripts/ops_smoke.py`)
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
 
