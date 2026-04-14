@@ -194,17 +194,90 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     captured = capsys.readouterr().out
     history_reports = sorted(report_dir.glob("post-deploy-*.json"))
     latest_report = report_dir / "latest.json"
+    index_report = report_dir / "index.json"
     assert result == 0
     assert "PASS report written" in captured
     assert "PASS latest report updated" in captured
     assert len(history_reports) == 1
     assert latest_report.exists()
+    assert index_report.exists()
     history_payload = json.loads(history_reports[0].read_text(encoding="utf-8"))
     latest_payload = json.loads(latest_report.read_text(encoding="utf-8"))
+    index_payload = json.loads(index_report.read_text(encoding="utf-8"))
     assert history_payload["status"] == "passed"
     assert latest_payload["status"] == "passed"
     assert history_payload["checks"][-1]["name"] == "deployed smoke"
     assert latest_payload["checks"][-1]["name"] == "deployed smoke"
+    assert index_payload["latest"] == "latest.json"
+    assert index_payload["latest_report"] == history_reports[0].name
+    assert index_payload["reports"][0]["file"] == history_reports[0].name
+    assert index_payload["reports"][0]["status"] == "passed"
+
+
+def test_post_deploy_check_updates_index_with_newest_report_first(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_report_index", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_dir = tmp_path / "reports" / "post-deploy"
+    initial_report = report_dir / "post-deploy-20260414T010000Z.json"
+    initial_index = report_dir / "index.json"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    initial_report.write_text(
+        json.dumps({"status": "passed", "started_at": "2026-04-14T01:00:00+00:00", "finished_at": "2026-04-14T01:01:00+00:00"}),
+        encoding="utf-8",
+    )
+    initial_index.write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-04-14T01:01:00+00:00",
+                "latest": "latest.json",
+                "latest_report": initial_report.name,
+                "reports": [
+                    {
+                        "file": initial_report.name,
+                        "status": "passed",
+                        "base_url": "https://admin.decisiondoc.kr",
+                        "started_at": "2026-04-14T01:00:00+00:00",
+                        "finished_at": "2026-04-14T01:01:00+00:00",
+                        "skip_smoke": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse('{"status":"ok"}')
+
+    def _fake_run(command, cwd=None, check=False):
+        _ = cwd, check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    result = checker.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--compose-file",
+            str(compose_file),
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+
+    history_reports = sorted(report_dir.glob("post-deploy-*.json"))
+    index_payload = json.loads((report_dir / "index.json").read_text(encoding="utf-8"))
+    assert result == 0
+    assert len(history_reports) == 2
+    assert index_payload["reports"][0]["file"] == index_payload["latest_report"]
+    assert index_payload["reports"][1]["file"] == initial_report.name
 
 
 def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) -> None:

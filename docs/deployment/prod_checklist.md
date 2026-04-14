@@ -71,7 +71,7 @@ python3 scripts/post_deploy_check.py \
   --report-dir ./reports/post-deploy
 ```
 
-`scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy/` 아래 timestamped report와 `latest.json` 을 함께 남깁니다.
+`scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy/` 아래 timestamped report, `latest.json`, `index.json` 을 함께 남깁니다.
 
 ## 5. Docker Compose / HA
 

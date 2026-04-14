@@ -18,6 +18,7 @@ DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_APP_SERVICE = "app"
 DEFAULT_NGINX_SERVICE = "nginx"
 DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "post-deploy"
+DEFAULT_REPORT_INDEX_LIMIT = 20
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -103,6 +104,56 @@ def _resolve_report_targets(
     return None, None
 
 
+def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "file": report_file.name,
+        "status": payload.get("status"),
+        "base_url": payload.get("base_url"),
+        "started_at": payload.get("started_at"),
+        "finished_at": payload.get("finished_at"),
+        "skip_smoke": bool(payload.get("skip_smoke")),
+    }
+
+
+def _update_report_index(
+    *,
+    report_file: Path,
+    latest_file: Path | None,
+    payload: dict[str, Any],
+    history_limit: int = DEFAULT_REPORT_INDEX_LIMIT,
+) -> None:
+    report_dir = report_file.parent
+    index_file = report_dir / "index.json"
+    index_payload: dict[str, Any] = {
+        "updated_at": payload.get("finished_at") or payload.get("started_at"),
+        "latest": latest_file.name if latest_file is not None else report_file.name,
+        "latest_report": report_file.name,
+        "reports": [],
+    }
+    if index_file.exists():
+        try:
+            loaded = json.loads(index_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                index_payload.update(
+                    {
+                        "updated_at": loaded.get("updated_at", index_payload["updated_at"]),
+                        "latest": loaded.get("latest", index_payload["latest"]),
+                        "latest_report": loaded.get("latest_report", index_payload["latest_report"]),
+                        "reports": list(loaded.get("reports", [])),
+                    }
+                )
+        except json.JSONDecodeError:
+            pass
+
+    reports = [entry for entry in index_payload.get("reports", []) if entry.get("file") != report_file.name]
+    reports.insert(0, _build_index_entry(report_file=report_file, payload=payload))
+    index_payload["updated_at"] = payload.get("finished_at") or payload.get("started_at")
+    index_payload["latest"] = latest_file.name if latest_file is not None else report_file.name
+    index_payload["latest_report"] = report_file.name
+    index_payload["reports"] = reports[:history_limit]
+    _write_json_report(index_file, index_payload)
+
+
 def _persist_reports(
     *,
     payload: dict[str, Any],
@@ -113,6 +164,8 @@ def _persist_reports(
         _write_json_report(report_file, payload)
     if latest_file is not None:
         _write_json_report(latest_file, payload)
+    if report_file is not None and latest_file is not None:
+        _update_report_index(report_file=report_file, latest_file=latest_file, payload=payload)
 
 
 def _fetch_health_json(base_url: str, *, timeout: float = 10.0) -> dict[str, Any]:

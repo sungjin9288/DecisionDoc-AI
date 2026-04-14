@@ -82,6 +82,7 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - smoke: `python3 scripts/run_deployed_smoke.py --env-file .env.prod` (필요 시 `python3 scripts/ops_smoke.py`)
 - post-deploy report history: `./reports/post-deploy/post-deploy-<timestamp>.json`
 - post-deploy latest pointer: `./reports/post-deploy/latest.json`
+- post-deploy index: `./reports/post-deploy/index.json`
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
 
 여러 장소로 분리 운영할 때는 [Multi-site 운영 가이드](multi_site_operations.md)를 확인하세요.

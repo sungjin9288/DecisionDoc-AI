@@ -298,6 +298,12 @@ cd /opt/decisiondoc
 python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy
 ```
 
+이 경우 아래 파일들이 같이 갱신됩니다.
+
+- `./reports/post-deploy/post-deploy-<timestamp>.json`
+- `./reports/post-deploy/latest.json`
+- `./reports/post-deploy/index.json`
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`
