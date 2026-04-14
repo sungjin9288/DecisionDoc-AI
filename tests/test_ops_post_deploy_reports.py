@@ -38,6 +38,18 @@ def _write_report_history(report_dir: Path) -> None:
             {"name": "smoke", "status": "passed", "exit_code": 0},
         ],
     }
+    previous_payload = {
+        "status": "failed",
+        "base_url": "https://admin.decisiondoc.kr",
+        "started_at": "2026-04-14T03:09:00+00:00",
+        "finished_at": "2026-04-14T03:10:00+00:00",
+        "skip_smoke": True,
+        "error": "docker compose ps failed with exit code 17",
+        "checks": [
+            {"name": "health", "status": "passed"},
+            {"name": "smoke", "status": "failed", "exit_code": 17},
+        ],
+    }
     index_payload = {
         "updated_at": "2026-04-14T04:10:00+00:00",
         "latest": "latest.json",
@@ -62,6 +74,8 @@ def _write_report_history(report_dir: Path) -> None:
         ],
     }
     (report_dir / "latest.json").write_text(json.dumps(latest_payload), encoding="utf-8")
+    (report_dir / "post-deploy-20260414T041000Z.json").write_text(json.dumps(latest_payload), encoding="utf-8")
+    (report_dir / "post-deploy-20260414T031000Z.json").write_text(json.dumps(previous_payload), encoding="utf-8")
     (report_dir / "index.json").write_text(json.dumps(index_payload), encoding="utf-8")
 
 
@@ -124,3 +138,35 @@ def test_ops_post_deploy_reports_returns_404_when_missing(tmp_path: Path, monkey
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Post-deploy report history not found."
+
+
+def test_ops_post_deploy_report_detail_returns_selected_file(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "reports" / "post-deploy"
+    _write_report_history(report_dir)
+    client = _create_client(tmp_path, monkeypatch, report_dir=report_dir)
+
+    response = client.get(
+        "/ops/post-deploy/reports/post-deploy-20260414T031000Z.json",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report_file"] == "post-deploy-20260414T031000Z.json"
+    assert body["details"]["status"] == "failed"
+    assert body["details"]["error"] == "docker compose ps failed with exit code 17"
+    assert body["details"]["checks"][1]["exit_code"] == 17
+
+
+def test_ops_post_deploy_report_detail_rejects_unknown_file(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "reports" / "post-deploy"
+    _write_report_history(report_dir)
+    client = _create_client(tmp_path, monkeypatch, report_dir=report_dir)
+
+    response = client.get(
+        "/ops/post-deploy/reports/not-listed.json",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Requested post-deploy report not found."

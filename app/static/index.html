@@ -18445,11 +18445,112 @@ function downloadOpsPostDeployJson() {
   setTimeout(() => URL.revokeObjectURL(href), 0);
 }
 
+function syncOpsPostDeployDetailSelection() {
+  const selectedFile = window.__opsPostDeploySelectedFile || '';
+  document.querySelectorAll('[data-report-detail-btn]').forEach((btn) => {
+    const isActive = btn.getAttribute('data-report-detail-btn') === selectedFile;
+    btn.textContent = isActive ? '보고 있는 리포트' : '상세 보기';
+    btn.style.background = isActive ? 'rgba(99,102,241,.16)' : 'rgba(255,255,255,.08)';
+    btn.style.color = isActive ? '#fff' : '#ddd6fe';
+    btn.disabled = isActive;
+  });
+}
+
+function renderOpsPostDeployReportDetail(detailPayload) {
+  const container = $id('ops-post-deploy-detail');
+  if (!container) return;
+  const details = detailPayload?.details || null;
+  if (!details) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    window.__opsPostDeploySelectedFile = '';
+    syncOpsPostDeployDetailSelection();
+    return;
+  }
+  const reportFile = String(detailPayload.report_file || details.report_file || '-');
+  const meta = getPostDeployStatusMeta(details.status || 'unknown');
+  const checks = Array.isArray(details.checks) ? details.checks : [];
+  const detailError = details.error
+    ? `<div style="margin-top:.65rem;color:#fecaca;font-size:.78rem;line-height:1.5;">${escapeHtml(details.error)}</div>`
+    : '';
+  window.__opsPostDeploySelectedFile = reportFile;
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;">
+      <div>
+        <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;">
+          <strong style="font-size:.86rem;color:#fff;">선택한 리포트</strong>
+          <span style="display:inline-flex;align-items:center;padding:.18rem .5rem;border-radius:999px;background:${meta.bg};color:${meta.color};font-size:.72rem;font-weight:800;">
+            ${escapeHtml(meta.label)}
+          </span>
+          <code style="font-size:.72rem;color:#ddd6fe;background:rgba(255,255,255,.08);padding:.2rem .45rem;border-radius:999px;">${escapeHtml(reportFile)}</code>
+        </div>
+        <div style="margin-top:.35rem;color:#cbd5e1;font-size:.78rem;">
+          시작 ${formatOpsReportTime(details.started_at)} · 종료 ${formatOpsReportTime(details.finished_at)} · 기준 URL ${escapeHtml(details.base_url || '-')}
+        </div>
+        ${detailError}
+      </div>
+      <div style="display:inline-flex;align-items:center;padding:.22rem .55rem;border-radius:999px;background:${details.skip_smoke ? 'rgba(251,191,36,.16)' : 'rgba(134,239,172,.14)'};color:${details.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:800;">
+        ${details.skip_smoke ? 'skip smoke' : 'smoke 포함'}
+      </div>
+    </div>
+    <div style="display:grid;gap:.45rem;">
+      ${checks.length ? checks.map((check) => {
+        const checkMeta = getPostDeployStatusMeta(check.status);
+        const exitCode = Number.isInteger(check.exit_code) ? ` · exit ${check.exit_code}` : '';
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;background:rgba(255,255,255,.05);border-radius:8px;padding:.55rem .7rem;">
+            <span style="color:#e5e7eb;font-size:.78rem;">${escapeHtml(check.name || 'unknown')}</span>
+            <span style="color:${checkMeta.color};font-size:.74rem;font-weight:800;">
+              ${escapeHtml(checkMeta.label)}${exitCode}
+            </span>
+          </div>
+        `;
+      }).join('') : '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">이 리포트에 저장된 check 결과가 없습니다.</p>'}
+    </div>
+  `;
+  syncOpsPostDeployDetailSelection();
+}
+
+async function loadOpsPostDeployReportDetail(reportFile) {
+  const selected = String(reportFile || '').trim();
+  const container = $id('ops-post-deploy-detail');
+  if (!selected || !container) return;
+  const summaryPayload = window.__opsPostDeployReportsPayload || null;
+  if (summaryPayload?.latest_report === selected && summaryPayload?.latest_details) {
+    renderOpsPostDeployReportDetail({
+      report_dir: summaryPayload.report_dir,
+      report_file: selected,
+      report_path: `${summaryPayload.report_dir}/${selected}`,
+      details: { ...summaryPayload.latest_details, report_file: selected },
+    });
+    return;
+  }
+
+  const headers = getOpsAccessHeaders();
+  container.style.display = 'block';
+  container.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">선택한 리포트를 불러오는 중...</p>';
+  try {
+    const res = await fetch(`/ops/post-deploy/reports/${encodeURIComponent(selected)}`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `오류 ${res.status}`);
+    }
+    const data = await res.json();
+    renderOpsPostDeployReportDetail(data);
+  } catch (e) {
+    container.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.82rem;">리포트 상세 조회 실패: ${escapeHtml(e.message || '알 수 없는 오류')}</p>`;
+    window.__opsPostDeploySelectedFile = '';
+    syncOpsPostDeployDetailSelection();
+  }
+}
+
 function renderOpsPostDeployReports(data) {
   const container = $id('ops-post-deploy-report');
   if (!container) return;
   window.__opsPostDeployReportsPayload = data;
   window.__opsPostDeployJsonExpanded = window.__opsPostDeployJsonExpanded === true;
+  window.__opsPostDeploySelectedFile = data?.latest_report || '';
   const reports = Array.isArray(data?.reports) ? data.reports : [];
   const latest = data?.latest_details || null;
   const latestStatus = getPostDeployStatusMeta(latest?.status || reports[0]?.status || 'unknown');
@@ -18503,8 +18604,14 @@ function renderOpsPostDeployReports(data) {
                 ${formatOpsReportTime(report.finished_at)} · ${escapeHtml(report.base_url || '-')}
               </div>
             </div>
-            <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">
-              ${report.skip_smoke ? 'skip smoke' : 'smoke 포함'}
+            <div style="display:grid;justify-items:end;gap:.45rem;">
+              <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">
+                ${report.skip_smoke ? 'skip smoke' : 'smoke 포함'}
+              </div>
+              <button type="button" data-report-detail-btn="${escapeHtml(report.file || '')}"
+                      style="background:rgba(255,255,255,.08);color:#ddd6fe;border:none;border-radius:999px;padding:.3rem .72rem;font-size:.72rem;font-weight:800;cursor:pointer;">
+                상세 보기
+              </button>
             </div>
           </div>
         `;
@@ -18529,10 +18636,26 @@ function renderOpsPostDeployReports(data) {
         </div>
       </div>
     ` : ''}
+    <div id="ops-post-deploy-detail" style="display:none;margin-top:1rem;padding:1rem;border-radius:12px;background:rgba(15,23,42,.42);border:1px solid rgba(196,181,253,.12);"></div>
     <div id="ops-post-deploy-raw" style="display:none;margin-top:1rem;padding:1rem;border-radius:12px;background:rgba(15,23,42,.54);border:1px solid rgba(196,181,253,.12);overflow:auto;"></div>
   `;
   $id('ops-post-deploy-toggle-json-btn')?.addEventListener('click', toggleOpsPostDeployJson);
   $id('ops-post-deploy-download-json-btn')?.addEventListener('click', downloadOpsPostDeployJson);
+  document.querySelectorAll('[data-report-detail-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      loadOpsPostDeployReportDetail(btn.getAttribute('data-report-detail-btn') || '');
+    });
+  });
+  if (data?.latest_report && latest) {
+    renderOpsPostDeployReportDetail({
+      report_dir: data.report_dir,
+      report_file: data.latest_report,
+      report_path: `${data.report_dir}/${data.latest_report}`,
+      details: { ...latest, report_file: data.latest_report },
+    });
+  } else {
+    renderOpsPostDeployReportDetail(null);
+  }
   syncOpsPostDeployJsonPanel();
 }
 
@@ -18545,6 +18668,7 @@ async function loadOpsPostDeployReports() {
   if (!headers.Authorization && !headers['X-DecisionDoc-Ops-Key']) {
     window.__opsPostDeployReportsPayload = null;
     window.__opsPostDeployJsonExpanded = false;
+    window.__opsPostDeploySelectedFile = '';
     container.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">Ops Key 또는 admin 로그인 세션이 있어야 배포 리포트를 조회할 수 있습니다.</p>';
     return;
   }
@@ -18564,12 +18688,14 @@ async function loadOpsPostDeployReports() {
     if (res.status === 401 || res.status === 403) {
       window.__opsPostDeployReportsPayload = null;
       window.__opsPostDeployJsonExpanded = false;
+      window.__opsPostDeploySelectedFile = '';
       container.innerHTML = '<p style="margin:0;color:#fca5a5;font-size:.82rem;">관리자 세션 또는 유효한 Ops Key가 필요합니다.</p>';
       return;
     }
     if (res.status === 404) {
       window.__opsPostDeployReportsPayload = null;
       window.__opsPostDeployJsonExpanded = false;
+      window.__opsPostDeploySelectedFile = '';
       container.innerHTML = '<p style="margin:0;color:#fcd34d;font-size:.82rem;">서버에 저장된 post-deploy 리포트가 아직 없습니다.</p>';
       return;
     }
@@ -18583,6 +18709,7 @@ async function loadOpsPostDeployReports() {
   } catch (e) {
     window.__opsPostDeployReportsPayload = null;
     window.__opsPostDeployJsonExpanded = false;
+    window.__opsPostDeploySelectedFile = '';
     container.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.82rem;">배포 리포트 조회 실패: ${escapeHtml(e.message || '알 수 없는 오류')}</p>`;
   } finally {
     refreshBtn && (refreshBtn.disabled = false);

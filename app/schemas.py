@@ -723,6 +723,13 @@ class OpsPostDeployReportsResponse(BaseModel):
     latest_details: PostDeployLatestDetailsResponse | None = None
 
 
+class OpsPostDeployReportDetailResponse(BaseModel):
+    report_dir: str
+    report_file: str
+    report_path: str
+    details: dict[str, Any]
+
+
 class CheckoutRequest(BaseModel):
     plan_id: str
 

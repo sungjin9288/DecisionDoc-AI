@@ -11,7 +11,11 @@ from uuid import uuid4
 
 from app.config import is_enabled
 from app.observability.logging import log_event
-from app.ops.report_history import build_post_deploy_reports_payload, get_default_post_deploy_report_dir
+from app.ops.report_history import (
+    build_post_deploy_report_detail_payload,
+    build_post_deploy_reports_payload,
+    get_default_post_deploy_report_dir,
+)
 from app.ops.statuspage import StatuspageClient
 
 logger = logging.getLogger("decisiondoc.ops")
@@ -118,6 +122,16 @@ class OpsInvestigationService:
             report_dir=get_default_post_deploy_report_dir(),
             limit=limit,
             latest=latest,
+        )
+
+    def read_post_deploy_report(
+        self,
+        *,
+        report_file: str,
+    ) -> dict[str, Any]:
+        return build_post_deploy_report_detail_payload(
+            report_dir=get_default_post_deploy_report_dir(),
+            report_file=report_file,
         )
 
     def investigate(

@@ -51,6 +51,7 @@
 - `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest` — 최신 post-deploy report와 최근 history를 콘솔에 요약 출력
 - `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest --json` — 최신 post-deploy report summary/history를 machine-readable JSON으로 출력
 - `GET /ops/post-deploy/reports?limit=5&latest=true` — admin JWT 또는 `X-DecisionDoc-Ops-Key`로 최신 post-deploy report/history를 API로 조회
+- `GET /ops/post-deploy/reports/{report_file}` — 특정 post-deploy report file의 상세 check/error payload를 drill-down 조회
 - `python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local --post-check` — rollout 뒤 post-deploy check와 `./reports/post-deploy/` history 저장까지 수행
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke

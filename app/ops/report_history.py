@@ -35,6 +35,37 @@ def resolve_report_index(report_dir: Path) -> tuple[dict[str, Any], Path]:
     return payload, index_path
 
 
+def resolve_named_report(report_dir: Path, report_file: str) -> tuple[dict[str, Any], Path]:
+    requested = str(report_file or "").strip()
+    if not requested:
+        raise ValueError("Report file name is required.")
+    report_name = Path(requested).name
+    if report_name != requested or not report_name.endswith(".json"):
+        raise ValueError(f"Invalid report file name: {report_file}")
+
+    index_payload, index_path = resolve_report_index(report_dir)
+    allowed_files = {
+        str(index_payload.get("latest", "")).strip(),
+        str(index_payload.get("latest_report", "")).strip(),
+    }
+    reports = index_payload.get("reports", [])
+    if isinstance(reports, list):
+        for entry in reports:
+            if isinstance(entry, dict):
+                allowed_files.add(str(entry.get("file", "")).strip())
+    allowed_files = {item for item in allowed_files if item}
+    if report_name not in allowed_files:
+        raise FileNotFoundError(f"Report file not listed in index: {report_name}")
+
+    resolved_path = Path(report_dir).expanduser() / report_name
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Report file not found: {resolved_path}")
+    payload = load_report_json(resolved_path)
+    payload.setdefault("report_file", report_name)
+    payload.setdefault("report_index_file", str(index_path))
+    return payload, resolved_path
+
+
 def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
     index_payload, index_path = resolve_report_index(report_dir)
     reports = list(index_payload.get("reports", []))
@@ -53,3 +84,13 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
         latest_path = Path(report_dir).expanduser() / "latest.json"
         payload["latest_details"] = load_report_json(latest_path)
     return payload
+
+
+def build_post_deploy_report_detail_payload(*, report_dir: Path, report_file: str) -> dict[str, Any]:
+    payload, resolved_path = resolve_named_report(report_dir, report_file)
+    return {
+        "report_dir": str(Path(report_dir).expanduser()),
+        "report_file": payload.get("report_file") or resolved_path.name,
+        "report_path": str(resolved_path),
+        "details": payload,
+    }

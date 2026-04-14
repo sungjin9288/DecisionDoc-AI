@@ -230,6 +230,21 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
 
     pg.get_by_role("button", name="JSON 숨기기").click()
     assert not pg.locator("#ops-post-deploy-raw").is_visible()
+
+    detail_text = pg.locator("#ops-post-deploy-detail").inner_text()
+    assert "선택한 리포트" in detail_text
+    assert "post-deploy-20260414T041000Z.json" in detail_text
+    assert "smoke 포함" in detail_text
+
+    pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').click()
+    pg.wait_for_function(
+        "() => document.querySelector('#ops-post-deploy-detail')?.innerText.includes('post-deploy-20260414T031000Z.json')"
+    )
+    selected_detail = pg.locator("#ops-post-deploy-detail").inner_text()
+    assert "post-deploy-20260414T031000Z.json" in selected_detail
+    assert "docker compose ps failed with exit code 17" in selected_detail
+    assert "실패" in selected_detail
+    assert "exit 17" in selected_detail
     assert not console_messages
 
     ctx.close()

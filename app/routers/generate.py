@@ -62,6 +62,7 @@ from app.schemas import (
     GovDocOptions,
     OpsInvestigateRequest,
     OpsInvestigateResponse,
+    OpsPostDeployReportDetailResponse,
     OpsPostDeployReportsResponse,
     SectionRewriteRequest,
 )
@@ -1802,6 +1803,25 @@ def get_ops_post_deploy_reports(
     except ValueError as exc:
         raise HTTPException(status_code=500, detail="Post-deploy report history is invalid.") from exc
     return OpsPostDeployReportsResponse(**result)
+
+
+@router.get(
+    "/ops/post-deploy/reports/{report_file}",
+    response_model=OpsPostDeployReportDetailResponse,
+)
+def get_ops_post_deploy_report_detail(
+    report_file: str,
+    request: Request,
+) -> OpsPostDeployReportDetailResponse:
+    _require_admin(request)
+    ops_service = request.app.state.ops_service
+    try:
+        result = ops_service.read_post_deploy_report(report_file=report_file)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Requested post-deploy report not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid post-deploy report file name.") from exc
+    return OpsPostDeployReportDetailResponse(**result)
 
 
 @router.post(

@@ -63,6 +63,18 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
             {"name": "smoke", "status": "passed", "exit_code": 0},
         ],
     }
+    previous_payload = {
+        "status": "failed",
+        "base_url": "https://admin.decisiondoc.kr",
+        "started_at": "2026-04-14T03:09:00+00:00",
+        "finished_at": "2026-04-14T03:10:00+00:00",
+        "skip_smoke": True,
+        "error": "docker compose ps failed with exit code 17",
+        "checks": [
+            {"name": "health", "status": "passed"},
+            {"name": "smoke", "status": "failed", "exit_code": 17},
+        ],
+    }
     index_payload = {
         "updated_at": "2026-04-14T04:10:00+00:00",
         "latest": "latest.json",
@@ -88,6 +100,10 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
     }
     with open(os.path.join(report_path, "latest.json"), "w", encoding="utf-8") as handle:
         json.dump(latest_payload, handle)
+    with open(os.path.join(report_path, "post-deploy-20260414T041000Z.json"), "w", encoding="utf-8") as handle:
+        json.dump(latest_payload, handle)
+    with open(os.path.join(report_path, "post-deploy-20260414T031000Z.json"), "w", encoding="utf-8") as handle:
+        json.dump(previous_payload, handle)
     with open(os.path.join(report_path, "index.json"), "w", encoding="utf-8") as handle:
         json.dump(index_payload, handle)
 
