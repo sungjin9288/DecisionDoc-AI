@@ -48,6 +48,7 @@
 - `python3 scripts/post_deploy_check.py --env-file .env.prod` — health, compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶은 post-deploy check
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json` — post-deploy check 결과를 JSON 리포트로 저장
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy` — timestamped report, `latest.json`, `index.json`을 함께 저장
+- `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest` — 최신 post-deploy report와 최근 history를 콘솔에 요약 출력
 - `python3 scripts/deploy_compose_local.py --env-file .env.prod --image decisiondoc-<site>-local --post-check` — rollout 뒤 post-deploy check와 `./reports/post-deploy/` history 저장까지 수행
 - `python3 scripts/ops_smoke.py` — ops/investigate smoke
 - `python3 scripts/voice_brief_smoke.py` — Voice Brief import smoke

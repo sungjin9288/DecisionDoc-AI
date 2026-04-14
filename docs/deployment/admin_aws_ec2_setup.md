@@ -304,6 +304,13 @@ python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports
 - `./reports/post-deploy/latest.json`
 - `./reports/post-deploy/index.json`
 
+최신 상태와 최근 이력을 콘솔에서 바로 보려면 아래 helper를 실행합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest
+```
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`
