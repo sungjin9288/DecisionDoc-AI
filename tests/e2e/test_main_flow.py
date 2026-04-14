@@ -197,6 +197,9 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "Admin 로그인 후 요금제 정보를 확인할 수 있습니다." in pg.locator(
         "#billing-panel"
     ).inner_text()
+    assert "admin 로그인 없이도 아래 `Ops Key` 입력으로 배포 리포트 조회와 운영 조사 기능을 사용할 수 있습니다." in pg.locator(
+        "#login-screen"
+    ).inner_text()
 
     pg.fill("#ops-key-input", live_server["ops_key"])
     pg.evaluate(
@@ -215,6 +218,18 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "health" in panel_text
     assert "smoke" in panel_text
     assert "https://admin.decisiondoc.kr" in panel_text
+    assert "JSON 보기" in panel_text
+    assert "JSON 다운로드" in panel_text
+
+    pg.get_by_role("button", name="JSON 보기").click()
+    pg.wait_for_selector("#ops-post-deploy-raw pre", timeout=5000)
+    raw_json = pg.locator("#ops-post-deploy-raw").inner_text()
+    assert '"latest_report": "post-deploy-20260414T041000Z.json"' in raw_json
+    assert '"status": "passed"' in raw_json
+    assert '"name": "health"' in raw_json
+
+    pg.get_by_role("button", name="JSON 숨기기").click()
+    assert not pg.locator("#ops-post-deploy-raw").is_visible()
     assert not console_messages
 
     ctx.close()
