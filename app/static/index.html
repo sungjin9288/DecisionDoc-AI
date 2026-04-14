@@ -5436,6 +5436,31 @@
   </form>
   <div id="ops-result" style="margin-top:1.2rem;"></div>
 
+  <hr style="border-color:rgba(255,255,255,.12);margin:1.5rem 0;"/>
+  <div class="ops-section" id="ops-post-deploy-section">
+    <div class="ops-section-header" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap;">
+      <div>
+        <h5 style="font-size:.875rem;font-weight:800;margin:0;color:#c4b5fd;">🚦 배포 점검 리포트</h5>
+        <p style="margin:.35rem 0 0;color:#cbd5e1;font-size:.78rem;">최신 post-deploy smoke 결과와 최근 배포 이력을 바로 확인합니다.</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+        <label for="ops-post-deploy-limit" style="color:#c4b5fd;font-size:.78rem;">최근 표시</label>
+        <select id="ops-post-deploy-limit" style="background:#2d2b6b;border:1px solid #4c1d95;color:#fff;border-radius:8px;padding:.38rem .6rem;">
+          <option value="3">3건</option>
+          <option value="5" selected>5건</option>
+          <option value="10">10건</option>
+        </select>
+        <button id="ops-post-deploy-refresh-btn" type="button"
+                style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:.45rem .9rem;font-weight:700;cursor:pointer;">
+          새로고침
+        </button>
+      </div>
+    </div>
+    <div id="ops-post-deploy-report" style="background:rgba(15,23,42,.28);border:1px solid rgba(196,181,253,.18);border-radius:12px;padding:1rem;">
+      <p style="margin:0;color:#cbd5e1;font-size:.82rem;">Ops Key 또는 admin 세션으로 리포트를 불러올 수 있습니다.</p>
+    </div>
+  </div>
+
   <!-- ── 로컬 LLM 상태 패널 ───────────────────────────────────── -->
   <hr style="border-color:rgba(255,255,255,.12);margin:1.5rem 0;"/>
   <h4 style="font-size:.875rem;font-weight:800;margin:0 0 1rem;color:#c4b5fd;">🤖 로컬 LLM 설정</h4>
@@ -6047,10 +6072,38 @@
     };
   }
 
+  function getOpsKeyValue() {
+    return $id('ops-key-input')?.value?.trim() || localStorage.getItem('dd_ops_key') || '';
+  }
+
+  function persistOpsKey() {
+    const opsKey = $id('ops-key-input')?.value?.trim() || '';
+    if (opsKey) localStorage.setItem('dd_ops_key', opsKey);
+    else localStorage.removeItem('dd_ops_key');
+  }
+
+  function getOpsAccessHeaders() {
+    const headers = getAuthHeaders();
+    const opsKey = getOpsKeyValue();
+    if (opsKey) headers['X-DecisionDoc-Ops-Key'] = opsKey;
+    return headers;
+  }
+
+  function hydrateOpsKeyInput() {
+    const input = $id('ops-key-input');
+    if (!input) return;
+    const stored = localStorage.getItem('dd_ops_key') || '';
+    if (!input.value && stored) input.value = stored;
+    if (input.dataset.boundOpsPersistence === '1') return;
+    input.addEventListener('change', persistOpsKey);
+    input.addEventListener('blur', persistOpsKey);
+    input.dataset.boundOpsPersistence = '1';
+  }
+
   async function loadTenantList() {
     if (!new URLSearchParams(location.search).has('ops')) return;
     try {
-      const opsKey = $id('ops-key-input')?.value?.trim() || localStorage.getItem('dd_ops_key') || '';
+      const opsKey = getOpsKeyValue();
       const res = await fetch('/admin/tenants', {
         headers: { 'X-DecisionDoc-Ops-Key': opsKey },
       });
@@ -8536,18 +8589,26 @@
   if (new URLSearchParams(window.location.search).get('ops') === '1') {
     const opsPanel = $id('ops-panel');
     if (opsPanel) opsPanel.style.display = 'block';
-    loadLocalLLMStatus();
-    loadSSOConfig();
-    loadBillingStatus();
+    hydrateOpsKeyInput();
+    window.addEventListener('load', () => {
+      window.loadOpsPostDeployReports?.();
+      window.loadLocalLLMStatus?.();
+      window.loadSSOConfig?.();
+      window.loadBillingStatus?.();
+    }, { once: true });
   }
+  $id('ops-post-deploy-refresh-btn')?.addEventListener('click', () => {
+    window.loadOpsPostDeployReports?.();
+  });
   $id('ops-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const opsKey  = $id('ops-key-input').value.trim();
+    const opsKey  = getOpsKeyValue();
     const wm      = parseInt($id('ops-window').value, 10);
     const reason  = $id('ops-reason').value.trim();
     const res_el  = $id('ops-result');
     const opsBtn  = $id('ops-investigate-btn');
     if (!opsKey) { res_el.innerHTML = '<p style="color:#f87171;">Ops Key를 입력해주세요.</p>'; return; }
+    persistOpsKey();
     opsBtn.disabled = true; opsBtn.textContent = '⏳ 조사 중...';
     res_el.innerHTML = '';
     try {
@@ -8577,6 +8638,7 @@
           ${errors.length  ? `<div style="margin-top:.6rem;color:var(--color-error,#dc2626);font-size:.78rem;">주요 에러: ${errors.map(e => e.code||e).join(', ')}</div>` : ''}
           ${samples.length ? `<div style="margin-top:.4rem;color:var(--muted);font-size:.73rem;">요청 ID 샘플: ${samples.slice(0,3).join(', ')}</div>` : ''}
         </div>`;
+      window.loadOpsPostDeployReports?.();
     } catch (e) {
       res_el.innerHTML = `<p style="color:#f87171;">❌ ${e.message}</p>`;
     } finally {
@@ -13828,10 +13890,15 @@
   /* ── Load all dashboard data ──────────────────────────────────── */
   /* ── User dashboard summary ──────────────────────────────────── */
   async function loadUserDashboard() {
+    const authHeaders = getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      renderUserDashboard([], null);
+      return;
+    }
     try {
       const [historyRes, billingRes] = await Promise.all([
-        fetch('/history?limit=50', { headers: getAuthHeaders() }),
-        fetch('/billing/status', { headers: getAuthHeaders() }),
+        fetch('/history?limit=50', { headers: authHeaders }),
+        fetch('/billing/status', { headers: authHeaders }),
       ]);
       const history = historyRes.ok ? await historyRes.json() : { history: [] };
       const billing = billingRes.ok ? await billingRes.json() : null;
@@ -14432,6 +14499,8 @@
     btn.textContent = '✓ 복사됨';
     setTimeout(() => { btn.textContent = '복사'; }, 2000);
   }
+
+  window.loadLocalLLMStatus = loadLocalLLMStatus;
 
   /* ════════════════════════════════════════════════════════════════
      ✍️ 스타일 관리
@@ -18265,10 +18334,157 @@ async function exportAuditLogs() {
   } catch(e) { showNotification('CSV 내보내기 실패', 'error'); }
 }
 
+function getPostDeployStatusMeta(status) {
+  switch (String(status || '').toLowerCase()) {
+    case 'passed':
+      return { label: '정상', color: '#22c55e', bg: 'rgba(34,197,94,.18)' };
+    case 'failed':
+      return { label: '실패', color: '#f87171', bg: 'rgba(248,113,113,.16)' };
+    default:
+      return { label: status || 'unknown', color: '#cbd5e1', bg: 'rgba(148,163,184,.16)' };
+  }
+}
+
+function formatOpsReportTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return escapeHtml(String(value));
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+function renderOpsPostDeployReports(data) {
+  const container = $id('ops-post-deploy-report');
+  if (!container) return;
+  const reports = Array.isArray(data?.reports) ? data.reports : [];
+  const latest = data?.latest_details || null;
+  const latestStatus = getPostDeployStatusMeta(latest?.status || reports[0]?.status || 'unknown');
+  const latestError = latest?.error ? `<div style="margin-top:.55rem;color:#fecaca;font-size:.78rem;">${escapeHtml(latest.error)}</div>` : '';
+  const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+      <div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+          <strong style="font-size:.92rem;color:#fff;">Latest report</strong>
+          <span style="display:inline-flex;align-items:center;padding:.22rem .55rem;border-radius:999px;background:${latestStatus.bg};color:${latestStatus.color};font-size:.74rem;font-weight:800;">
+            ${escapeHtml(latestStatus.label)}
+          </span>
+          <code style="font-size:.72rem;color:#ddd6fe;background:rgba(255,255,255,.08);padding:.2rem .45rem;border-radius:999px;">${escapeHtml(data?.latest_report || '-')}</code>
+        </div>
+        <div style="margin-top:.45rem;color:#cbd5e1;font-size:.78rem;">
+          업데이트 ${formatOpsReportTime(data?.updated_at)} · 기준 URL ${escapeHtml(latest?.base_url || reports[0]?.base_url || '-')}
+        </div>
+        ${latestError}
+      </div>
+      <div style="min-width:180px;background:rgba(255,255,255,.06);border:1px solid rgba(196,181,253,.15);border-radius:12px;padding:.8rem .95rem;">
+        <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;">최근 점검 범위</div>
+        <div style="margin-top:.35rem;color:#fff;font-size:.84rem;font-weight:700;">${reports.length}건 표시</div>
+        <div style="margin-top:.2rem;color:#cbd5e1;font-size:.76rem;">latest detail ${latest ? '포함' : '없음'}</div>
+      </div>
+    </div>
+    <div style="display:grid;gap:.6rem;">
+      ${reports.length ? reports.map((report) => {
+        const meta = getPostDeployStatusMeta(report.status);
+        return `
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">
+            <div>
+              <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+                <code style="font-size:.72rem;color:#ddd6fe;">${escapeHtml(report.file || '-')}</code>
+                <span style="display:inline-flex;align-items:center;padding:.18rem .5rem;border-radius:999px;background:${meta.bg};color:${meta.color};font-size:.72rem;font-weight:800;">
+                  ${escapeHtml(meta.label)}
+                </span>
+              </div>
+              <div style="margin-top:.35rem;color:#cbd5e1;font-size:.78rem;">
+                ${formatOpsReportTime(report.finished_at)} · ${escapeHtml(report.base_url || '-')}
+              </div>
+            </div>
+            <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">
+              ${report.skip_smoke ? 'skip smoke' : 'smoke 포함'}
+            </div>
+          </div>
+        `;
+      }).join('') : `<p style="margin:0;color:#cbd5e1;font-size:.82rem;">표시할 배포 리포트가 없습니다.</p>`}
+    </div>
+    ${latestChecks.length ? `
+      <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid rgba(196,181,253,.12);">
+        <div style="color:#c4b5fd;font-size:.75rem;font-weight:700;margin-bottom:.55rem;">Latest checks</div>
+        <div style="display:grid;gap:.45rem;">
+          ${latestChecks.map((check) => {
+            const meta = getPostDeployStatusMeta(check.status);
+            const exitCode = Number.isInteger(check.exit_code) ? ` · exit ${check.exit_code}` : '';
+            return `
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;background:rgba(255,255,255,.05);border-radius:8px;padding:.55rem .7rem;">
+                <span style="color:#e5e7eb;font-size:.78rem;">${escapeHtml(check.name || 'unknown')}</span>
+                <span style="color:${meta.color};font-size:.74rem;font-weight:800;">
+                  ${escapeHtml(meta.label)}${exitCode}
+                </span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
+
+async function loadOpsPostDeployReports() {
+  const container = $id('ops-post-deploy-report');
+  const refreshBtn = $id('ops-post-deploy-refresh-btn');
+  if (!container) return;
+
+  const headers = getOpsAccessHeaders();
+  if (!headers.Authorization && !headers['X-DecisionDoc-Ops-Key']) {
+    container.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">Ops Key 또는 admin 로그인 세션이 있어야 배포 리포트를 조회할 수 있습니다.</p>';
+    return;
+  }
+
+  refreshBtn && (refreshBtn.disabled = true);
+  if (refreshBtn) refreshBtn.textContent = '불러오는 중...';
+  container.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">최신 배포 리포트를 불러오는 중...</p>';
+
+  try {
+    const limit = parseInt($id('ops-post-deploy-limit')?.value || '5', 10);
+    const params = new URLSearchParams({
+      limit: String(Number.isFinite(limit) ? limit : 5),
+      latest: 'true',
+    });
+    const res = await fetch(`/ops/post-deploy/reports?${params}`, { headers });
+
+    if (res.status === 401 || res.status === 403) {
+      container.innerHTML = '<p style="margin:0;color:#fca5a5;font-size:.82rem;">관리자 세션 또는 유효한 Ops Key가 필요합니다.</p>';
+      return;
+    }
+    if (res.status === 404) {
+      container.innerHTML = '<p style="margin:0;color:#fcd34d;font-size:.82rem;">서버에 저장된 post-deploy 리포트가 아직 없습니다.</p>';
+      return;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `오류 ${res.status}`);
+    }
+
+    const data = await res.json();
+    renderOpsPostDeployReports(data);
+  } catch (e) {
+    container.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.82rem;">배포 리포트 조회 실패: ${escapeHtml(e.message || '알 수 없는 오류')}</p>`;
+  } finally {
+    refreshBtn && (refreshBtn.disabled = false);
+    if (refreshBtn) refreshBtn.textContent = '새로고침';
+  }
+}
+
+window.loadOpsPostDeployReports = loadOpsPostDeployReports;
+
 // ── SSO Login Buttons ───────────────────────────────────────────────────────
 async function addSSOLoginButtons() {
+  if (!getAuthHeaders().Authorization) return;
   try {
-    const res = await fetch('/admin/sso/config');
+    const res = await fetch('/admin/sso/config', { headers: getAuthHeaders() });
     if (!res.ok) return;
     const cfg = await res.json();
     const provider = cfg.provider;
@@ -18325,6 +18541,13 @@ let _ssoConfig = null;
 let _ssoCurrentProvider = 'disabled';
 
 async function loadSSOConfig() {
+  if (!getAuthHeaders().Authorization) {
+    const container = $id('sso-form-container');
+    if (container) {
+      container.innerHTML = '<p class="sso-disabled-msg" style="color:#9ca3af;font-size:.85rem;">Admin 로그인 후 SSO 설정을 불러올 수 있습니다.</p>';
+    }
+    return;
+  }
   try {
     const res = await fetch('/admin/sso/config', { headers: getAuthHeaders() });
     if (!res.ok) return;
@@ -18337,6 +18560,8 @@ async function loadSSOConfig() {
     renderSSOForm(_ssoCurrentProvider);
   } catch(e) { console.error('loadSSOConfig:', e); }
 }
+
+window.loadSSOConfig = loadSSOConfig;
 
 function switchSSOProvider(provider) {
   _ssoCurrentProvider = provider;
@@ -18530,9 +18755,14 @@ async function saveGCloudConfig() {
 async function loadBillingStatus() {
   const panel = $id('billing-panel');
   if (!panel) return;
+  const authHeaders = getAuthHeaders();
+  if (!authHeaders.Authorization) {
+    panel.innerHTML = '<p style="color:rgba(255,255,255,.5);font-size:.85rem">Admin 로그인 후 요금제 정보를 확인할 수 있습니다.</p>';
+    return;
+  }
   try {
     const [statusRes, plansRes] = await Promise.all([
-      fetch('/billing/status', { headers: getAuthHeaders() }),
+      fetch('/billing/status', { headers: authHeaders }),
       fetch('/billing/plans'),
     ]);
     if (!statusRes.ok || !plansRes.ok) {
@@ -18546,6 +18776,8 @@ async function loadBillingStatus() {
     if (panel) panel.innerHTML = '<p style="color:rgba(255,255,255,.5);font-size:.85rem">요금제 정보 로드 실패</p>';
   }
 }
+
+window.loadBillingStatus = loadBillingStatus;
 
 function renderBillingUI(status, plans) {
   const panel = $id('billing-panel');
