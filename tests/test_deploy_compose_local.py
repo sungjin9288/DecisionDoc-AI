@@ -104,7 +104,40 @@ def test_deploy_compose_local_can_skip_build_and_run_post_check(tmp_path: Path, 
         "--base-url",
         "https://dawool.decisiondoc.kr",
         "--skip-smoke",
+        "--report-file",
+        str(deployer.DEFAULT_POST_CHECK_REPORT),
     ]
+
+
+def test_deploy_compose_local_allows_custom_report_path(tmp_path: Path, monkeypatch) -> None:
+    deployer = _load_script_module("decisiondoc_deploy_compose_local_report", "scripts/deploy_compose_local.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("DECISIONDOC_ENV=prod\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    custom_report = tmp_path / "reports" / "custom-post-deploy.json"
+
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def _fake_run(command, cwd=None, env=None, check=False):
+        _ = cwd, check
+        calls.append((list(command), dict(env or {})))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(deployer.subprocess, "run", _fake_run)
+
+    result = deployer.deploy_compose_local(
+        env_file=env_file,
+        compose_file=compose_file,
+        image="decisiondoc-custom-report-local",
+        build_context=tmp_path,
+        skip_build=True,
+        post_check=True,
+        report_file=custom_report,
+    )
+
+    assert result == 0
+    assert calls[1][0][-2:] == ["--report-file", str(custom_report)]
 
 
 def test_deploy_compose_local_requires_existing_env_file(tmp_path: Path) -> None:

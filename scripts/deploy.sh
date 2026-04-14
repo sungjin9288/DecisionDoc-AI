@@ -7,6 +7,7 @@ ENVIRONMENT=${1:-staging}
 IMAGE_INPUT=${2:-latest}
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
+POST_DEPLOY_REPORT="./reports/post-deploy.json"
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     ENV_FILE=".env.prod"
@@ -52,7 +53,8 @@ DOCKER_IMAGE="$IMAGE_REF" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FIL
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     echo "Running post-deploy verification..."
-    python3 scripts/post_deploy_check.py --env-file "$ENV_FILE"
+    python3 scripts/post_deploy_check.py --env-file "$ENV_FILE" --report-file "$POST_DEPLOY_REPORT"
+    echo "Post-deploy report saved: $POST_DEPLOY_REPORT"
 else
     echo "Running staging health check..."
     curl -sf http://localhost:8000/health > /dev/null

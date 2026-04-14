@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_IMAGE = "decisiondoc-local"
+DEFAULT_POST_CHECK_REPORT = REPO_ROOT / "reports" / "post-deploy.json"
 
 
 def _run_command(
@@ -39,6 +40,7 @@ def deploy_compose_local(
     post_check: bool = False,
     base_url: str = "",
     skip_smoke: bool = False,
+    report_file: Path | None = DEFAULT_POST_CHECK_REPORT,
 ) -> int:
     resolved_env_file = Path(env_file).expanduser()
     resolved_compose_file = Path(compose_file).expanduser()
@@ -93,8 +95,13 @@ def deploy_compose_local(
             command.extend(["--base-url", base_url.strip()])
         if skip_smoke:
             command.append("--skip-smoke")
+        if report_file is not None:
+            command.extend(["--report-file", str(Path(report_file).expanduser())])
         _run_command(command, label="post deploy check")
-        print("PASS post-deploy check", flush=True)
+        if report_file is not None:
+            print(f"PASS post-deploy check -> {Path(report_file).expanduser()}", flush=True)
+        else:
+            print("PASS post-deploy check", flush=True)
 
     return 0
 
@@ -143,6 +150,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="When used with --post-check, skip the deployed smoke runner.",
     )
+    parser.add_argument(
+        "--report-file",
+        default=str(DEFAULT_POST_CHECK_REPORT),
+        help="When used with --post-check, path to write the post-deploy JSON report. Default: reports/post-deploy.json",
+    )
     return parser
 
 
@@ -157,6 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         post_check=bool(args.post_check),
         base_url=args.base_url,
         skip_smoke=bool(args.skip_smoke),
+        report_file=Path(args.report_file).expanduser() if args.report_file else None,
     )
 
 

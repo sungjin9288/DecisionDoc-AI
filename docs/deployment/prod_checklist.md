@@ -54,7 +54,8 @@ python3 scripts/check_prod_env.py \
 # 3. local build rollout
 python3 scripts/deploy_compose_local.py \
   --env-file .env.prod \
-  --image decisiondoc-admin-local
+  --image decisiondoc-admin-local \
+  --post-check
 
 # 4. post-deploy check
 python3 scripts/post_deploy_check.py --env-file .env.prod
@@ -64,6 +65,8 @@ python3 scripts/post_deploy_check.py \
   --env-file .env.prod \
   --report-file ./reports/post-deploy.json
 ```
+
+`scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy.json` 경로에 동일한 report를 남깁니다.
 
 ## 5. Docker Compose / HA
 
