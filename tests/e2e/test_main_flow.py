@@ -220,6 +220,48 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "https://admin.decisiondoc.kr" in panel_text
     assert "JSON 보기" in panel_text
     assert "JSON 다운로드" in panel_text
+    assert pg.locator("#ops-post-deploy-failures-only").count() == 1
+    assert pg.locator("#ops-post-deploy-search").count() == 1
+
+    pg.fill("#ops-post-deploy-search", "031000")
+    pg.wait_for_function(
+        """() => {
+          const report = document.querySelector('#ops-post-deploy-report');
+          const detail = document.querySelector('#ops-post-deploy-detail');
+          const buttons = document.querySelectorAll('[data-report-detail-btn]');
+          return report?.innerText.includes('1 / 2건')
+            && buttons.length === 1
+            && detail?.innerText.includes('post-deploy-20260414T031000Z.json');
+        }"""
+    )
+    assert pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').count() == 1
+
+    pg.click("#ops-post-deploy-clear-filters-btn")
+    pg.wait_for_function(
+        "() => document.querySelectorAll('[data-report-detail-btn]').length === 2"
+    )
+
+    pg.check("#ops-post-deploy-failures-only")
+    pg.wait_for_function(
+        """() => {
+          const report = document.querySelector('#ops-post-deploy-report');
+          const detail = document.querySelector('#ops-post-deploy-detail');
+          const buttons = document.querySelectorAll('[data-report-detail-btn]');
+          return report?.innerText.includes('1 / 2건')
+            && report?.innerText.includes('필터 적용됨')
+            && buttons.length === 1
+            && detail?.innerText.includes('post-deploy-20260414T031000Z.json');
+        }"""
+    )
+
+    pg.click("#ops-post-deploy-clear-filters-btn")
+    pg.wait_for_function(
+        """() => {
+          const report = document.querySelector('#ops-post-deploy-report');
+          return document.querySelectorAll('[data-report-detail-btn]').length === 2
+            && !report?.innerText.includes('필터 적용됨');
+        }"""
+    )
 
     pg.get_by_role("button", name="JSON 보기").click()
     pg.wait_for_selector("#ops-post-deploy-raw pre", timeout=5000)
