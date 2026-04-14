@@ -176,6 +176,51 @@ def test_login_screen_bootstrap_has_no_sso_reference_error(playwright, live_serv
     browser.close()
 
 
+def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_server):
+    console_messages: list[str] = []
+    browser = playwright.chromium.launch()
+    ctx = browser.new_context()
+    ctx.add_init_script("localStorage.setItem('onboarding_done', '1');")
+    pg = ctx.new_page()
+    pg.on("console", lambda msg: console_messages.append(msg.text))
+
+    pg.goto(f"{live_server['base_url']}?ops=1")
+    pg.wait_for_selector("#ops-panel", timeout=10000)
+    pg.wait_for_selector("#ops-post-deploy-report", timeout=10000)
+
+    assert "Ops Key 또는 admin 로그인 세션이 있어야 배포 리포트를 조회할 수 있습니다." in pg.locator(
+        "#ops-post-deploy-report"
+    ).inner_text()
+    assert "Admin 로그인 후 SSO 설정을 불러올 수 있습니다." in pg.locator(
+        "#sso-form-container"
+    ).inner_text()
+    assert "Admin 로그인 후 요금제 정보를 확인할 수 있습니다." in pg.locator(
+        "#billing-panel"
+    ).inner_text()
+
+    pg.fill("#ops-key-input", live_server["ops_key"])
+    pg.evaluate(
+        """async () => {
+          localStorage.setItem('dd_ops_key', document.querySelector('#ops-key-input')?.value || '');
+          await window.loadOpsPostDeployReports();
+        }"""
+    )
+
+    pg.wait_for_function(
+        "() => document.querySelector('#ops-post-deploy-report')?.innerText.includes('Latest report')"
+    )
+    panel_text = pg.locator("#ops-post-deploy-report").inner_text()
+    assert "post-deploy-20260414T041000Z.json" in panel_text
+    assert "post-deploy-20260414T031000Z.json" in panel_text
+    assert "health" in panel_text
+    assert "smoke" in panel_text
+    assert "https://admin.decisiondoc.kr" in panel_text
+    assert not console_messages
+
+    ctx.close()
+    browser.close()
+
+
 def test_bundle_selection_enables_generate_button(page):
     """Clicking a bundle card must enable the generate button."""
     page.wait_for_selector(".bundle-card", timeout=5000)

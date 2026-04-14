@@ -48,10 +48,56 @@ def _bootstrap_e2e_user(base_url: str) -> dict[str, str]:
     return {"username": username, "password": password}
 
 
+def _seed_post_deploy_reports(report_dir: str) -> None:
+    """Create a small post-deploy history fixture for browser ops tests."""
+    report_path = os.path.abspath(report_dir)
+    os.makedirs(report_path, exist_ok=True)
+    latest_payload = {
+        "status": "passed",
+        "base_url": "https://admin.decisiondoc.kr",
+        "started_at": "2026-04-14T04:09:00+00:00",
+        "finished_at": "2026-04-14T04:10:00+00:00",
+        "skip_smoke": False,
+        "checks": [
+            {"name": "health", "status": "passed"},
+            {"name": "smoke", "status": "passed", "exit_code": 0},
+        ],
+    }
+    index_payload = {
+        "updated_at": "2026-04-14T04:10:00+00:00",
+        "latest": "latest.json",
+        "latest_report": "post-deploy-20260414T041000Z.json",
+        "reports": [
+            {
+                "file": "post-deploy-20260414T041000Z.json",
+                "status": "passed",
+                "base_url": "https://admin.decisiondoc.kr",
+                "started_at": "2026-04-14T04:09:00+00:00",
+                "finished_at": "2026-04-14T04:10:00+00:00",
+                "skip_smoke": False,
+            },
+            {
+                "file": "post-deploy-20260414T031000Z.json",
+                "status": "failed",
+                "base_url": "https://admin.decisiondoc.kr",
+                "started_at": "2026-04-14T03:09:00+00:00",
+                "finished_at": "2026-04-14T03:10:00+00:00",
+                "skip_smoke": True,
+            },
+        ],
+    }
+    with open(os.path.join(report_path, "latest.json"), "w", encoding="utf-8") as handle:
+        json.dump(latest_payload, handle)
+    with open(os.path.join(report_path, "index.json"), "w", encoding="utf-8") as handle:
+        json.dump(index_payload, handle)
+
+
 @pytest.fixture(scope="session")
 def live_server(tmp_path_factory):
     """Session-scoped fixture: starts uvicorn on a free localhost port with mock provider."""
     tmp = tmp_path_factory.mktemp("e2e_data")
+    report_dir = tmp / "reports" / "post-deploy"
+    _seed_post_deploy_reports(str(report_dir))
     os.environ.update(
         {
             "DECISIONDOC_PROVIDER": "mock",
@@ -59,6 +105,8 @@ def live_server(tmp_path_factory):
             "DECISIONDOC_ENV": "dev",
             "DECISIONDOC_MAINTENANCE": "0",
             "DECISIONDOC_API_KEYS": "e2e-global-api-key",
+            "DECISIONDOC_OPS_KEY": "ops-secret",
+            "DECISIONDOC_POST_DEPLOY_REPORT_DIR": str(report_dir),
             "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED": "1",
         }
     )
@@ -90,7 +138,7 @@ def live_server(tmp_path_factory):
     base_url = f"http://127.0.0.1:{port}"
     auth = _bootstrap_e2e_user(base_url)
 
-    yield {"base_url": base_url, "auth": auth}
+    yield {"base_url": base_url, "auth": auth, "ops_key": "ops-secret"}
 
     server.should_exit = True
     thread.join(timeout=5)
