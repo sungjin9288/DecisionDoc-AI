@@ -3,35 +3,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "post-deploy"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.ops.report_history import (
+    build_post_deploy_reports_payload,
+    get_default_post_deploy_report_dir,
+    load_report_json,
+)
+
+
+DEFAULT_REPORT_DIR = get_default_post_deploy_report_dir()
 DEFAULT_LIMIT = 5
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    resolved = Path(path).expanduser()
-    if not resolved.exists():
-        raise SystemExit(f"Report file not found: {resolved}")
-    try:
-        payload = json.loads(resolved.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"Invalid JSON report: {resolved}") from exc
-    if not isinstance(payload, dict):
-        raise SystemExit(f"Unexpected JSON payload: {resolved}")
-    return payload
-
-
-def _resolve_index(report_dir: Path) -> tuple[dict[str, Any], Path]:
-    resolved_dir = Path(report_dir).expanduser()
-    index_path = resolved_dir / "index.json"
-    if not index_path.exists():
-        raise SystemExit(f"Report index not found: {index_path}")
-    payload = _load_json(index_path)
-    return payload, index_path
 
 
 def _print_entry(entry: dict[str, Any]) -> None:
@@ -45,7 +33,7 @@ def _print_entry(entry: dict[str, Any]) -> None:
 
 def _print_latest_details(report_dir: Path) -> None:
     latest_path = Path(report_dir).expanduser() / "latest.json"
-    payload = _load_json(latest_path)
+    payload = load_report_json(latest_path)
     print("", flush=True)
     print("Latest report details", flush=True)
     print(f"- status={payload.get('status', 'unknown')}", flush=True)
@@ -66,23 +54,10 @@ def _print_latest_details(report_dir: Path) -> None:
 
 
 def _build_json_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
-    index_payload, index_path = _resolve_index(report_dir)
-    reports = list(index_payload.get("reports", []))
-    if not reports:
-        raise SystemExit(f"No reports listed in index: {index_path}")
-
-    normalized_limit = max(1, int(limit))
-    payload: dict[str, Any] = {
-        "report_dir": str(Path(report_dir).expanduser()),
-        "index_file": str(index_path),
-        "latest_report": index_payload.get("latest_report", "-"),
-        "updated_at": index_payload.get("updated_at", "-"),
-        "reports": [entry for entry in reports[:normalized_limit] if isinstance(entry, dict)],
-    }
-    if latest:
-        latest_path = Path(report_dir).expanduser() / "latest.json"
-        payload["latest_details"] = _load_json(latest_path)
-    return payload
+    try:
+        return build_post_deploy_reports_payload(report_dir=report_dir, limit=limit, latest=latest)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def show_post_deploy_reports(*, report_dir: Path, limit: int, latest: bool, json_output: bool) -> int:

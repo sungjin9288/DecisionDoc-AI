@@ -318,6 +318,15 @@ cd /opt/decisiondoc
 python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest --json
 ```
 
+SSH 없이 브라우저나 API client에서 보려면 아래 endpoint를 사용합니다.
+
+```text
+GET https://admin.decisiondoc.kr/ops/post-deploy/reports?limit=5&latest=true
+```
+
+- 인증: `admin JWT` 또는 `X-DecisionDoc-Ops-Key`
+- 용도: 최근 post-deploy history와 latest report detail을 JSON으로 바로 확인
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`

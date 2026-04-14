@@ -41,12 +41,12 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
-from app.dependencies import require_auth as _require_auth
+from app.dependencies import require_admin as _require_admin, require_auth as _require_auth
 from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
 from app.observability.logging import log_event
 from app.observability.timing import Timer
@@ -62,6 +62,7 @@ from app.schemas import (
     GovDocOptions,
     OpsInvestigateRequest,
     OpsInvestigateResponse,
+    OpsPostDeployReportsResponse,
     SectionRewriteRequest,
 )
 from app.services.attachment_service import (
@@ -1781,6 +1782,26 @@ def investigate_ops(payload: OpsInvestigateRequest, request: Request) -> OpsInve
     )
     request.state.maintenance = is_maintenance_mode()
     return OpsInvestigateResponse(**result)
+
+
+@router.get(
+    "/ops/post-deploy/reports",
+    response_model=OpsPostDeployReportsResponse,
+)
+def get_ops_post_deploy_reports(
+    request: Request,
+    limit: int = Query(default=5, ge=1, le=20),
+    latest: bool = Query(default=False),
+) -> OpsPostDeployReportsResponse:
+    _require_admin(request)
+    ops_service = request.app.state.ops_service
+    try:
+        result = ops_service.read_post_deploy_reports(limit=limit, latest=latest)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Post-deploy report history not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Post-deploy report history is invalid.") from exc
+    return OpsPostDeployReportsResponse(**result)
 
 
 @router.post(

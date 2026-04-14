@@ -689,6 +689,40 @@ class OpsInvestigateResponse(BaseModel):
     report_json_key: str | None = None  # deprecated: identical to report_s3_key
 
 
+class PostDeployReportSummary(BaseModel):
+    file: str
+    status: str
+    base_url: str
+    started_at: str
+    finished_at: str
+    skip_smoke: bool = False
+
+
+class PostDeployReportCheck(BaseModel):
+    name: str
+    status: str
+    exit_code: int | None = None
+
+
+class PostDeployLatestDetailsResponse(BaseModel):
+    status: str
+    base_url: str = "-"
+    started_at: str = "-"
+    finished_at: str = "-"
+    skip_smoke: bool = False
+    error: str | None = None
+    checks: list[PostDeployReportCheck] = Field(default_factory=list)
+
+
+class OpsPostDeployReportsResponse(BaseModel):
+    report_dir: str
+    index_file: str
+    latest_report: str
+    updated_at: str
+    reports: list[PostDeployReportSummary]
+    latest_details: PostDeployLatestDetailsResponse | None = None
+
+
 class CheckoutRequest(BaseModel):
     plan_id: str
 

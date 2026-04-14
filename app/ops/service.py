@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from app.config import is_enabled
 from app.observability.logging import log_event
+from app.ops.report_history import build_post_deploy_reports_payload, get_default_post_deploy_report_dir
 from app.ops.statuspage import StatuspageClient
 
 logger = logging.getLogger("decisiondoc.ops")
@@ -106,6 +107,18 @@ class OpsInvestigationService:
         self._cw_log_calls = 0
         self._log_events_returned = 0
         self._s3_put_count = 0
+
+    def read_post_deploy_reports(
+        self,
+        *,
+        limit: int,
+        latest: bool,
+    ) -> dict[str, Any]:
+        return build_post_deploy_reports_payload(
+            report_dir=get_default_post_deploy_report_dir(),
+            limit=limit,
+            latest=latest,
+        )
 
     def investigate(
         self,
