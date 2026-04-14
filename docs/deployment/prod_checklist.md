@@ -64,9 +64,14 @@ python3 scripts/post_deploy_check.py --env-file .env.prod
 python3 scripts/post_deploy_check.py \
   --env-file .env.prod \
   --report-file ./reports/post-deploy.json
+
+# 4-2. history + latest
+python3 scripts/post_deploy_check.py \
+  --env-file .env.prod \
+  --report-dir ./reports/post-deploy
 ```
 
-`scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy.json` 경로에 동일한 report를 남깁니다.
+`scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy/` 아래 timestamped report와 `latest.json` 을 함께 남깁니다.
 
 ## 5. Docker Compose / HA
 

@@ -291,6 +291,13 @@ cd /opt/decisiondoc
 python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json
 ```
 
+히스토리를 같이 보관하려면 디렉터리 기준으로 실행합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy
+```
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`

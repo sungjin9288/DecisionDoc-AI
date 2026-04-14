@@ -17,6 +17,7 @@ DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_APP_SERVICE = "app"
 DEFAULT_NGINX_SERVICE = "nginx"
+DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "post-deploy"
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -85,6 +86,35 @@ def _write_json_report(report_file: Path, payload: dict[str, Any]) -> None:
     os.replace(temp_path, resolved)
 
 
+def _resolve_report_targets(
+    *,
+    report_file: Path | None,
+    report_dir: Path | None,
+    started_at: datetime,
+) -> tuple[Path | None, Path | None]:
+    if report_file is not None and report_dir is not None:
+        raise SystemExit("Use either --report-file or --report-dir, not both.")
+    if report_dir is not None:
+        resolved_dir = Path(report_dir).expanduser()
+        timestamp = started_at.strftime("%Y%m%dT%H%M%SZ")
+        return resolved_dir / f"post-deploy-{timestamp}.json", resolved_dir / "latest.json"
+    if report_file is not None:
+        return Path(report_file).expanduser(), None
+    return None, None
+
+
+def _persist_reports(
+    *,
+    payload: dict[str, Any],
+    report_file: Path | None,
+    latest_file: Path | None,
+) -> None:
+    if report_file is not None:
+        _write_json_report(report_file, payload)
+    if latest_file is not None:
+        _write_json_report(latest_file, payload)
+
+
 def _fetch_health_json(base_url: str, *, timeout: float = 10.0) -> dict[str, Any]:
     health_url = f"{base_url.rstrip('/')}/health"
     try:
@@ -108,6 +138,7 @@ def run_post_deploy_check(
     base_url: str = "",
     skip_smoke: bool = False,
     report_file: Path | None = None,
+    report_dir: Path | None = None,
 ) -> int:
     resolved_env_file = Path(env_file).expanduser()
     resolved_compose_file = Path(compose_file).expanduser()
@@ -116,6 +147,12 @@ def run_post_deploy_check(
 
     env_values = _load_env_file(resolved_env_file)
     resolved_base_url = _resolve_base_url(base_url, env_values)
+    started_at = datetime.now(timezone.utc)
+    resolved_report_file, latest_report_file = _resolve_report_targets(
+        report_file=report_file,
+        report_dir=report_dir,
+        started_at=started_at,
+    )
     report: dict[str, Any] = {
         "status": "passed",
         "base_url": resolved_base_url,
@@ -124,7 +161,7 @@ def run_post_deploy_check(
         "app_service": app_service,
         "nginx_service": nginx_service,
         "skip_smoke": bool(skip_smoke),
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": started_at.isoformat(),
         "checks": [],
     }
 
@@ -192,9 +229,15 @@ def run_post_deploy_check(
             print("PASS deployed smoke", flush=True)
 
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
-        if report_file is not None:
-            _write_json_report(report_file, report)
-            print(f"PASS report written -> {Path(report_file).expanduser()}", flush=True)
+        _persist_reports(
+            payload=report,
+            report_file=resolved_report_file,
+            latest_file=latest_report_file,
+        )
+        if resolved_report_file is not None:
+            print(f"PASS report written -> {resolved_report_file}", flush=True)
+        if latest_report_file is not None:
+            print(f"PASS latest report updated -> {latest_report_file}", flush=True)
 
         print("PASS post-deploy check completed.", flush=True)
         return 0
@@ -202,8 +245,11 @@ def run_post_deploy_check(
         report["status"] = "failed"
         report["error"] = str(exc)
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
-        if report_file is not None:
-            _write_json_report(report_file, report)
+        _persist_reports(
+            payload=report,
+            report_file=resolved_report_file,
+            latest_file=latest_report_file,
+        )
         raise
 
 
@@ -246,6 +292,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional path to write a JSON summary report for the post-deploy check.",
     )
+    parser.add_argument(
+        "--report-dir",
+        default="",
+        help="Optional directory to store a timestamped report plus latest.json for the post-deploy check.",
+    )
     return parser
 
 
@@ -259,6 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         base_url=args.base_url,
         skip_smoke=bool(args.skip_smoke),
         report_file=Path(args.report_file).expanduser() if args.report_file else None,
+        report_dir=Path(args.report_dir).expanduser() if args.report_dir else None,
     )
 
 

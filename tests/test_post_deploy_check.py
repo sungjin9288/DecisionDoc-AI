@@ -160,6 +160,53 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
     assert payload["checks"][-1]["name"] == "deployed smoke"
 
 
+def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monkeypatch, capsys) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_report_dir", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_dir = tmp_path / "reports" / "post-deploy"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse('{"status":"ok","provider":"openai"}')
+
+    def _fake_run(command, cwd=None, check=False):
+        _ = cwd, check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    result = checker.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--compose-file",
+            str(compose_file),
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    history_reports = sorted(report_dir.glob("post-deploy-*.json"))
+    latest_report = report_dir / "latest.json"
+    assert result == 0
+    assert "PASS report written" in captured
+    assert "PASS latest report updated" in captured
+    assert len(history_reports) == 1
+    assert latest_report.exists()
+    history_payload = json.loads(history_reports[0].read_text(encoding="utf-8"))
+    latest_payload = json.loads(latest_report.read_text(encoding="utf-8"))
+    assert history_payload["status"] == "passed"
+    assert latest_payload["status"] == "passed"
+    assert history_payload["checks"][-1]["name"] == "deployed smoke"
+    assert latest_payload["checks"][-1]["name"] == "deployed smoke"
+
+
 def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script_module("decisiondoc_post_deploy_check_report_fail", "scripts/post_deploy_check.py")
     env_file = tmp_path / ".env.prod"
@@ -202,6 +249,30 @@ def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) ->
     assert payload["error"] == "docker compose ps failed with exit code 17"
     assert payload["checks"][-1]["name"] == "docker compose ps"
     assert payload["checks"][-1]["status"] == "failed"
+
+
+def test_post_deploy_check_rejects_report_file_and_report_dir_together(tmp_path: Path) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_report_conflict", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_dir = tmp_path / "reports" / "post-deploy"
+    report_file = tmp_path / "reports" / "post-deploy.json"
+
+    try:
+        checker.run_post_deploy_check(
+            env_file=env_file,
+            compose_file=compose_file,
+            app_service="app",
+            nginx_service="nginx",
+            report_file=report_file,
+            report_dir=report_dir,
+        )
+    except SystemExit as exc:
+        assert "either --report-file or --report-dir" in str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for conflicting report targets")
 
 
 def test_post_deploy_check_skips_smoke_when_requested(tmp_path: Path, monkeypatch, capsys) -> None:

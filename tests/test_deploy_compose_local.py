@@ -104,8 +104,8 @@ def test_deploy_compose_local_can_skip_build_and_run_post_check(tmp_path: Path, 
         "--base-url",
         "https://dawool.decisiondoc.kr",
         "--skip-smoke",
-        "--report-file",
-        str(deployer.DEFAULT_POST_CHECK_REPORT),
+        "--report-dir",
+        str(deployer.DEFAULT_POST_CHECK_REPORT_DIR),
     ]
 
 
