@@ -65,25 +65,43 @@ def _print_latest_details(report_dir: Path) -> None:
         print(f"- [{status}] {name}{suffix}", flush=True)
 
 
-def show_post_deploy_reports(*, report_dir: Path, limit: int, latest: bool) -> int:
+def _build_json_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
     index_payload, index_path = _resolve_index(report_dir)
     reports = list(index_payload.get("reports", []))
     if not reports:
         raise SystemExit(f"No reports listed in index: {index_path}")
 
     normalized_limit = max(1, int(limit))
-    latest_report = index_payload.get("latest_report", "-")
-    updated_at = index_payload.get("updated_at", "-")
+    payload: dict[str, Any] = {
+        "report_dir": str(Path(report_dir).expanduser()),
+        "index_file": str(index_path),
+        "latest_report": index_payload.get("latest_report", "-"),
+        "updated_at": index_payload.get("updated_at", "-"),
+        "reports": [entry for entry in reports[:normalized_limit] if isinstance(entry, dict)],
+    }
+    if latest:
+        latest_path = Path(report_dir).expanduser() / "latest.json"
+        payload["latest_details"] = _load_json(latest_path)
+    return payload
+
+
+def show_post_deploy_reports(*, report_dir: Path, limit: int, latest: bool, json_output: bool) -> int:
+    payload = _build_json_payload(report_dir=report_dir, limit=limit, latest=latest)
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
+        return 0
+
+    latest_report = payload["latest_report"]
+    updated_at = payload["updated_at"]
 
     print(f"Report directory: {Path(report_dir).expanduser()}", flush=True)
-    print(f"Index file: {index_path}", flush=True)
+    print(f"Index file: {payload['index_file']}", flush=True)
     print(f"Latest report: {latest_report}", flush=True)
     print(f"Updated at: {updated_at}", flush=True)
     print("", flush=True)
-    print(f"Recent reports (limit={normalized_limit})", flush=True)
-    for entry in reports[:normalized_limit]:
-        if isinstance(entry, dict):
-            _print_entry(entry)
+    print(f"Recent reports (limit={max(1, int(limit))})", flush=True)
+    for entry in payload["reports"]:
+        _print_entry(entry)
 
     if latest:
         _print_latest_details(report_dir)
@@ -111,6 +129,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also print detailed checks from latest.json.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a machine-readable JSON payload instead of human-readable text.",
+    )
     return parser
 
 
@@ -120,6 +143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report_dir=Path(args.report_dir),
         limit=int(args.limit),
         latest=bool(args.latest),
+        json_output=bool(args.json),
     )
 
 

@@ -84,6 +84,7 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - post-deploy latest pointer: `./reports/post-deploy/latest.json`
 - post-deploy index: `./reports/post-deploy/index.json`
 - post-deploy summary viewer: `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest`
+- post-deploy JSON viewer: `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest --json`
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
 
 여러 장소로 분리 운영할 때는 [Multi-site 운영 가이드](multi_site_operations.md)를 확인하세요.

@@ -311,6 +311,13 @@ cd /opt/decisiondoc
 python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest
 ```
 
+자동화 파서나 외부 스크립트에서 읽어야 하면 JSON 모드로 실행합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest --json
+```
+
 개별 확인이 필요하면 아래 4개를 순서대로 봅니다.
 
 1. `https://admin.decisiondoc.kr/health`
