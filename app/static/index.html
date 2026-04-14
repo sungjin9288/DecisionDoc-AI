@@ -18432,6 +18432,13 @@ function formatOpsReportJson(value) {
   }
 }
 
+function truncateOpsReportError(value, maxLen = 140) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 3).trim()}...`;
+}
+
 function getOpsPostDeployFilterState() {
   return {
     query: String($id('ops-post-deploy-search')?.value || '').trim().toLowerCase(),
@@ -18676,6 +18683,7 @@ function renderOpsPostDeployReports(data) {
     <div style="display:grid;gap:.6rem;">
       ${reports.length ? reports.map((report) => {
         const meta = getPostDeployStatusMeta(report.status);
+        const errorSnippet = report.error ? truncateOpsReportError(report.error) : '';
         return `
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">
             <div>
@@ -18688,6 +18696,7 @@ function renderOpsPostDeployReports(data) {
               <div style="margin-top:.35rem;color:#cbd5e1;font-size:.78rem;">
                 ${formatOpsReportTime(report.finished_at)} · ${escapeHtml(report.base_url || '-')}
               </div>
+              ${errorSnippet ? `<div style="margin-top:.35rem;color:#fca5a5;font-size:.76rem;">오류: ${escapeHtml(errorSnippet)}</div>` : ''}
             </div>
             <div style="display:grid;justify-items:end;gap:.45rem;">
               <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">

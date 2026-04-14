@@ -253,6 +253,9 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
             && detail?.innerText.includes('post-deploy-20260414T031000Z.json');
         }"""
     )
+    assert "docker compose ps failed with exit code 17" in pg.locator(
+        "#ops-post-deploy-report"
+    ).inner_text()
 
     pg.click("#ops-post-deploy-clear-filters-btn")
     pg.wait_for_function(
