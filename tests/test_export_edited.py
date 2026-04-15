@@ -2,12 +2,14 @@
 
 The endpoint accepts pre-rendered (possibly user-edited) docs and converts them
 to the requested file format without re-running LLM generation.
-Supported formats: docx, pdf, excel, hwp.
+Supported formats: docx, pdf, excel, hwp, pptx.
 """
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from io import BytesIO
+from pptx import Presentation
 
 _ZIP_MAGIC  = b"PK\x03\x04"   # OOXML (.docx / .xlsx) and hwpx
 _PDF_MAGIC  = b"%PDF"
@@ -138,12 +140,68 @@ def test_export_edited_pdf_valid_bytes(tmp_path, monkeypatch):
     assert res.content[:4] == _PDF_MAGIC
 
 
+# ── /generate/export-edited — pptx ─────────────────────────────────────────
+
+def test_export_edited_pptx_returns_200(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "PPT 편집 문서",
+        "docs": _SAMPLE_DOCS,
+    })
+    assert res.status_code == 200
+
+
+def test_export_edited_pptx_content_type(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "PPT 편집 문서",
+        "docs": _SAMPLE_DOCS,
+    })
+    assert "presentationml.presentation" in res.headers["content-type"]
+
+
+def test_export_edited_pptx_valid_bytes(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "PPT 편집 문서",
+        "docs": _SAMPLE_DOCS,
+    })
+    assert res.content[:4] == _ZIP_MAGIC
+
+
+def test_export_edited_pptx_skips_ppt_guide_sections(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    docs = [
+        {
+            "doc_type": "proposal_kr",
+            "markdown": (
+                "# 사업 이해\n\n"
+                "## 제안 요약\n\n핵심 요약입니다.\n\n"
+                "## PPT 구성 가이드\n\n- 발표용 메모 1\n- 발표용 메모 2\n"
+            ),
+        }
+    ]
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "PPT 편집 문서",
+        "docs": docs,
+    })
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    titles = [slide.shapes.title.text for slide in prs.slides if getattr(slide.shapes, "title", None)]
+    assert "제안 요약" in titles
+    assert not any("PPT 구성 가이드" in title for title in titles)
+
+
 # ── edge-cases & validation ─────────────────────────────────────────────────
 
 def test_export_edited_unsupported_format_returns_400(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/export-edited", json={
-        "format": "pptx",
+        "format": "pages",
         "title": "테스트",
         "docs": _SAMPLE_DOCS,
     })

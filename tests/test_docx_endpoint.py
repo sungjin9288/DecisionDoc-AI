@@ -1,6 +1,8 @@
 """Tests for POST /generate/docx endpoint and build_docx() service."""
 from __future__ import annotations
 
+from io import BytesIO
+
 from fastapi.testclient import TestClient
 
 _DOCX_MAGIC = b"PK\x03\x04"  # OOXML/ZIP magic bytes — all .docx files start with this
@@ -53,6 +55,54 @@ def test_build_docx_multiple_docs():
     result = build_docx(docs, title="멀티 문서")
     assert result[:4] == _DOCX_MAGIC
     assert len(result) > 1000  # must be a real docx, not empty
+
+
+def test_build_docx_renders_markdown_tables():
+    """Markdown tables must become real Word tables in the exported document."""
+    from docx import Document
+
+    from app.services.docx_service import build_docx
+
+    markdown = (
+        "# 문서 제목\n\n"
+        "| 단계 | 기간 | 주요 산출물 | 마일스톤 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 착수 | 1개월 | 착수보고서 | M1 |\n"
+        "| 개발 | 4개월 | 개발 산출물 | M2 |\n"
+    )
+    result = build_docx([{"doc_type": "x", "markdown": markdown}], title="표 테스트")
+    doc = Document(BytesIO(result))
+
+    assert len(doc.tables) >= 1
+    target = next(
+        table for table in doc.tables
+        if table.cell(0, 0).text == "단계" and table.cell(0, 1).text == "기간"
+    )
+    assert target.cell(1, 0).text == "착수"
+
+
+def test_build_docx_adds_export_cover_and_section_intro():
+    """Non-government DOCX exports should include a cover page and per-doc section intro."""
+    from docx import Document
+
+    from app.services.docx_service import build_docx
+
+    result = build_docx(
+        [
+            {"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"},
+            {"doc_type": "tech_proposal", "markdown": "# 제목\n\n본문 B"},
+        ],
+        title="완성형 패키지 테스트",
+    )
+    doc = Document(BytesIO(result))
+    joined = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    assert "완성형 문서 패키지" in joined
+    assert "문서 구성" in joined
+    assert "핵심 검토 포인트" in joined
+    assert "사업 이해" in joined
+    assert "문서 01 / 02" in joined
+    assert "핵심 섹션:" in joined
 
 
 # ── Integration tests for /generate/docx ─────────────────────────────────────

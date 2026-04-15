@@ -1,7 +1,13 @@
 # 사업수행계획서: {{ title }}
 
+## 수행 총괄 요약
+{% if executive_summary %}{{ executive_summary }}
+{% endif %}
+
 ## 사업 개요
-{{ project_info }}
+{{ project_info | markdown_kv_table }}
+
+---
 
 ## 수행 범위
 {% if scope_of_work %}{% for item in scope_of_work %}
@@ -9,16 +15,30 @@
 {% endfor %}{% endif %}
 
 ## 산출물 목록
-{% if deliverables %}{% for deliverable in deliverables %}
-- {{ deliverable }}
-{% endfor %}{% endif %}
+{% set deliverables_table = deliverables | markdown_table(["산출물", "제출 기한", "형식", "검수 방법"]) %}
+{% if deliverables_table %}{{ deliverables_table }}
+{% endif %}
 
 ## 투입 인력
-{% if team_structure %}{% for member in team_structure %}
-- {{ member }}
-{% endfor %}{% endif %}
+{% set team_table = team_structure | markdown_table(["역할", "등급", "성명", "M/M", "책임 및 전문성"]) %}
+{% if team_table %}{{ team_table }}
+{% endif %}
 
 ## WBS
-{% if wbs_summary %}{% for phase in wbs_summary %}
-- {{ phase }}
-{% endfor %}{% endif %}
+{% set wbs_table = wbs_summary | markdown_table(["단계", "기간", "주요 산출물", "마일스톤"]) %}
+{% if wbs_table %}{{ wbs_table }}
+{% endif %}
+
+## 핵심 성공 지표
+{% set success_table = success_metrics | markdown_table(["관리 항목", "목표 기준", "확인 방식"]) %}
+{% if success_table %}{{ success_table }}
+{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+> 아래 구성안을 기준으로 수행계획 발표자료를 정리하세요.
+
+{{ slide_outline | slide_outline_table }}
+{% endif %}

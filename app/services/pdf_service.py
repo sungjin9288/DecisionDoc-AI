@@ -13,10 +13,13 @@ Government format (행안부 공문서 표준):
 from __future__ import annotations
 
 import html as _html
-import re
 from typing import Any
 
 from playwright.async_api import async_playwright
+
+from app.services.export_labels import humanize_doc_type
+from app.services.export_outline import summarize_export_docs
+from app.services.markdown_utils import parse_markdown_blocks, render_inline_html
 
 
 # ---------------------------------------------------------------------------
@@ -25,27 +28,49 @@ from playwright.async_api import async_playwright
 
 def _markdown_to_html(markdown: str) -> str:
     """Very lightweight markdown → HTML converter."""
-    lines = []
-    for line in markdown.splitlines():
-        s = line.strip()
-        if s.startswith("### "):
-            lines.append(f"<h3>{_html.escape(s[4:])}</h3>")
-        elif s.startswith("## "):
-            lines.append(f"<h2>{_html.escape(s[3:])}</h2>")
-        elif s.startswith("# "):
-            lines.append(f"<h1>{_html.escape(s[2:])}</h1>")
-        elif s.startswith(("- ", "* ")):
-            text = _html.escape(s[2:])
-            text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-            lines.append(f"<li>{text}</li>")
-        elif s == "---":
+    lines: list[str] = []
+    in_list = False
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            lines.append("</ul>")
+            in_list = False
+
+    for block in parse_markdown_blocks(markdown):
+        block_type = block["type"]
+        if block_type == "heading":
+            close_list()
+            level = min(int(block.get("level", 1)), 3)
+            lines.append(f"<h{level}>{_html.escape(block['text'])}</h{level}>")
+        elif block_type == "list_item":
+            if not in_list:
+                lines.append("<ul>")
+                in_list = True
+            lines.append(f"<li>{render_inline_html(block['text'])}</li>")
+        elif block_type == "table":
+            close_list()
+            header_cells = "".join(f"<th>{render_inline_html(cell)}</th>" for cell in block["headers"])
+            body_rows = []
+            for row in block["rows"]:
+                cells = "".join(f"<td>{render_inline_html(cell)}</td>" for cell in row)
+                body_rows.append(f"<tr>{cells}</tr>")
+            lines.append(
+                "<table class='markdown-table'>"
+                f"<thead><tr>{header_cells}</tr></thead>"
+                f"<tbody>{''.join(body_rows)}</tbody>"
+                "</table>"
+            )
+        elif block_type == "hr":
+            close_list()
             lines.append("<hr/>")
-        elif s == "":
+        elif block_type == "blank":
+            close_list()
             lines.append("<br/>")
         else:
-            text = _html.escape(s)
-            text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-            lines.append(f"<p>{text}</p>")
+            close_list()
+            lines.append(f"<p>{render_inline_html(block['text'])}</p>")
+    close_list()
     return "\n".join(lines)
 
 
@@ -165,6 +190,24 @@ def _build_css(opts: Any | None) -> str:
     ul {{ padding-left: 20px; margin: 6px 0; }}
     hr {{ border: none; border-top: 1px solid #ccc; margin: 12px 0; }}
     p {{ margin: 4px 0; }}
+    .markdown-table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 16px;
+        font-size: {font_size - 0.2:.1f}pt;
+    }}
+    .markdown-table th,
+    .markdown-table td {{
+        border: 1px solid #c9d3e6;
+        padding: 6px 8px;
+        vertical-align: top;
+        text-align: left;
+        word-break: break-word;
+    }}
+    .markdown-table th {{
+        background: #eef3fb;
+        font-weight: 700;
+    }}
 
     /* 공문서 헤더 블록 */
     .gov-org {{
@@ -202,6 +245,99 @@ def _build_css(opts: Any | None) -> str:
     .sig-space {{ height: 40px; }}
 
     .doc-separator {{ page-break-before: always; }}
+    .export-cover {{
+        min-height: 240px;
+        border: 1px solid #d8def0;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #f6f7ff 0%, #eef2ff 100%);
+        padding: 28px 30px;
+        margin-bottom: 26px;
+    }}
+    .export-cover .eyebrow {{
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #5b63d3;
+        color: white;
+        font-size: 9pt;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }}
+    .export-cover h1 {{
+        margin-top: 0;
+        margin-bottom: 8px;
+    }}
+    .export-cover p {{
+        color: #4c5370;
+        margin-bottom: 10px;
+    }}
+    .doc-chip-list {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }}
+    .doc-chip {{
+        display: inline-block;
+        padding: 6px 10px;
+        border: 1px solid #cfd7ee;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.85);
+        font-size: 9pt;
+        font-weight: 600;
+    }}
+    .summary-grid {{
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin: 18px 0 8px;
+    }}
+    .summary-card {{
+        border: 1px solid #d7ddef;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.92);
+        padding: 14px 16px;
+    }}
+    .summary-card .kicker {{
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #5b63d3;
+        margin-bottom: 4px;
+    }}
+    .summary-card h3 {{
+        margin: 0 0 6px;
+    }}
+    .summary-card p {{
+        margin: 0 0 6px;
+        color: #4d546f;
+    }}
+    .summary-card .meta {{
+        font-size: 9pt;
+        color: #6c7390;
+    }}
+    .doc-section-card {{
+        border-bottom: 2px solid #dfe4f3;
+        padding-bottom: 8px;
+        margin-bottom: 14px;
+    }}
+    .doc-section-card .section-index {{
+        font-size: 9pt;
+        font-weight: 700;
+        color: #5b63d3;
+        margin-bottom: 4px;
+    }}
+    .doc-section-card h2 {{
+        margin: 0 0 4px;
+    }}
+    .doc-section-card p {{
+        margin: 0;
+        color: #5f6377;
+    }}
+    .doc-section-card .meta {{
+        margin-top: 6px;
+        font-size: 9pt;
+        color: #6d7592;
+    }}
     """
 
 
@@ -226,11 +362,46 @@ def _render_html(
         parts.append(_gov_header_block_html(title, opts))
         parts.append("<br/>")
     else:
-        parts.append(f'<h1>{_html.escape(title)}</h1>')
+        summaries = summarize_export_docs(docs)
+        doc_chips = "".join(
+            f"<span class='doc-chip'>{idx}. {_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</span>"
+            for idx, doc in enumerate(docs, start=1)
+        )
+        summary_cards = "".join(
+            "<article class='summary-card'>"
+            f"<div class='kicker'>문서 {summary['index']}</div>"
+            f"<h3>{_html.escape(summary['label'])}</h3>"
+            f"<p>{_html.escape(summary['lead'])}</p>"
+            f"<div class='meta'>핵심 섹션: {_html.escape(summary['sections'])} / {_html.escape(summary['metrics'])}</div>"
+            "</article>"
+            for summary in summaries
+        )
+        parts.append(
+            "<section class='export-cover'>"
+            "<div class='eyebrow'>DecisionDoc AI Export</div>"
+            f"<h1>{_html.escape(title)}</h1>"
+            "<p><strong>완성형 문서 패키지</strong></p>"
+            f"<p>총 {len(docs)}개 문서를 제출용 패키지 형태로 정리했습니다. 각 섹션은 문서 단위로 분리되어 바로 검토·공유할 수 있습니다.</p>"
+            f"<div class='doc-chip-list'>{doc_chips}</div>"
+            "<div class='summary-grid'>"
+            f"{summary_cards}"
+            "</div>"
+            "</section>"
+        )
 
     for i, doc in enumerate(docs):
         if i > 0:
             parts.append('<div class="doc-separator"></div>')
+        if not (opts and opts.is_government_format):
+            summary = summarize_export_docs([doc])[0]
+            parts.append(
+                "<section class='doc-section-card'>"
+                f"<div class='section-index'>문서 {i + 1:02d} / {len(docs):02d}</div>"
+                f"<h2>{_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</h2>"
+                f"<p>{_html.escape(summary['lead'])}</p>"
+                f"<div class='meta'>핵심 섹션: {_html.escape(summary['sections'])} / {_html.escape(summary['metrics'])}</div>"
+                "</section>"
+            )
         parts.append(_markdown_to_html(doc.get("markdown", "")))
 
     if opts and opts.is_government_format:

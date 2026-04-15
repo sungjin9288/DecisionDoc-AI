@@ -1,19 +1,23 @@
 # 품질·리스크 관리계획: {{ title }}
 
+## 품질 운영 원칙
+{% if quality_operating_principles %}{{ quality_operating_principles }}
+{% endif %}
+
 ## 품질 기준
-{% if quality_standards %}{% for std in quality_standards %}
-- {{ std }}
-{% endfor %}{% endif %}
+{% set quality_table = quality_standards | markdown_table(["구분", "품질 기준", "측정 방법"]) %}
+{% if quality_table %}{{ quality_table }}
+{% endif %}
 
 ## 검수 기준
-{% if inspection_criteria %}{% for criterion in inspection_criteria %}
-- {{ criterion }}
-{% endfor %}{% endif %}
+{% set inspection_table = inspection_criteria | markdown_table(["검수 대상", "검수 시점", "승인 기준", "증빙"]) %}
+{% if inspection_table %}{{ inspection_table }}
+{% endif %}
 
 ## 리스크 매트릭스
-{% if risk_matrix %}{% for risk in risk_matrix %}
-- {{ risk }}
-{% endfor %}{% endif %}
+{% set risk_table = risk_matrix | markdown_table(["리스크", "발생 가능성", "영향도", "대응 방안"]) %}
+{% if risk_table %}{{ risk_table }}
+{% endif %}
 
 ## 변경 관리
 {% if change_management %}{{ change_management }}
@@ -21,4 +25,17 @@
 
 ## 보고 체계
 {% if reporting_structure %}{{ reporting_structure }}
+{% endif %}
+
+## 운영 회의체 및 통제 포인트
+{% set governance_table = governance_checkpoints | markdown_table(["운영 회의체", "주기", "책임", "주요 확인 항목"]) %}
+{% if governance_table %}{{ governance_table }}
+{% endif %}
+
+{% if total_slides and slide_outline %}
+## PPT 구성 가이드
+
+> **권장 슬라이드 수: {{ total_slides }}페이지**
+
+{{ slide_outline | slide_outline_table }}
 {% endif %}

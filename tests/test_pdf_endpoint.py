@@ -26,6 +26,40 @@ def test_build_pdf_service_returns_pdf_bytes():
     assert pdf_bytes[:4] == b"%PDF"
 
 
+def test_markdown_to_html_renders_table_markup():
+    from app.services.pdf_service import _markdown_to_html
+
+    html = _markdown_to_html(
+        "| 단계 | 기간 |\n"
+        "| --- | --- |\n"
+        "| 착수 | 1개월 |\n"
+    )
+
+    assert "<table class='markdown-table'>" in html
+    assert "<th>단계</th>" in html
+    assert "<td>착수</td>" in html
+
+
+def test_render_html_adds_export_cover_and_section_cards():
+    from app.services.pdf_service import _render_html
+
+    html = _render_html(
+        [
+            {"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"},
+            {"doc_type": "tech_proposal", "markdown": "# 제목\n\n본문 B"},
+        ],
+        title="완성형 패키지 테스트",
+        opts=None,
+    )
+
+    assert "export-cover" in html
+    assert "완성형 문서 패키지" in html
+    assert "summary-card" in html
+    assert "사업 이해" in html
+    assert "문서 01 / 02" in html
+    assert "핵심 섹션:" in html
+
+
 def test_pdf_endpoint_returns_200(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/pdf", json={"title": "PDF 테스트", "goal": "검증"})

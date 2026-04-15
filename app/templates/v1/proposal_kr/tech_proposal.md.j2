@@ -1,37 +1,41 @@
 # 기술제안서: {{ title }}
 
+## 기술 제안 요약
+{% if technical_summary %}{{ technical_summary }}
+{% endif %}
+
 ## 적용 기술
-{% if tech_stack %}{% for tech in tech_stack %}
-- {{ tech }}
-{% endfor %}{% endif %}
+{% set tech_table = tech_stack | markdown_table(["구성 영역", "적용 기술", "적용 목적"]) %}
+{% if tech_table %}{{ tech_table }}
+{% endif %}
 
 ## 시스템 아키텍처
 {% if architecture_overview %}{{ architecture_overview }}
 {% endif %}
+
 ## AI 접근 방식
 {% if ai_approach %}{{ ai_approach }}
 {% endif %}
+
+## 기술 구현 원칙
+{% set principle_table = implementation_principles | markdown_table(["설계 원칙", "적용 방안", "검증 포인트"]) %}
+{% if principle_table %}{{ principle_table }}
+{% endif %}
+
 ## 보안 대책
-{% if security_measures %}{% for measure in security_measures %}
-- {{ measure }}
-{% endfor %}{% endif %}
+{% set security_table = security_measures | markdown_table(["보안 영역", "통제 방안", "운영 기준"]) %}
+{% if security_table %}{{ security_table }}
+{% endif %}
 
 ## 차별성
-{% if differentiation %}{% for diff in differentiation %}
-- {{ diff }}
-{% endfor %}{% endif %}
+{% set differentiation_table = differentiation | markdown_table(["차별화 포인트", "경쟁 우위", "입증 근거"]) %}
+{% if differentiation_table %}{{ differentiation_table }}
+{% endif %}
 
 {% if total_slides and slide_outline %}
 ## PPT 구성 가이드
 
 > **권장 슬라이드 수: {{ total_slides }}페이지**
 
-{% for slide in slide_outline %}
-### 슬라이드 {{ slide.page }} — {{ slide.title }}
-
-**📋 핵심 내용**: {{ slide.key_content }}
-
-**🎨 디자인 팁**: {{ slide.design_tip }}
-
-{% endfor %}
+{{ slide_outline | slide_outline_table }}
 {% endif %}

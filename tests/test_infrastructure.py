@@ -150,6 +150,9 @@ def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     assert "toggleDark()" not in res.text
     assert "prompt('표시 이름을 입력하세요:'" not in res.text
     assert "prompt('활성 상태를 입력하세요 (active / inactive):'" not in res.text
+    assert "exportDocument('pptx',  'ppt-btn'" in res.text
+    assert "downloadBatchResult('${bundleId}','pptx')" in res.text
+    assert "downloadBatchResult('${bundleId}','hwp')" in res.text
 
 
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():

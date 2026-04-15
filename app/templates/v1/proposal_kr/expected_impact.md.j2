@@ -1,37 +1,41 @@
 # 기대효과: {{ title }}
 
+## 효과 요약
+{% if impact_summary %}{{ impact_summary }}
+{% endif %}
+
 ## 정량적 효과
-{% if quantitative_effects %}{% for effect in quantitative_effects %}
-- {{ effect }}
-{% endfor %}{% endif %}
+{% set quantitative_table = quantitative_effects | markdown_table(["지표", "현재 수준", "목표 수준", "기대 효과"]) %}
+{% if quantitative_table %}{{ quantitative_table }}
+{% endif %}
 
 ## 정성적 효과
-{% if qualitative_effects %}{% for effect in qualitative_effects %}
-- {{ effect }}
-{% endfor %}{% endif %}
+{% set qualitative_table = qualitative_effects | markdown_table(["영역", "기대 효과", "활용 관점"]) %}
+{% if qualitative_table %}{{ qualitative_table }}
+{% endif %}
 
 ## 사회적 가치
 {% if social_value %}{{ social_value }}
 {% endif %}
+
+## KPI 달성 약속
+{% set commitment_table = kpi_commitments | markdown_table(["핵심 KPI", "목표값", "산정 기준", "달성 시점"]) %}
+{% if commitment_table %}{{ commitment_table }}
+{% endif %}
+
 ## 투자 대비 효과
 {% if roi_estimate %}{{ roi_estimate }}
 {% endif %}
+
 ## 성과 모니터링
-{% if monitoring_plan %}{% for plan in monitoring_plan %}
-- {{ plan }}
-{% endfor %}{% endif %}
+{% set monitoring_table = monitoring_plan | markdown_table(["모니터링 항목", "주기", "책임", "목표 기준"]) %}
+{% if monitoring_table %}{{ monitoring_table }}
+{% endif %}
 
 {% if total_slides and slide_outline %}
 ## PPT 구성 가이드
 
 > **권장 슬라이드 수: {{ total_slides }}페이지**
 
-{% for slide in slide_outline %}
-### 슬라이드 {{ slide.page }} — {{ slide.title }}
-
-**📋 핵심 내용**: {{ slide.key_content }}
-
-**🎨 디자인 팁**: {{ slide.design_tip }}
-
-{% endfor %}
+{{ slide_outline | slide_outline_table }}
 {% endif %}

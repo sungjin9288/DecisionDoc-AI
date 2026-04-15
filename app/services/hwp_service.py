@@ -17,6 +17,10 @@ import zipfile
 from io import BytesIO
 from typing import Any
 
+from app.services.export_labels import humanize_doc_type
+from app.services.export_outline import summarize_export_docs
+from app.services.markdown_utils import parse_markdown_blocks
+
 # HWPX namespaces
 _NS_HH = "http://www.hancom.com/hwpml/2012/core"
 
@@ -142,6 +146,33 @@ def _para_xml(text: str, style: str = "본문") -> str:
     )
 
 
+def _clean_hwp_text(text: str) -> str:
+    return re.sub(r"\*\*([^*]+)\*\*", r"\1", str(text).strip())
+
+
+def _table_block_paras(block: dict[str, Any]) -> list[str]:
+    headers = [str(header).strip() for header in block.get("headers", [])]
+    rows = block.get("rows", []) or []
+    paras: list[str] = []
+    if headers:
+        paras.append(_para_xml("표: " + " | ".join(headers), "제목3"))
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        parts: list[str] = []
+        for idx, cell in enumerate(row):
+            value = _clean_hwp_text(cell)
+            if not value:
+                continue
+            header = headers[idx] if idx < len(headers) else f"항목 {idx + 1}"
+            parts.append(f"{header}: {value}")
+        if parts:
+            paras.append(_para_xml("• " + " / ".join(parts), "본문"))
+    if paras:
+        paras.append(_para_xml(""))
+    return paras
+
+
 def _gov_header_paras(title: str, opts: Any) -> list[str]:
     """Generate HWPX paragraph elements for the 공문서 헤더 블록."""
     paras: list[str] = []
@@ -169,6 +200,28 @@ def _gov_header_paras(title: str, opts: Any) -> list[str]:
     return paras
 
 
+def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
+    summaries = summarize_export_docs(docs)
+    paras = [
+        _para_xml(title, "제목1"),
+        _para_xml("완성형 문서 패키지", "제목2"),
+        _para_xml(f"총 {len(docs)}개 문서를 하나의 제출 패키지로 정리했습니다.", "본문"),
+        _para_xml("문서 구성", "제목3"),
+    ]
+    for idx, doc in enumerate(docs, start=1):
+        paras.append(_para_xml(f"{idx}. {humanize_doc_type(str(doc.get('doc_type', 'document')))}", "본문"))
+    paras.append(_para_xml(""))
+    paras.append(_para_xml("핵심 검토 포인트", "제목3"))
+    for summary in summaries:
+        paras.append(_para_xml(f"[{summary['index']}] {summary['label']}", "본문"))
+        paras.append(_para_xml(f"핵심 메시지: {summary['lead']}", "본문"))
+        paras.append(_para_xml(f"핵심 섹션: {summary['sections']} / 구성 특징: {summary['metrics']}", "본문"))
+        paras.append(_para_xml(""))
+    paras.append(_para_xml("─" * 50, "본문"))
+    paras.append(_para_xml(""))
+    return paras
+
+
 def _section_xml(
     docs: list[dict[str, Any]],
     title: str,
@@ -185,29 +238,37 @@ def _section_xml(
     if opts and opts.is_government_format:
         paras.extend(_gov_header_paras(title, opts))
     else:
-        paras.append(_para_xml(title, "제목1"))
-        paras.append(_para_xml(""))
+        paras.extend(_export_cover_paras(title, docs))
 
     # Content
+    summaries = summarize_export_docs(docs)
     for i, doc in enumerate(docs):
         if i > 0:
             paras.append(_para_xml("─" * 40, "본문"))
-        for line in doc.get("markdown", "").splitlines():
-            s = line.strip()
-            if s.startswith("### "):
-                paras.append(_para_xml(s[4:], "제목3"))
-            elif s.startswith("## "):
-                paras.append(_para_xml(s[3:], "제목2"))
-            elif s.startswith("# "):
-                paras.append(_para_xml(s[2:], "제목1"))
-            elif s.startswith(("- ", "* ")):
-                text = re.sub(r"\*\*([^*]+)\*\*", r"\1", s[2:])
+            paras.append(_para_xml(""))
+        if not (opts and opts.is_government_format):
+            doc_title = humanize_doc_type(str(doc.get("doc_type", "document")))
+            summary = summaries[i]
+            paras.append(_para_xml(f"문서 {i + 1:02d} / {len(docs):02d}", "제목3"))
+            paras.append(_para_xml(doc_title, "제목2"))
+            paras.append(_para_xml(summary["lead"], "본문"))
+            paras.append(_para_xml(f"핵심 섹션: {summary['sections']} / 구성 특징: {summary['metrics']}", "본문"))
+            paras.append(_para_xml(""))
+        for block in parse_markdown_blocks(doc.get("markdown", "")):
+            block_type = block.get("type")
+            if block_type == "heading":
+                level = int(block.get("level", 1))
+                style = {1: "제목1", 2: "제목2", 3: "제목3"}.get(level, "제목3")
+                paras.append(_para_xml(_clean_hwp_text(block.get("text", "")), style))
+            elif block_type == "list_item":
+                text = _clean_hwp_text(block.get("text", ""))
                 paras.append(_para_xml(f"• {text}", "본문"))
-            elif s == "---":
+            elif block_type == "paragraph":
+                paras.append(_para_xml(_clean_hwp_text(block.get("text", "")), "본문"))
+            elif block_type == "table":
+                paras.extend(_table_block_paras(block))
+            elif block_type in {"blank", "hr"}:
                 paras.append(_para_xml("", "본문"))
-            else:
-                text = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
-                paras.append(_para_xml(text, "본문"))
 
     # 결재란 (텍스트 형태 — HWP에서 표 그리기는 별도 spec 필요)
     if opts and opts.is_government_format:

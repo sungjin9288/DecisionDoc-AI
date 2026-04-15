@@ -50,8 +50,8 @@ _CRITICAL_HEADINGS = {
         "win_strategy": ["## SWOT 분석", "## 차별화 포인트"],
     },
     "performance_plan_kr": {
-        "performance_overview": ["## 사업 개요", "## WBS"],
-        "quality_risk_plan":    ["## 품질 기준", "## 리스크 매트릭스"],
+        "performance_overview": ["## 수행 총괄 요약", "## 사업 개요", "## WBS"],
+        "quality_risk_plan":    ["## 품질 운영 원칙", "## 품질 기준", "## 리스크 매트릭스"],
     },
     "completion_report_kr": {
         "completion_summary": ["## 납품물 목록", "## 성과 측정 결과"],
@@ -72,6 +72,7 @@ def _create_client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
     monkeypatch.delenv("DECISIONDOC_API_KEY",  raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -329,6 +330,84 @@ def test_gov_bundle_generate_markdown_non_empty(tmp_path, monkeypatch, bundle_id
         assert doc.get("markdown"), (
             f"{bundle_id}.{doc['doc_type']}: markdown is empty"
         )
+
+
+def test_performance_plan_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
+    """performance_plan_kr should render markdown tables for finished-doc sections."""
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post("/generate", json={
+        "title": "국토교통 통합형 서비스 발굴 경연",
+        "goal": "교통약자 안전 확보를 위한 AI 기반 대응 체계를 구축한다.",
+        "bundle_type": "performance_plan_kr",
+    })
+    assert res.status_code == 200
+
+    docs = {doc["doc_type"]: doc["markdown"] for doc in res.json()["docs"]}
+    overview = docs["performance_overview"]
+    quality = docs["quality_risk_plan"]
+
+    assert "## 수행 총괄 요약" in overview
+    assert "참고 맥락" not in overview
+    assert "범위 참고 맥락" not in overview
+    assert "| 항목 | 내용 |" in overview
+    assert "| 산출물 | 제출 기한 | 형식 | 검수 방법 |" in overview
+    assert "| 역할 | 등급 | 성명 | M/M | 책임 및 전문성 |" in overview
+    assert "| 관리 항목 | 목표 기준 | 확인 방식 |" in overview
+    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in overview
+    assert "## 품질 운영 원칙" in quality
+    assert "| 리스크 | 발생 가능성 | 영향도 | 대응 방안 |" in quality
+    assert "| 운영 회의체 | 주기 | 책임 | 주요 확인 항목 |" in quality
+    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in quality
+
+
+def test_proposal_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
+    """proposal_kr should render summary-heavy sections as markdown tables."""
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post("/generate", json={
+        "title": "국토교통 통합형 서비스 발굴 경연",
+        "goal": "국민 체감형 교통안전 서비스를 고도화한다.",
+        "bundle_type": "proposal_kr",
+    })
+    assert res.status_code == 200
+
+    docs = {doc["doc_type"]: doc["markdown"] for doc in res.json()["docs"]}
+
+    business = docs["business_understanding"]
+    tech = docs["tech_proposal"]
+    execution = docs["execution_plan"]
+    impact = docs["expected_impact"]
+
+    assert "# 사업 이해:" in business
+    assert "사업이해서" not in business
+    assert "참고 맥락" not in business
+    assert "제안한다.를" not in business
+    assert "사업 제안서 제안은" not in business
+    assert "은(는)" not in business
+    assert "## 제안 요약" in business
+    assert "| 목표 항목 | 정량·정성 목표 | 측정 기준 |" in business
+    assert "| 평가 관점 | 대응 전략 | 입증 근거 |" in business
+    assert "| 사용자군 | 주요 역할·니즈 | 기대 변화 |" in business
+    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in business
+
+    assert "## 기술 제안 요약" in tech
+    assert "| 구성 영역 | 적용 기술 | 적용 목적 |" in tech
+    assert "| 설계 원칙 | 적용 방안 | 검증 포인트 |" in tech
+    assert "| 보안 영역 | 통제 방안 | 운영 기준 |" in tech
+    assert "| 차별화 포인트 | 경쟁 우위 | 입증 근거 |" in tech
+
+    assert "## 수행 총괄 요약" in execution
+    assert "| 역할 | 인원·등급 | 책임 | 투입 시점 |" in execution
+    assert "| 마일스톤 | 시점 | 완료 기준 | 핵심 산출물 |" in execution
+    assert "| 산출물 | 제출 시점 | 형식 | 검수 방법 |" in execution
+
+    assert "## 효과 요약" in impact
+    assert "제안한다.를" not in impact
+    assert "달성을 통한" not in impact
+    assert "사업 제안서 사업" not in impact
+    assert "| 지표 | 현재 수준 | 목표 수준 | 기대 효과 |" in impact
+    assert "| 영역 | 기대 효과 | 활용 관점 |" in impact
+    assert "| 핵심 KPI | 목표값 | 산정 기준 | 달성 시점 |" in impact
+    assert "| 모니터링 항목 | 주기 | 책임 | 목표 기준 |" in impact
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

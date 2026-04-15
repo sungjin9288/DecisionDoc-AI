@@ -43,6 +43,46 @@ def test_build_hwp_contains_required_files():
         assert "Contents/section0.xml" in names
 
 
+def test_build_hwp_renders_markdown_table_as_readable_rows():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{
+        "doc_type": "proposal",
+        "markdown": (
+            "# 사업 개요\n\n"
+            "| 항목 | 내용 |\n"
+            "| --- | --- |\n"
+            "| 계약 기간 | 24개월 |\n"
+            "| 계약 금액 | 65억 원 |\n"
+        ),
+    }]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+    assert "표: 항목 | 내용" in section_xml
+    assert "항목: 계약 기간 / 내용: 24개월" in section_xml
+    assert "항목: 계약 금액 / 내용: 65억 원" in section_xml
+
+
+def test_build_hwp_adds_export_cover_and_section_intro():
+    from app.services.hwp_service import build_hwp
+
+    docs = [
+        {"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"},
+        {"doc_type": "tech_proposal", "markdown": "# 제목\n\n본문 B"},
+    ]
+    result = build_hwp(docs, title="완성형 패키지 테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+
+    assert "완성형 문서 패키지" in section_xml
+    assert "문서 구성" in section_xml
+    assert "핵심 검토 포인트" in section_xml
+    assert "사업 이해" in section_xml
+    assert "문서 01 / 02" in section_xml
+    assert "핵심 섹션:" in section_xml
+
+
 def test_hwp_endpoint_returns_200(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/hwp", json={"title": "HWP 테스트", "goal": "검증"})

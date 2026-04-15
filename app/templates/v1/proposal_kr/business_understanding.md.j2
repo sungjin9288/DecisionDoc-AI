@@ -1,4 +1,8 @@
-# 사업이해서: {{ title }}
+# 사업 이해: {{ title }}
+
+## 제안 요약
+{% if executive_summary %}{{ executive_summary }}
+{% endif %}
 
 ## 사업 배경
 {{ project_background }}
@@ -9,14 +13,19 @@
 {% endfor %}
 
 ## 사업 목표
-{% for obj in project_objectives %}
-- {{ obj }}
-{% endfor %}
+{% set objective_table = project_objectives | markdown_table(["목표 항목", "정량·정성 목표", "측정 기준"]) %}
+{% if objective_table %}{{ objective_table }}
+{% endif %}
+
+## 평가 대응 포인트
+{% set evaluation_table = evaluation_alignment | markdown_table(["평가 관점", "대응 전략", "입증 근거"]) %}
+{% if evaluation_table %}{{ evaluation_table }}
+{% endif %}
 
 ## 대상 사용자
-{% for user in target_users %}
-- {{ user }}
-{% endfor %}
+{% set user_table = target_users | markdown_table(["사용자군", "주요 역할·니즈", "기대 변화"]) %}
+{% if user_table %}{{ user_table }}
+{% endif %}
 
 ## 사업 범위
 {{ scope_summary }}
@@ -25,14 +34,7 @@
 ## PPT 구성 가이드
 
 > **권장 슬라이드 수: {{ total_slides }}페이지**
-> 아래 슬라이드별 구성안을 참고하여 발표 자료를 제작하세요.
+> 아래 구성안을 기반으로 평가위원 발표자료를 제작하세요.
 
-{% for slide in slide_outline %}
-### 슬라이드 {{ slide.page }} — {{ slide.title }}
-
-**📋 핵심 내용**: {{ slide.key_content }}
-
-**🎨 디자인 팁**: {{ slide.design_tip }}
-
-{% endfor %}
+{{ slide_outline | slide_outline_table }}
 {% endif %}

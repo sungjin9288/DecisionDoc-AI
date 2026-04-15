@@ -80,7 +80,7 @@ from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.generation_service import BundleNotSupportedError
 from app.services.hwp_service import build_hwp
-from app.services.pptx_service import build_pptx
+from app.services.pptx_service import build_pptx, build_pptx_from_docs
 
 logger = logging.getLogger("decisiondoc.generate")
 
@@ -192,6 +192,40 @@ def _load_pdf_builder():
             detail="PDF export is not available in this deployment.",
         ) from exc
     return _build_pdf
+
+
+def _build_structured_slide_data(bundle: dict[str, Any], goal: str) -> dict[str, Any] | None:
+    """Collect slide outline metadata embedded in bundle docs."""
+    slide_outline: list[dict[str, Any]] = []
+    page = 1
+
+    for value in bundle.values():
+        if not isinstance(value, dict):
+            continue
+        outline = value.get("slide_outline")
+        if not isinstance(outline, list) or not outline:
+            continue
+        for item in outline:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            if not title or "PPT 구성 가이드" in title:
+                continue
+            slide_outline.append({
+                "page": page,
+                "title": title,
+                "key_content": str(item.get("key_content", "")).strip(),
+                "design_tip": str(item.get("design_tip", "")).strip(),
+            })
+            page += 1
+
+    if not slide_outline:
+        return None
+
+    return {
+        "presentation_goal": str(goal).strip(),
+        "slide_outline": slide_outline,
+    }
 
 
 def _auto_improve_if_needed(
@@ -831,10 +865,7 @@ def generate_pptx_endpoint(
     payload: GenerateRequest,
     request: Request,
 ) -> Response:
-    """Generate a PPTX skeleton from a presentation_kr bundle and return it as a download."""
-    if payload.bundle_type != "presentation_kr":
-        raise BundleNotSupportedError(payload.bundle_type, "generate/pptx")
-
+    """Generate a PPTX download from presentation bundles or rendered docs."""
     service = request.app.state.service
     template_version = request.app.state.template_version
     request_id = request.state.request_id
@@ -846,10 +877,22 @@ def generate_pptx_endpoint(
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
 
-    slide_data = result["raw_bundle"].get("slide_structure", {})
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
-    pptx_bytes = build_pptx(slide_data, title=payload.title)
+    structured_slide_data = None
+    if payload.bundle_type == "presentation_kr" and isinstance(result["raw_bundle"].get("slide_structure"), dict):
+        structured_slide_data = result["raw_bundle"].get("slide_structure", {})
+    else:
+        structured_slide_data = _build_structured_slide_data(result["raw_bundle"], payload.goal)
+
+    if structured_slide_data is not None:
+        pptx_bytes = build_pptx(
+            structured_slide_data,
+            title=payload.title,
+            include_outline_overview=payload.bundle_type != "presentation_kr",
+        )
+    else:
+        pptx_bytes = build_pptx_from_docs(result["docs"], title=payload.title)
 
     return Response(
         content=pptx_bytes,
@@ -1125,7 +1168,7 @@ async def generate_export_edited_endpoint(
     """Export pre-rendered (possibly user-edited) docs to the requested format.
 
     Does **not** call the LLM — uses the docs list directly.
-    Supported formats: docx, pdf, excel, hwp.
+    Supported formats: docx, pdf, excel, hwp, pptx.
     """
     docs = [{"doc_type": d.doc_type, "markdown": d.markdown} for d in payload.docs]
     title = payload.title or "문서"
@@ -1151,6 +1194,10 @@ async def generate_export_edited_endpoint(
         content = build_hwp(docs, title=title, gov_options=gov_opts)
         media_type = "application/hwp+zip"
         ext = "hwpx"
+    elif fmt in ("ppt", "pptx"):
+        content = build_pptx_from_docs(docs, title=title)
+        media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ext = "pptx"
     else:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 형식입니다: {payload.format}")
 
@@ -1639,7 +1686,7 @@ def export_zip(request: Request, request_id: str, formats: str = "docx"):
                     content = build_hwp(docs, title=title)
                     zf.writestr(f"{title or 'document'}.hwp", content)
                 elif fmt == "pptx":
-                    content = build_pptx(docs[0] if docs else {}, title=title)
+                    content = build_pptx_from_docs(docs, title=title)
                     zf.writestr(f"{title or 'document'}.pptx", content)
             except Exception:
                 logger.warning("Failed to convert to %s", fmt, exc_info=True)
