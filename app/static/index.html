@@ -4427,11 +4427,11 @@
   <section id="ai-rank-roster" class="ai-rank-roster" aria-labelledby="ai-rank-roster-title">
     <div class="ai-rank-roster-head">
       <div>
-        <div class="ai-rank-roster-kicker">AI 운영 체계</div>
-        <h2 id="ai-rank-roster-title" class="ai-rank-roster-title">프로젝트를 닫는 3계층 AI 팀</h2>
+        <div class="ai-rank-roster-kicker">업무 AI 배정</div>
+        <h2 id="ai-rank-roster-title" class="ai-rank-roster-title">관리자가 배정하는 업무 AI</h2>
         <p class="ai-rank-roster-desc">
-          기획한 운영 방식에 맞춰, 각 AI는 다른 직급과 책임으로 움직입니다.
-          공고 판단부터 의사결정 문서, 제안서 handoff, 수행계획 연결까지 같은 프로젝트 흐름 안에서 이어집니다.
+          관리자가 사용자 직위에 맞춰 업무 AI를 배정합니다.
+          로그인한 팀원은 자기에게 배정된 AI만 보고, 그 범위 안에서 문서와 handoff 흐름을 진행합니다.
         </p>
       </div>
       <div class="ai-rank-roster-flow" aria-label="핵심 흐름">
@@ -4441,7 +4441,7 @@
       </div>
     </div>
     <div class="ai-rank-roster-grid">
-      <article class="ai-rank-card executive" data-ai-rank="executive" aria-label="임원 직급 AI" role="button" tabindex="0" onclick="activateAiRank('executive')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('executive'); }">
+      <article class="ai-rank-card executive" data-ai-rank="executive" aria-label="최종 승인 AI 카드" role="button" tabindex="0" onclick="activateAiRank('executive')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('executive'); }">
         <span class="ai-rank-tier">임원 · Executive Approver</span>
         <h3 class="ai-rank-title">최종 승인 AI</h3>
         <p class="ai-rank-summary">
@@ -4458,9 +4458,9 @@
           <span class="ai-rank-tag">risk summary</span>
         </div>
       </article>
-      <article class="ai-rank-card proposal_bd" data-ai-rank="proposal_bd" aria-label="리드 직급 AI" role="button" tabindex="0" onclick="activateAiRank('proposal_bd')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('proposal_bd'); }">
+      <article class="ai-rank-card proposal_bd" data-ai-rank="proposal_bd" aria-label="제안 영업 AI 카드" role="button" tabindex="0" onclick="activateAiRank('proposal_bd')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('proposal_bd'); }">
         <span class="ai-rank-tier">리드 · Proposal / BD Lead</span>
-        <h3 class="ai-rank-title">제안/영업 리드 AI</h3>
+        <h3 class="ai-rank-title">제안/영업 AI</h3>
         <p class="ai-rank-summary">
           공고를 프로젝트에 붙이고, 무엇이 막히는지 먼저 드러낸 뒤 제안 착수 여부를 가장 빠르게 판단합니다.
         </p>
@@ -4475,9 +4475,9 @@
           <span class="ai-rank-tag">proposal_kr</span>
         </div>
       </article>
-      <article class="ai-rank-card delivery_pm" data-ai-rank="delivery_pm" aria-label="PM 직급 AI" role="button" tabindex="0" onclick="activateAiRank('delivery_pm')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('delivery_pm'); }">
+      <article class="ai-rank-card delivery_pm" data-ai-rank="delivery_pm" aria-label="PM AI 카드" role="button" tabindex="0" onclick="activateAiRank('delivery_pm')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateAiRank('delivery_pm'); }">
         <span class="ai-rank-tier">PM · Delivery Lead / PM</span>
-        <h3 class="ai-rank-title">수행 리드 AI</h3>
+        <h3 class="ai-rank-title">PM AI</h3>
         <p class="ai-rank-summary">
           실제로 수행 가능한지, 인력과 일정이 맞는지, 파트너 경로가 필요한지를 delivery 관점에서 검증합니다.
         </p>
@@ -4496,7 +4496,7 @@
     <div id="ai-rank-roster-status" class="ai-rank-status" aria-live="polite">
       <div>
         <div class="ai-rank-status-label">추천 실행 흐름</div>
-        <h3 id="ai-rank-status-title" class="ai-rank-status-title">제안/영업 리드 AI</h3>
+        <h3 id="ai-rank-status-title" class="ai-rank-status-title">제안/영업 AI</h3>
         <p id="ai-rank-status-copy" class="ai-rank-status-copy">공고 탐색과 1차 Go / No-Go 판단을 시작할 역할을 선택하세요.</p>
         <div id="ai-rank-status-meta" class="ai-rank-status-meta"></div>
       </div>
@@ -5611,6 +5611,7 @@
   let _projectProcurementRemediationContext = null;
   let _projectProcurementSummaryReturnContext = null;
   let _locationProcurementSummaryModalState = null;
+  let _locationUsersPanelState = null;
   let _locationProcurementCandidateOrder = 'latest_followup';
   let _locationProcurementCandidateScope = 'all';
   let _locationProcurementCandidateStatusFilters = [];
@@ -6429,7 +6430,7 @@
       },
     },
     proposal_bd: {
-      label: '제안/영업 리드 AI',
+      label: '제안/영업 AI',
       copy: '공고 탐색과 기회 선별을 먼저 열고, hard filter와 checklist 확인을 위한 공공조달 흐름을 바로 시작합니다.',
       actionLabel: '나라장터 검색 열기',
       meta: ['category: gov', 'audience: mixed', 'tone: formal'],
@@ -6455,7 +6456,7 @@
       },
     },
     delivery_pm: {
-      label: '수행 리드 AI',
+      label: 'PM AI',
       copy: '프로젝트와 수행 역량을 먼저 연결해서 staffing readiness, missing data, handoff 준비 상태를 delivery 관점에서 점검합니다.',
       actionLabel: '프로젝트 연결 준비',
       meta: ['audience: technical', 'tone: detailed', 'project-linked review'],
@@ -6477,6 +6478,106 @@
     },
   };
   let _activeAiRank = 'proposal_bd';
+  const AI_ASSIGNMENT_LABELS = {
+    proposal_bd: '제안/영업 AI',
+    delivery_pm: 'PM AI',
+    executive: '최종 승인 AI',
+  };
+
+  function isAdminUser() {
+    return _currentUser?.role === 'admin';
+  }
+
+  function getVisibleAiRankKeys() {
+    if (!_currentUser || isAdminUser()) return Object.keys(AI_RANK_PROFILES);
+    const assigned = Array.isArray(_currentUser.assigned_ai_profiles)
+      ? _currentUser.assigned_ai_profiles.filter(key => AI_RANK_PROFILES[key])
+      : [];
+    return assigned;
+  }
+
+  function formatAssignedAiProfiles(keys) {
+    const normalized = Array.isArray(keys) ? keys.filter(Boolean) : [];
+    if (!normalized.length) {
+      return '<span class="loc-badge">미배정</span>';
+    }
+    return normalized.map(key => {
+      const label = AI_ASSIGNMENT_LABELS[key] || key;
+      return `<span class="loc-badge">${escapeHtml(label)}</span>`;
+    }).join('');
+  }
+
+  function getAiProfilePromptOptions(selectedKeys = []) {
+    const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
+    return Object.entries(AI_ASSIGNMENT_LABELS)
+      .map(([key, label]) => `${selected.has(key) ? '[x]' : '[ ]'} ${key} (${label})`)
+      .join('\n');
+  }
+
+  function parseAssignedAiProfilesInput(raw) {
+    return String(raw || '')
+      .split(',')
+      .map(item => item.trim())
+      .filter(item => item && AI_ASSIGNMENT_LABELS[item]);
+  }
+
+  function getLocationPanelUser(userId) {
+    const users = Array.isArray(_locationUsersPanelState?.users) ? _locationUsersPanelState.users : [];
+    return users.find(user => String(user.user_id || '') === String(userId || '')) || null;
+  }
+
+  async function hydrateCurrentUserProfile() {
+    if (!_currentUser) return null;
+    try {
+      const res = await fetch('/auth/me', { headers: getAuthHeaders() });
+      if (!res.ok) return null;
+      const data = await res.json();
+      _currentUser = {
+        ..._currentUser,
+        ...data,
+        sub: data.user_id || _currentUser.sub,
+      };
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyAiRankVisibility() {
+    const visibleKeys = getVisibleAiRankKeys();
+    const kicker = document.querySelector('.ai-rank-roster-kicker');
+    const desc = document.querySelector('.ai-rank-roster-desc');
+    const action = $id('ai-rank-status-action');
+    document.querySelectorAll('.ai-rank-card').forEach(card => {
+      card.style.display = visibleKeys.includes(card.dataset.aiRank) ? '' : 'none';
+    });
+    if (kicker) kicker.textContent = isAdminUser() ? '업무 AI 배정' : '내 업무 AI';
+    if (desc) {
+      if (isAdminUser()) {
+        desc.textContent = '관리자는 직위와 역할에 맞춰 사용자별 업무 AI를 배정하고, 각 팀원이 자기 AI 범위 안에서만 문서 흐름을 사용하도록 관리합니다.';
+      } else if (visibleKeys.length > 0) {
+        desc.textContent = '현재 계정에 배정된 업무 AI만 표시됩니다. 번들 선택과 생성 권한도 같은 기준으로 자동 제한됩니다.';
+      } else {
+        desc.textContent = '아직 이 계정에는 업무 AI가 배정되지 않았습니다. 관리자에게 직위와 AI 배정을 요청하세요.';
+      }
+    }
+    if (!visibleKeys.length) {
+      document.querySelectorAll('.ai-rank-card').forEach(card => card.classList.remove('active'));
+      if (action) action.disabled = true;
+      const title = $id('ai-rank-status-title');
+      const copy = $id('ai-rank-status-copy');
+      const meta = $id('ai-rank-status-meta');
+      if (title) title.textContent = '업무 AI 미배정';
+      if (copy) copy.textContent = '현재 계정에는 아직 사용할 업무 AI가 없습니다. 관리자에게 직위와 AI를 배정받은 뒤 다시 로그인하세요.';
+      if (meta) meta.innerHTML = '<span>admin assigned AI required</span>';
+      return;
+    }
+    if (!visibleKeys.includes(_activeAiRank)) {
+      _activeAiRank = visibleKeys[0];
+    }
+    if (action) action.disabled = false;
+    activateAiRank(_activeAiRank);
+  }
 
   function setActiveCategory(category) {
     const target = document.querySelector(`.cat-btn[data-cat="${category}"]`);
@@ -6523,6 +6624,7 @@
 
   window.activateAiRank = function activateAiRank(rank) {
     if (!AI_RANK_PROFILES[rank]) return;
+    if (!getVisibleAiRankKeys().includes(rank)) return;
     _activeAiRank = rank;
     document.querySelectorAll('.ai-rank-card').forEach(card => {
       card.classList.toggle('active', card.dataset.aiRank === rank);
@@ -9820,7 +9922,7 @@
       const payload = JSON.parse(atob(data.access_token.split('.')[1]));
       _currentUser = payload;
       document.getElementById('login-screen')?.remove();
-      initApp();
+      await initApp();
       showNotification('관리자 계정이 생성되었습니다!', 'success');
     } catch(e) { if (errEl) { errEl.textContent = e.message; errEl.style.display='block'; } }
   }
@@ -9842,9 +9944,12 @@
       const data = await res.json();
       localStorage.setItem('dd_access_token', data.access_token);
       if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
-      _currentUser = { sub: data.user.user_id, username: data.user.username, display_name: data.user.display_name, role: data.user.role, avatar_color: data.user.avatar_color };
+      _currentUser = {
+        ...data.user,
+        sub: data.user.user_id,
+      };
       document.getElementById('login-screen')?.remove();
-      initApp();
+      await initApp();
       showNotification(`${data.user.display_name}님, 환영합니다!`, 'success');
     } catch(e) {
       if(errEl){errEl.textContent=e.message;errEl.style.display='block';}
@@ -9893,8 +9998,12 @@
     const nameEl = document.getElementById('user-display-name');
     const label = u.display_name || u.username || u.sub || '?';
     if (avatar) { avatar.textContent = label[0].toUpperCase(); avatar.style.background = u.avatar_color || '#6366f1'; }
-    if (nameEl) nameEl.textContent = label;
-    if (userInfo) userInfo.style.display = 'flex';
+    const titleText = String(u.job_title || '').trim();
+    if (nameEl) nameEl.textContent = titleText ? `${label} · ${titleText}` : label;
+    if (userInfo) {
+      userInfo.style.display = 'flex';
+      userInfo.title = titleText ? `${label} (${titleText})` : label;
+    }
   }
 
   /* ── Message thread helpers ──────────────────────────────────── */
@@ -10409,8 +10518,9 @@
   }
 
   /* ── Init ──────────────────────────────────────────────────────── */
-  function initApp() {
+  async function initApp() {
     setAppShellAuthenticated(true);
+    await hydrateCurrentUserProfile();
     renderUserInfo();
     loadFormDraft();
     const versionInfoPromise = loadServerVersionInfo();
@@ -10424,7 +10534,7 @@
     loadServerHistory();
     checkOnboarding();
     checkDeadlineAlerts();
-    activateAiRank(_activeAiRank);
+    applyAiRankVisibility();
     // Show notification bell and start polling
     const bell = $id('notif-bell');
     if (bell) bell.style.display = 'flex';
@@ -12176,12 +12286,12 @@
       currentOwner = 'proposal_bd';
       nextOwner = 'delivery_pm';
       headline = hasOpportunity
-        ? '제안/영업 리드 AI가 입찰 판단과 요약 생성을 주도하는 단계입니다.'
-        : '제안/영업 리드 AI가 opportunity attach부터 시작해야 하는 단계입니다.';
+        ? '제안/영업 AI가 입찰 판단과 요약 생성을 주도하는 단계입니다.'
+        : '제안/영업 AI가 opportunity attach부터 시작해야 하는 단계입니다.';
     } else if (!decisionDoc && (actionNeededCount > 0 || missingData.length > 0)) {
       currentOwner = 'delivery_pm';
       nextOwner = 'executive';
-      headline = '수행 리드 AI가 누락 정보와 실행 준비 항목을 정리하는 단계입니다.';
+      headline = 'PM AI가 누락 정보와 실행 준비 항목을 정리하는 단계입니다.';
     } else if (overrideRequired) {
       currentOwner = 'executive';
       nextOwner = 'approval';
@@ -12207,13 +12317,14 @@
 
   function renderProcurementOwnerStrip(project, decision, docs) {
     const ownerState = getProcurementOwnerState(project, decision, docs);
+    const visibleKeys = getVisibleAiRankKeys();
     const currentLabelMap = {
-      proposal_bd: '제안/영업 리드 AI',
-      delivery_pm: '수행 리드 AI',
+      proposal_bd: '제안/영업 AI',
+      delivery_pm: 'PM AI',
       executive: '최종 승인 AI',
     };
     const nextLabelMap = {
-      delivery_pm: '수행 리드 AI',
+      delivery_pm: 'PM AI',
       executive: '최종 승인 AI',
       approval: '결재 흐름',
       downstream: '제안/RFP/수행계획 handoff',
@@ -12221,12 +12332,12 @@
     const steps = [
       {
         key: 'proposal_bd',
-        role: '제안/영업 리드 AI',
+        role: '제안/영업 AI',
         copy: '공고 import, 1차 Go / No-Go 판단, 초기 handoff 준비',
       },
       {
         key: 'delivery_pm',
-        role: '수행 리드 AI',
+        role: 'PM AI',
         copy: '수행 적합도, missing data, staffing/readiness 정리',
       },
       {
@@ -12247,6 +12358,28 @@
       }
       return { ...step, status };
     });
+    const visibleSteps = isAdminUser()
+      ? steps
+      : steps.filter(step => visibleKeys.includes(step.key));
+    if (!visibleSteps.length) {
+      return `
+        <div class="procurement-owner-strip">
+          <div class="procurement-owner-head">
+            <div>
+              <h5>현재 담당 AI와 handoff</h5>
+              <p>이 프로젝트에서 볼 수 있는 업무 AI가 아직 배정되지 않았습니다. 관리자에게 직위와 업무 AI 배정을 요청하세요.</p>
+            </div>
+          </div>
+        </div>`;
+    }
+    const currentOwnerLabel = isAdminUser() || visibleKeys.includes(ownerState.currentOwner)
+      ? (currentLabelMap[ownerState.currentOwner] || '대기')
+      : '다른 담당자';
+    const nextOwnerLabel = isAdminUser()
+      ? (nextLabelMap[ownerState.nextOwner] || '대기')
+      : (AI_ASSIGNMENT_LABELS[ownerState.nextOwner] && visibleKeys.includes(ownerState.nextOwner)
+          ? nextLabelMap[ownerState.nextOwner]
+          : '다른 담당자');
 
     return `
       <div class="procurement-owner-strip">
@@ -12256,13 +12389,13 @@
             <p>${escapeHtml(ownerState.headline)}</p>
           </div>
           <div class="procurement-owner-summary">
-            <span class="procurement-owner-pill"><strong>Current</strong> ${escapeHtml(currentLabelMap[ownerState.currentOwner] || '대기')}</span>
-            <span class="procurement-owner-pill"><strong>Next</strong> ${escapeHtml(nextLabelMap[ownerState.nextOwner] || '대기')}</span>
+            <span class="procurement-owner-pill"><strong>Current</strong> ${escapeHtml(currentOwnerLabel)}</span>
+            <span class="procurement-owner-pill"><strong>Next</strong> ${escapeHtml(nextOwnerLabel)}</span>
             <span class="procurement-owner-pill"><strong>Action Needed</strong> ${ownerState.actionNeededCount}건</span>
           </div>
         </div>
         <div class="procurement-handoff-track">
-          ${steps.map(step => `
+          ${visibleSteps.map(step => `
             <article class="procurement-handoff-step ${step.status}" data-procurement-handoff-step="${step.key}">
               <span class="procurement-handoff-badge">${step.status === 'done' ? 'done' : step.status === 'active' ? 'active' : step.status === 'next' ? 'next' : 'waiting'}</span>
               <h6 class="procurement-handoff-role">${escapeHtml(step.role)}</h6>
@@ -12302,7 +12435,7 @@
       {
         key: 'proposal_bd',
         tier: '리드 · Proposal / BD Lead',
-        name: '제안/영업 리드 AI',
+        name: '제안/영업 AI',
         status: bdStatus,
         statusLabel: !hasOpportunity ? '공고 대기' : (decision?.recommendation ? recommendationMeta.label : '판단 필요'),
         summary: !hasOpportunity
@@ -12323,7 +12456,7 @@
       {
         key: 'delivery_pm',
         tier: 'PM · Delivery Lead / PM',
-        name: '수행 리드 AI',
+        name: 'PM AI',
         status: pmStatus,
         statusLabel: !hasOpportunity ? '연결 전' : (actionNeededCount || missingData.length ? '보완 필요' : '수행 검토 가능'),
         summary: !hasOpportunity
@@ -12377,8 +12510,27 @@
     ];
   }
 
-  function renderProcurementRoleBoard(project, decision, docs) {
+  function getVisibleProcurementRoleItems(project, decision, docs) {
     const items = getProcurementRoleBoardItems(project, decision, docs);
+    if (isAdminUser()) return items;
+    const visibleKeys = getVisibleAiRankKeys();
+    return items.filter(item => visibleKeys.includes(item.key));
+  }
+
+  function renderProcurementRoleBoard(project, decision, docs) {
+    const items = getVisibleProcurementRoleItems(project, decision, docs);
+    if (!items.length) {
+      return `
+        <div id="procurement-role-board" class="procurement-role-board">
+          <div class="procurement-role-board-head">
+            <div>
+              <h5>업무 AI 상황판</h5>
+              <p>현재 계정에 배정된 업무 AI가 없어 프로젝트 역할 상황판을 표시하지 않습니다.</p>
+            </div>
+            <span class="procurement-role-chip">admin assignment required</span>
+          </div>
+        </div>`;
+    }
     const activeRole = items.some(item => item.key === _activeProcurementRoleBrief)
       ? _activeProcurementRoleBrief
       : getProcurementOwnerState(project, decision, docs).currentOwner;
@@ -12386,8 +12538,8 @@
       <div id="procurement-role-board" class="procurement-role-board">
         <div class="procurement-role-board-head">
           <div>
-            <h5>직급별 AI 상황판</h5>
-            <p>현재 프로젝트에 연결된 공고 상태를 기준으로, 어떤 역할의 AI가 다음 액션을 맡아야 하는지 보여줍니다.</p>
+            <h5>업무 AI 상황판</h5>
+            <p>현재 계정에 배정된 업무 AI 기준으로, 지금 확인해야 할 다음 액션을 보여줍니다.</p>
           </div>
           <span class="procurement-role-chip">project-scoped procurement state</span>
         </div>
@@ -12492,8 +12644,11 @@
 
   function getProcurementRoleBrief(project, decision, docs, roleKey) {
     const items = getProcurementRoleBoardItems(project, decision, docs);
+    const visibleItems = isAdminUser()
+      ? items
+      : items.filter(candidate => getVisibleAiRankKeys().includes(candidate.key));
     const ownerState = getProcurementOwnerState(project, decision, docs);
-    const item = items.find(candidate => candidate.key === roleKey) || items[0];
+    const item = visibleItems.find(candidate => candidate.key === roleKey) || visibleItems[0] || items[0];
     const identity = getProcurementRoleIdentity(item.key);
     const opportunity = decision?.opportunity || {};
     const recommendationMeta = getProcurementRecommendationMeta(decision?.recommendation?.value || '');
@@ -12521,7 +12676,7 @@
         ...item,
         identity,
         kicker: 'Bid intake brief',
-        title: '제안/영업 리드 AI 브리핑',
+        title: '제안/영업 AI 브리핑',
         copy: !decision?.opportunity
           ? '공고를 프로젝트에 붙이고 첫 번째 Go / No-Go 판단을 만들어 downstream 문서 흐름의 시작점을 준비해야 합니다.'
           : '연결된 공고의 입찰 적합도와 초기 리스크를 좁혀서 decision bundle 또는 proposal handoff로 넘길 타이밍을 판단합니다.',
@@ -12560,7 +12715,7 @@
         ...item,
         identity,
         kicker: 'Delivery readiness brief',
-        title: '수행 리드 AI 브리핑',
+        title: 'PM AI 브리핑',
         copy: !decision?.opportunity
           ? '공고가 연결되기 전에는 수행 readiness를 평가할 근거가 부족합니다. 먼저 procurement state를 채워야 합니다.'
           : 'soft-fit score, checklist, missing data를 기준으로 실제 수행 가능성과 staffing gap을 정리하고 performance plan handoff를 준비합니다.',
@@ -12647,11 +12802,25 @@
   }
 
   function renderProcurementRoleBriefPanel(project, decision, docs) {
-    const items = getProcurementRoleBoardItems(project, decision, docs);
+    const items = getVisibleProcurementRoleItems(project, decision, docs);
+    if (!items.length) {
+      return `
+        <div id="procurement-role-brief" class="procurement-role-brief empty">
+          <div class="procurement-role-brief-head">
+            <div class="procurement-role-brief-identity">
+              <span class="procurement-role-brief-avatar proposal_bd" aria-hidden="true">🔒</span>
+              <div>
+                <h5>업무 AI briefing</h5>
+                <p>현재 계정에 배정된 업무 AI가 없어 역할별 브리핑을 표시하지 않습니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
     const ownerState = getProcurementOwnerState(project, decision, docs);
     const activeRole = items.some(item => item.key === _activeProcurementRoleBrief)
       ? _activeProcurementRoleBrief
-      : ownerState.currentOwner;
+      : (items.find(item => item.key === ownerState.currentOwner)?.key || items[0].key);
     const brief = getProcurementRoleBrief(project, decision, docs, activeRole);
     return `
       <div id="procurement-role-brief" class="procurement-role-brief ${brief.key}">
@@ -12659,11 +12828,11 @@
           <div class="procurement-role-brief-identity">
             <span class="procurement-role-brief-avatar ${escapeHtml(brief.identity.className)}" aria-hidden="true">${brief.identity.avatar}</span>
             <div>
-              <h5>직급별 AI briefing</h5>
-              <p>선택한 역할이 지금 보고 있는 evidence, 즉시 보완할 항목, 다음 handoff 결과물을 한 번에 요약합니다.</p>
+              <h5>업무 AI briefing</h5>
+              <p>현재 계정에 배정된 역할이 보고 있는 evidence, 즉시 보완할 항목, 다음 handoff 결과물을 한 번에 요약합니다.</p>
             </div>
           </div>
-          <div class="procurement-role-brief-tabs" role="tablist" aria-label="직급별 AI 브리핑 선택">
+          <div class="procurement-role-brief-tabs" role="tablist" aria-label="업무 AI 브리핑 선택">
             ${items.map(item => `
               <button
                 type="button"
@@ -12743,8 +12912,11 @@
   window.selectProcurementRoleBrief = function selectProcurementRoleBrief(roleKey) {
     const detail = _currentProjectDetail;
     if (!detail?.project) return;
-    _activeProcurementRoleBrief = roleKey;
     const docs = Object.values(detail.docsById || {});
+    if (!getVisibleProcurementRoleItems(detail.project, detail.procurementDecision, docs).some(item => item.key === roleKey)) {
+      return;
+    }
+    _activeProcurementRoleBrief = roleKey;
     const boardHost = document.getElementById('procurement-role-board');
     if (boardHost) {
       boardHost.outerHTML = renderProcurementRoleBoard(detail.project, detail.procurementDecision, docs);
@@ -15282,6 +15454,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const users = data.users || data;
+      _locationUsersPanelState = { tenantId, users };
       let html = `<p style="font-size:.85rem; margin-bottom:.5rem;">테넌트: <strong>${escapeHtml(tenantId)}</strong></p>`;
       html += '<div class="users-list-panel">';
       if (!users.length) {
@@ -15292,13 +15465,21 @@
           const role = escapeHtml(u.role || '');
           const color = u.avatar_color || '#6366f1';
           const initial = (name[0] || '?').toUpperCase();
+          const jobTitle = escapeHtml(u.job_title || '미지정');
+          const userId = escapeHtml(String(u.user_id || ''));
+          const statusBadge = u.is_active
+            ? '<span class="loc-badge">활성</span>'
+            : '<span class="loc-badge" style="background:rgba(239,68,68,.12);color:#dc2626;">비활성</span>';
           return `<div class="user-row">
             <div class="user-avatar" style="background:${escapeHtml(color)}">${initial}</div>
             <div style="flex:1; min-width:0;">
               <div style="font-size:.875rem; font-weight:600;">${name}</div>
               <div style="font-size:.78rem; color:var(--muted);">${escapeHtml(u.email || '')}</div>
+              <div style="font-size:.78rem; color:var(--muted); margin-top:2px;">직위: ${jobTitle}</div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${formatAssignedAiProfiles(u.assigned_ai_profiles || [])}${statusBadge}</div>
             </div>
             <span style="font-size:.75rem; background:rgba(99,102,241,.1); color:var(--p1); padding:2px 8px; border-radius:99px;">${role}</span>
+            <button class="btn-secondary" style="margin-left:.5rem; font-size:.78rem;" onclick="editLocationUserAssignment('${escapeHtml(tenantId)}', '${userId}')">배정 수정</button>
           </div>`;
         }).join('');
       }
@@ -15306,6 +15487,7 @@
       html += `<button class="btn-secondary" style="margin-top:1rem; font-size:.85rem;" onclick="inviteToLocation('${escapeHtml(tenantId)}')">✉️ 초대하기</button>`;
       body.innerHTML = html;
     } catch (e) {
+      _locationUsersPanelState = null;
       body.innerHTML = `<p style="color:#ef4444; font-size:.85rem;">불러오기 실패: ${escapeHtml(e.message)}</p>`;
     }
   }
@@ -17636,19 +17818,74 @@
     }
   }
 
-  function inviteToLocation(tenantId) {
+  async function inviteToLocation(tenantId) {
     const email = prompt(`${tenantId} 거점에 초대할 이메일을 입력하세요:`);
     if (!email) return;
     const role = prompt('역할을 입력하세요 (admin / member / viewer):', 'member') || 'member';
+    const jobTitle = prompt('직위를 입력하세요 (예: PM, 영업 리드, 이사):', '') || '';
+    const defaultProfiles = role === 'admin' ? Object.keys(AI_ASSIGNMENT_LABELS) : [];
+    const assignedRaw = prompt(
+      `배정할 업무 AI key를 콤마로 입력하세요.\n${getAiProfilePromptOptions(defaultProfiles)}`,
+      defaultProfiles.join(',')
+    );
+    if (assignedRaw === null) return;
+    const assignedAiProfiles = parseAssignedAiProfilesInput(assignedRaw);
     fetch('/admin/invite', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, role, tenant_id: tenantId })
+      body: JSON.stringify({ email, role, tenant_id: tenantId, job_title: jobTitle, assigned_ai_profiles: assignedAiProfiles })
     }).then(res => {
       if (!res.ok) return res.json().then(d => { throw new Error(d.detail || `HTTP ${res.status}`); });
       showNotification(`${email}님을 초대했습니다.`, 'success');
+      openLocationUsersPanel(tenantId);
     }).catch(e => showNotification('초대 실패: ' + e.message, 'error'));
   }
+
+  window.editLocationUserAssignment = async function editLocationUserAssignment(tenantId, userId) {
+    const user = getLocationPanelUser(userId);
+    if (!user) {
+      showNotification('사용자 정보를 다시 불러오세요.', 'error');
+      return;
+    }
+    const displayName = prompt('표시 이름을 입력하세요:', user.display_name || user.username || '');
+    if (displayName === null) return;
+    const email = prompt('이메일을 입력하세요:', user.email || '');
+    if (email === null) return;
+    const role = prompt('역할을 입력하세요 (admin / member / viewer):', user.role || 'member');
+    if (!role) return;
+    const jobTitle = prompt('직위를 입력하세요:', user.job_title || '');
+    if (jobTitle === null) return;
+    const assignedRaw = prompt(
+      `배정할 업무 AI key를 콤마로 입력하세요.\n${getAiProfilePromptOptions(user.assigned_ai_profiles || [])}`,
+      Array.isArray(user.assigned_ai_profiles) ? user.assigned_ai_profiles.join(',') : ''
+    );
+    if (assignedRaw === null) return;
+    const statusRaw = prompt('활성 상태를 입력하세요 (active / inactive):', user.is_active ? 'active' : 'inactive');
+    if (!statusRaw) return;
+    const isActive = statusRaw.trim().toLowerCase() !== 'inactive';
+    try {
+      const res = await fetch(`/admin/locations/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          display_name: displayName.trim(),
+          email: email.trim(),
+          role: role.trim(),
+          job_title: jobTitle.trim(),
+          assigned_ai_profiles: parseAssignedAiProfilesInput(assignedRaw),
+          is_active: isActive,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+      }
+      showNotification('사용자 배정을 업데이트했습니다.', 'success');
+      await openLocationUsersPanel(tenantId);
+    } catch (e) {
+      showNotification('배정 수정 실패: ' + e.message, 'error');
+    }
+  };
 
   // ── 업로드 기반 생성 공통 처리 ────────────────────────────────────────────────
   function applyGeneratedResponse(data, requestPayload = null) {

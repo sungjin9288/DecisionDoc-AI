@@ -630,6 +630,8 @@ class CreateUserRequest(BaseModel):
     email: str
     password: str
     role: str = "member"
+    job_title: str = ""
+    assigned_ai_profiles: list[str] = Field(default_factory=list)
 
 
 class UpdateUserRequest(BaseModel):
@@ -637,6 +639,8 @@ class UpdateUserRequest(BaseModel):
     email: str | None = None
     role: str | None = None
     is_active: bool | None = None
+    job_title: str | None = None
+    assigned_ai_profiles: list[str] | None = None
 
 
 # ── Message schemas ────────────────────────────────────────────────────────────
@@ -779,9 +783,12 @@ class CreateShareRequest(BaseModel):
 
 
 class InviteUserRequest(BaseModel):
+    tenant_id: str | None = None
     email: str = ""
     role: str = "member"
     send_email: bool = False
+    job_title: str = ""
+    assigned_ai_profiles: list[str] = Field(default_factory=list)
 
 
 class AcceptInviteRequest(BaseModel):

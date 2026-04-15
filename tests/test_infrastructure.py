@@ -80,12 +80,12 @@ def test_root_html_includes_ai_rank_roster(client):
     res = client.get("/")
     assert res.status_code == 200
     assert 'id="ai-rank-roster"' in res.text
-    assert "프로젝트를 닫는 3계층 AI 팀" in res.text
+    assert "관리자가 배정하는 업무 AI" in res.text
     assert "Executive Approver" in res.text
     assert "Proposal / BD Lead" in res.text
     assert "Delivery Lead / PM" in res.text
     assert 'id="ai-rank-status-action"' in res.text
-    assert "직급별 AI briefing" in res.text
+    assert "업무 AI briefing" in res.text
     assert 'data-procurement-brief-action="' in res.text
     assert "procurement-role-brief-avatar" in res.text
     assert "Recent Activity" in res.text
@@ -103,6 +103,8 @@ def test_root_html_includes_ai_rank_roster(client):
     assert 'data-procurement-override-history-index="' in res.text
     assert 'class="ai-rank-card proposal_bd"' in res.text
     assert 'class="ai-rank-card delivery_pm"' in res.text
+    assert "제안/영업 AI" in res.text
+    assert "PM AI" in res.text
     assert 'id="sketch-again-btn"' in res.text
     assert 'id="ppt-doc-btn"' in res.text
     assert 'id="sketch-pages"' in res.text

@@ -176,7 +176,12 @@ def test_invite_accept_public_for_valid_invite(client):
     invite = client.post(
         "/admin/invite",
         headers={"Authorization": f"Bearer {token}"},
-        json={"email": "member@test.com", "role": "member"},
+        json={
+            "email": "member@test.com",
+            "role": "member",
+            "job_title": "PM",
+            "assigned_ai_profiles": ["delivery_pm"],
+        },
     )
     assert invite.status_code == 200
     invite_id = invite.json()["invite_id"]
@@ -193,6 +198,57 @@ def test_invite_accept_public_for_valid_invite(client):
     body = res.json()
     assert body["message"] == "계정이 생성되었습니다."
     assert body["user"]["role"] == "member"
+    assert body["user"]["job_title"] == "PM"
+    assert body["user"]["assigned_ai_profiles"] == ["delivery_pm"]
+
+
+def test_admin_can_update_location_user_ai_assignment(client):
+    admin = client.post(
+        "/auth/register",
+        json={
+            "username": "admin2",
+            "display_name": "관리자",
+            "email": "admin2@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert admin.status_code == 200
+    token = admin.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_user = client.post(
+        "/admin/users",
+        headers=headers,
+        json={
+            "username": "member2",
+            "display_name": "팀원2",
+            "email": "member2@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+            "job_title": "영업",
+            "assigned_ai_profiles": ["proposal_bd"],
+        },
+    )
+    assert create_user.status_code == 200
+    user_id = create_user.json()["user_id"]
+
+    update_res = client.patch(
+        f"/admin/locations/system/users/{user_id}",
+        headers=headers,
+        json={
+            "job_title": "PM",
+            "assigned_ai_profiles": ["delivery_pm"],
+            "is_active": True,
+        },
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["message"] == "사용자 업무 AI 배정이 수정되었습니다."
+
+    users_res = client.get("/admin/locations/system/users", headers=headers)
+    assert users_res.status_code == 200
+    updated = next(user for user in users_res.json() if user["user_id"] == user_id)
+    assert updated["job_title"] == "PM"
+    assert updated["assigned_ai_profiles"] == ["delivery_pm"]
 
 
 # ── G2B search ────────────────────────────────────────────────────────────────

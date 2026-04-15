@@ -93,8 +93,8 @@ def test_generate_landing_shows_ai_rank_roster(page):
     assert page.locator("#ai-rank-roster").is_visible()
     assert page.locator("#ai-rank-roster .ai-rank-card").count() == 3
     assert page.locator("#ai-rank-roster .ai-rank-card .ai-rank-title", has_text="최종 승인 AI").count() == 1
-    assert page.locator("#ai-rank-roster .ai-rank-card .ai-rank-title", has_text="제안/영업 리드 AI").count() == 1
-    assert page.locator("#ai-rank-roster .ai-rank-card .ai-rank-title", has_text="수행 리드 AI").count() == 1
+    assert page.locator("#ai-rank-roster .ai-rank-card .ai-rank-title", has_text="제안/영업 AI").count() == 1
+    assert page.locator("#ai-rank-roster .ai-rank-card .ai-rank-title", has_text="PM AI").count() == 1
 
 
 def test_ai_rank_roster_bd_action_opens_g2b_search(page):
@@ -602,17 +602,17 @@ def test_project_detail_shows_procurement_ai_role_board(page, live_server):
     assert page.locator(".procurement-role-brief-section", has_text="Recent Activity").count() == 1
     assert page.locator(".procurement-role-brief-log li", has_text="Approval").count() == 1
     assert page.locator(".procurement-role-brief-log-time").count() >= 3
-    assert page.locator(".procurement-role-card", has_text="제안/영업 리드 AI").locator("button", has_text="판단 갱신").count() == 1
-    assert page.locator(".procurement-role-card", has_text="수행 리드 AI").locator("button", has_text="수행계획 생성").count() == 1
+    assert page.locator(".procurement-role-card", has_text="제안/영업 AI").locator("button", has_text="판단 갱신").count() == 1
+    assert page.locator(".procurement-role-card", has_text="PM AI").locator("button", has_text="수행계획 생성").count() == 1
     assert page.locator(".procurement-role-card", has_text="최종 승인 AI").locator("button", has_text="결재 요청").count() == 1
     page.locator('[data-procurement-role="proposal_bd"]').click()
     page.locator('[data-procurement-brief-tab="proposal_bd"]').click()
-    assert "제안/영업 리드 AI 브리핑" in page.locator(".procurement-role-brief-title").inner_text()
+    assert "제안/영업 AI 브리핑" in page.locator(".procurement-role-brief-title").inner_text()
     assert page.locator('[data-procurement-brief-action="proposal_bd"]', has_text="판단 갱신").count() == 1
     assert page.locator('.procurement-role-card[data-procurement-role="proposal_bd"].active').count() == 1
     assert page.locator("#procurement-role-brief.proposal_bd").count() == 1
     page.locator('[data-procurement-brief-tab="delivery_pm"]').click()
-    assert "수행 리드 AI 브리핑" in page.locator(".procurement-role-brief-title").inner_text()
+    assert "PM AI 브리핑" in page.locator(".procurement-role-brief-title").inner_text()
     assert page.locator('[data-procurement-brief-action="delivery_pm"]', has_text="수행계획 생성").count() == 1
     assert page.locator(".procurement-role-brief-avatar.delivery_pm").count() == 1
     assert page.locator("#procurement-role-brief.delivery_pm").count() == 1

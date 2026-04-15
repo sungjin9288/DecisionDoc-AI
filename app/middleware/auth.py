@@ -59,6 +59,11 @@ _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
+    def _attach_user_state(user_payload: dict) -> None:
+        request.state.user_id = user_payload["sub"]
+        request.state.username = user_payload["username"]
+        request.state.user_role = user_payload["role"]
+
     # Static files, explicit public endpoints, invite acceptance pages, and
     # shared document views must be reachable before a JWT session exists.
     if (
@@ -67,6 +72,9 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/shared/")
         or path.startswith("/invite/")
     ):
+        user = get_current_user_from_request(request)
+        if user:
+            _attach_user_state(user)
         return await call_next(request)
 
     user = get_current_user_from_request(request)
@@ -104,9 +112,7 @@ async def auth_middleware(request: Request, call_next):
         )
 
     # Attach user context to request state for downstream handlers
-    request.state.user_id = user["sub"]
-    request.state.username = user["username"]
-    request.state.user_role = user["role"]
+    _attach_user_state(user)
 
     # Viewer: block write methods except on the allowed prefixes
     if user["role"] == "viewer":

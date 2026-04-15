@@ -8,13 +8,17 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
 import bcrypt
 
+from app.ai_profiles.catalog import (
+    default_ai_profiles_for_role,
+    normalize_ai_profile_keys,
+)
 from app.storage.base import BaseJsonStore
 from app.storage.state_backend import StateBackend, get_state_backend
 
@@ -53,6 +57,8 @@ class User:
     created_at: str
     last_login: str | None
     avatar_color: str      # hex color for avatar placeholder
+    job_title: str = ""
+    assigned_ai_profiles: list[str] = dc_field(default_factory=list)
 
 
 def _hash_password(password: str) -> str:
@@ -119,6 +125,8 @@ class UserStore(BaseJsonStore):
     def _to_user(self, d: dict) -> User:
         d = dict(d)
         d["role"] = UserRole(d["role"])
+        d.setdefault("job_title", "")
+        d.setdefault("assigned_ai_profiles", [])
         return User(**d)
 
     # ── public API ────────────────────────────────────────────────────────
@@ -131,11 +139,18 @@ class UserStore(BaseJsonStore):
         email: str,
         password: str,
         role: UserRole | str = UserRole.MEMBER,
+        job_title: str = "",
+        assigned_ai_profiles: list[str] | None = None,
     ) -> User:
         """Create a new user. Raises ValueError if username already exists."""
         _validate_password(password)
         if isinstance(role, str):
             role = UserRole(role)
+        normalized_profiles = (
+            default_ai_profiles_for_role(role.value)
+            if assigned_ai_profiles is None
+            else normalize_ai_profile_keys(assigned_ai_profiles)
+        )
         with self._lock:
             data = self._load()
             # Check uniqueness within tenant
@@ -155,6 +170,8 @@ class UserStore(BaseJsonStore):
                 created_at=_now_iso(),
                 last_login=None,
                 avatar_color=_pick_avatar_color(username),
+                job_title=(job_title or "").strip(),
+                assigned_ai_profiles=normalized_profiles,
             )
             data[user_id] = asdict(user)
             self._save(data)
@@ -196,7 +213,14 @@ class UserStore(BaseJsonStore):
 
     def update(self, user_id: str, **kwargs) -> User:
         """Update allowed fields: display_name, email, role, is_active."""
-        allowed = {"display_name", "email", "role", "is_active"}
+        allowed = {
+            "display_name",
+            "email",
+            "role",
+            "is_active",
+            "job_title",
+            "assigned_ai_profiles",
+        }
         unknown = set(kwargs) - allowed
         if unknown:
             raise ValueError(f"수정 불가 필드: {unknown}")
@@ -210,6 +234,10 @@ class UserStore(BaseJsonStore):
                     continue
                 if k == "role":
                     rec["role"] = UserRole(v).value if isinstance(v, str) else UserRole(v).value
+                elif k == "assigned_ai_profiles":
+                    rec["assigned_ai_profiles"] = normalize_ai_profile_keys(v)
+                elif k == "job_title":
+                    rec["job_title"] = str(v or "").strip()
                 else:
                     rec[k] = v
             data[user_id] = rec

@@ -343,6 +343,13 @@ def test_login_success_returns_tokens_and_user(tmp_path, monkeypatch):
     assert "refresh_token" in data
     assert data["user"]["username"] == "alice"
     assert data["user"]["role"] == "admin"  # first registered user is always admin
+    assert data["user"]["job_title"] == ""
+    assert data["user"]["assigned_ai_profiles"] == ["proposal_bd", "delivery_pm", "executive"]
+    assert [profile["key"] for profile in data["user"]["available_ai_profiles"]] == [
+        "proposal_bd",
+        "delivery_pm",
+        "executive",
+    ]
 
 
 def test_login_wrong_password_returns_401(tmp_path, monkeypatch):
@@ -495,6 +502,12 @@ def test_auth_me_returns_profile(tmp_path, monkeypatch):
     assert data["role"] == "admin"
     assert "email" in data
     assert "avatar_color" in data
+    assert data["job_title"] == ""
+    assert [profile["key"] for profile in data["available_ai_profiles"]] == [
+        "proposal_bd",
+        "delivery_pm",
+        "executive",
+    ]
 
 
 # ── Admin endpoint tests ───────────────────────────────────────────────────────
@@ -514,10 +527,59 @@ def test_admin_create_user(tmp_path, monkeypatch):
             "email": "member@test.com",
             "password": "MemberPass1!",
             "role": "member",
+            "job_title": "PM",
+            "assigned_ai_profiles": ["delivery_pm"],
         },
     )
     assert res.status_code == 200
     assert "user_id" in res.json()
+    users = client.get("/admin/users", headers=headers).json()["users"]
+    created = next(user for user in users if user["username"] == "newmember")
+    assert created["job_title"] == "PM"
+    assert created["assigned_ai_profiles"] == ["delivery_pm"]
+
+
+def test_member_login_only_receives_assigned_ai_profiles_and_bundle_scope(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+
+    create_res = client.post(
+        "/admin/users",
+        headers=admin_headers,
+        json={
+            "username": "pmmember",
+            "display_name": "PM Member",
+            "email": "pm@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+            "job_title": "프로젝트 매니저",
+            "assigned_ai_profiles": ["delivery_pm"],
+        },
+    )
+    assert create_res.status_code == 200
+
+    member_login = client.post(
+        "/auth/login", json={"username": "pmmember", "password": "MemberPass1!"}
+    )
+    assert member_login.status_code == 200
+    member_data = member_login.json()
+    assert member_data["user"]["job_title"] == "프로젝트 매니저"
+    assert member_data["user"]["assigned_ai_profiles"] == ["delivery_pm"]
+    assert [profile["key"] for profile in member_data["user"]["available_ai_profiles"]] == [
+        "delivery_pm"
+    ]
+
+    member_headers = {"Authorization": f"Bearer {member_data['access_token']}"}
+    me_res = client.get("/auth/me", headers=member_headers)
+    assert me_res.status_code == 200
+    assert me_res.json()["assigned_ai_profiles"] == ["delivery_pm"]
+
+    bundles = client.get("/bundles", headers=member_headers).json()
+    bundle_ids = {bundle["id"] for bundle in bundles}
+    assert "performance_plan_kr" in bundle_ids
+    assert "tech_decision" not in bundle_ids
+    assert "proposal_kr" not in bundle_ids
 
 
 def test_admin_list_users_returns_all_tenant_users(tmp_path, monkeypatch):

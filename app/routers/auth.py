@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from app.ai_profiles.catalog import list_ai_profiles
 from app.dependencies import get_tenant_id
 from app.schemas import (
     ChangePasswordRequest,
@@ -23,6 +24,24 @@ from app.schemas import (
 logger = logging.getLogger("decisiondoc.generate")
 
 router = APIRouter(tags=["auth"])
+
+
+def _serialize_user_for_client(user) -> dict:
+    assigned_profiles = list(getattr(user, "assigned_ai_profiles", []) or [])
+    visible_profiles = None if user.role.value == "admin" else assigned_profiles
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "email": user.email,
+        "role": user.role.value,
+        "created_at": user.created_at,
+        "last_login": user.last_login,
+        "avatar_color": user.avatar_color,
+        "job_title": getattr(user, "job_title", ""),
+        "assigned_ai_profiles": assigned_profiles,
+        "available_ai_profiles": list_ai_profiles(visible_profiles),
+    }
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────
@@ -79,13 +98,7 @@ async def login(request: Request, body: LoginRequest):
             user.user_id, tenant_id, user.role.value, user.username
         ),
         "refresh_token": create_refresh_token(user.user_id, tenant_id),
-        "user": {
-            "user_id": user.user_id,
-            "username": user.username,
-            "display_name": user.display_name,
-            "role": user.role.value,
-            "avatar_color": user.avatar_color,
-        },
+        "user": _serialize_user_for_client(user),
     }
 
 
@@ -122,16 +135,7 @@ async def get_me(request: Request):
     user = user_store.get_by_id(user_id)
     if not user:
         raise HTTPException(404, "사용자를 찾을 수 없습니다.")
-    return {
-        "user_id": user.user_id,
-        "username": user.username,
-        "display_name": user.display_name,
-        "email": user.email,
-        "role": user.role.value,
-        "created_at": user.created_at,
-        "last_login": user.last_login,
-        "avatar_color": user.avatar_color,
-    }
+    return _serialize_user_for_client(user)
 
 
 @router.post("/auth/change-password")
@@ -348,14 +352,8 @@ async def list_users(request: Request):
     users = user_store.list_by_tenant(tenant_id)
     return {"users": [
         {
-            "user_id": u.user_id,
-            "username": u.username,
-            "display_name": u.display_name,
-            "email": u.email,
-            "role": u.role.value,
+            **_serialize_user_for_client(u),
             "is_active": u.is_active,
-            "last_login": u.last_login,
-            "avatar_color": u.avatar_color,
         } for u in users
     ]}
 
@@ -377,6 +375,8 @@ async def create_user(request: Request, body: CreateUserRequest):
             email=body.email,
             password=body.password,
             role=body.role,
+            job_title=body.job_title,
+            assigned_ai_profiles=body.assigned_ai_profiles,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))

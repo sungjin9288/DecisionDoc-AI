@@ -336,10 +336,10 @@ def create_app() -> FastAPI:
           - category: filter by category (e.g. 'tech', 'business', 'public')
         """
         from app.bundle_catalog.registry import list_bundles
+        from app.ai_profiles.catalog import effective_bundle_ids_for_request
         all_bundles = list_bundles()
-        tenant = getattr(request.state, "tenant", None)
-        if tenant and tenant.allowed_bundles:
-            all_bundles = [b for b in all_bundles if b["id"] in tenant.allowed_bundles]
+        effective_bundle_ids = effective_bundle_ids_for_request(request)
+        all_bundles = [b for b in all_bundles if b["id"] in effective_bundle_ids]
 
         # Keyword search filter
         if q:
@@ -365,7 +365,10 @@ def create_app() -> FastAPI:
     def get_bundle_detail(bundle_id: str, request: Request) -> dict:
         """Return detailed information for a specific bundle type."""
         from app.bundle_catalog.registry import BUNDLE_REGISTRY
+        from app.ai_profiles.catalog import effective_bundle_ids_for_request
         if bundle_id not in BUNDLE_REGISTRY:
+            raise HTTPException(status_code=404, detail=f"번들을 찾을 수 없습니다: {bundle_id}")
+        if bundle_id not in effective_bundle_ids_for_request(request):
             raise HTTPException(status_code=404, detail=f"번들을 찾을 수 없습니다: {bundle_id}")
         spec = BUNDLE_REGISTRY[bundle_id]
         metadata = spec.ui_metadata()

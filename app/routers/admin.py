@@ -16,6 +16,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from app.ai_profiles.catalog import (
+    default_ai_profiles_for_role,
+    list_ai_profiles,
+    normalize_ai_profile_keys,
+)
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
 from app.dependencies import require_admin
@@ -86,6 +91,16 @@ _PROCUREMENT_STALE_SHARE_STATUSES = (
 def _render_invite_page(invite: dict, invite_id: str) -> str:
     role_labels = {"admin": "관리자", "member": "팀원", "viewer": "열람자"}
     role = role_labels.get(invite.get("role", "member"), "팀원")
+    job_title = str(invite.get("job_title", "") or "").strip()
+    assigned_profiles = list_ai_profiles(invite.get("assigned_ai_profiles") or [])
+    profile_html = (
+        "".join(
+            f'<span class="badge" style="margin-right:6px;margin-bottom:6px;">{profile["label"]}</span>'
+            for profile in assigned_profiles
+        )
+        if assigned_profiles
+        else '<span style="color:#6b7280;font-size:.9rem;">관리자가 로그인 후 업무 AI를 배정할 예정입니다.</span>'
+    )
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -113,6 +128,11 @@ def _render_invite_page(invite: dict, invite_id: str) -> str:
   <h2>🎉 팀 초대</h2>
   <p>DecisionDoc AI 팀에 초대되었습니다.</p>
   <p>역할: <span class="badge">{role}</span></p>
+  <p>직위: <strong>{job_title or '미지정'}</strong></p>
+  <div style="margin:12px 0 4px;">
+    <div style="font-size:.85rem;color:#374151;font-weight:600;margin-bottom:6px;">배정된 업무 AI</div>
+    <div style="display:flex;flex-wrap:wrap;">{profile_html}</div>
+  </div>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0">
   <form onsubmit="accept(event)">
     <label>아이디</label>
@@ -1744,7 +1764,15 @@ async def admin_invite_user(body: InviteUserRequest, request: Request) -> dict:
     """Generate a 7-day invitation link for a new team member. Admin only."""
     require_admin(request)
     from app.storage.invite_store import InviteStore
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    tenant_store = request.app.state.tenant_store
+    tenant_id = (body.tenant_id or getattr(request.state, "tenant_id", "system") or "system").strip()
+    if tenant_store.get_tenant(tenant_id) is None:
+        raise HTTPException(404, f"Tenant '{tenant_id}' not found.")
+    assigned_profiles = (
+        normalize_ai_profile_keys(body.assigned_ai_profiles)
+        if body.assigned_ai_profiles
+        else default_ai_profiles_for_role(body.role)
+    )
     invite_id = _secrets.token_urlsafe(20)
     store = InviteStore(tenant_id)
     store.create(
@@ -1754,6 +1782,8 @@ async def admin_invite_user(body: InviteUserRequest, request: Request) -> dict:
         role=body.role,
         created_by=getattr(request.state, "user_id", "admin"),
         expires_days=7,
+        job_title=body.job_title.strip(),
+        assigned_ai_profiles=assigned_profiles,
     )
     base_url = str(request.base_url).rstrip("/")
     invite_url = f"{base_url}/invite/{invite_id}"
@@ -1762,6 +1792,8 @@ async def admin_invite_user(body: InviteUserRequest, request: Request) -> dict:
         "invite_url": invite_url,
         "email": body.email,
         "role": body.role,
+        "job_title": body.job_title.strip(),
+        "assigned_ai_profiles": assigned_profiles,
         "expires_days": 7,
     }
 
@@ -1807,6 +1839,8 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                 email=invite.get("email", ""),
                 password=body.password,
                 role=invite.get("role", "member"),
+                job_title=invite.get("job_title", ""),
+                assigned_ai_profiles=invite.get("assigned_ai_profiles") or [],
             )
             store.mark_used(invite_id)
             return {
@@ -1819,6 +1853,8 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                     "user_id": user.user_id,
                     "username": user.username,
                     "role": user.role.value,
+                    "job_title": user.job_title,
+                    "assigned_ai_profiles": list(user.assigned_ai_profiles),
                 },
             }
     raise HTTPException(404, "초대 링크를 찾을 수 없습니다.")
@@ -2077,14 +2113,41 @@ def admin_location_users(tenant_id_path: str, request: Request) -> list[dict]:
             "username": u.username,
             "display_name": u.display_name,
             "email": u.email,
-            "role": u.role,
+            "role": u.role.value,
             "is_active": u.is_active,
             "created_at": u.created_at,
             "last_login": u.last_login,
             "avatar_color": u.avatar_color,
+            "job_title": getattr(u, "job_title", ""),
+            "assigned_ai_profiles": list(getattr(u, "assigned_ai_profiles", []) or []),
         }
         for u in users
     ]
+
+
+@router.patch("/admin/locations/{tenant_id_path}/users/{user_id}", dependencies=[Depends(require_api_key)])
+def admin_update_location_user(tenant_id_path: str, user_id: str, payload: dict, request: Request) -> dict:
+    """Update a tenant user's role/profile assignment. Requires admin."""
+    require_admin(request)
+    from app.storage.user_store import UserStore
+
+    tenant_store = request.app.state.tenant_store
+    if tenant_store.get_tenant(tenant_id_path) is None:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")
+    data_dir = request.app.state.data_dir
+    user_store = UserStore(
+        data_dir / "tenants" / tenant_id_path,
+        backend=request.app.state.state_backend,
+    )
+    updates: dict = {}
+    for key in ("display_name", "email", "role", "is_active", "job_title", "assigned_ai_profiles"):
+        if key in payload:
+            updates[key] = payload[key]
+    try:
+        user_store.update(user_id, **updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"message": "사용자 업무 AI 배정이 수정되었습니다."}
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
+from app.ai_profiles.catalog import ensure_bundle_access
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
 from app.dependencies import require_admin as _require_admin, require_auth as _require_auth
@@ -535,12 +536,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and req.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{req.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, req.bundle_type)
     _ensure_procurement_override_reason_for_downstream(req, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(req, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(req, request, tenant_id=tenant_id)
@@ -785,12 +781,7 @@ def generate_export(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -848,12 +839,7 @@ def generate_pptx_endpoint(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -892,9 +878,7 @@ async def generate_stream(
     project_store = request.app.state.project_store
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(status_code=403, detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.")
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(payload, request, tenant_id=tenant_id)
@@ -995,12 +979,7 @@ def generate_docx_endpoint(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -1037,12 +1016,7 @@ async def generate_pdf_endpoint(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -1080,12 +1054,7 @@ def generate_excel_endpoint(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -1122,12 +1091,7 @@ def generate_hwp_endpoint(
     template_version = request.app.state.template_version
     request_id = request.state.request_id
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     result = service.generate_documents(payload, request_id=request_id, tenant_id=tenant_id)
@@ -1259,12 +1223,7 @@ def generate_sketch_endpoint(
     data_dir = request.app.state.data_dir
     search_service = request.app.state.search_service
     request_id = request.state.request_id
-    tenant = getattr(request.state, "tenant", None)
-    if tenant and tenant.allowed_bundles and payload.bundle_type not in tenant.allowed_bundles:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle '{payload.bundle_type}' is not allowed for this tenant.",
-        )
+    ensure_bundle_access(request, payload.bundle_type)
     bundle_spec = get_bundle_spec(payload.bundle_type)
     provider = get_provider()
     result = generate_sketch(

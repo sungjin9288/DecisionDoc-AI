@@ -217,7 +217,7 @@ def _proposal_business_understanding(title: str, goal: str, ctx: str) -> dict:
         "project_background": (
             f"{title} 사업은 {goal}을 목적으로 추진됩니다.{ctx_line} "
             "공공 서비스 디지털 전환 가속화와 AI 기술의 급격한 발전으로 인해, "
-            "기존 수작업 중심의 업무 프로세스를 AI 기반 스마트 운영 체계로 전환하는 것이 "
+            "기존 수작업 중심의 업무 프로세스를 AI 기반 업무 지원 체계로 전환하는 것이 "
             "국가 경쟁력 강화와 서비스 품질 향상을 위한 핵심 과제로 부상하고 있습니다."
         ),
         "current_issues": [

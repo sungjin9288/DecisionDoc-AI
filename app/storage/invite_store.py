@@ -30,6 +30,8 @@ class InviteStore(BaseJsonStore):
         role: str,
         created_by: str,
         expires_days: int = 7,
+        job_title: str = "",
+        assigned_ai_profiles: list[str] | None = None,
     ) -> dict:
         with self._lock:
             data = self._load()
@@ -43,6 +45,8 @@ class InviteStore(BaseJsonStore):
                 "expires_at": (
                     datetime.now() + timedelta(days=expires_days)
                 ).isoformat(),
+                "job_title": job_title,
+                "assigned_ai_profiles": list(assigned_ai_profiles or []),
                 "is_active": True,
                 "used_at": None,
             }
