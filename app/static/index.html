@@ -809,6 +809,21 @@
       background:var(--bg,#fff);
       color:inherit;
     }
+    .location-user-inline-meta {
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid var(--border,#ddd);
+      background:rgba(248,250,252,.88);
+      font-size:.82rem;
+      color:var(--muted);
+      line-height:1.45;
+    }
+    .location-user-inline-meta strong {
+      display:block;
+      margin-bottom:.18rem;
+      font-size:.84rem;
+      color:var(--text);
+    }
     .ai-assignment-checklist {
       display:grid;
       gap:.55rem;
@@ -5353,6 +5368,70 @@
         <div style="display:flex; justify-content:flex-end; gap:.55rem; margin-top:1rem;">
           <button type="button" class="btn-secondary" onclick="closeLocationCreateUserModal()">취소</button>
           <button id="location-user-create-submit" type="submit" class="btn-primary">계정 생성</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Location user edit modal -->
+  <div id="location-user-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1260; align-items:center; justify-content:center; padding:1rem;" onclick="if(event.target===this) closeLocationUserEditModal()">
+    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+      <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1rem;">
+        <div>
+          <h4 style="margin:0; font-size:1.05rem;">권한/배정 수정</h4>
+          <p id="location-user-edit-subtitle" style="margin:.35rem 0 0; font-size:.82rem; color:var(--muted);">팀원 계정의 역할, 직위, 노출할 업무 AI와 활성 상태를 한 화면에서 수정합니다.</p>
+        </div>
+        <button class="btn-secondary" type="button" onclick="closeLocationUserEditModal()">닫기</button>
+      </div>
+      <form id="location-user-edit-form" onsubmit="submitLocationUserEdit(event)">
+        <input id="location-user-edit-tenant-id" type="hidden">
+        <input id="location-user-edit-user-id" type="hidden">
+        <div class="location-user-create-grid">
+          <div class="location-user-inline-meta">
+            <strong>아이디</strong>
+            <span id="location-user-edit-username">-</span>
+          </div>
+          <div class="location-user-inline-meta">
+            <strong>최근 로그인</strong>
+            <span id="location-user-edit-last-login">기록 없음</span>
+          </div>
+          <label>
+            표시 이름
+            <input id="location-user-edit-display-name" type="text" required>
+          </label>
+          <label>
+            이메일
+            <input id="location-user-edit-email" type="email" required>
+          </label>
+          <label>
+            역할
+            <select id="location-user-edit-role">
+              <option value="member">member</option>
+              <option value="viewer">viewer</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <label>
+            활성 상태
+            <select id="location-user-edit-status">
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </label>
+          <label class="full-span">
+            직위
+            <input id="location-user-edit-job-title" type="text" placeholder="예: PM, 영업 리드, 이사">
+          </label>
+          <div class="full-span">
+            <div style="font-size:.82rem; font-weight:700; margin-bottom:.4rem;">배정할 업무 AI</div>
+            <p style="margin:0 0 .55rem; font-size:.78rem; color:var(--muted); line-height:1.5;">이 계정에 실제로 보일 업무 AI만 선택합니다. admin도 운영 원칙에 맞게 필요한 범위만 남길 수 있습니다.</p>
+            <div id="location-user-edit-ai-list" class="ai-assignment-checklist"></div>
+          </div>
+        </div>
+        <div id="location-user-edit-status-text" style="display:none; margin-top:.85rem; font-size:.8rem;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:.55rem; margin-top:1rem;">
+          <button type="button" class="btn-secondary" onclick="closeLocationUserEditModal()">취소</button>
+          <button id="location-user-edit-submit" type="submit" class="btn-primary">저장</button>
         </div>
       </form>
     </div>
@@ -18204,6 +18283,22 @@
       .filter(key => key && AI_ASSIGNMENT_LABELS[key]);
   }
 
+  function renderLocationUserEditAiOptions(selectedKeys = []) {
+    const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
+    return Object.entries(AI_ASSIGNMENT_LABELS).map(([key, label]) => {
+      const checked = selected.has(key) ? 'checked' : '';
+      const hint = AI_RANK_PROFILES[key]?.subline || AI_RANK_PROFILES[key]?.title || '';
+      return `
+        <label class="ai-assignment-option">
+          <input type="checkbox" name="location-user-edit-ai-profile" value="${escapeHtml(key)}" ${checked}>
+          <span>
+            <strong>${escapeHtml(label)}</strong>
+            <p>${escapeHtml(hint)}</p>
+          </span>
+        </label>`;
+    }).join('');
+  }
+
   async function submitLocationCreateUser(event) {
     event.preventDefault();
     const tenantId = ($id('location-user-create-tenant-id')?.value || '').trim();
@@ -18288,6 +18383,45 @@
     }
   }
 
+  function closeLocationUserEditModal() {
+    const modal = $id('location-user-edit-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function getLocationUserEditAiProfiles() {
+    return [...document.querySelectorAll('input[name="location-user-edit-ai-profile"]:checked')]
+      .map(input => String(input.value || '').trim())
+      .filter(key => key && AI_ASSIGNMENT_LABELS[key]);
+  }
+
+  function openLocationUserEditModal(tenantId, user) {
+    const modal = $id('location-user-edit-modal');
+    if (!modal || !user) return;
+    const status = $id('location-user-edit-status-text');
+    const submit = $id('location-user-edit-submit');
+    $id('location-user-edit-form')?.reset();
+    $id('location-user-edit-tenant-id') && ($id('location-user-edit-tenant-id').value = String(tenantId || '').trim());
+    $id('location-user-edit-user-id') && ($id('location-user-edit-user-id').value = String(user.user_id || '').trim());
+    $id('location-user-edit-username') && ($id('location-user-edit-username').textContent = String(user.username || '-').trim() || '-');
+    $id('location-user-edit-last-login') && ($id('location-user-edit-last-login').textContent = String(user.last_login || '').trim() || '기록 없음');
+    $id('location-user-edit-display-name') && ($id('location-user-edit-display-name').value = String(user.display_name || user.username || '').trim());
+    $id('location-user-edit-email') && ($id('location-user-edit-email').value = String(user.email || '').trim());
+    $id('location-user-edit-role') && ($id('location-user-edit-role').value = String(user.role || 'member').trim() || 'member');
+    $id('location-user-edit-status') && ($id('location-user-edit-status').value = user.is_active === false ? 'inactive' : 'active');
+    $id('location-user-edit-job-title') && ($id('location-user-edit-job-title').value = String(user.job_title || '').trim());
+    $id('location-user-edit-subtitle') && ($id('location-user-edit-subtitle').textContent = `${String(tenantId || 'system').trim()} 거점에서 ${String(user.display_name || user.username || '팀원').trim()} 계정의 권한과 업무 AI를 수정합니다.`);
+    $id('location-user-edit-ai-list') && ($id('location-user-edit-ai-list').innerHTML = renderLocationUserEditAiOptions(user.assigned_ai_profiles || []));
+    if (status) {
+      status.style.display = 'none';
+      status.textContent = '';
+    }
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = '저장';
+    }
+    modal.style.display = 'flex';
+  }
+
   async function inviteToLocation(tenantId) {
     const email = prompt(`${tenantId} 거점에 초대할 이메일을 입력하세요:`);
     if (!email) return;
@@ -18324,45 +18458,81 @@
       showNotification('사용자 정보를 다시 불러오세요.', 'error');
       return;
     }
-    const displayName = prompt('표시 이름을 입력하세요:', user.display_name || user.username || '');
-    if (displayName === null) return;
-    const email = prompt('이메일을 입력하세요:', user.email || '');
-    if (email === null) return;
-    const role = prompt('역할을 입력하세요 (admin / member / viewer):', user.role || 'member');
-    if (!role) return;
-    const jobTitle = prompt('직위를 입력하세요:', user.job_title || '');
-    if (jobTitle === null) return;
-    const assignedRaw = prompt(
-      `배정할 업무 AI key를 콤마로 입력하세요.\n${getAiProfilePromptOptions(user.assigned_ai_profiles || [])}`,
-      Array.isArray(user.assigned_ai_profiles) ? user.assigned_ai_profiles.join(',') : ''
-    );
-    if (assignedRaw === null) return;
-    const statusRaw = prompt('활성 상태를 입력하세요 (active / inactive):', user.is_active ? 'active' : 'inactive');
-    if (!statusRaw) return;
-    const isActive = statusRaw.trim().toLowerCase() !== 'inactive';
+    openLocationUserEditModal(tenantId, user);
+  };
+
+  async function submitLocationUserEdit(event) {
+    event.preventDefault();
+    const tenantId = ($id('location-user-edit-tenant-id')?.value || '').trim();
+    const userId = ($id('location-user-edit-user-id')?.value || '').trim();
+    const displayName = ($id('location-user-edit-display-name')?.value || '').trim();
+    const email = ($id('location-user-edit-email')?.value || '').trim();
+    const role = ($id('location-user-edit-role')?.value || 'member').trim();
+    const jobTitle = ($id('location-user-edit-job-title')?.value || '').trim();
+    const statusRaw = ($id('location-user-edit-status')?.value || 'active').trim();
+    const isActive = statusRaw === 'active';
+    const assignedAiProfiles = getLocationUserEditAiProfiles();
+    const status = $id('location-user-edit-status-text');
+    const submit = $id('location-user-edit-submit');
+
+    if (!tenantId || !userId || !displayName || !email || !role) {
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#dc2626';
+        status.textContent = '표시 이름, 이메일, 역할은 모두 필요합니다.';
+      }
+      return;
+    }
+
+    if (status) {
+      status.style.display = 'block';
+      status.style.color = 'var(--muted)';
+      status.textContent = '저장 중…';
+    }
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = '저장 중…';
+    }
+
     try {
       const res = await fetch(`/admin/locations/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          display_name: displayName.trim(),
-          email: email.trim(),
-          role: role.trim(),
-          job_title: jobTitle.trim(),
-          assigned_ai_profiles: parseAssignedAiProfilesInput(assignedRaw),
+          display_name: displayName,
+          email,
+          role,
+          job_title: jobTitle,
+          assigned_ai_profiles: assignedAiProfiles,
           is_active: isActive,
         }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+        const err = await parseApiErrorResponse(res);
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#15803d';
+        status.textContent = '사용자 정보가 저장되었습니다.';
       }
       showNotification('사용자 배정을 업데이트했습니다.', 'success');
+      closeLocationUserEditModal();
       await openLocationUsersPanel(tenantId);
     } catch (e) {
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#dc2626';
+        status.textContent = `저장 실패: ${e.message}`;
+      }
       showNotification('배정 수정 실패: ' + e.message, 'error');
+    } finally {
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = '저장';
+      }
     }
-  };
+  }
 
   // ── 업로드 기반 생성 공통 처리 ────────────────────────────────────────────────
   function applyGeneratedResponse(data, requestPayload = null) {

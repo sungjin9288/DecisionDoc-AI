@@ -139,9 +139,17 @@ def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     assert 'id="profile-form"' in res.text
     assert "➕ 계정 직접 생성" in res.text
     assert 'id="location-user-create-modal"' in res.text
+    assert 'id="location-user-edit-modal"' in res.text
+    assert 'id="location-user-edit-form"' in res.text
     assert "🔗 초대 링크 발급" in res.text
+    assert "권한/배정 수정" in res.text
+    assert "최근 로그인" in res.text
+    assert "활성 상태" in res.text
+    assert "openLocationUserEditModal" in res.text
     assert 'id="dark-toggle"' not in res.text
     assert "toggleDark()" not in res.text
+    assert "prompt('표시 이름을 입력하세요:'" not in res.text
+    assert "prompt('활성 상태를 입력하세요 (active / inactive):'" not in res.text
 
 
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
