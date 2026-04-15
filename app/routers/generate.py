@@ -64,6 +64,8 @@ from app.schemas import (
     OpsInvestigateResponse,
     OpsPostDeployReportDetailResponse,
     OpsPostDeployReportsResponse,
+    OpsPostDeployRunRequest,
+    OpsPostDeployRunResponse,
     SectionRewriteRequest,
 )
 from app.services.attachment_service import (
@@ -1822,6 +1824,26 @@ def get_ops_post_deploy_report_detail(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid post-deploy report file name.") from exc
     return OpsPostDeployReportDetailResponse(**result)
+
+
+@router.post(
+    "/ops/post-deploy/run",
+    response_model=OpsPostDeployRunResponse,
+    dependencies=[Depends(require_ops_key)],
+)
+def run_ops_post_deploy_check(
+    payload: OpsPostDeployRunRequest,
+    request: Request,
+) -> OpsPostDeployRunResponse:
+    ops_service = request.app.state.ops_service
+    try:
+        result = ops_service.run_post_deploy_check(skip_smoke=payload.skip_smoke)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Post-deploy runner is disabled.") from exc
+    except Exception as exc:
+        logger.warning("Post-deploy run failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Post-deploy run failed.") from exc
+    return OpsPostDeployRunResponse(**result)
 
 
 @router.post(

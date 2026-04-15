@@ -87,6 +87,7 @@ docker compose -f docker-compose.prod.yml logs app --tail=100 -f
 - post-deploy JSON viewer: `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest --json`
 - post-deploy API viewer: `GET /ops/post-deploy/reports?limit=5&latest=true` (`admin JWT` 또는 `X-DecisionDoc-Ops-Key`)
 - post-deploy API drill-down: `GET /ops/post-deploy/reports/{report_file}` 로 특정 history file의 실패 원인과 check detail 조회
+- post-deploy API run: `POST /ops/post-deploy/run` (ops key 필요, ENV `DECISIONDOC_OPS_ALLOW_POST_DEPLOY_RUN=1`, optional `DECISIONDOC_OPS_POST_DEPLOY_ENV_FILE`, `DECISIONDOC_OPS_POST_DEPLOY_TIMEOUT_SECONDS`)
 - 감사 로그는 `data/tenants/<tenant_id>/audit_logs.jsonl` (볼륨 내)로 저장됨
 
 여러 장소로 분리 운영할 때는 [Multi-site 운영 가이드](multi_site_operations.md)를 확인하세요.

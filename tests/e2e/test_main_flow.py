@@ -235,6 +235,22 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
         }"""
     )
     assert pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').count() == 1
+    assert pg.locator("#ops-post-deploy-run-btn").count() == 1
+    assert pg.locator("#ops-post-deploy-run-skip-smoke").count() == 1
+    assert pg.locator("#ops-post-deploy-compare-left").count() == 1
+    assert pg.locator("#ops-post-deploy-compare-right").count() == 1
+
+    pg.select_option("#ops-post-deploy-compare-left", "post-deploy-20260414T041000Z.json")
+    pg.select_option("#ops-post-deploy-compare-right", "post-deploy-20260414T031000Z.json")
+    pg.click("#ops-post-deploy-compare-run-btn")
+    pg.wait_for_function(
+        """() => {
+          const compare = document.querySelector('#ops-post-deploy-compare-result');
+          return compare?.innerText.includes('체크 차이') && compare?.innerText.includes('smoke');
+        }"""
+    )
+    compare_text = pg.locator("#ops-post-deploy-compare-result").inner_text()
+    assert "exit 17" in compare_text
 
     pg.click("#ops-post-deploy-clear-filters-btn")
     pg.wait_for_function(

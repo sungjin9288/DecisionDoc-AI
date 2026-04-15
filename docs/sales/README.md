@@ -41,6 +41,20 @@
   - `admin` / `dawool` 분리 운영 구조
   - 보안, 권한, 로그, 운영 포인트
 
+## PDF 재생성
+
+- 단일 소개서:
+  - `python3 scripts/build_sales_intro_pdf.py`
+- 소개 자료 패키지 일괄 생성:
+  - `python3 scripts/build_sales_pack.py`
+
+기본 생성 파일:
+
+- `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
+- `output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf`
+- `output/pdf/decisiondoc_ai_notebooklm_comparison_ko.pdf`
+- `output/pdf/decisiondoc_ai_internal_deployment_brief_ko.pdf`
+
 ## 권장 사용 순서
 
 1. 첫 소개 미팅: `product_brief.md`

@@ -16,6 +16,25 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+def _render_inline(text: str) -> str:
+    rendered = html.escape(text)
+    rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
+    return rendered
+
+
+def _is_markdown_table_separator(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped.startswith("|"):
+        return False
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    return bool(cells) and all(cell and set(cell) <= {"-", ":"} for cell in cells)
+
+
+def _parse_table_cells(text: str) -> list[str]:
+    return [cell.strip() for cell in text.strip().strip("|").split("|")]
+
+
 def _markdown_to_html(markdown: str) -> str:
     lines: list[str] = []
     in_list = False
@@ -26,40 +45,63 @@ def _markdown_to_html(markdown: str) -> str:
             lines.append("</ul>")
             in_list = False
 
-    for raw in markdown.splitlines():
+    raw_lines = markdown.splitlines()
+    index = 0
+    while index < len(raw_lines):
+        raw = raw_lines[index]
         line = raw.rstrip()
         stripped = line.strip()
 
+        if stripped.startswith("|") and index + 1 < len(raw_lines):
+            separator = raw_lines[index + 1].strip()
+            if _is_markdown_table_separator(separator):
+                close_list()
+                headers = _parse_table_cells(stripped)
+                body_rows: list[list[str]] = []
+                index += 2
+                while index < len(raw_lines):
+                    row_text = raw_lines[index].strip()
+                    if not row_text.startswith("|"):
+                        break
+                    body_rows.append(_parse_table_cells(row_text))
+                    index += 1
+
+                lines.append("<table>")
+                lines.append("<thead><tr>")
+                lines.extend(f"<th>{_render_inline(cell)}</th>" for cell in headers)
+                lines.append("</tr></thead>")
+                if body_rows:
+                    lines.append("<tbody>")
+                    for row in body_rows:
+                        lines.append("<tr>")
+                        lines.extend(f"<td>{_render_inline(cell)}</td>" for cell in row)
+                        lines.append("</tr>")
+                    lines.append("</tbody>")
+                lines.append("</table>")
+                continue
+
         if stripped.startswith("### "):
             close_list()
-            lines.append(f"<h3>{html.escape(stripped[4:])}</h3>")
-            continue
-        if stripped.startswith("## "):
+            lines.append(f"<h3>{_render_inline(stripped[4:])}</h3>")
+        elif stripped.startswith("## "):
             close_list()
-            lines.append(f"<h2>{html.escape(stripped[3:])}</h2>")
-            continue
-        if stripped.startswith("# "):
+            lines.append(f"<h2>{_render_inline(stripped[3:])}</h2>")
+        elif stripped.startswith("# "):
             close_list()
-            lines.append(f"<h1>{html.escape(stripped[2:])}</h1>")
-            continue
-        if stripped.startswith(("- ", "* ")):
+            lines.append(f"<h1>{_render_inline(stripped[2:])}</h1>")
+        elif stripped.startswith(("- ", "* ")):
             if not in_list:
                 lines.append("<ul>")
                 in_list = True
-            text = html.escape(stripped[2:])
-            text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-            lines.append(f"<li>{text}</li>")
-            continue
-        if not stripped:
+            lines.append(f"<li>{_render_inline(stripped[2:])}</li>")
+        elif not stripped:
             close_list()
             lines.append("<div class='spacer'></div>")
-            continue
+        else:
+            close_list()
+            lines.append(f"<p>{_render_inline(stripped)}</p>")
 
-        close_list()
-        text = html.escape(stripped)
-        text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-        lines.append(f"<p>{text}</p>")
-
+        index += 1
     close_list()
     return "\n".join(lines)
 
@@ -136,6 +178,32 @@ def _build_html(markdown: str, *, title: str) -> str:
       margin: 0 0 2mm 0;
       padding-left: 5mm;
     }}
+    code {{
+      font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+      font-size: 9pt;
+      padding: 1px 5px;
+      border-radius: 6px;
+      background: #eef2f7;
+      color: #1e3a5f;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 3mm 0 4mm 0;
+      font-size: 9.6pt;
+    }}
+    th, td {{
+      border: 1px solid #d6dde5;
+      padding: 2.5mm 2.8mm;
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.5;
+    }}
+    th {{
+      background: #f4f7fb;
+      color: #0f172a;
+      font-weight: 700;
+    }}
     .summary {{
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -207,7 +275,14 @@ async def _build_pdf_from_html(html_text: str) -> bytes:
     return pdf_bytes
 
 
-def main() -> int:
+def _resolve_repo_path(value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build DecisionDoc AI sales PDF from markdown.")
     parser.add_argument(
         "--source",
@@ -234,11 +309,11 @@ def main() -> int:
         default="DecisionDoc AI 소개서",
         help="Document title shown in the rendered HTML/PDF",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    source_path = REPO_ROOT / args.source
-    html_output = REPO_ROOT / args.html_output
-    pdf_output = REPO_ROOT / args.pdf_output
+    source_path = _resolve_repo_path(args.source)
+    html_output = _resolve_repo_path(args.html_output)
+    pdf_output = _resolve_repo_path(args.pdf_output)
 
     markdown = source_path.read_text(encoding="utf-8")
     title = args.title

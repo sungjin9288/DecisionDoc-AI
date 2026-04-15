@@ -104,8 +104,17 @@ def _resolve_report_targets(
     return None, None
 
 
+def _normalize_index_error(value: Any, *, max_len: int = 160) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= max_len:
+        return text
+    return f"{text[: max_len - 3].rstrip()}..."
+
+
 def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    return {
+    entry: dict[str, Any] = {
         "file": report_file.name,
         "status": payload.get("status"),
         "base_url": payload.get("base_url"),
@@ -113,6 +122,10 @@ def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[st
         "finished_at": payload.get("finished_at"),
         "skip_smoke": bool(payload.get("skip_smoke")),
     }
+    error = _normalize_index_error(payload.get("error"))
+    if error:
+        entry["error"] = error
+    return entry
 
 
 def _update_report_index(

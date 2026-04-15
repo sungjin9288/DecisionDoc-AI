@@ -95,6 +95,7 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
                 "started_at": "2026-04-14T03:09:00+00:00",
                 "finished_at": "2026-04-14T03:10:00+00:00",
                 "skip_smoke": True,
+                "error": "docker compose ps failed with exit code 17",
             },
         ],
     }

@@ -696,6 +696,7 @@ class PostDeployReportSummary(BaseModel):
     started_at: str
     finished_at: str
     skip_smoke: bool = False
+    error: str | None = None
 
 
 class PostDeployReportCheck(BaseModel):
@@ -728,6 +729,26 @@ class OpsPostDeployReportDetailResponse(BaseModel):
     report_file: str
     report_path: str
     details: dict[str, Any]
+
+
+class OpsPostDeployRunRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    skip_smoke: bool = False
+
+
+class OpsPostDeployRunResponse(BaseModel):
+    run_id: str
+    status: str
+    exit_code: int | None = None
+    started_at: str
+    finished_at: str
+    report_dir: str
+    report_file: str | None = None
+    report_path: str | None = None
+    stdout_tail: list[str] = Field(default_factory=list)
+    stderr_tail: list[str] = Field(default_factory=list)
+    command: str | None = None
 
 
 class CheckoutRequest(BaseModel):

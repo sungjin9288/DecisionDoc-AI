@@ -5496,6 +5496,25 @@
         필터 초기화
       </button>
     </div>
+    <div id="ops-post-deploy-run-panel"
+         style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;padding:.7rem .85rem;border-radius:12px;background:rgba(15,23,42,.32);border:1px solid rgba(196,181,253,.12);">
+      <div>
+        <div style="font-size:.78rem;color:#e2e8f0;font-weight:700;">post-deploy 점검 실행</div>
+        <div style="margin-top:.25rem;color:#cbd5e1;font-size:.72rem;">서버에서 `DECISIONDOC_OPS_ALLOW_POST_DEPLOY_RUN=1` 설정이 필요합니다.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;">
+        <label for="ops-post-deploy-run-skip-smoke"
+               style="display:inline-flex;align-items:center;gap:.4rem;padding:.38rem .65rem;background:rgba(255,255,255,.06);border:1px solid rgba(196,181,253,.15);border-radius:999px;color:#ddd6fe;font-size:.74rem;font-weight:700;cursor:pointer;">
+          <input id="ops-post-deploy-run-skip-smoke" type="checkbox" style="margin:0;">
+          smoke 생략
+        </label>
+        <button id="ops-post-deploy-run-btn" type="button"
+                style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:999px;padding:.45rem .95rem;font-size:.75rem;font-weight:800;cursor:pointer;">
+          점검 실행
+        </button>
+      </div>
+      <div id="ops-post-deploy-run-status" style="flex-basis:100%;color:#cbd5e1;font-size:.75rem;"></div>
+    </div>
     <div id="ops-post-deploy-report" style="background:rgba(15,23,42,.28);border:1px solid rgba(196,181,253,.18);border-radius:12px;padding:1rem;">
       <p style="margin:0;color:#cbd5e1;font-size:.82rem;">Ops Key 또는 admin 세션으로 리포트를 불러올 수 있습니다.</p>
     </div>
@@ -8657,6 +8676,9 @@
     window.__opsPostDeploySelectedFile = window.__opsPostDeployReportsPayload?.latest_report || '';
     window.__opsPostDeployDetailPayload = null;
     rerenderOpsPostDeployReports();
+  });
+  $id('ops-post-deploy-run-btn')?.addEventListener('click', () => {
+    runOpsPostDeployCheck();
   });
   $id('ops-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -18481,6 +18503,225 @@ function rerenderOpsPostDeployReports() {
   renderOpsPostDeployReports(payload);
 }
 
+function getOpsPostDeployCompareState(payload, reports) {
+  const files = reports.map((report) => String(report?.file || '').trim()).filter(Boolean);
+  const latest = String(payload?.latest_report || '').trim();
+  const state = window.__opsPostDeployCompareState || {};
+  let left = String(state.left || '').trim();
+  let right = String(state.right || '').trim();
+  if (!left || !files.includes(left)) {
+    left = latest && files.includes(latest) ? latest : files[0] || '';
+  }
+  if (!right || !files.includes(right) || right === left) {
+    right = files.find((file) => file && file !== left) || left;
+  }
+  window.__opsPostDeployCompareState = { left, right };
+  return window.__opsPostDeployCompareState;
+}
+
+function cacheOpsPostDeployDetail(payload) {
+  if (!payload?.report_file || !payload?.details) return;
+  const cache = window.__opsPostDeployDetailCache || {};
+  cache[payload.report_file] = payload;
+  window.__opsPostDeployDetailCache = cache;
+}
+
+async function fetchOpsPostDeployReportDetail(reportFile) {
+  const headers = getOpsAccessHeaders();
+  const res = await fetch(`/ops/post-deploy/reports/${encodeURIComponent(reportFile)}`, { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `오류 ${res.status}`);
+  }
+  return res.json();
+}
+
+async function ensureOpsPostDeployReportDetail(reportFile) {
+  const file = String(reportFile || '').trim();
+  if (!file) throw new Error("리포트 파일이 비어 있습니다.");
+  const cache = window.__opsPostDeployDetailCache || {};
+  if (cache[file]) return cache[file];
+  const summaryPayload = window.__opsPostDeployReportsPayload || null;
+  if (summaryPayload?.latest_report === file && summaryPayload?.latest_details) {
+    const payload = {
+      report_dir: summaryPayload.report_dir,
+      report_file: file,
+      report_path: `${summaryPayload.report_dir}/${file}`,
+      details: { ...summaryPayload.latest_details, report_file: file },
+    };
+    cacheOpsPostDeployDetail(payload);
+    return payload;
+  }
+  const payload = await fetchOpsPostDeployReportDetail(file);
+  cacheOpsPostDeployDetail(payload);
+  return payload;
+}
+
+function buildOpsPostDeployCheckMap(details) {
+  const map = new Map();
+  const checks = Array.isArray(details?.checks) ? details.checks : [];
+  checks.forEach((check) => {
+    if (!check?.name) return;
+    map.set(check.name, {
+      status: check.status || 'unknown',
+      exit_code: Number.isInteger(check.exit_code) ? check.exit_code : null,
+    });
+  });
+  return map;
+}
+
+function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
+  const container = $id('ops-post-deploy-compare-result');
+  if (!container) return;
+  const left = leftPayload?.details || {};
+  const right = rightPayload?.details || {};
+  const leftMeta = getPostDeployStatusMeta(left.status || 'unknown');
+  const rightMeta = getPostDeployStatusMeta(right.status || 'unknown');
+  const leftError = truncateOpsReportError(left.error, 200);
+  const rightError = truncateOpsReportError(right.error, 200);
+  const leftChecks = buildOpsPostDeployCheckMap(left);
+  const rightChecks = buildOpsPostDeployCheckMap(right);
+  const allNames = Array.from(new Set([...leftChecks.keys(), ...rightChecks.keys()]));
+  const diffs = allNames.filter((name) => {
+    const l = leftChecks.get(name);
+    const r = rightChecks.get(name);
+    if (!l || !r) return true;
+    return l.status !== r.status || l.exit_code !== r.exit_code;
+  });
+  const diffRows = diffs.length
+    ? diffs.map((name) => {
+        const l = leftChecks.get(name);
+        const r = rightChecks.get(name);
+        const lText = l ? `${l.status}${Number.isInteger(l.exit_code) ? ` · exit ${l.exit_code}` : ''}` : '—';
+        const rText = r ? `${r.status}${Number.isInteger(r.exit_code) ? ` · exit ${r.exit_code}` : ''}` : '—';
+        return `
+          <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:.5rem;align-items:center;padding:.4rem .5rem;border-radius:8px;background:rgba(255,255,255,.04);">
+            <span style="color:#e2e8f0;font-size:.74rem;">${escapeHtml(name)}</span>
+            <span style="color:#cbd5e1;font-size:.72rem;">${escapeHtml(lText)}</span>
+            <span style="color:#cbd5e1;font-size:.72rem;">${escapeHtml(rText)}</span>
+          </div>
+        `;
+      }).join("")
+    : `<p style="margin:.2rem 0;color:#cbd5e1;font-size:.76rem;">두 리포트의 체크 결과가 동일합니다.</p>`;
+  container.innerHTML = `
+    <div style="display:grid;gap:.55rem;margin-top:.6rem;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+        <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:.65rem .75rem;">
+          <div style="display:flex;align-items:center;gap:.4rem;">
+            <span style="color:#cbd5e1;font-size:.72rem;">A</span>
+            <code style="font-size:.72rem;color:#ddd6fe;">${escapeHtml(leftPayload.report_file || '-') }</code>
+          </div>
+          <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;">
+            <span style="padding:.15rem .45rem;border-radius:999px;background:${leftMeta.bg};color:${leftMeta.color};font-size:.72rem;font-weight:800;">
+              ${escapeHtml(leftMeta.label)}
+            </span>
+            <span style="color:#cbd5e1;font-size:.72rem;">${formatOpsReportTime(left.finished_at)}</span>
+          </div>
+          <div style="margin-top:.3rem;color:#cbd5e1;font-size:.72rem;">${escapeHtml(left.base_url || '-')}</div>
+          ${leftError ? `<div style="margin-top:.3rem;color:#fecaca;font-size:.72rem;">${escapeHtml(leftError)}</div>` : ''}
+        </div>
+        <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:.65rem .75rem;">
+          <div style="display:flex;align-items:center;gap:.4rem;">
+            <span style="color:#cbd5e1;font-size:.72rem;">B</span>
+            <code style="font-size:.72rem;color:#ddd6fe;">${escapeHtml(rightPayload.report_file || '-') }</code>
+          </div>
+          <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;">
+            <span style="padding:.15rem .45rem;border-radius:999px;background:${rightMeta.bg};color:${rightMeta.color};font-size:.72rem;font-weight:800;">
+              ${escapeHtml(rightMeta.label)}
+            </span>
+            <span style="color:#cbd5e1;font-size:.72rem;">${formatOpsReportTime(right.finished_at)}</span>
+          </div>
+          <div style="margin-top:.3rem;color:#cbd5e1;font-size:.72rem;">${escapeHtml(right.base_url || '-')}</div>
+          ${rightError ? `<div style="margin-top:.3rem;color:#fecaca;font-size:.72rem;">${escapeHtml(rightError)}</div>` : ''}
+        </div>
+      </div>
+      <div>
+        <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">체크 차이</div>
+        <div style="display:grid;gap:.35rem;">${diffRows}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function runOpsPostDeployCompare() {
+  const container = $id('ops-post-deploy-compare-result');
+  const state = window.__opsPostDeployCompareState || {};
+  const left = String(state.left || '').trim();
+  const right = String(state.right || '').trim();
+  if (!container) return;
+  if (!left || !right) {
+    container.innerHTML = '<p style="margin:0;color:#fcd34d;font-size:.76rem;">비교할 리포트를 선택해주세요.</p>';
+    return;
+  }
+  if (left === right) {
+    container.innerHTML = '<p style="margin:0;color:#fcd34d;font-size:.76rem;">서로 다른 리포트를 선택해주세요.</p>';
+    return;
+  }
+  container.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.76rem;">리포트 비교 중...</p>';
+  try {
+    const [leftPayload, rightPayload] = await Promise.all([
+      ensureOpsPostDeployReportDetail(left),
+      ensureOpsPostDeployReportDetail(right),
+    ]);
+    renderOpsPostDeployCompareResult(leftPayload, rightPayload);
+  } catch (e) {
+    container.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.76rem;">리포트 비교 실패: ${escapeHtml(e.message || '알 수 없는 오류')}</p>`;
+  }
+}
+
+async function runOpsPostDeployCheck() {
+  const statusEl = $id('ops-post-deploy-run-status');
+  const runBtn = $id('ops-post-deploy-run-btn');
+  const skipSmoke = Boolean($id('ops-post-deploy-run-skip-smoke')?.checked);
+  const headers = getOpsAccessHeaders();
+  if (!headers.Authorization && !headers['X-DecisionDoc-Ops-Key']) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:#fca5a5;">Ops Key 또는 admin 세션이 필요합니다.</span>';
+    return;
+  }
+  persistOpsKey();
+  if (runBtn) {
+    runBtn.disabled = true;
+    runBtn.textContent = '실행 중...';
+  }
+  if (statusEl) statusEl.innerHTML = '<span style="color:#cbd5e1;">post-deploy 점검을 실행하는 중...</span>';
+  try {
+    const res = await fetch('/ops/post-deploy/run', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skip_smoke: skipSmoke }),
+    });
+    if (res.status === 403) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || '서버에서 post-deploy 실행이 비활성화되어 있습니다.');
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `오류 ${res.status}`);
+    }
+    const data = await res.json();
+    const statusLine = `${data.status || 'unknown'}${Number.isInteger(data.exit_code) ? ` · exit ${data.exit_code}` : ''}`;
+    const reportLine = data.report_file ? ` · ${data.report_file}` : '';
+    const outputLines = Array.isArray(data.stdout_tail) ? data.stdout_tail : [];
+    const outputBlock = outputLines.length
+      ? `<pre style="margin:.5rem 0 0;white-space:pre-wrap;color:#e2e8f0;font-size:.72rem;line-height:1.4;">${escapeHtml(outputLines.join("\n"))}</pre>`
+      : '';
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <div style="color:#e2e8f0;font-size:.76rem;">완료: ${escapeHtml(statusLine)}${escapeHtml(reportLine)}</div>
+        ${outputBlock}
+      `;
+    }
+    window.loadOpsPostDeployReports?.();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:#fca5a5;">실행 실패: ${escapeHtml(e.message || '알 수 없는 오류')}</span>`;
+  } finally {
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = '점검 실행';
+    }
+  }
+}
+
 function syncOpsPostDeployJsonPanel() {
   const payload = window.__opsPostDeployReportsPayload || null;
   const expanded = window.__opsPostDeployJsonExpanded === true;
@@ -18643,6 +18884,14 @@ function renderOpsPostDeployReports(data) {
   const latestStatus = getPostDeployStatusMeta(latest?.status || allReports[0]?.status || 'unknown');
   const latestError = latest?.error ? `<div style="margin-top:.55rem;color:#fecaca;font-size:.78rem;">${escapeHtml(latest.error)}</div>` : '';
   const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
+  const compareState = getOpsPostDeployCompareState(data, allReports);
+  const compareOptions = allReports
+    .map((report) => {
+      const file = String(report?.file || '').trim();
+      if (!file) return '';
+      return `<option value="${escapeHtml(file)}">${escapeHtml(file)}</option>`;
+    })
+    .join('');
 
   container.innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
@@ -18711,6 +18960,30 @@ function renderOpsPostDeployReports(data) {
         `;
       }).join('') : `<p style="margin:0;color:#cbd5e1;font-size:.82rem;">${filterActive ? '현재 필터에 맞는 배포 리포트가 없습니다.' : '표시할 배포 리포트가 없습니다.'}</p>`}
     </div>
+    <div id="ops-post-deploy-compare" style="margin-top:1rem;padding:1rem;border-radius:12px;background:rgba(15,23,42,.36);border:1px solid rgba(196,181,253,.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;">
+        <strong style="font-size:.82rem;color:#e2e8f0;">리포트 비교</strong>
+        <button id="ops-post-deploy-compare-run-btn" type="button"
+                style="background:rgba(99,102,241,.18);color:#fff;border:none;border-radius:999px;padding:.3rem .85rem;font-size:.72rem;font-weight:800;cursor:pointer;">
+          비교 실행
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:center;margin-top:.55rem;">
+        <select id="ops-post-deploy-compare-left"
+                style="background:#2d2b6b;border:1px solid #4c1d95;color:#fff;border-radius:8px;padding:.4rem .55rem;font-size:.75rem;">
+          ${compareOptions}
+        </select>
+        <select id="ops-post-deploy-compare-right"
+                style="background:#2d2b6b;border:1px solid #4c1d95;color:#fff;border-radius:8px;padding:.4rem .55rem;font-size:.75rem;">
+          ${compareOptions}
+        </select>
+        <button id="ops-post-deploy-compare-swap-btn" type="button"
+                style="background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:999px;padding:.35rem .65rem;font-size:.72rem;font-weight:800;cursor:pointer;">
+          swap
+        </button>
+      </div>
+      <div id="ops-post-deploy-compare-result" style="margin-top:.6rem;color:#cbd5e1;font-size:.76rem;"></div>
+    </div>
     ${latestChecks.length ? `
       <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid rgba(196,181,253,.12);">
         <div style="color:#c4b5fd;font-size:.75rem;font-weight:700;margin-bottom:.55rem;">Latest checks</div>
@@ -18735,6 +19008,41 @@ function renderOpsPostDeployReports(data) {
   `;
   $id('ops-post-deploy-toggle-json-btn')?.addEventListener('click', toggleOpsPostDeployJson);
   $id('ops-post-deploy-download-json-btn')?.addEventListener('click', downloadOpsPostDeployJson);
+  if (latest && data?.latest_report) {
+    cacheOpsPostDeployDetail({
+      report_dir: data.report_dir,
+      report_file: data.latest_report,
+      report_path: `${data.report_dir}/${data.latest_report}`,
+      details: { ...latest, report_file: data.latest_report },
+    });
+  }
+  $id('ops-post-deploy-compare-left')?.addEventListener('change', (event) => {
+    const value = event.target?.value || '';
+    window.__opsPostDeployCompareState = {
+      ...(window.__opsPostDeployCompareState || {}),
+      left: value,
+    };
+  });
+  $id('ops-post-deploy-compare-right')?.addEventListener('change', (event) => {
+    const value = event.target?.value || '';
+    window.__opsPostDeployCompareState = {
+      ...(window.__opsPostDeployCompareState || {}),
+      right: value,
+    };
+  });
+  $id('ops-post-deploy-compare-swap-btn')?.addEventListener('click', () => {
+    const state = window.__opsPostDeployCompareState || {};
+    window.__opsPostDeployCompareState = {
+      left: state.right || '',
+      right: state.left || '',
+    };
+    rerenderOpsPostDeployReports();
+  });
+  $id('ops-post-deploy-compare-run-btn')?.addEventListener('click', () => {
+    runOpsPostDeployCompare();
+  });
+  $id('ops-post-deploy-compare-left') && ($id('ops-post-deploy-compare-left').value = compareState.left || '');
+  $id('ops-post-deploy-compare-right') && ($id('ops-post-deploy-compare-right').value = compareState.right || '');
   document.querySelectorAll('[data-report-detail-btn]').forEach((btn) => {
     btn.addEventListener('click', () => {
       loadOpsPostDeployReportDetail(btn.getAttribute('data-report-detail-btn') || '');
