@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import re
 from typing import Any
 
 from pptx import Presentation
@@ -32,10 +33,46 @@ def _clean_slide_text(text: str) -> str:
 
 
 def _chunk_lines(lines: list[str], size: int = _MAX_SLIDE_LINES) -> list[list[str]]:
-    cleaned = [_clean_slide_text(line) for line in lines if _clean_slide_text(line)]
+    cleaned: list[str] = []
+    for raw in lines:
+        cleaned.extend(_expand_slide_line(raw))
     if not cleaned:
         return []
     return [cleaned[idx: idx + size] for idx in range(0, len(cleaned), size)]
+
+
+def _expand_slide_line(text: str, max_len: int = 78) -> list[str]:
+    cleaned = _clean_slide_text(text)
+    if not cleaned:
+        return []
+    if len(cleaned) <= max_len:
+        return [cleaned]
+
+    parts = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+| · | / ", cleaned)
+        if part.strip()
+    ]
+    if len(parts) <= 1:
+        parts = [part.strip() for part in re.split(r", | 및 | 그리고 ", cleaned) if part.strip()]
+    if len(parts) <= 1:
+        words = cleaned.split()
+        parts = []
+        current: list[str] = []
+        current_len = 0
+        for word in words:
+            next_len = current_len + len(word) + (1 if current else 0)
+            if current and next_len > max_len:
+                parts.append(" ".join(current))
+                current = [word]
+                current_len = len(word)
+            else:
+                current.append(word)
+                current_len = next_len
+        if current:
+            parts.append(" ".join(current))
+    normalized = [_clean_slide_text(part) for part in parts if _clean_slide_text(part)]
+    return normalized[:6]
 
 
 def _table_block_lines(block: dict[str, Any]) -> list[str]:
@@ -260,7 +297,7 @@ def _render_summary_slide(prs: Presentation, summaries: list[dict[str, str]]) ->
             width=8.5,
             height=1.1,
             title=f"문서 {summary['index']} | {summary['label']}",
-            body=f"{summary['lead']} / 핵심 섹션: {summary['sections']} / {summary['metrics']}",
+            body=f"{summary.get('ppt_lead') or summary['lead']} / 핵심 섹션: {summary['sections']} / {summary['metrics']}",
             fill_color=_COLOR_CARD,
             title_color=_COLOR_TEXT_DARK,
             body_color=_COLOR_TEXT_MUTED,
@@ -380,7 +417,7 @@ def build_pptx(
                 width=8.0,
                 height=0.78,
                 title="핵심 포인트",
-                body=key_point,
+                body=_clean_slide_text(_expand_slide_line(key_point, max_len=64)[0]),
                 fill_color=_COLOR_CARD,
                 title_color=_COLOR_BG_ACCENT,
                 body_color=_COLOR_TEXT_DARK,
@@ -441,7 +478,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
             width=8.0,
             height=1.1,
             title="핵심 포인트",
-            body=summaries[0]["lead"],
+            body=summaries[0].get("ppt_lead") or summaries[0]["lead"],
             fill_color=_COLOR_CARD_SOFT,
             title_color=_COLOR_BG_ACCENT,
             body_color=_COLOR_TEXT_DARK,
@@ -476,7 +513,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
         _render_section_divider(
             prs,
             current_doc_heading,
-            summary["lead"],
+            summary.get("ppt_lead") or summary["lead"],
             meta_lines=[
                 f"핵심 섹션: {summary['sections']}",
                 f"구성 특징: {summary['metrics']}",

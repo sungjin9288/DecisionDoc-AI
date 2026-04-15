@@ -1,6 +1,7 @@
 """Shared helpers for finished-document export summaries."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.services.export_labels import humanize_doc_type
@@ -16,6 +17,15 @@ def _truncate(text: str, limit: int = 120) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 1].rstrip() + "…"
+
+
+def _ppt_lead(text: str, limit: int = 84) -> str:
+    compact = _clean_text(text)
+    if not compact:
+        return ""
+    sentence_parts = re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+", compact)
+    candidate = next((part.strip() for part in sentence_parts if part.strip()), compact)
+    return _truncate(candidate, limit)
 
 
 def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -66,6 +76,7 @@ def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "index": f"{idx:02d}",
                 "label": label,
                 "lead": _truncate(lead or f"{label}의 핵심 내용을 정리한 문서입니다."),
+                "ppt_lead": _ppt_lead(lead or f"{label}의 핵심 내용을 정리한 문서입니다."),
                 "sections": section_hint,
                 "metrics": metrics,
                 "table_count": table_count,

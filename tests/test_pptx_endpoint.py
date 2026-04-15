@@ -130,3 +130,21 @@ def test_pptx_performance_bundle_uses_structured_slide_outline(tmp_path, monkeyp
     assert "WBS 및 마일스톤" in titles
     assert "리스크 매트릭스" in titles
     assert not any("PPT 구성 가이드" in title for title in titles)
+
+
+def test_pptx_summary_slide_prefers_short_presentation_lead(tmp_path, monkeypatch):
+    """Summary slides should use shorter PPT-oriented lead text instead of full prose blocks."""
+    from pptx import Presentation
+
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post(
+        "/generate/pptx",
+        json={"title": "제안서 PPT", "goal": "완성형 문서 변환", "bundle_type": "proposal_kr"},
+    )
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    summary_slide = next(slide for slide in prs.slides if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "핵심 검토 포인트")
+    summary_text = "\n".join(shape.text for shape in summary_slide.shapes if hasattr(shape, "text") and shape.text)
+    assert "핵심 섹션:" in summary_text
+    assert "구성 특징" not in summary_text
+    assert "하나의 사업 범위로 묶은 안입니다. 사업 배경과 현황 문제를 정책 목표와 연결해 설명하고" not in summary_text
