@@ -18,7 +18,7 @@ from typing import Any
 from playwright.async_api import async_playwright
 
 from app.services.export_labels import humanize_doc_type
-from app.services.export_outline import summarize_export_docs
+from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks, render_inline_html
 
 
@@ -288,9 +288,31 @@ def _build_css(opts: Any | None) -> str:
     }}
     .summary-grid {{
         display: grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 12px;
         margin: 18px 0 8px;
+    }}
+    .metric-strip {{
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin: 14px 0 12px;
+    }}
+    .metric-card {{
+        border-radius: 14px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid #d7ddef;
+        padding: 10px 12px;
+    }}
+    .metric-card .label {{
+        font-size: 8.5pt;
+        color: #6c7390;
+        margin-bottom: 2px;
+    }}
+    .metric-card .value {{
+        font-size: 15pt;
+        font-weight: 700;
+        color: #1f2543;
     }}
     .summary-card {{
         border: 1px solid #d7ddef;
@@ -363,9 +385,18 @@ def _render_html(
         parts.append("<br/>")
     else:
         summaries = summarize_export_docs(docs)
+        package = summarize_export_package(docs)
         doc_chips = "".join(
             f"<span class='doc-chip'>{idx}. {_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</span>"
             for idx, doc in enumerate(docs, start=1)
+        )
+        metric_cards = "".join(
+            [
+                f"<div class='metric-card'><div class='label'>문서 수</div><div class='value'>{package['doc_count']}</div></div>",
+                f"<div class='metric-card'><div class='label'>표 수</div><div class='value'>{package['table_total']}</div></div>",
+                f"<div class='metric-card'><div class='label'>목록 수</div><div class='value'>{package['bullet_total']}</div></div>",
+                f"<div class='metric-card'><div class='label'>주요 섹션 수</div><div class='value'>{package['heading_total']}</div></div>",
+            ]
         )
         summary_cards = "".join(
             "<article class='summary-card'>"
@@ -382,6 +413,7 @@ def _render_html(
             f"<h1>{_html.escape(title)}</h1>"
             "<p><strong>완성형 문서 패키지</strong></p>"
             f"<p>총 {len(docs)}개 문서를 제출용 패키지 형태로 정리했습니다. 각 섹션은 문서 단위로 분리되어 바로 검토·공유할 수 있습니다.</p>"
+            f"<div class='metric-strip'>{metric_cards}</div>"
             f"<div class='doc-chip-list'>{doc_chips}</div>"
             "<div class='summary-grid'>"
             f"{summary_cards}"
@@ -399,7 +431,8 @@ def _render_html(
                 f"<div class='section-index'>문서 {i + 1:02d} / {len(docs):02d}</div>"
                 f"<h2>{_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</h2>"
                 f"<p>{_html.escape(summary['lead'])}</p>"
-                f"<div class='meta'>핵심 섹션: {_html.escape(summary['sections'])} / {_html.escape(summary['metrics'])}</div>"
+                f"<div class='meta'>검토 초점: {_html.escape(summary['sections'])}</div>"
+                f"<div class='meta'>구성 밀도: {_html.escape(summary['metrics'])}</div>"
                 "</section>"
             )
         parts.append(_markdown_to_html(doc.get("markdown", "")))

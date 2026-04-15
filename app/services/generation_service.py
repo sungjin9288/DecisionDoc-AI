@@ -157,7 +157,9 @@ def _normalized_row_list(value: Any) -> list[str]:
 
 
 def _ensure_text(value: Any, fallback: str, *, min_chars: int = 80) -> str:
-    return value.strip() if _has_meaningful_text(value, min_chars=min_chars) else fallback.strip()
+    if _has_meaningful_text(value, min_chars=min_chars):
+        return _normalize_finished_doc_text(value)
+    return _normalize_finished_doc_text(fallback)
 
 
 def _ensure_rows(value: Any, fallback_rows: list[str], *, min_items: int = 3) -> list[str]:
@@ -201,6 +203,44 @@ def _strip_reference_noise(text: Any) -> str:
     return cleaned.strip()
 
 
+def _normalize_finished_doc_text(text: Any) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = _strip_reference_noise(text)
+    replacements = (
+        ("제안한다.을 달성하기 위해", "제안하며, 이를 달성하기 위해"),
+        ("제안한다.를", "제안 내용을"),
+        ("제안한다.은", "제안은"),
+        ("제안한다.는", "제안은"),
+        ("사업 제안서 사업", "사업"),
+        ("달성을 통한", "달성을 위한"),
+        ("은(는)", "는"),
+    )
+    for source, target in replacements:
+        cleaned = cleaned.replace(source, target)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _normalize_finished_doc_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _normalize_finished_doc_text(value)
+    if isinstance(value, list):
+        normalized_items: list[Any] = []
+        for item in value:
+            normalized = _normalize_finished_doc_value(item)
+            if isinstance(normalized, str):
+                if normalized:
+                    normalized_items.append(normalized)
+            else:
+                normalized_items.append(normalized)
+        return normalized_items
+    if isinstance(value, dict):
+        return {key: _normalize_finished_doc_value(item) for key, item in value.items()}
+    return value
+
+
 def _sanitize_rows(
     value: Any,
     fallback_rows: list[str],
@@ -212,7 +252,7 @@ def _sanitize_rows(
     for row in _normalized_row_list(value):
         if any(term in row for term in banned_terms):
             continue
-        cleaned_row = _strip_reference_noise(row)
+        cleaned_row = _normalize_finished_doc_text(row)
         if cleaned_row:
             rows.append(cleaned_row)
     if len(rows) >= min_items:
@@ -453,7 +493,8 @@ def _apply_finished_doc_quality_guard(
         _quality_guard_proposal_bundle(bundle, title=title, goal=goal)
     elif bundle_type == "performance_plan_kr":
         _quality_guard_performance_bundle(bundle, title=title, goal=goal)
-    return bundle
+    normalized = _normalize_finished_doc_value(bundle)
+    return normalized if isinstance(normalized, dict) else bundle
 
 
 class ProviderFailedError(Exception):

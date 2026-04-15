@@ -95,13 +95,24 @@ def test_build_docx_adds_export_cover_and_section_intro():
         title="완성형 패키지 테스트",
     )
     doc = Document(BytesIO(result))
-    joined = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    paragraph_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    table_text = "\n".join(
+        cell.text
+        for table in doc.tables
+        for row in table.rows
+        for cell in row.cells
+        if cell.text.strip()
+    )
+    joined = "\n".join([paragraph_text, table_text])
 
     assert "완성형 문서 패키지" in joined
     assert "문서 구성" in joined
     assert "핵심 검토 포인트" in joined
+    assert "문서 수" in joined
+    assert "표 수" in joined
     assert "사업 이해" in joined
     assert "문서 01 / 02" in joined
+    assert "검토 초점" in joined
     assert "핵심 섹션:" in joined
 
 

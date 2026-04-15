@@ -22,7 +22,7 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 
 from app.services.export_labels import humanize_doc_type
-from app.services.export_outline import summarize_export_docs
+from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks
 
 
@@ -248,6 +248,7 @@ def _add_export_cover_page(
     line_spacing_pct: int,
 ) -> None:
     summaries = summarize_export_docs(docs)
+    package = summarize_export_package(docs)
     cover = doc.add_paragraph()
     cover.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = cover.add_run(title)
@@ -268,6 +269,39 @@ def _add_export_cover_page(
     summary_run = summary.add_run(f"총 {len(docs)}개 문서를 하나의 제출 패키지로 정리했습니다.")
     _set_run_font(summary_run, font_name, font_size_pt)
     _set_line_spacing(summary, line_spacing_pct)
+
+    metrics_table = doc.add_table(rows=2, cols=4)
+    try:
+        metrics_table.style = "Table Grid"
+    except Exception:
+        pass
+    metric_headers = ["문서 수", "표 수", "목록 수", "주요 섹션 수"]
+    metric_values = [
+        f"{package['doc_count']}개",
+        f"{package['table_total']}개",
+        f"{package['bullet_total']}개",
+        f"{package['heading_total']}개",
+    ]
+    for idx, header in enumerate(metric_headers):
+        _add_table_cell_text(
+            metrics_table.cell(0, idx),
+            header,
+            font_name=font_name,
+            font_size_pt=font_size_pt - 0.2,
+            line_spacing_pct=line_spacing_pct,
+            bold=True,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+        )
+        _set_cell_shading(metrics_table.cell(0, idx), "DCE6FA")
+        _add_table_cell_text(
+            metrics_table.cell(1, idx),
+            metric_values[idx],
+            font_name=font_name,
+            font_size_pt=font_size_pt + 0.2,
+            line_spacing_pct=line_spacing_pct,
+            bold=True,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+        )
 
     doc.add_paragraph()
     heading = doc.add_paragraph()
@@ -293,6 +327,12 @@ def _add_export_cover_page(
     summary_run = summary_heading.add_run("핵심 검토 포인트")
     summary_run.bold = True
     _set_run_font(summary_run, font_name, font_size_pt + 1.5)
+
+    package_note = doc.add_paragraph()
+    package_note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    package_note_run = package_note.add_run(f"주요 구성: {package['headline']}")
+    package_note_run.font.color.rgb = RGBColor(0x5F, 0x63, 0x77)
+    _set_run_font(package_note_run, font_name, font_size_pt - 0.1)
 
     table = doc.add_table(rows=len(summaries) + 1, cols=3)
     try:
@@ -378,6 +418,32 @@ def _add_doc_section_intro(
     for run in desc_para.runs:
         run.font.color.rgb = RGBColor(0x5F, 0x63, 0x77)
     _set_line_spacing(desc_para, line_spacing_pct)
+
+    facts_table = doc.add_table(rows=2, cols=2)
+    try:
+        facts_table.style = "Table Grid"
+    except Exception:
+        pass
+    fact_headers = ["검토 초점", "구성 밀도"]
+    fact_values = [section_hint, metrics]
+    for idx, header in enumerate(fact_headers):
+        _add_table_cell_text(
+            facts_table.cell(0, idx),
+            header,
+            font_name=font_name,
+            font_size_pt=font_size_pt - 0.4,
+            line_spacing_pct=line_spacing_pct,
+            bold=True,
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+        )
+        _set_cell_shading(facts_table.cell(0, idx), "EEF2FF")
+        _add_table_cell_text(
+            facts_table.cell(1, idx),
+            fact_values[idx],
+            font_name=font_name,
+            font_size_pt=font_size_pt - 0.2,
+            line_spacing_pct=line_spacing_pct,
+        )
 
     meta_para = doc.add_paragraph()
     _add_bold_inline(

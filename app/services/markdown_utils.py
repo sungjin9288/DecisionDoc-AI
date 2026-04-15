@@ -21,7 +21,24 @@ def split_table_row(line: str) -> list[str]:
         text = text[1:]
     if text.endswith("|"):
         text = text[:-1]
-    return [cell.strip() for cell in text.split("|")]
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in text:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    cells.append("".join(current).strip())
+    return cells
 
 
 def is_table_separator(line: str) -> bool:
@@ -80,15 +97,22 @@ def build_markdown_table(rows: list[Any], headers: list[str]) -> str:
     if not headers:
         return ""
 
+    def _escape_markdown_cell(value: Any) -> str:
+        text = str(value).strip()
+        text = text.replace("\\", "\\\\")
+        text = text.replace("|", "\\|")
+        text = " / ".join(part.strip() for part in text.splitlines() if part.strip())
+        return text
+
     normalized_rows: list[list[str]] = []
     width = len(headers)
     for row in rows or []:
         if isinstance(row, str):
             cells = split_table_row(row) if "|" in row else [row.strip()]
         elif isinstance(row, (list, tuple)):
-            cells = [str(cell).strip() for cell in row]
+            cells = [_escape_markdown_cell(cell) for cell in row]
         else:
-            cells = [str(row).strip()]
+            cells = [_escape_markdown_cell(row)]
 
         if len(cells) < width:
             cells.extend([""] * (width - len(cells)))
@@ -97,7 +121,7 @@ def build_markdown_table(rows: list[Any], headers: list[str]) -> str:
     if not normalized_rows:
         return ""
 
-    header_line = "| " + " | ".join(headers) + " |"
+    header_line = "| " + " | ".join(_escape_markdown_cell(header) for header in headers) + " |"
     separator_line = "| " + " | ".join(["---"] * width) + " |"
     body_lines = ["| " + " | ".join(row) + " |" for row in normalized_rows]
     return "\n".join([header_line, separator_line, *body_lines])

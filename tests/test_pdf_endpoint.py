@@ -54,9 +54,13 @@ def test_render_html_adds_export_cover_and_section_cards():
 
     assert "export-cover" in html
     assert "완성형 문서 패키지" in html
+    assert "metric-strip" in html
     assert "summary-card" in html
+    assert "문서 수" in html
+    assert "표 수" in html
     assert "사업 이해" in html
     assert "문서 01 / 02" in html
+    assert "검토 초점:" in html
     assert "핵심 섹션:" in html
 
 

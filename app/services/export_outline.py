@@ -18,8 +18,8 @@ def _truncate(text: str, limit: int = 120) -> str:
     return compact[: limit - 1].rstrip() + "…"
 
 
-def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, str]]:
-    summaries: list[dict[str, str]] = []
+def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
 
     for idx, doc in enumerate(docs, start=1):
         markdown = str(doc.get("markdown", ""))
@@ -68,7 +68,26 @@ def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "lead": _truncate(lead or f"{label}의 핵심 내용을 정리한 문서입니다."),
                 "sections": section_hint,
                 "metrics": metrics,
+                "table_count": table_count,
+                "bullet_count": bullet_count,
+                "heading_count": len(headings),
             }
         )
 
     return summaries
+
+
+def summarize_export_package(docs: list[dict[str, Any]]) -> dict[str, str]:
+    summaries = summarize_export_docs(docs)
+    doc_count = len(summaries)
+    table_total = sum(int(summary.get("table_count", 0) or 0) for summary in summaries)
+    bullet_total = sum(int(summary.get("bullet_count", 0) or 0) for summary in summaries)
+    heading_total = sum(int(summary.get("heading_count", 0) or 0) for summary in summaries)
+    top_labels = " · ".join(str(summary["label"]) for summary in summaries[:3]) if summaries else "문서 구성 없음"
+    return {
+        "doc_count": str(doc_count),
+        "table_total": str(table_total),
+        "bullet_total": str(bullet_total),
+        "heading_total": str(heading_total),
+        "headline": top_labels,
+    }

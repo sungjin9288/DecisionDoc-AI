@@ -390,6 +390,7 @@ def test_proposal_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
     assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in business
 
     assert "## 기술 제안 요약" in tech
+    assert "제안한다.을" not in tech
     assert "| 구성 영역 | 적용 기술 | 적용 목적 |" in tech
     assert "| 설계 원칙 | 적용 방안 | 검증 포인트 |" in tech
     assert "| 보안 영역 | 통제 방안 | 운영 기준 |" in tech

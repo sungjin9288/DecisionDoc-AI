@@ -18,7 +18,7 @@ from io import BytesIO
 from typing import Any
 
 from app.services.export_labels import humanize_doc_type
-from app.services.export_outline import summarize_export_docs
+from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks
 
 # HWPX namespaces
@@ -202,10 +202,19 @@ def _gov_header_paras(title: str, opts: Any) -> list[str]:
 
 def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
     summaries = summarize_export_docs(docs)
+    package = summarize_export_package(docs)
     paras = [
         _para_xml(title, "제목1"),
         _para_xml("완성형 문서 패키지", "제목2"),
         _para_xml(f"총 {len(docs)}개 문서를 하나의 제출 패키지로 정리했습니다.", "본문"),
+        _para_xml(
+            "문서 수: {doc_count} / 표 수: {table_total} / 목록 수: {bullet_total} / 주요 섹션 수: {heading_total}".format(
+                **package
+            ),
+            "본문",
+        ),
+        _para_xml(f"주요 구성: {package['headline']}", "본문"),
+        _para_xml(""),
         _para_xml("문서 구성", "제목3"),
     ]
     for idx, doc in enumerate(docs, start=1):
@@ -252,6 +261,8 @@ def _section_xml(
             paras.append(_para_xml(f"문서 {i + 1:02d} / {len(docs):02d}", "제목3"))
             paras.append(_para_xml(doc_title, "제목2"))
             paras.append(_para_xml(summary["lead"], "본문"))
+            paras.append(_para_xml(f"검토 초점: {summary['sections']}", "본문"))
+            paras.append(_para_xml(f"구성 밀도: {summary['metrics']}", "본문"))
             paras.append(_para_xml(f"핵심 섹션: {summary['sections']} / 구성 특징: {summary['metrics']}", "본문"))
             paras.append(_para_xml(""))
         for block in parse_markdown_blocks(doc.get("markdown", "")):
