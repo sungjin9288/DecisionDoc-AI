@@ -137,6 +137,9 @@ def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     assert "⚙️ 내 정보" in res.text
     assert 'id="profile-modal"' in res.text
     assert 'id="profile-form"' in res.text
+    assert "➕ 계정 직접 생성" in res.text
+    assert 'id="location-user-create-modal"' in res.text
+    assert "🔗 초대 링크 발급" in res.text
     assert 'id="dark-toggle"' not in res.text
     assert "toggleDark()" not in res.text
 

@@ -760,6 +760,85 @@
     .users-list-panel { margin-top:1rem; }
     .user-row { display:flex; align-items:center; gap:.75rem; padding:.5rem 0; border-bottom:1px solid var(--border); }
     .user-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.8rem; color:#fff; flex-shrink:0; }
+    .location-admin-help {
+      margin-top:.9rem;
+      padding:.85rem 1rem;
+      border-radius:12px;
+      border:1px solid rgba(99,102,241,.18);
+      background:linear-gradient(135deg, rgba(99,102,241,.08), rgba(236,72,153,.05));
+    }
+    .location-admin-help strong {
+      display:block;
+      margin-bottom:.35rem;
+      font-size:.86rem;
+    }
+    .location-admin-help p {
+      margin:0;
+      font-size:.8rem;
+      color:var(--muted);
+      line-height:1.55;
+    }
+    .location-modal-actions {
+      display:flex;
+      gap:.55rem;
+      flex-wrap:wrap;
+      margin-top:1rem;
+    }
+    .location-user-create-grid {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:.85rem;
+    }
+    .location-user-create-grid .full-span {
+      grid-column:1 / -1;
+    }
+    .location-user-create-grid label {
+      display:flex;
+      flex-direction:column;
+      gap:.4rem;
+      font-size:.82rem;
+      font-weight:700;
+      color:inherit;
+    }
+    .location-user-create-grid input,
+    .location-user-create-grid select {
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid var(--border,#ddd);
+      font-size:.86rem;
+      background:var(--bg,#fff);
+      color:inherit;
+    }
+    .ai-assignment-checklist {
+      display:grid;
+      gap:.55rem;
+      margin-top:.3rem;
+    }
+    .ai-assignment-option {
+      display:flex;
+      gap:.65rem;
+      align-items:flex-start;
+      padding:.7rem .8rem;
+      border:1px solid var(--border,#e5e7eb);
+      border-radius:10px;
+      background:rgba(248,250,252,.88);
+    }
+    .ai-assignment-option input[type=checkbox] {
+      margin-top:.12rem;
+      width:auto;
+      accent-color:var(--p1,#6366f1);
+    }
+    .ai-assignment-option strong {
+      display:block;
+      font-size:.84rem;
+      margin-bottom:.18rem;
+    }
+    .ai-assignment-option p {
+      margin:0;
+      font-size:.76rem;
+      color:var(--muted);
+      line-height:1.45;
+    }
     .chevron { font-size:1.2rem; color:var(--muted,#888); }
     .empty-state { text-align:center; padding:40px 20px; color:var(--muted,#888); font-size:.9rem; }
 
@@ -5216,6 +5295,66 @@
       <div style="display:flex; justify-content:flex-end; margin-top:1rem;">
         <button class="btn-secondary" onclick="document.getElementById('location-users-modal').style.display='none'">닫기</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Direct user creation modal -->
+  <div id="location-user-create-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1250; align-items:center; justify-content:center; padding:1rem;" onclick="if(event.target===this) closeLocationCreateUserModal()">
+    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+      <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1rem;">
+        <div>
+          <h4 style="margin:0; font-size:1.05rem;">➕ 계정 직접 생성</h4>
+          <p id="location-user-create-subtitle" style="margin:.35rem 0 0; font-size:.82rem; color:var(--muted);">관리자가 계정을 직접 만들고 초기 비밀번호를 전달합니다.</p>
+        </div>
+        <button class="btn-secondary" type="button" onclick="closeLocationCreateUserModal()">닫기</button>
+      </div>
+      <form id="location-user-create-form" onsubmit="submitLocationCreateUser(event)">
+        <input id="location-user-create-tenant-id" type="hidden">
+        <div class="location-user-create-grid">
+          <label>
+            아이디
+            <input id="location-user-create-username" type="text" placeholder="예: dawool-pm" required autocomplete="off">
+          </label>
+          <label>
+            표시 이름
+            <input id="location-user-create-display-name" type="text" placeholder="예: 다울 PM" required>
+          </label>
+          <label class="full-span">
+            이메일
+            <input id="location-user-create-email" type="email" placeholder="예: pm@company.kr" required>
+          </label>
+          <label>
+            역할
+            <select id="location-user-create-role" onchange="syncLocationCreateUserRoleDefaults()">
+              <option value="member" selected>member</option>
+              <option value="viewer">viewer</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <label>
+            직위
+            <input id="location-user-create-job-title" type="text" placeholder="예: PM, 영업 리드, 이사">
+          </label>
+          <label>
+            초기 비밀번호
+            <input id="location-user-create-password" type="password" placeholder="최소 8자, 영문/숫자 포함" required>
+          </label>
+          <label>
+            초기 비밀번호 확인
+            <input id="location-user-create-password-confirm" type="password" placeholder="같은 비밀번호를 한 번 더 입력" required>
+          </label>
+          <div class="full-span">
+            <div style="font-size:.82rem; font-weight:700; margin-bottom:.4rem;">배정할 업무 AI</div>
+            <p style="margin:0 0 .55rem; font-size:.78rem; color:var(--muted); line-height:1.5;">로그인 후 이 계정에 노출할 AI를 선택합니다. 비워 두면 생성은 되지만 문서 생성 권한은 사실상 없습니다.</p>
+            <div id="location-user-create-ai-list" class="ai-assignment-checklist"></div>
+          </div>
+        </div>
+        <div id="location-user-create-status" style="display:none; margin-top:.85rem; font-size:.8rem;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:.55rem; margin-top:1rem;">
+          <button type="button" class="btn-secondary" onclick="closeLocationCreateUserModal()">취소</button>
+          <button id="location-user-create-submit" type="submit" class="btn-primary">계정 생성</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -15657,12 +15796,20 @@
               <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${formatAssignedAiProfiles(u.assigned_ai_profiles || [])}${statusBadge}</div>
             </div>
             <span style="font-size:.75rem; background:rgba(99,102,241,.1); color:var(--p1); padding:2px 8px; border-radius:99px;">${role}</span>
-            <button class="btn-secondary" style="margin-left:.5rem; font-size:.78rem;" onclick="editLocationUserAssignment('${escapeHtml(tenantId)}', '${userId}')">배정 수정</button>
+            <button class="btn-secondary" style="margin-left:.5rem; font-size:.78rem;" onclick="editLocationUserAssignment('${escapeHtml(tenantId)}', '${userId}')">권한/배정 수정</button>
           </div>`;
         }).join('');
       }
       html += '</div>';
-      html += `<button class="btn-secondary" style="margin-top:1rem; font-size:.85rem;" onclick="inviteToLocation('${escapeHtml(tenantId)}')">✉️ 초대하기</button>`;
+      html += `
+        <div class="location-admin-help">
+          <strong>관리자 생성 경로</strong>
+          <p>이 화면에서 계정을 직접 만들고 초기 비밀번호를 전달하는 방식이 기본입니다. 링크 초대는 외부 협업자나 사전 계정 생성이 어려울 때만 보조 수단으로 사용하세요.</p>
+        </div>
+        <div class="location-modal-actions">
+          <button class="btn-primary" style="font-size:.85rem;" onclick="openLocationCreateUserModal('${escapeHtml(tenantId)}')">➕ 계정 직접 생성</button>
+          <button class="btn-secondary" style="font-size:.85rem;" onclick="inviteToLocation('${escapeHtml(tenantId)}')">🔗 초대 링크 발급</button>
+        </div>`;
       body.innerHTML = html;
     } catch (e) {
       _locationUsersPanelState = null;
@@ -17999,6 +18146,148 @@
     }
   }
 
+  function renderLocationCreateUserAiOptions(selectedKeys = []) {
+    const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
+    const entries = Object.entries(AI_ASSIGNMENT_LABELS);
+    return entries.map(([key, label]) => {
+      const checked = selected.has(key) ? 'checked' : '';
+      const hint = AI_RANK_PROFILES[key]?.subline || AI_RANK_PROFILES[key]?.title || '';
+      return `
+        <label class="ai-assignment-option">
+          <input type="checkbox" name="location-user-create-ai-profile" value="${escapeHtml(key)}" ${checked}>
+          <span>
+            <strong>${escapeHtml(label)}</strong>
+            <p>${escapeHtml(hint)}</p>
+          </span>
+        </label>`;
+    }).join('');
+  }
+
+  function syncLocationCreateUserRoleDefaults() {
+    const role = ($id('location-user-create-role')?.value || 'member').trim();
+    const selectedKeys = role === 'admin' ? Object.keys(AI_ASSIGNMENT_LABELS) : [];
+    const list = $id('location-user-create-ai-list');
+    if (list) list.innerHTML = renderLocationCreateUserAiOptions(selectedKeys);
+  }
+
+  function openLocationCreateUserModal(tenantId) {
+    const modal = $id('location-user-create-modal');
+    if (!modal) return;
+    const tenantText = String(tenantId || '').trim() || 'system';
+    $id('location-user-create-form')?.reset();
+    $id('location-user-create-tenant-id') && ($id('location-user-create-tenant-id').value = tenantText);
+    $id('location-user-create-subtitle') && ($id('location-user-create-subtitle').textContent = `${tenantText} 거점 계정을 관리자가 직접 생성합니다. 초기 비밀번호를 전달한 뒤 사용자가 내 정보에서 변경하도록 안내하세요.`);
+    $id('location-user-create-role') && ($id('location-user-create-role').value = 'member');
+    syncLocationCreateUserRoleDefaults();
+    const status = $id('location-user-create-status');
+    if (status) {
+      status.style.display = 'none';
+      status.textContent = '';
+    }
+    const submit = $id('location-user-create-submit');
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = '계정 생성';
+    }
+    modal.style.display = 'flex';
+    setTimeout(() => $id('location-user-create-username')?.focus(), 40);
+  }
+
+  function closeLocationCreateUserModal() {
+    const modal = $id('location-user-create-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function getLocationCreateUserAiProfiles() {
+    return [...document.querySelectorAll('input[name="location-user-create-ai-profile"]:checked')]
+      .map(input => String(input.value || '').trim())
+      .filter(key => key && AI_ASSIGNMENT_LABELS[key]);
+  }
+
+  async function submitLocationCreateUser(event) {
+    event.preventDefault();
+    const tenantId = ($id('location-user-create-tenant-id')?.value || '').trim();
+    const username = ($id('location-user-create-username')?.value || '').trim();
+    const displayName = ($id('location-user-create-display-name')?.value || '').trim();
+    const email = ($id('location-user-create-email')?.value || '').trim();
+    const role = ($id('location-user-create-role')?.value || 'member').trim();
+    const jobTitle = ($id('location-user-create-job-title')?.value || '').trim();
+    const password = ($id('location-user-create-password')?.value || '').trim();
+    const passwordConfirm = ($id('location-user-create-password-confirm')?.value || '').trim();
+    const assignedAiProfiles = getLocationCreateUserAiProfiles();
+    const status = $id('location-user-create-status');
+    const submit = $id('location-user-create-submit');
+
+    if (!tenantId || !username || !displayName || !email || !password) {
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#dc2626';
+        status.textContent = '아이디, 표시 이름, 이메일, 초기 비밀번호는 모두 필요합니다.';
+      }
+      return;
+    }
+    if (password !== passwordConfirm) {
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#dc2626';
+        status.textContent = '초기 비밀번호와 확인 값이 일치하지 않습니다.';
+      }
+      return;
+    }
+
+    if (status) {
+      status.style.display = 'block';
+      status.style.color = 'var(--muted)';
+      status.textContent = '계정 생성 중…';
+    }
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = '생성 중…';
+    }
+
+    try {
+      const res = await fetch('/admin/users', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'X-Tenant-ID': tenantId,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          display_name: displayName,
+          email,
+          password,
+          role,
+          job_title: jobTitle,
+          assigned_ai_profiles: assignedAiProfiles,
+        }),
+      });
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
+      if (status) {
+        status.style.color = '#15803d';
+        status.textContent = '계정이 생성되었습니다. 초기 비밀번호를 안전한 채널로 전달하세요.';
+      }
+      showNotification(`계정 ${username} 이(가) 생성되었습니다.`, 'success');
+      closeLocationCreateUserModal();
+      await openLocationUsersPanel(tenantId);
+    } catch (e) {
+      if (status) {
+        status.style.color = '#dc2626';
+        status.textContent = `생성 실패: ${e.message}`;
+      }
+      showNotification('계정 생성 실패: ' + e.message, 'error');
+    } finally {
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = '계정 생성';
+      }
+    }
+  }
+
   async function inviteToLocation(tenantId) {
     const email = prompt(`${tenantId} 거점에 초대할 이메일을 입력하세요:`);
     if (!email) return;
@@ -18015,9 +18304,16 @@
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, role, tenant_id: tenantId, job_title: jobTitle, assigned_ai_profiles: assignedAiProfiles })
-    }).then(res => {
-      if (!res.ok) return res.json().then(d => { throw new Error(d.detail || `HTTP ${res.status}`); });
-      showNotification(`${email}님을 초대했습니다.`, 'success');
+    }).then(async res => {
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      showNotification(`${email}님 초대 링크를 발급했습니다.`, 'success');
+      if (data.invite_url) {
+        window.prompt('아래 초대 링크를 복사해서 전달하세요.', data.invite_url);
+      }
       openLocationUsersPanel(tenantId);
     }).catch(e => showNotification('초대 실패: ' + e.message, 'error'));
   }
