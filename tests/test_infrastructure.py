@@ -131,6 +131,16 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "페이지 스케치" in res.text
 
 
+def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "⚙️ 내 정보" in res.text
+    assert 'id="profile-modal"' in res.text
+    assert 'id="profile-form"' in res.text
+    assert 'id="dark-toggle"' not in res.text
+    assert "toggleDark()" not in res.text
+
+
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None

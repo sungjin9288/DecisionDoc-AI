@@ -17,6 +17,7 @@ from app.schemas import (
     CreateUserRequest,
     LoginRequest,
     RefreshRequest,
+    UpdateMyProfileRequest,
     UpdateUserRequest,
     WithdrawRequest,
 )
@@ -133,6 +134,38 @@ async def get_me(request: Request):
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
     user = user_store.get_by_id(user_id)
+    if not user:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+    return _serialize_user_for_client(user)
+
+
+@router.patch("/auth/me")
+async def update_me(request: Request, body: UpdateMyProfileRequest):
+    """Update the current authenticated user's editable profile fields."""
+    from app.storage.user_store import get_user_store
+
+    tenant_id = get_tenant_id(request)
+    user_store = get_user_store(tenant_id)
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "인증이 필요합니다.")
+
+    updates: dict[str, str] = {}
+    if body.display_name is not None:
+        display_name = body.display_name.strip()
+        if not display_name:
+            raise HTTPException(400, "표시 이름은 비워둘 수 없습니다.")
+        updates["display_name"] = display_name
+    if body.email is not None:
+        email = body.email.strip()
+        if not email:
+            raise HTTPException(400, "이메일은 비워둘 수 없습니다.")
+        updates["email"] = email
+
+    try:
+        user = user_store.update(user_id, **updates) if updates else user_store.get_by_id(user_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     if not user:
         raise HTTPException(404, "사용자를 찾을 수 없습니다.")
     return _serialize_user_for_client(user)

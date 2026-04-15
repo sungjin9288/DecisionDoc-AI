@@ -13,6 +13,7 @@ _DOCUMENT_UPLOAD_SAMPLE = (
     b"Goal: Validate uploaded document generation\n"
     b"Constraints: Keep auditability first.\n"
 )
+DEFAULT_SMOKE_TIMEOUT_SEC = "60"
 
 
 def _required_env(name: str) -> str:
@@ -858,7 +859,7 @@ def main() -> int:
     base_url = _required_env("SMOKE_BASE_URL").rstrip("/")
     api_key = _required_env("SMOKE_API_KEY")
     provider = os.getenv("SMOKE_PROVIDER", "mock").strip() or "mock"
-    timeout_sec = float(os.getenv("SMOKE_TIMEOUT_SEC", "30"))
+    timeout_sec = float(os.getenv("SMOKE_TIMEOUT_SEC", DEFAULT_SMOKE_TIMEOUT_SEC))
     include_procurement = _is_enabled(os.getenv("SMOKE_INCLUDE_PROCUREMENT", "0"))
     procurement_url_or_number = os.getenv("SMOKE_PROCUREMENT_URL_OR_NUMBER", "").strip()
 

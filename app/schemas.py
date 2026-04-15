@@ -624,6 +624,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class UpdateMyProfileRequest(BaseModel):
+    display_name: str | None = None
+    email: str | None = None
+
+
 class CreateUserRequest(BaseModel):
     username: str
     display_name: str

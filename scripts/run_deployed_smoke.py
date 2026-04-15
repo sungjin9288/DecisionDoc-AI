@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_SERVICE = "app"
+DEFAULT_SMOKE_TIMEOUT_SEC = "60"
 DEFAULT_SMOKE_CHECKS = [
     "GET /health",
     "POST /generate (no key) -> 401",
@@ -95,6 +96,19 @@ def _resolve_provider(provider: str, env_values: dict[str, str]) -> str:
     return "mock"
 
 
+def _resolve_timeout_sec(timeout_sec: str | float | int, env_values: dict[str, str]) -> str:
+    normalized = str(timeout_sec or "").strip()
+    if normalized:
+        return normalized
+    env_timeout = str(env_values.get("SMOKE_TIMEOUT_SEC", "")).strip()
+    if env_timeout:
+        return env_timeout
+    inherited_timeout = os.getenv("SMOKE_TIMEOUT_SEC", "").strip()
+    if inherited_timeout:
+        return inherited_timeout
+    return DEFAULT_SMOKE_TIMEOUT_SEC
+
+
 def run_deployed_smoke(
     *,
     env_file: Path,
@@ -103,6 +117,7 @@ def run_deployed_smoke(
     base_url: str = "",
     api_key: str = "",
     provider: str = "",
+    timeout_sec: str | float | int = "",
 ) -> int:
     resolved_env_file = Path(env_file).expanduser()
     resolved_compose_file = Path(compose_file).expanduser()
@@ -113,6 +128,7 @@ def run_deployed_smoke(
     resolved_base_url = _resolve_base_url(base_url, env_values)
     resolved_api_key = _resolve_api_key(api_key, env_values)
     resolved_provider = _resolve_provider(provider, env_values)
+    resolved_timeout_sec = _resolve_timeout_sec(timeout_sec, env_values)
     resolved_service = _required_value("service", service)
 
     command = [
@@ -130,6 +146,8 @@ def run_deployed_smoke(
         f"SMOKE_API_KEY={resolved_api_key}",
         "-e",
         f"SMOKE_PROVIDER={resolved_provider}",
+        "-e",
+        f"SMOKE_TIMEOUT_SEC={resolved_timeout_sec}",
         resolved_service,
         "python",
         "scripts/smoke.py",
@@ -165,17 +183,19 @@ def _print_env_template(*, env_file: Path, compose_file: Path, service: str) -> 
     print(_suggested_command(env_file=env_file, compose_file=compose_file, service=service), flush=True)
 
 
-def _run_preflight(*, env_file: Path, base_url: str, api_key: str, provider: str) -> int:
+def _run_preflight(*, env_file: Path, base_url: str, api_key: str, provider: str, timeout_sec: str | float | int) -> int:
     env_values = _load_env_file(env_file)
     resolved_base_url = _resolve_base_url(base_url, env_values)
     resolved_api_key = _resolve_api_key(api_key, env_values)
     resolved_provider = _resolve_provider(provider, env_values)
+    resolved_timeout_sec = _resolve_timeout_sec(timeout_sec, env_values)
 
     print("Deployed smoke preflight", flush=True)
     print("", flush=True)
     print(f"[ok] SMOKE_BASE_URL={resolved_base_url}", flush=True)
     print(f"[ok] SMOKE_API_KEY={'set' if resolved_api_key else 'missing'}", flush=True)
     print(f"[ok] SMOKE_PROVIDER={resolved_provider}", flush=True)
+    print(f"[ok] SMOKE_TIMEOUT_SEC={resolved_timeout_sec}", flush=True)
     print("", flush=True)
     _print_smoke_checks()
     return 0
@@ -216,6 +236,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Override SMOKE_PROVIDER. Defaults to DECISIONDOC_PROVIDER from the env file.",
     )
     parser.add_argument(
+        "--timeout-sec",
+        default="",
+        help="Override SMOKE_TIMEOUT_SEC. Defaults to SMOKE_TIMEOUT_SEC from the env file or 60 seconds.",
+    )
+    parser.add_argument(
         "--preflight",
         action="store_true",
         help="Print resolved smoke inputs without executing the smoke script.",
@@ -241,6 +266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_url=args.base_url,
             api_key=args.api_key,
             provider=args.provider,
+            timeout_sec=args.timeout_sec,
         )
     return run_deployed_smoke(
         env_file=env_file,
@@ -249,6 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         base_url=args.base_url,
         api_key=args.api_key,
         provider=args.provider,
+        timeout_sec=args.timeout_sec,
     )
 
 

@@ -335,6 +335,21 @@ def test_admin_create_tenant(tmp_path: Path, monkeypatch) -> None:
     assert data["is_active"] is True
 
 
+def test_admin_create_tenant_with_admin_jwt(tmp_path: Path, monkeypatch) -> None:
+    """POST /admin/tenants — admin JWT로도 생성 가능."""
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+
+    resp = client.post(
+        "/admin/tenants",
+        json={"tenant_id": "jwt-corp", "display_name": "JWT Corp"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tenant_id"] == "jwt-corp"
+
+
 def test_admin_create_tenant_duplicate_returns_409(tmp_path: Path, monkeypatch) -> None:
     """POST /admin/tenants 중복 → 409."""
     client = _make_client(tmp_path, monkeypatch)

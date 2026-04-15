@@ -26,6 +26,7 @@ def test_run_deployed_smoke_uses_env_file_defaults(tmp_path: Path, monkeypatch) 
                 "ALLOWED_ORIGINS=https://dawool.decisiondoc.kr",
                 "DECISIONDOC_API_KEYS=runtime-key-1,runtime-key-2",
                 "DECISIONDOC_PROVIDER=openai",
+                "SMOKE_TIMEOUT_SEC=75",
             ]
         )
         + "\n",
@@ -65,6 +66,8 @@ def test_run_deployed_smoke_uses_env_file_defaults(tmp_path: Path, monkeypatch) 
             "SMOKE_API_KEY=runtime-key-1",
             "-e",
             "SMOKE_PROVIDER=openai",
+            "-e",
+            "SMOKE_TIMEOUT_SEC=75",
             "app",
             "python",
             "scripts/smoke.py",
@@ -111,6 +114,7 @@ def test_run_deployed_smoke_allows_cli_overrides(tmp_path: Path, monkeypatch) ->
     assert "SMOKE_BASE_URL=https://custom.example.com" in command
     assert "SMOKE_API_KEY=override-key" in command
     assert "SMOKE_PROVIDER=gemini" in command
+    assert "SMOKE_TIMEOUT_SEC=60" in command
     assert command[-3:] == ["web", "python", "scripts/smoke.py"]
 
 
@@ -142,7 +146,45 @@ def test_preflight_uses_legacy_api_key_fallback(tmp_path: Path, capsys) -> None:
     assert "[ok] SMOKE_BASE_URL=https://admin.decisiondoc.kr" in captured
     assert "[ok] SMOKE_API_KEY=set" in captured
     assert "[ok] SMOKE_PROVIDER=openai" in captured
+    assert "[ok] SMOKE_TIMEOUT_SEC=60" in captured
     assert "- POST /generate/from-documents (auth) -> 200" in captured
+
+
+def test_run_deployed_smoke_honors_timeout_override(tmp_path: Path, monkeypatch) -> None:
+    runner = _load_script_module("decisiondoc_run_deployed_smoke_timeout_override", "scripts/run_deployed_smoke.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text(
+        "\n".join(
+            [
+                "ALLOWED_ORIGINS=https://admin.decisiondoc.kr",
+                "DECISIONDOC_API_KEYS=runtime-key-1",
+                "DECISIONDOC_PROVIDER=openai",
+                "SMOKE_TIMEOUT_SEC=75",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def _fake_run(command, cwd=None, check=False):
+        _ = cwd, check
+        calls.append(list(command))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(runner.subprocess, "run", _fake_run)
+
+    result = runner.run_deployed_smoke(
+        env_file=env_file,
+        compose_file=compose_file,
+        service="app",
+        timeout_sec="90",
+    )
+
+    assert result == 0
+    assert "SMOKE_TIMEOUT_SEC=90" in calls[0]
 
 
 def test_print_env_template_lists_document_upload_smoke_checks(tmp_path: Path, capsys) -> None:

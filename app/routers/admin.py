@@ -1864,9 +1864,10 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
 # Tenant Management
 # ---------------------------------------------------------------------------
 
-@router.post("/admin/tenants", dependencies=[Depends(require_ops_key)])
+@router.post("/admin/tenants")
 def admin_create_tenant(payload: dict, request: Request) -> dict:
-    """Create a new tenant. Requires OPS key."""
+    """Create a new tenant. Accepts admin JWT or OPS key."""
+    require_admin(request)
     tenant_store = request.app.state.tenant_store
     tenant_id_val = payload.get("tenant_id", "").strip()
     display_name_val = payload.get("display_name", "").strip()
@@ -1884,24 +1885,27 @@ def admin_create_tenant(payload: dict, request: Request) -> dict:
     return dataclasses.asdict(tenant)
 
 
-@router.get("/admin/tenants", dependencies=[Depends(require_ops_key)])
+@router.get("/admin/tenants")
 def admin_list_tenants(request: Request) -> list[dict]:
-    """List all tenants. Requires OPS key."""
+    """List all tenants. Accepts admin JWT or OPS key."""
+    require_admin(request)
     return [dataclasses.asdict(t) for t in request.app.state.tenant_store.list_tenants()]
 
 
-@router.get("/admin/tenants/{tenant_id_path}", dependencies=[Depends(require_ops_key)])
+@router.get("/admin/tenants/{tenant_id_path}")
 def admin_get_tenant(tenant_id_path: str, request: Request) -> dict:
-    """Get a single tenant by ID. Requires OPS key."""
+    """Get a single tenant by ID. Accepts admin JWT or OPS key."""
+    require_admin(request)
     tenant = request.app.state.tenant_store.get_tenant(tenant_id_path)
     if tenant is None:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")
     return dataclasses.asdict(tenant)
 
 
-@router.patch("/admin/tenants/{tenant_id_path}", dependencies=[Depends(require_ops_key)])
+@router.patch("/admin/tenants/{tenant_id_path}")
 def admin_update_tenant(tenant_id_path: str, payload: dict, request: Request) -> dict:
-    """Update mutable fields of a tenant. Requires OPS key."""
+    """Update mutable fields of a tenant. Accepts admin JWT or OPS key."""
+    require_admin(request)
     try:
         tenant = request.app.state.tenant_store.update_tenant(
             tenant_id_path,
@@ -1914,9 +1918,10 @@ def admin_update_tenant(tenant_id_path: str, payload: dict, request: Request) ->
     return dataclasses.asdict(tenant)
 
 
-@router.post("/admin/tenants/{tenant_id_path}/custom-hint", dependencies=[Depends(require_ops_key)])
+@router.post("/admin/tenants/{tenant_id_path}/custom-hint")
 def admin_set_custom_hint(tenant_id_path: str, payload: dict, request: Request) -> dict:
-    """Set a bundle-specific custom prompt hint for a tenant. Requires OPS key."""
+    """Set a bundle-specific custom prompt hint for a tenant. Accepts admin JWT or OPS key."""
+    require_admin(request)
     bundle_id_val = payload.get("bundle_id", "").strip()
     hint_val = payload.get("hint", "").strip()
     if not bundle_id_val or not hint_val:
@@ -1928,9 +1933,10 @@ def admin_set_custom_hint(tenant_id_path: str, payload: dict, request: Request) 
     return {"tenant_id": tenant_id_path, "bundle_id": bundle_id_val, "hint": hint_val}
 
 
-@router.delete("/admin/tenants/{tenant_id_path}/custom-hint/{bundle_id_path}", dependencies=[Depends(require_ops_key)])
+@router.delete("/admin/tenants/{tenant_id_path}/custom-hint/{bundle_id_path}")
 def admin_delete_custom_hint(tenant_id_path: str, bundle_id_path: str, request: Request) -> dict:
-    """Remove a bundle-specific custom prompt hint for a tenant. Requires OPS key."""
+    """Remove a bundle-specific custom prompt hint for a tenant. Accepts admin JWT or OPS key."""
+    require_admin(request)
     try:
         request.app.state.tenant_store.delete_custom_hint(tenant_id_path, bundle_id_path)
     except ValueError as exc:
@@ -1938,9 +1944,10 @@ def admin_delete_custom_hint(tenant_id_path: str, bundle_id_path: str, request: 
     return {"deleted": True, "tenant_id": tenant_id_path, "bundle_id": bundle_id_path}
 
 
-@router.get("/admin/tenants/{tenant_id_path}/stats", dependencies=[Depends(require_ops_key)])
+@router.get("/admin/tenants/{tenant_id_path}/stats")
 def admin_tenant_stats(tenant_id_path: str, request: Request) -> dict:
-    """Tenant usage statistics. Requires OPS key."""
+    """Tenant usage statistics. Accepts admin JWT or OPS key."""
+    require_admin(request)
     tenant = request.app.state.tenant_store.get_tenant(tenant_id_path)
     if tenant is None:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")
@@ -1970,10 +1977,10 @@ def admin_tenant_stats(tenant_id_path: str, request: Request) -> dict:
 
 @router.get(
     "/admin/tenants/{tenant_id_path}/procurement-quality-summary",
-    dependencies=[Depends(require_ops_key)],
 )
 def admin_tenant_procurement_quality_summary(tenant_id_path: str, request: Request) -> dict:
-    """Tenant-scoped procurement decision and handoff summary. Requires OPS key."""
+    """Tenant-scoped procurement decision and handoff summary. Accepts admin JWT or OPS key."""
+    require_admin(request)
     tenant = request.app.state.tenant_store.get_tenant(tenant_id_path)
     if tenant is None:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")

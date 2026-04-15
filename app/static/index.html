@@ -2574,27 +2574,6 @@
     }
     .aud-chip:hover:not(.selected) { background:var(--p-light); border-color:var(--p1); color:var(--p1); }
 
-    /* ── Dark mode (#10) ────────────────────────────────────────── */
-    [data-theme="dark"] {
-      --bg: #0f0e1a;
-      --surface: rgba(30,27,70,.85);
-      --surface-solid: #1e1b46;
-      --text: #e2e0f4;
-      --muted: #8b87c0;
-      --border: rgba(139,135,192,.2);
-      --p-light: rgba(99,102,241,.15);
-    }
-    [data-theme="dark"] body { background: var(--bg); }
-    [data-theme="dark"] .doc-pane { background:#1e1b46; color:#e2e0f4; }
-    [data-theme="dark"] .doc-pane pre, [data-theme="dark"] .doc-pane code { background:#13122e; color:#a78bfa; }
-    [data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select {
-      background:#1e1b46; color:#e2e0f4; border-color:rgba(139,135,192,.3);
-    }
-    [data-theme="dark"] #doc-pane { background:#1e1b46; color:#e2e0f4; }
-    [data-theme="dark"] #doc-pane pre, [data-theme="dark"] #doc-pane code { background:#13122e; color:#a78bfa; }
-    [data-theme="dark"] #form-section, [data-theme="dark"] .bundle-card,
-    [data-theme="dark"] #history-panel { background:var(--surface-solid); }
-
     /* ── Favorites (#12) ────────────────────────────────────────── */
     .fav-btn { position:absolute; top:.4rem; right:.4rem; background:none; border:none; cursor:pointer; font-size:1rem; z-index:2; opacity:.5; transition:opacity .2s; }
     .fav-btn.active { opacity:1; }
@@ -3725,6 +3704,72 @@
       color: inherit; border-radius: 4px; font-size: 0.875rem;
     }
     .user-menu button:hover { background: rgba(99,102,241,0.08); }
+    .profile-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .profile-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(99,102,241,0.12);
+      color: var(--p1);
+      font-size: .76rem;
+      font-weight: 600;
+    }
+    .profile-readonly-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .75rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .profile-readonly-grid label,
+    .profile-form label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: .35rem;
+    }
+    .profile-readonly-value {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.72);
+      color: var(--text);
+      font-size: .88rem;
+      line-height: 1.45;
+    }
+    .profile-form input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.9);
+      font-size: .9rem;
+      color: var(--text);
+    }
+    .profile-section-title {
+      margin: 0 0 .75rem;
+      font-size: .95rem;
+      font-weight: 800;
+      color: var(--text-strong);
+    }
+    .profile-help-text {
+      margin: .5rem 0 0;
+      color: var(--muted);
+      font-size: .8rem;
+      line-height: 1.5;
+    }
+    .profile-status-text {
+      min-height: 20px;
+      font-size: .82rem;
+      color: var(--muted);
+    }
 
     /* ── Notification bell ──────────────────────────────────────── */
     .notif-bell {
@@ -4227,37 +4272,6 @@
       border: 1px solid rgba(255,255,255,.3);
     }
 
-    /* ── Dark mode enhancements ──────────────────────────────────── */
-    body.dark {
-      --bg: #0f0f1a;
-      --surface: rgba(30,27,75,.85);
-      --surface-solid: #1a1730;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --border: rgba(99,102,241,.18);
-      --p-light: rgba(99,102,241,.15);
-    }
-    body.dark .bundle-card {
-      border-color: rgba(99,102,241,.2);
-      background: rgba(30,27,75,.7);
-    }
-    body.dark input,
-    body.dark textarea,
-    body.dark select {
-      background: rgba(15,15,26,.6);
-      border-color: rgba(99,102,241,.25);
-    }
-    body.dark .stat-card,
-    body.dark .ud-card {
-      background: rgba(30,27,75,.7);
-      border-color: rgba(99,102,241,.18);
-    }
-    body.dark .history-item:hover,
-    body.dark .doc-item:hover,
-    body.dark .g2b-result-item:hover {
-      background: rgba(99,102,241,.08);
-    }
-
     /* ── Hero stats badges ───────────────────────────────────────── */
     .hero-stats {
       display: flex;
@@ -4284,11 +4298,6 @@
     .hero-stat-badge:hover {
       background: rgba(255,255,255,.22);
     }
-
-    /* ── Dark mode label / step-title improvements ───────────────── */
-    body.dark label { color: #cbd5e1; }
-    body.dark .step-title { color: var(--p3); }
-    body.dark .section-header .step-dot { background: linear-gradient(135deg, var(--p1), var(--p2)); }
 
     /* ── Result section tabs (redesigned) ───────────────────────── */
     .result-section-tab {
@@ -4342,17 +4351,6 @@
       gap: 1rem;
     }
 
-    /* ── Dark mode: form & sketch panels ───────────────────── */
-    body.dark #form-section,
-    body.dark #sketch-panel {
-      background: var(--surface);
-      border-color: var(--border);
-    }
-    body.dark .step-prog-item .step-prog-dot {
-      background: rgba(255,255,255,.12);
-      color: var(--muted);
-    }
-    body.dark .step-prog-line { background: rgba(255,255,255,.15); }
   </style>
 </head>
 <body class="auth-pending">
@@ -4361,15 +4359,12 @@
 
 <!-- ── Hero ─────────────────────────────────────────────────────── -->
 <div class="hero">
-  <button id="dark-toggle" aria-label="다크모드 전환" aria-pressed="false" title="다크 모드 전환"
-    style="position:absolute;top:1.2rem;right:1.5rem;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.3);color:#fff;border-radius:99px;padding:.4rem .9rem;font-size:.82rem;cursor:pointer;backdrop-filter:blur(8px);z-index:10;">
-    🌙 다크
-  </button>
   <!-- ── User info (shown after login) ──────────────────────────── -->
-  <div id="user-info" class="user-info" style="display:none" onclick="toggleUserMenu()">
+  <div id="user-info" class="user-info" style="display:none" onclick="toggleUserMenu(event)">
     <div class="user-avatar" id="user-avatar">?</div>
     <span id="user-display-name"></span>
     <div class="user-menu" id="user-menu" style="display:none">
+      <button onclick="event.stopPropagation();openMyProfileModal()">⚙️ 내 정보</button>
       <button onclick="event.stopPropagation();logout()">🚪 로그아웃</button>
     </div>
   </div>
@@ -4397,6 +4392,76 @@
     <span class="hero-stat-badge">🗂️ 11가지 번들</span>
     <span class="hero-stat-badge">⚡ 30초 생성</span>
     <span class="hero-stat-badge">🏛️ 나라장터 연동</span>
+  </div>
+</div>
+
+<div id="profile-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1300; align-items:center; justify-content:center; padding:1rem;" onclick="if(event.target===this) closeMyProfileModal()">
+  <div style="width:100%; max-width:640px; max-height:90vh; overflow-y:auto; background:var(--surface-solid,#fff); border:1px solid var(--border,#e5e7eb); border-radius:18px; box-shadow:0 18px 48px rgba(15,23,42,.18); padding:1.5rem;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1rem;">
+      <div>
+        <h3 style="margin:0; font-size:1.12rem; font-weight:800;">내 정보</h3>
+        <p class="profile-help-text" style="margin:.35rem 0 0;">표시 이름, 이메일, 비밀번호는 여기서 직접 바꾸고 직위와 업무 AI는 관리자에게 요청하세요.</p>
+      </div>
+      <button type="button" class="btn-secondary" onclick="closeMyProfileModal()">닫기</button>
+    </div>
+    <div class="profile-readonly-grid">
+      <div>
+        <label>아이디</label>
+        <div id="profile-username" class="profile-readonly-value">-</div>
+      </div>
+      <div>
+        <label>역할</label>
+        <div id="profile-role" class="profile-readonly-value">-</div>
+      </div>
+      <div>
+        <label>직위</label>
+        <div id="profile-job-title" class="profile-readonly-value">미지정</div>
+      </div>
+      <div>
+        <label>배정된 업무 AI</label>
+        <div id="profile-ai-profiles" class="profile-readonly-value">미배정</div>
+      </div>
+    </div>
+    <form id="profile-form" class="profile-form" onsubmit="saveMyProfile(event)">
+      <div style="padding:1rem; border:1px solid var(--border,#e5e7eb); border-radius:14px; background:rgba(255,255,255,.58); margin-bottom:1rem;">
+        <h4 class="profile-section-title">기본 정보</h4>
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.85rem 1rem;">
+          <div>
+            <label for="profile-display-name">표시 이름</label>
+            <input id="profile-display-name" type="text" autocomplete="name" required>
+          </div>
+          <div>
+            <label for="profile-email">이메일</label>
+            <input id="profile-email" type="email" autocomplete="email" required>
+          </div>
+        </div>
+      </div>
+      <div style="padding:1rem; border:1px solid var(--border,#e5e7eb); border-radius:14px; background:rgba(255,255,255,.58); margin-bottom:1rem;">
+        <h4 class="profile-section-title">비밀번호 변경</h4>
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:.85rem 1rem;">
+          <div>
+            <label for="profile-old-password">현재 비밀번호</label>
+            <input id="profile-old-password" type="password" autocomplete="current-password">
+          </div>
+          <div>
+            <label for="profile-new-password">새 비밀번호</label>
+            <input id="profile-new-password" type="password" autocomplete="new-password">
+          </div>
+          <div>
+            <label for="profile-new-password-confirm">새 비밀번호 확인</label>
+            <input id="profile-new-password-confirm" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <p class="profile-help-text">비밀번호를 바꾸지 않으려면 이 영역은 비워두세요.</p>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+        <div id="profile-status" class="profile-status-text"></div>
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" class="btn-secondary" onclick="closeMyProfileModal()">취소</button>
+          <button id="profile-save-btn" type="submit" class="btn-primary">저장</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 <svg class="wave" viewBox="0 0 1440 40" preserveAspectRatio="none" height="40">
@@ -8921,35 +8986,6 @@
     btn.setAttribute('aria-pressed', String(active));
   }
 
-  /* ── Dark mode toggle (#10) ─────────────────────────────────────── */
-  function toggleDark() {
-    const isDark = document.body.classList.toggle('dark');
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    localStorage.setItem('dd_dark', isDark ? '1' : '0');
-    localStorage.setItem('dd_theme', isDark ? 'dark' : 'light');
-    const btn = $id('dark-toggle');
-    if (btn) {
-      btn.textContent = isDark ? '☀️ 라이트' : '🌙 다크';
-      btn.setAttribute('aria-pressed', String(isDark));
-    }
-  }
-  (function() {
-    const savedDark  = localStorage.getItem('dd_dark');
-    const savedTheme = localStorage.getItem('dd_theme');
-    const darkBtn    = $id('dark-toggle');
-    // 저장된 값에서 다크 여부 판별
-    const isDark = savedDark === '1' || savedTheme === 'dark';
-    if (isDark) {
-      document.body.classList.add('dark');
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
-    if (darkBtn) {
-      darkBtn.textContent = isDark ? '☀️ 라이트' : '🌙 다크';
-      darkBtn.setAttribute('aria-pressed', String(isDark));
-      darkBtn.addEventListener('click', toggleDark);
-    }
-  })();
-
   /* ── Edit button (#13 + PU-2/M-6 _editedMarkdown capture) ────── */
   let isEditing = false;
   $id('edit-btn').addEventListener('click', () => {
@@ -9980,14 +10016,151 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _currentUser = null;
+    closeMyProfileModal();
+    closeUserMenu();
     const userInfo = document.getElementById('user-info');
     if (userInfo) userInfo.style.display = 'none';
     showLoginScreen();
   }
 
-  function toggleUserMenu() {
+  function closeUserMenu() {
+    const menu = document.getElementById('user-menu');
+    if (menu) menu.style.display = 'none';
+  }
+
+  function toggleUserMenu(event) {
+    event?.stopPropagation?.();
     const menu = document.getElementById('user-menu');
     if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function roleLabel(role) {
+    if (role === 'admin') return '관리자';
+    if (role === 'viewer') return '열람자';
+    return '팀원';
+  }
+
+  function renderAssignedAiProfilesMarkup(keys) {
+    const values = Array.isArray(keys) ? keys.filter(Boolean) : [];
+    if (!values.length) return '<span style="color:var(--muted);">미배정</span>';
+    return `<div class="profile-chip-list">${values.map((key) => `
+      <span class="profile-chip">${escapeHtml(AI_ASSIGNMENT_LABELS[key] || key)}</span>
+    `).join('')}</div>`;
+  }
+
+  function setProfileStatus(message = '', type = 'muted') {
+    const statusEl = $id('profile-status');
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.style.color =
+      type === 'error' ? '#dc2626' :
+      type === 'success' ? '#15803d' :
+      'var(--muted)';
+  }
+
+  function populateMyProfileModal() {
+    if (!_currentUser) return;
+    $id('profile-username') && ($id('profile-username').textContent = _currentUser.username || '-');
+    $id('profile-role') && ($id('profile-role').textContent = roleLabel(_currentUser.role));
+    $id('profile-job-title') && ($id('profile-job-title').textContent = String(_currentUser.job_title || '').trim() || '미지정');
+    $id('profile-ai-profiles') && ($id('profile-ai-profiles').innerHTML = renderAssignedAiProfilesMarkup(_currentUser.assigned_ai_profiles));
+    $id('profile-display-name') && ($id('profile-display-name').value = _currentUser.display_name || '');
+    $id('profile-email') && ($id('profile-email').value = _currentUser.email || '');
+    ['profile-old-password', 'profile-new-password', 'profile-new-password-confirm'].forEach((id) => {
+      if ($id(id)) $id(id).value = '';
+    });
+    setProfileStatus('');
+  }
+
+  async function openMyProfileModal() {
+    closeUserMenu();
+    if (!_currentUser) return;
+    await hydrateCurrentUserProfile();
+    populateMyProfileModal();
+    const modal = $id('profile-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeMyProfileModal() {
+    const modal = $id('profile-modal');
+    if (modal) modal.style.display = 'none';
+    setProfileStatus('');
+  }
+
+  async function saveMyProfile(event) {
+    event.preventDefault();
+    if (!_currentUser) return;
+    const saveBtn = $id('profile-save-btn');
+    const displayName = ($id('profile-display-name')?.value || '').trim();
+    const email = ($id('profile-email')?.value || '').trim();
+    const oldPassword = $id('profile-old-password')?.value || '';
+    const newPassword = $id('profile-new-password')?.value || '';
+    const confirmPassword = $id('profile-new-password-confirm')?.value || '';
+    const wantsPasswordChange = Boolean(oldPassword || newPassword || confirmPassword);
+
+    if (!displayName || !email) {
+      setProfileStatus('표시 이름과 이메일을 입력하세요.', 'error');
+      return;
+    }
+    if (wantsPasswordChange) {
+      if (!oldPassword || !newPassword || !confirmPassword) {
+        setProfileStatus('비밀번호를 바꾸려면 현재/새 비밀번호를 모두 입력하세요.', 'error');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setProfileStatus('새 비밀번호 확인 값이 일치하지 않습니다.', 'error');
+        return;
+      }
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '저장 중...';
+    }
+    setProfileStatus('저장 중입니다...');
+
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      let latestUser = _currentUser;
+      if (displayName !== (_currentUser.display_name || '') || email !== (_currentUser.email || '')) {
+        const profileRes = await fetch('/auth/me', {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ display_name: displayName, email }),
+        });
+        if (!profileRes.ok) {
+          const err = await parseApiErrorResponse(profileRes);
+          throw new Error(err.message || `HTTP ${profileRes.status}`);
+        }
+        latestUser = await profileRes.json();
+        _currentUser = { ..._currentUser, ...latestUser, sub: latestUser.user_id || _currentUser.sub };
+        renderUserInfo();
+      }
+      if (wantsPasswordChange) {
+        const passwordRes = await fetch('/auth/change-password', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+        });
+        if (!passwordRes.ok) {
+          const err = await parseApiErrorResponse(passwordRes);
+          throw new Error(err.message || `HTTP ${passwordRes.status}`);
+        }
+      }
+      populateMyProfileModal();
+      setProfileStatus('내 정보가 저장되었습니다.', 'success');
+      showNotification('내 정보가 저장되었습니다.', 'success');
+      if (!wantsPasswordChange) {
+        window.setTimeout(() => closeMyProfileModal(), 350);
+      }
+    } catch (e) {
+      setProfileStatus(e.message || '저장에 실패했습니다.', 'error');
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '저장';
+      }
+    }
   }
 
   function renderUserInfo() {
@@ -10257,6 +10430,11 @@
 
   // Close notification panel when clicking outside
   document.addEventListener('click', function(e) {
+    const userInfo = $id('user-info');
+    const userMenu = $id('user-menu');
+    if (userInfo && userMenu && userMenu.style.display === 'block' && !userInfo.contains(e.target)) {
+      userMenu.style.display = 'none';
+    }
     const panel = $id('notif-panel');
     const bell = $id('notif-bell');
     if (panel && bell && panel.style.display === 'flex') {
@@ -17808,7 +17986,10 @@
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenant_id: tenantId, display_name: displayName })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
       showNotification('거점이 생성되었습니다.', 'success');
       document.getElementById('create-location-modal').style.display = 'none';
       document.getElementById('create-location-form').reset();

@@ -510,6 +510,27 @@ def test_auth_me_returns_profile(tmp_path, monkeypatch):
     ]
 
 
+def test_auth_me_patch_updates_display_name_and_email(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+
+    res = client.patch(
+        "/auth/me",
+        headers=headers,
+        json={"display_name": "안성진 관리자", "email": "sungjin-admin@test.com"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["display_name"] == "안성진 관리자"
+    assert data["email"] == "sungjin-admin@test.com"
+
+    me_res = client.get("/auth/me", headers=headers)
+    assert me_res.status_code == 200
+    assert me_res.json()["display_name"] == "안성진 관리자"
+    assert me_res.json()["email"] == "sungjin-admin@test.com"
+
+
 # ── Admin endpoint tests ───────────────────────────────────────────────────────
 
 
