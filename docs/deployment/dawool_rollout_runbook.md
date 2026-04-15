@@ -17,6 +17,7 @@
 
 실제 입력값과 실행 결과는 아래 worksheet에 같이 기록하는 것을 권장합니다.
 
+- `docs/deployment/dawool_intake_checklist.md`
 - `docs/deployment/dawool_rollout_worksheet.md`
 
 현재 기준은 아래를 전제로 합니다.

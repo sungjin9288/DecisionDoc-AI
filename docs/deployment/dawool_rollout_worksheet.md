@@ -5,6 +5,7 @@
 
 실행 절차 자체는 아래 문서를 기준으로 합니다.
 
+- `docs/deployment/dawool_intake_checklist.md`
 - `docs/deployment/dawool_rollout_runbook.md`
 
 이 시트는 “무엇을 채워야 하는지”와 “어디까지 끝났는지”를 놓치지 않게 하기 위한 운영 기록용 문서입니다.

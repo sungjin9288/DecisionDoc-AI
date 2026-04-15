@@ -34,6 +34,7 @@
 - AWS 운영 Runbook 및 장기 release lane: [AWS 배포 Runbook](deploy_aws.md)
 - Multi-site 운영 (`admin` + `dawool`): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
 - `decisiondoc.kr` DNS 설정: [DNS 설정 가이드](deployment/dns_setup_decisiondoc_kr.md)
+- `dawool` 다음 phase 입력값 정리: [Dawool intake checklist](deployment/dawool_intake_checklist.md)
 - `dawool.decisiondoc.kr` 고객 전용 배포: [Dawool rollout runbook](deployment/dawool_rollout_runbook.md)
 - `dawool` 실제 입력값/점검 기록: [Dawool rollout worksheet](deployment/dawool_rollout_worksheet.md)
 - `.env.prod` 자동 생성: `python3 scripts/bootstrap_prod_env.py --profile <admin|dawool> --output .env.prod --openai-api-key 'sk-...'`
