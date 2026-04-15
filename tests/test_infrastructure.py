@@ -166,6 +166,8 @@ def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
 
     for content in (primary, ssl_variant):
         assert "/events" in content
+        assert "pptx" in content
+        assert "export-edited" in content
         assert "with-attachments" in content
         assert "from-documents" in content
         assert "proxy_read_timeout" in content
