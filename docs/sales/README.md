@@ -41,6 +41,11 @@
   - `admin` / `dawool` 분리 운영 구조
   - 보안, 권한, 로그, 운영 포인트
 
+- `company_delivery_guide.md`
+  - 회사 전달 순서
+  - 외부/내부 발송 문구 템플릿
+  - 첨부 패키지와 보안 경계 기준
+
 ## PDF 재생성
 
 - 단일 소개서:
@@ -54,6 +59,7 @@
 - `output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf`
 - `output/pdf/decisiondoc_ai_notebooklm_comparison_ko.pdf`
 - `output/pdf/decisiondoc_ai_internal_deployment_brief_ko.pdf`
+- `output/pdf/decisiondoc_ai_company_delivery_guide_ko.pdf`
 
 ## 권장 사용 순서
 
@@ -63,3 +69,4 @@
 4. 대표 시연 진행: `demo_runbook.md`
 5. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
 6. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
+7. 실제 회사 전달 문구/순서: `company_delivery_guide.md`

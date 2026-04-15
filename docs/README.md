@@ -43,6 +43,7 @@
 ## 세일즈/설명 패키지
 - [Sales Pack 인덱스](sales/README.md)
 - [제품 소개서](sales/product_brief.md)
+- [회사 전달 가이드](sales/company_delivery_guide.md)
 - [NotebookLM 비교 설명서](sales/notebooklm_comparison.md)
 - [내부 설치형 도입 설명서](sales/internal_deployment_brief.md)
 

@@ -23,6 +23,7 @@
 | 총 운영자 | [프로덕션 배포 체크리스트](./prod_checklist.md) | 배포 전/후/장애 시 체크 순서 확인 |
 | 총 운영자 | [정보보호 정책](../security_policy.md) | 권한, 키, 로그, 보존 정책 확인 |
 | 회사 담당자 | [Sales Pack 인덱스](../sales/README.md) | 소개 자료와 설명 흐름 확인 |
+| 회사 담당자 | [회사 전달 가이드](../sales/company_delivery_guide.md) | 실제 전달 순서와 발송 문구 확인 |
 | 회사 담당자 | [DecisionDoc AI v1 완료 스냅샷](../v1_completion_snapshot.md) | 이번 완료 범위와 다음 phase 경계 확인 |
 
 ## 2. 인수인계 실행 순서
@@ -44,6 +45,7 @@
    - [대표 시연 runbook](../sales/demo_runbook.md)
    - [NotebookLM 비교 자료](../sales/notebooklm_comparison.md)
    - [내부 설치형 도입 설명서](../sales/internal_deployment_brief.md)
+   - [회사 전달 가이드](../sales/company_delivery_guide.md)
 6. PDF가 필요하면 아래 명령으로 다시 생성합니다.
 
 ```bash
@@ -57,6 +59,7 @@ python3 scripts/build_sales_pack.py
 - `output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf`
 - `output/pdf/decisiondoc_ai_notebooklm_comparison_ko.pdf`
 - `output/pdf/decisiondoc_ai_internal_deployment_brief_ko.pdf`
+- `output/pdf/decisiondoc_ai_company_delivery_guide_ko.pdf`
 
 ## 3. Acceptance 템플릿
 

@@ -48,6 +48,12 @@ DOCUMENTS: tuple[SalesDocument, ...] = (
         title="DecisionDoc AI 내부 설치형 도입 설명서",
         slug="decisiondoc_ai_internal_deployment_brief_ko",
     ),
+    SalesDocument(
+        key="company_delivery_guide",
+        source="docs/sales/company_delivery_guide.md",
+        title="DecisionDoc AI 회사 전달 가이드",
+        slug="decisiondoc_ai_company_delivery_guide_ko",
+    ),
 )
 
 
