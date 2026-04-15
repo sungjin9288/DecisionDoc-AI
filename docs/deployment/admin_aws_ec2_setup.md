@@ -2,6 +2,18 @@
 
 이 문서는 `admin.decisiondoc.kr` 를 AWS EC2에 배포하는 절차를 repo 기준으로 정리한 가이드입니다.
 
+현재 v1 기준에서 이 문서는 **canonical deployment path** 입니다.
+
+즉, 이번 handoff에서 실제 운영 기준선으로 보는 경로는 아래입니다.
+
+- `admin.decisiondoc.kr`
+- AWS EC2 1대
+- Docker Compose
+- `scripts/run_deployed_smoke.py`
+- `scripts/post_deploy_check.py`
+
+`dawool` live rollout과 AWS `stage-first / promote-only` lane은 이번 완료 범위가 아니라 다음 phase입니다.
+
 권장 대상:
 
 - 당신이 이동하면서 접속하는 공용 운영 환경
@@ -257,6 +269,15 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec nginx nginx 
 
 - `https://admin.decisiondoc.kr/health` 응답
 - nginx 설정 테스트 통과
+- `sudo crontab -l` 에 `certbot renew --quiet --deploy-hook '/opt/decisiondoc/scripts/refresh_ssl_certs.sh admin.decisiondoc.kr'` 가 보임
+- `curl -I https://admin.decisiondoc.kr/health` 는 HEAD 특성상 `405` 가 나올 수 있지만, TLS handshake와 response header 확인 용도로는 정상입니다.
+
+갱신 반영만 수동으로 다시 하고 싶으면 아래 helper를 직접 실행합니다.
+
+```bash
+cd /opt/decisiondoc
+sudo ./scripts/refresh_ssl_certs.sh admin.decisiondoc.kr
+```
 
 ## 12. 스모크 테스트
 
@@ -340,7 +361,59 @@ POST https://admin.decisiondoc.kr/ops/post-deploy/run
 3. `docker compose --env-file .env.prod -f docker-compose.prod.yml logs app --tail=100`
 4. `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
 
-## 14. 지금 당장 필요한 것
+## 14. 백업 / 복구 기준선
+
+운영 baseline에는 데이터 백업과 복구 절차가 포함됩니다.
+
+수동 백업:
+
+```bash
+cd /opt/decisiondoc
+./scripts/backup.sh
+ls -lt /backup/decisiondoc/
+```
+
+보존 기간을 줄이거나 늘리려면:
+
+```bash
+cd /opt/decisiondoc
+BACKUP_KEEP_DAYS=14 ./scripts/backup.sh
+```
+
+권장 cron:
+
+```bash
+0 2 * * * /opt/decisiondoc/scripts/backup.sh >> /var/log/decisiondoc-backup.log 2>&1
+```
+
+복구:
+
+```bash
+cd /opt/decisiondoc
+./scripts/restore.sh /backup/decisiondoc/data-YYYYMMDD-HHMMSS.tar.gz
+```
+
+복구 직후에는 아래를 다시 확인합니다.
+
+1. `docker compose --env-file .env.prod -f docker-compose.prod.yml ps`
+2. `curl https://admin.decisiondoc.kr/health`
+3. `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
+
+## 15. 운영 키 보관 / rotation 상태
+
+이 환경에서는 아래 3개를 따로 관리합니다.
+
+- `DECISIONDOC_API_KEYS`
+- `DECISIONDOC_OPS_KEY`
+- `OPENAI_API_KEY`
+
+기본 원칙:
+
+- `DECISIONDOC_API_KEYS` 와 `DECISIONDOC_OPS_KEY` 는 같은 값으로 두지 않습니다.
+- 키는 `.env.prod` 와 별도 운영 기록에만 남기고, 채팅/문서 본문에는 직접 복사하지 않습니다.
+- rotation 절차는 [api_key_rotation_change_plan.md](./api_key_rotation_change_plan.md) 와 [prod_checklist.md](./prod_checklist.md) 기준으로 진행합니다.
+
+## 16. 지금 당장 필요한 것
 
 이 문서를 따라 진행하려면 아직 아래 값이 필요합니다.
 
@@ -349,10 +422,11 @@ POST https://admin.decisiondoc.kr/ops/post-deploy/run
 3. Let's Encrypt 발급에 사용할 이메일 주소
 4. `OPENAI_API_KEY`
 
-## 15. 참고 문서
+## 17. 참고 문서
 
 - EC2 getting started: <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html>
 - Elastic IP: <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/working-with-eips.html>
 - Route 53 routing concepts: <https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-to-aws-resources.html>
 - Repo DNS guide: `docs/deployment/dns_setup_decisiondoc_kr.md`
 - Repo multi-site guide: `docs/deployment/multi_site_operations.md`
+- Repo handoff index: `docs/deployment/admin_v1_handoff.md`

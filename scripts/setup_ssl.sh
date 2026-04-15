@@ -8,6 +8,7 @@ EMAIL=${2:-""}
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 ENV_FILE="$APP_DIR/.env.prod"
+REFRESH_SCRIPT="$APP_DIR/scripts/refresh_ssl_certs.sh"
 
 cleanup() {
   cd "$APP_DIR"
@@ -27,7 +28,7 @@ echo "SSL Setup for $DOMAIN"
 # Install certbot if needed
 if ! command -v certbot &>/dev/null; then
   echo "Installing certbot..."
-  apt-get update -q && apt-get install -y certbot python3-certbot-nginx
+  apt-get update -q && apt-get install -y certbot
 fi
 
 cd "$APP_DIR"
@@ -40,15 +41,12 @@ certbot certonly --standalone \
   --email "$EMAIL" \
   --domains "$DOMAIN"
 
-# Copy to nginx ssl directory
-mkdir -p "$APP_DIR/nginx/ssl"
-cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$APP_DIR/nginx/ssl/cert.pem"
-cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$APP_DIR/nginx/ssl/key.pem"
-chmod 600 "$APP_DIR/nginx/ssl/key.pem"
+"$REFRESH_SCRIPT" "$DOMAIN"
 
 # Setup auto-renewal cron
-(crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --post-hook 'cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem $APP_DIR/nginx/ssl/cert.pem && cp /etc/letsencrypt/live/$DOMAIN/privkey.pem $APP_DIR/nginx/ssl/key.pem && cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE exec nginx nginx -s reload'") | crontab -
+CRON_CMD="0 3 * * * certbot renew --quiet --deploy-hook '$REFRESH_SCRIPT $DOMAIN' >> /var/log/decisiondoc-ssl-renew.log 2>&1"
+(crontab -l 2>/dev/null | grep -v "decisiondoc-ssl-renew.log" | grep -v "refresh_ssl_certs.sh $DOMAIN" || true; echo "$CRON_CMD") | crontab -
 
 echo "SSL configured for $DOMAIN"
 echo "   Certificate: nginx/ssl/cert.pem"
-echo "   Auto-renewal: daily cron (3AM)"
+echo "   Auto-renewal: daily cron (3AM) via scripts/refresh_ssl_certs.sh"

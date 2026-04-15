@@ -1,4 +1,3 @@
-version: '3.9'
 # High Availability configuration
 # - 3 app replicas behind nginx load balancer
 # - Shared data volume

@@ -2,6 +2,19 @@
 
 이 문서는 `dawool.decisiondoc.kr` 를 고객 전용 환경으로 배포할 때 필요한 값, 실행 순서, 점검 항목, 컷오버 체크리스트를 한 번에 정리한 runbook입니다.
 
+현재 v1 완료 기준에서는 이 문서는 **next phase runbook** 입니다.
+
+즉, 이번 단계에서는 아래까지만 완료된 것으로 봅니다.
+
+- runbook / worksheet 준비 완료
+- admin 기준선과 분리 원칙 문서화 완료
+
+이번 단계에 포함되지 않는 것:
+
+- `dawool.decisiondoc.kr` 실제 서버 생성
+- 실제 `.env.prod` 작성 및 live smoke
+- 현장 컷오버
+
 실제 입력값과 실행 결과는 아래 worksheet에 같이 기록하는 것을 권장합니다.
 
 - `docs/deployment/dawool_rollout_worksheet.md`
@@ -15,6 +28,14 @@
 - SSL: Let's Encrypt
 
 이 문서는 이미 검증된 `admin` 배포 절차를 고객 전용 환경에 그대로 복제하는 흐름으로 작성합니다.
+
+실제 착수 조건은 아래 5개입니다.
+
+1. `dawool` 전용 도메인 확정
+2. `dawool` 전용 `.env.prod` 준비
+3. `admin`과 분리된 `DECISIONDOC_API_KEYS` / `DECISIONDOC_OPS_KEY`
+4. `admin` 기준선 smoke/post-deploy 절차 재사용 가능 확인
+5. 현장 acceptance owner 지정
 
 ## 1. 먼저 결정해야 할 것
 

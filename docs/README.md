@@ -22,11 +22,16 @@
 8. [CSAP 준비](compliance/csap_checklist.md)
 
 ## 내부 운영 패키지 (판매/내부 전개 기준)
+- v1 canonical handoff: [Admin v1 Handoff](deployment/admin_v1_handoff.md)
 - 배포 경로 비교 및 선택 기준: [설치 가이드](deployment/install.md)
 - Docker 운영 체크리스트: [Docker 배포](deployment/docker.md)
-- `admin.decisiondoc.kr` AWS 구축: [AWS EC2 구축 가이드](deployment/admin_aws_ec2_setup.md)
-- AWS 운영 Runbook 및 체크리스트: [AWS 배포 Runbook](deploy_aws.md), [prod 체크리스트](deployment/prod_checklist.md)
+- `admin.decisiondoc.kr` canonical deployment: [AWS EC2 구축 가이드](deployment/admin_aws_ec2_setup.md)
+- 현재 운영 체크리스트: [prod 체크리스트](deployment/prod_checklist.md)
 - 보안/권한/로그 정책 요약: [정보보호 정책](security_policy.md)
+- v1 완료 범위 / 다음 phase: [v1 완료 스냅샷](v1_completion_snapshot.md)
+
+## 다음 phase / 확장 경로
+- AWS 운영 Runbook 및 장기 release lane: [AWS 배포 Runbook](deploy_aws.md)
 - Multi-site 운영 (`admin` + `dawool`): [Multi-site 운영 가이드](deployment/multi_site_operations.md)
 - `decisiondoc.kr` DNS 설정: [DNS 설정 가이드](deployment/dns_setup_decisiondoc_kr.md)
 - `dawool.decisiondoc.kr` 고객 전용 배포: [Dawool rollout runbook](deployment/dawool_rollout_runbook.md)
