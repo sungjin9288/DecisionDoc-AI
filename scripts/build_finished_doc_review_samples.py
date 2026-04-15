@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.services.review_preview import build_review_dashboard, preview_export_bytes
 
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "output" / "review_samples"
 DEFAULT_DATA_DIR = REPO_ROOT / "tmp" / "review-samples-data"
@@ -143,6 +144,7 @@ def run(output_root: Path, bundles: list[str], formats: list[str]) -> Path:
         "generated_at": timestamp,
         "bundles": {},
     }
+    bundle_previews: dict[str, dict[str, list[str]]] = {}
 
     for bundle_type in bundles:
         payload = _build_generate_payload(bundle_type)
@@ -157,30 +159,54 @@ def run(output_root: Path, bundles: list[str], formats: list[str]) -> Path:
         bundle_dir = run_dir / bundle_type
         markdown_dir = bundle_dir / "markdown"
         export_dir = bundle_dir / "exports"
+        preview_dir = bundle_dir / "previews"
         _ensure_clean_dir(markdown_dir)
         _ensure_clean_dir(export_dir)
+        _ensure_clean_dir(preview_dir)
 
         _write_text(bundle_dir / "generate_response.json", json.dumps(body, ensure_ascii=False, indent=2))
 
+        markdown_files: dict[str, str] = {}
         for doc in docs:
             doc_type = str(doc["doc_type"])
-            _write_text(markdown_dir / f"{doc_type}.md", str(doc["markdown"]))
+            markdown_path = markdown_dir / f"{doc_type}.md"
+            _write_text(markdown_path, str(doc["markdown"]))
+            markdown_files[doc_type] = str(markdown_path.relative_to(run_dir))
 
         exported_files: dict[str, str] = {}
+        preview_files: dict[str, str] = {}
+        bundle_previews[bundle_type] = {}
         for export_format in formats:
             content = _export_docs(client, title=payload["title"], docs=docs, export_format=export_format)
             filename = f"{bundle_type}{_ext_for_format(export_format)}"
-            _write_bytes(export_dir / filename, content)
-            exported_files[export_format] = str((export_dir / filename).relative_to(run_dir))
+            export_path = export_dir / filename
+            _write_bytes(export_path, content)
+            exported_files[export_format] = str(export_path.relative_to(run_dir))
+            preview_lines = preview_export_bytes(export_format, content)
+            if preview_lines:
+                bundle_previews[bundle_type][export_format] = preview_lines
+                preview_path = preview_dir / f"{export_format}.txt"
+                _write_text(preview_path, "\n".join(preview_lines))
+                preview_files[export_format] = str(preview_path.relative_to(run_dir))
 
         manifest["bundles"][bundle_type] = {
             "title": payload["title"],
             "request": payload,
             "doc_count": len(docs),
             "exports": exported_files,
+            "markdown_docs": markdown_files,
+            "preview_files": preview_files,
         }
 
     _write_text(run_dir / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+    _write_text(
+        run_dir / "review.html",
+        build_review_dashboard(
+            generated_at=timestamp,
+            manifest=manifest,
+            bundle_previews=bundle_previews,
+        ),
+    )
     latest_dir = output_root / "latest"
     if latest_dir.exists() or latest_dir.is_symlink():
         if latest_dir.is_dir() and not latest_dir.is_symlink():
