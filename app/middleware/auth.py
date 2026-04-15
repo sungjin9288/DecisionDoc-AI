@@ -59,8 +59,14 @@ _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Static files, explicitly public endpoints, and shared document views pass through
-    if path in PUBLIC_PATHS or path.startswith("/static") or path.startswith("/shared/"):
+    # Static files, explicit public endpoints, invite acceptance pages, and
+    # shared document views must be reachable before a JWT session exists.
+    if (
+        path in PUBLIC_PATHS
+        or path.startswith("/static")
+        or path.startswith("/shared/")
+        or path.startswith("/invite/")
+    ):
         return await call_next(request)
 
     user = get_current_user_from_request(request)

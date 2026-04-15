@@ -128,12 +128,71 @@ def test_invite_page_not_found(client):
     assert res.status_code == 404
 
 
+def test_invite_page_public_for_valid_invite(client):
+    admin = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "관리자",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert admin.status_code == 200
+    token = admin.json()["access_token"]
+    invite = client.post(
+        "/admin/invite",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "viewer@test.com", "role": "viewer"},
+    )
+    assert invite.status_code == 200
+    invite_id = invite.json()["invite_id"]
+
+    res = client.get(f"/invite/{invite_id}")
+    assert res.status_code == 200
+    assert "초대" in res.text
+
+
 def test_invite_accept_not_found(client):
     res = client.post(
         "/invite/nonexistent-id/accept",
         json={"username": "u", "display_name": "n", "password": "pass1234"},
     )
     assert res.status_code == 404
+
+
+def test_invite_accept_public_for_valid_invite(client):
+    admin = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "관리자",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert admin.status_code == 200
+    token = admin.json()["access_token"]
+    invite = client.post(
+        "/admin/invite",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "member@test.com", "role": "member"},
+    )
+    assert invite.status_code == 200
+    invite_id = invite.json()["invite_id"]
+
+    res = client.post(
+        f"/invite/{invite_id}/accept",
+        json={
+            "username": "member1",
+            "display_name": "팀원",
+            "password": "MemberPass1!",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["message"] == "계정이 생성되었습니다."
+    assert body["user"]["role"] == "member"
 
 
 # ── G2B search ────────────────────────────────────────────────────────────────
