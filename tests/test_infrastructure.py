@@ -174,6 +174,13 @@ def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
         assert "300s" in content
 
 
+def test_dockerfile_sets_shared_playwright_browser_path_for_non_root_runtime():
+    dockerfile = open("Dockerfile", encoding="utf-8").read()
+    assert "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" in dockerfile
+    assert "mkdir -p /app/data /ms-playwright" in dockerfile
+    assert "chown -R decisiondoc:decisiondoc /app /ms-playwright" in dockerfile
+
+
 def test_favicon_stays_public_even_after_user_registration(client):
     register = client.post(
         "/auth/register",

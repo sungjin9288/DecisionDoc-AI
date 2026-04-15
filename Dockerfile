@@ -15,6 +15,7 @@ RUN pip install --upgrade pip \
 # ── Stage 2: Runtime ──────────────────────────────────
 FROM python:3.12-slim AS runtime
 WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Install runtime system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,11 +39,11 @@ COPY scripts/ ./scripts/
 RUN python scripts/generate_icons.py
 
 # Create data directory with proper permissions
-RUN mkdir -p /app/data && chmod 755 /app/data
+RUN mkdir -p /app/data /ms-playwright && chmod 755 /app/data
 
 # Create non-root user for security
 RUN groupadd -r decisiondoc && useradd -r -g decisiondoc -d /app decisiondoc \
-    && chown -R decisiondoc:decisiondoc /app
+    && chown -R decisiondoc:decisiondoc /app /ms-playwright
 
 USER decisiondoc
 
