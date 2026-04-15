@@ -35,6 +35,7 @@ PUBLIC_PATHS: frozenset[str] = frozenset({
     "/auth/refresh",
     "/auth/register",
     "/auth/ldap-login",
+    "/events",
     # SSO — all SAML and GCloud endpoints
     "/saml/metadata",
     "/saml/login",

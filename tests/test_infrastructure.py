@@ -157,6 +157,18 @@ def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None
 
 
+def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
+    primary = open("nginx/nginx.conf", encoding="utf-8").read()
+    ssl_variant = open("nginx/nginx.ssl.conf", encoding="utf-8").read()
+
+    for content in (primary, ssl_variant):
+        assert "/events" in content
+        assert "with-attachments" in content
+        assert "from-documents" in content
+        assert "proxy_read_timeout" in content
+        assert "300s" in content
+
+
 def test_favicon_stays_public_even_after_user_registration(client):
     register = client.post(
         "/auth/register",

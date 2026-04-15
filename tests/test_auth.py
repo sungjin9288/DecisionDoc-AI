@@ -247,6 +247,24 @@ def test_auth_login_endpoint_is_public(tmp_path, monkeypatch):
     assert res.status_code == 401  # credential error, not middleware block
 
 
+def test_events_endpoint_is_public_even_when_users_exist(tmp_path, monkeypatch):
+    """/events must stay public because the EventSource client authenticates via query token."""
+    from app.middleware.auth import PUBLIC_PATHS
+
+    client = _make_client(tmp_path, monkeypatch)
+    client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+
+    assert "/events" in PUBLIC_PATHS
+
+
 def test_missing_token_returns_401_when_users_exist(tmp_path, monkeypatch):
     """After users are registered, requests without JWT are rejected."""
     client = _make_client(tmp_path, monkeypatch)
