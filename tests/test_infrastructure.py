@@ -168,7 +168,10 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "근거 보기" in res.text
     assert "_markLocalHistoryPromoted" in res.text
     assert "_renderHistoryPromotionBadge" in res.text
+    assert "_applyKnowledgePromotionState" in res.text
     assert "승인본 학습 완료" in res.text
+    assert "이미 학습된 승인본" in res.text
+    assert "already_promoted" in res.text
     assert "승인본 학습" in res.text
     assert "gold" in res.text
     assert "수주" in res.text

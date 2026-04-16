@@ -238,6 +238,9 @@ class KnowledgeEntry:
         reference_year: int | None = None,
         success_state: str = "draft",
         notes: str = "",
+        source_bundle_id: str = "",
+        source_request_id: str = "",
+        source_doc_type: str = "",
     ) -> None:
         self.doc_id = doc_id
         self.filename = filename
@@ -252,6 +255,9 @@ class KnowledgeEntry:
         self.reference_year = _normalize_reference_year(reference_year)
         self.success_state = _normalize_success_state(success_state)
         self.notes = _normalize_string(notes)
+        self.source_bundle_id = _normalize_string(source_bundle_id)
+        self.source_request_id = _normalize_string(source_request_id)
+        self.source_doc_type = _normalize_string(source_doc_type)
 
     def to_meta(self) -> dict[str, Any]:
         """index.json에 저장할 메타데이터 (text 제외)."""
@@ -269,6 +275,9 @@ class KnowledgeEntry:
             "reference_year": self.reference_year,
             "success_state": self.success_state,
             "notes": self.notes,
+            "source_bundle_id": self.source_bundle_id,
+            "source_request_id": self.source_request_id,
+            "source_doc_type": self.source_doc_type,
         }
 
 
@@ -296,6 +305,9 @@ class KnowledgeStore:
         reference_year: int | None = None,
         success_state: str = "draft",
         notes: str = "",
+        source_bundle_id: str = "",
+        source_request_id: str = "",
+        source_doc_type: str = "",
     ) -> KnowledgeEntry:
         """문서를 지식 저장소에 추가하고 KnowledgeEntry를 반환."""
         self._ensure_dir()
@@ -313,6 +325,9 @@ class KnowledgeStore:
             reference_year=reference_year,
             success_state=success_state,
             notes=notes,
+            source_bundle_id=source_bundle_id,
+            source_request_id=source_request_id,
+            source_doc_type=source_doc_type,
         )
         self._save_entry(entry)
         _log.info(
@@ -362,6 +377,12 @@ class KnowledgeStore:
                 item["success_state"] = _normalize_success_state(fields["success_state"])
             if "notes" in fields and fields["notes"] is not None:
                 item["notes"] = _normalize_string(fields["notes"])
+            if "source_bundle_id" in fields and fields["source_bundle_id"] is not None:
+                item["source_bundle_id"] = _normalize_string(fields["source_bundle_id"])
+            if "source_request_id" in fields and fields["source_request_id"] is not None:
+                item["source_request_id"] = _normalize_string(fields["source_request_id"])
+            if "source_doc_type" in fields and fields["source_doc_type"] is not None:
+                item["source_doc_type"] = _normalize_string(fields["source_doc_type"])
             updated = True
             break
         if updated:
@@ -411,7 +432,41 @@ class KnowledgeStore:
             reference_year=meta.get("reference_year"),
             success_state=meta.get("success_state", "draft"),
             notes=meta.get("notes", ""),
+            source_bundle_id=meta.get("source_bundle_id", ""),
+            source_request_id=meta.get("source_request_id", ""),
+            source_doc_type=meta.get("source_doc_type", ""),
         )
+
+    def find_promoted_document(
+        self,
+        *,
+        source_request_id: str,
+        source_doc_type: str,
+        source_bundle_id: str = "",
+    ) -> KnowledgeEntry | None:
+        """Find an approved_output entry created from the same generation request/doc type."""
+        request_id = _normalize_string(source_request_id)
+        doc_type = _normalize_string(source_doc_type)
+        bundle_id = _normalize_string(source_bundle_id)
+        if not request_id or not doc_type:
+            return None
+        for meta in self._load_index():
+            if meta.get("learning_mode") != "approved_output":
+                continue
+            if _normalize_string(meta.get("source_request_id")) != request_id:
+                continue
+            if _normalize_string(meta.get("source_doc_type")) != doc_type:
+                continue
+            meta_bundle_id = _normalize_string(meta.get("source_bundle_id"))
+            if bundle_id and meta_bundle_id and meta_bundle_id != bundle_id:
+                continue
+            doc_id = meta.get("doc_id")
+            if not doc_id:
+                continue
+            entry = self.get_document(str(doc_id))
+            if entry is not None:
+                return entry
+        return None
 
     def rank_documents_for_context(
         self,

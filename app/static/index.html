@@ -6425,6 +6425,25 @@
     } catch {}
   }
 
+  function _applyKnowledgePromotionState() {
+    const btn = $id('knowledge-promote-btn');
+    if (!btn) return;
+    if (lastMeta?.knowledge_promoted) {
+      btn.style.display = '';
+      btn.disabled = true;
+      btn.textContent = '✅ 승인본 학습 완료';
+      btn.title = '이 생성 결과는 이미 학습 라이브러리로 승격되었습니다';
+      return;
+    }
+    const { projectId, docs } = _buildKnowledgePromotionState();
+    btn.style.display = '';
+    btn.disabled = !projectId || !docs.length;
+    btn.textContent = '🧠 승인본으로 학습';
+    btn.title = projectId
+      ? '현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다'
+      : 'project_id가 있는 생성 결과만 학습 라이브러리로 승격할 수 있습니다';
+  }
+
   function _getPromotionProjectId() {
     return String(lastRequestPayload?.project_id || '').trim();
   }
@@ -6512,14 +6531,30 @@
         throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
       }
       const data = await res.json();
+      lastMeta = {
+        ...(lastMeta || {}),
+        knowledge_promoted: true,
+        knowledge_project_id: projectId,
+        knowledge_promoted_at: new Date().toISOString(),
+        knowledge_document_count: data.promoted || data.reused || docs.length,
+        knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
+        knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
+      };
       _markLocalHistoryPromoted(lastMeta?.request_id || '', {
         project_id: projectId,
         promoted_at: new Date().toISOString(),
-        knowledge_document_count: data.promoted || docs.length,
+        knowledge_document_count: data.promoted || data.reused || docs.length,
         knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
         knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
       });
-      showNotification(`승인본 ${data.promoted || docs.length}건을 지식 라이브러리에 저장했습니다.`, 'success');
+      _applyKnowledgePromotionState();
+      const promotedCount = data.promoted || 0;
+      const reusedCount = data.reused || 0;
+      if (data.already_promoted) {
+        showNotification(`이미 학습된 승인본 ${reusedCount || docs.length}건을 재사용했습니다.`, 'info');
+      } else {
+        showNotification(`승인본 ${promotedCount || docs.length}건을 지식 라이브러리에 저장했습니다.`, 'success');
+      }
       closeKnowledgePromoteModal();
       await updateKnowledgeBadge(projectId);
       renderHistoryList();
@@ -8898,13 +8933,7 @@
     }
     const knowledgePromoteBtn = $id('knowledge-promote-btn');
     if (knowledgePromoteBtn) {
-      const { projectId, docs } = _buildKnowledgePromotionState();
-      knowledgePromoteBtn.style.display = '';
-      knowledgePromoteBtn.disabled = !projectId || !docs.length;
-      knowledgePromoteBtn.textContent = '🧠 승인본으로 학습';
-      knowledgePromoteBtn.title = projectId
-        ? '현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다'
-        : 'project_id가 있는 생성 결과만 학습 라이브러리로 승격할 수 있습니다';
+      _applyKnowledgePromotionState();
     }
     const sketchAgainBtn = $id('sketch-again-btn');
     if (sketchAgainBtn) {

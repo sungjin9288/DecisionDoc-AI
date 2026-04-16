@@ -185,6 +185,29 @@ class TestKnowledgeStore:
         assert "품질 등급: gold" in ctx
         assert "출처: 파주시 / 2025" in ctx
 
+    def test_find_promoted_document_by_source_request_and_doc_type(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore("proj-dedupe", data_dir=str(tmp_path))
+        entry = store.add_document(
+            "approved-reference.md",
+            "# 승인본\n본문",
+            learning_mode="approved_output",
+            quality_tier="gold",
+            applicable_bundles=["proposal_kr"],
+            source_bundle_id="bundle-123",
+            source_request_id="req-dup-001",
+            source_doc_type="business_understanding",
+        )
+
+        fetched = store.find_promoted_document(
+            source_request_id="req-dup-001",
+            source_doc_type="business_understanding",
+            source_bundle_id="bundle-123",
+        )
+        assert fetched is not None
+        assert fetched.doc_id == entry.doc_id
+
 
 # ── attachment_service PPTX 테스트 ────────────────────────────────────────────
 
@@ -454,6 +477,32 @@ class TestKnowledgeAPI:
         assert ranked[0]["learning_mode"] == "approved_output"
         assert ranked[0]["bundle_match"] is True
         assert ranked[0]["success_state"] == "awarded"
+
+        duplicate = client.post(
+            "/knowledge/proj-promote/promote-generated",
+            headers=HEADERS,
+            json={
+                "title": "파주시 모빌리티 제안서",
+                "bundle_type": "proposal_kr",
+                "docs": [
+                    {"doc_type": "business_understanding", "markdown": "# 사업 이해\n승인본 본문"},
+                    {"doc_type": "execution_plan", "markdown": "# 수행 계획\n추진 전략"},
+                ],
+                "tags": ["공공", "교통"],
+                "quality_tier": "gold",
+                "success_state": "awarded",
+                "source_organization": "파주시",
+                "reference_year": 2026,
+                "notes": "실수주 후 확정본",
+                "source_bundle_id": "bundle-123",
+                "source_request_id": "req-456",
+            },
+        )
+        assert duplicate.status_code == 200
+        duplicate_body = duplicate.json()
+        assert duplicate_body["promoted"] == 0
+        assert duplicate_body["reused"] == 2
+        assert duplicate_body["already_promoted"] is True
 
     def test_upload_requires_auth(self, client):
         resp = client.post(

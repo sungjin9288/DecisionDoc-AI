@@ -48,6 +48,9 @@ def _serialize_entry(entry) -> dict:
         "reference_year": entry.reference_year,
         "success_state": entry.success_state,
         "notes": entry.notes,
+        "source_bundle_id": entry.source_bundle_id,
+        "source_request_id": entry.source_request_id,
+        "source_doc_type": entry.source_doc_type,
     }
 
 
@@ -218,10 +221,22 @@ def promote_generated_documents_to_knowledge(
     store = KnowledgeStore(project_id)
     base_tags = [tag.strip() for tag in body.tags if tag.strip()]
     created: list[dict] = []
+    reused: list[dict] = []
 
     for item in body.docs:
         markdown = str(item.markdown or "").strip()
         if not markdown:
+            continue
+        existing = store.find_promoted_document(
+            source_request_id=body.source_request_id,
+            source_doc_type=item.doc_type,
+            source_bundle_id=body.source_bundle_id,
+        )
+        if existing is not None:
+            payload = _serialize_entry(existing)
+            payload["doc_type"] = item.doc_type
+            payload["reused"] = True
+            reused.append(payload)
             continue
         doc_tags = list(base_tags)
         if body.bundle_type not in doc_tags:
@@ -239,12 +254,15 @@ def promote_generated_documents_to_knowledge(
             reference_year=body.reference_year,
             success_state=body.success_state,
             notes=body.notes or f"승격 출처: {body.bundle_type}",
+            source_bundle_id=body.source_bundle_id,
+            source_request_id=body.source_request_id,
+            source_doc_type=item.doc_type,
         )
         payload = _serialize_entry(entry)
         payload["doc_type"] = item.doc_type
         created.append(payload)
 
-    if not created:
+    if not created and not reused:
         raise HTTPException(422, detail="승격할 문서 본문이 없습니다.")
 
     promoted_history_entries = 0
@@ -278,11 +296,13 @@ def promote_generated_documents_to_knowledge(
     return {
         "project_id": project_id,
         "promoted": len(created),
+        "reused": len(reused),
+        "already_promoted": len(created) == 0 and len(reused) > 0,
         "bundle_type": body.bundle_type,
         "source_bundle_id": body.source_bundle_id,
         "source_request_id": body.source_request_id,
         "promoted_history_entries": promoted_history_entries,
-        "documents": created,
+        "documents": created + reused,
     }
 
 
