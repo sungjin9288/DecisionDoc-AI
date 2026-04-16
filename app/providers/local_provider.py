@@ -110,6 +110,11 @@ class LocalProvider(UsageTokenMixin, Provider):
         except json.JSONDecodeError as exc:
             raise ProviderError("Provider request failed.") from exc
 
+    def extract_attachment_text(self, filename: str, raw: bytes, *, request_id: str) -> str:
+        raise ProviderError(
+            "Local provider does not support image/PDF OCR·vision attachment extraction."
+        )
+
     # ── Internal helpers ─────────────────────────────────────────────
 
     def _chat_completion(

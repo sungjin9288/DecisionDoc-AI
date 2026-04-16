@@ -4973,6 +4973,7 @@
         <button class="action-btn" id="related-btn" title="관련 문서 추천">🔗 관련 추천</button>
         <button class="action-btn" id="sketch-again-btn" title="현재 입력 기준으로 페이지 구성 스케치를 다시 봅니다">🗂️ 페이지 스케치</button>
         <button class="action-btn" id="ppt-doc-btn" title="현재 입력을 발표 자료 번들로 다시 구성합니다">📊 PPT 문서로 재구성</button>
+        <button class="action-btn" id="knowledge-promote-btn" title="현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다" style="display:none">🧠 승인본으로 학습</button>
         <button class="action-btn" id="export-btn">📥 내보내기</button>
         <button class="action-btn" id="ppt-btn" style="display:none">📊 PPT 다운로드</button>
         <button class="action-btn" id="docx-btn">📄 Word</button>
@@ -5243,6 +5244,166 @@
         style="background:#f8f8ff; border-radius:8px; padding:1rem; font-size:.78rem;
                white-space:pre-wrap; word-break:break-word; color:var(--text); border:1px solid var(--border);">
       </pre>
+    </div>
+  </div>
+
+  <div id="knowledge-promote-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+           z-index:9050; align-items:center; justify-content:center;">
+    <div style="background:var(--surface-solid); border-radius:var(--radius-md); padding:1.5rem;
+                max-width:640px; width:92%; max-height:84vh; overflow-y:auto; position:relative;">
+      <button type="button" onclick="closeKnowledgePromoteModal()"
+        style="position:absolute; top:.75rem; right:.75rem; background:none; border:none;
+               cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
+      <h3 style="margin:0 0 .4rem; font-size:1rem; font-weight:800;">🧠 승인본으로 학습 라이브러리 승격</h3>
+      <div style="font-size:.8rem; color:var(--muted); margin-bottom:1rem;">
+        현재 생성 결과를 프로젝트 지식에 등록해 이후 생성에서 우선 참조하도록 만듭니다.
+      </div>
+      <form id="knowledge-promote-form" onsubmit="submitKnowledgePromotion(event)">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.75rem; margin-bottom:.9rem;">
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>프로젝트</span>
+            <input id="knowledge-promote-project" type="text" readonly
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:rgba(148,163,184,.08); color:inherit;">
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>번들 유형</span>
+            <input id="knowledge-promote-bundle" type="text" readonly
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:rgba(148,163,184,.08); color:inherit;">
+          </label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.75rem;">
+          <span>문서 제목</span>
+          <input id="knowledge-promote-title" type="text" readonly
+            style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:rgba(148,163,184,.08); color:inherit;">
+        </label>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:.75rem;">
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>품질 등급</span>
+            <select id="knowledge-promote-quality"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+              <option value="gold">gold</option>
+              <option value="silver">silver</option>
+              <option value="working">working</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>성과 상태</span>
+            <select id="knowledge-promote-success"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+              <option value="approved">approved</option>
+              <option value="awarded">awarded</option>
+              <option value="working">working</option>
+              <option value="draft">draft</option>
+            </select>
+          </label>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:.75rem;">
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>기관명</span>
+            <input id="knowledge-promote-org" type="text" placeholder="예: 파주시"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>연도</span>
+            <input id="knowledge-promote-year" type="number" min="2000" max="2100" placeholder="예: 2026"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+          </label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.75rem;">
+          <span>태그 (쉼표 구분)</span>
+          <input id="knowledge-promote-tags" type="text" placeholder="예: 착수보고, 평가대응, 파주시"
+            style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+        </label>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.95rem;">
+          <span>메모</span>
+          <textarea id="knowledge-promote-notes" rows="4" placeholder="왜 이 결과를 승인본 reference로 남기는지 간단히 기록합니다."
+            style="padding:.7rem .8rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit; resize:vertical;"></textarea>
+        </label>
+        <div id="knowledge-promote-meta" style="font-size:.76rem; color:var(--muted); margin-bottom:.95rem;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:.55rem; flex-wrap:wrap;">
+          <button type="button" class="action-btn" onclick="closeKnowledgePromoteModal()">취소</button>
+          <button type="submit" class="action-btn" id="knowledge-promote-submit-btn"
+            style="background:var(--accent, var(--p1)); color:#fff; border-color:transparent;">🧠 지식 라이브러리에 저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="knowledge-metadata-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+           z-index:9055; align-items:center; justify-content:center;">
+    <div style="background:var(--surface-solid); border-radius:var(--radius-md); padding:1.5rem;
+                max-width:620px; width:92%; max-height:84vh; overflow-y:auto; position:relative;">
+      <button type="button" onclick="closeKnowledgeMetadataModal()"
+        style="position:absolute; top:.75rem; right:.75rem; background:none; border:none;
+               cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
+      <h3 style="margin:0 0 .4rem; font-size:1rem; font-weight:800;">⚙️ 지식 문서 학습 메타 수정</h3>
+      <div id="knowledge-metadata-modal-file" style="font-size:.8rem; color:var(--muted); margin-bottom:1rem;"></div>
+      <form id="knowledge-metadata-form" onsubmit="submitKnowledgeMetadataUpdate(event)">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:.8rem;">
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>학습 모드</span>
+            <select id="knowledge-metadata-learning-mode"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+              <option value="reference">reference</option>
+              <option value="approved_output">approved_output</option>
+              <option value="template">template</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>품질 등급</span>
+            <select id="knowledge-metadata-quality"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+              <option value="gold">gold</option>
+              <option value="silver">silver</option>
+              <option value="working">working</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>성과 상태</span>
+            <select id="knowledge-metadata-success"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+              <option value="awarded">awarded</option>
+              <option value="approved">approved</option>
+              <option value="working">working</option>
+              <option value="draft">draft</option>
+            </select>
+          </label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.75rem;">
+          <span>적용 번들 (쉼표 구분)</span>
+          <input id="knowledge-metadata-bundles" type="text" placeholder="예: proposal_kr, performance_plan_kr"
+            style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+        </label>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin-bottom:.75rem;">
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>기관명</span>
+            <input id="knowledge-metadata-org" type="text" placeholder="예: 파주시"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+          </label>
+          <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600;">
+            <span>연도</span>
+            <input id="knowledge-metadata-year" type="number" min="2000" max="2100" placeholder="예: 2026"
+              style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+          </label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.75rem;">
+          <span>태그 (쉼표 구분)</span>
+          <input id="knowledge-metadata-tags" type="text" placeholder="예: 착수보고, 우수사례, 파주시"
+            style="padding:.55rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit;">
+        </label>
+        <label style="display:flex; flex-direction:column; gap:.35rem; font-size:.82rem; font-weight:600; margin-bottom:.95rem;">
+          <span>메모</span>
+          <textarea id="knowledge-metadata-notes" rows="4" placeholder="왜 이 reference가 중요한지, 어떤 상황에 재사용할지 기록합니다."
+            style="padding:.7rem .8rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit; resize:vertical;"></textarea>
+        </label>
+        <div style="display:flex; justify-content:flex-end; gap:.55rem; flex-wrap:wrap;">
+          <button type="button" class="action-btn" onclick="closeKnowledgeMetadataModal()">취소</button>
+          <button type="submit" class="action-btn" id="knowledge-metadata-submit-btn"
+            style="background:var(--accent, var(--p1)); color:#fff; border-color:transparent;">💾 메타 저장</button>
+        </div>
+      </form>
     </div>
   </div>
 </section>
@@ -5924,6 +6085,7 @@
   let _projectProcurementSummaryReturnContext = null;
   let _locationProcurementSummaryModalState = null;
   let _locationUsersPanelState = null;
+  let _knowledgeEditingDoc = null;
   let _locationProcurementCandidateOrder = 'latest_followup';
   let _locationProcurementCandidateScope = 'all';
   let _locationProcurementCandidateStatusFilters = [];
@@ -6082,17 +6244,33 @@
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
                  title="${escapeHtml(doc.filename)}">${escapeHtml(doc.filename)}</div>
+            <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem;">
+              ${_renderKnowledgeMetaBadges(doc)}
+            </div>
             <div style="font-size:.75rem;color:var(--muted);margin-top:.1rem;">
               ${Math.round((doc.text_len||0)/1000*10)/10}K자
               ${doc.has_style ? ' · <span style="color:#22c55e;font-weight:600;">스타일 학습됨</span>' : ''}
-              ${doc.tags && doc.tags.length ? ' · ' + doc.tags.map(t=>`<span style="background:var(--p-light);color:var(--p1);border-radius:4px;padding:0 .3rem;">${escapeHtml(t)}</span>`).join(' ') : ''}
               · ${_knowledgeFormatDate(doc.created_at)}
             </div>
+            ${(doc.source_organization || doc.reference_year || (doc.tags && doc.tags.length))
+              ? `<div style="font-size:.75rem;color:var(--muted);margin-top:.32rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;">
+                   ${doc.source_organization ? `<span>기관: ${escapeHtml(doc.source_organization)}</span>` : ''}
+                   ${doc.reference_year ? `<span>연도: ${escapeHtml(String(doc.reference_year))}</span>` : ''}
+                   ${(doc.tags && doc.tags.length) ? _renderKnowledgeTagBadges(doc.tags) : ''}
+                 </div>`
+              : ''}
+            ${doc.notes ? `<div style="font-size:.76rem;color:var(--text);margin-top:.38rem;line-height:1.45;">${escapeHtml(String(doc.notes).slice(0, 180))}</div>` : ''}
           </div>
-          <button onclick="deleteKnowledgeDoc('${escapeHtml(projectId)}','${escapeHtml(doc.doc_id)}')"
-            style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.1rem;
-                   padding:.25rem .4rem;border-radius:6px;line-height:1;"
-            title="삭제" aria-label="문서 삭제">🗑</button>
+          <div style="display:flex;flex-direction:column;gap:.35rem;align-items:flex-end;">
+            <button onclick="openKnowledgeMetadataModal('${escapeHtml(projectId)}','${escapeHtml(doc.doc_id)}')"
+              style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;
+                     padding:.25rem .4rem;border-radius:6px;line-height:1;"
+              title="메타 수정" aria-label="메타 수정">⚙️</button>
+            <button onclick="deleteKnowledgeDoc('${escapeHtml(projectId)}','${escapeHtml(doc.doc_id)}')"
+              style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.1rem;
+                     padding:.25rem .4rem;border-radius:6px;line-height:1;"
+              title="삭제" aria-label="문서 삭제">🗑</button>
+          </div>
         </div>
       `).join('');
     } catch(e) {
@@ -6110,6 +6288,178 @@
     if (!ts) return '';
     const d = new Date(ts * 1000);
     return d.toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function _knowledgeModeLabel(mode) {
+    const map = {
+      reference: '참고문서',
+      approved_output: '승인본 학습',
+      template: '우수 템플릿',
+    };
+    return map[String(mode || '').trim()] || (mode || 'reference');
+  }
+
+  function _knowledgeQualityLabel(tier) {
+    const map = { gold: 'gold', silver: 'silver', working: 'working' };
+    return map[String(tier || '').trim()] || (tier || 'working');
+  }
+
+  function _knowledgeSuccessLabel(state) {
+    const map = {
+      awarded: '수주',
+      approved: '승인',
+      working: '진행중',
+      draft: '초안',
+    };
+    return map[String(state || '').trim()] || (state || 'draft');
+  }
+
+  function _knowledgeBadgeTone(kind) {
+    const tones = {
+      reference: 'background:rgba(59,130,246,.12);color:#1d4ed8;border:1px solid rgba(59,130,246,.18);',
+      approved_output: 'background:rgba(15,118,110,.12);color:#0f766e;border:1px solid rgba(15,118,110,.18);',
+      template: 'background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.18);',
+      gold: 'background:rgba(217,119,6,.12);color:#b45309;border:1px solid rgba(217,119,6,.18);',
+      silver: 'background:rgba(100,116,139,.12);color:#475569;border:1px solid rgba(100,116,139,.18);',
+      working: 'background:rgba(148,163,184,.12);color:#475569;border:1px solid rgba(148,163,184,.18);',
+      awarded: 'background:rgba(22,163,74,.12);color:#166534;border:1px solid rgba(22,163,74,.18);',
+      approved: 'background:rgba(15,118,110,.12);color:#0f766e;border:1px solid rgba(15,118,110,.18);',
+      draft: 'background:rgba(148,163,184,.12);color:#475569;border:1px solid rgba(148,163,184,.18);',
+      bundle: 'background:var(--p-light);color:var(--p1);border:1px solid var(--p-ring);',
+      tag: 'background:rgba(99,102,241,.08);color:var(--p1);border:1px solid rgba(99,102,241,.14);',
+    };
+    return tones[kind] || 'background:rgba(148,163,184,.12);color:#475569;border:1px solid rgba(148,163,184,.18);';
+  }
+
+  function _knowledgePill(text, tone) {
+    if (!text) return '';
+    return `<span style="display:inline-flex;align-items:center;gap:.25rem;padding:.16rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap;${_knowledgeBadgeTone(tone)}">${escapeHtml(text)}</span>`;
+  }
+
+  function _renderKnowledgeMetaBadges(doc) {
+    const parts = [];
+    parts.push(_knowledgePill(_knowledgeModeLabel(doc.learning_mode), doc.learning_mode || 'reference'));
+    parts.push(_knowledgePill(_knowledgeQualityLabel(doc.quality_tier), doc.quality_tier || 'working'));
+    parts.push(_knowledgePill(_knowledgeSuccessLabel(doc.success_state), doc.success_state || 'draft'));
+    (Array.isArray(doc.applicable_bundles) ? doc.applicable_bundles : []).slice(0, 2).forEach(bundle => {
+      parts.push(_knowledgePill(bundle, 'bundle'));
+    });
+    return parts.filter(Boolean).join(' ');
+  }
+
+  function _renderKnowledgeTagBadges(tags) {
+    return (Array.isArray(tags) ? tags : [])
+      .slice(0, 4)
+      .map(tag => _knowledgePill(tag, 'tag'))
+      .join(' ');
+  }
+
+  function _getPromotionProjectId() {
+    return String(lastRequestPayload?.project_id || '').trim();
+  }
+
+  function _buildKnowledgePromotionState() {
+    const projectId = _getPromotionProjectId();
+    const title = String(lastRequestPayload?.title || lastMeta?.title || '').trim();
+    const bundleType = String(lastRequestPayload?.bundle_type || selectedBundle?.id || '').trim();
+    const docs = (Array.isArray(generatedDocs) ? generatedDocs : [])
+      .map(doc => ({
+        doc_type: String(doc.doc_type || '').trim(),
+        markdown: String(doc._editedMarkdown || doc.markdown || '').trim(),
+      }))
+      .filter(doc => doc.doc_type && doc.markdown);
+    return { projectId, title, bundleType, docs };
+  }
+
+  function closeKnowledgePromoteModal() {
+    const modal = $id('knowledge-promote-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function openKnowledgePromoteModal() {
+    const { projectId, title, bundleType, docs } = _buildKnowledgePromotionState();
+    if (!docs.length) {
+      showNotification('승격할 생성 문서가 없습니다.', 'warn');
+      return;
+    }
+    if (!projectId) {
+      showNotification('프로젝트에 연결된 생성 결과만 학습 라이브러리로 승격할 수 있습니다.', 'warn');
+      return;
+    }
+    $id('knowledge-promote-project').value = projectId;
+    $id('knowledge-promote-bundle').value = bundleType || 'unknown';
+    $id('knowledge-promote-title').value = title || '문서';
+    $id('knowledge-promote-quality').value = 'gold';
+    $id('knowledge-promote-success').value = 'approved';
+    $id('knowledge-promote-tags').value = '';
+    $id('knowledge-promote-org').value = '';
+    $id('knowledge-promote-year').value = '';
+    $id('knowledge-promote-notes').value = lastMeta?.request_id ? `승격 요청 ID: ${lastMeta.request_id}` : '';
+    $id('knowledge-promote-meta').textContent = `승격 대상 문서 ${docs.length}건 · bundle ${bundleType || 'unknown'} · bundle_id ${lastMeta?.bundle_id || 'n/a'}`;
+    const modal = $id('knowledge-promote-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  async function submitKnowledgePromotion(event) {
+    event.preventDefault();
+    const { projectId, title, bundleType, docs } = _buildKnowledgePromotionState();
+    if (!projectId || !title || !bundleType || !docs.length) {
+      showNotification('승격에 필요한 생성 결과 정보가 부족합니다.', 'error');
+      return;
+    }
+    const submitBtn = $id('knowledge-promote-submit-btn');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ 저장 중…';
+    }
+    try {
+      const tags = String($id('knowledge-promote-tags')?.value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+      const yearRaw = String($id('knowledge-promote-year')?.value || '').trim();
+      const referenceYear = yearRaw ? Number(yearRaw) : null;
+      const res = await fetch(`/knowledge/${encodeURIComponent(projectId)}/promote-generated`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          title,
+          bundle_type: bundleType,
+          docs,
+          tags,
+          quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
+          success_state: $id('knowledge-promote-success')?.value || 'approved',
+          source_organization: String($id('knowledge-promote-org')?.value || '').trim(),
+          reference_year: Number.isFinite(referenceYear) ? referenceYear : null,
+          notes: String($id('knowledge-promote-notes')?.value || '').trim(),
+          source_bundle_id: lastMeta?.bundle_id || '',
+          source_request_id: lastMeta?.request_id || '',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+      }
+      const data = await res.json();
+      showNotification(`승인본 ${data.promoted || docs.length}건을 지식 라이브러리에 저장했습니다.`, 'success');
+      closeKnowledgePromoteModal();
+      await updateKnowledgeBadge(projectId);
+      if ($id('knowledge-project-select')) {
+        await loadKnowledgeProjectSelector();
+        $id('knowledge-project-select').value = projectId;
+        _knowledgeCurrentProject = projectId;
+      }
+      if ($id('knowledge-page')?.style.display !== 'none' || _knowledgeCurrentProject === projectId) {
+        await loadKnowledgeDocs(projectId);
+      }
+    } catch (e) {
+      showNotification(`학습 승격 실패: ${e.message || e}`, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🧠 지식 라이브러리에 저장';
+      }
+    }
   }
 
   function knowledgeDrop(event) {
@@ -6180,6 +6530,97 @@
     }
   }
 
+  function closeKnowledgeMetadataModal() {
+    _knowledgeEditingDoc = null;
+    const modal = $id('knowledge-metadata-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function openKnowledgeMetadataModal(projectId, docId) {
+    try {
+      const res = await fetch(`/knowledge/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(docId)}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+      }
+      const doc = await res.json();
+      _knowledgeEditingDoc = { projectId, docId };
+      $id('knowledge-metadata-modal-file').textContent = `${doc.filename || docId} · ${projectId}`;
+      $id('knowledge-metadata-learning-mode').value = doc.learning_mode || 'reference';
+      $id('knowledge-metadata-quality').value = doc.quality_tier || 'working';
+      $id('knowledge-metadata-success').value = doc.success_state || 'draft';
+      $id('knowledge-metadata-bundles').value = Array.isArray(doc.applicable_bundles) ? doc.applicable_bundles.join(', ') : '';
+      $id('knowledge-metadata-org').value = doc.source_organization || '';
+      $id('knowledge-metadata-year').value = doc.reference_year || '';
+      $id('knowledge-metadata-tags').value = Array.isArray(doc.tags) ? doc.tags.join(', ') : '';
+      $id('knowledge-metadata-notes').value = doc.notes || '';
+      const modal = $id('knowledge-metadata-modal');
+      if (modal) modal.style.display = 'flex';
+    } catch (e) {
+      showNotification(`메타 로드 실패: ${e.message || e}`, 'error');
+    }
+  }
+
+  async function submitKnowledgeMetadataUpdate(event) {
+    event.preventDefault();
+    if (!_knowledgeEditingDoc?.projectId || !_knowledgeEditingDoc?.docId) {
+      showNotification('수정할 문서 정보가 없습니다.', 'error');
+      return;
+    }
+    const projectId = _knowledgeEditingDoc.projectId;
+    const docId = _knowledgeEditingDoc.docId;
+    const submitBtn = $id('knowledge-metadata-submit-btn');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ 저장 중…';
+    }
+    try {
+      const tags = String($id('knowledge-metadata-tags')?.value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+      const bundles = String($id('knowledge-metadata-bundles')?.value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+      const yearRaw = String($id('knowledge-metadata-year')?.value || '').trim();
+      const referenceYear = yearRaw ? Number(yearRaw) : null;
+      const res = await fetch(
+        `/knowledge/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(docId)}/metadata`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            tags,
+            learning_mode: $id('knowledge-metadata-learning-mode')?.value || 'reference',
+            quality_tier: $id('knowledge-metadata-quality')?.value || 'working',
+            applicable_bundles: bundles,
+            source_organization: String($id('knowledge-metadata-org')?.value || '').trim(),
+            reference_year: Number.isFinite(referenceYear) ? referenceYear : null,
+            success_state: $id('knowledge-metadata-success')?.value || 'draft',
+            notes: String($id('knowledge-metadata-notes')?.value || '').trim(),
+          }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+      }
+      closeKnowledgeMetadataModal();
+      showNotification('학습 메타를 저장했습니다.', 'success');
+      await loadKnowledgeDocs(projectId || _knowledgeCurrentProject);
+    } catch (e) {
+      showNotification(`메타 저장 실패: ${e.message || e}`, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '💾 메타 저장';
+      }
+    }
+  }
+
   async function previewKnowledgeContext() {
     if (!_knowledgeCurrentProject) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
@@ -6190,11 +6631,34 @@
     pre.textContent = '불러오는 중...';
     modal.style.display = 'flex';
     try {
-      const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/context`, {
+      const params = new URLSearchParams();
+      if (_getPromotionProjectId() === _knowledgeCurrentProject) {
+        if (lastRequestPayload?.bundle_type) params.set('bundle_type', lastRequestPayload.bundle_type);
+        if (lastRequestPayload?.title) params.set('title', lastRequestPayload.title);
+        if (lastRequestPayload?.goal) params.set('goal', lastRequestPayload.goal);
+      }
+      const query = params.toString();
+      const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/context${query ? `?${query}` : ''}`, {
         headers: getAuthHeaders()
       });
       const data = await res.json();
       const parts = [];
+      if (Array.isArray(data.ranked_documents) && data.ranked_documents.length) {
+        parts.push(
+          '=== 우선 참조 후보 ===\n' +
+          data.ranked_documents.map((doc, index) => {
+            const bits = [
+              `${index + 1}. ${doc.filename || doc.doc_id || 'reference'}`,
+              `score=${doc.score ?? 0}`,
+              doc.learning_mode || 'reference',
+              doc.quality_tier || 'working',
+            ];
+            if (doc.source_organization) bits.push(doc.source_organization);
+            if (doc.reference_year) bits.push(String(doc.reference_year));
+            return bits.join(' · ');
+          }).join('\n')
+        );
+      }
       if (data.context) parts.push('=== 문서 컨텍스트 ===\n' + data.context);
       if (data.style_context) parts.push('\n=== 스타일 가이드 ===\n' + data.style_context);
       if (!parts.length) parts.push('(등록된 문서가 없습니다)');
@@ -8258,6 +8722,16 @@
       pptDocBtn.disabled = false;
       pptDocBtn.textContent = '📊 PPT 문서로 재구성';
     }
+    const knowledgePromoteBtn = $id('knowledge-promote-btn');
+    if (knowledgePromoteBtn) {
+      const { projectId, docs } = _buildKnowledgePromotionState();
+      knowledgePromoteBtn.style.display = '';
+      knowledgePromoteBtn.disabled = !projectId || !docs.length;
+      knowledgePromoteBtn.textContent = '🧠 승인본으로 학습';
+      knowledgePromoteBtn.title = projectId
+        ? '현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다'
+        : 'project_id가 있는 생성 결과만 학습 라이브러리로 승격할 수 있습니다';
+    }
     const sketchAgainBtn = $id('sketch-again-btn');
     if (sketchAgainBtn) {
       sketchAgainBtn.style.display = '';
@@ -8628,6 +9102,10 @@
 
   $id('ppt-doc-btn').addEventListener('click', () => {
     regenerateAsPresentationBundle();
+  });
+
+  $id('knowledge-promote-btn').addEventListener('click', () => {
+    openKnowledgePromoteModal();
   });
 
   $id('storyboard-refresh-btn').addEventListener('click', () => {

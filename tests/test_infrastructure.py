@@ -137,6 +137,24 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "doc-section-focus" in res.text
     assert "PPT 문서로 재구성" in res.text
     assert "페이지 스케치" in res.text
+    assert 'id="knowledge-promote-btn"' in res.text
+    assert 'id="knowledge-promote-modal"' in res.text
+    assert 'id="knowledge-promote-form"' in res.text
+    assert 'id="knowledge-promote-submit-btn"' in res.text
+    assert 'id="knowledge-metadata-modal"' in res.text
+    assert 'id="knowledge-metadata-form"' in res.text
+    assert 'id="knowledge-metadata-submit-btn"' in res.text
+    assert "승인본으로 학습" in res.text
+    assert "openKnowledgePromoteModal" in res.text
+    assert "submitKnowledgePromotion" in res.text
+    assert "openKnowledgeMetadataModal" in res.text
+    assert "submitKnowledgeMetadataUpdate" in res.text
+    assert "메타 수정" in res.text
+    assert "ranked_documents" in res.text
+    assert "우선 참조 후보" in res.text
+    assert "승인본 학습" in res.text
+    assert "gold" in res.text
+    assert "수주" in res.text
 
 
 def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):

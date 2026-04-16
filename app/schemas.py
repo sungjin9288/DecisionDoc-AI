@@ -151,6 +151,24 @@ class EditedDocInput(BaseModel):
     markdown: str
 
 
+class PromoteKnowledgeReferenceRequest(BaseModel):
+    """Promote approved generated docs into project knowledge as gold references."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    title: str = Field(..., min_length=1)
+    bundle_type: str = Field(..., min_length=1)
+    docs: list[EditedDocInput] = Field(..., min_length=1)
+    tags: list[str] = Field(default_factory=list)
+    quality_tier: str = "gold"
+    success_state: str = "approved"
+    source_organization: str = ""
+    reference_year: int | None = None
+    notes: str = ""
+    source_bundle_id: str = ""
+    source_request_id: str = ""
+
+
 @dataclass
 class GovDocOptions:
     """행안부 공문서 표준 서식 옵션.
@@ -674,6 +692,19 @@ class UpdateToneGuideRequest(BaseModel):
     custom_rules: list[str] = []
     forbidden_words: list[str] = []
     preferred_words: list[str] = []
+
+
+class UpdateKnowledgeMetadataRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    tags: list[str] | None = None
+    learning_mode: str | None = None
+    quality_tier: str | None = None
+    applicable_bundles: list[str] | None = None
+    source_organization: str | None = None
+    reference_year: int | None = None
+    success_state: str | None = None
+    notes: str | None = None
 
 
 class OpsInvestigateRequest(BaseModel):

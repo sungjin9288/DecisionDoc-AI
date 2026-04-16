@@ -1211,7 +1211,11 @@ class GenerationService:
             from app.storage.knowledge_store import KnowledgeStore
 
             ks = KnowledgeStore(project_id)
-            knowledge_ctx = ks.build_context()
+            knowledge_ctx = ks.build_context(
+                bundle_type=bundle_type,
+                title=str(payload.get("title", "") or ""),
+                goal=str(payload.get("goal", "") or ""),
+            )
             style_ctx = ks.build_style_context()
             if knowledge_ctx:
                 payload["_knowledge_context"] = knowledge_ctx

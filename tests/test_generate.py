@@ -263,6 +263,64 @@ def test_generate_export_returns_files_and_writes_markdown(tmp_path, monkeypatch
         assert md_path.read_text(encoding="utf-8").strip()
 
 
+def test_generate_injects_ranked_knowledge_context(tmp_path, monkeypatch):
+    import app.main as main_module
+    from app.providers.mock_provider import MockProvider
+    from app.storage.knowledge_store import KnowledgeStore
+
+    captured: dict[str, object] = {}
+
+    class InspectingMockProvider(MockProvider):
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            captured["requirements"] = dict(requirements)
+            return super().generate_bundle(
+                requirements,
+                schema_version=schema_version,
+                request_id=request_id,
+                bundle_spec=bundle_spec,
+                feedback_hints=feedback_hints,
+            )
+
+    monkeypatch.setattr(main_module, "get_provider", lambda: InspectingMockProvider())
+    client = _create_client(tmp_path, monkeypatch)
+
+    store = KnowledgeStore("proj-knowledge", data_dir=str(tmp_path))
+    store.add_document(
+        "generic-guide.txt",
+        "일반 참고문서 내용",
+        learning_mode="reference",
+        quality_tier="working",
+    )
+    store.add_document(
+        "winning-proposal.docx",
+        "파주시 모빌리티 제안 승인본 구조",
+        learning_mode="approved_output",
+        quality_tier="gold",
+        applicable_bundles=["proposal_kr"],
+        source_organization="파주시",
+        reference_year=2025,
+        success_state="approved",
+        notes="제안서 구조와 표 구성이 우수함",
+    )
+
+    response = client.post(
+        "/generate",
+        json={
+            "title": "파주시 모빌리티 제안",
+            "goal": "승인 가능한 제안서 작성",
+            "bundle_type": "proposal_kr",
+            "project_id": "proj-knowledge",
+        },
+    )
+
+    assert response.status_code == 200
+    injected = str(captured["requirements"])
+    assert "_knowledge_context" in injected
+    assert "winning-proposal.docx" in injected
+    assert "우선 적용 문서: proposal_kr" in injected
+    assert "품질 등급: gold" in injected
+
+
 def test_generate_succeeds_when_eval_executor_is_unavailable(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
 

@@ -50,5 +50,16 @@ class Provider(ABC):
             "Override this method to use StructuredGenerator or FallbackPipeline."
         )
 
+    def extract_attachment_text(self, filename: str, raw: bytes, *, request_id: str) -> str:
+        """Extract readable text from image-like attachments via provider OCR/vision.
+
+        Override in providers that support multimodal file reading. The default
+        implementation intentionally fails so callers can decide whether to
+        surface a guidance message or try another provider.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement extract_attachment_text()."
+        )
+
     def consume_usage_tokens(self) -> dict[str, int] | None:
         return None

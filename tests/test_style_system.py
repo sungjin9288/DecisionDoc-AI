@@ -319,6 +319,34 @@ def test_analyze_document_style_json_parse_failure_returns_fallback(tmp_path):
     assert result["patterns"] == []
 
 
+def test_analyze_document_style_image_uses_attachment_fallback(tmp_path):
+    from app.services.style_analyzer import analyze_document_style
+
+    expected_json = """{
+      "formality": "혼용",
+      "density": "보통",
+      "perspective": "기관명칭",
+      "patterns": ["캡션 중심"],
+      "sample_sentences": ["이미지에 표 제목이 반복됩니다."],
+      "preferred_expressions": ["현황", "근거"],
+      "avoid_expressions": [],
+      "summary": "이미지형 자료에서도 핵심 레이블과 캡션을 우선 정리합니다."
+    }"""
+
+    class SyncImageProvider:
+        def extract_attachment_text(self, filename, raw, *, request_id):
+            return "[텍스트]\n- 파주시 경영평가 착수보고\n[시각 요소]\n- 표지형 슬라이드\n[활용 포인트]\n- 제목과 핵심 수치를 요약"
+
+        def generate_raw(self, prompt, *, request_id, max_output_tokens=None):
+            return expected_json
+
+    result = run_async(
+        analyze_document_style("capture.png", b"\x89PNG\r\n\x1a\nfake", None, SyncImageProvider())
+    )
+    assert result["formality"] == "혼용"
+    assert "이미지에 표 제목이 반복됩니다." in result["sample_sentences"]
+
+
 # ── API endpoint tests ─────────────────────────────────────────────────────────
 
 

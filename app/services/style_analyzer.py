@@ -6,6 +6,7 @@ Two responsibilities:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
@@ -29,10 +30,15 @@ async def analyze_document_style(
         formality, density, perspective, patterns, sample_sentences,
         preferred_expressions, avoid_expressions, summary
     """
-    from app.services.attachment_service import extract_text
+    from app.services.attachment_service import extract_text_with_ai_fallback
 
     try:
-        text = extract_text(filename, raw)
+        text = extract_text_with_ai_fallback(
+            filename,
+            raw,
+            provider=provider,
+            request_id="style-analysis",
+        )
     except Exception as exc:
         raise ValueError(f"{filename}: 텍스트를 추출할 수 없습니다. ({exc})")
 
@@ -66,10 +72,19 @@ async def analyze_document_style(
   "avoid_expressions": ["피해야 할 표현1"],
   "summary": "이 문서의 전체적인 문체 특징을 2문장으로 요약"
 }}
-반드시 유효한 JSON만 반환하세요."""
+    반드시 유효한 JSON만 반환하세요."""
 
     try:
-        result = await provider.generate_raw(prompt, max_tokens=800)
+        try:
+            result = provider.generate_raw(
+                prompt,
+                request_id="style-analysis",
+                max_output_tokens=800,
+            )
+        except TypeError:
+            result = provider.generate_raw(prompt, max_tokens=800)
+        if inspect.isawaitable(result):
+            result = await result
         # Strip markdown code fences if present
         result = re.sub(r"```(?:json)?\s*", "", result).strip()
         result = re.sub(r"```\s*$", "", result).strip()

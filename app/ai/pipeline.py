@@ -51,7 +51,13 @@ class FallbackPipeline(Provider):
         self._providers = providers
         self._active_provider: Provider | None = None
 
-    def generate_raw(self, prompt: str, *, request_id: str) -> str:
+    def generate_raw(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        max_output_tokens: int | None = None,
+    ) -> str:
         """Try each provider in order; return the first successful raw response.
 
         Raises:
@@ -60,7 +66,11 @@ class FallbackPipeline(Provider):
         errors: list[str] = []
         for provider in self._providers:
             try:
-                raw = provider.generate_raw(prompt, request_id=request_id)
+                raw = provider.generate_raw(
+                    prompt,
+                    request_id=request_id,
+                    max_output_tokens=max_output_tokens,
+                )
                 self._active_provider = provider
                 return raw
             except Exception as exc:
@@ -95,6 +105,20 @@ class FallbackPipeline(Provider):
                 )
                 self._active_provider = provider
                 return result
+            except Exception as exc:
+                errors.append(f"[{provider.name}] {exc}")
+        raise ProviderError(
+            "All providers in fallback chain failed:\n" + "\n".join(errors)
+        )
+
+    def extract_attachment_text(self, filename: str, raw: bytes, *, request_id: str) -> str:
+        """Try each provider in order; return the first successful attachment extraction."""
+        errors: list[str] = []
+        for provider in self._providers:
+            try:
+                text = provider.extract_attachment_text(filename, raw, request_id=request_id)
+                self._active_provider = provider
+                return text
             except Exception as exc:
                 errors.append(f"[{provider.name}] {exc}")
         raise ProviderError(

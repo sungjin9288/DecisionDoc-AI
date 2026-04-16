@@ -2347,3 +2347,45 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - `.venv/bin/pytest -q tests/test_procurement_pdf_normalizer.py tests/test_rfp_parsing.py tests/test_generate_from_documents.py tests/test_pdf_enhanced.py --tb=short`
 - remaining boundary
   - this strengthens prompt grounding, but it does not yet enforce post-generation validation that every `slide_outline` item actually matches the classified procurement pages
+
+## 2026-04-16 — Knowledge Reference Ranking Added For Better Learning-From-Examples Flow
+
+- shipped
+  - extended project knowledge documents with reusable learning metadata such as `learning_mode`, `quality_tier`, `applicable_bundles`, `source_organization`, `reference_year`, `success_state`, and `notes`
+  - updated the knowledge API so uploads can persist those fields, metadata can be edited after upload, and context preview can show ranked reference documents for a target bundle/title/goal
+  - changed generation-time project knowledge injection to rank documents by approval state, quality tier, bundle match, and query overlap instead of pure recency so approved examples are prioritized during bundle generation
+- file path
+  - `app/storage/knowledge_store.py`
+  - `app/routers/knowledge.py`
+  - `app/services/generation_service.py`
+  - `app/schemas.py`
+  - `tests/test_knowledge.py`
+  - `tests/test_generate.py`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - project knowledge existed, but it still behaved like a flat attachment bucket because generation consumed the newest files first regardless of whether they were approved winning outputs or bundle-specific references
+  - the next smallest useful step was to let operators mark which documents are gold references and have generation prefer those documents automatically without adding a new storage system or model-training path
+- validation
+  - `python3 -m py_compile app/storage/knowledge_store.py app/routers/knowledge.py app/services/generation_service.py app/schemas.py tests/test_knowledge.py tests/test_generate.py`
+  - `.venv/bin/pytest -q tests/test_knowledge.py tests/test_generate.py --tb=short`
+- remaining boundary
+  - this adds reference-library behavior and ranking, but it does not yet implement a full review UI for metadata management or an automatic feedback loop that promotes user-edited outputs into approved examples
+
+## 2026-04-16 — Approved Output Promotion Added To Close The Learning Loop
+
+- shipped
+  - added `POST /knowledge/{project_id}/promote-generated` so approved generated docs can be promoted into project knowledge as `approved_output` references without re-uploading files manually
+  - promotion automatically tags the new knowledge entries with the originating `bundle_type`, keeps optional `source_bundle_id` and `source_request_id` in the API response, and stores the promoted markdown with `approved_output` learning metadata for future ranking
+- file path
+  - `app/routers/knowledge.py`
+  - `app/schemas.py`
+  - `tests/test_knowledge.py`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - reference ranking alone is not enough if operators must manually repackage every approved final output before the system can learn from it
+  - the smallest practical next step was to let the product promote finalized docs directly into the same knowledge store that generation already consumes
+- validation
+  - `python3 -m py_compile app/routers/knowledge.py app/schemas.py tests/test_knowledge.py`
+  - `.venv/bin/pytest -q tests/test_knowledge.py tests/test_generate.py --tb=short`
+- remaining boundary
+  - this closes the backend promotion path, but it still needs a dedicated UI action so approved outputs can be promoted without calling the API directly

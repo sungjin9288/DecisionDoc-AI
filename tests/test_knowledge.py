@@ -107,6 +107,82 @@ class TestKnowledgeStore:
         ctx = store.build_context(max_chars=3000)
         assert len(ctx) <= 3200  # 약간의 헤더 여유
 
+    def test_add_document_persists_learning_metadata(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore("proj_meta", data_dir=str(tmp_path))
+        entry = store.add_document(
+            "award-proposal.docx",
+            "수주 완료 제안서 본문",
+            tags=["공공", "교통"],
+            learning_mode="approved_output",
+            quality_tier="gold",
+            applicable_bundles=["proposal_kr", "performance_plan_kr"],
+            source_organization="국토교통부",
+            reference_year=2025,
+            success_state="awarded",
+            notes="PPT 요약과 본문 표 구조가 우수함",
+        )
+
+        fetched = store.get_document(entry.doc_id)
+        assert fetched is not None
+        assert fetched.learning_mode == "approved_output"
+        assert fetched.quality_tier == "gold"
+        assert fetched.applicable_bundles == ["proposal_kr", "performance_plan_kr"]
+        assert fetched.source_organization == "국토교통부"
+        assert fetched.reference_year == 2025
+        assert fetched.success_state == "awarded"
+        assert fetched.notes == "PPT 요약과 본문 표 구조가 우수함"
+
+    def test_update_metadata_and_rank_documents_for_context(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore("proj_rank", data_dir=str(tmp_path))
+        generic = store.add_document(
+            "generic-reference.pdf",
+            "일반 참고문서",
+            learning_mode="reference",
+            quality_tier="working",
+        )
+        targeted = store.add_document(
+            "mobility-proposal.docx",
+            "모빌리티 제안서 승인본",
+            tags=["모빌리티", "제안"],
+            learning_mode="approved_output",
+            quality_tier="gold",
+            applicable_bundles=["proposal_kr"],
+            source_organization="파주시",
+            reference_year=2025,
+            success_state="approved",
+        )
+
+        updated = store.update_metadata(
+            generic.doc_id,
+            quality_tier="silver",
+            notes="기본 구조 참고용",
+        )
+        assert updated is True
+
+        ranked = store.rank_documents_for_context(
+            bundle_type="proposal_kr",
+            title="파주시 모빌리티 제안",
+            goal="승인 가능한 제안서 작성",
+        )
+        assert ranked[0]["doc_id"] == targeted.doc_id
+        assert ranked[0]["bundle_match"] is True
+        assert ranked[0]["learning_mode"] == "approved_output"
+        assert ranked[1]["doc_id"] == generic.doc_id
+
+        ctx = store.build_context(
+            bundle_type="proposal_kr",
+            title="파주시 모빌리티 제안",
+            goal="승인 가능한 제안서 작성",
+        )
+        assert "프로젝트 지식 학습 컨텍스트" in ctx
+        assert "우선 적용 문서: proposal_kr" in ctx
+        assert "품질 등급: gold" in ctx
+        assert "출처: 파주시 / 2025" in ctx
+
 
 # ── attachment_service PPTX 테스트 ────────────────────────────────────────────
 
@@ -170,7 +246,16 @@ class TestKnowledgeAPI:
             "/knowledge/proj-api/documents",
             headers=HEADERS,
             files={"file": ("guide.txt", content, "text/plain")},
-            data={"tags": "guide,test"},
+            data={
+                "tags": "guide,test",
+                "learning_mode": "approved_output",
+                "quality_tier": "gold",
+                "applicable_bundles": "proposal_kr,performance_plan_kr",
+                "source_organization": "행정안전부",
+                "reference_year": "2025",
+                "success_state": "approved",
+                "notes": "우수 제안서 레퍼런스",
+            },
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -178,6 +263,13 @@ class TestKnowledgeAPI:
         assert "doc_id" in body
         assert body["text_len"] > 0
         assert "guide" in body["tags"]
+        assert body["learning_mode"] == "approved_output"
+        assert body["quality_tier"] == "gold"
+        assert body["applicable_bundles"] == ["proposal_kr", "performance_plan_kr"]
+        assert body["source_organization"] == "행정안전부"
+        assert body["reference_year"] == 2025
+        assert body["success_state"] == "approved"
+        assert body["notes"] == "우수 제안서 레퍼런스"
 
     def test_list_documents(self, client, tmp_path):
         content = b"Document content"
@@ -198,11 +290,14 @@ class TestKnowledgeAPI:
             "/knowledge/proj-get/documents",
             headers=HEADERS,
             files={"file": ("detail.txt", content, "text/plain")},
+            data={"learning_mode": "template", "quality_tier": "silver"},
         )
         doc_id = upload.json()["doc_id"]
         resp = client.get(f"/knowledge/proj-get/documents/{doc_id}", headers=HEADERS)
         assert resp.status_code == 200
         assert resp.json()["text"] == "Detailed content here."
+        assert resp.json()["learning_mode"] == "template"
+        assert resp.json()["quality_tier"] == "silver"
 
     def test_get_nonexistent_document(self, client):
         resp = client.get("/knowledge/proj-x/documents/nonexistent", headers=HEADERS)
@@ -229,12 +324,109 @@ class TestKnowledgeAPI:
             "/knowledge/proj-ctx/documents",
             headers=HEADERS,
             files={"file": ("knowledge.txt", content, "text/plain")},
+            data={
+                "learning_mode": "approved_output",
+                "quality_tier": "gold",
+                "applicable_bundles": "proposal_kr",
+                "source_organization": "파주시",
+                "reference_year": "2025",
+                "success_state": "approved",
+            },
         )
-        resp = client.get("/knowledge/proj-ctx/context", headers=HEADERS)
+        resp = client.get(
+            "/knowledge/proj-ctx/context",
+            headers=HEADERS,
+            params={
+                "bundle_type": "proposal_kr",
+                "title": "파주시 제안",
+                "goal": "승인 가능한 제안서 작성",
+            },
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert "context" in body
         assert "Important project knowledge" in body["context"]
+        assert body["bundle_type"] == "proposal_kr"
+        assert body["ranked_documents"][0]["bundle_match"] is True
+        assert body["ranked_documents"][0]["quality_tier"] == "gold"
+
+    def test_update_document_metadata(self, client, tmp_path):
+        upload = client.post(
+            "/knowledge/proj-meta/documents",
+            headers=HEADERS,
+            files={"file": ("meta.txt", b"metadata target", "text/plain")},
+        )
+        doc_id = upload.json()["doc_id"]
+
+        resp = client.put(
+            f"/knowledge/proj-meta/documents/{doc_id}/metadata",
+            headers=HEADERS,
+            json={
+                "learning_mode": "approved_output",
+                "quality_tier": "gold",
+                "applicable_bundles": ["proposal_kr"],
+                "source_organization": "국토교통부",
+                "reference_year": 2026,
+                "success_state": "awarded",
+                "notes": "실수주 사례",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["updated"] is True
+        assert body["learning_mode"] == "approved_output"
+        assert body["quality_tier"] == "gold"
+        assert body["applicable_bundles"] == ["proposal_kr"]
+        assert body["source_organization"] == "국토교통부"
+        assert body["reference_year"] == 2026
+        assert body["success_state"] == "awarded"
+        assert body["notes"] == "실수주 사례"
+
+    def test_promote_generated_documents_to_knowledge(self, client, tmp_path):
+        resp = client.post(
+            "/knowledge/proj-promote/promote-generated",
+            headers=HEADERS,
+            json={
+                "title": "파주시 모빌리티 제안서",
+                "bundle_type": "proposal_kr",
+                "docs": [
+                    {"doc_type": "business_understanding", "markdown": "# 사업 이해\n승인본 본문"},
+                    {"doc_type": "execution_plan", "markdown": "# 수행 계획\n추진 전략"},
+                ],
+                "tags": ["공공", "교통"],
+                "quality_tier": "gold",
+                "success_state": "awarded",
+                "source_organization": "파주시",
+                "reference_year": 2026,
+                "notes": "실수주 후 확정본",
+                "source_bundle_id": "bundle-123",
+                "source_request_id": "req-456",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["promoted"] == 2
+        assert body["bundle_type"] == "proposal_kr"
+        assert body["source_bundle_id"] == "bundle-123"
+        assert body["source_request_id"] == "req-456"
+        assert body["documents"][0]["learning_mode"] == "approved_output"
+        assert body["documents"][0]["quality_tier"] == "gold"
+        assert body["documents"][0]["applicable_bundles"] == ["proposal_kr"]
+
+        preview = client.get(
+            "/knowledge/proj-promote/context",
+            headers=HEADERS,
+            params={
+                "bundle_type": "proposal_kr",
+                "title": "파주시 모빌리티 제안",
+                "goal": "수주 가능한 제안서 작성",
+            },
+        )
+        assert preview.status_code == 200
+        ranked = preview.json()["ranked_documents"]
+        assert ranked[0]["learning_mode"] == "approved_output"
+        assert ranked[0]["bundle_match"] is True
+        assert ranked[0]["success_state"] == "awarded"
 
     def test_upload_requires_auth(self, client):
         resp = client.post(
