@@ -19,6 +19,32 @@ def _truncate(text: str, limit: int = 120) -> str:
     return compact[: limit - 1].rstrip() + "…"
 
 
+def _merge_short_clauses(parts: list[str], *, max_len: int, min_chunk_len: int = 18) -> list[str]:
+    merged: list[str] = []
+    pending = ""
+
+    for raw in parts:
+        part = _clean_text(raw)
+        if not part:
+            continue
+        if not pending:
+            pending = part
+            continue
+
+        joiner = " · " if len(part) <= min_chunk_len or len(pending) <= min_chunk_len else " "
+        candidate = f"{pending}{joiner}{part}".strip()
+        if len(candidate) <= max_len and (len(part) <= min_chunk_len or len(pending) <= min_chunk_len):
+            pending = candidate
+            continue
+
+        merged.append(pending)
+        pending = part
+
+    if pending:
+        merged.append(pending)
+    return merged
+
+
 def presentation_points(text: str, *, max_len: int = 78, max_points: int = 4) -> list[str]:
     compact = _clean_text(text)
     if not compact:
@@ -40,7 +66,8 @@ def presentation_points(text: str, *, max_len: int = 78, max_points: int = 4) ->
             if part.strip()
         ]
         if len(clause_parts) > 1:
-            points.extend(_truncate(part, max_len) for part in clause_parts)
+            merged_parts = _merge_short_clauses(clause_parts, max_len=max_len)
+            points.extend(_truncate(part, max_len) for part in merged_parts)
             continue
         points.append(_truncate(sentence, max_len))
     return points[:max_points]

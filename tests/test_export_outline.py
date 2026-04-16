@@ -8,8 +8,18 @@ def test_presentation_points_split_long_sentence_into_clauses() -> None:
     )
     points = presentation_points(text, max_len=48, max_points=4)
     assert len(points) >= 2
-    assert any("AI 분석" in point for point in points)
+    assert any("AI 분석 · 운영 대시보드" in point for point in points)
     assert all(len(point) <= 48 for point in points)
+    assert "AI 분석" not in points
+
+
+def test_presentation_points_merges_short_enumeration_fragments() -> None:
+    text = (
+        "수행계획서는 계약 범위, 일정, 산출물, 투입 인력, 승인 게이트를 하나의 실행 문서로 정리한 결과물입니다."
+    )
+    points = presentation_points(text, max_len=40, max_points=4)
+    assert any("계약 범위 · 일정 · 산출물" in point for point in points)
+    assert not any(point == "일정" for point in points)
 
 
 def test_summarize_export_docs_exposes_short_ppt_lead() -> None:
