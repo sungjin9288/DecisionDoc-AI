@@ -270,6 +270,32 @@ def _build_structured_slide_data(bundle: dict[str, Any], goal: str) -> dict[str,
     }
 
 
+def _build_generated_docs_response(
+    docs: list[dict[str, Any]],
+    raw_bundle: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Attach structured slide metadata to rendered docs when present."""
+    raw_bundle = raw_bundle if isinstance(raw_bundle, dict) else {}
+    response_docs: list[dict[str, Any]] = []
+    for doc in docs:
+        doc_type = str(doc.get("doc_type", "") or "").strip()
+        markdown = str(doc.get("markdown", "") or "")
+        item: dict[str, Any] = {
+            "doc_type": doc_type,
+            "markdown": markdown,
+        }
+        structured = raw_bundle.get(doc_type)
+        if isinstance(structured, dict):
+            total_slides = structured.get("total_slides")
+            slide_outline = structured.get("slide_outline")
+            if isinstance(total_slides, int) and total_slides > 0:
+                item["total_slides"] = total_slides
+            if isinstance(slide_outline, list) and slide_outline:
+                item["slide_outline"] = slide_outline
+        response_docs.append(item)
+    return response_docs
+
+
 def _auto_improve_if_needed(
     bundle_type: str,
     feedback_store: Any,
@@ -649,7 +675,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         schema_version=metadata["schema_version"],
         cache_hit=metadata["cache_hit"],
         llm_total_tokens=metadata.get("llm_total_tokens"),
-        docs=result["docs"],
+        docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )
 
 

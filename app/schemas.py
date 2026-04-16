@@ -81,6 +81,8 @@ class HealthResponse(BaseModel):
 class GeneratedDoc(BaseModel):
     doc_type: str  # str (not DocType enum) — supports all bundle types
     markdown: str
+    total_slides: int | None = None
+    slide_outline: list[dict[str, Any]] | None = None
 
 
 class GenerateResponse(BaseModel):

@@ -233,6 +233,20 @@ None — initiative complete
   - added classifier regression coverage for real-world `경영평가추진일정` headings
   - extended slide-outline repair tests so procurement hints override already-filled generic visual metadata
 
+### 2026-04-16 — Generate responses now expose structured slide metadata directly
+
+- Background:
+  - The rendered proposal/performance markdown already included `PPT 구성 가이드`, but downstream consumers still had to parse markdown to recover `slide_outline` and `total_slides`.
+  - That made procurement-grounded PPT automation and live debugging unnecessarily fragile.
+- What changed:
+  - extended generated-doc responses so each document can include `total_slides` and `slide_outline` alongside `markdown`
+  - response enrichment is derived from the already-stabilized `raw_bundle`, so no additional parsing is required
+- Impact:
+  - `/generate` and `/generate/from-documents` callers can now render or validate procurement-grounded PPT page plans directly from JSON
+  - frontend and post-processing flows can consume structured slide guidance without scraping document markdown
+- Validation:
+  - added response regression coverage for `proposal_kr` document uploads to confirm `slide_outline` and procurement-guided visual types are present in the API payload
+
 ### 2026-04-16 — Document-ingestion path now reuses procurement summary blocks during slide_outline repair
 
 - Background:

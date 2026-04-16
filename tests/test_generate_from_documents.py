@@ -160,13 +160,20 @@ def test_generate_from_documents_proposal_bundle_reflects_procurement_slide_hint
         )
 
     assert response.status_code == 200
-    docs = {doc["doc_type"]: doc["markdown"] for doc in response.json()["docs"]}
+    body = response.json()
+    docs = {doc["doc_type"]: doc["markdown"] for doc in body["docs"]}
     business = docs["business_understanding"]
+    business_doc = next(doc for doc in body["docs"] if doc["doc_type"] == "business_understanding")
 
     assert "평가 대응 전략 — 평가 지표 체계" in business
     assert "일정 및 마일스톤 — 세부 추진 일정" in business
     assert "평가기준 표" in business
     assert "타임라인" in business
+    assert business_doc["total_slides"] >= 1
+    assert isinstance(business_doc["slide_outline"], list)
+    assert any(slide["title"].startswith("평가 대응 전략") for slide in business_doc["slide_outline"])
+    assert any(slide["visual_type"] == "평가기준 표" for slide in business_doc["slide_outline"])
+    assert any(slide["visual_type"] == "타임라인" for slide in business_doc["slide_outline"])
 
 
 def test_generate_from_documents_rejects_invalid_extension(tmp_path, monkeypatch):
