@@ -14,6 +14,19 @@ from app.providers.base import Provider
 class MockProvider(Provider):
     name = "mock"
 
+    def extract_attachment_text(self, filename: str, raw: bytes, *, request_id: str) -> str:
+        stem = filename.rsplit(".", 1)[0]
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        source_label = "스캔 PDF" if ext == "pdf" else "시각 자료"
+        return (
+            f"[AI 분석 첨부: {filename}]\n"
+            f"파일 '{stem}'은 {source_label}로 인식되었습니다.\n"
+            "추정 내용:\n"
+            "- 제목 또는 캡션이 포함된 이미지/도표/문서일 가능성이 높습니다.\n"
+            "- 문서에는 핵심 메시지, 시각자료 설명, 활용 포인트를 함께 반영하세요.\n"
+            "- 필요하면 원본 이미지 주변의 맥락 설명을 추가로 입력하세요."
+        )
+
     def generate_bundle(
         self,
         requirements: dict[str, Any],
@@ -196,8 +209,83 @@ class MockProvider(Provider):
 # Slide helper
 # ===========================================================================
 
-def _slide(page: int, title: str, key_content: str, design_tip: str) -> dict:
-    return {"page": page, "title": title, "key_content": key_content, "design_tip": design_tip}
+def _derive_slide_points(text: str, limit: int = 3) -> list[str]:
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return []
+    parts = [
+        item.strip()
+        for item in normalized.replace(" / ", " · ").replace(" + ", " · ").split(" · ")
+        if item.strip()
+    ]
+    if len(parts) == 1:
+        parts = [
+            item.strip()
+            for item in normalized.split(". ")
+            if item.strip()
+        ]
+    deduped: list[str] = []
+    for part in parts:
+        if part and part not in deduped:
+            deduped.append(part)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _infer_visual_type(design_tip: str) -> str:
+    hints = (
+        ("간트", "간트 차트"),
+        ("타임라인", "타임라인"),
+        ("조직도", "조직도"),
+        ("흐름도", "프로세스 흐름도"),
+        ("다이어그램", "구조 다이어그램"),
+        ("매트릭스", "매트릭스"),
+        ("와이어프레임", "화면 와이어프레임"),
+        ("목업", "화면 목업"),
+        ("스크린샷", "스크린샷"),
+        ("사진", "현장 사진"),
+        ("그래프", "그래프"),
+        ("차트", "차트"),
+        ("표", "비교 표"),
+        ("로고", "로고/브랜드 카드"),
+        ("아이콘", "아이콘 카드"),
+    )
+    for keyword, label in hints:
+        if keyword in design_tip:
+            return label
+    return "시각자료 카드"
+
+
+def _slide(
+    page: int,
+    title: str,
+    key_content: str,
+    design_tip: str,
+    *,
+    core_message: str | None = None,
+    evidence_points: list[str] | None = None,
+    visual_type: str | None = None,
+    visual_brief: str | None = None,
+    layout_hint: str | None = None,
+) -> dict:
+    normalized_key = " ".join(str(key_content or "").split())
+    normalized_tip = " ".join(str(design_tip or "").split())
+    derived_points = evidence_points or _derive_slide_points(normalized_key)
+    derived_visual_type = visual_type or _infer_visual_type(normalized_tip)
+    derived_visual_brief = visual_brief or normalized_tip
+    derived_layout_hint = layout_hint or normalized_tip
+    return {
+        "page": page,
+        "title": title,
+        "key_content": key_content,
+        "core_message": core_message or normalized_key,
+        "evidence_points": derived_points,
+        "visual_type": derived_visual_type,
+        "visual_brief": derived_visual_brief,
+        "layout_hint": derived_layout_hint,
+        "design_tip": design_tip,
+    }
 
 
 def _ctx_excerpt(ctx: str, limit: int = 360) -> str:

@@ -113,6 +113,7 @@ def test_pptx_general_bundle_uses_summary_slide_content(tmp_path, monkeypatch):
     assert "핵심 검토 포인트" in joined
     assert "사업 추진 배경" in joined
     assert "핵심 섹션:" in joined
+    assert "시각자료" in joined
 
 
 def test_pptx_performance_bundle_uses_structured_slide_outline(tmp_path, monkeypatch):
@@ -133,6 +134,58 @@ def test_pptx_performance_bundle_uses_structured_slide_outline(tmp_path, monkeyp
     assert "WBS 및 마일스톤" in titles
     assert "리스크 매트릭스" in titles
     assert not any("PPT 구성 가이드" in title for title in titles)
+
+
+def test_pptx_structured_slides_include_visual_and_layout_guidance(tmp_path, monkeypatch):
+    from pptx import Presentation
+
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post(
+        "/generate/pptx",
+        json={"title": "제안서 PPT", "goal": "완성형 문서 변환", "bundle_type": "proposal_kr"},
+    )
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    first_content_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "사업 추진 배경"
+    )
+    content_text = "\n".join(shape.text for shape in first_content_slide.shapes if hasattr(shape, "text") and shape.text)
+    assert "핵심 메시지" in content_text
+    assert "권장 시각자료" in content_text
+    assert "시각자료 배치" in content_text
+    assert "권장 시각자료:" in content_text
+    assert "배치 가이드:" in content_text
+
+
+def test_pptx_performance_bundle_renders_timeline_and_governance_visuals(tmp_path, monkeypatch):
+    from pptx import Presentation
+
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post(
+        "/generate/pptx",
+        json={"title": "수행계획 발표", "goal": "표 중심 발표자료", "bundle_type": "performance_plan_kr"},
+    )
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+
+    timeline_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "WBS 및 마일스톤"
+    )
+    governance_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "추진 거버넌스"
+    )
+
+    timeline_text = "\n".join(shape.text for shape in timeline_slide.shapes if hasattr(shape, "text") and shape.text)
+    governance_text = "\n".join(shape.text for shape in governance_slide.shapes if hasattr(shape, "text") and shape.text)
+
+    assert "타임라인 도식" in timeline_text
+    assert "거버넌스 구조" in governance_text
 
 
 def test_pptx_summary_slide_prefers_short_presentation_lead(tmp_path, monkeypatch):

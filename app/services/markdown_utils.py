@@ -147,15 +147,103 @@ def build_markdown_kv_table(text: str) -> str:
     return build_markdown_table(rows, ["항목", "내용"])
 
 
+def _outline_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _outline_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    rows: list[str] = []
+    for item in value:
+        normalized = _outline_text(item)
+        if normalized:
+            rows.append(normalized)
+    return rows
+
+
+def slide_outline_message(slide: dict[str, Any]) -> str:
+    return _outline_text(slide.get("core_message") or slide.get("key_content"))
+
+
+def slide_outline_evidence(slide: dict[str, Any]) -> list[str]:
+    explicit = _outline_list(slide.get("evidence_points"))
+    if explicit:
+        return explicit[:3]
+
+    raw = _outline_text(slide.get("key_content"))
+    if not raw:
+        return []
+
+    parts = [
+        item.strip()
+        for item in re.split(r"\n+| \+ | / | · |, ", raw)
+        if item.strip()
+    ]
+    deduped: list[str] = []
+    for part in parts:
+        normalized = _outline_text(part)
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+        if len(deduped) >= 3:
+            break
+    return deduped
+
+
+def slide_outline_visual(slide: dict[str, Any]) -> str:
+    visual_type = _outline_text(slide.get("visual_type"))
+    visual_brief = _outline_text(slide.get("visual_brief"))
+    if visual_type and visual_brief:
+        return f"{visual_type} — {visual_brief}"
+    if visual_brief:
+        return visual_brief
+    if visual_type:
+        return visual_type
+
+    design_tip = _outline_text(slide.get("design_tip"))
+    keyword_pairs = (
+        ("프로세스 흐름도", "프로세스 흐름도"),
+        ("흐름도", "프로세스 흐름도"),
+        ("조직도", "조직도"),
+        ("타임라인", "타임라인"),
+        ("간트", "간트 차트"),
+        ("차트", "차트"),
+        ("그래프", "그래프"),
+        ("표", "비교 표"),
+        ("매트릭스", "매트릭스"),
+        ("와이어프레임", "와이어프레임"),
+        ("스크린샷", "스크린샷"),
+        ("목업", "화면 목업"),
+        ("지도", "지도"),
+        ("사진", "현장 사진"),
+        ("아이콘", "아이콘 카드"),
+        ("로고", "로고/브랜드 카드"),
+    )
+    for keyword, label in keyword_pairs:
+        if keyword in design_tip:
+            return label
+    return ""
+
+
+def slide_outline_layout(slide: dict[str, Any]) -> str:
+    return _outline_text(slide.get("layout_hint") or slide.get("design_tip"))
+
+
 def build_slide_outline_table(slides: list[dict[str, Any]]) -> str:
     """Render slide outline objects into a markdown table."""
     rows: list[list[str]] = []
     for slide in slides or []:
+        evidence = " · ".join(slide_outline_evidence(slide))
         rows.append([
             str(slide.get("page", "")).strip(),
             str(slide.get("title", "")).strip(),
-            str(slide.get("key_content", "")).strip(),
-            str(slide.get("design_tip", "")).strip(),
+            slide_outline_message(slide),
+            evidence,
+            slide_outline_visual(slide),
+            slide_outline_layout(slide),
         ])
 
-    return build_markdown_table(rows, ["페이지", "슬라이드 제목", "핵심 내용", "디자인 가이드"])
+    return build_markdown_table(
+        rows,
+        ["페이지", "슬라이드 제목", "핵심 메시지", "입증 포인트", "권장 시각자료", "배치 가이드"],
+    )

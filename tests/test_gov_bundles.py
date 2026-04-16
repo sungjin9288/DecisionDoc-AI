@@ -353,11 +353,13 @@ def test_performance_plan_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
     assert "| 산출물 | 제출 기한 | 형식 | 검수 방법 |" in overview
     assert "| 역할 | 등급 | 성명 | M/M | 책임 및 전문성 |" in overview
     assert "| 관리 항목 | 목표 기준 | 확인 방식 |" in overview
-    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in overview
+    assert "| 페이지 | 슬라이드 제목 | 핵심 메시지 | 입증 포인트 | 권장 시각자료 | 배치 가이드 |" in overview
+    assert "타임라인" in overview or "조직도" in overview
     assert "## 품질 운영 원칙" in quality
     assert "| 리스크 | 발생 가능성 | 영향도 | 대응 방안 |" in quality
     assert "| 운영 회의체 | 주기 | 책임 | 주요 확인 항목 |" in quality
-    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in quality
+    assert "| 페이지 | 슬라이드 제목 | 핵심 메시지 | 입증 포인트 | 권장 시각자료 | 배치 가이드 |" in quality
+    assert "리스크 매트릭스" in quality or "프로세스 흐름도" in quality
 
 
 def test_proposal_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
@@ -387,7 +389,8 @@ def test_proposal_kr_uses_finished_doc_tables(tmp_path, monkeypatch):
     assert "| 목표 항목 | 정량·정성 목표 | 측정 기준 |" in business
     assert "| 평가 관점 | 대응 전략 | 입증 근거 |" in business
     assert "| 사용자군 | 주요 역할·니즈 | 기대 변화 |" in business
-    assert "| 페이지 | 슬라이드 제목 | 핵심 내용 | 디자인 가이드 |" in business
+    assert "| 페이지 | 슬라이드 제목 | 핵심 메시지 | 입증 포인트 | 권장 시각자료 | 배치 가이드 |" in business
+    assert "아이콘 카드" in business or "프로세스 흐름도" in business
 
     assert "## 기술 제안 요약" in tech
     assert "제안한다.을" not in tech

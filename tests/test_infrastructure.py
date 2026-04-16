@@ -155,6 +155,15 @@ def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     assert "downloadBatchResult('${bundleId}','hwp')" in res.text
 
 
+def test_index_html_expands_attachment_accept_lists_for_structured_docs():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert ".json,.jsonl,.ndjson" in content
+    assert ".yaml,.yml" in content
+    assert ".xml,.html,.htm,.rtf" in content
+    assert ".odt,.ods,.odp,.zip" in content
+    assert ".png,.jpg,.jpeg,.webp" in content
+
+
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None

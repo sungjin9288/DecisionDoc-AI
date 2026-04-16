@@ -12,7 +12,13 @@ from pptx.util import Inches, Pt
 
 from app.services.export_outline import presentation_points, summarize_export_docs
 from app.services.export_labels import humanize_doc_type
-from app.services.markdown_utils import parse_markdown_blocks
+from app.services.markdown_utils import (
+    parse_markdown_blocks,
+    slide_outline_evidence,
+    slide_outline_layout,
+    slide_outline_message,
+    slide_outline_visual,
+)
 
 _MAX_SLIDE_LINES = 5
 _MAX_CONTENT_SLIDE_LINES = 4
@@ -92,7 +98,13 @@ def _table_block_lines(block: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _render_slide(prs: Presentation, title: str, lines: list[str], notes: str = "") -> None:
+def _render_slide(
+    prs: Presentation,
+    title: str,
+    lines: list[str],
+    notes: str = "",
+    guidance_lines: list[str] | None = None,
+) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[1])
     slide.shapes.title.text = _clean_slide_text(title) or "문서"
     _style_text_frame(
@@ -112,6 +124,21 @@ def _render_slide(prs: Presentation, title: str, lines: list[str], notes: str = 
     else:
         body_tf.paragraphs[0].text = "내용 없음"
     _style_text_frame(body_tf, font_size_pt=17, color=_COLOR_TEXT_DARK)
+
+    cleaned_guidance = [_clean_slide_text(line) for line in (guidance_lines or []) if _clean_slide_text(line)]
+    if cleaned_guidance:
+        _add_card(
+            slide,
+            left=5.95,
+            top=4.55,
+            width=3.05,
+            height=1.15,
+            title="시각자료/배치 가이드",
+            body=cleaned_guidance[:3],
+            fill_color=_COLOR_CARD_SOFT,
+            title_color=_COLOR_BG_ACCENT,
+            body_color=_COLOR_TEXT_DARK,
+        )
 
     if notes.strip():
         slide.notes_slide.notes_text_frame.text = notes.strip()
@@ -374,23 +401,395 @@ def _render_summary_slide(prs: Presentation, summaries: list[dict[str, str]]) ->
             )
 
 
+def _structured_visual_lines(item: dict[str, Any]) -> list[str]:
+    raw_visual_type = _clean_slide_text(item.get("visual_type", ""))
+    raw_visual_brief = _clean_slide_text(item.get("visual_brief", ""))
+    derived_visual = slide_outline_visual(item)
+    visual_type = raw_visual_type or (derived_visual.split(" — ", 1)[0] if " — " in derived_visual else derived_visual)
+    visual_brief = raw_visual_brief or (derived_visual.split(" — ", 1)[1] if " — " in derived_visual else "")
+
+    lines = ["시각자료 자리"]
+    if visual_type:
+        lines.append(visual_type)
+    if visual_brief:
+        lines.extend(_expand_slide_line(visual_brief, max_len=28)[:2])
+    return lines[:4]
+
+
+def _visual_kind(item: dict[str, Any]) -> str:
+    visual = slide_outline_visual(item)
+    lowered = visual.lower()
+    if any(keyword in visual for keyword in ["타임라인", "로드맵", "간트", "마일스톤"]):
+        return "timeline"
+    if any(keyword in visual for keyword in ["거버넌스", "조직도", "보고", "역할"]):
+        return "governance"
+    if any(keyword in visual for keyword in ["프로세스", "흐름도", "절차", "플로우"]):
+        return "flow"
+    if any(keyword in visual for keyword in ["비교", "카드", "차트", "지표", "목표", "매트릭스"]) or "card" in lowered:
+        return "cards"
+    return "placeholder"
+
+
+def _render_visual_placeholder(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=height,
+        title="권장 시각자료",
+        body=_structured_visual_lines(item),
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+
+
+def _render_visual_cards(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="비교 카드",
+        body="핵심 근거를 시각 카드로 배치",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    points = slide_outline_evidence(item)[:4] or _structured_visual_lines(item)[1:4]
+    positions = [(left, top + 0.72), (left + 2.0, top + 0.72), (left, top + 1.92), (left + 2.0, top + 1.92)]
+    for point, (card_left, card_top) in zip(points, positions, strict=False):
+        _add_card(
+            slide,
+            left=card_left,
+            top=card_top,
+            width=1.85,
+            height=1.0,
+            title="핵심 포인트",
+            body=_expand_slide_line(point, max_len=18)[:2],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_TEXT_DARK,
+            body_color=_COLOR_TEXT_MUTED,
+        )
+
+
+def _render_visual_timeline(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="타임라인 도식",
+        body="단계별 흐름과 마일스톤을 시각화",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    points = slide_outline_evidence(item)[:4] or _structured_visual_lines(item)[1:4]
+    if not points:
+        points = ["1단계", "2단계", "3단계"]
+    step_width = min(1.1, (width - 0.4) / max(1, len(points)))
+    for idx, point in enumerate(points, start=1):
+        node_left = left + 0.1 + (idx - 1) * step_width
+        _add_card(
+            slide,
+            left=node_left,
+            top=top + 1.2,
+            width=0.95,
+            height=1.35,
+            title=f"{idx:02d}",
+            body=_expand_slide_line(point, max_len=14)[:3],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_BG_ACCENT,
+            body_color=_COLOR_TEXT_DARK,
+        )
+        if idx < len(points):
+            _add_text_box(
+                slide,
+                left=node_left + 0.92,
+                top=top + 1.65,
+                width=0.18,
+                height=0.2,
+                text="→",
+                font_size_pt=18,
+                bold=True,
+                color=_COLOR_BG_ACCENT,
+                align=PP_ALIGN.CENTER,
+            )
+
+
+def _render_visual_flow(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="프로세스 흐름",
+        body="단계별 업무 흐름과 전환 포인트를 표현",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    points = slide_outline_evidence(item)[:3] or _structured_visual_lines(item)[1:4]
+    if not points:
+        points = ["입력", "처리", "결과"]
+    for idx, point in enumerate(points, start=1):
+        box_top = top + 0.82 + (idx - 1) * 0.88
+        _add_card(
+            slide,
+            left=left + 0.3,
+            top=box_top,
+            width=width - 0.6,
+            height=0.62,
+            title=f"단계 {idx}",
+            body=_expand_slide_line(point, max_len=28)[:2],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_TEXT_DARK,
+            body_color=_COLOR_TEXT_MUTED,
+        )
+        if idx < len(points):
+            _add_text_box(
+                slide,
+                left=left + (width / 2) - 0.1,
+                top=box_top + 0.58,
+                width=0.2,
+                height=0.2,
+                text="↓",
+                font_size_pt=18,
+                bold=True,
+                color=_COLOR_BG_ACCENT,
+                align=PP_ALIGN.CENTER,
+            )
+
+
+def _render_visual_governance(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="거버넌스 구조",
+        body="의사결정과 보고 흐름을 시각화",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    points = slide_outline_evidence(item)[:3]
+    headline = points[0] if points else "총괄 의사결정"
+    children = points[1:] or ["실무 운영", "성과 보고"]
+    _add_card(
+        slide,
+        left=left + 1.0,
+        top=top + 0.82,
+        width=2.0,
+        height=0.72,
+        title="총괄",
+        body=_expand_slide_line(headline, max_len=18)[:2],
+        fill_color=_COLOR_CARD,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    child_positions = [left + 0.2, left + 2.15, left + 4.1]
+    for child, child_left in zip(children[:3], child_positions, strict=False):
+        _add_text_box(
+            slide,
+            left=child_left + 0.85,
+            top=top + 1.46,
+            width=0.2,
+            height=0.2,
+            text="↓",
+            font_size_pt=18,
+            bold=True,
+            color=_COLOR_BG_ACCENT,
+            align=PP_ALIGN.CENTER,
+        )
+        _add_card(
+            slide,
+            left=child_left,
+            top=top + 1.72,
+            width=1.75,
+            height=0.92,
+            title="역할",
+            body=_expand_slide_line(child, max_len=16)[:2],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_TEXT_DARK,
+            body_color=_COLOR_TEXT_MUTED,
+        )
+
+
+def _render_structured_visual_panel(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    kind = _visual_kind(item)
+    if kind == "timeline":
+        _render_visual_timeline(slide, item, left=left, top=top, width=width, height=height)
+        return
+    if kind == "flow":
+        _render_visual_flow(slide, item, left=left, top=top, width=width, height=height)
+        return
+    if kind == "governance":
+        _render_visual_governance(slide, item, left=left, top=top, width=width, height=height)
+        return
+    if kind == "cards":
+        _render_visual_cards(slide, item, left=left, top=top, width=width, height=height)
+        return
+    _render_visual_placeholder(slide, item, left=left, top=top, width=width, height=height)
+
+
 def _structured_slide_summaries(slide_outline: list[dict[str, Any]]) -> list[dict[str, str]]:
     summaries: list[dict[str, str]] = []
     for idx, item in enumerate(slide_outline[:4], start=1):
         title = _clean_slide_text(item.get("title", "")) or f"슬라이드 {idx}"
-        lead = _clean_slide_text(item.get("key_content", "")) or "핵심 메시지 없음"
-        lines = [line.strip() for line in str(item.get("key_content", "")).splitlines() if line.strip()]
-        metrics = f"핵심 항목 {max(1, len(lines))}개"
+        lead = slide_outline_message(item) or "핵심 메시지 없음"
+        evidence = slide_outline_evidence(item)
+        visual = slide_outline_visual(item)
+        metrics = f"핵심 항목 {max(1, len(evidence) or 1)}개"
+        metric_items = [metrics]
+        if visual:
+            metric_items.append(f"시각자료 {visual}")
         summaries.append(
             {
                 "index": f"{idx:02d}",
                 "label": title,
                 "lead": lead,
+                "ppt_lead": _clean_slide_text(_expand_slide_line(lead, max_len=54)[0]) if lead else "",
                 "sections": title,
                 "metrics": metrics,
+                "metric_items": metric_items,
             }
         )
     return summaries
+
+
+def _structured_slide_lines(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    core_message = slide_outline_message(item)
+    if core_message:
+        lines.extend(_expand_slide_line(core_message, max_len=58)[:2])
+    for evidence in slide_outline_evidence(item)[:3]:
+        lines.append(f"입증 포인트: {evidence}")
+    return lines[:5] or ["핵심 메시지 없음"]
+
+
+def _structured_slide_guidance(item: dict[str, Any]) -> list[str]:
+    guidance: list[str] = []
+    visual = slide_outline_visual(item)
+    layout = slide_outline_layout(item)
+    if visual:
+        guidance.append(f"권장 시각자료: {visual}")
+    if layout:
+        guidance.extend(_expand_slide_line(f"배치 가이드: {layout}", max_len=34)[:2])
+    return guidance[:3]
+
+
+def _render_structured_guided_slide(
+    prs: Presentation,
+    item: dict[str, Any],
+    *,
+    notes: str = "",
+) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _set_slide_background(slide, _COLOR_BG_SOFT)
+    title = _clean_slide_text(item.get("title", "")) or "슬라이드"
+    slide.shapes.title.text = title
+    _style_text_frame(
+        slide.shapes.title.text_frame,
+        font_size_pt=24,
+        bold=True,
+        color=_COLOR_TEXT_DARK,
+    )
+
+    message_lines = _expand_slide_line(slide_outline_message(item), max_len=38)[:2]
+    evidence_lines = [f"입증 포인트: {point}" for point in slide_outline_evidence(item)[:3]]
+    content_lines = message_lines + evidence_lines
+    _add_card(
+        slide,
+        left=0.65,
+        top=1.25,
+        width=4.15,
+        height=4.1,
+        title="핵심 메시지",
+        body=content_lines or ["핵심 메시지 없음"],
+        fill_color=_COLOR_CARD,
+        title_color=_COLOR_TEXT_DARK,
+        body_color=_COLOR_TEXT_DARK,
+    )
+
+    _add_card(
+        slide,
+        left=5.0,
+        top=4.45,
+        width=4.0,
+        height=0.95,
+        title="시각자료 배치",
+        body=_structured_slide_guidance(item) or ["배치 가이드 없음"],
+        fill_color=_COLOR_CARD,
+        title_color=_COLOR_TEXT_DARK,
+        body_color=_COLOR_TEXT_MUTED,
+    )
+
+    _render_structured_visual_panel(
+        slide,
+        left=5.0,
+        top=1.25,
+        width=4.0,
+        height=3.0,
+        item=item,
+    )
+
+    if notes.strip():
+        slide.notes_slide.notes_text_frame.text = notes.strip()
 
 
 def _render_table_slide(prs: Presentation, title: str, headers: list[str], rows: list[list[str]], subtitle: str = "") -> None:
@@ -499,7 +898,7 @@ def build_pptx(
             if not item_title:
                 continue
             detail_points = presentation_points(
-                str(item.get("key_content", "")),
+                slide_outline_message(item),
                 max_len=56,
                 max_points=1,
             )
@@ -511,10 +910,17 @@ def build_pptx(
     for item in slide_outline:
         if not isinstance(item, dict):
             continue
-        raw = str(item.get("key_content", ""))
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        design_tip = str(item.get("design_tip", ""))
-        _render_slide(prs, str(item.get("title", "")), lines, notes=design_tip)
+        design_tip = str(item.get("design_tip", "")).strip()
+        notes_parts = [part for part in [
+            design_tip,
+            f"권장 시각자료: {slide_outline_visual(item)}" if slide_outline_visual(item) else "",
+            f"배치 가이드: {slide_outline_layout(item)}" if slide_outline_layout(item) else "",
+        ] if part]
+        _render_structured_guided_slide(
+            prs,
+            item,
+            notes="\n".join(notes_parts),
+        )
 
     buf = BytesIO()
     prs.save(buf)

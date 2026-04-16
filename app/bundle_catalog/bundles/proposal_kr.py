@@ -11,10 +11,15 @@ from app.bundle_catalog.spec import BundleSpec, DocumentSpec
 _SLIDE_ITEM = {
     "type": "object",
     "properties": {
-        "page":        {"type": "integer"},
-        "title":       {"type": "string"},
+        "page": {"type": "integer"},
+        "title": {"type": "string"},
         "key_content": {"type": "string"},
-        "design_tip":  {"type": "string"},
+        "core_message": {"type": "string"},
+        "evidence_points": {"type": "array", "items": {"type": "string"}},
+        "visual_type": {"type": "string"},
+        "visual_brief": {"type": "string"},
+        "layout_hint": {"type": "string"},
+        "design_tip": {"type": "string"},
     },
 }
 
@@ -48,7 +53,10 @@ PROPOSAL_KR = BundleSpec(
         "- kpi_commitments는 `핵심 KPI | 목표값 | 산정 기준 | 달성 시점` 형식의 row 목록으로 작성하세요.\n"
         "- monitoring_plan은 `모니터링 항목 | 주기 | 책임 | 목표 기준` 형식의 row 목록으로 작성하세요.\n"
         "- 공식적이고 격식 있는 한국어 문체를 사용하세요.\n"
-        "- slide_outline 은 PPT 슬라이드별 구성안입니다. page·title·key_content·design_tip 을 채우세요.\n"
+        "- slide_outline 은 PPT 슬라이드별 구성안입니다. 각 페이지마다 page·title·key_content·core_message·evidence_points·visual_type·visual_brief·layout_hint·design_tip 을 채우세요.\n"
+        "- key_content는 발표자가 실제로 설명할 메시지를 2~4문장으로 적고, core_message는 한 줄 결론형 문장으로 압축하세요.\n"
+        "- evidence_points는 평가위원 설득에 필요한 근거 2~4개를 bullet 단위로 적고, visual_type은 사진·현장사진·프로세스 흐름도·비교표·차트·타임라인·조직도·화면 목업 중 가장 적합한 유형을 고르세요.\n"
+        "- visual_brief에는 넣어야 할 그림/표/도식의 구체 내용을 쓰고, layout_hint에는 좌우/상하 배치와 강조 요소를 명확히 적으세요.\n"
         "- 각 항목은 한국어로 작성하세요."
     ),
     category="consulting",

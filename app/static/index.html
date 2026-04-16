@@ -4870,10 +4870,10 @@
     <div class="attachment-area">
       <div class="attachment-label">
         📎 참고 자료 첨부
-        <small>(선택 · .txt .md .pdf .docx .pptx .hwpx .xlsx .csv · 최대 12,000자/파일)</small>
+        <small>(선택 · PDF/Office/HWPX/JSON/XML/HTML/YAML/RTF/ODT/ZIP/이미지 · 최대 12,000자/파일)</small>
       </div>
       <input type="file" id="f-attachments" multiple
-             accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv">
+             accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp">
       <label for="f-attachments" class="attachment-trigger">+ 파일 선택</label>
       <button type="button" class="attachment-trigger" onclick="openFromDocumentsModal()"
               style="background:linear-gradient(135deg,#2563eb,#38bdf8);border-color:transparent;color:#fff;margin-left:.4rem;">📚 문서로 초안 생성</button>
@@ -5157,9 +5157,9 @@
     ondrop="knowledgeDrop(event)">
     <div style="font-size:2rem; margin-bottom:.5rem;">📂</div>
     <div style="font-weight:600; margin-bottom:.25rem;">파일을 드래그하거나 클릭해서 업로드</div>
-    <div style="font-size:.8rem; color:var(--muted);">PDF · DOCX · PPTX · XLSX · HWP · TXT · MD · CSV (최대 20MB)</div>
+    <div style="font-size:.8rem; color:var(--muted);">PDF · DOCX · PPTX · XLSX · HWPX · TXT · MD · CSV/TSV · JSON/XML/HTML · YAML/RTF · ODT/ODS/ODP · ZIP · PNG/JPG/WEBP (최대 20MB)</div>
     <input id="knowledge-file-input" type="file" multiple
-      accept=".pdf,.docx,.pptx,.xlsx,.xls,.hwp,.hwpx,.txt,.md,.csv"
+      accept=".pdf,.docx,.pptx,.xlsx,.xls,.hwp,.hwpx,.txt,.md,.log,.ini,.cfg,.conf,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp"
       style="display:none;" onchange="knowledgeUploadFiles(this.files)">
     <button onclick="$id('knowledge-file-input').click()"
       style="margin-top:1rem; padding:.5rem 1.25rem; border-radius:8px;
@@ -5585,10 +5585,10 @@
            ondrop="fromDocumentsHandleDrop(event)">
         <div style="font-size:2.3rem">📚</div>
         <div style="margin-top:8px;font-weight:600">지원 문서를 드래그하거나 클릭하여 선택</div>
-        <div style="color:var(--muted);font-size:.85rem;margin-top:4px">.txt .md .pdf .docx .pptx .hwpx .xlsx .csv</div>
+        <div style="color:var(--muted);font-size:.85rem;margin-top:4px">.txt .md .pdf .docx .pptx .hwpx .xlsx .csv .json .xml .html .yaml .rtf .odt .zip .png .jpg .webp</div>
         <div id="from-documents-filenames" style="margin-top:12px;color:var(--p1);font-weight:600;display:none"></div>
       </div>
-      <input type="file" id="from-documents-file-input" multiple accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv" style="display:none" onchange="fromDocumentsFilesSelected(this)">
+      <input type="file" id="from-documents-file-input" multiple accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp" style="display:none" onchange="fromDocumentsFilesSelected(this)">
 
       <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
         <div>
@@ -15317,11 +15317,11 @@
         <h4>📄 문서에서 스타일 학습</h4>
         <div class="style-learning-hint" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:.85rem;">
           <p style="font-weight:600;margin:0 0 4px;">📄 <strong>AI 학습으로 개선하기</strong></p>
-          <p style="margin:0 0 4px;">실제 업무 문서(DOCX/PDF/HWP)를 업로드하면 AI가 문체를 분석하여 현재 스타일 프로필을 자동으로 개선합니다.</p>
+          <p style="margin:0 0 4px;">실제 업무 문서(DOCX/PDF/HWPX/HTML/XML/JSON)나 캡처 이미지(PNG/JPG/WEBP)를 업로드하면 AI가 문체와 표현 특징을 분석하여 현재 스타일 프로필을 자동으로 개선합니다.</p>
           <p style="color:var(--muted);font-size:0.8rem;margin:0;">3개 이상 업로드할수록 정확도가 높아집니다.</p>
         </div>
         <div class="style-upload-area">
-          <input type="file" id="style-file-input" accept=".pdf,.docx,.hwpx,.txt"
+          <input type="file" id="style-file-input" accept=".pdf,.docx,.hwpx,.hwp,.txt,.md,.json,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.png,.jpg,.jpeg,.webp"
             multiple style="display:none" onchange="analyzeStyleDocuments('${p.profile_id}')">
           <select id="style-bundle-filter" class="style-bundle-select">
             <option value="">전체 번들에 적용</option>
@@ -15329,7 +15329,7 @@
               `<option value="${id}">${name}</option>`).join('')}
           </select>
           <button onclick="document.getElementById('style-file-input').click()" class="btn-outline">
-            📎 문서 업로드 (PDF/DOCX/HWP)
+            📎 문서 업로드 (PDF/DOCX/HWPX/JSON/XML/HTML/PNG)
           </button>
         </div>
         ${(p.examples || []).length ? `

@@ -12,6 +12,11 @@ _SLIDE_ITEM = {
         "page": {"type": "integer"},
         "title": {"type": "string"},
         "key_content": {"type": "string"},
+        "core_message": {"type": "string"},
+        "evidence_points": {"type": "array", "items": {"type": "string"}},
+        "visual_type": {"type": "string"},
+        "visual_brief": {"type": "string"},
+        "layout_hint": {"type": "string"},
         "design_tip": {"type": "string"},
     },
 }
@@ -41,6 +46,10 @@ PERFORMANCE_PLAN_KR = BundleSpec(
         "- 리스크는 `리스크 | 발생 가능성 | 영향도 | 대응 방안` 순서의 table row 목록으로 작성하세요.\n"
         "- governance_checkpoints는 `운영 회의체 | 주기 | 책임 | 주요 확인 항목` 순서의 table row 목록으로 작성하세요.\n"
         "- 변경 관리 절차와 보고 체계를 명확히 기술하세요.\n"
+        "- slide_outline 은 발표자료 페이지별 설계안입니다. 각 페이지마다 page·title·key_content·core_message·evidence_points·visual_type·visual_brief·layout_hint·design_tip 을 채우세요.\n"
+        "- key_content는 발표자가 설명할 핵심 내용을 2~4문장으로 정리하고, core_message는 발주처가 바로 이해할 한 줄 결론으로 적으세요.\n"
+        "- evidence_points는 일정·산출물·검수 기준·리스크 등 발주처를 설득할 근거 2~4개를 적고, visual_type은 사진·타임라인·조직도·비교표·간트 차트·프로세스 흐름도·리스크 매트릭스 중 가장 적합한 유형을 고르세요.\n"
+        "- visual_brief에는 실제로 넣어야 할 도표/그림 구성을 쓰고, layout_hint에는 좌우 배치, 강조 숫자, 표/도식 위치를 구체적으로 적으세요.\n"
         "- 모든 내용을 한국어로 작성하세요."
     ),
     few_shot_example=(
