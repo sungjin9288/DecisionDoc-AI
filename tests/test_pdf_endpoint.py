@@ -62,6 +62,8 @@ def test_render_html_adds_export_cover_and_section_cards():
     assert "문서 01 / 02" in html
     assert "검토 초점:" in html
     assert "핵심 섹션:" in html
+    assert "구성 지표:" in html
+    assert " / 구성 특징:" not in html
 
 
 def test_pdf_endpoint_returns_200(tmp_path, monkeypatch):

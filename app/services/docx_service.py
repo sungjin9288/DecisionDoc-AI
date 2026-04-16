@@ -355,6 +355,8 @@ def _add_export_cover_page(
         _set_cell_shading(cell, "EAEFF7")
 
     for row_idx, summary in enumerate(summaries, start=1):
+        section_text = " · ".join(summary.get("section_items") or [summary["sections"]])
+        metric_text = " · ".join(summary.get("metric_items") or [summary["metrics"]])
         _add_table_cell_text(
             table.cell(row_idx, 0),
             summary["label"],
@@ -372,7 +374,7 @@ def _add_export_cover_page(
         )
         _add_table_cell_text(
             table.cell(row_idx, 2),
-            f"{summary['sections']} / {summary['metrics']}",
+            f"핵심 섹션: {section_text}\n구성 지표: {metric_text}",
             font_name=font_name,
             font_size_pt=font_size_pt,
             line_spacing_pct=line_spacing_pct,
@@ -394,6 +396,8 @@ def _add_doc_section_intro(
     font_size_pt: float,
     line_spacing_pct: int,
 ) -> None:
+    section_items = [item for item in section_hint.split(" · ") if item]
+    metric_items = [item for item in metrics.split(" / ") if item]
     badge = doc.add_paragraph()
     badge.alignment = WD_ALIGN_PARAGRAPH.LEFT
     badge_run = badge.add_run(f"문서 {index:02d} / {total:02d}")
@@ -425,7 +429,7 @@ def _add_doc_section_intro(
     except Exception:
         pass
     fact_headers = ["검토 초점", "구성 밀도"]
-    fact_values = [section_hint, metrics]
+    fact_values = [" · ".join(section_items) if section_items else section_hint, " · ".join(metric_items) if metric_items else metrics]
     for idx, header in enumerate(fact_headers):
         _add_table_cell_text(
             facts_table.cell(0, idx),
@@ -445,16 +449,21 @@ def _add_doc_section_intro(
             line_spacing_pct=line_spacing_pct,
         )
 
-    meta_para = doc.add_paragraph()
-    _add_bold_inline(
-        meta_para,
-        f"핵심 섹션: {section_hint} / 구성 특징: {metrics}",
-        font_name,
-        font_size_pt - 0.3,
-    )
-    for run in meta_para.runs:
-        run.font.color.rgb = RGBColor(0x6E, 0x75, 0x91)
-    _set_line_spacing(meta_para, line_spacing_pct)
+    meta_lines = [
+        f"핵심 섹션: {' · '.join(section_items) if section_items else section_hint}",
+        f"구성 지표: {' · '.join(metric_items) if metric_items else metrics}",
+    ]
+    for line in meta_lines:
+        meta_para = doc.add_paragraph()
+        _add_bold_inline(
+            meta_para,
+            line,
+            font_name,
+            font_size_pt - 0.3,
+        )
+        for run in meta_para.runs:
+            run.font.color.rgb = RGBColor(0x6E, 0x75, 0x91)
+        _set_line_spacing(meta_para, line_spacing_pct)
 
     separator = doc.add_paragraph("─" * 48)
     separator.runs[0].font.color.rgb = RGBColor(0xB9, 0xC2, 0xD6)

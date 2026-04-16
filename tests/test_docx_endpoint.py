@@ -114,6 +114,8 @@ def test_build_docx_adds_export_cover_and_section_intro():
     assert "문서 01 / 02" in joined
     assert "검토 초점" in joined
     assert "핵심 섹션:" in joined
+    assert "구성 지표:" in joined
+    assert " / 구성 특징:" not in joined
 
 
 # ── Integration tests for /generate/docx ─────────────────────────────────────

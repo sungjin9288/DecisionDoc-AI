@@ -84,6 +84,8 @@ def test_build_hwp_adds_export_cover_and_section_intro():
     assert "문서 01 / 02" in section_xml
     assert "검토 초점:" in section_xml
     assert "핵심 섹션:" in section_xml
+    assert "구성 지표:" in section_xml
+    assert " / 구성 특징:" not in section_xml
 
 
 def test_hwp_endpoint_returns_200(tmp_path, monkeypatch):

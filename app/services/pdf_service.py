@@ -403,7 +403,8 @@ def _render_html(
             f"<div class='kicker'>문서 {summary['index']}</div>"
             f"<h3>{_html.escape(summary['label'])}</h3>"
             f"<p>{_html.escape(summary['lead'])}</p>"
-            f"<div class='meta'>핵심 섹션: {_html.escape(summary['sections'])} / {_html.escape(summary['metrics'])}</div>"
+            f"<div class='meta'>핵심 섹션: {_html.escape(' · '.join(summary.get('section_items') or [summary['sections']]))}</div>"
+            f"<div class='meta'>구성 지표: {_html.escape(' · '.join(summary.get('metric_items') or [summary['metrics']]))}</div>"
             "</article>"
             for summary in summaries
         )
@@ -431,8 +432,8 @@ def _render_html(
                 f"<div class='section-index'>문서 {i + 1:02d} / {len(docs):02d}</div>"
                 f"<h2>{_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</h2>"
                 f"<p>{_html.escape(summary['lead'])}</p>"
-                f"<div class='meta'>검토 초점: {_html.escape(summary['sections'])}</div>"
-                f"<div class='meta'>구성 밀도: {_html.escape(summary['metrics'])}</div>"
+                f"<div class='meta'>검토 초점: {_html.escape(' · '.join(summary.get('section_items') or [summary['sections']]))}</div>"
+                f"<div class='meta'>구성 지표: {_html.escape(' · '.join(summary.get('metric_items') or [summary['metrics']]))}</div>"
                 "</section>"
             )
         parts.append(_markdown_to_html(doc.get("markdown", "")))
