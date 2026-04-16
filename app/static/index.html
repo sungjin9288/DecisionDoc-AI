@@ -8537,7 +8537,16 @@
       return;
     }
 
-    cardsEl.innerHTML = items.map((doc, index) => {
+    cardsEl.innerHTML = _renderAppliedReferenceCards(items);
+
+    if (metaEl) {
+      metaEl.textContent = `${items.length}개 reference가 이번 생성에 실제로 반영됐습니다.`;
+    }
+    panel.style.display = 'block';
+  }
+
+  function _renderAppliedReferenceCards(items) {
+    return items.map((doc, index) => {
       const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
       const badges = _renderKnowledgeMetaBadges(doc);
       const tags = _renderKnowledgeTagBadges(doc.tags);
@@ -8567,11 +8576,43 @@
         </div>
       `;
     }).join('');
+  }
 
-    if (metaEl) {
-      metaEl.textContent = `${items.length}개 reference가 이번 생성에 실제로 반영됐습니다.`;
+  function openHistoryReferenceModal(title, items) {
+    const refs = Array.isArray(items) ? items : [];
+    if (!refs.length) {
+      showNotification('참조 문서 정보가 없습니다.', 'info');
+      return;
     }
-    panel.style.display = 'block';
+
+    const existing = document.getElementById('history-reference-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'history-reference-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:9500;display:flex;align-items:center;justify-content:center;padding:1.25rem;';
+    modal.innerHTML = `
+      <div style="background:var(--card,#fff);border-radius:18px;padding:1.5rem;max-width:980px;width:min(980px, 100%);max-height:88vh;overflow:auto;box-shadow:0 24px 80px rgba(15,23,42,.28);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+          <div>
+            <div style="font-size:.75rem;color:var(--p1);font-weight:700;letter-spacing:.02em;">히스토리 참조 근거</div>
+            <div style="font-size:1.02rem;font-weight:700;color:var(--text);margin-top:.2rem;">${escapeHtml(title || '생성 이력')}</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:.3rem;">${refs.length}개 reference가 이 생성 결과에 반영됐습니다.</div>
+          </div>
+          <button id="history-reference-close" type="button" style="border:none;background:none;font-size:1.3rem;line-height:1;cursor:pointer;color:var(--muted);">✕</button>
+        </div>
+        <div class="slide-grid">
+          ${_renderAppliedReferenceCards(refs)}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.querySelector('#history-reference-close')?.addEventListener('click', close);
+    modal.addEventListener('click', event => {
+      if (event.target === modal) close();
+    });
   }
 
   function renderResultsStoryboard() {
@@ -9358,6 +9399,15 @@
             참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
           </div>
         ` : ''}
+        <div style="display:flex;gap:.35rem;margin-top:.45rem;">
+          ${Array.isArray(item.applied_references) && item.applied_references.length ? `
+            <button type="button" class="history-reference-btn"
+              style="padding:.18rem .48rem;border-radius:6px;background:var(--p-light);color:var(--p1);
+                     border:1px solid var(--p-ring);font-size:.72rem;cursor:pointer;font-weight:600;">
+              근거 보기
+            </button>
+          ` : ''}
+        </div>
       </div>
     `).join('') + `<button onclick="clearHistory()" style="width:100%;margin-top:.4rem;padding:.4rem;
       background:none;border:1.5px solid var(--border);border-radius:var(--radius-sm);
@@ -9377,6 +9427,14 @@
           const bBundle = bCard ? { id: bCard.dataset.id, name_ko: bCard.dataset.name, icon: bCard.querySelector('.card-icon')?.textContent || '' } : null;
           if (bCard && bBundle) selectBundle(bBundle, bCard);
         }
+      });
+    });
+    list.querySelectorAll('.history-reference-btn').forEach((btn, index) => {
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        const item = loadHistory()[index];
+        if (!item) return;
+        openHistoryReferenceModal(item.title, item.applied_references);
       });
     });
   }
@@ -9435,6 +9493,16 @@
                 참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
               </div>
             ` : ''}
+            ${Array.isArray(item.applied_references) && item.applied_references.length ? `
+              <div style="margin-top:.35rem;">
+                <button type="button" class="history-reference-preview"
+                  data-entry-id="${escapeHtml(item.entry_id || '')}"
+                  style="padding:.18rem .48rem;border-radius:6px;background:var(--p-light);color:var(--p1);
+                         border:1px solid var(--p-ring);font-size:.72rem;cursor:pointer;font-weight:600;">
+                  근거 보기
+                </button>
+              </div>
+            ` : ''}
           </div>
           <button onclick='toggleHistoryStar(${JSON.stringify(item.entry_id)}, this)'
             style="background:none;border:none;cursor:pointer;font-size:.95rem;padding:2px 4px;
@@ -9450,6 +9518,15 @@
             title="삭제">✕</button>
         </div>
       `).join('');
+      list.querySelectorAll('.history-reference-preview').forEach(btn => {
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
+          const entryId = btn.dataset.entryId || '';
+          const item = items.find(candidate => String(candidate.entry_id || '') === entryId);
+          if (!item) return;
+          openHistoryReferenceModal(item.title, item.applied_references);
+        });
+      });
     } catch (e) {
       list.innerHTML = `<div style="color:#ef4444;font-size:.82rem;">오류: ${escapeHtml(String(e))}</div>`;
     }
