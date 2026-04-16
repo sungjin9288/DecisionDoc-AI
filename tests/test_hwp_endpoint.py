@@ -76,9 +76,13 @@ def test_build_hwp_adds_export_cover_and_section_intro():
         section_xml = zf.read("Contents/section0.xml").decode("utf-8")
 
     assert "완성형 문서 패키지" in section_xml
+    assert "패키지 지표" in section_xml
     assert "문서 구성" in section_xml
     assert "핵심 검토 포인트" in section_xml
     assert "문서 수: 2" in section_xml
+    assert "표 수: " in section_xml
+    assert "목록 수: " in section_xml
+    assert "주요 섹션 수: " in section_xml
     assert "주요 구성:" in section_xml
     assert "사업 이해" in section_xml
     assert "문서 01 / 02" in section_xml
@@ -86,6 +90,7 @@ def test_build_hwp_adds_export_cover_and_section_intro():
     assert "핵심 섹션:" in section_xml
     assert "구성 지표:" in section_xml
     assert " / 구성 특징:" not in section_xml
+    assert " / 표 수:" not in section_xml
 
 
 def test_hwp_endpoint_returns_200(tmp_path, monkeypatch):

@@ -25,12 +25,12 @@ def _dedupe_lines(lines: list[str], limit: int) -> list[str]:
     return deduped
 
 
-def collect_docx_preview_lines(raw: bytes, *, limit: int = 12) -> list[str]:
+def collect_docx_preview_lines(raw: bytes, *, limit: int = 16) -> list[str]:
     document = Document(BytesIO(raw))
     return _dedupe_lines([paragraph.text for paragraph in document.paragraphs], limit)
 
 
-def collect_pptx_preview_lines(raw: bytes, *, limit: int = 12) -> list[str]:
+def collect_pptx_preview_lines(raw: bytes, *, limit: int = 16) -> list[str]:
     presentation = Presentation(BytesIO(raw))
     lines: list[str] = []
     for idx, slide in enumerate(presentation.slides, start=1):
@@ -53,7 +53,7 @@ def collect_pptx_preview_lines(raw: bytes, *, limit: int = 12) -> list[str]:
     return _dedupe_lines(lines, limit)
 
 
-def collect_hwpx_preview_lines(raw: bytes, *, limit: int = 12) -> list[str]:
+def collect_hwpx_preview_lines(raw: bytes, *, limit: int = 16) -> list[str]:
     with zipfile.ZipFile(BytesIO(raw), "r") as archive:
         xml = archive.read("Contents/section0.xml").decode("utf-8", errors="ignore")
     texts = re.findall(r"<hh:t>(.*?)</hh:t>", xml, flags=re.DOTALL)
@@ -61,7 +61,7 @@ def collect_hwpx_preview_lines(raw: bytes, *, limit: int = 12) -> list[str]:
     return _dedupe_lines(cleaned, limit)
 
 
-def preview_export_bytes(export_format: str, raw: bytes, *, limit: int = 12) -> list[str]:
+def preview_export_bytes(export_format: str, raw: bytes, *, limit: int = 16) -> list[str]:
     if export_format == "docx":
         return collect_docx_preview_lines(raw, limit=limit)
     if export_format == "pptx":

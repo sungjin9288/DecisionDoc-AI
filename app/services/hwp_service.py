@@ -207,12 +207,11 @@ def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
         _para_xml(title, "제목1"),
         _para_xml("완성형 문서 패키지", "제목2"),
         _para_xml(f"총 {len(docs)}개 문서를 하나의 제출 패키지로 정리했습니다.", "본문"),
-        _para_xml(
-            "문서 수: {doc_count} / 표 수: {table_total} / 목록 수: {bullet_total} / 주요 섹션 수: {heading_total}".format(
-                **package
-            ),
-            "본문",
-        ),
+        _para_xml("패키지 지표", "제목3"),
+        _para_xml(f"문서 수: {package['doc_count']}", "본문"),
+        _para_xml(f"표 수: {package['table_total']}", "본문"),
+        _para_xml(f"목록 수: {package['bullet_total']}", "본문"),
+        _para_xml(f"주요 섹션 수: {package['heading_total']}", "본문"),
         _para_xml(f"주요 구성: {package['headline']}", "본문"),
         _para_xml(""),
         _para_xml("문서 구성", "제목3"),
