@@ -116,11 +116,17 @@ def test_root_html_includes_ai_rank_roster(client):
     assert 'id="results-ppt-guide"' in res.text
     assert 'id="results-ppt-guide-meta"' in res.text
     assert 'id="results-ppt-guide-cards"' in res.text
+    assert 'id="results-reference-guide"' in res.text
+    assert 'id="results-reference-guide-meta"' in res.text
+    assert 'id="results-reference-guide-cards"' in res.text
     assert "PPT 페이지 설계" in res.text
+    assert "이번 생성에 반영된 우선 참조" in res.text
     assert "slide_outline" in res.text
     assert "renderResultsPptGuide" in res.text
+    assert "renderResultsAppliedReferences" in res.text
     assert "권장 시각자료" in res.text
     assert "시각자료 배치" in res.text
+    assert "applied_references" in res.text
     assert "slide-card is-clickable" in res.text
     assert "slide-card-badges" in res.text
     assert "slide-card-badge kind" in res.text

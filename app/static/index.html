@@ -5013,6 +5013,16 @@
       <div id="results-ppt-guide-cards" class="slide-card-row"></div>
     </div>
 
+    <div id="results-reference-guide" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.55rem;">
+        <div>
+          <div style="font-size:.8rem;font-weight:800;color:var(--ok, #0f766e);">🧠 이번 생성에 반영된 우선 참조</div>
+          <div id="results-reference-guide-meta" style="font-size:.76rem;color:var(--muted);">현재 생성에 실제로 반영된 ranked reference를 보여줍니다.</div>
+        </div>
+      </div>
+      <div id="results-reference-guide-cards" class="slide-card-row"></div>
+    </div>
+
     <!-- 일괄 다운로드 버튼 -->
     <div id="download-buttons" style="display:none"></div>
 
@@ -8504,6 +8514,56 @@
     panel.style.display = 'block';
   }
 
+  function renderResultsAppliedReferences() {
+    const panel = $id('results-reference-guide');
+    const cardsEl = $id('results-reference-guide-cards');
+    const metaEl = $id('results-reference-guide-meta');
+    if (!panel || !cardsEl) return;
+
+    const items = Array.isArray(lastMeta?.applied_references) ? lastMeta.applied_references : [];
+    if (!items.length) {
+      panel.style.display = 'none';
+      cardsEl.innerHTML = '';
+      return;
+    }
+
+    cardsEl.innerHTML = items.map((doc, index) => {
+      const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
+      const badges = _renderKnowledgeMetaBadges(doc);
+      const tags = _renderKnowledgeTagBadges(doc.tags);
+      const metaBits = [
+        doc.source_organization ? escapeHtml(doc.source_organization) : '',
+        doc.reference_year ? escapeHtml(String(doc.reference_year)) : '',
+        typeof doc.score === 'number' ? `score ${escapeHtml(String(doc.score))}` : '',
+      ].filter(Boolean);
+      return `
+        <div class="slide-card">
+          <div class="slide-page-num">reference ${index + 1}</div>
+          <div class="slide-title">${escapeHtml(doc.filename || doc.doc_id || 'reference document')}</div>
+          <div class="slide-card-badges">${badges}${tags ? ` ${tags}` : ''}</div>
+          ${metaBits.length ? `<div class="slide-content">${metaBits.join(' · ')}</div>` : ''}
+          ${doc.selection_reason ? `
+            <div class="slide-guide-section">
+              <span class="slide-guide-label">선정 이유</span>
+              <div class="slide-guide-text">${escapeHtml(doc.selection_reason)}</div>
+            </div>
+          ` : ''}
+          ${breakdown ? `
+            <div class="slide-guide-section">
+              <span class="slide-guide-label">점수 구성</span>
+              <div class="slide-guide-text">${escapeHtml(breakdown)}</div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    if (metaEl) {
+      metaEl.textContent = `${items.length}개 reference가 이번 생성에 실제로 반영됐습니다.`;
+    }
+    panel.style.display = 'block';
+  }
+
   function renderResultsStoryboard() {
     const panel = $id('results-storyboard');
     const cardsEl = $id('results-storyboard-cards');
@@ -8765,6 +8825,7 @@
 
     renderResultsStoryboard();
     renderResultsPptGuide();
+    renderResultsAppliedReferences();
 
     const compareBtn = $id('compare-btn');
     if (compareBtn) compareBtn.style.display = '';

@@ -314,6 +314,14 @@ def test_generate_injects_ranked_knowledge_context(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 200
+    body = response.json()
+    assert "applied_references" in body
+    assert len(body["applied_references"]) >= 1
+    top_ref = body["applied_references"][0]
+    assert top_ref["filename"] == "winning-proposal.docx"
+    assert top_ref["selection_reason"]
+    assert top_ref["bundle_match"] is True
+    assert isinstance(top_ref["score_breakdown"], list)
     injected = str(captured["requirements"])
     assert "_knowledge_context" in injected
     assert "winning-proposal.docx" in injected

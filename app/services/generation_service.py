@@ -1043,6 +1043,7 @@ class GenerationService:
                 "llm_prompt_tokens": (usage_tokens or {}).get("prompt_tokens"),
                 "llm_output_tokens": (usage_tokens or {}).get("output_tokens"),
                 "llm_total_tokens": (usage_tokens or {}).get("total_tokens"),
+                "applied_references": payload.get("_knowledge_ranked_documents", [])[:3],
             },
         }
 
@@ -1195,6 +1196,32 @@ class GenerationService:
         import dataclasses
         return dataclasses.replace(bundle_spec, prompt_hint=variant_prompt)
 
+    def _serialize_applied_reference(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "doc_id": str(item.get("doc_id", "") or ""),
+            "filename": str(item.get("filename", "") or ""),
+            "learning_mode": str(item.get("learning_mode", "") or "reference"),
+            "quality_tier": str(item.get("quality_tier", "") or "working"),
+            "success_state": str(item.get("success_state", "") or "draft"),
+            "applicable_bundles": [
+                str(bundle).strip()
+                for bundle in (item.get("applicable_bundles") or [])
+                if str(bundle).strip()
+            ],
+            "source_organization": str(item.get("source_organization", "") or ""),
+            "reference_year": item.get("reference_year"),
+            "tags": [
+                str(tag).strip()
+                for tag in (item.get("tags") or [])
+                if str(tag).strip()
+            ],
+            "score": int(item.get("score", 0) or 0),
+            "query_overlap": int(item.get("query_overlap", 0) or 0),
+            "bundle_match": bool(item.get("bundle_match")),
+            "selection_reason": str(item.get("selection_reason", "") or ""),
+            "score_breakdown": list(item.get("score_breakdown") or []),
+        }
+
     def _inject_project_contexts(
         self,
         payload: dict[str, Any],
@@ -1211,12 +1238,22 @@ class GenerationService:
             from app.storage.knowledge_store import KnowledgeStore
 
             ks = KnowledgeStore(project_id)
+            ranked_documents = ks.rank_documents_for_context(
+                bundle_type=bundle_type,
+                title=str(payload.get("title", "") or ""),
+                goal=str(payload.get("goal", "") or ""),
+            )
             knowledge_ctx = ks.build_context(
                 bundle_type=bundle_type,
                 title=str(payload.get("title", "") or ""),
                 goal=str(payload.get("goal", "") or ""),
             )
             style_ctx = ks.build_style_context()
+            if ranked_documents:
+                payload["_knowledge_ranked_documents"] = [
+                    self._serialize_applied_reference(item)
+                    for item in ranked_documents[:5]
+                ]
             if knowledge_ctx:
                 payload["_knowledge_context"] = knowledge_ctx
                 _log.info(

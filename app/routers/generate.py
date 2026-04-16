@@ -675,6 +675,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         schema_version=metadata["schema_version"],
         cache_hit=metadata["cache_hit"],
         llm_total_tokens=metadata.get("llm_total_tokens"),
+        applied_references=metadata.get("applied_references", []),
         docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )
 
@@ -1060,6 +1061,7 @@ async def generate_stream(
                     schema_version=metadata["schema_version"],
                     cache_hit=metadata["cache_hit"],
                     llm_total_tokens=metadata.get("llm_total_tokens"),
+                    applied_references=metadata.get("applied_references", []),
                     docs=result["docs"],
                 )
                 yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"

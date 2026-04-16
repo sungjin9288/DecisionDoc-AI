@@ -93,6 +93,7 @@ class GenerateResponse(BaseModel):
     schema_version: str
     cache_hit: bool | None = None
     llm_total_tokens: int | None = None
+    applied_references: list[dict[str, Any]] = Field(default_factory=list)
     docs: list[GeneratedDoc]
 
 
