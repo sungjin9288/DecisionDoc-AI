@@ -6354,6 +6354,22 @@
       .join(' ');
   }
 
+  function _formatKnowledgeScoreBreakdown(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    return items
+      .slice(0, 4)
+      .map(item => {
+        const label = String(item?.label || '').trim();
+        const detail = String(item?.detail || '').trim();
+        const score = Number(item?.score || 0);
+        const scoreText = Number.isFinite(score) ? `${score >= 0 ? '+' : ''}${score}` : '0';
+        const detailText = detail ? ` (${detail})` : '';
+        return `${label} ${scoreText}${detailText}`.trim();
+      })
+      .filter(Boolean)
+      .join(' · ');
+  }
+
   function _getPromotionProjectId() {
     return String(lastRequestPayload?.project_id || '').trim();
   }
@@ -6655,7 +6671,11 @@
             ];
             if (doc.source_organization) bits.push(doc.source_organization);
             if (doc.reference_year) bits.push(String(doc.reference_year));
-            return bits.join(' · ');
+            const lines = [bits.join(' · ')];
+            if (doc.selection_reason) lines.push(`   - 선정 이유: ${doc.selection_reason}`);
+            const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
+            if (breakdown) lines.push(`   - 점수 구성: ${breakdown}`);
+            return lines.join('\n');
           }).join('\n')
         );
       }

@@ -171,6 +171,8 @@ class TestKnowledgeStore:
         assert ranked[0]["doc_id"] == targeted.doc_id
         assert ranked[0]["bundle_match"] is True
         assert ranked[0]["learning_mode"] == "approved_output"
+        assert "bundle `proposal_kr` 일치" in ranked[0]["selection_reason"]
+        assert any(item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"])
         assert ranked[1]["doc_id"] == generic.doc_id
 
         ctx = store.build_context(
@@ -349,6 +351,8 @@ class TestKnowledgeAPI:
         assert body["bundle_type"] == "proposal_kr"
         assert body["ranked_documents"][0]["bundle_match"] is True
         assert body["ranked_documents"][0]["quality_tier"] == "gold"
+        assert "selection_reason" in body["ranked_documents"][0]
+        assert body["ranked_documents"][0]["score_breakdown"]
 
     def test_update_document_metadata(self, client, tmp_path):
         upload = client.post(

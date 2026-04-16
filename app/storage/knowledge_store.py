@@ -40,6 +40,11 @@ _LEARNING_MODE_LABELS = {
     "policy": "가이드/기준",
     "template": "우수 템플릿",
 }
+_QUALITY_TIER_LABELS = {
+    "working": "working",
+    "silver": "silver",
+    "gold": "gold",
+}
 _LEARNING_MODE_WEIGHTS = {
     "reference": 120,
     "approved_output": 360,
@@ -57,6 +62,12 @@ _REFERENCE_SUCCESS_WEIGHTS = {
     "reference": 20,
     "approved": 90,
     "awarded": 120,
+}
+_REFERENCE_SUCCESS_LABELS = {
+    "draft": "초안",
+    "reference": "참고",
+    "approved": "승인",
+    "awarded": "수주",
 }
 
 
@@ -114,6 +125,99 @@ def _tokenize_reference_text(*values: str) -> set[str]:
             continue
         tokens.update(re.findall(r"[0-9a-zA-Z가-힣]{2,}", text))
     return tokens
+
+
+def _format_reference_ranking_reason(
+    *,
+    bundle_type: str | None,
+    bundle_match: bool,
+    applicable_bundles: list[str],
+    success_state: str,
+    quality_tier: str,
+    overlap: int,
+) -> str:
+    reasons: list[str] = []
+    if bundle_match and bundle_type:
+        reasons.append(f"bundle `{bundle_type}` 일치")
+    elif bundle_type and applicable_bundles:
+        reasons.append(f"적용 bundle {', '.join(applicable_bundles[:2])}")
+    if success_state in ("approved", "awarded"):
+        reasons.append(f"{_REFERENCE_SUCCESS_LABELS[success_state]} 결과물")
+    if quality_tier in ("gold", "silver"):
+        reasons.append(f"{_QUALITY_TIER_LABELS[quality_tier]} 등급")
+    if overlap > 0:
+        reasons.append(f"핵심어 {overlap}개 겹침")
+    if not reasons:
+        reasons.append("기본 참고문서 조건 충족")
+    return " · ".join(reasons)
+
+
+def _build_reference_score_breakdown(
+    *,
+    learning_mode: str,
+    quality_tier: str,
+    success_state: str,
+    overlap: int,
+    bundle_type: str | None,
+    bundle_match: bool,
+    applicable_bundles: list[str],
+    tag_count: int,
+) -> list[dict[str, Any]]:
+    breakdown: list[dict[str, Any]] = [
+        {
+            "label": "학습 분류",
+            "detail": _LEARNING_MODE_LABELS[learning_mode],
+            "score": _LEARNING_MODE_WEIGHTS[learning_mode],
+        },
+        {
+            "label": "품질 등급",
+            "detail": _QUALITY_TIER_LABELS[quality_tier],
+            "score": _QUALITY_TIER_WEIGHTS[quality_tier],
+        },
+    ]
+    success_score = _REFERENCE_SUCCESS_WEIGHTS[success_state]
+    if success_score:
+        breakdown.append(
+            {
+                "label": "활용 상태",
+                "detail": _REFERENCE_SUCCESS_LABELS[success_state],
+                "score": success_score,
+            }
+        )
+    if overlap:
+        breakdown.append(
+            {
+                "label": "핵심어 겹침",
+                "detail": f"{overlap}개",
+                "score": overlap * 28,
+            }
+        )
+    if bundle_match and bundle_type:
+        breakdown.append(
+            {
+                "label": "bundle 일치",
+                "detail": bundle_type,
+                "score": 140,
+            }
+        )
+    elif bundle_type and applicable_bundles:
+        breakdown.append(
+            {
+                "label": "bundle 보정",
+                "detail": ", ".join(applicable_bundles[:2]),
+                "score": -20,
+            }
+        )
+    tag_bonus = min(tag_count, 4) * 4
+    if tag_bonus:
+        breakdown.append(
+            {
+                "label": "태그 밀도",
+                "detail": f"{min(tag_count, 4)}개 반영",
+                "score": tag_bonus,
+            }
+        )
+    return breakdown
 
 
 class KnowledgeEntry:
@@ -319,9 +423,10 @@ class KnowledgeStore:
         query_tokens = _tokenize_reference_text(title, goal, bundle_type or "")
         ranked: list[dict[str, Any]] = []
         for meta in self._load_index():
+            tags = _normalize_list(meta.get("tags"))
             doc_tokens = _tokenize_reference_text(
                 meta.get("filename", ""),
-                " ".join(meta.get("tags", []) or []),
+                " ".join(tags),
                 " ".join(meta.get("applicable_bundles", []) or []),
                 meta.get("source_organization", ""),
                 meta.get("notes", ""),
@@ -332,18 +437,30 @@ class KnowledgeStore:
             success_state = _normalize_success_state(meta.get("success_state"))
             applicable_bundles = _normalize_list(meta.get("applicable_bundles"))
             bundle_match = bool(bundle_type) and bundle_type in applicable_bundles
+            tag_bonus = min(len(tags), 4) * 4
             score = (
                 _LEARNING_MODE_WEIGHTS[learning_mode]
                 + _QUALITY_TIER_WEIGHTS[quality_tier]
                 + _REFERENCE_SUCCESS_WEIGHTS[success_state]
                 + overlap * 28
                 + (140 if bundle_match else 0)
-                + min(len(meta.get("tags", []) or []), 4) * 4
+                + tag_bonus
             )
             if bundle_type and applicable_bundles and not bundle_match:
                 score -= 20
+            score_breakdown = _build_reference_score_breakdown(
+                learning_mode=learning_mode,
+                quality_tier=quality_tier,
+                success_state=success_state,
+                overlap=overlap,
+                bundle_type=bundle_type,
+                bundle_match=bundle_match,
+                applicable_bundles=applicable_bundles,
+                tag_count=len(tags),
+            )
             ranked.append({
                 **meta,
+                "tags": tags,
                 "learning_mode": learning_mode,
                 "quality_tier": quality_tier,
                 "success_state": success_state,
@@ -352,6 +469,15 @@ class KnowledgeStore:
                 "query_overlap": overlap,
                 "bundle_match": bundle_match,
                 "learning_mode_label": _LEARNING_MODE_LABELS[learning_mode],
+                "selection_reason": _format_reference_ranking_reason(
+                    bundle_type=bundle_type,
+                    bundle_match=bundle_match,
+                    applicable_bundles=applicable_bundles,
+                    success_state=success_state,
+                    quality_tier=quality_tier,
+                    overlap=overlap,
+                ),
+                "score_breakdown": score_breakdown,
             })
         ranked.sort(
             key=lambda item: (item.get("score", 0), item.get("created_at", 0)),
