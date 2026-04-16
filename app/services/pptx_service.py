@@ -37,7 +37,9 @@ def _chunk_lines(lines: list[str], size: int = _MAX_SLIDE_LINES) -> list[list[st
         cleaned.extend(_expand_slide_line(raw))
     if not cleaned:
         return []
-    return [cleaned[idx: idx + size] for idx in range(0, len(cleaned), size)]
+    chunk_count = max(1, (len(cleaned) + size - 1) // size)
+    balanced_size = max(1, (len(cleaned) + chunk_count - 1) // chunk_count)
+    return [cleaned[idx: idx + balanced_size] for idx in range(0, len(cleaned), balanced_size)]
 
 
 def _expand_slide_line(text: str, max_len: int = 78) -> list[str]:
@@ -581,7 +583,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
                     for idx in range(0, len(rows), _MAX_TABLE_ROWS):
                         chunk = rows[idx: idx + _MAX_TABLE_ROWS]
                         table_title = current_title if idx == 0 else f"{current_title} ({idx // _MAX_TABLE_ROWS + 1})"
-                        _render_table_slide(prs, table_title, headers, chunk, subtitle=fallback_title)
+                        _render_table_slide(prs, table_title, headers, chunk)
                 else:
                     current_lines.extend(_table_block_lines(block))
             elif block_type == "hr":

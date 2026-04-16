@@ -3,6 +3,8 @@ from io import BytesIO
 
 from fastapi.testclient import TestClient
 
+from app.services.pptx_service import _chunk_lines
+
 _PPTX_MAGIC = b"PK\x03\x04"  # ZIP/OOXML magic bytes — all .pptx files start with this
 
 
@@ -149,3 +151,17 @@ def test_pptx_summary_slide_prefers_short_presentation_lead(tmp_path, monkeypatc
     assert "구성 지표:" in summary_text
     assert " / 핵심 섹션:" not in summary_text
     assert "하나의 사업 범위로 묶은 안입니다. 사업 배경과 현황 문제를 정책 목표와 연결해 설명하고" not in summary_text
+
+
+def test_chunk_lines_rebalances_small_tail():
+    chunks = _chunk_lines(
+        [
+            "하나",
+            "둘",
+            "셋",
+            "넷",
+            "다섯",
+            "여섯",
+        ]
+    )
+    assert [len(chunk) for chunk in chunks] == [3, 3]
