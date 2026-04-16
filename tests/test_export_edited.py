@@ -196,6 +196,40 @@ def test_export_edited_pptx_skips_ppt_guide_sections(tmp_path, monkeypatch):
     assert not any("PPT 구성 가이드" in title for title in titles)
 
 
+def test_export_edited_pptx_table_slides_include_document_context_subtitle(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    docs = [
+        {
+            "doc_type": "proposal_kr",
+            "markdown": (
+                "# 사업 이해\n\n"
+                "## 제안 요약\n\n"
+                "본 제안은 핵심 정책 목표를 공공기관이 실제 운영 KPI로 관리할 수 있도록 데이터 통합 · AI 분석 운영 대시보드를 하나의 사업 범위로 묶은 안입니다.\n\n"
+                "## 사업 목표\n\n"
+                "| 목표 | KPI | 기준 |\n"
+                "| --- | --- | --- |\n"
+                "| 처리시간 단축 | 30% | 운영 |\n"
+                "| 정확도 향상 | 20% | 품질 |\n"
+            ),
+        }
+    ]
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "문서형 PPT",
+        "docs": docs,
+    })
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    target_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "사업 목표"
+    )
+    texts = [shape.text for shape in target_slide.shapes if hasattr(shape, "text") and shape.text]
+    assert len(texts) >= 2
+    assert any("핵심 정책 목표" in text for text in texts[1:])
+
+
 # ── edge-cases & validation ─────────────────────────────────────────────────
 
 def test_export_edited_unsupported_format_returns_400(tmp_path, monkeypatch):

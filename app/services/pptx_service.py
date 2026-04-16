@@ -569,6 +569,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
         current_lines: list[str] = []
         current_doc_heading = fallback_title
         skip_current_section = False
+        table_subtitle = _clean_slide_text(summary.get("ppt_lead") or summary["lead"])
 
         def flush_section() -> None:
             nonlocal current_lines
@@ -630,7 +631,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
                     for idx in range(0, len(rows), _MAX_TABLE_ROWS):
                         chunk = rows[idx: idx + _MAX_TABLE_ROWS]
                         table_title = current_title if idx == 0 else f"{current_title} ({idx // _MAX_TABLE_ROWS + 1})"
-                        _render_table_slide(prs, table_title, headers, chunk)
+                        _render_table_slide(prs, table_title, headers, chunk, subtitle=table_subtitle)
                 else:
                     current_lines.extend(_table_block_lines(block))
             elif block_type == "hr":
