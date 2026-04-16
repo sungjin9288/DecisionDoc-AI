@@ -218,6 +218,21 @@ None — initiative complete
   - added parser tests for normalized procurement context round-tripping
   - added generation-service tests covering slide metadata backfill and fallback outline synthesis
 
+### 2026-04-16 — Procurement page classifier now prioritizes schedule/process/governance signals over broad evaluation keywords
+
+- Background:
+  - Real kickoff/evaluation PDFs often repeat broad words such as `평가` and `경영평가` on every page.
+  - That caused schedule and process pages to be misclassified as `평가기준/지표`, which in turn dropped `일정 및 마일스톤` candidates and let generic provider visuals survive.
+- What changed:
+  - reordered procurement page classification so `일정`, `로드맵`, `마일스톤`, `절차`, `프로세스`, `조직`, `거버넌스` signals win before broad evaluation keywords
+  - updated slide-outline repair logic so procurement hints can override generic provider visuals when the matched procurement page is strong enough
+- Impact:
+  - schedule pages now generate `타임라인` guidance and `일정 및 마일스톤` candidate slides more reliably
+  - evaluation/criteria pages keep `평가기준 표` guidance even when the provider initially emits a generic comparison layout
+- Validation:
+  - added classifier regression coverage for real-world `경영평가추진일정` headings
+  - extended slide-outline repair tests so procurement hints override already-filled generic visual metadata
+
 ### 2026-04-16 — Document-ingestion path now reuses procurement summary blocks during slide_outline repair
 
 - Background:

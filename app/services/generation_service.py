@@ -561,6 +561,7 @@ def _merge_slide_outline_with_hint(
     hint: dict[str, Any] | None,
     fallback_page: int,
     replace_title: bool = False,
+    prefer_hint_fields: bool = False,
 ) -> dict[str, Any]:
     merged = {
         "page": int(item.get("page") or fallback_page),
@@ -606,15 +607,15 @@ def _merge_slide_outline_with_hint(
     procurement_evidence = f"참고 페이지: {page}p [{label or '일반 본문'}] {detail}".strip()
     if procurement_evidence not in merged["evidence_points"]:
         merged["evidence_points"] = [*merged["evidence_points"][:3], procurement_evidence]
-    if not merged["visual_type"]:
+    if prefer_hint_fields or not merged["visual_type"]:
         merged["visual_type"] = visual_type
-    if not merged["layout_hint"]:
+    if prefer_hint_fields or not merged["layout_hint"]:
         merged["layout_hint"] = layout_hint
-    if not merged["visual_brief"]:
+    if prefer_hint_fields or not merged["visual_brief"]:
         merged["visual_brief"] = (
             f"참고 PDF {page}p '{detail}'를 근거로 {visual_type or '요약 카드'} 중심 시각자료를 구성합니다."
         )
-    if not merged["design_tip"]:
+    if prefer_hint_fields or not merged["design_tip"]:
         merged["design_tip"] = (
             f"조달 근거 페이지 {page}의 구조를 재사용하고, {candidate_label or label or '핵심 근거'}를 한 장에서 바로 읽히게 정리하세요."
         )
@@ -645,6 +646,7 @@ def _synthesize_procurement_slides(hints: list[dict[str, Any]], *, limit: int = 
                 hint=hint,
                 fallback_page=idx,
                 replace_title=True,
+                prefer_hint_fields=True,
             )
         )
     for idx, slide in enumerate(synthesized, start=1):
@@ -725,11 +727,13 @@ def _apply_procurement_slide_outline_guidance(
                 or title_needs_detail
                 or bool(best_hint and detail_key and detail_key not in title_key and best_score <= 5)
             )
+            prefer_hint_fields = bool(best_hint and (replace_title or best_score <= 5))
             merged = _merge_slide_outline_with_hint(
                 item,
                 hint=best_hint,
                 fallback_page=idx,
                 replace_title=replace_title,
+                prefer_hint_fields=prefer_hint_fields,
             )
             hint_page = merged.get("_procurement_hint_page")
             if isinstance(hint_page, int):

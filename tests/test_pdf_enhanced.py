@@ -264,10 +264,10 @@ def test_procurement_slide_outline_guidance_backfills_visual_and_evidence():
                     "key_content": "발주처 평가 포인트와 대응 근거를 정리한다.",
                     "core_message": "",
                     "evidence_points": [],
-                    "visual_type": "",
-                    "visual_brief": "",
-                    "layout_hint": "",
-                    "design_tip": "",
+                    "visual_type": "비교표",
+                    "visual_brief": "일반 비교 자료",
+                    "layout_hint": "좌우 비교 레이아웃",
+                    "design_tip": "일반 비교 도식",
                 }
             ],
         }

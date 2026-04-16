@@ -227,6 +227,12 @@ def _classify_page(page: dict[str, Any]) -> str:
     headings = " ".join(page.get("headings", []) or [])
     preview = _normalize_text(page.get("preview", ""))
     haystack = f"{headings} {preview}"
+    if any(keyword in haystack for keyword in ("일정", "로드맵", "마일스톤", "시기")):
+        return "일정/마일스톤"
+    if any(keyword in haystack for keyword in ("절차", "방법", "프로세스")):
+        return "추진절차/방법"
+    if any(keyword in haystack for keyword in ("조직", "인력", "거버넌스", "보고", "운영체계", "수행체계")):
+        return "조직/거버넌스"
     if any(keyword in haystack for keyword in ("개요", "배경", "목적", "필요성", "착수보고")):
         return "개요/배경"
     if any(keyword in haystack for keyword in ("평가", "심사", "기준", "지표", "편람")):

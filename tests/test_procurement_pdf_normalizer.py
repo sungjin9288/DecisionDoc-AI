@@ -119,6 +119,32 @@ def test_build_procurement_pdf_context_uses_page_classifier_for_ppt_candidates()
     assert "일정 및 마일스톤 — 4p [일정/마일스톤] 세부 추진 일정" in context
 
 
+def test_build_procurement_pdf_context_prefers_schedule_label_over_broad_evaluation_keywords():
+    structured = {
+        "title": "공공기관 경영평가 착수보고",
+        "page_count": 8,
+        "has_tables": False,
+        "raw_text": "경영평가 추진 일정",
+        "pages": [
+            {
+                "page": 7,
+                "headings": ["파주시공공기관(장) 경영평가추진일정"],
+                "preview": "경영평가 추진 일정과 완료 시기를 정리한다",
+                "has_tables": False,
+            }
+        ],
+        "sections": [
+            {"heading": "파주시공공기관(장) 경영평가추진일정", "content": "착수, 중간, 완료 일정을 제시한다."},
+        ],
+    }
+
+    context = build_procurement_pdf_context(structured, "kickoff.pdf")
+
+    assert "- 7p [일정/마일스톤] 파주시공공기관(장) 경영평가추진일정" in context
+    assert "7p 파주시공공기관(장) 경영평가추진일정 | 권장 시각자료: 타임라인" in context
+    assert "일정 및 마일스톤 — 7p [일정/마일스톤] 파주시공공기관(장) 경영평가추진일정" in context
+
+
 def test_parse_procurement_pdf_context_returns_design_hints_and_candidates():
     context = (
         "=== 공공조달 PDF 정규화 요약 ===\n"
