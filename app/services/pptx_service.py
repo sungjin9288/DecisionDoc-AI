@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-import re
 from typing import Any
 
 from pptx import Presentation
@@ -11,7 +10,7 @@ from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
-from app.services.export_outline import summarize_export_docs
+from app.services.export_outline import presentation_points, summarize_export_docs
 from app.services.export_labels import humanize_doc_type
 from app.services.markdown_utils import parse_markdown_blocks
 
@@ -45,32 +44,27 @@ def _expand_slide_line(text: str, max_len: int = 78) -> list[str]:
     cleaned = _clean_slide_text(text)
     if not cleaned:
         return []
+    points = presentation_points(cleaned, max_len=max_len, max_points=6)
+    if points:
+        return points
     if len(cleaned) <= max_len:
         return [cleaned]
 
-    parts = [
-        part.strip()
-        for part in re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+| · | / ", cleaned)
-        if part.strip()
-    ]
-    if len(parts) <= 1:
-        parts = [part.strip() for part in re.split(r", | 및 | 그리고 ", cleaned) if part.strip()]
-    if len(parts) <= 1:
-        words = cleaned.split()
-        parts = []
-        current: list[str] = []
-        current_len = 0
-        for word in words:
-            next_len = current_len + len(word) + (1 if current else 0)
-            if current and next_len > max_len:
-                parts.append(" ".join(current))
-                current = [word]
-                current_len = len(word)
-            else:
-                current.append(word)
-                current_len = next_len
-        if current:
+    words = cleaned.split()
+    parts = []
+    current: list[str] = []
+    current_len = 0
+    for word in words:
+        next_len = current_len + len(word) + (1 if current else 0)
+        if current and next_len > max_len:
             parts.append(" ".join(current))
+            current = [word]
+            current_len = len(word)
+        else:
+            current.append(word)
+            current_len = next_len
+    if current:
+        parts.append(" ".join(current))
     normalized = [_clean_slide_text(part) for part in parts if _clean_slide_text(part)]
     return normalized[:6]
 

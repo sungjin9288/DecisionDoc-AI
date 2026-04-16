@@ -19,13 +19,36 @@ def _truncate(text: str, limit: int = 120) -> str:
     return compact[: limit - 1].rstrip() + "…"
 
 
-def _ppt_lead(text: str, limit: int = 84) -> str:
+def presentation_points(text: str, *, max_len: int = 78, max_points: int = 4) -> list[str]:
     compact = _clean_text(text)
     if not compact:
-        return ""
-    sentence_parts = re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+", compact)
-    candidate = next((part.strip() for part in sentence_parts if part.strip()), compact)
-    return _truncate(candidate, limit)
+        return []
+
+    points: list[str] = []
+    sentence_parts = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+", compact)
+        if part.strip()
+    ]
+    for sentence in sentence_parts:
+        if len(sentence) <= max_len:
+            points.append(sentence)
+            continue
+        clause_parts = [
+            part.strip()
+            for part in re.split(r", | 및 | 그리고 | 또는 | / ", sentence)
+            if part.strip()
+        ]
+        if len(clause_parts) > 1:
+            points.extend(_truncate(part, max_len) for part in clause_parts)
+            continue
+        points.append(_truncate(sentence, max_len))
+    return points[:max_points]
+
+
+def _ppt_lead(text: str, limit: int = 84) -> str:
+    points = presentation_points(text, max_len=limit, max_points=1)
+    return points[0] if points else ""
 
 
 def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
