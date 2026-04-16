@@ -101,16 +101,22 @@ def test_history_store_mark_promoted_updates_matching_request(tmp_path, monkeypa
         quality_tier="gold",
         success_state="approved",
         promoted_at="2026-04-16T12:00:00+00:00",
+        knowledge_documents=[
+            {"doc_id": "kdoc-1", "doc_type": "business_understanding", "filename": "승인본-사업이해.md"},
+            {"doc_id": "kdoc-2", "doc_type": "execution_plan", "filename": "승인본-수행계획.md"},
+        ],
         user_id="u1",
     )
 
     assert updated == 1
-    item = store.get_for_user("u1")[0]
+    item = store.get_entry(entry.entry_id, "u1")
+    assert item is not None
     assert item["knowledge_promoted"] is True
     assert item["knowledge_project_id"] == "proj-123"
     assert item["knowledge_document_count"] == 2
     assert item["knowledge_quality_tier"] == "gold"
     assert item["knowledge_success_state"] == "approved"
+    assert item["knowledge_documents"][0]["doc_id"] == "kdoc-1"
 
 
 def test_history_store_cap_at_50(tmp_path, monkeypatch):

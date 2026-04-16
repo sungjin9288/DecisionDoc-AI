@@ -40,6 +40,7 @@ class HistoryEntry:
     knowledge_document_count: int = 0
     knowledge_quality_tier: str = ""
     knowledge_success_state: str = ""
+    knowledge_documents: list[dict] | None = None
 
 
 class HistoryStore:
@@ -115,6 +116,7 @@ class HistoryStore:
                 "knowledge_document_count": int(entry.knowledge_document_count or 0),
                 "knowledge_quality_tier": entry.knowledge_quality_tier or "",
                 "knowledge_success_state": entry.knowledge_success_state or "",
+                "knowledge_documents": entry.knowledge_documents or [],
             })
             # Cap per-user entries
             user_entries = [e for e in entries if e.get("user_id") == entry.user_id]
@@ -170,6 +172,7 @@ class HistoryStore:
         quality_tier: str,
         success_state: str,
         promoted_at: str,
+        knowledge_documents: list[dict] | None = None,
         user_id: str | None = None,
     ) -> int:
         """Mark matching history entries as promoted to the knowledge library.
@@ -192,6 +195,17 @@ class HistoryStore:
                 entry["knowledge_document_count"] = int(document_count or 0)
                 entry["knowledge_quality_tier"] = str(quality_tier or "")
                 entry["knowledge_success_state"] = str(success_state or "")
+                entry["knowledge_documents"] = [
+                    {
+                        "doc_id": str(doc.get("doc_id") or "").strip(),
+                        "doc_type": str(doc.get("doc_type") or "").strip(),
+                        "filename": str(doc.get("filename") or "").strip(),
+                        "quality_tier": str(doc.get("quality_tier") or "").strip(),
+                        "success_state": str(doc.get("success_state") or "").strip(),
+                    }
+                    for doc in (knowledge_documents or [])
+                    if isinstance(doc, dict) and str(doc.get("doc_id") or "").strip()
+                ]
                 updated += 1
             if updated:
                 self._save(entries)

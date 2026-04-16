@@ -4974,6 +4974,7 @@
         <button class="action-btn" id="sketch-again-btn" title="현재 입력 기준으로 페이지 구성 스케치를 다시 봅니다">🗂️ 페이지 스케치</button>
         <button class="action-btn" id="ppt-doc-btn" title="현재 입력을 발표 자료 번들로 다시 구성합니다">📊 PPT 문서로 재구성</button>
         <button class="action-btn" id="knowledge-promote-btn" title="현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다" style="display:none">🧠 승인본으로 학습</button>
+        <button class="action-btn" id="knowledge-promote-docs-btn" title="이번 결과에서 학습 라이브러리로 저장된 문서를 확인합니다" style="display:none">📚 학습 문서 보기</button>
         <button class="action-btn" id="export-btn">📥 내보내기</button>
         <button class="action-btn" id="ppt-btn" style="display:none">📊 PPT 다운로드</button>
         <button class="action-btn" id="docx-btn">📄 Word</button>
@@ -6405,6 +6406,16 @@
     `;
   }
 
+  function _summarizePromotedKnowledgeDocuments(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const names = items
+      .map(item => String(item?.filename || item?.doc_type || item?.doc_id || '').trim())
+      .filter(Boolean);
+    if (!names.length) return '';
+    if (names.length === 1) return names[0];
+    return `${names[0]} 외 ${names.length - 1}건`;
+  }
+
   function _markLocalHistoryPromoted(requestId, payload) {
     if (!requestId) return;
     try {
@@ -6418,6 +6429,7 @@
         item.knowledge_document_count = Number(payload.knowledge_document_count || 0);
         item.knowledge_quality_tier = payload.knowledge_quality_tier || '';
         item.knowledge_success_state = payload.knowledge_success_state || '';
+        item.knowledge_documents = Array.isArray(payload.knowledge_documents) ? payload.knowledge_documents : [];
         changed = true;
       });
       if (changed) {
@@ -6443,6 +6455,21 @@
     btn.title = projectId
       ? '현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다'
       : 'project_id가 있는 생성 결과만 학습 라이브러리로 승격할 수 있습니다';
+  }
+
+  function _applyKnowledgePromotionDocsState() {
+    const btn = $id('knowledge-promote-docs-btn');
+    if (!btn) return;
+    const docs = Array.isArray(lastMeta?.knowledge_documents) ? lastMeta.knowledge_documents : [];
+    if (!lastMeta?.knowledge_promoted || !docs.length) {
+      btn.style.display = 'none';
+      btn.disabled = true;
+      return;
+    }
+    btn.style.display = '';
+    btn.disabled = false;
+    btn.textContent = '📚 학습 문서 보기';
+    btn.title = _summarizePromotedKnowledgeDocuments(docs) || '이번 결과에서 학습 라이브러리로 저장된 문서를 확인합니다';
   }
 
   function _normalizeKnowledgePromotionTarget(raw) {
@@ -6591,6 +6618,7 @@
           knowledge_document_count: data.promoted || data.reused || docs.length,
           knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
           knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
+          knowledge_documents: Array.isArray(data.documents) ? data.documents : [],
         };
       }
       _markLocalHistoryPromoted(promotionTarget.requestId || '', {
@@ -6599,8 +6627,10 @@
         knowledge_document_count: data.promoted || data.reused || docs.length,
         knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
         knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
+        knowledge_documents: Array.isArray(data.documents) ? data.documents : [],
       });
       _applyKnowledgePromotionState();
+      _applyKnowledgePromotionDocsState();
       const promotedCount = data.promoted || 0;
       const reusedCount = data.reused || 0;
       if (data.already_promoted) {
@@ -8776,6 +8806,72 @@
     });
   }
 
+  function openPromotedKnowledgeDocsModal(title, projectId, items) {
+    const docs = Array.isArray(items) ? items : [];
+    if (!projectId || !docs.length) {
+      showNotification('확인할 학습 문서 정보가 없습니다.', 'info');
+      return;
+    }
+
+    const existing = document.getElementById('knowledge-promotion-docs-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'knowledge-promotion-docs-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:9500;display:flex;align-items:center;justify-content:center;padding:1.25rem;';
+    modal.innerHTML = `
+      <div style="background:var(--card,#fff);border-radius:18px;padding:1.5rem;max-width:920px;width:min(920px, 100%);max-height:88vh;overflow:auto;box-shadow:0 24px 80px rgba(15,23,42,.28);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+          <div>
+            <div style="font-size:.75rem;color:var(--p1);font-weight:700;letter-spacing:.02em;">학습 라이브러리 반영 결과</div>
+            <div style="font-size:1.02rem;font-weight:700;color:var(--text);margin-top:.2rem;">${escapeHtml(title || '승인본 학습')}</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:.3rem;">${docs.length}개 문서가 knowledge library에 연결되어 있습니다.</div>
+          </div>
+          <button id="knowledge-promotion-docs-close" type="button" style="border:none;background:none;font-size:1.3rem;line-height:1;cursor:pointer;color:var(--muted);">✕</button>
+        </div>
+        <div style="display:grid;gap:.75rem;">
+          ${docs.map(doc => `
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;padding:.85rem 1rem;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+              <div style="min-width:0;flex:1;">
+                <div style="font-weight:700;font-size:.9rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(String(doc.filename || doc.doc_type || doc.doc_id || '문서'))}">
+                  ${escapeHtml(String(doc.filename || doc.doc_type || doc.doc_id || '문서'))}
+                </div>
+                <div style="font-size:.75rem;color:var(--muted);margin-top:.24rem;display:flex;gap:.35rem;flex-wrap:wrap;">
+                  ${doc.doc_type ? `<span>${escapeHtml(String(doc.doc_type))}</span>` : ''}
+                  ${doc.quality_tier ? `<span>${escapeHtml(String(doc.quality_tier))}</span>` : ''}
+                  ${doc.success_state ? `<span>${escapeHtml(String(doc.success_state))}</span>` : ''}
+                  ${doc.doc_id ? `<span>ID: ${escapeHtml(String(doc.doc_id))}</span>` : ''}
+                </div>
+              </div>
+              ${doc.doc_id ? `
+                <button type="button" class="knowledge-promotion-doc-open-btn"
+                  data-project-id="${escapeHtml(String(projectId))}"
+                  data-doc-id="${escapeHtml(String(doc.doc_id))}"
+                  style="padding:.35rem .7rem;border-radius:8px;border:1px solid var(--p-ring);background:var(--p-light);color:var(--p1);font-size:.76rem;font-weight:700;cursor:pointer;flex-shrink:0;">
+                  메타 열기
+                </button>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.querySelector('#knowledge-promotion-docs-close')?.addEventListener('click', close);
+    modal.addEventListener('click', event => {
+      if (event.target === modal) close();
+    });
+    modal.querySelectorAll('.knowledge-promotion-doc-open-btn').forEach(btn => {
+      btn.addEventListener('click', async event => {
+        event.stopPropagation();
+        close();
+        await openKnowledgeMetadataModal(btn.dataset.projectId || '', btn.dataset.docId || '');
+      });
+    });
+  }
+
   function renderResultsStoryboard() {
     const panel = $id('results-storyboard');
     const cardsEl = $id('results-storyboard-cards');
@@ -9017,6 +9113,10 @@
     const knowledgePromoteBtn = $id('knowledge-promote-btn');
     if (knowledgePromoteBtn) {
       _applyKnowledgePromotionState();
+    }
+    const knowledgePromoteDocsBtn = $id('knowledge-promote-docs-btn');
+    if (knowledgePromoteDocsBtn) {
+      _applyKnowledgePromotionDocsState();
     }
     const sketchAgainBtn = $id('sketch-again-btn');
     if (sketchAgainBtn) {
@@ -9394,6 +9494,13 @@
   $id('knowledge-promote-btn').addEventListener('click', () => {
     openKnowledgePromoteModal();
   });
+  $id('knowledge-promote-docs-btn').addEventListener('click', () => {
+    openPromotedKnowledgeDocsModal(
+      lastMeta?.title || lastRequestPayload?.title || '승인본 학습',
+      lastMeta?.knowledge_project_id || _getPromotionProjectId(),
+      lastMeta?.knowledge_documents || [],
+    );
+  });
 
   $id('storyboard-refresh-btn').addEventListener('click', () => {
     rerunSketchFromCurrentPayload();
@@ -9555,12 +9662,24 @@
           </div>
         ` : ''}
         ${_renderHistoryPromotionBadge(item)}
+        ${_summarizePromotedKnowledgeDocuments(item.knowledge_documents) ? `
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">
+            학습 문서: ${escapeHtml(_summarizePromotedKnowledgeDocuments(item.knowledge_documents))}
+          </div>
+        ` : ''}
         <div style="display:flex;gap:.35rem;margin-top:.45rem;">
           ${!item.knowledge_promoted && item?.payload?.project_id && Array.isArray(item.docs) && item.docs.length ? `
             <button type="button" class="history-promote-btn"
               style="padding:.18rem .48rem;border-radius:6px;background:#eef2ff;color:var(--p1);
                      border:1px solid var(--p-ring);font-size:.72rem;cursor:pointer;font-weight:700;">
               🧠 학습
+            </button>
+          ` : ''}
+          ${item.knowledge_promoted && Array.isArray(item.knowledge_documents) && item.knowledge_documents.length ? `
+            <button type="button" class="history-promote-docs-btn"
+              style="padding:.18rem .48rem;border-radius:6px;background:#eef2ff;color:var(--p1);
+                     border:1px solid var(--p-ring);font-size:.72rem;cursor:pointer;font-weight:700;">
+              📚 학습 문서
             </button>
           ` : ''}
           ${Array.isArray(item.applied_references) && item.applied_references.length ? `
@@ -9615,6 +9734,14 @@
           request_id: item.id || item.request_id || '',
           knowledge_promoted: item.knowledge_promoted,
         });
+      });
+    });
+    list.querySelectorAll('.history-promote-docs-btn').forEach((btn, index) => {
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        const item = loadHistory()[index];
+        if (!item) return;
+        openPromotedKnowledgeDocsModal(item.title, item.knowledge_project_id || item?.payload?.project_id || '', item.knowledge_documents);
       });
     });
   }
@@ -9674,6 +9801,11 @@
               </div>
             ` : ''}
             ${_renderHistoryPromotionBadge(item)}
+            ${_summarizePromotedKnowledgeDocuments(item.knowledge_documents) ? `
+              <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                학습 문서: ${escapeHtml(_summarizePromotedKnowledgeDocuments(item.knowledge_documents))}
+              </div>
+            ` : ''}
             ${Array.isArray(item.applied_references) && item.applied_references.length ? `
               <div style="margin-top:.35rem;">
                 <button type="button" class="history-reference-preview"
@@ -9702,6 +9834,14 @@
               🧠 학습
             </button>
           ` : ''}
+          ${item.knowledge_promoted && Array.isArray(item.knowledge_documents) && item.knowledge_documents.length ? `
+            <button type="button" class="history-promote-server-docs-btn"
+              data-entry-id="${escapeHtml(item.entry_id || '')}"
+              style="padding:.2rem .55rem;border-radius:6px;background:#eef2ff;color:var(--p1);
+                     border:1px solid var(--p-ring);font-size:.75rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+              📚 학습 문서
+            </button>
+          ` : ''}
           <button onclick='deleteServerHistory(${JSON.stringify(item.entry_id)})'
             style="background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--muted);flex-shrink:0;"
             title="삭제">✕</button>
@@ -9720,6 +9860,15 @@
         btn.addEventListener('click', event => {
           event.stopPropagation();
           promoteServerHistoryEntry(btn.dataset.entryId || '');
+        });
+      });
+      list.querySelectorAll('.history-promote-server-docs-btn').forEach(btn => {
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
+          const entryId = btn.dataset.entryId || '';
+          const item = items.find(candidate => String(candidate.entry_id || '') === entryId);
+          if (!item) return;
+          openPromotedKnowledgeDocsModal(item.title, item.knowledge_project_id || item.project_id || '', item.knowledge_documents);
         });
       });
     } catch (e) {

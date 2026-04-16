@@ -169,6 +169,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "promoteServerHistoryEntry" in res.text
     assert "history-promote-server-btn" in res.text
     assert "history-promote-btn" in res.text
+    assert "knowledge-promote-docs-btn" in res.text
+    assert "openPromotedKnowledgeDocsModal" in res.text
+    assert "학습 문서 보기" in res.text
+    assert "학습 문서:" in res.text
+    assert "knowledge_documents" in res.text
     assert "_markLocalHistoryPromoted" in res.text
     assert "_renderHistoryPromotionBadge" in res.text
     assert "_applyKnowledgePromotionState" in res.text

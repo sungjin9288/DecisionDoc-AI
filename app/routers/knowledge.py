@@ -279,10 +279,11 @@ def promote_generated_documents_to_knowledge(
             ).mark_promoted(
                 body.source_request_id,
                 project_id=project_id,
-                document_count=len(created),
+                document_count=len(created) + len(reused),
                 quality_tier=body.quality_tier,
                 success_state=body.success_state,
                 promoted_at=datetime.now(UTC).isoformat(),
+                knowledge_documents=created + reused,
                 user_id=user_id,
             )
         except Exception as exc:

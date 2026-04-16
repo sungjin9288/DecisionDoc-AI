@@ -462,6 +462,10 @@ class TestKnowledgeAPI:
         assert history_item["knowledge_document_count"] == 2
         assert history_item["knowledge_quality_tier"] == "gold"
         assert history_item["knowledge_success_state"] == "awarded"
+        history_detail = HistoryStore("system", base_dir=str(tmp_path)).get_entry("req-456", "test-user")
+        assert history_detail is not None
+        assert history_detail["knowledge_documents"][0]["doc_type"] == "business_understanding"
+        assert history_detail["knowledge_documents"][1]["doc_type"] == "execution_plan"
 
         preview = client.get(
             "/knowledge/proj-promote/context",
