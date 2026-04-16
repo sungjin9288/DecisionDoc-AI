@@ -116,7 +116,7 @@ def _suggest_bundle(text: str, fields: dict[str, Any]) -> str:
     return "rfp_analysis_kr"
 
 
-def build_rfp_context(attachment_text: str) -> str:
+def build_rfp_context(attachment_text: str, *, normalized_context: str = "") -> str:
     """Wrap raw attachment text in a structured RFP context block.
 
     This produces better LLM results than injecting flat text into the
@@ -129,10 +129,16 @@ def build_rfp_context(attachment_text: str) -> str:
     Returns:
         A labelled context string ready to be prepended to ``req.context``.
     """
-    return (
-        "=== RFP 원문 (참고용) ===\n"
-        f"{attachment_text}\n"
-        "=== RFP 원문 끝 ===\n"
+    parts: list[str] = []
+    normalized = normalized_context.strip()
+    if normalized:
+        parts.append(normalized)
+        parts.append("")
+    parts.append("=== RFP 원문 (참고용) ===")
+    parts.append(attachment_text)
+    parts.append("=== RFP 원문 끝 ===")
+    parts.append(
         "위 RFP 원문을 바탕으로 문서를 작성하세요. "
         "발주처의 요구사항, 평가기준, 사업 목적을 최대한 반영하세요."
     )
+    return "\n".join(parts)

@@ -217,6 +217,17 @@ def build_bundle_prompt(
             "\n\n[프로젝트 공공조달 의사결정 상태 — 아래 structured state를 source of truth로 사용하세요]\n"
             f"{procurement_context}"
         )
+        if bundle_spec is not None and any(
+            "slide_outline" in str(doc.json_schema)
+            for doc in bundle_spec.docs
+        ):
+            prompt += (
+                "\n\n[공공조달 PPT 설계 적용 규칙]\n"
+                "- procurement context 안의 `페이지 분류`, `PPT 페이지 설계 힌트`, `발표/PPT 후보 페이지`를 slide_outline 작성의 source of truth로 사용하세요.\n"
+                "- slide_outline.title 은 후보 페이지의 주제를 따르고, core_message 와 evidence_points 는 해당 페이지의 조달 신호와 검토 메모를 반영하세요.\n"
+                "- visual_type, visual_brief, layout_hint 는 `PPT 페이지 설계 힌트`와 충돌하지 않게 채우고, 힌트가 있으면 그 방향을 우선하세요.\n"
+                "- 평가표·일정표·거버넌스·절차 페이지는 일반 서술형보다 표, 타임라인, 조직도, 프로세스 흐름도 중심으로 설계하세요.\n"
+            )
     if decision_council_context:
         prompt += (
             "\n\n[Decision Council v1 handoff — 아래 council 합의 방향을 추가 source of truth로 사용하세요]\n"

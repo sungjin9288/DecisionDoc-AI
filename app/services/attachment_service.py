@@ -8,6 +8,9 @@ Supported formats:
 - .xlsx / .xls: openpyxl — sheet/row/cell extraction
 - .csv        : stdlib csv module
 - .pptx       : python-pptx — slide title + body text extraction
+- .json / .yaml / .xml / .html / .rtf : structured text normalization
+- .odt / .ods / .odp                   : OpenDocument ZIP+XML extraction
+- .zip                                 : supported documents inside ZIP
 
 Per-file cap: MAX_CHARS_PER_FILE (12 000 chars / ~3 000 tokens).
 Global cap:   MAX_TOTAL_CHARS   (20 000 chars) across all files in one call.
@@ -16,11 +19,15 @@ File size:    MAX_FILE_SIZE_BYTES (20 MB).
 from __future__ import annotations
 
 import csv
+import html
 import io
+import json
 import logging
 import re
 import zipfile
 from pathlib import Path
+from typing import Any
+from xml.etree import ElementTree as ET
 
 _log = logging.getLogger("decisiondoc.attachment")
 
@@ -36,8 +43,32 @@ ALLOWED_EXTENSIONS = {
     ".pptx",
     ".hwp", ".hwpx",
     ".xlsx", ".xls",
-    ".csv",
+    ".csv", ".tsv",
+    ".json", ".jsonl", ".ndjson",
+    ".yaml", ".yml",
+    ".xml",
+    ".html", ".htm",
+    ".rtf",
+    ".log", ".ini", ".cfg", ".conf",
+    ".odt", ".ods", ".odp",
+    ".zip",
 }
+
+PLAIN_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".log", ".ini", ".cfg", ".conf", ".jsonl", ".ndjson",
+}
+IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".heic", ".svg",
+}
+LEGACY_CONVERSION_HINTS = {
+    ".doc": "구형 Word(.doc)는 직접 추출하지 못합니다. DOCX 또는 PDF로 변환해 업로드하세요.",
+    ".ppt": "구형 PowerPoint(.ppt)는 직접 추출하지 못합니다. PPTX 또는 PDF로 변환해 업로드하세요.",
+    ".xlsb": "바이너리 Excel(.xlsb)는 직접 추출하지 못합니다. XLSX, CSV 또는 PDF로 변환해 업로드하세요.",
+    ".pages": "Apple Pages 문서는 직접 추출하지 못합니다. PDF 또는 DOCX로 변환해 업로드하세요.",
+    ".numbers": "Apple Numbers 문서는 직접 추출하지 못합니다. XLSX 또는 CSV로 변환해 업로드하세요.",
+    ".key": "Apple Keynote 문서는 직접 추출하지 못합니다. PPTX 또는 PDF로 변환해 업로드하세요.",
+}
+MAX_ZIP_MEMBERS = 20
 
 
 class AttachmentError(Exception):
@@ -66,7 +97,61 @@ def extract_text(filename: str, raw: bytes) -> str:
             f"{filename}: 파일 크기 {mb} MB 초과 (최대 20 MB)"
         )
 
+    return _extract_by_extension(filename, raw, allow_zip=True)
+
+
+def extract_text_with_ai_fallback(
+    filename: str,
+    raw: bytes,
+    *,
+    provider: Any | None = None,
+    request_id: str = "",
+) -> str:
+    """Extract text locally first, then fall back to provider OCR/vision when needed.
+
+    The local parser remains the source of truth for structured document formats.
+    Provider fallback is only attempted for image files or PDFs that look like
+    scanned documents with no readable text layer.
+    """
+    try:
+        return extract_text(filename, raw)
+    except AttachmentError as exc:
+        if provider is None or not _should_try_provider_fallback(filename, exc):
+            raise
+        try:
+            text = provider.extract_attachment_text(filename, raw, request_id=request_id)
+        except Exception as provider_exc:
+            raise AttachmentError(
+                f"{filename}: 이미지/PDF OCR·비전 추출 실패 ({provider_exc})"
+            ) from provider_exc
+        if not text.strip():
+            raise AttachmentError(f"{filename}: OCR/비전 추출 결과가 비어 있습니다")
+        return text[:MAX_CHARS_PER_FILE]
+
+
+def _should_try_provider_fallback(filename: str, exc: AttachmentError) -> bool:
     ext = Path(filename).suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        return True
+    if ext == ".pdf" and _is_scanned_pdf_error(exc):
+        return True
+    return False
+
+
+def _is_scanned_pdf_error(exc: AttachmentError) -> bool:
+    message = str(exc)
+    return "스캔 이미지 PDF일 수 있습니다" in message
+
+
+def _extract_by_extension(filename: str, raw: bytes, *, allow_zip: bool) -> str:
+    ext = Path(filename).suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        raise AttachmentError(
+            f"{filename}: 이미지 파일은 아직 본문 OCR/비전 분석을 지원하지 않습니다. "
+            "이미지를 PDF/DOCX/PPTX에 포함하거나 설명 텍스트를 함께 업로드하세요."
+        )
+    if ext in LEGACY_CONVERSION_HINTS:
+        raise AttachmentError(f"{filename}: {LEGACY_CONVERSION_HINTS[ext]}")
     if ext not in ALLOWED_EXTENSIONS:
         raise AttachmentError(
             f"지원하지 않는 파일 형식입니다: '{ext}'. "
@@ -84,9 +169,26 @@ def extract_text(filename: str, raw: bytes) -> str:
             return _extract_hwpx(raw, filename)
         if ext in (".xlsx", ".xls"):
             return _extract_excel(raw, filename)
-        if ext == ".csv":
-            return _extract_csv(raw)
-        # .txt / .md
+        if ext in (".csv", ".tsv"):
+            return _extract_csv(raw, delimiter="\t" if ext == ".tsv" else ",")
+        if ext == ".json":
+            return _extract_json(raw, filename)
+        if ext in (".yaml", ".yml"):
+            return _extract_yaml(raw, filename)
+        if ext == ".xml":
+            return _extract_xml(raw, filename)
+        if ext in (".html", ".htm"):
+            return _extract_html(raw)
+        if ext == ".rtf":
+            return _extract_rtf(raw)
+        if ext in PLAIN_TEXT_EXTENSIONS:
+            return _extract_plain(raw)
+        if ext in (".odt", ".ods", ".odp"):
+            return _extract_opendocument(raw, filename)
+        if ext == ".zip":
+            if not allow_zip:
+                raise AttachmentError(f"{filename}: ZIP 내부의 중첩 ZIP은 처리하지 않습니다")
+            return _extract_zip(raw, filename)
         return _extract_plain(raw)
     except AttachmentError:
         raise
@@ -95,7 +197,12 @@ def extract_text(filename: str, raw: bytes) -> str:
         raise AttachmentError(f"{filename} 파싱 실패: {exc}") from exc
 
 
-def extract_multiple(files: list[tuple[str, bytes]]) -> str:
+def extract_multiple(
+    files: list[tuple[str, bytes]],
+    *,
+    provider: Any | None = None,
+    request_id: str = "",
+) -> str:
     """Extract text from multiple files with a global character cap.
 
     Files that fail to parse emit a warning line instead of raising so that
@@ -112,7 +219,12 @@ def extract_multiple(files: list[tuple[str, bytes]]) -> str:
 
     for filename, raw in files:
         try:
-            text = extract_text(filename, raw)
+            text = extract_text_with_ai_fallback(
+                filename,
+                raw,
+                provider=provider,
+                request_id=request_id,
+            )
         except AttachmentError as exc:
             parts.append(f"[첨부파일: {filename}]\n⚠️ {exc}")
             _log.warning("[Attachment] %s", exc)
@@ -192,7 +304,7 @@ def _extract_pdf(raw: bytes, filename: str) -> str:
                 page_parts: list[str] = []
                 for y_key in sorted(lines):
                     line_chars = sorted(lines[y_key], key=lambda c: c.get("x0", 0))
-                    line_text = "".join(c.get("text", "") for c in line_chars).strip()
+                    line_text = _reconstruct_pdf_line_text(line_chars)
                     if not line_text:
                         continue
 
@@ -252,6 +364,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
         * ``raw_text``   — Full extracted text (plain, no markdown markup).
         * ``page_count`` — Number of pages in the PDF.
         * ``has_tables`` — True if at least one table was found.
+        * ``pages``      — List of per-page dicts with text/headings/table flags.
 
     Raises:
         AttachmentError: When pdfplumber is not installed or the file cannot
@@ -268,6 +381,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
     page_count = 0
     has_tables = False
     raw_text_parts: list[str] = []
+    page_summaries: list[dict[str, Any]] = []
 
     # Sections built incrementally: current heading + accumulated body lines
     detected_sections: list[dict] = []
@@ -284,10 +398,13 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
 
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         page_count = len(pdf.pages)
-        for page in pdf.pages:
+        for page_index, page in enumerate(pdf.pages, start=1):
+            page_line_texts: list[str] = []
+            page_headings: list[str] = []
             # Check for tables
             tables = page.extract_tables() or []
-            if tables:
+            page_has_tables = bool(tables)
+            if page_has_tables:
                 has_tables = True
             for table in tables:
                 if not table:
@@ -299,6 +416,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
                         rows.append(" | ".join(cells))
                 if rows:
                     raw_text_parts.append("\n".join(rows))
+                    page_line_texts.extend(rows)
 
             # Char-level extraction for heading detection
             try:
@@ -316,11 +434,12 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
 
                 for y_key in sorted(lines):
                     line_chars = sorted(lines[y_key], key=lambda c: c.get("x0", 0))
-                    line_text = "".join(c.get("text", "") for c in line_chars).strip()
+                    line_text = _reconstruct_pdf_line_text(line_chars)
                     if not line_text:
                         continue
 
                     raw_text_parts.append(line_text)
+                    page_line_texts.append(line_text)
 
                     line_sizes = [c.get("size", 0) for c in line_chars if c.get("size")]
                     line_avg_size = sum(line_sizes) / len(line_sizes) if line_sizes else 0.0
@@ -329,6 +448,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
                     if is_heading:
                         _flush_section()
                         current_heading = line_text
+                        page_headings.append(line_text)
                     else:
                         current_body_lines.append(line_text)
 
@@ -338,6 +458,17 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
                 if text and text.strip():
                     raw_text_parts.append(text.strip())
                     current_body_lines.append(text.strip())
+                    page_line_texts.extend(line.strip() for line in text.splitlines() if line.strip())
+
+            page_preview = " ".join(page_line_texts[:8]).strip()
+            page_summaries.append(
+                {
+                    "page": page_index,
+                    "headings": page_headings[:6],
+                    "preview": page_preview[:300],
+                    "has_tables": page_has_tables,
+                }
+            )
 
     _flush_section()
 
@@ -356,6 +487,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
         "raw_text": raw_text,
         "page_count": page_count,
         "has_tables": has_tables,
+        "pages": page_summaries,
     }
 
 
@@ -419,7 +551,8 @@ def _extract_hwpx(raw: bytes, filename: str) -> str:
 
     except zipfile.BadZipFile as exc:
         raise AttachmentError(
-            f"{filename}: 유효하지 않은 HWP 파일입니다"
+            f"{filename}: 구형 바이너리 HWP는 직접 추출하지 못합니다. "
+            "HWPX, PDF 또는 DOCX로 변환해 업로드하세요."
         ) from exc
 
     result = "\n".join(texts)
@@ -456,10 +589,10 @@ def _extract_excel(raw: bytes, filename: str) -> str:
     return "\n\n".join(sheets)[:MAX_CHARS_PER_FILE]
 
 
-def _extract_csv(raw: bytes) -> str:
+def _extract_csv(raw: bytes, *, delimiter: str) -> str:
     """Extract text from CSV."""
     text = raw.decode("utf-8", errors="ignore")
-    reader = csv.reader(io.StringIO(text))
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = [" | ".join(row) for row in reader if any(row)]
     return "\n".join(rows)[:MAX_CHARS_PER_FILE]
 
@@ -502,3 +635,221 @@ def _extract_plain(raw: bytes) -> str:
         return raw.decode("utf-8")[:MAX_CHARS_PER_FILE]
     except UnicodeDecodeError:
         return raw.decode("latin-1", errors="replace")[:MAX_CHARS_PER_FILE]
+
+
+def _extract_json(raw: bytes, filename: str) -> str:
+    text = _extract_plain(raw)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:MAX_CHARS_PER_FILE]
+    return json.dumps(parsed, ensure_ascii=False, indent=2)[:MAX_CHARS_PER_FILE]
+
+
+def _extract_yaml(raw: bytes, filename: str) -> str:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise AttachmentError(
+            "YAML 파싱 라이브러리가 설치되어 있지 않습니다. 'pip install PyYAML'를 실행하세요."
+        ) from exc
+
+    text = _extract_plain(raw)
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return text[:MAX_CHARS_PER_FILE]
+    if parsed is None:
+        return text[:MAX_CHARS_PER_FILE]
+    return yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)[:MAX_CHARS_PER_FILE]
+
+
+def _extract_xml(raw: bytes, filename: str) -> str:
+    text = _extract_plain(raw)
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return text[:MAX_CHARS_PER_FILE]
+
+    parts: list[str] = []
+    for elem in root.iter():
+        if elem.text and elem.text.strip():
+            parts.append(elem.text.strip())
+    result = "\n".join(parts)
+    if not result:
+        raise AttachmentError(f"{filename}: XML에서 텍스트를 추출할 수 없습니다")
+    return result[:MAX_CHARS_PER_FILE]
+
+
+def _extract_html(raw: bytes) -> str:
+    text = _extract_plain(raw)
+    text = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</(p|div|li|tr|h[1-6])>", "\n", text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()[:MAX_CHARS_PER_FILE]
+
+
+def _extract_rtf(raw: bytes) -> str:
+    text = raw.decode("latin-1", errors="ignore")
+    text = re.sub(
+        r"\\'([0-9a-fA-F]{2})",
+        lambda m: bytes.fromhex(m.group(1)).decode("cp1252", errors="ignore"),
+        text,
+    )
+    text = re.sub(r"\\u(-?\d+)\??", lambda m: _decode_rtf_unicode(m.group(1)), text)
+    text = text.replace("\\par", "\n").replace("\\line", "\n").replace("\\tab", "\t")
+    text = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", text)
+    text = text.replace("{", "").replace("}", "")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()[:MAX_CHARS_PER_FILE]
+
+
+def _decode_rtf_unicode(value: str) -> str:
+    codepoint = int(value)
+    if codepoint < 0:
+        codepoint += 65536
+    try:
+        return chr(codepoint)
+    except ValueError:
+        return ""
+
+
+def _extract_opendocument(raw: bytes, filename: str) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            if "content.xml" not in zf.namelist():
+                raise AttachmentError(f"{filename}: OpenDocument content.xml을 찾을 수 없습니다")
+            xml = zf.read("content.xml").decode("utf-8", errors="ignore")
+    except zipfile.BadZipFile as exc:
+        raise AttachmentError(
+            f"{filename}: 유효하지 않은 OpenDocument 파일입니다"
+        ) from exc
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise AttachmentError(f"{filename}: OpenDocument XML 파싱 실패") from exc
+
+    parts: list[str] = []
+    for elem in root.iter():
+        local = _local_name(elem.tag)
+        if local in {"h", "p", "span", "list-item", "table-cell"}:
+            text = " ".join(t.strip() for t in elem.itertext() if t and t.strip())
+            if text:
+                parts.append(text)
+
+    result = "\n".join(parts)
+    if not result:
+        raise AttachmentError(f"{filename}: 텍스트를 추출할 수 없습니다")
+    return result[:MAX_CHARS_PER_FILE]
+
+
+def _extract_zip(raw: bytes, filename: str) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            infos = [info for info in zf.infolist() if not info.is_dir()]
+            if not infos:
+                raise AttachmentError(f"{filename}: ZIP 안에 읽을 파일이 없습니다")
+
+            parts: list[str] = []
+            for info in infos[:MAX_ZIP_MEMBERS]:
+                inner_name = Path(info.filename).name or info.filename
+                inner_ext = Path(inner_name).suffix.lower()
+                if inner_ext == ".zip":
+                    parts.append(f"[압축 내부 파일: {info.filename}]\n⚠️ 중첩 ZIP은 건너뜁니다.")
+                    continue
+                if inner_ext in IMAGE_EXTENSIONS:
+                    parts.append(
+                        f"[압축 내부 파일: {info.filename}]\n⚠️ 이미지 파일은 OCR/비전 분석을 아직 지원하지 않아 건너뜁니다."
+                    )
+                    continue
+                if inner_ext in LEGACY_CONVERSION_HINTS:
+                    parts.append(f"[압축 내부 파일: {info.filename}]\n⚠️ {LEGACY_CONVERSION_HINTS[inner_ext]}")
+                    continue
+                if inner_ext not in ALLOWED_EXTENSIONS:
+                    parts.append(f"[압축 내부 파일: {info.filename}]\n⚠️ 지원하지 않는 형식이라 건너뜁니다.")
+                    continue
+                if info.file_size > MAX_FILE_SIZE_BYTES:
+                    parts.append(
+                        f"[압축 내부 파일: {info.filename}]\n⚠️ 파일 크기가 20 MB를 초과해 건너뜁니다."
+                    )
+                    continue
+
+                inner_raw = zf.read(info)
+                try:
+                    text = _extract_by_extension(inner_name, inner_raw, allow_zip=False)
+                except AttachmentError as exc:
+                    parts.append(f"[압축 내부 파일: {info.filename}]\n⚠️ {exc}")
+                    continue
+                parts.append(f"[압축 내부 파일: {info.filename}]\n{text}")
+    except zipfile.BadZipFile as exc:
+        raise AttachmentError(f"{filename}: 유효하지 않은 ZIP 파일입니다") from exc
+
+    result = "\n\n---\n\n".join(parts)
+    if not result.strip():
+        raise AttachmentError(f"{filename}: ZIP 안에서 읽을 수 있는 텍스트를 찾지 못했습니다")
+    return result[:MAX_CHARS_PER_FILE]
+
+
+def _local_name(tag: str) -> str:
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def _reconstruct_pdf_line_text(line_chars: list[dict]) -> str:
+    if not line_chars:
+        return ""
+
+    pieces: list[str] = []
+    prev_char: dict | None = None
+    for char in line_chars:
+        text = str(char.get("text", ""))
+        if not text:
+            continue
+        if prev_char is not None and _should_insert_pdf_space(prev_char, char):
+            pieces.append(" ")
+        pieces.append(text)
+        prev_char = char
+    return "".join(pieces).strip()
+
+
+def _should_insert_pdf_space(prev_char: dict, curr_char: dict) -> bool:
+    prev_text = str(prev_char.get("text", ""))
+    curr_text = str(curr_char.get("text", ""))
+    if not prev_text or not curr_text:
+        return False
+    if prev_text.isspace() or curr_text.isspace():
+        return False
+
+    prev_x1 = float(prev_char.get("x1", prev_char.get("x0", 0.0) + _pdf_char_width(prev_char)))
+    curr_x0 = float(curr_char.get("x0", 0.0))
+    gap = curr_x0 - prev_x1
+    if gap <= 0:
+        return False
+
+    width_threshold = min(_pdf_char_width(prev_char), _pdf_char_width(curr_char)) * 0.25
+    absolute_threshold = 1.8
+    return gap >= max(absolute_threshold, width_threshold)
+
+
+def _pdf_char_width(char: dict) -> float:
+    x0 = float(char.get("x0", 0.0))
+    x1 = float(char.get("x1", x0))
+    width = x1 - x0
+    if width > 0:
+        return width
+
+    text = str(char.get("text", ""))
+    size = float(char.get("size", 0.0) or 0.0)
+    if not size:
+        return 0.0
+    if any("\uac00" <= ch <= "\ud7a3" or "\u4e00" <= ch <= "\u9fff" for ch in text):
+        return size * 0.88
+    if text.isalnum():
+        return size * 0.58
+    return size * 0.42

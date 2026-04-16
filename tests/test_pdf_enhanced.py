@@ -87,7 +87,9 @@ def test_extract_pdf_structured_basic():
     assert "raw_text" in result
     assert "page_count" in result
     assert "has_tables" in result
+    assert "pages" in result
     assert isinstance(result["sections"], list)
+    assert isinstance(result["pages"], list)
     assert result["page_count"] == 1
     assert result["has_tables"] is False
 
@@ -220,6 +222,164 @@ def test_pdf_source_in_prompt():
     assert "This is the PDF raw text content" in prompt
 
 
+def test_procurement_page_hints_in_prompt_for_slide_outline_bundle():
+    from app.bundle_catalog.bundles.proposal_kr import PROPOSAL_KR
+    from app.domain.schema import build_bundle_prompt
+
+    prompt = build_bundle_prompt(
+        {
+            "title": "공공기관 경영평가 제안",
+            "goal": "착수보고 PDF를 참고해 제안서와 PPT 설계를 만든다.",
+            "_procurement_context": (
+                "=== 공공조달 PDF 정규화 요약 ===\n"
+                "페이지 분류:\n"
+                "- 3p [평가기준/지표] 평가 지표 체계\n"
+                "PPT 페이지 설계 힌트:\n"
+                "- 3p 평가 지표 체계 | 권장 시각자료: 평가기준 표 | 배치 가이드: 상단 핵심 메시지 / 중앙 배점·평가표 / 하단 대응 포인트\n"
+                "발표/PPT 후보 페이지:\n"
+                "- 평가 대응 전략 — 3p [평가기준/지표] 평가 지표 체계\n"
+                "=== 공공조달 PDF 정규화 요약 끝 ==="
+            ),
+        },
+        schema_version="v1",
+        bundle_spec=PROPOSAL_KR,
+    )
+
+    assert "[공공조달 PPT 설계 적용 규칙]" in prompt
+    assert "`페이지 분류`, `PPT 페이지 설계 힌트`, `발표/PPT 후보 페이지`" in prompt
+    assert "visual_type, visual_brief, layout_hint" in prompt
+    assert "표, 타임라인, 조직도, 프로세스 흐름도" in prompt
+
+
+def test_procurement_slide_outline_guidance_backfills_visual_and_evidence():
+    from app.services.generation_service import _apply_procurement_slide_outline_guidance
+
+    bundle = {
+        "business_understanding": {
+            "total_slides": 1,
+            "slide_outline": [
+                {
+                    "page": 1,
+                    "title": "평가 대응 전략",
+                    "key_content": "발주처 평가 포인트와 대응 근거를 정리한다.",
+                    "core_message": "",
+                    "evidence_points": [],
+                    "visual_type": "",
+                    "visual_brief": "",
+                    "layout_hint": "",
+                    "design_tip": "",
+                }
+            ],
+        }
+    }
+    context = (
+        "=== 공공조달 PDF 정규화 요약 ===\n"
+        "페이지 분류:\n"
+        "- 3p [평가기준/지표] 평가 지표 체계\n"
+        "PPT 페이지 설계 힌트:\n"
+        "- 3p 평가 지표 체계 | 권장 시각자료: 평가기준 표 | 배치 가이드: 상단 핵심 메시지 / 중앙 배점·평가표 / 하단 대응 포인트\n"
+        "발표/PPT 후보 페이지:\n"
+        "- 평가 대응 전략 — 3p [평가기준/지표] 평가 지표 체계\n"
+        "=== 공공조달 PDF 정규화 요약 끝 ==="
+    )
+
+    guided = _apply_procurement_slide_outline_guidance(bundle, procurement_context=context)
+    slide = guided["business_understanding"]["slide_outline"][0]
+
+    assert slide["visual_type"] == "평가기준 표"
+    assert slide["layout_hint"] == "상단 핵심 메시지 / 중앙 배점·평가표 / 하단 대응 포인트"
+    assert "참고 페이지: 3p [평가기준/지표] 평가 지표 체계" in slide["evidence_points"]
+    assert slide["visual_brief"].startswith("참고 PDF 3p")
+    assert slide["title"] == "평가 대응 전략 — 평가 지표 체계"
+
+
+def test_procurement_slide_outline_guidance_synthesizes_outline_when_missing():
+    from app.services.generation_service import _apply_procurement_slide_outline_guidance
+
+    bundle = {
+        "performance_overview": {
+            "total_slides": 0,
+            "slide_outline": [],
+        }
+    }
+    context = (
+        "=== 공공조달 PDF 정규화 요약 ===\n"
+        "페이지 분류:\n"
+        "- 4p [표·평가표 중심] 지방출자·출연기관경영평가대상범위\n"
+        "- 7p [일정/마일스톤] 파주시공공기관(장) 경영평가추진일정\n"
+        "PPT 페이지 설계 힌트:\n"
+        "- 4p 지방출자·출연기관경영평가대상범위 | 권장 시각자료: 비교 표 + 강조 박스 | 배치 가이드: 중앙 표 / 우측 또는 하단 핵심 시사점\n"
+        "- 7p 파주시공공기관(장) 경영평가추진일정 | 권장 시각자료: 타임라인 | 배치 가이드: 가로 타임라인 / 하단 단계별 산출물\n"
+        "발표/PPT 후보 페이지:\n"
+        "- 평가 대응 전략 — 4p [표·평가표 중심] 지방출자·출연기관경영평가대상범위\n"
+        "- 일정 및 마일스톤 — 7p [일정/마일스톤] 파주시공공기관(장) 경영평가추진일정\n"
+        "=== 공공조달 PDF 정규화 요약 끝 ==="
+    )
+
+    guided = _apply_procurement_slide_outline_guidance(bundle, procurement_context=context)
+    outline = guided["performance_overview"]["slide_outline"]
+
+    assert len(outline) == 2
+    assert guided["performance_overview"]["total_slides"] == 2
+    assert outline[0]["title"] == "평가 대응 전략 — 지방출자·출연기관경영평가대상범위"
+    assert outline[0]["visual_type"] == "비교 표 + 강조 박스"
+    assert outline[1]["visual_type"] == "타임라인"
+
+
+def test_procurement_slide_outline_guidance_reorders_to_procurement_page_order():
+    from app.services.generation_service import _apply_procurement_slide_outline_guidance
+
+    bundle = {
+        "business_understanding": {
+            "total_slides": 2,
+            "slide_outline": [
+                {
+                    "page": 1,
+                    "title": "슬라이드 1",
+                    "key_content": "일정 및 마일스톤을 설명한다.",
+                    "core_message": "",
+                    "evidence_points": [],
+                    "visual_type": "",
+                    "visual_brief": "",
+                    "layout_hint": "",
+                    "design_tip": "",
+                },
+                {
+                    "page": 2,
+                    "title": "슬라이드 2",
+                    "key_content": "평가 대응 전략을 설명한다.",
+                    "core_message": "",
+                    "evidence_points": [],
+                    "visual_type": "",
+                    "visual_brief": "",
+                    "layout_hint": "",
+                    "design_tip": "",
+                },
+            ],
+        }
+    }
+    context = (
+        "=== 공공조달 PDF 정규화 요약 ===\n"
+        "페이지 분류:\n"
+        "- 3p [평가기준/지표] 평가 지표 체계\n"
+        "- 7p [일정/마일스톤] 세부 추진 일정\n"
+        "PPT 페이지 설계 힌트:\n"
+        "- 3p 평가 지표 체계 | 권장 시각자료: 평가기준 표 | 배치 가이드: 상단 핵심 메시지 / 중앙 배점·평가표 / 하단 대응 포인트\n"
+        "- 7p 세부 추진 일정 | 권장 시각자료: 타임라인 | 배치 가이드: 가로 타임라인 / 하단 단계별 산출물\n"
+        "발표/PPT 후보 페이지:\n"
+        "- 평가 대응 전략 — 3p [평가기준/지표] 평가 지표 체계\n"
+        "- 일정 및 마일스톤 — 7p [일정/마일스톤] 세부 추진 일정\n"
+        "=== 공공조달 PDF 정규화 요약 끝 ==="
+    )
+
+    guided = _apply_procurement_slide_outline_guidance(bundle, procurement_context=context)
+    outline = guided["business_understanding"]["slide_outline"]
+
+    assert [item["page"] for item in outline] == [1, 2]
+    assert outline[0]["title"] == "평가 대응 전략 — 평가 지표 체계"
+    assert outline[1]["title"] == "일정 및 마일스톤 — 세부 추진 일정"
+
+
 # ── Test 8: pdf_source excluded from clean_requirements ───────────────────────
 
 def test_skip_keys_exclude_pdf_source():
@@ -292,3 +452,59 @@ def test_structured_title_detection():
         result = extract_pdf_structured(b"%PDF fake", "title_test.pdf")
 
     assert result["title"] == "MyDocTitle"
+
+
+def test_structured_pages_include_heading_preview_and_table_flag():
+    from app.services.attachment_service import extract_pdf_structured
+
+    heading_chars = [
+        _make_char(c, top=10.0, x0=i * 8.0, size=24.0) for i, c in enumerate("세부 추진 일정")
+    ]
+    body_chars = [
+        _make_char(c, top=30.0, x0=i * 6.0, size=10.0) for i, c in enumerate("착수 중간 완료 보고")
+    ]
+    mock_page = _make_mock_page(chars=heading_chars + body_chars, tables=[["A", "B"]])
+    mock_pdfplumber = _make_pdfplumber_mock([mock_page])
+
+    with patch.dict(sys.modules, {"pdfplumber": mock_pdfplumber}):
+        result = extract_pdf_structured(b"%PDF fake", "pages.pdf")
+
+    assert result["pages"] == [
+        {
+            "page": 1,
+            "headings": ["세부 추진 일정"],
+            "preview": "A B 세부 추진 일정 착수 중간 완료 보고",
+            "has_tables": True,
+        }
+    ]
+
+
+def test_reconstruct_pdf_line_text_restores_korean_word_spacing():
+    from app.services.attachment_service import _reconstruct_pdf_line_text
+
+    chars = [
+        {"text": "경", "x0": 0.0, "x1": 13.2, "size": 15.0},
+        {"text": "영", "x0": 13.22, "x1": 26.44, "size": 15.0},
+        {"text": "평", "x0": 26.46, "x1": 39.68, "size": 15.0},
+        {"text": "가", "x0": 39.70, "x1": 52.92, "size": 15.0},
+        {"text": "개", "x0": 56.60, "x1": 69.82, "size": 15.0},
+        {"text": "요", "x0": 69.84, "x1": 83.06, "size": 15.0},
+    ]
+
+    assert _reconstruct_pdf_line_text(chars) == "경영평가 개요"
+
+
+def test_reconstruct_pdf_line_text_keeps_tight_ascii_without_extra_spaces():
+    from app.services.attachment_service import _reconstruct_pdf_line_text
+
+    chars = [
+        {"text": "C", "x0": 0.0, "x1": 10.8, "size": 15.0},
+        {"text": "o", "x0": 10.4, "x1": 19.6, "size": 15.0},
+        {"text": "n", "x0": 19.7, "x1": 29.4, "size": 15.0},
+        {"text": "t", "x0": 29.5, "x1": 35.3, "size": 15.0},
+        {"text": "a", "x0": 35.0, "x1": 43.9, "size": 15.0},
+        {"text": "c", "x0": 44.0, "x1": 52.6, "size": 15.0},
+        {"text": "t", "x0": 53.0, "x1": 58.8, "size": 15.0},
+    ]
+
+    assert _reconstruct_pdf_line_text(chars) == "Contact"

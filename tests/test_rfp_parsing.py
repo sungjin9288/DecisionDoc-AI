@@ -249,6 +249,17 @@ class TestBuildRFPContext:
         ctx = build_rfp_context("내용")
         assert "바탕으로 문서를 작성하세요" in ctx
 
+    def test_includes_normalized_procurement_context_when_provided(self):
+        from app.services.rfp_parser import build_rfp_context
+
+        ctx = build_rfp_context(
+            "원문",
+            normalized_context="=== 공공조달 PDF 정규화 요약 ===\n핵심 섹션:\n- 평가 개요",
+        )
+
+        assert "=== 공공조달 PDF 정규화 요약 ===" in ctx
+        assert "=== RFP 원문" in ctx
+
 
 # ── rfp_parser: _suggest_bundle ─────────────────────────────────────────────
 
@@ -400,6 +411,35 @@ class TestParseRFPEndpoint:
         data = res.json()
         assert "structured_context" in data
         assert "=== RFP 원문" in data["structured_context"]
+
+    def test_pdf_response_includes_procurement_context_preview(self, tmp_path, monkeypatch):
+        client = _make_client(tmp_path, monkeypatch)
+
+        structured = {
+            "title": "착수보고 자료",
+            "sections": [
+                {"heading": "Ⅰ. 평가 개요", "content": "경영평가 추진 배경을 설명한다."},
+                {"heading": "Ⅱ. 추진 일정", "content": "착수와 중간 보고 일정을 제시한다."},
+            ],
+            "raw_text": "착수보고 자료\n경영평가 추진 배경",
+            "page_count": 10,
+            "has_tables": True,
+        }
+
+        with patch("app.routers.generate.extract_multiple", return_value="RFP content"), patch(
+            "app.routers.generate.extract_pdf_structured",
+            return_value=structured,
+        ):
+            res = client.post(
+                "/attachments/parse-rfp",
+                files=[("files", ("rfp.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+            )
+
+        assert res.status_code == 200
+        data = res.json()
+        assert "procurement_context_preview" in data
+        assert "공공조달 PDF 정규화 요약" in data["procurement_context_preview"]
+        assert "핵심 섹션:" in data["structured_context"]
 
     def test_total_chars_in_response(self, tmp_path, monkeypatch):
         client = _make_client(tmp_path, monkeypatch)

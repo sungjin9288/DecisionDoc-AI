@@ -74,7 +74,7 @@ from app.services.attachment_service import (
     MAX_TOTAL_CHARS,
     extract_multiple,
     extract_pdf_structured,
-    extract_text,
+    extract_text_with_ai_fallback,
 )
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
@@ -115,7 +115,12 @@ def _resolve_gov_options(gov_options_dict: dict | None) -> GovDocOptions | None:
         return None
 
 
-def _extract_uploaded_documents(files: list[UploadFile]) -> tuple[str, list[str]]:
+def _extract_uploaded_documents(
+    files: list[UploadFile],
+    *,
+    provider: Any | None = None,
+    request_id: str = "",
+) -> tuple[str, list[str], str]:
     """Extract uploaded files into one generation-ready context block.
 
     Returns the merged text and a list of successfully parsed filenames.
@@ -124,6 +129,7 @@ def _extract_uploaded_documents(files: list[UploadFile]) -> tuple[str, list[str]
     """
     parts: list[str] = []
     parsed_filenames: list[str] = []
+    file_data: list[tuple[str, bytes]] = []
     total = 0
     errors: list[str] = []
 
@@ -132,9 +138,15 @@ def _extract_uploaded_documents(files: list[UploadFile]) -> tuple[str, list[str]
         raw = upload.file.read()
         if not raw:
             continue
+        file_data.append((filename, raw))
 
         try:
-            text = extract_text(filename, raw)
+            text = extract_text_with_ai_fallback(
+                filename,
+                raw,
+                provider=provider,
+                request_id=request_id,
+            )
         except AttachmentError as exc:
             errors.append(str(exc))
             continue
@@ -155,7 +167,28 @@ def _extract_uploaded_documents(files: list[UploadFile]) -> tuple[str, list[str]
         detail = errors[0] if errors else "텍스트를 추출할 수 있는 파일이 없습니다."
         raise HTTPException(status_code=422, detail=detail)
 
-    return "\n\n---\n\n".join(parts), parsed_filenames
+    return "\n\n---\n\n".join(parts), parsed_filenames, _build_procurement_attachment_context(file_data)
+
+
+def _build_procurement_attachment_context(file_data: list[tuple[str, bytes]]) -> str:
+    """Best-effort procurement-oriented summary for uploaded PDF attachments."""
+    from app.services.procurement_pdf_normalizer import build_procurement_pdf_context
+
+    blocks: list[str] = []
+    for filename, raw in file_data:
+        if Path(filename).suffix.lower() != ".pdf":
+            continue
+        try:
+            structured = extract_pdf_structured(raw, filename)
+        except Exception:
+            continue
+        block = build_procurement_pdf_context(structured, filename)
+        if block:
+            blocks.append(block)
+
+    if not blocks:
+        return ""
+    return "\n\n".join(blocks)[:4_000]
 
 
 # ── ZIP export in-memory cache ────────────────────────────────────────────────
@@ -215,6 +248,15 @@ def _build_structured_slide_data(bundle: dict[str, Any], goal: str) -> dict[str,
                 "page": page,
                 "title": title,
                 "key_content": str(item.get("key_content", "")).strip(),
+                "core_message": str(item.get("core_message", "")).strip(),
+                "evidence_points": [
+                    str(point).strip()
+                    for point in item.get("evidence_points", [])
+                    if str(point).strip()
+                ],
+                "visual_type": str(item.get("visual_type", "")).strip(),
+                "visual_brief": str(item.get("visual_brief", "")).strip(),
+                "layout_hint": str(item.get("layout_hint", "")).strip(),
                 "design_tip": str(item.get("design_tip", "")).strip(),
             })
             page += 1
@@ -653,8 +695,13 @@ def generate_with_attachments(
             file_data.append((upload.filename, raw))
         if file_data:
             from app.services.rfp_parser import build_rfp_context
-            combined = extract_multiple(file_data)
-            rfp_context = build_rfp_context(combined)
+            combined = extract_multiple(
+                file_data,
+                provider=get_provider(),
+                request_id=request.state.request_id,
+            )
+            procurement_context = _build_procurement_attachment_context(file_data)
+            rfp_context = build_rfp_context(combined, normalized_context=procurement_context)
             existing = req.context or ""
             merged = rfp_context + ("\n\n" + existing if existing else "")
             req = req.model_copy(update={"context": merged})
@@ -686,9 +733,14 @@ def generate_from_documents(
     """Upload one or more documents and generate a bundle directly from them."""
     from app.schemas import GenerateRequest as _GenerateRequest
 
-    combined_text, parsed_filenames = _extract_uploaded_documents(files)
+    combined_text, parsed_filenames, procurement_context = _extract_uploaded_documents(
+        files,
+        provider=get_provider(),
+        request_id=request.state.request_id,
+    )
     doc_types_list = [dt.strip() for dt in doc_types.split(",") if dt.strip()]
-    merged_context = combined_text + ("\n\n" + context if context else "")
+    merged_parts = [part for part in [procurement_context, combined_text, context] if part]
+    merged_context = "\n\n".join(merged_parts)
     first_name = parsed_filenames[0]
     default_title = Path(first_name).stem
 
@@ -704,6 +756,8 @@ def generate_from_documents(
         raise HTTPException(status_code=422, detail=f"요청 생성 실패: {exc}") from exc
 
     request.state.document_ingestion_files = parsed_filenames
+    if procurement_context:
+        request.state.document_ingestion_procurement_context = procurement_context[:1_000]
     log_event(
         logger,
         {
@@ -750,6 +804,8 @@ def generate_from_pdf(
         structured = extract_pdf_structured(raw, filename)
     except AttachmentError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from app.services.procurement_pdf_normalizer import build_procurement_pdf_context
+    procurement_pdf_context = build_procurement_pdf_context(structured, filename)
 
     # ── Build requirements ─────────────────────────────────────────────────────
     filename_stem = Path(filename).stem
@@ -770,7 +826,9 @@ def generate_from_pdf(
         req = _GenerateRequest(
             title=requirements["title"],
             goal=f"PDF 문서 '{filename}'의 내용을 기반으로 의사결정 문서를 작성합니다.",
-            context=structured["raw_text"][:3000],
+            context="\n\n".join(
+                part for part in [procurement_pdf_context, structured["raw_text"][:3000]] if part
+            ),
             doc_types=doc_types_list,
             bundle_type="tech_decision",
         )
@@ -783,6 +841,7 @@ def generate_from_pdf(
     # We also attach them as extra state so the prompt builder can detect them.
     request.state.pdf_source = structured["raw_text"]
     request.state.pdf_structured = structured
+    request.state.pdf_procurement_context = procurement_pdf_context[:1_000] if procurement_pdf_context else ""
 
     log_event(
         logger,
@@ -1879,16 +1938,23 @@ async def parse_rfp_endpoint(
     if not file_data:
         raise HTTPException(status_code=422, detail="파일이 없거나 비어 있습니다.")
 
-    combined = extract_multiple(file_data)
     provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
-    fields = parse_rfp_fields(combined, provider=provider, request_id=request_id)
-    structured_context = build_rfp_context(combined[:6_000])
+    combined = extract_multiple(
+        file_data,
+        provider=provider,
+        request_id=request_id,
+    )
+    procurement_context = _build_procurement_attachment_context(file_data)
+    parse_input = procurement_context + "\n\n" + combined if procurement_context else combined
+    fields = parse_rfp_fields(parse_input, provider=provider, request_id=request_id)
+    structured_context = build_rfp_context(combined[:6_000], normalized_context=procurement_context)
 
     return {
         "extracted_fields": fields,
         "raw_text_preview": combined[:2_000],
         "total_chars": len(combined),
         "structured_context": structured_context,
+        "procurement_context_preview": procurement_context[:1_000],
         "files_processed": [f[0] for f in file_data],
     }
 

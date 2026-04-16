@@ -1,6 +1,7 @@
 """Tests for file attachment extraction and /generate/with-attachments endpoint."""
 import io
 import json
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +10,9 @@ from app.services.attachment_service import (
     MAX_CHARS,
     AttachmentError,
     extract_text,
+    extract_text_with_ai_fallback,
 )
+from app.providers.mock_provider import MockProvider
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +53,51 @@ class TestExtractTextUnsupported:
         with pytest.raises(AttachmentError):
             extract_text("noextension", b"data")
 
+    def test_image_extension_returns_guidance(self):
+        with pytest.raises(AttachmentError, match="이미지 파일은 아직 본문 OCR/비전 분석을 지원하지 않습니다"):
+            extract_text("diagram.png", b"\x89PNG\r\n\x1a\n")
+
+    def test_legacy_doc_extension_returns_conversion_hint(self):
+        with pytest.raises(AttachmentError, match="DOCX 또는 PDF로 변환"):
+            extract_text("legacy.doc", b"binary")
+
+    def test_image_can_use_ai_fallback_when_provider_exists(self):
+        result = extract_text_with_ai_fallback(
+            "diagram.png",
+            b"\x89PNG\r\n\x1a\nfake",
+            provider=MockProvider(),
+            request_id="req-image",
+        )
+        assert "[AI 분석 첨부: diagram.png]" in result
+        assert "시각 자료로 인식되었습니다" in result
+
+    def test_scanned_pdf_can_use_ai_fallback_when_provider_exists(self, monkeypatch):
+        def _raise_scanned_pdf(raw: bytes, filename: str) -> str:
+            raise AttachmentError(f"{filename}: 텍스트를 추출할 수 없습니다 (스캔 이미지 PDF일 수 있습니다)")
+
+        monkeypatch.setattr("app.services.attachment_service._extract_pdf", _raise_scanned_pdf)
+        result = extract_text_with_ai_fallback(
+            "scan.pdf",
+            b"%PDF-1.4 fake",
+            provider=MockProvider(),
+            request_id="req-pdf",
+        )
+        assert "[AI 분석 첨부: scan.pdf]" in result
+        assert "스캔 PDF로 인식되었습니다" in result
+
+    def test_non_scanned_pdf_error_does_not_use_ai_fallback(self, monkeypatch):
+        def _raise_regular_pdf(raw: bytes, filename: str) -> str:
+            raise AttachmentError(f"{filename}: 손상된 PDF입니다")
+
+        monkeypatch.setattr("app.services.attachment_service._extract_pdf", _raise_regular_pdf)
+        with pytest.raises(AttachmentError, match="손상된 PDF입니다"):
+            extract_text_with_ai_fallback(
+                "broken.pdf",
+                b"%PDF-1.4 fake",
+                provider=MockProvider(),
+                request_id="req-pdf",
+            )
+
 
 class TestExtractTextPdf:
     def test_missing_sdk_raises_attachment_error(self, monkeypatch):
@@ -65,6 +113,66 @@ class TestExtractTextPdf:
         monkeypatch.setattr(builtins, "__import__", mock_import)
         with pytest.raises(AttachmentError, match="PDF 파싱 라이브러리"):
             extract_text("doc.pdf", b"%PDF-1.4 fake")
+
+
+class TestExtractStructuredFormats:
+    def test_json_pretty_prints(self):
+        result = extract_text("data.json", b'{"name":"DecisionDoc","items":[1,2]}')
+        assert '"name": "DecisionDoc"' in result
+        assert '"items": [' in result
+
+    def test_yaml_extracts(self):
+        raw = b"name: DecisionDoc\nfeatures:\n  - export\n  - attachments\n"
+        result = extract_text("config.yaml", raw)
+        assert "name: DecisionDoc" in result
+        assert "- export" in result
+
+    def test_html_strips_tags_and_scripts(self):
+        raw = b"<html><head><script>alert(1)</script><title>Title</title></head><body><h1>Heading</h1><p>Hello <b>world</b></p></body></html>"
+        result = extract_text("page.html", raw)
+        assert "Heading" in result
+        assert "Hello world" in result
+        assert "alert(1)" not in result
+
+    def test_rtf_extracts_plain_text(self):
+        raw = br"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello\par World}"
+        result = extract_text("memo.rtf", raw)
+        assert "Hello" in result
+        assert "World" in result
+
+    def test_odt_extracts_content_xml_text(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                "content.xml",
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+                  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+                  <office:body><office:text>
+                    <text:h>제목</text:h>
+                    <text:p>본문 내용</text:p>
+                  </office:text></office:body>
+                </office:document-content>""",
+            )
+        result = extract_text("sample.odt", buf.getvalue())
+        assert "제목" in result
+        assert "본문 내용" in result
+
+    def test_zip_extracts_supported_inner_files(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("notes/readme.txt", "압축 내부 텍스트")
+            zf.writestr("data/config.json", '{"goal":"문서 생성"}')
+            zf.writestr("images/photo.jpg", b"\xff\xd8\xff")
+        result = extract_text("bundle.zip", buf.getvalue())
+        assert "[압축 내부 파일: notes/readme.txt]" in result
+        assert "압축 내부 텍스트" in result
+        assert '"goal": "문서 생성"' in result
+        assert "이미지 파일은 OCR/비전 분석을 아직 지원하지 않아 건너뜁니다." in result
+
+    def test_binary_hwp_returns_hwpx_guidance(self):
+        with pytest.raises(AttachmentError, match="HWPX, PDF 또는 DOCX로 변환"):
+            extract_text("legacy.hwp", b"not-a-zip")
 
 
 # ---------------------------------------------------------------------------
@@ -173,5 +281,27 @@ class TestGenerateWithAttachments:
             "/generate/with-attachments",
             data={"payload": self._payload()},
             files=[("attachments", ("empty.txt", io.BytesIO(b""), "text/plain"))],
+        )
+        assert res.status_code == 200
+
+    def test_image_file_is_accepted_via_ai_fallback(self, tmp_path, monkeypatch):
+        client = _create_client(tmp_path, monkeypatch)
+        res = client.post(
+            "/generate/with-attachments",
+            data={"payload": self._payload()},
+            files=[("attachments", ("diagram.png", io.BytesIO(b"\x89PNG\r\n\x1a\nfake"), "image/png"))],
+        )
+        assert res.status_code == 200
+
+    def test_scanned_pdf_file_is_accepted_via_ai_fallback(self, tmp_path, monkeypatch):
+        def _raise_scanned_pdf(raw: bytes, filename: str) -> str:
+            raise AttachmentError(f"{filename}: 텍스트를 추출할 수 없습니다 (스캔 이미지 PDF일 수 있습니다)")
+
+        monkeypatch.setattr("app.services.attachment_service._extract_pdf", _raise_scanned_pdf)
+        client = _create_client(tmp_path, monkeypatch)
+        res = client.post(
+            "/generate/with-attachments",
+            data={"payload": self._payload()},
+            files=[("attachments", ("scan.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf"))],
         )
         assert res.status_code == 200

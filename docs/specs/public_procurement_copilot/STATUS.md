@@ -200,6 +200,36 @@ The feature should:
 
 None — initiative complete
 
+### 2026-04-16 — Post-generation slide_outline guidance now repairs procurement-grounded PPT metadata
+
+- Background:
+  - Procurement PDF normalization and prompt grounding were already generating `페이지 분류`, `PPT 페이지 설계 힌트`, and `발표/PPT 후보 페이지`, but the final provider output could still return slide metadata that ignored or under-filled those hints.
+  - This left a gap between procurement page classification and the actual structured PPT contract used by `proposal_kr` / `performance_plan_kr`.
+- What changed:
+  - added a parser for the normalized procurement context block so downstream services can recover page-classification, page-design-hint, and PPT-candidate metadata from the injected text
+  - updated the generation post-processing path to repair `slide_outline` items when procurement context exists:
+    - backfill `visual_type`, `layout_hint`, `visual_brief`
+    - append procurement-grounded evidence lines
+    - synthesize a minimal fallback outline when the provider omits the slide list entirely
+- Impact:
+  - `proposal_kr` and `performance_plan_kr` PPT design output is now materially more likely to stay aligned with real procurement source pages even when the model under-specifies slide metadata
+  - the fix is additive and isolated to the generation/stabilizer phase; provider implementations and route contracts remain unchanged
+- Validation:
+  - added parser tests for normalized procurement context round-tripping
+  - added generation-service tests covering slide metadata backfill and fallback outline synthesis
+
+### 2026-04-16 — Document-ingestion path now reuses procurement summary blocks during slide_outline repair
+
+- Background:
+  - `/generate/from-documents` merges procurement normalization into the freeform `context` string rather than passing `_procurement_context` as a first-class request field.
+  - Without a recovery step, procurement-aware slide repair only applied when project handoff injected `_procurement_context` directly.
+- What changed:
+  - generation post-processing now detects the normalized procurement summary block directly from `context` when `_procurement_context` is absent
+  - title replacement logic was tightened so generic or partially matched slide titles are renamed to procurement-grounded `candidate_label — detail` titles when the source page hint is more specific
+- Impact:
+  - uploaded procurement PDFs now influence final `slide_outline` output even on document-ingestion routes, not only on project-linked handoff routes
+  - generated PPT guide tables are more likely to expose concrete procurement page topics such as 평가 지표 체계 or 세부 추진 일정
+
 ### 2026-04-06 — Fresh-stack preflight corrected for create-path validation
 
 - Background:
@@ -2226,3 +2256,65 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
 - remaining boundary
   - this workaround only creates a fresh naming path; it does not prove that the AWS account will allow a new `CreateFunction` or new stack create
   - the next live check still has to be `deploy-smoke [dev-green]` or a similar suffixed `dev` run before any suffixed `prod` promotion is considered
+
+## 2026-04-16 — Procurement PDF Normalization Added To Attachment/RFP Parsing
+
+- shipped
+  - added `app/services/procurement_pdf_normalizer.py` to turn structured PDF extraction into a procurement-oriented summary block with document type guess, key sections, procurement signals, PPT candidate pages, and review notes
+  - updated `POST /generate/with-attachments`, `POST /generate/from-documents`, and `POST /attachments/parse-rfp` so PDF attachments prepend this normalized context before the raw extracted text
+  - kept the change additive and PDF-only so existing non-PDF attachment flows, provider boundaries, and storage behavior stay unchanged
+- file path
+  - `app/services/procurement_pdf_normalizer.py`
+  - `app/services/rfp_parser.py`
+  - `app/routers/generate.py`
+  - `tests/test_procurement_pdf_normalizer.py`
+  - `tests/test_rfp_parsing.py`
+  - `tests/test_generate_from_documents.py`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - real public-sector kickoff/evaluation PDFs were readable but still too flat for downstream generation because raw text alone did not preserve heading hierarchy, procurement signals, or slide-worthy structure
+  - the smallest safe improvement was to reuse the existing structured PDF extraction and add a procurement-specific normalization layer rather than rewriting attachment parsing or provider prompts
+- validation
+  - `python3 -m py_compile app/services/procurement_pdf_normalizer.py app/services/rfp_parser.py app/routers/generate.py tests/test_procurement_pdf_normalizer.py tests/test_rfp_parsing.py tests/test_generate_from_documents.py`
+  - `.venv/bin/pytest -q tests/test_procurement_pdf_normalizer.py tests/test_rfp_parsing.py tests/test_generate_from_documents.py tests/test_pdf_enhanced.py --tb=short`
+- remaining boundary
+  - this improves generation inputs for procurement PDFs, but it does not yet classify embedded images/diagrams or fully reconstruct multi-column slide layouts from the source PDF
+
+## 2026-04-16 — Procurement PDF Page Classifier Added For Better PPT/Section Planning
+
+- shipped
+  - extended `extract_pdf_structured()` so structured PDF extraction now returns per-page summaries with page number, detected headings, preview text, and table presence
+  - upgraded `app/services/procurement_pdf_normalizer.py` to classify pages into document-oriented buckets such as `개요/배경`, `평가기준/지표`, `일정/마일스톤`, `추진절차/방법`, and `조직/거버넌스`
+  - added a new `페이지 분류:` block and made `발표/PPT 후보 페이지:` prefer page-classifier output over heading-only heuristics when page metadata is available
+- file path
+  - `app/services/attachment_service.py`
+  - `app/services/procurement_pdf_normalizer.py`
+  - `tests/test_pdf_enhanced.py`
+  - `tests/test_procurement_pdf_normalizer.py`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - heading-only normalization improved procurement PDF ingestion but still mixed true section headings with fragmented legal/body text on real kickoff and evaluation slides
+  - the next smallest safe step was to add page-level structure so downstream generation can distinguish `개요`, `평가기준`, `일정`, and `거버넌스` pages even when heading extraction is imperfect
+- validation
+  - `python3 -m py_compile app/services/attachment_service.py app/services/procurement_pdf_normalizer.py tests/test_pdf_enhanced.py tests/test_procurement_pdf_normalizer.py`
+  - `.venv/bin/pytest -q tests/test_procurement_pdf_normalizer.py tests/test_rfp_parsing.py tests/test_generate_from_documents.py tests/test_pdf_enhanced.py --tb=short`
+- remaining boundary
+  - this page classifier improves slide/chapter planning inputs, but it still does not classify embedded images/diagrams or fully recover multi-column slide layouts
+
+## 2026-04-16 — Prompt Contract Updated To Use Procurement PDF Slide Hints In slide_outline
+
+- shipped
+  - updated `build_bundle_prompt()` so bundles that declare `slide_outline` now receive an explicit `공공조달 PPT 설계 적용 규칙` block when procurement context is present
+  - the prompt now tells the model to treat `페이지 분류`, `PPT 페이지 설계 힌트`, and `발표/PPT 후보 페이지` as source-of-truth inputs for `slide_outline.title`, `core_message`, `evidence_points`, `visual_type`, `visual_brief`, and `layout_hint`
+- file path
+  - `app/domain/schema.py`
+  - `tests/test_pdf_enhanced.py`
+  - `docs/specs/public_procurement_copilot/STATUS.md`
+- reason for change
+  - procurement PDF normalization and page classification were already being injected into context, but the prompt still left it implicit whether the model must use those hints when composing slide-by-slide structure
+  - the next minimal improvement was to make the contract explicit instead of relying on the model to infer that relationship on its own
+- validation
+  - `python3 -m py_compile app/domain/schema.py tests/test_pdf_enhanced.py`
+  - `.venv/bin/pytest -q tests/test_procurement_pdf_normalizer.py tests/test_rfp_parsing.py tests/test_generate_from_documents.py tests/test_pdf_enhanced.py --tb=short`
+- remaining boundary
+  - this strengthens prompt grounding, but it does not yet enforce post-generation validation that every `slide_outline` item actually matches the classified procurement pages
