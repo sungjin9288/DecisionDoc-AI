@@ -15,6 +15,8 @@ from app.services.export_labels import humanize_doc_type
 from app.services.markdown_utils import parse_markdown_blocks
 
 _MAX_SLIDE_LINES = 5
+_MAX_CONTENT_SLIDE_LINES = 4
+_MAX_CONTENT_SLIDE_LEN = 64
 _MAX_TABLE_ROWS = 6
 _COLOR_BG_DARK = RGBColor(27, 33, 69)
 _COLOR_BG_ACCENT = RGBColor(98, 79, 255)
@@ -31,10 +33,10 @@ def _clean_slide_text(text: str) -> str:
     return " ".join(str(text).replace("**", "").replace("`", "").split())
 
 
-def _chunk_lines(lines: list[str], size: int = _MAX_SLIDE_LINES) -> list[list[str]]:
+def _chunk_lines(lines: list[str], size: int = _MAX_SLIDE_LINES, max_len: int = 78) -> list[list[str]]:
     cleaned: list[str] = []
     for raw in lines:
-        cleaned.extend(_expand_slide_line(raw))
+        cleaned.extend(_expand_slide_line(raw, max_len=max_len))
     if not cleaned:
         return []
     chunk_count = max(1, (len(cleaned) + size - 1) // size)
@@ -570,7 +572,11 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
 
         def flush_section() -> None:
             nonlocal current_lines
-            chunks = _chunk_lines(current_lines)
+            chunks = _chunk_lines(
+                current_lines,
+                size=_MAX_CONTENT_SLIDE_LINES,
+                max_len=_MAX_CONTENT_SLIDE_LEN,
+            )
             if not chunks:
                 return
             for idx, chunk in enumerate(chunks, start=1):

@@ -168,6 +168,19 @@ def test_chunk_lines_rebalances_small_tail():
     assert [len(chunk) for chunk in chunks] == [3, 3]
 
 
+def test_chunk_lines_uses_tighter_max_len_for_dense_content():
+    chunks = _chunk_lines(
+        [
+            "수행계획서는 계약 범위, 일정, 산출물, 투입 인력, 승인 게이트를 하나의 실행 문서로 정리한 결과물입니다."
+        ],
+        size=4,
+        max_len=32,
+    )
+    flattened = [line for chunk in chunks for line in chunk]
+    assert len(flattened) >= 2
+    assert all(len(line) <= 32 for line in flattened)
+
+
 def test_pptx_agenda_slide_includes_short_lead_detail(tmp_path, monkeypatch):
     """Agenda cards should show a short presentation-oriented detail line, not titles only."""
     from pptx import Presentation
