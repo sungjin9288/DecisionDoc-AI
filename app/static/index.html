@@ -6380,6 +6380,16 @@
       .join(' · ');
   }
 
+  function _formatAppliedReferenceSummary(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const filenames = items
+      .map(item => String(item?.filename || item?.doc_id || '').trim())
+      .filter(Boolean);
+    if (!filenames.length) return '';
+    if (filenames.length === 1) return filenames[0];
+    return `${filenames[0]} 외 ${filenames.length - 1}건`;
+  }
+
   function _getPromotionProjectId() {
     return String(lastRequestPayload?.project_id || '').trim();
   }
@@ -9311,6 +9321,7 @@
         bundle_name: selectedBundle?.name_ko || payload.bundle_type || '',
         provider:    meta.provider || '',
         cache_hit:   meta.cache_hit,
+        applied_references: Array.isArray(meta.applied_references) ? meta.applied_references : [],
         docs,
         payload,
       });
@@ -9342,6 +9353,11 @@
         <div style="font-size:.72rem;color:var(--p1);margin-top:.15rem;">
           ${item.bundle_name} · ${item.provider}${item.cache_hit ? ' · ⚡' : ''}
         </div>
+        ${_formatAppliedReferenceSummary(item.applied_references) ? `
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">
+            참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
+          </div>
+        ` : ''}
       </div>
     `).join('') + `<button onclick="clearHistory()" style="width:100%;margin-top:.4rem;padding:.4rem;
       background:none;border:1.5px solid var(--border);border-radius:var(--radius-sm);
@@ -9414,6 +9430,11 @@
               ${escapeHtml(item.bundle_name||item.bundle_id||'')}
               · ${item.created_at ? new Date(item.created_at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}
             </div>
+            ${_formatAppliedReferenceSummary(item.applied_references) ? `
+              <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
+              </div>
+            ` : ''}
           </div>
           <button onclick='toggleHistoryStar(${JSON.stringify(item.entry_id)}, this)'
             style="background:none;border:none;cursor:pointer;font-size:.95rem;padding:2px 4px;

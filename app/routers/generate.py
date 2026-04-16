@@ -663,6 +663,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
             created_at=datetime.now(timezone.utc).isoformat(),
             score=0.0,
             tags=[],
+            applied_references=metadata.get("applied_references", []),
         ))
     except Exception as _he:
         logger.warning("[History] 이력 저장 실패 (무시): %s", _he)

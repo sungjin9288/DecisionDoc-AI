@@ -25,11 +25,13 @@ def test_history_store_add_and_get(tmp_path, monkeypatch):
         title="Test ADR",
         request_id="req-001",
         created_at="2026-03-01T00:00:00",
+        applied_references=[{"filename": "winning-proposal.docx", "selection_reason": "bundle `proposal_kr` 일치"}],
     )
     store.add(entry)
     items = store.get_for_user("u1")
     assert len(items) == 1
     assert items[0]["title"] == "Test ADR"
+    assert items[0]["applied_references"][0]["filename"] == "winning-proposal.docx"
 
 
 def test_history_store_delete(tmp_path, monkeypatch):

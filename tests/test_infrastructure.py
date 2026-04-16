@@ -160,6 +160,8 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "우선 참조 후보" in res.text
     assert "선정 이유" in res.text
     assert "점수 구성" in res.text
+    assert "참조 문서:" in res.text
+    assert "_formatAppliedReferenceSummary" in res.text
     assert "승인본 학습" in res.text
     assert "gold" in res.text
     assert "수주" in res.text

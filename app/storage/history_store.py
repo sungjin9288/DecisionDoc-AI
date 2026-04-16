@@ -30,6 +30,7 @@ class HistoryEntry:
     created_at: str
     score: float = 0.0
     tags: list = None
+    applied_references: list[dict] | None = None
 
 
 class HistoryStore:
@@ -88,6 +89,7 @@ class HistoryStore:
                 "created_at": entry.created_at,
                 "score": entry.score,
                 "tags": entry.tags or [],
+                "applied_references": entry.applied_references or [],
             })
             # Cap per-user entries
             user_entries = [e for e in entries if e.get("user_id") == entry.user_id]
