@@ -235,7 +235,8 @@ def _render_section_divider(
     prs: Presentation,
     title: str,
     subtitle: str = "",
-    meta_lines: list[str] | None = None,
+    section_lines: list[str] | None = None,
+    metric_lines: list[str] | None = None,
 ) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[2])
     _set_slide_background(slide, _COLOR_BG_DARK)
@@ -253,18 +254,31 @@ def _render_section_divider(
             font_size_pt=18,
             color=_COLOR_TEXT_LIGHT,
         )
-    meta_lines = [_clean_slide_text(line) for line in (meta_lines or []) if _clean_slide_text(line)]
-    if meta_lines:
+    section_lines = [_clean_slide_text(line) for line in (section_lines or []) if _clean_slide_text(line)]
+    metric_lines = [_clean_slide_text(line) for line in (metric_lines or []) if _clean_slide_text(line)]
+    if section_lines or metric_lines:
         _add_card(
             slide,
             left=0.8,
             top=4.2,
-            width=8.0,
+            width=4.25,
             height=1.4,
-            title="검토 메모",
-            body=meta_lines,
+            title="핵심 섹션",
+            body=section_lines or ["핵심 섹션 요약"],
             fill_color=_COLOR_CARD_SOFT,
             title_color=_COLOR_TEXT_DARK,
+            body_color=_COLOR_TEXT_DARK,
+        )
+        _add_card(
+            slide,
+            left=5.15,
+            top=4.2,
+            width=3.65,
+            height=1.4,
+            title="구성 지표",
+            body=metric_lines or ["구성 지표 없음"],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_BG_ACCENT,
             body_color=_COLOR_TEXT_DARK,
         )
 
@@ -567,9 +581,16 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
         fallback_title = humanize_doc_type(doc_type)
         current_title = fallback_title
         current_lines: list[str] = []
-        current_doc_heading = fallback_title
         skip_current_section = False
         table_subtitle = _clean_slide_text(summary.get("ppt_lead") or summary["lead"])
+        current_doc_heading = next(
+            (
+                _clean_slide_text(block.get("text", ""))
+                for block in blocks
+                if block.get("type") == "heading" and _clean_slide_text(block.get("text", ""))
+            ),
+            fallback_title,
+        )
 
         def flush_section() -> None:
             nonlocal current_lines
@@ -589,10 +610,8 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
             prs,
             current_doc_heading,
             summary.get("ppt_lead") or summary["lead"],
-            meta_lines=[
-                f"핵심 섹션: {summary['sections']}",
-                f"구성 지표: {' · '.join(summary.get('metric_items') or [summary['metrics']])}",
-            ],
+            section_lines=summary.get("section_items") or [summary["sections"]],
+            metric_lines=summary.get("metric_items") or [summary["metrics"]],
         )
 
         for block in blocks:
@@ -607,8 +626,6 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
                         continue
                     skip_current_section = False
                     current_title = heading_text
-                    if current_doc_heading == fallback_title:
-                        current_doc_heading = heading_text
             elif block_type == "paragraph":
                 if skip_current_section:
                     continue

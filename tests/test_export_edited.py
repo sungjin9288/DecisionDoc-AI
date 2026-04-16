@@ -230,6 +230,43 @@ def test_export_edited_pptx_table_slides_include_document_context_subtitle(tmp_p
     assert any("핵심 정책 목표" in text for text in texts[1:])
 
 
+def test_export_edited_pptx_section_divider_uses_structured_meta_cards(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    docs = [
+        {
+            "doc_type": "proposal_kr",
+            "markdown": (
+                "# 사업 이해\n\n"
+                "## 제안 요약\n\n"
+                "본 제안은 핵심 정책 목표를 공공기관이 실제 운영 KPI로 관리할 수 있도록 데이터 통합 · AI 분석 운영 대시보드를 하나의 사업 범위로 묶은 안입니다.\n\n"
+                "## 사업 배경\n\n"
+                "- 정책 환경 변화\n"
+                "- 발주기관 운영 부담 증가\n\n"
+                "## 사업 목표\n\n"
+                "| 목표 | KPI |\n"
+                "| --- | --- |\n"
+                "| 처리시간 단축 | 30% |\n"
+            ),
+        }
+    ]
+    res = client.post("/generate/export-edited", json={
+        "format": "pptx",
+        "title": "문서형 PPT",
+        "docs": docs,
+    })
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    divider_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "사업 이해"
+    )
+    divider_text = "\n".join(shape.text for shape in divider_slide.shapes if hasattr(shape, "text") and shape.text)
+    assert "핵심 섹션" in divider_text
+    assert "구성 지표" in divider_text
+    assert "검토 메모" not in divider_text
+
+
 # ── edge-cases & validation ─────────────────────────────────────────────────
 
 def test_export_edited_unsupported_format_returns_400(tmp_path, monkeypatch):
