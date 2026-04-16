@@ -53,6 +53,40 @@ def test_history_store_delete(tmp_path, monkeypatch):
     assert store.get_for_user("u1") == []
 
 
+def test_history_store_mark_promoted_updates_matching_request(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = HistoryStore("t1")
+    entry = HistoryEntry(
+        entry_id=str(uuid.uuid4()),
+        tenant_id="t1",
+        user_id="u1",
+        bundle_id="proposal_kr",
+        bundle_name="제안서",
+        title="승격 대상",
+        request_id="req-promote-001",
+        created_at="2026-03-01T00:00:00",
+    )
+    store.add(entry)
+
+    updated = store.mark_promoted(
+        "req-promote-001",
+        project_id="proj-123",
+        document_count=2,
+        quality_tier="gold",
+        success_state="approved",
+        promoted_at="2026-04-16T12:00:00+00:00",
+        user_id="u1",
+    )
+
+    assert updated == 1
+    item = store.get_for_user("u1")[0]
+    assert item["knowledge_promoted"] is True
+    assert item["knowledge_project_id"] == "proj-123"
+    assert item["knowledge_document_count"] == 2
+    assert item["knowledge_quality_tier"] == "gold"
+    assert item["knowledge_success_state"] == "approved"
+
+
 def test_history_store_cap_at_50(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     store = HistoryStore("t1")

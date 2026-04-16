@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 import re
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 
 from app.auth.api_key import require_api_key
@@ -207,6 +209,7 @@ def update_knowledge_document_metadata(
 )
 def promote_generated_documents_to_knowledge(
     project_id: str,
+    request: Request,
     body: PromoteKnowledgeReferenceRequest,
 ) -> dict:
     """승인된 생성 결과를 프로젝트 지식 학습 라이브러리로 승격."""
@@ -244,12 +247,41 @@ def promote_generated_documents_to_knowledge(
     if not created:
         raise HTTPException(422, detail="승격할 문서 본문이 없습니다.")
 
+    promoted_history_entries = 0
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    user_id = getattr(request.state, "user_id", "") or None
+    if body.source_request_id:
+        try:
+            from app.storage.history_store import HistoryStore
+
+            promoted_history_entries = HistoryStore(
+                tenant_id,
+                base_dir=str(request.app.state.data_dir),
+                backend=request.app.state.state_backend,
+            ).mark_promoted(
+                body.source_request_id,
+                project_id=project_id,
+                document_count=len(created),
+                quality_tier=body.quality_tier,
+                success_state=body.success_state,
+                promoted_at=datetime.now(UTC).isoformat(),
+                user_id=user_id,
+            )
+        except Exception as exc:
+            _log.warning(
+                "[Knowledge] Failed to update history promotion state project=%s request_id=%s: %s",
+                project_id,
+                body.source_request_id,
+                exc,
+            )
+
     return {
         "project_id": project_id,
         "promoted": len(created),
         "bundle_type": body.bundle_type,
         "source_bundle_id": body.source_bundle_id,
         "source_request_id": body.source_request_id,
+        "promoted_history_entries": promoted_history_entries,
         "documents": created,
     }
 

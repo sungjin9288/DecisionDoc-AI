@@ -31,6 +31,12 @@ class HistoryEntry:
     score: float = 0.0
     tags: list = None
     applied_references: list[dict] | None = None
+    knowledge_promoted: bool = False
+    knowledge_project_id: str = ""
+    knowledge_promoted_at: str = ""
+    knowledge_document_count: int = 0
+    knowledge_quality_tier: str = ""
+    knowledge_success_state: str = ""
 
 
 class HistoryStore:
@@ -90,6 +96,12 @@ class HistoryStore:
                 "score": entry.score,
                 "tags": entry.tags or [],
                 "applied_references": entry.applied_references or [],
+                "knowledge_promoted": bool(entry.knowledge_promoted),
+                "knowledge_project_id": entry.knowledge_project_id or "",
+                "knowledge_promoted_at": entry.knowledge_promoted_at or "",
+                "knowledge_document_count": int(entry.knowledge_document_count or 0),
+                "knowledge_quality_tier": entry.knowledge_quality_tier or "",
+                "knowledge_success_state": entry.knowledge_success_state or "",
             })
             # Cap per-user entries
             user_entries = [e for e in entries if e.get("user_id") == entry.user_id]
@@ -123,6 +135,42 @@ class HistoryStore:
                     break
             self._save(entries)
         return new_state
+
+    def mark_promoted(
+        self,
+        request_id: str,
+        *,
+        project_id: str,
+        document_count: int,
+        quality_tier: str,
+        success_state: str,
+        promoted_at: str,
+        user_id: str | None = None,
+    ) -> int:
+        """Mark matching history entries as promoted to the knowledge library.
+
+        Returns the number of updated entries.
+        """
+        if not request_id:
+            return 0
+        updated = 0
+        with self._lock:
+            entries = self._load()
+            for entry in entries:
+                if entry.get("request_id") != request_id:
+                    continue
+                if user_id and entry.get("user_id") != user_id:
+                    continue
+                entry["knowledge_promoted"] = True
+                entry["knowledge_project_id"] = project_id
+                entry["knowledge_promoted_at"] = promoted_at
+                entry["knowledge_document_count"] = int(document_count or 0)
+                entry["knowledge_quality_tier"] = str(quality_tier or "")
+                entry["knowledge_success_state"] = str(success_state or "")
+                updated += 1
+            if updated:
+                self._save(entries)
+        return updated
 
     def get_favorites(self, user_id: str) -> list[dict]:
         """즐겨찾기된 항목만 반환합니다."""

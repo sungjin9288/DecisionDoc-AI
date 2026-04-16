@@ -387,6 +387,21 @@ class TestKnowledgeAPI:
         assert body["notes"] == "실수주 사례"
 
     def test_promote_generated_documents_to_knowledge(self, client, tmp_path):
+        from app.storage.history_store import HistoryEntry, HistoryStore
+
+        HistoryStore("system", base_dir=str(tmp_path)).add(
+            HistoryEntry(
+                entry_id="req-456",
+                tenant_id="system",
+                user_id="test-user",
+                bundle_id="proposal_kr",
+                bundle_name="proposal_kr",
+                title="파주시 모빌리티 제안서",
+                request_id="req-456",
+                created_at="2026-04-16T00:00:00+00:00",
+            )
+        )
+
         resp = client.post(
             "/knowledge/proj-promote/promote-generated",
             headers=HEADERS,
@@ -413,9 +428,17 @@ class TestKnowledgeAPI:
         assert body["bundle_type"] == "proposal_kr"
         assert body["source_bundle_id"] == "bundle-123"
         assert body["source_request_id"] == "req-456"
+        assert body["promoted_history_entries"] == 1
         assert body["documents"][0]["learning_mode"] == "approved_output"
         assert body["documents"][0]["quality_tier"] == "gold"
         assert body["documents"][0]["applicable_bundles"] == ["proposal_kr"]
+
+        history_item = HistoryStore("system", base_dir=str(tmp_path)).get_for_user("test-user")[0]
+        assert history_item["knowledge_promoted"] is True
+        assert history_item["knowledge_project_id"] == "proj-promote"
+        assert history_item["knowledge_document_count"] == 2
+        assert history_item["knowledge_quality_tier"] == "gold"
+        assert history_item["knowledge_success_state"] == "awarded"
 
         preview = client.get(
             "/knowledge/proj-promote/context",

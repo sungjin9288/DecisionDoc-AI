@@ -6390,6 +6390,41 @@
     return `${filenames[0]} 외 ${filenames.length - 1}건`;
   }
 
+  function _renderHistoryPromotionBadge(item) {
+    if (!item || !item.knowledge_promoted) return '';
+    const count = Number(item.knowledge_document_count || 0);
+    const quality = String(item.knowledge_quality_tier || '').trim();
+    const success = String(item.knowledge_success_state || '').trim();
+    const meta = [count > 0 ? `${count}건` : '', quality, success].filter(Boolean).join(' · ');
+    return `
+      <div style="margin-top:.32rem;display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;">
+        ${_knowledgePill('승인본 학습 완료', 'approved_output')}
+        ${meta ? `<span style="font-size:.72rem;color:var(--muted);">${escapeHtml(meta)}</span>` : ''}
+      </div>
+    `;
+  }
+
+  function _markLocalHistoryPromoted(requestId, payload) {
+    if (!requestId) return;
+    try {
+      const items = loadHistory();
+      let changed = false;
+      items.forEach(item => {
+        if (String(item?.id || item?.request_id || '') !== String(requestId)) return;
+        item.knowledge_promoted = true;
+        item.knowledge_project_id = payload.project_id || '';
+        item.knowledge_promoted_at = payload.promoted_at || new Date().toISOString();
+        item.knowledge_document_count = Number(payload.knowledge_document_count || 0);
+        item.knowledge_quality_tier = payload.knowledge_quality_tier || '';
+        item.knowledge_success_state = payload.knowledge_success_state || '';
+        changed = true;
+      });
+      if (changed) {
+        localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(items));
+      }
+    } catch {}
+  }
+
   function _getPromotionProjectId() {
     return String(lastRequestPayload?.project_id || '').trim();
   }
@@ -6477,9 +6512,17 @@
         throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
       }
       const data = await res.json();
+      _markLocalHistoryPromoted(lastMeta?.request_id || '', {
+        project_id: projectId,
+        promoted_at: new Date().toISOString(),
+        knowledge_document_count: data.promoted || docs.length,
+        knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
+        knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
+      });
       showNotification(`승인본 ${data.promoted || docs.length}건을 지식 라이브러리에 저장했습니다.`, 'success');
       closeKnowledgePromoteModal();
       await updateKnowledgeBadge(projectId);
+      renderHistoryList();
       if ($id('knowledge-project-select')) {
         await loadKnowledgeProjectSelector();
         $id('knowledge-project-select').value = projectId;
@@ -9399,6 +9442,7 @@
             참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
           </div>
         ` : ''}
+        ${_renderHistoryPromotionBadge(item)}
         <div style="display:flex;gap:.35rem;margin-top:.45rem;">
           ${Array.isArray(item.applied_references) && item.applied_references.length ? `
             <button type="button" class="history-reference-btn"
@@ -9493,6 +9537,7 @@
                 참조 문서: ${escapeHtml(_formatAppliedReferenceSummary(item.applied_references))}
               </div>
             ` : ''}
+            ${_renderHistoryPromotionBadge(item)}
             ${Array.isArray(item.applied_references) && item.applied_references.length ? `
               <div style="margin-top:.35rem;">
                 <button type="button" class="history-reference-preview"
