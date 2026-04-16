@@ -32,6 +32,32 @@ def test_history_store_add_and_get(tmp_path, monkeypatch):
     assert len(items) == 1
     assert items[0]["title"] == "Test ADR"
     assert items[0]["applied_references"][0]["filename"] == "winning-proposal.docx"
+    assert "docs" not in items[0]
+
+
+def test_history_store_get_entry_returns_docs_for_promotion(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = HistoryStore("t1")
+    entry = HistoryEntry(
+        entry_id=str(uuid.uuid4()),
+        tenant_id="t1",
+        user_id="u1",
+        bundle_id="proposal_kr",
+        bundle_type="proposal_kr",
+        bundle_name="제안서",
+        title="승격 가능한 제안서",
+        request_id="req-history-detail-001",
+        created_at="2026-03-01T00:00:00",
+        project_id="proj-001",
+        docs=[{"doc_type": "business_understanding", "markdown": "# 제목\n본문"}],
+    )
+    store.add(entry)
+
+    detail = store.get_entry(entry.entry_id, "u1")
+    assert detail is not None
+    assert detail["project_id"] == "proj-001"
+    assert detail["bundle_type"] == "proposal_kr"
+    assert detail["docs"][0]["doc_type"] == "business_understanding"
 
 
 def test_history_store_delete(tmp_path, monkeypatch):
@@ -186,6 +212,35 @@ def test_history_get_returns_history_key():
     data = res.json()
     assert "history" in data
     assert isinstance(data["history"], list)
+
+
+def test_history_get_entry_returns_docs_payload(tmp_path, monkeypatch):
+    store = HistoryStore(
+        "system",
+        base_dir=str(client.app.state.data_dir),
+        backend=client.app.state.state_backend,
+    )
+    entry = HistoryEntry(
+        entry_id="history-detail-001",
+        tenant_id="system",
+        user_id="testuser",
+        bundle_id="proposal_kr",
+        bundle_type="proposal_kr",
+        bundle_name="제안서",
+        title="상세 이력",
+        request_id="req-history-api-001",
+        created_at="2026-03-01T00:00:00",
+        project_id="proj-history-1",
+        docs=[{"doc_type": "business_understanding", "markdown": "# 본문"}],
+    )
+    store.add(entry)
+
+    res = client.get("/history/history-detail-001", headers=_auth_headers())
+    assert res.status_code == 200
+    data = res.json()
+    assert data["project_id"] == "proj-history-1"
+    assert data["bundle_type"] == "proposal_kr"
+    assert data["docs"][0]["doc_type"] == "business_understanding"
 
 
 def test_history_delete_nonexistent_returns_200():

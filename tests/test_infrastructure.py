@@ -166,6 +166,9 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "history-reference-modal" in res.text
     assert "히스토리 참조 근거" in res.text
     assert "근거 보기" in res.text
+    assert "promoteServerHistoryEntry" in res.text
+    assert "history-promote-server-btn" in res.text
+    assert "history-promote-btn" in res.text
     assert "_markLocalHistoryPromoted" in res.text
     assert "_renderHistoryPromotionBadge" in res.text
     assert "_applyKnowledgePromotionState" in res.text

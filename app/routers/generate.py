@@ -657,13 +657,16 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
             tenant_id=tenant_id,
             user_id=user_id,
             bundle_id=req.bundle_type,
+            bundle_type=req.bundle_type,
             bundle_name=req.bundle_type,
             title=req.title,
             request_id=request_id,
             created_at=datetime.now(timezone.utc).isoformat(),
+            project_id=req.project_id or "",
             score=0.0,
             tags=[],
             applied_references=metadata.get("applied_references", []),
+            docs=result["docs"],
         ))
     except Exception as _he:
         logger.warning("[History] 이력 저장 실패 (무시): %s", _he)

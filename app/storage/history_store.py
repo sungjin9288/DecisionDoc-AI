@@ -28,9 +28,12 @@ class HistoryEntry:
     title: str
     request_id: str
     created_at: str
+    bundle_type: str = ""
+    project_id: str = ""
     score: float = 0.0
     tags: list = None
     applied_references: list[dict] | None = None
+    docs: list[dict] | None = None
     knowledge_promoted: bool = False
     knowledge_project_id: str = ""
     knowledge_promoted_at: str = ""
@@ -81,6 +84,13 @@ class HistoryStore:
             content_type="application/x-ndjson; charset=utf-8",
         )
 
+    @staticmethod
+    def _sanitize_entry(entry: dict, *, include_docs: bool = False) -> dict:
+        item = dict(entry)
+        if not include_docs:
+            item.pop("docs", None)
+        return item
+
     def add(self, entry: HistoryEntry) -> None:
         with self._lock:
             entries = self._load()
@@ -89,13 +99,16 @@ class HistoryStore:
                 "tenant_id": entry.tenant_id,
                 "user_id": entry.user_id,
                 "bundle_id": entry.bundle_id,
+                "bundle_type": entry.bundle_type or entry.bundle_id,
                 "bundle_name": entry.bundle_name,
                 "title": entry.title,
                 "request_id": entry.request_id,
                 "created_at": entry.created_at,
+                "project_id": entry.project_id or "",
                 "score": entry.score,
                 "tags": entry.tags or [],
                 "applied_references": entry.applied_references or [],
+                "docs": entry.docs or [],
                 "knowledge_promoted": bool(entry.knowledge_promoted),
                 "knowledge_project_id": entry.knowledge_project_id or "",
                 "knowledge_promoted_at": entry.knowledge_promoted_at or "",
@@ -112,7 +125,19 @@ class HistoryStore:
     def get_for_user(self, user_id: str, limit: int = 20) -> list[dict]:
         with self._lock:
             entries = self._load()
-        return [e for e in entries if e.get("user_id") == user_id][:limit]
+        return [
+            self._sanitize_entry(e)
+            for e in entries
+            if e.get("user_id") == user_id
+        ][:limit]
+
+    def get_entry(self, entry_id: str, user_id: str) -> dict | None:
+        with self._lock:
+            entries = self._load()
+        for entry in entries:
+            if entry.get("entry_id") == entry_id and entry.get("user_id") == user_id:
+                return self._sanitize_entry(entry, include_docs=True)
+        return None
 
     def delete(self, entry_id: str, user_id: str) -> None:
         with self._lock:
@@ -177,7 +202,8 @@ class HistoryStore:
         with self._lock:
             entries = self._load()
         return [
-            e for e in entries
+            self._sanitize_entry(e)
+            for e in entries
             if e.get("user_id") == user_id and e.get("starred", False)
         ]
 
@@ -199,5 +225,5 @@ class HistoryStore:
                 " ".join(e.get("tags") or []),
             ]).lower()
             if q_lower in haystack:
-                results.append(e)
+                results.append(self._sanitize_entry(e))
         return results[:limit]

@@ -6102,6 +6102,7 @@
   let _locationProcurementActivityActionFilters = [];
   let _activeProcurementRoleBrief = 'proposal_bd';
   let _approvalRequestSource = null;
+  let _knowledgePromotionTarget = null;
   let _serverVersionInfo = {
     version: '1.1.0',
     features: {
@@ -6444,6 +6445,30 @@
       : 'project_id가 있는 생성 결과만 학습 라이브러리로 승격할 수 있습니다';
   }
 
+  function _normalizeKnowledgePromotionTarget(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const docs = (Array.isArray(raw.docs) ? raw.docs : [])
+      .map(doc => ({
+        doc_type: String(doc?.doc_type || '').trim(),
+        markdown: String(doc?._editedMarkdown || doc?.markdown || '').trim(),
+      }))
+      .filter(doc => doc.doc_type && doc.markdown);
+    const projectId = String(raw.projectId || raw.project_id || '').trim();
+    const title = String(raw.title || '').trim();
+    const bundleType = String(raw.bundleType || raw.bundle_type || '').trim();
+    if (!projectId || !title || !bundleType || !docs.length) return null;
+    return {
+      source: String(raw.source || 'results'),
+      projectId,
+      title,
+      bundleType,
+      docs,
+      bundleId: String(raw.bundleId || raw.bundle_id || '').trim(),
+      requestId: String(raw.requestId || raw.request_id || '').trim(),
+      knowledgePromoted: !!raw.knowledgePromoted || !!raw.knowledge_promoted,
+    };
+  }
+
   function _getPromotionProjectId() {
     return String(lastRequestPayload?.project_id || '').trim();
   }
@@ -6458,16 +6483,40 @@
         markdown: String(doc._editedMarkdown || doc.markdown || '').trim(),
       }))
       .filter(doc => doc.doc_type && doc.markdown);
-    return { projectId, title, bundleType, docs };
+    return {
+      source: 'results',
+      projectId,
+      title,
+      bundleType,
+      docs,
+      bundleId: String(lastMeta?.bundle_id || '').trim(),
+      requestId: String(lastMeta?.request_id || '').trim(),
+      knowledgePromoted: !!lastMeta?.knowledge_promoted,
+    };
+  }
+
+  function _getActiveKnowledgePromotionTarget() {
+    return _normalizeKnowledgePromotionTarget(_knowledgePromotionTarget) || _normalizeKnowledgePromotionTarget(_buildKnowledgePromotionState());
   }
 
   function closeKnowledgePromoteModal() {
     const modal = $id('knowledge-promote-modal');
     if (modal) modal.style.display = 'none';
+    _knowledgePromotionTarget = null;
   }
 
-  function openKnowledgePromoteModal() {
-    const { projectId, title, bundleType, docs } = _buildKnowledgePromotionState();
+  function openKnowledgePromoteModal(target = null) {
+    _knowledgePromotionTarget = target ? _normalizeKnowledgePromotionTarget(target) : null;
+    const promotionTarget = _getActiveKnowledgePromotionTarget();
+    if (!promotionTarget) {
+      showNotification('승격에 필요한 생성 결과 정보가 부족합니다.', 'warn');
+      return;
+    }
+    if (promotionTarget.knowledgePromoted) {
+      showNotification('이미 학습된 승인본입니다.', 'info');
+      return;
+    }
+    const { projectId, title, bundleType, docs, requestId, bundleId } = promotionTarget;
     if (!docs.length) {
       showNotification('승격할 생성 문서가 없습니다.', 'warn');
       return;
@@ -6484,19 +6533,20 @@
     $id('knowledge-promote-tags').value = '';
     $id('knowledge-promote-org').value = '';
     $id('knowledge-promote-year').value = '';
-    $id('knowledge-promote-notes').value = lastMeta?.request_id ? `승격 요청 ID: ${lastMeta.request_id}` : '';
-    $id('knowledge-promote-meta').textContent = `승격 대상 문서 ${docs.length}건 · bundle ${bundleType || 'unknown'} · bundle_id ${lastMeta?.bundle_id || 'n/a'}`;
+    $id('knowledge-promote-notes').value = requestId ? `승격 요청 ID: ${requestId}` : '';
+    $id('knowledge-promote-meta').textContent = `승격 대상 문서 ${docs.length}건 · bundle ${bundleType || 'unknown'} · bundle_id ${bundleId || 'n/a'} · project ${projectId}`;
     const modal = $id('knowledge-promote-modal');
     if (modal) modal.style.display = 'flex';
   }
 
   async function submitKnowledgePromotion(event) {
     event.preventDefault();
-    const { projectId, title, bundleType, docs } = _buildKnowledgePromotionState();
-    if (!projectId || !title || !bundleType || !docs.length) {
+    const promotionTarget = _getActiveKnowledgePromotionTarget();
+    if (!promotionTarget) {
       showNotification('승격에 필요한 생성 결과 정보가 부족합니다.', 'error');
       return;
     }
+    const { projectId, title, bundleType, docs } = promotionTarget;
     const submitBtn = $id('knowledge-promote-submit-btn');
     if (submitBtn) {
       submitBtn.disabled = true;
@@ -6522,8 +6572,8 @@
           source_organization: String($id('knowledge-promote-org')?.value || '').trim(),
           reference_year: Number.isFinite(referenceYear) ? referenceYear : null,
           notes: String($id('knowledge-promote-notes')?.value || '').trim(),
-          source_bundle_id: lastMeta?.bundle_id || '',
-          source_request_id: lastMeta?.request_id || '',
+          source_bundle_id: promotionTarget.bundleId || '',
+          source_request_id: promotionTarget.requestId || '',
         }),
       });
       if (!res.ok) {
@@ -6531,18 +6581,21 @@
         throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
       }
       const data = await res.json();
-      lastMeta = {
-        ...(lastMeta || {}),
-        knowledge_promoted: true,
-        knowledge_project_id: projectId,
-        knowledge_promoted_at: new Date().toISOString(),
-        knowledge_document_count: data.promoted || data.reused || docs.length,
-        knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
-        knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
-      };
-      _markLocalHistoryPromoted(lastMeta?.request_id || '', {
+      const promotedAt = new Date().toISOString();
+      if (promotionTarget.requestId && String(lastMeta?.request_id || '') === String(promotionTarget.requestId)) {
+        lastMeta = {
+          ...(lastMeta || {}),
+          knowledge_promoted: true,
+          knowledge_project_id: projectId,
+          knowledge_promoted_at: promotedAt,
+          knowledge_document_count: data.promoted || data.reused || docs.length,
+          knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
+          knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
+        };
+      }
+      _markLocalHistoryPromoted(promotionTarget.requestId || '', {
         project_id: projectId,
-        promoted_at: new Date().toISOString(),
+        promoted_at: promotedAt,
         knowledge_document_count: data.promoted || data.reused || docs.length,
         knowledge_quality_tier: $id('knowledge-promote-quality')?.value || 'gold',
         knowledge_success_state: $id('knowledge-promote-success')?.value || 'approved',
@@ -6558,6 +6611,7 @@
       closeKnowledgePromoteModal();
       await updateKnowledgeBadge(projectId);
       renderHistoryList();
+      await loadServerHistory($id('history-search-input')?.value || '');
       if ($id('knowledge-project-select')) {
         await loadKnowledgeProjectSelector();
         $id('knowledge-project-select').value = projectId;
@@ -6573,6 +6627,35 @@
         submitBtn.disabled = false;
         submitBtn.textContent = '🧠 지식 라이브러리에 저장';
       }
+    }
+  }
+
+  async function promoteServerHistoryEntry(entryId) {
+    if (!entryId) return;
+    try {
+      const res = await fetch(`/history/${encodeURIComponent(entryId)}`, { headers: getAuthHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+      }
+      const item = await res.json();
+      const target = _normalizeKnowledgePromotionTarget({
+        source: 'history-server',
+        project_id: item.project_id,
+        title: item.title,
+        bundle_type: item.bundle_type || item.bundle_id,
+        docs: item.docs,
+        bundle_id: item.bundle_id,
+        request_id: item.request_id,
+        knowledge_promoted: item.knowledge_promoted,
+      });
+      if (!target) {
+        showNotification('이 이력은 학습 승격에 필요한 문서 본문이나 프로젝트 정보가 없습니다.', 'warn');
+        return;
+      }
+      openKnowledgePromoteModal(target);
+    } catch (e) {
+      showNotification(`이력 불러오기 실패: ${e.message || e}`, 'error');
     }
   }
 
@@ -9473,6 +9556,13 @@
         ` : ''}
         ${_renderHistoryPromotionBadge(item)}
         <div style="display:flex;gap:.35rem;margin-top:.45rem;">
+          ${!item.knowledge_promoted && item?.payload?.project_id && Array.isArray(item.docs) && item.docs.length ? `
+            <button type="button" class="history-promote-btn"
+              style="padding:.18rem .48rem;border-radius:6px;background:#eef2ff;color:var(--p1);
+                     border:1px solid var(--p-ring);font-size:.72rem;cursor:pointer;font-weight:700;">
+              🧠 학습
+            </button>
+          ` : ''}
           ${Array.isArray(item.applied_references) && item.applied_references.length ? `
             <button type="button" class="history-reference-btn"
               style="padding:.18rem .48rem;border-radius:6px;background:var(--p-light);color:var(--p1);
@@ -9508,6 +9598,23 @@
         const item = loadHistory()[index];
         if (!item) return;
         openHistoryReferenceModal(item.title, item.applied_references);
+      });
+    });
+    list.querySelectorAll('.history-promote-btn').forEach((btn, index) => {
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        const item = loadHistory()[index];
+        if (!item) return;
+        openKnowledgePromoteModal({
+          source: 'history-local',
+          project_id: item?.payload?.project_id || '',
+          title: item.title,
+          bundle_type: item.bundle_type,
+          docs: item.docs,
+          bundle_id: item.bundle_id || item.bundle_type || '',
+          request_id: item.id || item.request_id || '',
+          knowledge_promoted: item.knowledge_promoted,
+        });
       });
     });
   }
@@ -9587,6 +9694,14 @@
                    border:1px solid var(--p-ring);font-size:.75rem;cursor:pointer;font-weight:600;flex-shrink:0;">
             재사용
           </button>
+          ${!item.knowledge_promoted && item.project_id ? `
+            <button type="button" class="history-promote-server-btn"
+              data-entry-id="${escapeHtml(item.entry_id || '')}"
+              style="padding:.2rem .55rem;border-radius:6px;background:#eef2ff;color:var(--p1);
+                     border:1px solid var(--p-ring);font-size:.75rem;cursor:pointer;font-weight:700;flex-shrink:0;">
+              🧠 학습
+            </button>
+          ` : ''}
           <button onclick='deleteServerHistory(${JSON.stringify(item.entry_id)})'
             style="background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--muted);flex-shrink:0;"
             title="삭제">✕</button>
@@ -9599,6 +9714,12 @@
           const item = items.find(candidate => String(candidate.entry_id || '') === entryId);
           if (!item) return;
           openHistoryReferenceModal(item.title, item.applied_references);
+        });
+      });
+      list.querySelectorAll('.history-promote-server-btn').forEach(btn => {
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
+          promoteServerHistoryEntry(btn.dataset.entryId || '');
         });
       });
     } catch (e) {

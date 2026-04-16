@@ -58,6 +58,25 @@ def get_history(
     return {"history": entries, "count": len(entries), "q": q}
 
 
+@router.get("/history/{entry_id}", dependencies=[Depends(require_api_key)])
+def get_history_entry(entry_id: str, request: Request):
+    """단일 이력 상세 조회. 승격/재사용용으로 전체 docs payload를 포함한다."""
+    require_auth(request)
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    user_id = getattr(request.state, "user_id", "anonymous")
+    from app.storage.history_store import HistoryStore
+
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
+    entry = store.get_entry(entry_id, user_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
+    return entry
+
+
 @router.delete("/history/{entry_id}", dependencies=[Depends(require_api_key)])
 def delete_history_entry(entry_id: str, request: Request):
     require_auth(request)
