@@ -26,3 +26,22 @@ def test_summarize_export_docs_exposes_short_ppt_lead() -> None:
     summary = summarize_export_docs(docs)[0]
     assert summary["ppt_lead"] == "첫 문장은 발표자료용 요약으로 충분히 짧아야 합니다."
     assert "두 번째 문장" not in summary["ppt_lead"]
+
+
+def test_summarize_export_docs_exposes_structured_section_and_metric_items() -> None:
+    docs = [
+        {
+            "doc_type": "business_understanding",
+            "markdown": (
+                "# 사업 이해\n\n"
+                "제안의 핵심 요약입니다.\n\n"
+                "## 제안 요약\n\n"
+                "| 항목 | 내용 |\n| --- | --- |\n| KPI | 운영 정렬 |\n\n"
+                "## 사업 배경\n\n"
+                "- 정책 배경\n"
+            ),
+        }
+    ]
+    summary = summarize_export_docs(docs)[0]
+    assert summary["section_items"] == ["제안 요약", "사업 배경"]
+    assert summary["metric_items"] == ["표 1개", "목록 1개"]

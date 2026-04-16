@@ -85,14 +85,16 @@ def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 table_count += 1
 
         primary_sections = [item for item in headings[1:4] if item]
-        section_hint = " · ".join(primary_sections) if primary_sections else "핵심 섹션 요약"
+        section_items = primary_sections or ["핵심 섹션 요약"]
+        section_hint = " · ".join(section_items)
 
         metric_parts: list[str] = []
         if table_count:
             metric_parts.append(f"표 {table_count}개")
         if bullet_count:
             metric_parts.append(f"목록 {bullet_count}개")
-        metrics = " / ".join(metric_parts) if metric_parts else "서술형 중심 문서"
+        metric_items = metric_parts or ["서술형 중심 문서"]
+        metrics = " / ".join(metric_items)
 
         summaries.append(
             {
@@ -101,7 +103,9 @@ def summarize_export_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "lead": _truncate(lead or f"{label}의 핵심 내용을 정리한 문서입니다."),
                 "ppt_lead": _ppt_lead(lead or f"{label}의 핵심 내용을 정리한 문서입니다."),
                 "sections": section_hint,
+                "section_items": section_items,
                 "metrics": metrics,
+                "metric_items": metric_items,
                 "table_count": table_count,
                 "bullet_count": bullet_count,
                 "heading_count": len(headings),

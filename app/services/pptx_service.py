@@ -131,6 +131,25 @@ def _add_text_box(
     _style_text_frame(tx_box.text_frame, font_size_pt=font_size_pt, bold=bold, color=color, align=align)
 
 
+def _set_text_frame_lines(
+    text_frame: Any,
+    lines: list[str],
+    *,
+    font_size_pt: int = 14,
+    bold: bool = False,
+    color: RGBColor | None = None,
+    align: PP_ALIGN | None = None,
+) -> None:
+    cleaned_lines = [_clean_slide_text(line) for line in lines if _clean_slide_text(line)]
+    text_frame.clear()
+    if not cleaned_lines:
+        cleaned_lines = [""]
+    text_frame.paragraphs[0].text = cleaned_lines[0]
+    for line in cleaned_lines[1:]:
+        text_frame.add_paragraph().text = line
+    _style_text_frame(text_frame, font_size_pt=font_size_pt, bold=bold, color=color, align=align)
+
+
 def _style_text_frame(
     text_frame: Any,
     *,
@@ -163,7 +182,7 @@ def _add_card(
     width: float,
     height: float,
     title: str,
-    body: str,
+    body: str | list[str],
     fill_color: RGBColor = _COLOR_CARD,
     title_color: RGBColor = _COLOR_TEXT_DARK,
     body_color: RGBColor = _COLOR_TEXT_MUTED,
@@ -190,16 +209,22 @@ def _add_card(
         bold=True,
         color=title_color,
     )
-    _add_text_box(
-        slide,
-        left=left + 0.18,
-        top=top + 0.48,
-        width=width - 0.36,
-        height=height - 0.6,
-        text=body,
-        font_size_pt=11,
-        color=body_color,
+    body_box = slide.shapes.add_textbox(
+        Inches(left + 0.18),
+        Inches(top + 0.48),
+        Inches(width - 0.36),
+        Inches(height - 0.6),
     )
+    if isinstance(body, list):
+        _set_text_frame_lines(
+            body_box.text_frame,
+            body,
+            font_size_pt=11,
+            color=body_color,
+        )
+    else:
+        body_box.text_frame.text = _clean_slide_text(body)
+        _style_text_frame(body_box.text_frame, font_size_pt=11, color=body_color)
 
 
 def _render_section_divider(
@@ -233,7 +258,7 @@ def _render_section_divider(
             width=8.0,
             height=1.4,
             title="검토 메모",
-            body=" / ".join(meta_lines),
+            body=meta_lines,
             fill_color=_COLOR_CARD_SOFT,
             title_color=_COLOR_TEXT_DARK,
             body_color=_COLOR_TEXT_DARK,
@@ -284,19 +309,25 @@ def _render_summary_slide(prs: Presentation, summaries: list[dict[str, str]]) ->
 
     top = 1.25
     for summary in summaries[:4]:
+        metric_items = summary.get("metric_items") or [summary["metrics"]]
+        body_lines = [
+            summary.get("ppt_lead") or summary["lead"],
+            f"핵심 섹션: {summary['sections']}",
+            f"구성 지표: {' · '.join(metric_items)}",
+        ]
         _add_card(
             slide,
             left=0.65,
             top=top,
             width=8.5,
-            height=1.1,
+            height=1.35,
             title=f"문서 {summary['index']} | {summary['label']}",
-            body=f"{summary.get('ppt_lead') or summary['lead']} / 핵심 섹션: {summary['sections']} / {summary['metrics']}",
+            body=body_lines,
             fill_color=_COLOR_CARD,
             title_color=_COLOR_TEXT_DARK,
             body_color=_COLOR_TEXT_MUTED,
         )
-        top += 1.25
+        top += 1.45
 
 
 def _structured_slide_summaries(slide_outline: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -510,7 +541,7 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
             summary.get("ppt_lead") or summary["lead"],
             meta_lines=[
                 f"핵심 섹션: {summary['sections']}",
-                f"구성 특징: {summary['metrics']}",
+                f"구성 지표: {' · '.join(summary.get('metric_items') or [summary['metrics']])}",
             ],
         )
 

@@ -146,5 +146,6 @@ def test_pptx_summary_slide_prefers_short_presentation_lead(tmp_path, monkeypatc
     summary_slide = next(slide for slide in prs.slides if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "핵심 검토 포인트")
     summary_text = "\n".join(shape.text for shape in summary_slide.shapes if hasattr(shape, "text") and shape.text)
     assert "핵심 섹션:" in summary_text
-    assert "구성 특징" not in summary_text
+    assert "구성 지표:" in summary_text
+    assert " / 핵심 섹션:" not in summary_text
     assert "하나의 사업 범위로 묶은 안입니다. 사업 배경과 현황 문제를 정책 목표와 연결해 설명하고" not in summary_text
