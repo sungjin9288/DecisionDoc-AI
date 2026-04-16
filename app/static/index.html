@@ -2867,6 +2867,25 @@
       color: var(--text-secondary, var(--muted));
       line-height: 1.4;
     }
+    .slide-guide-section {
+      margin-top: .48rem;
+      padding-top: .45rem;
+      border-top: 1px solid rgba(99,115,129,.14);
+    }
+    .slide-guide-label {
+      display: block;
+      font-size: .62rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: .16rem;
+      letter-spacing: -.01em;
+    }
+    .slide-guide-text {
+      font-size: .68rem;
+      color: var(--text-secondary, var(--muted));
+      line-height: 1.45;
+      word-break: keep-all;
+    }
     /* 검색 스니펫 */
     .snippet-item {
       font-size: .78rem;
@@ -4981,6 +5000,16 @@
         </div>
       </div>
       <div id="results-storyboard-cards" class="slide-card-row"></div>
+    </div>
+
+    <div id="results-ppt-guide" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.55rem;">
+        <div>
+          <div style="font-size:.8rem;font-weight:800;color:var(--accent, var(--p1));">📐 PPT 페이지 설계</div>
+          <div id="results-ppt-guide-meta" style="font-size:.76rem;color:var(--muted);">생성 응답의 slide_outline를 기준으로 페이지별 설계 힌트를 보여줍니다.</div>
+        </div>
+      </div>
+      <div id="results-ppt-guide-cards" class="slide-card-row"></div>
     </div>
 
     <!-- 일괄 다운로드 버튼 -->
@@ -7825,6 +7854,12 @@
     });
   }
 
+  function _setActivePptGuideCard(targetKey) {
+    document.querySelectorAll('#results-ppt-guide-cards .slide-card').forEach(card => {
+      card.classList.toggle('is-active', card.dataset.pptGuideKey === targetKey);
+    });
+  }
+
   function _activateResultTab(index) {
     if (index < 0 || index >= generatedDocs.length) return;
     document.querySelectorAll('#tab-bar .tab-btn').forEach((btn, i) => {
@@ -7834,11 +7869,15 @@
     showDoc(index);
   }
 
-  function _findStoryboardDocIndex(title) {
+  function _findStoryboardDocIndex(title, preferredDocType = '') {
     const needle = _normalizeStoryboardText(title);
     if (!needle) return activeTab;
 
     const prioritized = [];
+    if (preferredDocType) {
+      const preferredIndex = generatedDocs.findIndex(doc => doc.doc_type === preferredDocType);
+      if (preferredIndex >= 0) prioritized.push(preferredIndex);
+    }
     if (selectedBundle?.id === 'presentation_kr') {
       const slideIndex = generatedDocs.findIndex(doc => doc.doc_type === 'slide_structure');
       if (slideIndex >= 0) prioritized.push(slideIndex);
@@ -7854,10 +7893,9 @@
     return prioritized[0] ?? activeTab;
   }
 
-  function focusStoryboardSection(title) {
+  function _focusDocSectionByTitle(title, preferredDocType = '') {
     if (!title || !generatedDocs.length) return;
-    _setActiveStoryboardCard(title);
-    const docIndex = _findStoryboardDocIndex(title);
+    const docIndex = _findStoryboardDocIndex(title, preferredDocType);
     if (docIndex !== activeTab) {
       _activateResultTab(docIndex);
     }
@@ -7876,6 +7914,110 @@
       target.classList.add('doc-section-focus');
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
+  }
+
+  function focusStoryboardSection(title) {
+    if (!title || !generatedDocs.length) return;
+    _setActiveStoryboardCard(title);
+    _focusDocSectionByTitle(title);
+  }
+
+  function _collectResultsPptGuideItems() {
+    const items = [];
+    generatedDocs.forEach(doc => {
+      if (!Array.isArray(doc?.slide_outline) || !doc.slide_outline.length) return;
+      const totalSlides = Number(doc.total_slides) > 0 ? Number(doc.total_slides) : doc.slide_outline.length;
+      doc.slide_outline.forEach((slide, index) => {
+        const page = Number(slide?.page) > 0 ? Number(slide.page) : index + 1;
+        const evidencePoints = Array.isArray(slide?.evidence_points)
+          ? slide.evidence_points.filter(Boolean)
+          : [];
+        items.push({
+          key: `${doc.doc_type || 'doc'}:${page}:${slide?.title || index + 1}`,
+          doc_type: doc.doc_type || '',
+          docLabel: _getStoryboardDocLabel(doc.doc_type),
+          page,
+          totalSlides,
+          title: slide?.title || `${_getStoryboardDocLabel(doc.doc_type)} ${page}`,
+          coreMessage: String(slide?.core_message || slide?.key_content || '').trim(),
+          evidenceSummary: evidencePoints.slice(0, 2).join(' · '),
+          visualType: String(slide?.visual_type || '설계 힌트').trim(),
+          visualBrief: String(slide?.visual_brief || '').trim(),
+          layoutHint: String(slide?.layout_hint || slide?.design_tip || '').trim(),
+        });
+      });
+    });
+    return items;
+  }
+
+  function _truncateGuideText(text, limit = 84) {
+    const value = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!value) return '';
+    return value.length > limit ? `${value.slice(0, limit - 1).trim()}…` : value;
+  }
+
+  function renderResultsPptGuide() {
+    const panel = $id('results-ppt-guide');
+    const cardsEl = $id('results-ppt-guide-cards');
+    const metaEl = $id('results-ppt-guide-meta');
+    if (!panel || !cardsEl) return;
+
+    const items = _collectResultsPptGuideItems();
+    if (!items.length) {
+      panel.style.display = 'none';
+      cardsEl.innerHTML = '';
+      return;
+    }
+
+    cardsEl.innerHTML = items.map(item => `
+      <div class="slide-card is-clickable" data-ppt-guide-key="${escapeHtml(item.key)}" tabindex="0" role="button" aria-label="${escapeHtml(item.title)}">
+        <div class="slide-page-num">${escapeHtml(item.docLabel)} · 슬라이드 ${item.page}/${item.totalSlides}</div>
+        <div class="slide-card-badges">
+          <span class="slide-card-badge kind">${escapeHtml(item.visualType)}</span>
+          <span class="slide-card-badge kind">${escapeHtml(item.docLabel)}</span>
+        </div>
+        <div class="slide-title">${escapeHtml(item.title)}</div>
+        <div class="slide-content">${escapeHtml(_truncateGuideText(item.coreMessage || item.evidenceSummary || item.visualBrief, 96))}</div>
+        ${item.evidenceSummary ? `
+          <div class="slide-guide-section">
+            <span class="slide-guide-label">입증 포인트</span>
+            <div class="slide-guide-text">${escapeHtml(_truncateGuideText(item.evidenceSummary, 92))}</div>
+          </div>
+        ` : ''}
+        <div class="slide-guide-section">
+          <span class="slide-guide-label">권장 시각자료</span>
+          <div class="slide-guide-text">${escapeHtml(_truncateGuideText(item.visualBrief || item.visualType, 92))}</div>
+        </div>
+        ${item.layoutHint ? `
+          <div class="slide-guide-section">
+            <span class="slide-guide-label">시각자료 배치</span>
+            <div class="slide-guide-text">${escapeHtml(_truncateGuideText(item.layoutHint, 92))}</div>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+
+    cardsEl.querySelectorAll('.slide-card').forEach((card, index) => {
+      const item = items[index];
+      if (!item) return;
+      const focus = () => {
+        _setActivePptGuideCard(item.key);
+        _focusDocSectionByTitle(item.title, item.doc_type);
+      };
+      card.addEventListener('click', focus);
+      card.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          focus();
+        }
+      });
+    });
+
+    if (metaEl) {
+      const docCount = new Set(items.map(item => item.doc_type)).size;
+      metaEl.textContent = `${docCount}개 문서에서 ${items.length}개 slide_outline를 읽어 페이지별 설계 힌트를 보여줍니다.`;
+    }
+    panel.style.display = 'block';
   }
 
   function renderResultsStoryboard() {
@@ -8128,6 +8270,7 @@
     }
 
     renderResultsStoryboard();
+    renderResultsPptGuide();
 
     const compareBtn = $id('compare-btn');
     if (compareBtn) compareBtn.style.display = '';
