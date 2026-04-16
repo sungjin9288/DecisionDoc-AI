@@ -2,8 +2,9 @@
 from io import BytesIO
 
 from fastapi.testclient import TestClient
+from pptx import Presentation
 
-from app.services.pptx_service import _chunk_lines
+from app.services.pptx_service import _chunk_lines, _render_summary_slide
 
 _PPTX_MAGIC = b"PK\x03\x04"  # ZIP/OOXML magic bytes — all .pptx files start with this
 
@@ -187,3 +188,24 @@ def test_pptx_agenda_slide_includes_short_lead_detail(tmp_path, monkeypatch):
     assert "표지" in agenda_text
     assert "사업명: 제안서 PPT" in agenda_text
     assert "정책 환경 변화" in agenda_text
+
+
+def test_render_summary_slide_paginates_when_many_documents():
+    prs = Presentation()
+    summaries = [
+        {
+            "index": f"{idx:02d}",
+            "label": f"문서 {idx}",
+            "lead": f"문서 {idx} 요약입니다.",
+            "ppt_lead": f"문서 {idx} 발표 요약",
+            "sections": "요약 · 본문",
+            "metrics": "표 2개",
+            "metric_items": ["표 2개", "목록 1개"],
+        }
+        for idx in range(1, 6)
+    ]
+
+    _render_summary_slide(prs, summaries)
+
+    titles = [slide.shapes.title.text for slide in prs.slides if getattr(slide.shapes, "title", None)]
+    assert titles == ["핵심 검토 포인트 (1/2)", "핵심 검토 포인트 (2/2)"]

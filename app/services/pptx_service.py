@@ -309,37 +309,53 @@ def _render_agenda_slide(prs: Presentation, title: str, items: list[str | dict[s
 
 
 def _render_summary_slide(prs: Presentation, summaries: list[dict[str, str]]) -> None:
-    slide = prs.slides.add_slide(prs.slide_layouts[5])  # title only
-    _set_slide_background(slide, _COLOR_BG_SOFT)
-    slide.shapes.title.text = "핵심 검토 포인트"
-    _style_text_frame(
-        slide.shapes.title.text_frame,
-        font_size_pt=26,
-        bold=True,
-        color=_COLOR_TEXT_DARK,
-    )
+    if not summaries:
+        return
 
-    top = 1.25
-    for summary in summaries[:4]:
-        metric_items = summary.get("metric_items") or [summary["metrics"]]
-        body_lines = [
-            summary.get("ppt_lead") or summary["lead"],
-            f"핵심 섹션: {summary['sections']}",
-            f"구성 지표: {' · '.join(metric_items)}",
-        ]
-        _add_card(
-            slide,
-            left=0.65,
-            top=top,
-            width=8.5,
-            height=1.35,
-            title=f"문서 {summary['index']} | {summary['label']}",
-            body=body_lines,
-            fill_color=_COLOR_CARD,
-            title_color=_COLOR_TEXT_DARK,
-            body_color=_COLOR_TEXT_MUTED,
+    page_size = 4
+    pages = [summaries[idx: idx + page_size] for idx in range(0, len(summaries), page_size)]
+    for page_index, page in enumerate(pages, start=1):
+        slide = prs.slides.add_slide(prs.slide_layouts[5])  # title only
+        _set_slide_background(slide, _COLOR_BG_SOFT)
+        title = "핵심 검토 포인트"
+        if len(pages) > 1:
+            title = f"{title} ({page_index}/{len(pages)})"
+        slide.shapes.title.text = title
+        _style_text_frame(
+            slide.shapes.title.text_frame,
+            font_size_pt=26,
+            bold=True,
+            color=_COLOR_TEXT_DARK,
         )
-        top += 1.45
+
+        if len(page) <= 2:
+            positions = [(0.65, 1.25), (0.65, 2.95)]
+            card_width = 8.5
+            card_height = 1.45
+        else:
+            positions = [(0.65, 1.25), (5.0, 1.25), (0.65, 3.15), (5.0, 3.15)]
+            card_width = 3.95
+            card_height = 1.6
+
+        for summary, (left, top) in zip(page, positions, strict=False):
+            metric_items = summary.get("metric_items") or [summary["metrics"]]
+            body_lines = [
+                summary.get("ppt_lead") or summary["lead"],
+                f"핵심 섹션: {summary['sections']}",
+                f"구성 지표: {' · '.join(metric_items)}",
+            ]
+            _add_card(
+                slide,
+                left=left,
+                top=top,
+                width=card_width,
+                height=card_height,
+                title=f"문서 {summary['index']} | {summary['label']}",
+                body=body_lines,
+                fill_color=_COLOR_CARD,
+                title_color=_COLOR_TEXT_DARK,
+                body_color=_COLOR_TEXT_MUTED,
+            )
 
 
 def _structured_slide_summaries(slide_outline: list[dict[str, Any]]) -> list[dict[str, str]]:
