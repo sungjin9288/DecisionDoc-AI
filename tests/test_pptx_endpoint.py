@@ -165,3 +165,25 @@ def test_chunk_lines_rebalances_small_tail():
         ]
     )
     assert [len(chunk) for chunk in chunks] == [3, 3]
+
+
+def test_pptx_agenda_slide_includes_short_lead_detail(tmp_path, monkeypatch):
+    """Agenda cards should show a short presentation-oriented detail line, not titles only."""
+    from pptx import Presentation
+
+    client = _create_client(tmp_path, monkeypatch)
+    res = client.post(
+        "/generate/pptx",
+        json={"title": "제안서 PPT", "goal": "완성형 문서 변환", "bundle_type": "proposal_kr"},
+    )
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    agenda_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "발표 구성"
+    )
+    agenda_text = "\n".join(shape.text for shape in agenda_slide.shapes if hasattr(shape, "text") and shape.text)
+    assert "표지" in agenda_text
+    assert "사업명: 제안서 PPT" in agenda_text
+    assert "정책 환경 변화" in agenda_text

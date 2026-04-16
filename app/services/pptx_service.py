@@ -267,7 +267,7 @@ def _render_section_divider(
         )
 
 
-def _render_agenda_slide(prs: Presentation, title: str, items: list[str]) -> None:
+def _render_agenda_slide(prs: Presentation, title: str, items: list[str | dict[str, str]]) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     _set_slide_background(slide, _COLOR_BG_SOFT)
     slide.shapes.title.text = _clean_slide_text(title) or "발표 구성"
@@ -277,9 +277,19 @@ def _render_agenda_slide(prs: Presentation, title: str, items: list[str]) -> Non
         bold=True,
         color=_COLOR_TEXT_DARK,
     )
-    cleaned_items = [_clean_slide_text(item) for item in items if _clean_slide_text(item)]
+    normalized_items: list[dict[str, str]] = []
+    for item in items:
+        if isinstance(item, dict):
+            item_title = _clean_slide_text(item.get("title", ""))
+            item_detail = _clean_slide_text(item.get("detail", ""))
+        else:
+            item_title = _clean_slide_text(item)
+            item_detail = ""
+        if item_title:
+            normalized_items.append({"title": item_title, "detail": item_detail})
+    cleaned_items = normalized_items
     if not cleaned_items:
-        cleaned_items = ["목차 없음"]
+        cleaned_items = [{"title": "목차 없음", "detail": ""}]
     two_col_split = max(1, (len(cleaned_items) + 1) // 2)
     for idx, item in enumerate(cleaned_items[:6], start=1):
         col = 0 if idx <= two_col_split else 1
@@ -289,9 +299,9 @@ def _render_agenda_slide(prs: Presentation, title: str, items: list[str]) -> Non
             left=0.7 + (4.5 * col),
             top=1.4 + (0.92 * row),
             width=4.0,
-            height=0.72,
+            height=0.9,
             title=f"{idx:02d}",
-            body=item,
+            body=[item["title"], item["detail"]] if item["detail"] else item["title"],
             fill_color=_COLOR_CARD,
             title_color=_COLOR_BG_ACCENT,
             body_color=_COLOR_TEXT_DARK,
@@ -451,9 +461,18 @@ def build_pptx(
             )
 
     if include_outline_overview and slide_outline:
-        agenda_items = [
-            _clean_slide_text(item.get("title", "")) for item in slide_outline if _clean_slide_text(item.get("title", ""))
-        ]
+        agenda_items = []
+        for item in slide_outline:
+            item_title = _clean_slide_text(item.get("title", ""))
+            if not item_title:
+                continue
+            detail_points = presentation_points(
+                str(item.get("key_content", "")),
+                max_len=56,
+                max_points=1,
+            )
+            detail = _clean_slide_text(detail_points[0]) if detail_points else ""
+            agenda_items.append({"title": item_title, "detail": detail})
         _render_agenda_slide(prs, "발표 구성", agenda_items)
         _render_summary_slide(prs, _structured_slide_summaries(slide_outline))
 
@@ -511,8 +530,14 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
             body_color=_COLOR_TEXT_DARK,
         )
 
-    doc_titles = [summary["label"] for summary in summaries]
-    _render_agenda_slide(prs, "발표 구성", doc_titles)
+    agenda_items = [
+        {
+            "title": summary["label"],
+            "detail": summary.get("ppt_lead") or "",
+        }
+        for summary in summaries
+    ]
+    _render_agenda_slide(prs, "발표 구성", agenda_items)
     if summaries:
         _render_summary_slide(prs, summaries)
 
