@@ -39,6 +39,8 @@ def test_build_hwp_contains_required_files():
     with zipfile.ZipFile(BytesIO(result)) as zf:
         names = set(zf.namelist())
         assert "META-INF/container.xml" in names
+        assert "META-INF/manifest.xml" in names
+        assert "Contents/content.hpf" in names
         assert "Contents/header.xml" in names
         assert "Contents/section0.xml" in names
 
@@ -93,7 +95,39 @@ def test_build_hwp_adds_export_cover_and_section_intro():
     assert " / 표 수:" not in section_xml
 
 
-def test_build_hwp_adds_visual_asset_block():
+def test_build_hwp_adds_visual_asset_block_and_embeds_png():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"}]
+    visual_assets = [
+        {
+            "asset_id": "asset-1",
+            "doc_type": "business_understanding",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "현장 사진",
+            "visual_brief": "현장 사진 기반 시각자료",
+            "media_type": "image/png",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2l4WQAAAAASUVORK5CYII=",
+        }
+    ]
+    result = build_hwp(docs, title="시각자료 테스트", visual_assets=visual_assets)
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        names = set(zf.namelist())
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+        content_hpf = zf.read("Contents/content.hpf").decode("utf-8")
+        manifest_xml = zf.read("META-INF/manifest.xml").decode("utf-8")
+
+    assert "생성 시각자료" in section_xml
+    assert "사업 추진 배경 · 현장 사진" in section_xml
+    assert "현장 사진 기반 시각자료" in section_xml
+    assert "<hp:pic" in section_xml
+    assert "binaryItemIDRef=\"bindata1\"" in section_xml
+    assert "BinData/bindata1.png" in names
+    assert "bindata1" in content_hpf
+    assert "BinData/bindata1.png" in manifest_xml
+
+
+def test_build_hwp_keeps_svg_assets_as_metadata_only():
     from app.services.hwp_service import build_hwp
 
     docs = [{"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"}]
@@ -110,11 +144,14 @@ def test_build_hwp_adds_visual_asset_block():
     ]
     result = build_hwp(docs, title="시각자료 테스트", visual_assets=visual_assets)
     with zipfile.ZipFile(BytesIO(result)) as zf:
+        names = set(zf.namelist())
         section_xml = zf.read("Contents/section0.xml").decode("utf-8")
 
     assert "생성 시각자료" in section_xml
     assert "사업 추진 배경 · 타임라인" in section_xml
     assert "단계별 마일스톤을 설명하는 시각자료" in section_xml
+    assert "<hp:pic" not in section_xml
+    assert not any(name.startswith("BinData/") for name in names)
 
 
 def test_hwp_endpoint_returns_200(tmp_path, monkeypatch):

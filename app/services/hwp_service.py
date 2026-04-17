@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html as _html
 import re
+import struct
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -20,10 +21,16 @@ from typing import Any
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks
-from app.services.visual_asset_service import group_visual_assets_by_doc_type
+from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 
 # HWPX namespaces
-_NS_HH = "http://www.hancom.com/hwpml/2012/core"
+_NS_HH = "http://www.hancom.co.kr/hwpml/2011/head"
+_NS_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+_NS_HC = "http://www.hancom.co.kr/hwpml/2011/core"
+_NS_HS = "http://www.hancom.co.kr/hwpml/2011/section"
+_NS_OPF = "http://www.idpf.org/2007/opf"
+_NS_OCF = "urn:oasis:names:tc:opendocument:xmlns:container"
+_NS_ODF = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
 
 # HWP unit: 1/3600 inch.  1 mm ≈ 141.732 hwpunits
 # A4: 210mm × 297mm
@@ -47,13 +54,57 @@ def _escape(text: str) -> str:
 def _container_xml() -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
+        f'<container xmlns="{_NS_OCF}">\n'
         '  <rootfiles>\n'
-        '    <rootfile full-path="Contents/header.xml"'
-        ' media-type="application/hwp+zip"/>\n'
+        '    <rootfile full-path="Contents/content.hpf"'
+        ' media-type="application/hwpml-package+xml"/>\n'
         '  </rootfiles>\n'
         '</container>'
     )
+
+
+def _content_hpf_xml(binary_items: list[dict[str, Any]]) -> str:
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<opf:package xmlns:opf="{_NS_OPF}" version="1.0">',
+        '  <opf:manifest>',
+        '    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>',
+        '    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>',
+        '    <opf:item id="settings" href="Contents/settings.xml" media-type="application/xml"/>',
+    ]
+    for item in binary_items:
+        lines.append(
+            '    <opf:item '
+            f'id="{_escape(item["id"])}" '
+            f'href="{_escape(item["href"])}" '
+            f'media-type="{_escape(item["media_type"])}" '
+            'isEmbeded="1"/>'
+        )
+    lines.extend([
+        '  </opf:manifest>',
+        '</opf:package>',
+    ])
+    return "\n".join(lines)
+
+
+def _manifest_xml(binary_items: list[dict[str, Any]]) -> str:
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<manifest:manifest xmlns:manifest="{_NS_ODF}">',
+        '  <manifest:file-entry manifest:full-path="/" manifest:media-type="application/hwp+zip"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/content.hpf" manifest:media-type="application/hwpml-package+xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/header.xml" manifest:media-type="application/xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/section0.xml" manifest:media-type="application/xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/settings.xml" manifest:media-type="application/xml"/>',
+    ]
+    for item in binary_items:
+        lines.append(
+            '  <manifest:file-entry '
+            f'manifest:full-path="{_escape(item["href"])}" '
+            f'manifest:media-type="{_escape(item["media_type"])}"/>'
+        )
+    lines.append('</manifest:manifest>')
+    return "\n".join(lines)
 
 
 def _styles_xml(font_name: str = "맑은 고딕",
@@ -135,15 +186,15 @@ def _para_xml(text: str, style: str = "본문") -> str:
     """Wrap text in an HWPX paragraph element."""
     escaped = _escape(text)
     return (
-        f'  <hh:p>\n'
-        f'    <hh:pPr>\n'
-        f'      <hh:paraStyle hh:styleIDRef="{style}"/>\n'
-        f'    </hh:pPr>\n'
-        f'    <hh:run>\n'
-        f'      <hh:rPr/>\n'
-        f'      <hh:t>{escaped}</hh:t>\n'
-        f'    </hh:run>\n'
-        f'  </hh:p>'
+        f'  <hp:p>\n'
+        f'    <hp:pPr>\n'
+        f'      <hp:paraStyle hp:styleIDRef="{style}"/>\n'
+        f'    </hp:pPr>\n'
+        f'    <hp:run>\n'
+        f'      <hp:rPr/>\n'
+        f'      <hp:t>{escaped}</hp:t>\n'
+        f'    </hp:run>\n'
+        f'  </hp:p>'
     )
 
 
@@ -199,6 +250,141 @@ def _gov_header_paras(title: str, opts: Any) -> list[str]:
     paras.append(_para_xml(""))
 
     return paras
+
+
+def _media_extension(media_type: str) -> str:
+    lowered = str(media_type or "").lower()
+    if lowered == "image/png":
+        return "png"
+    if lowered in {"image/jpeg", "image/jpg"}:
+        return "jpg"
+    if lowered == "image/gif":
+        return "gif"
+    if lowered == "image/bmp":
+        return "bmp"
+    return ""
+
+
+def _parse_png_size(raw: bytes) -> tuple[int, int] | None:
+    if len(raw) >= 24 and raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return struct.unpack(">II", raw[16:24])
+    return None
+
+
+def _parse_jpeg_size(raw: bytes) -> tuple[int, int] | None:
+    if len(raw) < 4 or raw[:2] != b"\xff\xd8":
+        return None
+    index = 2
+    while index + 9 < len(raw):
+        if raw[index] != 0xFF:
+            index += 1
+            continue
+        marker = raw[index + 1]
+        index += 2
+        if marker in {0xD8, 0xD9}:
+            continue
+        if index + 2 > len(raw):
+            break
+        segment_length = int.from_bytes(raw[index:index + 2], "big")
+        if segment_length < 2 or index + segment_length > len(raw):
+            break
+        if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+            height = int.from_bytes(raw[index + 3:index + 5], "big")
+            width = int.from_bytes(raw[index + 5:index + 7], "big")
+            if width > 0 and height > 0:
+                return width, height
+            break
+        index += segment_length
+    return None
+
+
+def _image_hwpu_size(raw: bytes, media_type: str) -> tuple[int, int]:
+    pixel_size: tuple[int, int] | None = None
+    if media_type == "image/png":
+        pixel_size = _parse_png_size(raw)
+    elif media_type in {"image/jpeg", "image/jpg"}:
+        pixel_size = _parse_jpeg_size(raw)
+
+    max_width = _A4_W - _mm(50)
+    max_height = _A4_H - _mm(140)
+    default_width = min(max_width, _mm(140))
+    default_height = min(max_height, _mm(90))
+
+    if not pixel_size:
+        return default_width, default_height
+
+    src_width, src_height = pixel_size
+    if src_width <= 0 or src_height <= 0:
+        return default_width, default_height
+
+    width = default_width
+    height = round(width * (src_height / src_width))
+    if height > max_height:
+        height = max_height
+        width = round(height * (src_width / src_height))
+    return max(1, width), max(1, height)
+
+
+def _picture_xml(ref_id: str, width: int, height: int, inst_id: int) -> str:
+    return (
+        '  <hp:p>\n'
+        '    <hp:run>\n'
+        f'      <hp:pic id="{inst_id}" zOrder="0" numberingType="NONE" textWrap="TOP_AND_BOTTOM" '
+        f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="NONE" groupLevel="0" instid="{inst_id}" reverse="0">\n'
+        f'        <hp:sz width="{width}" widthRelTo="ABSOLUTE" height="{height}" heightRelTo="ABSOLUTE" protect="0"/>\n'
+        '        <hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
+        'vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>\n'
+        '        <hp:outMargin left="0" right="0" top="0" bottom="0"/>\n'
+        '        <hp:offset x="0" y="0"/>\n'
+        f'        <hp:orgSz width="{width}" height="{height}"/>\n'
+        f'        <hp:curSz width="{width}" height="{height}"/>\n'
+        '        <hp:lineShape color="0" width="0" style="SOLID" endCap="FLAT" headStyle="NORMAL" tailStyle="NORMAL" '
+        'headfill="0" tailfill="0" headSz="SMALL_SMALL" tailSz="SMALL_SMALL" outlineStyle="NORMAL" alpha="0"/>\n'
+        '        <hp:imgRect>\n'
+        '          <hc:pt0 x="0" y="0"/>\n'
+        f'          <hc:pt1 x="{width}" y="0"/>\n'
+        f'          <hc:pt2 x="{width}" y="{height}"/>\n'
+        f'          <hc:pt3 x="0" y="{height}"/>\n'
+        '        </hp:imgRect>\n'
+        '        <hp:imgClip left="-1" right="-1" top="-1" bottom="-1"/>\n'
+        '        <hp:inMargin left="0" right="0" top="0" bottom="0"/>\n'
+        f'        <hp:imgDim dimwidth="{width}" dimheight="{height}"/>\n'
+        f'        <hc:img binaryItemIDRef="{_escape(ref_id)}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>\n'
+        '      </hp:pic>\n'
+        '    </hp:run>\n'
+        '  </hp:p>'
+    )
+
+
+def _prepare_hwp_visual_assets(visual_assets: list[dict[str, Any]] | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    prepared: list[dict[str, Any]] = []
+    binary_items: list[dict[str, Any]] = []
+    for index, asset in enumerate(visual_assets or [], start=1):
+        if not isinstance(asset, dict):
+            continue
+        asset_copy = dict(asset)
+        media_type = str(asset_copy.get("media_type", "") or "").strip().lower()
+        extension = _media_extension(media_type)
+        raw = decode_visual_asset_bytes(asset_copy)
+        if extension and raw:
+            item_id = f"bindata{index}"
+            href = f"BinData/{item_id}.{extension}"
+            width, height = _image_hwpu_size(raw, media_type)
+            asset_copy["hwp_binary_item_id"] = item_id
+            asset_copy["hwp_binary_href"] = href
+            asset_copy["hwp_binary_width"] = width
+            asset_copy["hwp_binary_height"] = height
+            asset_copy["hwp_binary_index"] = index
+            binary_items.append(
+                {
+                    "id": item_id,
+                    "href": href,
+                    "media_type": media_type,
+                    "raw": raw,
+                }
+            )
+        prepared.append(asset_copy)
+    return prepared, binary_items
 
 
 def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
@@ -282,6 +468,12 @@ def _section_xml(
                     paras.append(_para_xml(title_line, "본문"))
                     if visual_brief:
                         paras.append(_para_xml(visual_brief, "본문"))
+                    ref_id = str(asset.get("hwp_binary_item_id", "")).strip()
+                    width = int(asset.get("hwp_binary_width", 0) or 0)
+                    height = int(asset.get("hwp_binary_height", 0) or 0)
+                    binary_index = int(asset.get("hwp_binary_index", 0) or 0)
+                    if ref_id and width > 0 and height > 0:
+                        paras.append(_picture_xml(ref_id, width, height, 1000 + binary_index))
                 paras.append(_para_xml(""))
         for block in parse_markdown_blocks(doc.get("markdown", "")):
             block_type = block.get("type")
@@ -336,7 +528,7 @@ def _section_xml(
 
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<hh:sec xmlns:hh="{_NS_HH}">\n'
+        f'<hh:sec xmlns:hh="{_NS_HH}" xmlns:hs="{_NS_HS}" xmlns:hp="{_NS_HP}" xmlns:hc="{_NS_HC}">\n'
         f'{sec_pr}'
         f'{body}\n'
         f'</hh:sec>'
@@ -383,6 +575,7 @@ def build_hwp(
     font_name = opts.font_name        if opts else "맑은 고딕"
     font_size = opts.font_size_pt     if opts else 10.5
     spacing   = opts.line_spacing_pct if opts else 160
+    prepared_visual_assets, binary_items = _prepare_hwp_visual_assets(visual_assets)
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -391,13 +584,17 @@ def build_hwp(
         zi.compress_type = zipfile.ZIP_STORED
         zf.writestr(zi, "application/hwp+zip")
         zf.writestr("META-INF/container.xml", _container_xml())
+        zf.writestr("META-INF/manifest.xml", _manifest_xml(binary_items))
+        zf.writestr("Contents/content.hpf", _content_hpf_xml(binary_items))
         zf.writestr(
             "Contents/header.xml",
             _header_xml(title, font_name, font_size, spacing),
         )
         zf.writestr(
             "Contents/section0.xml",
-            _section_xml(docs, title, opts, top_mm, bot_mm, left_mm, right_mm, visual_assets=visual_assets),
+            _section_xml(docs, title, opts, top_mm, bot_mm, left_mm, right_mm, visual_assets=prepared_visual_assets),
         )
         zf.writestr("Contents/settings.xml", _settings_xml())
+        for item in binary_items:
+            zf.writestr(item["href"], item["raw"])
     return buf.getvalue()
