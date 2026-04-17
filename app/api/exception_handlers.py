@@ -13,6 +13,7 @@ from app.services.generation_service import (
     BundleNotSupportedError,
     EvalLintFailedError,
     ProviderFailedError,
+    provider_failure_error_code,
     is_provider_rate_limited,
     provider_failure_retry_after_seconds,
 )
@@ -68,11 +69,20 @@ def install_exception_handlers(app: FastAPI) -> None:
         status_code = 500
         errors: list[str] | None = None
         if is_provider_rate_limited(exc):
-            message = "AI provider is temporarily rate limited. 잠시 후 다시 시도하세요."
+            provider_code = provider_failure_error_code(exc)
+            if provider_code == "insufficient_quota":
+                message = "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요."
+            else:
+                message = "AI provider is temporarily rate limited. 잠시 후 다시 시도하세요."
             status_code = 503
+            errors = []
             retry_after = provider_failure_retry_after_seconds(exc)
             if retry_after is not None:
-                errors = [f"retry_after_seconds={retry_after}"]
+                errors.append(f"retry_after_seconds={retry_after}")
+            if provider_code:
+                errors.append(f"provider_error_code={provider_code}")
+            if not errors:
+                errors = None
         return _error_response(
             request,
             code="PROVIDER_FAILED",

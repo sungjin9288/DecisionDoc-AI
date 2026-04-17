@@ -134,6 +134,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "_normalizeVisualAssets" in res.text
     assert "_persistCurrentVisualAssetsSnapshot" in res.text
     assert "_resetVisualAssetsForFreshResult" in res.text
+    assert "_fetchJsonWithProviderRetry" in res.text
+    assert "_extractRetryAfterSeconds" in res.text
+    assert "_extractProviderErrorCode" in res.text
+    assert "_waitForProviderRetry" in res.text
+    assert "AI provider quota is exhausted." in res.text
     assert "buildEditedExportDocsPayload" in res.text
     assert "권장 시각자료" in res.text
     assert "시각자료 배치" in res.text

@@ -229,6 +229,39 @@ def test_provider_rate_limit_returns_503_with_retry_guidance(tmp_path, monkeypat
     assert body["errors"] == ["retry_after_seconds=12"]
 
 
+def test_provider_quota_exhausted_returns_503_with_quota_guidance(tmp_path, monkeypatch):
+    import app.main as main_module
+
+    class FakeQuotaError(Exception):
+        status_code = 429
+
+        def __init__(self) -> None:
+            super().__init__("insufficient_quota")
+            self.body = {"error": {"code": "insufficient_quota", "message": "quota exhausted"}}
+            self.response = type(
+                "FakeResponse",
+                (),
+                {"status_code": 429, "headers": {}},
+            )()
+
+    class QuotaLimitedProvider(MockProvider):
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            try:
+                raise FakeQuotaError()
+            except Exception as exc:
+                raise ProviderError("Provider request failed.") from exc
+
+    monkeypatch.setattr(main_module, "get_provider", lambda: QuotaLimitedProvider())
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post("/generate", json={"title": "x", "goal": "y"})
+    assert response.status_code == 503
+    body = response.json()
+    assert body["code"] == "PROVIDER_FAILED"
+    assert body["message"] == "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요."
+    assert body["errors"] == ["provider_error_code=insufficient_quota"]
+
+
 @pytest.mark.parametrize("fixture_path", sorted(Path(__file__).parent.joinpath("fixtures").glob("*.json")))
 def test_regression_fixtures_generate_valid_docs(tmp_path, monkeypatch, fixture_path):
     client = _create_client(tmp_path, monkeypatch)

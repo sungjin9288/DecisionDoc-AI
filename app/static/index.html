@@ -8226,6 +8226,73 @@
     }
   }
 
+  function _extractRetryAfterSeconds(err) {
+    if (!err || !Array.isArray(err.errors)) return null;
+    for (const item of err.errors) {
+      const m = String(item || '').match(/^retry_after_seconds=(\d+)$/);
+      if (m) return Number(m[1]);
+    }
+    return null;
+  }
+
+  function _extractProviderErrorCode(err) {
+    if (!err || !Array.isArray(err.errors)) return '';
+    for (const item of err.errors) {
+      const m = String(item || '').match(/^provider_error_code=(.+)$/);
+      if (m) return String(m[1] || '').trim();
+    }
+    return '';
+  }
+
+  function _formatApiErrorMessage(err, status) {
+    if (err?.message) return err.message;
+    if (status === 503 && err?.code === 'PROVIDER_FAILED') {
+      const providerCode = _extractProviderErrorCode(err);
+      if (providerCode === 'insufficient_quota') {
+        return 'AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.';
+      }
+      const retryAfter = _extractRetryAfterSeconds(err);
+      if (retryAfter) {
+        return `AI provider가 일시적으로 제한되었습니다. ${retryAfter}초 후 다시 시도하세요.`;
+      }
+      return 'AI provider가 일시적으로 제한되었습니다. 잠시 후 다시 시도하세요.';
+    }
+    return `서버 오류 ${status}`;
+  }
+
+  async function _waitForProviderRetry(seconds, label = 'AI provider') {
+    const safeSeconds = Math.max(1, Math.min(Number(seconds) || 0, 30));
+    setStatus(`⏳ ${label} 사용량 제한으로 ${safeSeconds}초 후 자동 재시도합니다…`, 'loading');
+    await new Promise(resolve => setTimeout(resolve, safeSeconds * 1000));
+  }
+
+  async function _fetchJsonWithProviderRetry(fetcher, { label = 'AI provider', maxAutoRetrySeconds = 30 } = {}) {
+    let retried = false;
+    while (true) {
+      const res = await fetcher();
+      if (res.ok) return await res.json();
+      const err = await res.json().catch(() => ({}));
+      const retryAfter = _extractRetryAfterSeconds(err);
+      if (
+        !retried &&
+        res.status === 503 &&
+        err?.code === 'PROVIDER_FAILED' &&
+        retryAfter &&
+        retryAfter <= maxAutoRetrySeconds &&
+        _extractProviderErrorCode(err) !== 'insufficient_quota'
+      ) {
+        retried = true;
+        await _waitForProviderRetry(retryAfter, label);
+        continue;
+      }
+      throw Object.assign(new Error(_formatApiErrorMessage(err, res.status)), {
+        code: err?.code || '',
+        details: err,
+        status: res.status,
+      });
+    }
+  }
+
   /* ── Generate ──────────────────────────────────────────────────── */
   $id('generate-btn').addEventListener('click', async () => {
     const title       = $id('f-title').value.trim();
@@ -8284,15 +8351,19 @@
     try {
       if (hasFiles) {
         // 파일 첨부: 기존 방식 유지 (스트리밍 미지원)
-        const fd = new FormData();
-        fd.append('payload', payloadJson);
-        Array.from(fileInput.files).forEach(f => fd.append('attachments', f));
-        const res = await fetch('/generate/with-attachments', { method: 'POST', headers: getAuthHeaders(), body: fd });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `서버 오류 ${res.status}`);
-        }
-        const data = await res.json();
+        const buildAttachmentRequest = () => {
+          const fd = new FormData();
+          fd.append('payload', payloadJson);
+          Array.from(fileInput.files).forEach(f => fd.append('attachments', f));
+          return fetch('/generate/with-attachments', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: fd,
+          });
+        };
+        const data = await _fetchJsonWithProviderRetry(buildAttachmentRequest, {
+          label: 'AI 문서 생성',
+        });
         generatedDocs = data.docs;
         lastMeta = data;
         _resetVisualAssetsForFreshResult(data);
@@ -8341,16 +8412,14 @@
     $id('sketch-panel').style.display = 'none';
 
     try {
-      const res = await fetch('/generate/sketch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-        body: payloadJson,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `오류 ${res.status}`);
-      }
-      const sketch = await res.json();
+      const sketch = await _fetchJsonWithProviderRetry(
+        () => fetch('/generate/sketch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
+          body: payloadJson,
+        }),
+        { label: 'AI 스케치 생성' },
+      );
       _lastSketchResult = sketch;
       renderSketch(sketch);
       $id('sketch-panel').style.display = 'block';
@@ -9093,7 +9162,19 @@
       if (!res.ok) {
         clearTimeout(timeoutId);
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `서버 오류 ${res.status}`);
+        const retryAfter = _extractRetryAfterSeconds(err);
+        if (
+          res.status === 503 &&
+          err?.code === 'PROVIDER_FAILED' &&
+          retryAfter &&
+          retryAfter <= 30 &&
+          _extractProviderErrorCode(err) !== 'insufficient_quota'
+        ) {
+          clearTimeout(timeoutId);
+          await _waitForProviderRetry(retryAfter, 'AI 문서 생성');
+          return _runFullGenerateWithPayload(payloadJson);
+        }
+        throw new Error(_formatApiErrorMessage(err, res.status));
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
