@@ -96,8 +96,8 @@ def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypat
         assert timeout == 10.0
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         calls.append(list(command))
         return SimpleNamespace(returncode=0)
 
@@ -172,8 +172,8 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
         assert timeout == 10.0
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -214,8 +214,8 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
         assert timeout == 10.0
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -298,8 +298,8 @@ def test_post_deploy_check_updates_index_with_newest_report_first(tmp_path: Path
         assert timeout == 10.0
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -336,8 +336,8 @@ def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) ->
         _ = url, timeout
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         if list(command)[-1] == "ps":
             return SimpleNamespace(returncode=17)
         return SimpleNamespace(returncode=0)
@@ -366,6 +366,74 @@ def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) ->
     assert payload["error"] == "docker compose ps failed with exit code 17"
     assert payload["checks"][-1]["name"] == "docker compose ps"
     assert payload["checks"][-1]["status"] == "failed"
+
+
+def test_post_deploy_check_captures_deployed_smoke_failure_details(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_smoke_fail_details", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_file = tmp_path / "reports" / "post-deploy-smoke-fail.json"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        _ = url, timeout
+        return _FakeResponse(_health_payload())
+
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check
+        if list(command)[:2] == [checker.sys.executable, "scripts/run_deployed_smoke.py"]:
+            if "--preflight" in list(command):
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(
+                returncode=1,
+                stdout="GET /health -> 200 request_id=req-1\n",
+                stderr=(
+                    "POST /generate (auth) expected 200, got 503 "
+                    "(code=PROVIDER_FAILED; "
+                    "message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.; "
+                    "provider_error_code=insufficient_quota)\n"
+                ),
+            )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    try:
+        checker.main(
+            [
+                "--env-file",
+                str(env_file),
+                "--compose-file",
+                str(compose_file),
+                "--report-file",
+                str(report_file),
+            ]
+        )
+    except SystemExit as exc:
+        assert str(exc) == (
+            "deployed smoke failed with exit code 1 "
+            "(smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)"
+        )
+    else:
+        raise AssertionError("Expected SystemExit for failing deployed smoke")
+
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    smoke_check = payload["checks"][-1]
+    assert payload["status"] == "failed"
+    assert payload["error"] == (
+        "deployed smoke failed with exit code 1 "
+        "(smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)"
+    )
+    assert smoke_check["name"] == "deployed smoke"
+    assert smoke_check["status"] == "failed"
+    assert smoke_check["smoke_response_code"] == "PROVIDER_FAILED"
+    assert smoke_check["provider_error_code"] == "insufficient_quota"
+    assert smoke_check["smoke_message"] == "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요."
+    assert smoke_check["failure_line"].startswith("POST /generate (auth) expected 200, got 503")
+    assert smoke_check["stdout"] == "GET /health -> 200 request_id=req-1\n"
+    assert "provider_error_code=insufficient_quota" in smoke_check["stderr"]
 
 
 def test_post_deploy_check_rejects_report_file_and_report_dir_together(tmp_path: Path) -> None:
@@ -406,8 +474,8 @@ def test_post_deploy_check_skips_smoke_when_requested(tmp_path: Path, monkeypatc
         assert timeout == 10.0
         return _FakeResponse(_health_payload())
 
-    def _fake_run(command, cwd=None, check=False):
-        _ = cwd, check
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
         calls.append(list(command))
         return SimpleNamespace(returncode=0)
 

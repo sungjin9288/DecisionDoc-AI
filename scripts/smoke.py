@@ -31,11 +31,31 @@ def _json_body(response: httpx.Response) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _error_items(body: dict[str, Any]) -> list[str]:
+    raw_errors = body.get("errors")
+    if not isinstance(raw_errors, list):
+        return []
+    items: list[str] = []
+    for raw_item in raw_errors:
+        item = str(raw_item or "").strip()
+        if item:
+            items.append(item)
+    return items
+
+
 def _assert_status(endpoint: str, response: httpx.Response, expected: int) -> dict[str, Any]:
     body = _json_body(response)
     if response.status_code != expected:
         code = body.get("code", "unknown")
-        raise SystemExit(f"{endpoint} expected {expected}, got {response.status_code} (code={code})")
+        details: list[str] = []
+        message = str(body.get("message", "")).strip()
+        if message:
+            details.append(f"message={message}")
+        details.extend(_error_items(body))
+        detail_suffix = f"; {'; '.join(details)}" if details else ""
+        raise SystemExit(
+            f"{endpoint} expected {expected}, got {response.status_code} (code={code}{detail_suffix})"
+        )
     return body
 
 

@@ -4,11 +4,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 from urllib import error, request
 
 
@@ -22,6 +23,7 @@ DEFAULT_REPORT_INDEX_LIMIT = 20
 REQUIRED_PROVIDER_ROUTE_KEYS = ("default", "generation", "attachment", "visual")
 REQUIRED_PROVIDER_CHECK_KEYS = ("provider", "provider_generation", "provider_attachment", "provider_visual")
 ALLOWED_PROVIDER_ROUTE_STATUSES = {"ok", "degraded"}
+MAX_CAPTURED_OUTPUT_CHARS = 4000
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -70,11 +72,103 @@ def _append_step(report: dict[str, Any], *, name: str, status: str, **details: A
     report.setdefault("checks", []).append({"name": name, "status": status, **details})
 
 
-def _run_command_with_report(report: dict[str, Any], command: list[str], *, label: str) -> None:
-    completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
+def _tail_output(value: str, *, max_len: int = MAX_CAPTURED_OUTPUT_CHARS) -> str | None:
+    text = str(value or "")
+    if not text.strip():
+        return None
+    if len(text) <= max_len:
+        return text
+    return f"...\n{text[-max_len:]}"
+
+
+def _replay_captured_output(*, stdout: str, stderr: str) -> None:
+    if stdout:
+        print(stdout, end="" if stdout.endswith("\n") else "\n", flush=True)
+    if stderr:
+        print(stderr, end="" if stderr.endswith("\n") else "\n", file=sys.stderr, flush=True)
+
+
+def _extract_smoke_failure_details(*, stdout: str, stderr: str) -> dict[str, Any]:
+    combined = "\n".join(part for part in (stdout, stderr) if str(part or "").strip())
+    if not combined.strip():
+        return {}
+
+    details: dict[str, Any] = {}
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+    failure_line = next((line for line in reversed(lines) if " expected " in line and " got " in line), "")
+    target_text = failure_line or combined
+
+    smoke_response_code = re.search(r"\(code=([A-Z_]+)", target_text)
+    if smoke_response_code:
+        details["smoke_response_code"] = smoke_response_code.group(1)
+
+    smoke_message = re.search(r"message=([^;\n)]+)", target_text)
+    if smoke_message:
+        details["smoke_message"] = smoke_message.group(1).strip()
+
+    provider_error_code = re.search(r"provider_error_code=([A-Za-z0-9_.-]+)", combined)
+    if provider_error_code:
+        details["provider_error_code"] = provider_error_code.group(1)
+
+    retry_after_seconds = re.search(r"retry_after_seconds=(\d+)", combined)
+    if retry_after_seconds:
+        details["retry_after_seconds"] = int(retry_after_seconds.group(1))
+
+    if failure_line:
+        details["failure_line"] = failure_line
+
+    return details
+
+
+def _build_failure_suffix(details: dict[str, Any]) -> str:
+    parts: list[str] = []
+    smoke_response_code = str(details.get("smoke_response_code", "")).strip()
+    if smoke_response_code:
+        parts.append(f"smoke_response_code={smoke_response_code}")
+    provider_error_code = str(details.get("provider_error_code", "")).strip()
+    if provider_error_code:
+        parts.append(f"provider_error_code={provider_error_code}")
+    retry_after_seconds = details.get("retry_after_seconds")
+    if isinstance(retry_after_seconds, int):
+        parts.append(f"retry_after_seconds={retry_after_seconds}")
+    return f" ({'; '.join(parts)})" if parts else ""
+
+
+def _run_command_with_report(
+    report: dict[str, Any],
+    command: list[str],
+    *,
+    label: str,
+    capture_output: bool = False,
+    failure_parser: Callable[..., dict[str, Any]] | None = None,
+) -> None:
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=capture_output,
+        text=capture_output,
+    )
+    stdout = str(getattr(completed, "stdout", "") or "")
+    stderr = str(getattr(completed, "stderr", "") or "")
+    if capture_output:
+        _replay_captured_output(stdout=stdout, stderr=stderr)
+
     if completed.returncode != 0:
-        _append_step(report, name=label, status="failed", command=command, exit_code=completed.returncode)
-        raise SystemExit(f"{label} failed with exit code {completed.returncode}")
+        step_details: dict[str, Any] = {
+            "command": command,
+            "exit_code": completed.returncode,
+        }
+        stdout_tail = _tail_output(stdout)
+        stderr_tail = _tail_output(stderr)
+        if stdout_tail is not None:
+            step_details["stdout"] = stdout_tail
+        if stderr_tail is not None:
+            step_details["stderr"] = stderr_tail
+        parsed_details = failure_parser(stdout=stdout, stderr=stderr) if failure_parser is not None else {}
+        step_details.update(parsed_details)
+        _append_step(report, name=label, status="failed", **step_details)
+        raise SystemExit(f"{label} failed with exit code {completed.returncode}{_build_failure_suffix(parsed_details)}")
     _append_step(report, name=label, status="passed", command=command, exit_code=completed.returncode)
 
 
@@ -395,6 +489,8 @@ def run_post_deploy_check(
                     resolved_base_url,
                 ],
                 label="deployed smoke",
+                capture_output=True,
+                failure_parser=_extract_smoke_failure_details,
             )
             print("PASS deployed smoke", flush=True)
 
