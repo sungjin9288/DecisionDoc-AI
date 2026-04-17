@@ -188,6 +188,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "promoteServerHistoryEntry" in res.text
     assert "history-promote-server-btn" in res.text
     assert "history-promote-btn" in res.text
+    assert "buildPostDeployProviderRouteSummary" in res.text
+    assert "getPostDeployRouteCheckMeta" in res.text
+    assert "ops-post-deploy-provider-routes" in res.text
+    assert "ops-post-deploy-provider-route-status" in res.text
+    assert "Provider route" in res.text
     assert "knowledge-promote-docs-btn" in res.text
     assert "openPromotedKnowledgeDocsModal" in res.text
     assert "학습 문서 보기" in res.text
