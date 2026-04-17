@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 
 
@@ -250,3 +252,39 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     assert payload["latest_details"]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert payload["latest_details"]["provider_route_checks"]["visual"] == "ok"
     assert payload["latest_details"]["checks"][2]["exit_code"] == 17
+
+
+def test_show_post_deploy_reports_loads_without_app_ops_package_import(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "app.ops", types.ModuleType("app.ops"))
+    viewer = _load_script_module(
+        "decisiondoc_show_post_deploy_reports_no_app_ops_import",
+        "scripts/show_post_deploy_reports.py",
+    )
+    report_dir = tmp_path / "reports" / "post-deploy"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-04-14T04:10:00+00:00",
+                "latest": "latest.json",
+                "latest_report": "post-deploy-20260414T041000Z.json",
+                "reports": [
+                    {
+                        "file": "post-deploy-20260414T041000Z.json",
+                        "status": "passed",
+                        "base_url": "https://admin.decisiondoc.kr",
+                        "started_at": "2026-04-14T04:09:00+00:00",
+                        "finished_at": "2026-04-14T04:10:00+00:00",
+                        "skip_smoke": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = viewer.main(["--report-dir", str(report_dir), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["latest_report"] == "post-deploy-20260414T041000Z.json"

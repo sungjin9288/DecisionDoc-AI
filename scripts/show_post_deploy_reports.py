@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -11,12 +12,21 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.ops.report_history import (
-    _extract_provider_route_summary,
-    build_post_deploy_reports_payload,
-    get_default_post_deploy_report_dir,
-    load_report_json,
-)
+
+def _load_report_history_module():
+    module_path = REPO_ROOT / "app" / "ops" / "report_history.py"
+    spec = importlib.util.spec_from_file_location("decisiondoc_report_history", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+_report_history = _load_report_history_module()
+_extract_provider_route_summary = _report_history._extract_provider_route_summary
+build_post_deploy_reports_payload = _report_history.build_post_deploy_reports_payload
+get_default_post_deploy_report_dir = _report_history.get_default_post_deploy_report_dir
+load_report_json = _report_history.load_report_json
 
 
 DEFAULT_REPORT_DIR = get_default_post_deploy_report_dir()
