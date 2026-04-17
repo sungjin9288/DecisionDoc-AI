@@ -66,6 +66,34 @@ def resolve_named_report(report_dir: Path, report_file: str) -> tuple[dict[str, 
     return payload, resolved_path
 
 
+def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list):
+        return {}
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if str(check.get("name", "")).strip() != "health provider routing":
+            continue
+        summary: dict[str, Any] = {}
+        provider_routes = check.get("provider_routes")
+        provider_route_checks = check.get("provider_route_checks")
+        if isinstance(provider_routes, dict):
+            summary["provider_routes"] = {
+                key: str(value)
+                for key, value in provider_routes.items()
+                if str(key).strip() and str(value).strip()
+            }
+        if isinstance(provider_route_checks, dict):
+            summary["provider_route_checks"] = {
+                key: str(value)
+                for key, value in provider_route_checks.items()
+                if str(key).strip() and str(value).strip()
+            }
+        return summary
+    return {}
+
+
 def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
     index_payload, index_path = resolve_report_index(report_dir)
     reports = list(index_payload.get("reports", []))
@@ -82,7 +110,11 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
     }
     if latest:
         latest_path = Path(report_dir).expanduser() / "latest.json"
-        payload["latest_details"] = load_report_json(latest_path)
+        latest_payload = load_report_json(latest_path)
+        extracted_summary = _extract_provider_route_summary(latest_payload)
+        for key, value in extracted_summary.items():
+            latest_payload.setdefault(key, value)
+        payload["latest_details"] = latest_payload
     return payload
 
 

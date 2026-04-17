@@ -250,6 +250,8 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert history_payload["checks"][-1]["name"] == "deployed smoke"
     assert latest_payload["checks"][-1]["name"] == "deployed smoke"
     assert history_payload["checks"][1]["name"] == "health provider routing"
+    assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
+    assert index_payload["reports"][0]["provider_route_checks"]["visual"] == "ok"
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name

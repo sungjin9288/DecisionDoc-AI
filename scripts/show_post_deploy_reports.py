@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.ops.report_history import (
+    _extract_provider_route_summary,
     build_post_deploy_reports_payload,
     get_default_post_deploy_report_dir,
     load_report_json,
@@ -29,11 +30,22 @@ def _print_entry(entry: dict[str, Any]) -> None:
     base_url = str(entry.get("base_url", "-"))
     skip_smoke = "yes" if entry.get("skip_smoke") else "no"
     print(f"- [{status}] {finished_at}  file={file_name}  base_url={base_url}  skip_smoke={skip_smoke}", flush=True)
+    provider_routes = entry.get("provider_routes")
+    if isinstance(provider_routes, dict) and provider_routes:
+        print(
+            "  provider_routes: "
+            f"generation={provider_routes.get('generation', '-')} "
+            f"attachment={provider_routes.get('attachment', '-')} "
+            f"visual={provider_routes.get('visual', '-')}",
+            flush=True,
+        )
 
 
 def _print_latest_details(report_dir: Path) -> None:
     latest_path = Path(report_dir).expanduser() / "latest.json"
     payload = load_report_json(latest_path)
+    for key, value in _extract_provider_route_summary(payload).items():
+        payload.setdefault(key, value)
     print("", flush=True)
     print("Latest report details", flush=True)
     print(f"- status={payload.get('status', 'unknown')}", flush=True)
@@ -43,6 +55,26 @@ def _print_latest_details(report_dir: Path) -> None:
     print(f"- skip_smoke={'yes' if payload.get('skip_smoke') else 'no'}", flush=True)
     if payload.get("error"):
         print(f"- error={payload['error']}", flush=True)
+    provider_routes = payload.get("provider_routes")
+    provider_route_checks = payload.get("provider_route_checks")
+    if isinstance(provider_routes, dict) and provider_routes:
+        print(
+            "- provider_routes="
+            f"default:{provider_routes.get('default', '-')} "
+            f"generation:{provider_routes.get('generation', '-')} "
+            f"attachment:{provider_routes.get('attachment', '-')} "
+            f"visual:{provider_routes.get('visual', '-')}",
+            flush=True,
+        )
+    if isinstance(provider_route_checks, dict) and provider_route_checks:
+        print(
+            "- provider_route_checks="
+            f"default:{provider_route_checks.get('default', '-')} "
+            f"generation:{provider_route_checks.get('generation', '-')} "
+            f"attachment:{provider_route_checks.get('attachment', '-')} "
+            f"visual:{provider_route_checks.get('visual', '-')}",
+            flush=True,
+        )
     checks = payload.get("checks", [])
     print("Checks", flush=True)
     for check in checks:

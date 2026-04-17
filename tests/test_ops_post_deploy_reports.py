@@ -35,6 +35,22 @@ def _write_report_history(report_dir: Path) -> None:
         "skip_smoke": False,
         "checks": [
             {"name": "health", "status": "passed"},
+            {
+                "name": "health provider routing",
+                "status": "passed",
+                "provider_routes": {
+                    "default": "claude,gemini,openai",
+                    "generation": "claude,gemini,openai",
+                    "attachment": "gemini,claude,openai",
+                    "visual": "openai,claude,gemini",
+                },
+                "provider_route_checks": {
+                    "default": "ok",
+                    "generation": "ok",
+                    "attachment": "ok",
+                    "visual": "degraded",
+                },
+            },
             {"name": "smoke", "status": "passed", "exit_code": 0},
         ],
     }
@@ -62,6 +78,18 @@ def _write_report_history(report_dir: Path) -> None:
                 "started_at": "2026-04-14T04:09:00+00:00",
                 "finished_at": "2026-04-14T04:10:00+00:00",
                 "skip_smoke": False,
+                "provider_routes": {
+                    "default": "claude,gemini,openai",
+                    "generation": "claude,gemini,openai",
+                    "attachment": "gemini,claude,openai",
+                    "visual": "openai,claude,gemini",
+                },
+                "provider_route_checks": {
+                    "default": "ok",
+                    "generation": "ok",
+                    "attachment": "ok",
+                    "visual": "degraded",
+                },
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -106,6 +134,7 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert body["latest_report"] == "post-deploy-20260414T041000Z.json"
     assert len(body["reports"]) == 1
     assert body["reports"][0]["file"] == "post-deploy-20260414T041000Z.json"
+    assert body["reports"][0]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert body["latest_details"] is None
 
 
@@ -123,8 +152,9 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
     assert response.status_code == 200
     body = response.json()
     assert body["latest_details"]["status"] == "passed"
-    assert body["latest_details"]["checks"][1]["name"] == "smoke"
-    assert body["latest_details"]["checks"][1]["exit_code"] == 0
+    assert body["latest_details"]["provider_route_checks"]["visual"] == "degraded"
+    assert body["latest_details"]["checks"][2]["name"] == "smoke"
+    assert body["latest_details"]["checks"][2]["exit_code"] == 0
 
 
 def test_ops_post_deploy_reports_returns_404_when_missing(tmp_path: Path, monkeypatch) -> None:

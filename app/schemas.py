@@ -801,6 +801,8 @@ class PostDeployReportSummary(BaseModel):
     finished_at: str
     skip_smoke: bool = False
     error: str | None = None
+    provider_routes: dict[str, str] | None = None
+    provider_route_checks: dict[str, str] | None = None
 
 
 class PostDeployReportCheck(BaseModel):
@@ -817,6 +819,8 @@ class PostDeployLatestDetailsResponse(BaseModel):
     skip_smoke: bool = False
     error: str | None = None
     checks: list[PostDeployReportCheck] = Field(default_factory=list)
+    provider_routes: dict[str, str] | None = None
+    provider_route_checks: dict[str, str] | None = None
 
 
 class OpsPostDeployReportsResponse(BaseModel):

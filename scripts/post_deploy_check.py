@@ -116,6 +116,34 @@ def _normalize_index_error(value: Any, *, max_len: int = 160) -> str | None:
     return f"{text[: max_len - 3].rstrip()}..."
 
 
+def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list):
+        return {}
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if str(check.get("name", "")).strip() != "health provider routing":
+            continue
+        provider_routes = check.get("provider_routes")
+        provider_route_checks = check.get("provider_route_checks")
+        summary: dict[str, Any] = {}
+        if isinstance(provider_routes, dict):
+            summary["provider_routes"] = {
+                key: str(value)
+                for key, value in provider_routes.items()
+                if str(key).strip() and str(value).strip()
+            }
+        if isinstance(provider_route_checks, dict):
+            summary["provider_route_checks"] = {
+                key: str(value)
+                for key, value in provider_route_checks.items()
+                if str(key).strip() and str(value).strip()
+            }
+        return summary
+    return {}
+
+
 def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "file": report_file.name,
@@ -128,6 +156,7 @@ def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[st
     error = _normalize_index_error(payload.get("error"))
     if error:
         entry["error"] = error
+    entry.update(_extract_provider_route_summary(payload))
     return entry
 
 

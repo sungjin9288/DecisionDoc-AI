@@ -39,6 +39,12 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
                         "started_at": "2026-04-14T04:09:00+00:00",
                         "finished_at": "2026-04-14T04:10:00+00:00",
                         "skip_smoke": False,
+                        "provider_routes": {
+                            "default": "claude,gemini,openai",
+                            "generation": "claude,gemini,openai",
+                            "attachment": "gemini,claude,openai",
+                            "visual": "openai,claude,gemini",
+                        },
                     },
                     {
                         "file": "post-deploy-20260414T031000Z.json",
@@ -62,6 +68,7 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
     assert "Latest report: post-deploy-20260414T041000Z.json" in captured
     assert "Recent reports (limit=1)" in captured
     assert "post-deploy-20260414T041000Z.json" in captured
+    assert "provider_routes: generation=claude,gemini,openai" in captured
     assert "post-deploy-20260414T031000Z.json" not in captured
 
 
@@ -80,6 +87,22 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                 "error": "docker compose ps failed with exit code 17",
                 "checks": [
                     {"name": "health", "status": "passed"},
+                    {
+                        "name": "health provider routing",
+                        "status": "passed",
+                        "provider_routes": {
+                            "default": "claude,gemini,openai",
+                            "generation": "claude,gemini,openai",
+                            "attachment": "gemini,claude,openai",
+                            "visual": "openai,claude,gemini",
+                        },
+                        "provider_route_checks": {
+                            "default": "ok",
+                            "generation": "ok",
+                            "attachment": "ok",
+                            "visual": "degraded",
+                        },
+                    },
                     {"name": "docker compose ps", "status": "failed", "exit_code": 17},
                 ],
             }
@@ -113,6 +136,8 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
     assert result == 0
     assert "Latest report details" in captured
     assert "- error=docker compose ps failed with exit code 17" in captured
+    assert "- provider_routes=default:claude,gemini,openai generation:claude,gemini,openai attachment:gemini,claude,openai visual:openai,claude,gemini" in captured
+    assert "- provider_route_checks=default:ok generation:ok attachment:ok visual:degraded" in captured
     assert "- [passed] health" in captured
     assert "- [failed] docker compose ps exit_code=17" in captured
 
@@ -175,6 +200,22 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
         "error": "docker compose ps failed with exit code 17",
         "checks": [
             {"name": "health", "status": "passed"},
+            {
+                "name": "health provider routing",
+                "status": "passed",
+                "provider_routes": {
+                    "default": "claude,gemini,openai",
+                    "generation": "claude,gemini,openai",
+                    "attachment": "gemini,claude,openai",
+                    "visual": "openai,claude,gemini",
+                },
+                "provider_route_checks": {
+                    "default": "ok",
+                    "generation": "ok",
+                    "attachment": "ok",
+                    "visual": "ok",
+                },
+            },
             {"name": "docker compose ps", "status": "failed", "exit_code": 17},
         ],
     }
@@ -206,4 +247,6 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     assert result == 0
     assert payload["latest_details"]["status"] == "failed"
     assert payload["latest_details"]["error"] == "docker compose ps failed with exit code 17"
-    assert payload["latest_details"]["checks"][1]["exit_code"] == 17
+    assert payload["latest_details"]["provider_routes"]["generation"] == "claude,gemini,openai"
+    assert payload["latest_details"]["provider_route_checks"]["visual"] == "ok"
+    assert payload["latest_details"]["checks"][2]["exit_code"] == 17
