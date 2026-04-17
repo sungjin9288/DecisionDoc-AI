@@ -231,6 +231,50 @@ def test_retry_raises_after_all_attempts(tmp_path: Path, monkeypatch) -> None:
     assert svc._call_provider_once.call_count == 2
 
 
+def test_retry_uses_retry_after_when_provider_is_rate_limited(tmp_path: Path, monkeypatch) -> None:
+    """429 cause가 있으면 기본 backoff 대신 retry-after를 우선 반영한다."""
+    monkeypatch.setenv("LLM_RETRY_ATTEMPTS", "2")
+    monkeypatch.setenv("LLM_RETRY_BACKOFF_SECONDS", "0")
+
+    from app.services.generation_service import ProviderFailedError
+    from app.bundle_catalog.spec import BundleSpec
+
+    svc, _ = _make_generation_service(tmp_path)
+    delays: list[int] = []
+    call_count = 0
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self) -> None:
+            super().__init__("429 Too Many Requests")
+            self.response = type(
+                "FakeResponse",
+                (),
+                {"status_code": 429, "headers": {"retry-after": "4"}},
+            )()
+
+    def fail_once_then_succeed(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            try:
+                raise FakeRateLimitError()
+            except Exception as exc:
+                raise ProviderFailedError("provider failed") from exc
+        return {"result": "ok"}
+
+    monkeypatch.setattr("app.services.generation_service.time.sleep", lambda seconds: delays.append(seconds))
+    svc._call_provider_once = fail_once_then_succeed  # type: ignore[method-assign]
+    bundle_spec = MagicMock(spec=BundleSpec)
+    bundle_spec.id = "tech_decision"
+
+    result = svc._call_provider_with_retry(MagicMock(), {}, "req-rate-limit", bundle_spec)
+    assert result == {"result": "ok"}
+    assert call_count == 2
+    assert delays == [4]
+
+
 # ─── H-1: /health readiness probe ────────────────────────────────────────────
 
 def _make_health_client(tmp_path: Path, monkeypatch):

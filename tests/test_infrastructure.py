@@ -237,6 +237,14 @@ def test_index_html_expands_attachment_accept_lists_for_structured_docs():
     assert ".png,.jpg,.jpeg,.webp" in content
 
 
+def test_index_html_rfp_parse_uses_auth_headers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert re.search(
+        r"fetch\('/attachments/parse-rfp',\s*\{\s*method:\s*'POST',\s*headers:\s*getAuthHeaders\(\),\s*body:\s*fd,?\s*\}\)",
+        content,
+    )
+
+
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None

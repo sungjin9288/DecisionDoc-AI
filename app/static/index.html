@@ -8131,7 +8131,11 @@
       const fd = new FormData();
       Array.from(fileInput.files).forEach(f => fd.append('files', f));
 
-      const res = await fetch('/attachments/parse-rfp', { method: 'POST', body: fd });
+      const res = await fetch('/attachments/parse-rfp', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: fd,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(err.detail || `HTTP ${res.status}`);

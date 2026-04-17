@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
 
+from app.providers.base import ProviderError
 from app.providers.factory import get_provider
 from app.providers.mock_provider import MockProvider
 from app.services.validator import validate_docs
@@ -194,6 +195,38 @@ def test_bundle_schema_validation_missing_required_key_returns_provider_failed(t
     assert body["code"] == "PROVIDER_FAILED"
     assert body["message"] == "Provider request failed."
     assert isinstance(body["request_id"], str)
+
+
+def test_provider_rate_limit_returns_503_with_retry_guidance(tmp_path, monkeypatch):
+    import app.main as main_module
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self) -> None:
+            super().__init__("429 Too Many Requests")
+            self.response = type(
+                "FakeResponse",
+                (),
+                {"status_code": 429, "headers": {"retry-after": "12"}},
+            )()
+
+    class RateLimitedProvider(MockProvider):
+        def generate_bundle(self, requirements, *, schema_version, request_id, bundle_spec=None, feedback_hints=""):  # noqa: ANN001
+            try:
+                raise FakeRateLimitError()
+            except Exception as exc:
+                raise ProviderError("Provider request failed.") from exc
+
+    monkeypatch.setattr(main_module, "get_provider", lambda: RateLimitedProvider())
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post("/generate", json={"title": "x", "goal": "y"})
+    assert response.status_code == 503
+    body = response.json()
+    assert body["code"] == "PROVIDER_FAILED"
+    assert body["message"] == "AI provider is temporarily rate limited. 잠시 후 다시 시도하세요."
+    assert body["errors"] == ["retry_after_seconds=12"]
 
 
 @pytest.mark.parametrize("fixture_path", sorted(Path(__file__).parent.joinpath("fixtures").glob("*.json")))

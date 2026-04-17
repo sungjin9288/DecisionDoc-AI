@@ -9,7 +9,13 @@ from app.maintenance.mode import MaintenanceModeError
 from app.ops.service import OpsNotifyFailedError
 from app.schemas import ErrorResponse
 from app.services.attachment_service import AttachmentError
-from app.services.generation_service import BundleNotSupportedError, EvalLintFailedError, ProviderFailedError
+from app.services.generation_service import (
+    BundleNotSupportedError,
+    EvalLintFailedError,
+    ProviderFailedError,
+    is_provider_rate_limited,
+    provider_failure_retry_after_seconds,
+)
 from app.storage.base import StorageFailedError
 from app.services.validator import DocumentValidationError
 
@@ -57,12 +63,22 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ProviderFailedError)
-    async def provider_failed_handler(request: Request, exc: ProviderFailedError):  # noqa: ARG001
+    async def provider_failed_handler(request: Request, exc: ProviderFailedError):
+        message = "Provider request failed."
+        status_code = 500
+        errors: list[str] | None = None
+        if is_provider_rate_limited(exc):
+            message = "AI provider is temporarily rate limited. 잠시 후 다시 시도하세요."
+            status_code = 503
+            retry_after = provider_failure_retry_after_seconds(exc)
+            if retry_after is not None:
+                errors = [f"retry_after_seconds={retry_after}"]
         return _error_response(
             request,
             code="PROVIDER_FAILED",
-            message="Provider request failed.",
-            status_code=500,
+            message=message,
+            status_code=status_code,
+            errors=errors,
         )
 
     @app.exception_handler(EvalLintFailedError)
