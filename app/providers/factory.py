@@ -2,6 +2,7 @@ import os
 
 from app.ai.pipeline import FallbackPipeline
 from app.providers.base import Provider, ProviderError
+from app.providers.claude_provider import ClaudeProvider
 from app.providers.gemini_provider import GeminiProvider
 from app.providers.local_provider import LocalProvider
 from app.providers.mock_provider import MockProvider
@@ -23,7 +24,7 @@ def _make_single_provider(name: str, model_override: str | None = None) -> Provi
     """Instantiate a single named provider.
 
     Args:
-        name: Provider name ("mock" | "openai" | "gemini" | "local").
+        name: Provider name ("mock" | "openai" | "gemini" | "claude" | "local").
         model_override: If set, override the model name for OpenAI (fine-tuned models).
 
     Raises:
@@ -35,6 +36,8 @@ def _make_single_provider(name: str, model_override: str | None = None) -> Provi
         return OpenAIProvider(model_override=model_override)
     if name == "gemini":
         return GeminiProvider()
+    if name == "claude":
+        return ClaudeProvider()
     if name == "local":
         from app.config import (
             get_local_llm_api_key,
@@ -55,8 +58,8 @@ def get_provider(model_override: str | None = None) -> Provider:
     """Return the configured provider, or a FallbackPipeline for comma-separated names.
 
     DECISIONDOC_PROVIDER accepts:
-      - A single name:              "mock" | "openai" | "gemini"
-      - A comma-separated fallback: "openai,gemini" (tries openai first, falls back to gemini)
+      - A single name:              "mock" | "openai" | "gemini" | "claude"
+      - A comma-separated fallback: "openai,gemini,claude"
 
     Args:
         model_override: If set, passes the model name to the OpenAI provider

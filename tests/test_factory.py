@@ -3,6 +3,7 @@ import pytest
 
 from app.ai.pipeline import FallbackPipeline
 from app.providers.base import ProviderError
+from app.providers.claude_provider import ClaudeProvider
 from app.providers.factory import get_provider
 from app.providers.mock_provider import MockProvider
 
@@ -22,6 +23,13 @@ def test_get_provider_mock_returns_mock(monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     provider = get_provider()
     assert isinstance(provider, MockProvider)
+
+
+def test_get_provider_claude_returns_claude(monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    provider = get_provider()
+    assert isinstance(provider, ClaudeProvider)
 
 
 def test_get_provider_unknown_raises_provider_error(monkeypatch):
@@ -84,3 +92,11 @@ def test_get_provider_name_attribute_pipeline(monkeypatch):
     """FallbackPipeline must report name='fallback'."""
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock,mock")
     assert get_provider().name == "fallback"
+
+
+def test_get_provider_claude_pipeline_trims_spaces(monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", " mock , claude ")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    provider = get_provider()
+    assert isinstance(provider, FallbackPipeline)
+    assert [p.name for p in provider._providers] == ["mock", "claude"]

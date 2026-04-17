@@ -28,21 +28,27 @@ def test_live_report_json_and_md_format_contains_delta_winner_and_wins():
             _row("03_normal_full_fields", 80, True),
             _row("09_cost_constrained_1", 75, True),
         ],
+        "claude": [
+            _row("01_normal_default_all", 92, True),
+            _row("03_normal_full_fields", 80, True),
+            _row("09_cost_constrained_1", 78, True),
+        ],
     }
 
     report = build_live_report(run_id="r1", template_version="v1", providers_result=providers_result)
     assert "summary" in report
     assert "wins" in report["summary"]
-    assert {"openai", "gemini", "tie"} <= set(report["summary"]["wins"].keys())
+    assert {"openai", "gemini", "claude", "tie"} <= set(report["summary"]["wins"].keys())
     assert report["comparison"]
     first = report["comparison"][0]
-    assert {"fixture_id", "openai_score", "gemini_score", "score_delta", "winner"} <= set(first.keys())
+    assert {"fixture_id", "openai_score", "gemini_score", "claude_score", "score_delta", "winner"} <= set(first.keys())
 
     tie_row = [row for row in report["comparison"] if row["fixture_id"] == "03_normal_full_fields"][0]
     assert tie_row["score_delta"] == 0
     assert tie_row["winner"] == "tie"
 
     md = render_live_markdown(report)
+    assert "claude_score" in md
     assert "delta" in md
     assert "winner" in md
     assert "| provider | avg_score |" in md

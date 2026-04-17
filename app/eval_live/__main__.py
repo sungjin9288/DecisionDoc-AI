@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from app.eval_live.runner import run_live_eval
+from app.eval_live.runner import LIVE_PROVIDERS, run_live_eval
 
 
 def _parse_args() -> argparse.Namespace:
@@ -19,6 +19,8 @@ def _validate_required_keys() -> None:
         raise RuntimeError("Missing OPENAI_API_KEY for live eval.")
     if not os.getenv("GEMINI_API_KEY"):
         raise RuntimeError("Missing GEMINI_API_KEY for live eval.")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise RuntimeError("Missing ANTHROPIC_API_KEY for live eval.")
 
 
 def _build_short_summary(report: dict) -> str:
@@ -34,9 +36,8 @@ def _build_short_summary(report: dict) -> str:
         f"run_id: {report['run_id']}",
         f"template_version: {report['template_version']}",
         f"fixtures: {', '.join(report['fixtures'])}",
-        f"openai avg_score: {providers['openai']['avg_score']}",
-        f"gemini avg_score: {providers['gemini']['avg_score']}",
-        f"wins: openai={wins['openai']}, gemini={wins['gemini']}, tie={wins['tie']}",
+        *[f"{provider} avg_score: {providers[provider]['avg_score']}" for provider in LIVE_PROVIDERS],
+        "wins: " + ", ".join([f"{provider}={wins[provider]}" for provider in LIVE_PROVIDERS] + [f"tie={wins['tie']}"]),
         f"biggest_delta: {biggest_label}",
         f"artifact_dir: {report.get('report_dir', '-')}",
         "raw text/keys/model outputs are not stored in report.",
@@ -60,10 +61,12 @@ def _write_github_step_summary(report: dict) -> None:
         "",
         "| provider | avg_score | avg_coverage | avg_total_chars | fail_count | wins |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
-        f"| openai | {providers['openai']['avg_score']} | {providers['openai']['avg_coverage']} | {providers['openai']['avg_total_chars']} | {providers['openai']['fail_count']} | {wins['openai']} |",
-        f"| gemini | {providers['gemini']['avg_score']} | {providers['gemini']['avg_coverage']} | {providers['gemini']['avg_total_chars']} | {providers['gemini']['fail_count']} | {wins['gemini']} |",
-        "",
     ]
+    for provider in LIVE_PROVIDERS:
+        lines.append(
+            f"| {provider} | {providers[provider]['avg_score']} | {providers[provider]['avg_coverage']} | {providers[provider]['avg_total_chars']} | {providers[provider]['fail_count']} | {wins[provider]} |"
+        )
+    lines.append("")
     with Path(summary_path).open("a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 

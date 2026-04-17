@@ -42,6 +42,8 @@ def health(request: Request) -> HealthResponse:
         checks["provider"] = "degraded"
     elif "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
         checks["provider"] = "degraded"
+    elif "claude" in provider_names and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+        checks["provider"] = "degraded"
     else:
         checks["provider"] = "ok"
 

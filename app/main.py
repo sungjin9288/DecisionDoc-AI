@@ -79,13 +79,15 @@ def create_app() -> FastAPI:
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
 
     # Fail fast on misconfigured environment before accepting traffic.
-    # provider_names supports comma-separated fallback chains (e.g. "openai,gemini").
+    # provider_names supports comma-separated fallback chains (e.g. "openai,gemini,claude").
     if not template_dir.is_dir():
         raise RuntimeError(f"Template directory does not exist: {template_dir}")
     if "openai" in provider_names and not os.getenv("OPENAI_API_KEY", "").strip():
         raise RuntimeError("OPENAI_API_KEY is required when DECISIONDOC_PROVIDER=openai.")
     if "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
         raise RuntimeError("GEMINI_API_KEY is required when DECISIONDOC_PROVIDER=gemini.")
+    if "claude" in provider_names and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+        raise RuntimeError("ANTHROPIC_API_KEY is required when DECISIONDOC_PROVIDER=claude.")
     storage_kind = os.getenv("DECISIONDOC_STORAGE", "local").lower()
     if storage_kind == "s3" and not os.getenv("DECISIONDOC_S3_BUCKET", "").strip():
         raise RuntimeError("DECISIONDOC_S3_BUCKET is required when DECISIONDOC_STORAGE=s3.")

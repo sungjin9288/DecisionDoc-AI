@@ -110,3 +110,36 @@ def test_check_prod_env_rejects_expected_origin_mismatch(tmp_path: Path) -> None
     )
 
     assert exit_code == 1
+
+
+def test_check_prod_env_accepts_valid_claude_prod_env(tmp_path: Path) -> None:
+    checker = _load_script_module("decisiondoc_check_prod_env_claude", "scripts/check_prod_env.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DECISIONDOC_ENV=prod",
+                "DECISIONDOC_PROVIDER=openai,claude",
+                "DECISIONDOC_STORAGE=local",
+                "JWT_SECRET_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "ALLOWED_ORIGINS=https://admin.decisiondoc.kr",
+                "DECISIONDOC_API_KEYS=ddoc_api_key_1",
+                "DECISIONDOC_OPS_KEY=ddoc_ops_key_1",
+                "OPENAI_API_KEY=sk-proj-valid-openai-key",
+                "ANTHROPIC_API_KEY=sk-ant-valid-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = checker.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--expected-origin",
+            "https://admin.decisiondoc.kr",
+        ]
+    )
+
+    assert exit_code == 0

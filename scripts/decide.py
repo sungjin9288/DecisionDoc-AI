@@ -98,6 +98,8 @@ def _validate_provider_env(provider_names: list[str]) -> None:
         raise SystemExit("Error: OPENAI_API_KEY is required when DECISIONDOC_PROVIDER=openai.")
     if "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
         raise SystemExit("Error: GEMINI_API_KEY is required when DECISIONDOC_PROVIDER=gemini.")
+    if "claude" in provider_names and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+        raise SystemExit("Error: ANTHROPIC_API_KEY is required when DECISIONDOC_PROVIDER=claude.")
 
 
 # ---------------------------------------------------------------------------

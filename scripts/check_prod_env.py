@@ -9,7 +9,7 @@ from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
-SUPPORTED_PROVIDERS = {"openai", "gemini", "local", "mock"}
+SUPPORTED_PROVIDERS = {"openai", "gemini", "claude", "local", "mock"}
 SUPPORTED_STORAGES = {"local", "s3"}
 
 
@@ -56,6 +56,7 @@ def _is_placeholder(value: str) -> bool:
         "https://yourdomain.com",
         "http://localhost:3000,http://localhost:8000",
         "sk-...",
+        "sk-ant-...",
         "aiza...",
     }
     if lower in placeholder_values:
@@ -95,6 +96,10 @@ def _validate_provider(env: dict[str, str], errors: list[str], warnings: list[st
         gemini_key = env.get("GEMINI_API_KEY", "").strip()
         if _is_placeholder(gemini_key):
             errors.append("GEMINI_API_KEY is missing or still uses a placeholder value")
+    if "claude" in providers:
+        claude_key = env.get("ANTHROPIC_API_KEY", "").strip()
+        if _is_placeholder(claude_key):
+            errors.append("ANTHROPIC_API_KEY is missing or still uses a placeholder value")
     if "mock" in providers:
         warnings.append("DECISIONDOC_PROVIDER includes mock; verify this is intentional for prod")
     return providers

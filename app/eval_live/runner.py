@@ -13,7 +13,7 @@ from app.providers.factory import get_provider
 from app.schemas import GenerateRequest
 from app.services.generation_service import GenerationService
 
-LIVE_PROVIDERS = ["openai", "gemini"]
+LIVE_PROVIDERS = ["openai", "gemini", "claude"]
 
 
 def _resolve_fixture_paths(fixtures_dir: Path) -> list[Path]:
@@ -68,17 +68,26 @@ def _pick_top_reasons(row: dict) -> list[str]:
     return [str(r) for r in reasons[:2]]
 
 
-def _winner_for_fixture(openai_row: dict, gemini_row: dict) -> str:
-    openai_pass = bool(openai_row.get("pass", False)) and not bool(openai_row.get("provider_error", False))
-    gemini_pass = bool(gemini_row.get("pass", False)) and not bool(gemini_row.get("provider_error", False))
-    if openai_pass != gemini_pass:
-        return "openai" if openai_pass else "gemini"
-    openai_score = int(openai_row.get("heuristic", {}).get("score", 0))
-    gemini_score = int(gemini_row.get("heuristic", {}).get("score", 0))
-    if openai_score > gemini_score:
-        return "openai"
-    if gemini_score > openai_score:
-        return "gemini"
+def _winner_for_fixture(rows_by_provider: dict[str, dict]) -> str:
+    best_provider = "tie"
+    best_pass = False
+    best_score = -1
+    tie = False
+
+    for provider in LIVE_PROVIDERS:
+        row = rows_by_provider.get(provider, {"heuristic": {"score": 0}, "pass": False, "provider_error": True})
+        provider_pass = bool(row.get("pass", False)) and not bool(row.get("provider_error", False))
+        provider_score = int(row.get("heuristic", {}).get("score", 0))
+        if (provider_pass, provider_score) > (best_pass, best_score):
+            best_provider = provider
+            best_pass = provider_pass
+            best_score = provider_score
+            tie = False
+        elif (provider_pass, provider_score) == (best_pass, best_score):
+            tie = True
+
+    if tie:
+        return "tie"
     return "tie"
 
 
@@ -88,32 +97,43 @@ def build_live_report(
     template_version: str,
     providers_result: dict[str, list[dict]],
 ) -> dict:
-    openai_map = {r["fixture_id"]: r for r in providers_result.get("openai", [])}
-    gemini_map = {r["fixture_id"]: r for r in providers_result.get("gemini", [])}
+    provider_maps = {
+        provider: {r["fixture_id"]: r for r in providers_result.get(provider, [])}
+        for provider in LIVE_PROVIDERS
+    }
 
     comparison_rows: list[dict] = []
-    wins = {"openai": 0, "gemini": 0, "tie": 0}
+    wins = {provider: 0 for provider in LIVE_PROVIDERS}
+    wins["tie"] = 0
 
     for fixture_id in REPRESENTATIVE_FIXTURES:
-        openai_row = openai_map.get(fixture_id, {"heuristic": {"score": 0}, "errors": ["missing_result"], "pass": False})
-        gemini_row = gemini_map.get(fixture_id, {"heuristic": {"score": 0}, "errors": ["missing_result"], "pass": False})
-        openai_score = int(openai_row.get("heuristic", {}).get("score", 0))
-        gemini_score = int(gemini_row.get("heuristic", {}).get("score", 0))
-        score_delta = openai_score - gemini_score
-        winner = _winner_for_fixture(openai_row, gemini_row)
+        rows_by_provider = {
+            provider: provider_maps.get(provider, {}).get(
+                fixture_id,
+                {"heuristic": {"score": 0}, "errors": ["missing_result"], "pass": False},
+            )
+            for provider in LIVE_PROVIDERS
+        }
+        scores = {
+            provider: int(row.get("heuristic", {}).get("score", 0))
+            for provider, row in rows_by_provider.items()
+        }
+        score_order = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        top_score = score_order[0][1] if score_order else 0
+        next_score = score_order[1][1] if len(score_order) > 1 else top_score
+        score_delta = top_score - next_score
+        winner = _winner_for_fixture(rows_by_provider)
         wins[winner] += 1
 
-        comparison_rows.append(
-            {
-                "fixture_id": fixture_id,
-                "openai_score": openai_score,
-                "gemini_score": gemini_score,
-                "score_delta": score_delta,
-                "winner": winner,
-                "top_reasons_openai": _pick_top_reasons(openai_row),
-                "top_reasons_gemini": _pick_top_reasons(gemini_row),
-            }
-        )
+        row_payload = {
+            "fixture_id": fixture_id,
+            "score_delta": score_delta,
+            "winner": winner,
+        }
+        for provider, row in rows_by_provider.items():
+            row_payload[f"{provider}_score"] = scores[provider]
+            row_payload[f"top_reasons_{provider}"] = _pick_top_reasons(row)
+        comparison_rows.append(row_payload)
 
     provider_summary = {provider: _summary_for_provider(rows) for provider, rows in providers_result.items()}
     for provider in LIVE_PROVIDERS:
@@ -162,13 +182,27 @@ def render_live_markdown(report: dict) -> str:
         lines.append(
             f"| {provider} | {data['avg_score']} | {data['avg_coverage']} | {data['avg_total_chars']} | {data['total_banned_violations']} | {data['fail_count']} | {data.get('wins', 0)} |"
         )
-    lines.extend(["", "## Per Fixture Comparison", "", "| fixture_id | openai_score | gemini_score | delta | winner | notes |", "| --- | ---: | ---: | ---: | --- | --- |"])
+    score_headers = " | ".join(f"{provider}_score" for provider in LIVE_PROVIDERS)
+    score_dividers = " | ".join("---:" for _ in LIVE_PROVIDERS)
+    lines.extend(
+        [
+            "",
+            "## Per Fixture Comparison",
+            "",
+            f"| fixture_id | {score_headers} | delta | winner | notes |",
+            f"| --- | {score_dividers} | ---: | --- | --- |",
+        ]
+    )
     for row in report["comparison"]:
         delta = row["score_delta"]
         delta_label = f"+{delta}" if delta > 0 else str(delta)
-        notes = ", ".join((row.get("top_reasons_openai", []) + row.get("top_reasons_gemini", []))[:2]) or "-"
+        notes_source: list[str] = []
+        for provider in LIVE_PROVIDERS:
+            notes_source.extend(row.get(f"top_reasons_{provider}", []))
+        notes = ", ".join(notes_source[:2]) or "-"
+        score_values = " | ".join(str(row.get(f"{provider}_score", 0)) for provider in LIVE_PROVIDERS)
         lines.append(
-            f"| {row['fixture_id']} | {row['openai_score']} | {row['gemini_score']} | {delta_label} | {row['winner']} | {notes} |"
+            f"| {row['fixture_id']} | {score_values} | {delta_label} | {row['winner']} | {notes} |"
         )
     return "\n".join(lines) + "\n"
 

@@ -59,3 +59,19 @@ def test_live_gemini_generate_ok(monkeypatch):
     body = response.json()
     assert body["provider"] == "gemini"
     assert len(body["docs"]) == 4
+
+
+def test_live_claude_generate_ok(monkeypatch):
+    if os.getenv("DECISIONDOC_PROVIDER") != "claude" or not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("Set DECISIONDOC_PROVIDER=claude and ANTHROPIC_API_KEY to run live Claude test.")
+
+    client = _live_client(monkeypatch, "claude")
+    headers = {}
+    api_key = _resolve_live_api_key()
+    if api_key:
+        headers["X-DecisionDoc-Api-Key"] = api_key
+    response = client.post("/generate", json={"title": "Live Claude", "goal": "live smoke"}, headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "claude"
+    assert len(body["docs"]) == 4
