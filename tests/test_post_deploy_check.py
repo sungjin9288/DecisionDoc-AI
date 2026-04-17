@@ -32,6 +32,46 @@ class _FakeResponse:
         _ = exc_type, exc, tb
 
 
+def _health_payload(
+    *,
+    status: str = "ok",
+    provider: str = "openai",
+    default_route: str = "openai",
+    generation_route: str = "openai",
+    attachment_route: str = "openai",
+    visual_route: str = "openai",
+    default_route_status: str = "ok",
+    generation_route_status: str = "ok",
+    attachment_route_status: str = "ok",
+    visual_route_status: str = "ok",
+    provider_check_status: str = "ok",
+) -> str:
+    return json.dumps(
+        {
+            "status": status,
+            "provider": provider,
+            "checks": {
+                "provider": provider_check_status,
+                "provider_generation": generation_route_status,
+                "provider_attachment": attachment_route_status,
+                "provider_visual": visual_route_status,
+            },
+            "provider_routes": {
+                "default": default_route,
+                "generation": generation_route,
+                "attachment": attachment_route,
+                "visual": visual_route,
+            },
+            "provider_route_checks": {
+                "default": default_route_status,
+                "generation": generation_route_status,
+                "attachment": attachment_route_status,
+                "visual": visual_route_status,
+            },
+        }
+    )
+
+
 def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script_module("decisiondoc_post_deploy_check_default", "scripts/post_deploy_check.py")
     env_file = tmp_path / ".env.prod"
@@ -54,7 +94,7 @@ def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypat
     def _fake_urlopen(url: str, timeout: float = 0.0):
         assert url == "https://admin.decisiondoc.kr/health"
         assert timeout == 10.0
-        return _FakeResponse('{"status":"ok","provider":"openai"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -130,7 +170,7 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
     def _fake_urlopen(url: str, timeout: float = 0.0):
         assert url == "https://admin.decisiondoc.kr/health"
         assert timeout == 10.0
-        return _FakeResponse('{"status":"ok","provider":"openai"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -157,6 +197,7 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
     assert payload["status"] == "passed"
     assert payload["base_url"] == "https://admin.decisiondoc.kr"
     assert payload["checks"][0]["name"] == "health"
+    assert payload["checks"][1]["name"] == "health provider routing"
     assert payload["checks"][-1]["name"] == "deployed smoke"
 
 
@@ -171,7 +212,7 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     def _fake_urlopen(url: str, timeout: float = 0.0):
         assert url == "https://admin.decisiondoc.kr/health"
         assert timeout == 10.0
-        return _FakeResponse('{"status":"ok","provider":"openai"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -208,6 +249,7 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert latest_payload["status"] == "passed"
     assert history_payload["checks"][-1]["name"] == "deployed smoke"
     assert latest_payload["checks"][-1]["name"] == "deployed smoke"
+    assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name
@@ -252,7 +294,7 @@ def test_post_deploy_check_updates_index_with_newest_report_first(tmp_path: Path
     def _fake_urlopen(url: str, timeout: float = 0.0):
         assert url == "https://admin.decisiondoc.kr/health"
         assert timeout == 10.0
-        return _FakeResponse('{"status":"ok"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -290,7 +332,7 @@ def test_post_deploy_check_writes_failure_report(tmp_path: Path, monkeypatch) ->
 
     def _fake_urlopen(url: str, timeout: float = 0.0):
         _ = url, timeout
-        return _FakeResponse('{"status":"ok"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -360,7 +402,7 @@ def test_post_deploy_check_skips_smoke_when_requested(tmp_path: Path, monkeypatc
     def _fake_urlopen(url: str, timeout: float = 0.0):
         assert url == "https://dawool.decisiondoc.kr/health"
         assert timeout == 10.0
-        return _FakeResponse('{"status":"ok"}')
+        return _FakeResponse(_health_payload())
 
     def _fake_run(command, cwd=None, check=False):
         _ = cwd, check
@@ -396,7 +438,7 @@ def test_post_deploy_check_rejects_non_ok_health(tmp_path: Path, monkeypatch) ->
 
     def _fake_urlopen(url: str, timeout: float = 0.0):
         _ = url, timeout
-        return _FakeResponse('{"status":"degraded"}')
+        return _FakeResponse(_health_payload(status="degraded", provider_check_status="degraded"))
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
 
@@ -411,3 +453,29 @@ def test_post_deploy_check_rejects_non_ok_health(tmp_path: Path, monkeypatch) ->
         assert "non-ok status" in str(exc)
     else:
         raise AssertionError("Expected SystemExit for degraded health response")
+
+
+def test_post_deploy_check_rejects_missing_provider_route_metadata(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_bad_provider_routes", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        _ = url, timeout
+        return _FakeResponse('{"status":"ok","provider":"openai","checks":{"provider":"ok"}}')
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+
+    try:
+        checker.run_post_deploy_check(
+            env_file=env_file,
+            compose_file=compose_file,
+            app_service="app",
+            nginx_service="nginx",
+        )
+    except SystemExit as exc:
+        assert "provider_routes" in str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for missing provider route metadata")

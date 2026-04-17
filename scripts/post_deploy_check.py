@@ -19,6 +19,9 @@ DEFAULT_APP_SERVICE = "app"
 DEFAULT_NGINX_SERVICE = "nginx"
 DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "post-deploy"
 DEFAULT_REPORT_INDEX_LIMIT = 20
+REQUIRED_PROVIDER_ROUTE_KEYS = ("default", "generation", "attachment", "visual")
+REQUIRED_PROVIDER_CHECK_KEYS = ("provider", "provider_generation", "provider_attachment", "provider_visual")
+ALLOWED_PROVIDER_ROUTE_STATUSES = {"ok", "degraded"}
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -195,6 +198,51 @@ def _fetch_health_json(base_url: str, *, timeout: float = 10.0) -> dict[str, Any
     return payload
 
 
+def _validate_health_provider_routing(payload: dict[str, Any]) -> dict[str, Any]:
+    provider_routes = payload.get("provider_routes")
+    if not isinstance(provider_routes, dict):
+        raise SystemExit("Health check missing provider_routes metadata.")
+    missing_routes = [key for key in REQUIRED_PROVIDER_ROUTE_KEYS if not str(provider_routes.get(key, "")).strip()]
+    if missing_routes:
+        raise SystemExit(f"Health check missing provider_routes keys: {', '.join(missing_routes)}")
+
+    provider_route_checks = payload.get("provider_route_checks")
+    if not isinstance(provider_route_checks, dict):
+        raise SystemExit("Health check missing provider_route_checks metadata.")
+    missing_route_checks = [key for key in REQUIRED_PROVIDER_ROUTE_KEYS if key not in provider_route_checks]
+    if missing_route_checks:
+        raise SystemExit(
+            f"Health check missing provider_route_checks keys: {', '.join(missing_route_checks)}"
+        )
+    invalid_route_checks = {
+        key: provider_route_checks.get(key)
+        for key in REQUIRED_PROVIDER_ROUTE_KEYS
+        if provider_route_checks.get(key) not in ALLOWED_PROVIDER_ROUTE_STATUSES
+    }
+    if invalid_route_checks:
+        raise SystemExit(f"Health check has invalid provider_route_checks values: {invalid_route_checks}")
+
+    checks = payload.get("checks")
+    if not isinstance(checks, dict):
+        raise SystemExit("Health check missing checks metadata.")
+    missing_checks = [key for key in REQUIRED_PROVIDER_CHECK_KEYS if key not in checks]
+    if missing_checks:
+        raise SystemExit(f"Health check missing provider check keys: {', '.join(missing_checks)}")
+    invalid_checks = {
+        key: checks.get(key)
+        for key in REQUIRED_PROVIDER_CHECK_KEYS
+        if checks.get(key) not in ALLOWED_PROVIDER_ROUTE_STATUSES
+    }
+    if invalid_checks:
+        raise SystemExit(f"Health check has invalid provider check values: {invalid_checks}")
+
+    return {
+        "provider_routes": {key: str(provider_routes[key]) for key in REQUIRED_PROVIDER_ROUTE_KEYS},
+        "provider_route_checks": {key: str(provider_route_checks[key]) for key in REQUIRED_PROVIDER_ROUTE_KEYS},
+        "checks": {key: str(checks[key]) for key in REQUIRED_PROVIDER_CHECK_KEYS},
+    }
+
+
 def run_post_deploy_check(
     *,
     env_file: Path,
@@ -241,6 +289,33 @@ def run_post_deploy_check(
             response=health_payload,
         )
         print(f"PASS health {resolved_base_url}/health -> {health_payload}", flush=True)
+
+        try:
+            provider_routing = _validate_health_provider_routing(health_payload)
+        except SystemExit as exc:
+            _append_step(
+                report,
+                name="health provider routing",
+                status="failed",
+                url=f"{resolved_base_url}/health",
+                error=str(exc),
+                response=health_payload,
+            )
+            raise
+        _append_step(
+            report,
+            name="health provider routing",
+            status="passed",
+            url=f"{resolved_base_url}/health",
+            **provider_routing,
+        )
+        print(
+            "PASS health provider routing -> "
+            f"generation={provider_routing['provider_routes']['generation']} "
+            f"attachment={provider_routing['provider_routes']['attachment']} "
+            f"visual={provider_routing['provider_routes']['visual']}",
+            flush=True,
+        )
 
         compose_prefix = [
             "docker",

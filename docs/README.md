@@ -52,7 +52,7 @@
 - `python3 scripts/smoke.py` — 로컬/직접 환경변수 주입용 기본 API smoke (`/generate`, `/generate/export`, `/generate/from-documents`)
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod` — 배포 서버 `.env.prod` 기준 API smoke
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight` — 배포 smoke 입력값과 포함 라우트 확인
-- `python3 scripts/post_deploy_check.py --env-file .env.prod` — health, compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶은 post-deploy check
+- `python3 scripts/post_deploy_check.py --env-file .env.prod` — health(+provider route visibility), compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶은 post-deploy check
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json` — post-deploy check 결과를 JSON 리포트로 저장
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy` — timestamped report, `latest.json`, `index.json`을 함께 저장
 - `python3 scripts/show_post_deploy_reports.py --report-dir ./reports/post-deploy --latest` — 최신 post-deploy report와 최근 history를 콘솔에 요약 출력
