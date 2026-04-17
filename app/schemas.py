@@ -76,6 +76,8 @@ class HealthResponse(BaseModel):
     provider: str
     maintenance: bool | None = None
     checks: dict[str, str] | None = None
+    provider_routes: dict[str, str] | None = None
+    provider_route_checks: dict[str, str] | None = None
 
 
 class GeneratedDoc(BaseModel):

@@ -296,6 +296,10 @@ def test_health_returns_checks_dict(tmp_path: Path, monkeypatch) -> None:
     assert "status" in data
     assert "checks" in data
     assert isinstance(data["checks"], dict)
+    assert "provider_routes" in data
+    assert "provider_route_checks" in data
+    assert isinstance(data["provider_routes"], dict)
+    assert isinstance(data["provider_route_checks"], dict)
 
 
 def test_health_ok_with_mock_provider(tmp_path: Path, monkeypatch) -> None:
@@ -308,3 +312,27 @@ def test_health_ok_with_mock_provider(tmp_path: Path, monkeypatch) -> None:
     assert data["checks"]["provider"] == "ok"
     assert data["checks"]["storage"] == "ok"
     assert data["checks"]["eval_store"] == "ok"
+    assert data["provider_routes"]["default"] == "mock"
+    assert data["provider_routes"]["generation"] == "mock"
+    assert data["provider_route_checks"]["generation"] == "ok"
+
+
+def test_health_marks_visual_route_degraded_when_capability_key_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "claude")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_SEARCH_ENABLED", "0")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    import app.main as main_module
+    from fastapi.testclient import TestClient
+
+    client = TestClient(main_module.create_app())
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["checks"]["provider"] == "degraded"
+    assert data["checks"]["provider_visual"] == "degraded"
+    assert data["provider_routes"]["visual"] == "claude"
+    assert data["provider_route_checks"]["visual"] == "degraded"

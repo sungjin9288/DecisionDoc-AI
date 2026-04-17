@@ -59,6 +59,15 @@ def configured_provider_names() -> set[str]:
     return names
 
 
+def configured_provider_routes() -> dict[str, str]:
+    return {
+        "default": ",".join(_resolve_provider_names()),
+        "generation": ",".join(_resolve_provider_names("generation")),
+        "attachment": ",".join(_resolve_provider_names("attachment")),
+        "visual": ",".join(_resolve_provider_names("visual")),
+    }
+
+
 def _make_single_provider(name: str, model_override: str | None = None) -> Provider:
     """Instantiate a single named provider.
 

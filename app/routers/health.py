@@ -19,10 +19,20 @@ from app.config import (
     is_realtime_events_enabled,
 )
 from app.maintenance.mode import is_maintenance_mode
-from app.providers.factory import configured_provider_names
+from app.providers.factory import configured_provider_names, configured_provider_routes
 from app.schemas import HealthResponse
 
 router = APIRouter(tags=["health"])
+
+
+def _provider_chain_ready(provider_names: list[str]) -> str:
+    if "openai" in provider_names and not os.getenv("OPENAI_API_KEY", "").strip():
+        return "degraded"
+    if "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
+        return "degraded"
+    if "claude" in provider_names and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+        return "degraded"
+    return "ok"
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -32,6 +42,11 @@ def health(request: Request) -> HealthResponse:
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock")
     provider_names = configured_provider_names()
+    provider_routes = configured_provider_routes()
+    provider_route_checks = {
+        capability: _provider_chain_ready([n.strip() for n in route.split(",") if n.strip()])
+        for capability, route in provider_routes.items()
+    }
     data_dir = request.app.state.data_dir
     storage_kind = os.getenv("DECISIONDOC_STORAGE", "local").lower()
     storage = request.app.state.storage
@@ -39,14 +54,10 @@ def health(request: Request) -> HealthResponse:
     template_version = request.app.state.template_version
 
     # 1. Provider API key presence
-    if "openai" in provider_names and not os.getenv("OPENAI_API_KEY", "").strip():
-        checks["provider"] = "degraded"
-    elif "gemini" in provider_names and not os.getenv("GEMINI_API_KEY", "").strip():
-        checks["provider"] = "degraded"
-    elif "claude" in provider_names and not os.getenv("ANTHROPIC_API_KEY", "").strip():
-        checks["provider"] = "degraded"
-    else:
-        checks["provider"] = "ok"
+    checks["provider"] = "degraded" if any(status == "degraded" for status in provider_route_checks.values()) else "ok"
+    checks["provider_generation"] = provider_route_checks["generation"]
+    checks["provider_attachment"] = provider_route_checks["attachment"]
+    checks["provider_visual"] = provider_route_checks["visual"]
 
     # 2. Local storage read/write roundtrip
     try:
@@ -95,6 +106,8 @@ def health(request: Request) -> HealthResponse:
         provider=configured_provider,
         maintenance=maintenance,
         checks=checks,
+        provider_routes=provider_routes,
+        provider_route_checks=provider_route_checks,
     )
 
 
