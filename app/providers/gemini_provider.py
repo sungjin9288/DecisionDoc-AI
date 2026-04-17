@@ -154,6 +154,18 @@ class GeminiProvider(UsageTokenMixin, Provider):
         except Exception as exc:  # pragma: no cover - network dependent
             raise ProviderError("Provider request failed.") from exc
 
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        raise ProviderError(
+            "Gemini provider does not support direct visual asset generation in this deployment."
+        )
+
 
 def _detect_attachment_mime_type(filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()

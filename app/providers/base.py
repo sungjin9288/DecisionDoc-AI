@@ -61,5 +61,24 @@ class Provider(ABC):
             f"{self.__class__.__name__} does not implement extract_attachment_text()."
         )
 
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        """Generate a visual asset (typically raster image bytes) from a prompt.
+
+        Implementations should return a dict with at least:
+        - ``media_type``: MIME type such as ``image/png``
+        - ``data``: raw bytes
+        Optional fields such as ``revised_prompt`` or ``model`` may also be returned.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement generate_visual_asset()."
+        )
+
     def consume_usage_tokens(self) -> dict[str, int] | None:
         return None

@@ -34,6 +34,7 @@ class HistoryEntry:
     tags: list = None
     applied_references: list[dict] | None = None
     docs: list[dict] | None = None
+    visual_assets: list[dict] | None = None
     knowledge_promoted: bool = False
     knowledge_project_id: str = ""
     knowledge_promoted_at: str = ""
@@ -86,11 +87,41 @@ class HistoryStore:
         )
 
     @staticmethod
-    def _sanitize_entry(entry: dict, *, include_docs: bool = False) -> dict:
+    def _sanitize_entry(
+        entry: dict,
+        *,
+        include_docs: bool = False,
+        include_visual_assets: bool = False,
+    ) -> dict:
         item = dict(entry)
         if not include_docs:
             item.pop("docs", None)
+        if not include_visual_assets:
+            item["visual_asset_count"] = len(item.get("visual_assets") or [])
+            item.pop("visual_assets", None)
         return item
+
+    @staticmethod
+    def _sanitize_visual_assets(visual_assets: list[dict] | None) -> list[dict]:
+        sanitized: list[dict] = []
+        for asset in visual_assets or []:
+            if not isinstance(asset, dict):
+                continue
+            sanitized.append({
+                "asset_id": str(asset.get("asset_id") or "").strip(),
+                "doc_type": str(asset.get("doc_type") or "").strip(),
+                "slide_title": str(asset.get("slide_title") or "").strip(),
+                "visual_type": str(asset.get("visual_type") or "").strip(),
+                "visual_brief": str(asset.get("visual_brief") or "").strip(),
+                "layout_hint": str(asset.get("layout_hint") or "").strip(),
+                "source_kind": str(asset.get("source_kind") or "").strip(),
+                "source_model": str(asset.get("source_model") or "").strip(),
+                "prompt": str(asset.get("prompt") or "").strip(),
+                "media_type": str(asset.get("media_type") or "").strip(),
+                "encoding": str(asset.get("encoding") or "base64").strip() or "base64",
+                "content_base64": str(asset.get("content_base64") or "").strip(),
+            })
+        return sanitized[:12]
 
     def add(self, entry: HistoryEntry) -> None:
         with self._lock:
@@ -110,6 +141,7 @@ class HistoryStore:
                 "tags": entry.tags or [],
                 "applied_references": entry.applied_references or [],
                 "docs": entry.docs or [],
+                "visual_assets": self._sanitize_visual_assets(entry.visual_assets),
                 "knowledge_promoted": bool(entry.knowledge_promoted),
                 "knowledge_project_id": entry.knowledge_project_id or "",
                 "knowledge_promoted_at": entry.knowledge_promoted_at or "",
@@ -138,8 +170,22 @@ class HistoryStore:
             entries = self._load()
         for entry in entries:
             if entry.get("entry_id") == entry_id and entry.get("user_id") == user_id:
-                return self._sanitize_entry(entry, include_docs=True)
+                return self._sanitize_entry(entry, include_docs=True, include_visual_assets=True)
         return None
+
+    def update_visual_assets(self, entry_id: str, user_id: str, visual_assets: list[dict] | None) -> bool:
+        with self._lock:
+            entries = self._load()
+            updated = False
+            for entry in entries:
+                if entry.get("entry_id") != entry_id or entry.get("user_id") != user_id:
+                    continue
+                entry["visual_assets"] = self._sanitize_visual_assets(visual_assets)
+                updated = True
+                break
+            if updated:
+                self._save(entries)
+        return updated
 
     def delete(self, entry_id: str, user_id: str) -> None:
         with self._lock:

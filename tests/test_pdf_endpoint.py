@@ -66,6 +66,32 @@ def test_render_html_adds_export_cover_and_section_cards():
     assert " / 구성 특징:" not in html
 
 
+def test_render_html_includes_generated_visual_asset_cards():
+    from app.services.pdf_service import _render_html
+
+    html = _render_html(
+        [{"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"}],
+        title="시각자료 테스트",
+        opts=None,
+        visual_assets=[
+            {
+                "asset_id": "asset-1",
+                "doc_type": "business_understanding",
+                "slide_title": "사업 추진 배경",
+                "visual_type": "현장 사진",
+                "visual_brief": "운영 현장을 보여주는 생성 이미지",
+                "media_type": "image/png",
+                "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+            }
+        ],
+    )
+
+    assert "visual-asset-stack" in html
+    assert "생성 시각자료" in html
+    assert "사업 추진 배경" in html
+    assert "data:image/png;base64," in html
+
+
 def test_pdf_endpoint_returns_200(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/pdf", json={"title": "PDF 테스트", "goal": "검증"})

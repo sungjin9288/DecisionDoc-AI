@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 
 from app.auth.api_key import require_api_key
 from app.dependencies import require_auth
-from app.schemas import CreateShareRequest
+from app.schemas import CreateShareRequest, UpdateHistoryVisualAssetsRequest
 
 router = APIRouter(tags=["history"])
 
@@ -75,6 +75,33 @@ def get_history_entry(entry_id: str, request: Request):
     if entry is None:
         raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
     return entry
+
+
+@router.put("/history/{entry_id}/visual-assets", dependencies=[Depends(require_api_key)])
+def update_history_visual_assets(
+    entry_id: str,
+    payload: UpdateHistoryVisualAssetsRequest,
+    request: Request,
+):
+    """Persist generated visual asset snapshots for later reopen/export flows."""
+    require_auth(request)
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    user_id = getattr(request.state, "user_id", "anonymous")
+    from app.storage.history_store import HistoryStore
+
+    store = HistoryStore(
+        tenant_id,
+        base_dir=str(request.app.state.data_dir),
+        backend=request.app.state.state_backend,
+    )
+    updated = store.update_visual_assets(
+        entry_id,
+        user_id,
+        [asset.model_dump() for asset in payload.visual_assets],
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
+    return {"entry_id": entry_id, "visual_asset_count": len(payload.visual_assets)}
 
 
 @router.delete("/history/{entry_id}", dependencies=[Depends(require_api_key)])

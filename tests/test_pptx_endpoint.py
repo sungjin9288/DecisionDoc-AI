@@ -1,8 +1,10 @@
 """Tests for POST /generate/pptx endpoint."""
 from io import BytesIO
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from app.services.pptx_service import _chunk_lines, _render_summary_slide
 
@@ -157,6 +159,41 @@ def test_pptx_structured_slides_include_visual_and_layout_guidance(tmp_path, mon
     assert "시각자료 배치" in content_text
     assert "권장 시각자료:" in content_text
     assert "배치 가이드:" in content_text
+
+
+def test_pptx_structured_bundle_embeds_generated_visual_assets(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    fake_assets = [
+        {
+            "asset_id": "asset-1",
+            "doc_type": "proposal_kr",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "현장 사진",
+            "visual_brief": "실행 현장과 운영 환경을 보여주는 참고 이미지",
+            "layout_hint": "오른쪽 반영역 이미지",
+            "source_kind": "provider_image",
+            "source_model": "mock-image",
+            "prompt": "prompt",
+            "media_type": "image/png",
+            "encoding": "base64",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+        }
+    ]
+
+    with patch("app.routers.generate.generate_visual_assets_from_docs", return_value=fake_assets):
+        res = client.post(
+            "/generate/pptx",
+            json={"title": "제안서 PPT", "goal": "완성형 문서 변환", "bundle_type": "proposal_kr"},
+        )
+
+    assert res.status_code == 200
+    prs = Presentation(BytesIO(res.content))
+    target_slide = next(
+        slide
+        for slide in prs.slides
+        if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "사업 추진 배경"
+    )
+    assert any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in target_slide.shapes)
 
 
 def test_pptx_performance_bundle_renders_timeline_and_governance_visuals(tmp_path, monkeypatch):

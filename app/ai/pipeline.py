@@ -125,6 +125,32 @@ class FallbackPipeline(Provider):
             "All providers in fallback chain failed:\n" + "\n".join(errors)
         )
 
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        """Try each provider in order; return the first successful visual asset."""
+        errors: list[str] = []
+        for provider in self._providers:
+            try:
+                result = provider.generate_visual_asset(
+                    prompt,
+                    request_id=request_id,
+                    size=size,
+                    style=style,
+                )
+                self._active_provider = provider
+                return result
+            except Exception as exc:
+                errors.append(f"[{provider.name}] {exc}")
+        raise ProviderError(
+            "All providers in fallback chain failed:\n" + "\n".join(errors)
+        )
+
     def consume_usage_tokens(self) -> dict[str, int] | None:
         """Forward usage tokens from the provider that last succeeded."""
         if self._active_provider is None:

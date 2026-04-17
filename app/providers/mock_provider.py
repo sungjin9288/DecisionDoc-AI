@@ -6,9 +6,16 @@ requirements (title, goal, context) so the output shows meaningful document
 direction — including slide-by-slide PPT construction guides — even without
 a real API key.
 """
+import base64
+
 from typing import Any
 
 from app.providers.base import Provider
+
+
+_MOCK_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII="
+)
 
 
 class MockProvider(Provider):
@@ -203,6 +210,21 @@ class MockProvider(Provider):
 
     def consume_usage_tokens(self) -> dict[str, int] | None:
         return {"prompt_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        return {
+            "media_type": "image/png",
+            "data": base64.b64decode(_MOCK_PNG_BASE64),
+            "revised_prompt": prompt,
+            "model": "mock-image",
+        }
 
 
 # ===========================================================================

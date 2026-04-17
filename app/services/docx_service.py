@@ -19,11 +19,12 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Mm, Pt, RGBColor
+from docx.shared import Inches, Mm, Pt, RGBColor
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks
+from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +472,58 @@ def _add_doc_section_intro(
     _set_line_spacing(separator, 100)
 
 
+def _add_visual_asset_block(
+    doc: Document,
+    *,
+    visual_assets: list[dict[str, Any]],
+    font_name: str,
+    font_size_pt: float,
+    line_spacing_pct: int,
+) -> None:
+    if not visual_assets:
+        return
+
+    title_para = doc.add_paragraph()
+    title_run = title_para.add_run("생성 시각자료")
+    title_run.bold = True
+    title_run.font.color.rgb = RGBColor(0x5B, 0x63, 0xD3)
+    _set_run_font(title_run, font_name, font_size_pt + 1.0)
+    _set_line_spacing(title_para, line_spacing_pct)
+
+    for asset in visual_assets[:2]:
+        slide_title = str(asset.get("slide_title", "")).strip() or "시각자료"
+        brief = str(asset.get("visual_brief", "")).strip()
+        visual_type = str(asset.get("visual_type", "")).strip()
+
+        meta_para = doc.add_paragraph()
+        _add_bold_inline(
+            meta_para,
+            f"**{slide_title}**" + (f" · {visual_type}" if visual_type else ""),
+            font_name,
+            font_size_pt - 0.1,
+        )
+        for run in meta_para.runs:
+            run.font.color.rgb = RGBColor(0x4C, 0x53, 0x70)
+        _set_line_spacing(meta_para, line_spacing_pct)
+
+        media_type = str(asset.get("media_type", "") or "").lower()
+        raw = decode_visual_asset_bytes(asset)
+        if raw and media_type in {"image/png", "image/jpeg"}:
+            try:
+                doc.add_picture(BytesIO(raw), width=Inches(5.8))
+            except Exception:
+                pass
+
+        if brief:
+            brief_para = doc.add_paragraph()
+            brief_run = brief_para.add_run(brief)
+            brief_run.font.color.rgb = RGBColor(0x6E, 0x75, 0x91)
+            _set_run_font(brief_run, font_name, font_size_pt - 0.3)
+            _set_line_spacing(brief_para, line_spacing_pct)
+
+    doc.add_paragraph()
+
+
 # ---------------------------------------------------------------------------
 # Government format helpers
 # ---------------------------------------------------------------------------
@@ -627,6 +680,7 @@ def build_docx(
     docs: list[dict[str, Any]],
     title: str,
     gov_options: Any | None = None,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Build a DOCX from a list of rendered docs.
 
@@ -652,6 +706,7 @@ def build_docx(
     font_name = opts.font_name        if opts else "맑은 고딕"
     font_size = opts.font_size_pt     if opts else 10.5
     spacing   = opts.line_spacing_pct if opts else 160
+    assets_by_doc_type = group_visual_assets_by_doc_type(visual_assets or [])
 
     doc = Document()
 
@@ -700,6 +755,13 @@ def build_docx(
                 lead=summary["lead"],
                 section_hint=summary["sections"],
                 metrics=summary["metrics"],
+                font_name=font_name,
+                font_size_pt=font_size,
+                line_spacing_pct=spacing,
+            )
+            _add_visual_asset_block(
+                doc,
+                visual_assets=assets_by_doc_type.get(str(d.get("doc_type", "document")), []),
                 font_name=font_name,
                 font_size_pt=font_size,
                 line_spacing_pct=spacing,

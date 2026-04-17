@@ -60,6 +60,81 @@ def test_history_store_get_entry_returns_docs_for_promotion(tmp_path, monkeypatc
     assert detail["docs"][0]["doc_type"] == "business_understanding"
 
 
+def test_history_store_visual_assets_hidden_in_list_and_available_in_detail(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = HistoryStore("t1")
+    entry = HistoryEntry(
+        entry_id=str(uuid.uuid4()),
+        tenant_id="t1",
+        user_id="u1",
+        bundle_id="proposal_kr",
+        bundle_type="proposal_kr",
+        bundle_name="제안서",
+        title="시각자료 포함 이력",
+        request_id="req-history-visual-001",
+        created_at="2026-03-01T00:00:00",
+        visual_assets=[{
+            "asset_id": "asset-1",
+            "doc_type": "business_understanding",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "timeline",
+            "visual_brief": "핵심 일정 도식",
+            "layout_hint": "우측 40%",
+            "source_kind": "svg",
+            "source_model": "",
+            "prompt": "",
+            "media_type": "image/svg+xml",
+            "encoding": "base64",
+            "content_base64": "PHN2Zy8+",
+        }],
+    )
+    store.add(entry)
+
+    items = store.get_for_user("u1")
+    assert "visual_assets" not in items[0]
+    assert items[0]["visual_asset_count"] == 1
+
+    detail = store.get_entry(entry.entry_id, "u1")
+    assert detail is not None
+    assert detail["visual_assets"][0]["asset_id"] == "asset-1"
+
+
+def test_history_store_update_visual_assets(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    store = HistoryStore("t1")
+    entry = HistoryEntry(
+        entry_id="history-visual-update-001",
+        tenant_id="t1",
+        user_id="u1",
+        bundle_id="proposal_kr",
+        bundle_name="제안서",
+        title="시각자료 업데이트",
+        request_id="req-visual-update-001",
+        created_at="2026-03-01T00:00:00",
+    )
+    store.add(entry)
+
+    updated = store.update_visual_assets("history-visual-update-001", "u1", [{
+        "asset_id": "asset-2",
+        "doc_type": "execution_plan",
+        "slide_title": "수행 일정",
+        "visual_type": "timeline",
+        "visual_brief": "일정 도식",
+        "layout_hint": "우측 배치",
+        "source_kind": "provider_image",
+        "source_model": "gpt-image-1",
+        "prompt": "timeline",
+        "media_type": "image/png",
+        "encoding": "base64",
+        "content_base64": "ZmFrZQ==",
+    }])
+
+    assert updated is True
+    detail = store.get_entry("history-visual-update-001", "u1")
+    assert detail is not None
+    assert detail["visual_assets"][0]["source_kind"] == "provider_image"
+
+
 def test_history_store_delete(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     store = HistoryStore("t1")
@@ -247,6 +322,53 @@ def test_history_get_entry_returns_docs_payload(tmp_path, monkeypatch):
     assert data["project_id"] == "proj-history-1"
     assert data["bundle_type"] == "proposal_kr"
     assert data["docs"][0]["doc_type"] == "business_understanding"
+
+
+def test_history_update_visual_assets_endpoint():
+    store = HistoryStore(
+        "system",
+        base_dir=str(client.app.state.data_dir),
+        backend=client.app.state.state_backend,
+    )
+    entry = HistoryEntry(
+        entry_id="history-visual-api-001",
+        tenant_id="system",
+        user_id="testuser",
+        bundle_id="proposal_kr",
+        bundle_type="proposal_kr",
+        bundle_name="제안서",
+        title="시각자료 API 이력",
+        request_id="req-history-visual-api-001",
+        created_at="2026-03-01T00:00:00",
+        docs=[{"doc_type": "business_understanding", "markdown": "# 본문"}],
+    )
+    store.add(entry)
+
+    payload = {
+        "visual_assets": [{
+            "asset_id": "asset-api-1",
+            "doc_type": "business_understanding",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "timeline",
+            "visual_brief": "핵심 일정",
+            "layout_hint": "우측 40%",
+            "source_kind": "svg",
+            "source_model": "",
+            "prompt": "",
+            "media_type": "image/svg+xml",
+            "encoding": "base64",
+            "content_base64": "PHN2Zy8+",
+        }]
+    }
+    res = client.put("/history/history-visual-api-001/visual-assets", json=payload, headers=_auth_headers())
+    assert res.status_code == 200
+    data = res.json()
+    assert data["visual_asset_count"] == 1
+
+    detail = client.get("/history/history-visual-api-001", headers=_auth_headers())
+    assert detail.status_code == 200
+    detail_data = detail.json()
+    assert detail_data["visual_assets"][0]["asset_id"] == "asset-api-1"
 
 
 def test_history_delete_nonexistent_returns_200():

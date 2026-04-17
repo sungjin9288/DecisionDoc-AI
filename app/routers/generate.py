@@ -5,6 +5,7 @@ Covers:
   POST /generate/with-attachments
   POST /generate/export
   POST /generate/pptx
+  POST /generate/visual-assets
   POST /generate/stream
   POST /generate/docx
   POST /generate/pdf
@@ -60,6 +61,8 @@ from app.schemas import (
     GenerateExportResponse,
     GenerateRequest,
     GenerateResponse,
+    GenerateVisualAssetsRequest,
+    GenerateVisualAssetsResponse,
     GovDocOptions,
     OpsInvestigateRequest,
     OpsInvestigateResponse,
@@ -81,6 +84,7 @@ from app.services.excel_service import build_excel
 from app.services.generation_service import BundleNotSupportedError
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx, build_pptx_from_docs
+from app.services.visual_asset_service import generate_visual_assets_from_docs
 
 logger = logging.getLogger("decisiondoc.generate")
 
@@ -189,6 +193,31 @@ def _build_procurement_attachment_context(file_data: list[tuple[str, bytes]]) ->
     if not blocks:
         return ""
     return "\n\n".join(blocks)[:4_000]
+
+
+def _generate_visual_assets_for_docs(
+    docs: list[dict[str, Any]],
+    *,
+    title: str,
+    goal: str,
+    bundle_type: str,
+    tenant_id: str,
+    request_id: str,
+) -> list[dict[str, Any]]:
+    if not any(isinstance(doc, dict) and isinstance(doc.get("slide_outline"), list) and doc.get("slide_outline") for doc in docs):
+        return []
+    try:
+        return generate_visual_assets_from_docs(
+            docs,
+            title=title,
+            goal=goal,
+            provider=get_provider_for_bundle(bundle_type, tenant_id),
+            request_id=request_id,
+            max_assets=6,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[VisualAssets] Export visual asset generation failed: %s", exc)
+        return []
 
 
 # ── ZIP export in-memory cache ────────────────────────────────────────────────
@@ -970,16 +999,34 @@ def generate_pptx_endpoint(
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
     structured_slide_data = None
+    visual_assets: list[dict[str, Any]] = []
     if payload.bundle_type == "presentation_kr" and isinstance(result["raw_bundle"].get("slide_structure"), dict):
         structured_slide_data = result["raw_bundle"].get("slide_structure", {})
     else:
         structured_slide_data = _build_structured_slide_data(result["raw_bundle"], payload.goal)
 
     if structured_slide_data is not None:
+        try:
+            visual_assets = generate_visual_assets_from_docs(
+                [
+                    {
+                        "doc_type": payload.bundle_type,
+                        "slide_outline": structured_slide_data.get("slide_outline", []),
+                    }
+                ],
+                title=payload.title,
+                goal=payload.goal,
+                provider=get_provider_for_bundle(payload.bundle_type, tenant_id),
+                request_id=request_id,
+                max_assets=min(6, max(1, len(structured_slide_data.get("slide_outline", []) or []))),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("[VisualAssets] PPT visual asset generation failed: %s", exc)
         pptx_bytes = build_pptx(
             structured_slide_data,
             title=payload.title,
             include_outline_overview=payload.bundle_type != "presentation_kr",
+            visual_assets=visual_assets,
         )
     else:
         pptx_bytes = build_pptx_from_docs(result["docs"], title=payload.title)
@@ -993,6 +1040,33 @@ def generate_pptx_endpoint(
                 f"filename*=UTF-8''{encoded_title}.pptx"
             )
         },
+    )
+
+
+@router.post(
+    "/generate/visual-assets",
+    response_model=GenerateVisualAssetsResponse,
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+)
+def generate_visual_assets_endpoint(
+    payload: GenerateVisualAssetsRequest,
+    request: Request,
+) -> GenerateVisualAssetsResponse:
+    """Generate reusable visual assets from slide_outline metadata."""
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    assets = generate_visual_assets_from_docs(
+        [doc.model_dump() for doc in payload.docs],
+        title=payload.title,
+        goal=payload.goal,
+        provider=get_provider_for_bundle(payload.bundle_type, tenant_id),
+        request_id=request.state.request_id,
+        max_assets=payload.max_assets,
+    )
+    return GenerateVisualAssetsResponse(
+        title=payload.title,
+        bundle_type=payload.bundle_type,
+        count=len(assets),
+        assets=assets,
     )
 
 
@@ -1122,7 +1196,15 @@ def generate_docx_endpoint(
 
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
-    docx_bytes = build_docx(result["docs"], title=payload.title, gov_options=None)
+    visual_assets = _generate_visual_assets_for_docs(
+        result["docs"],
+        title=payload.title,
+        goal=payload.goal,
+        bundle_type=payload.bundle_type,
+        tenant_id=tenant_id,
+        request_id=request_id,
+    )
+    docx_bytes = build_docx(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
     return Response(
         content=docx_bytes,
@@ -1160,7 +1242,15 @@ async def generate_pdf_endpoint(
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
     build_pdf = _load_pdf_builder()
-    pdf_bytes = await build_pdf(result["docs"], title=payload.title, gov_options=None)
+    visual_assets = _generate_visual_assets_for_docs(
+        result["docs"],
+        title=payload.title,
+        goal=payload.goal,
+        bundle_type=payload.bundle_type,
+        tenant_id=tenant_id,
+        request_id=request_id,
+    )
+    pdf_bytes = await build_pdf(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
     return Response(
         content=pdf_bytes,
@@ -1234,7 +1324,15 @@ def generate_hwp_endpoint(
 
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", payload.title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
-    hwp_bytes = build_hwp(result["docs"], title=payload.title, gov_options=None)
+    visual_assets = _generate_visual_assets_for_docs(
+        result["docs"],
+        title=payload.title,
+        goal=payload.goal,
+        bundle_type=payload.bundle_type,
+        tenant_id=tenant_id,
+        request_id=request_id,
+    )
+    hwp_bytes = build_hwp(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
     return Response(
         content=hwp_bytes,
@@ -1261,20 +1359,38 @@ async def generate_export_edited_endpoint(
     Does **not** call the LLM — uses the docs list directly.
     Supported formats: docx, pdf, excel, hwp, pptx.
     """
-    docs = [{"doc_type": d.doc_type, "markdown": d.markdown} for d in payload.docs]
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    request_id = request.state.request_id
+    docs = [
+        {
+            "doc_type": d.doc_type,
+            "markdown": d.markdown,
+            "total_slides": d.total_slides,
+            "slide_outline": d.slide_outline,
+        }
+        for d in payload.docs
+    ]
     title = payload.title or "문서"
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)[:100]
     encoded_title = urllib.parse.quote(safe_title, safe="")
     fmt = payload.format.lower().lstrip(".")
     gov_opts = _resolve_gov_options(payload.gov_options)
+    visual_assets = [asset.model_dump() for asset in payload.visual_assets] if payload.visual_assets else _generate_visual_assets_for_docs(
+        docs,
+        title=title,
+        goal="",
+        bundle_type=payload.bundle_type,
+        tenant_id=tenant_id,
+        request_id=request_id,
+    )
 
     if fmt == "docx":
-        content = build_docx(docs, title=title, gov_options=gov_opts)
+        content = build_docx(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
     elif fmt == "pdf":
         build_pdf = _load_pdf_builder()
-        content = await build_pdf(docs, title=title, gov_options=gov_opts)
+        content = await build_pdf(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)
         media_type = "application/pdf"
         ext = "pdf"
     elif fmt in ("excel", "xlsx"):
@@ -1282,11 +1398,31 @@ async def generate_export_edited_endpoint(
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ext = "xlsx"
     elif fmt in ("hwp", "hwpx"):
-        content = build_hwp(docs, title=title, gov_options=gov_opts)
+        content = build_hwp(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)
         media_type = "application/hwp+zip"
         ext = "hwpx"
     elif fmt in ("ppt", "pptx"):
-        content = build_pptx_from_docs(docs, title=title)
+        slide_outline = []
+        for doc in docs:
+            for item in doc.get("slide_outline", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                item_title = str(item.get("title", "")).strip()
+                if not item_title or "PPT 구성 가이드" in item_title:
+                    continue
+                slide_outline.append(item)
+        if slide_outline:
+            content = build_pptx(
+                {
+                    "presentation_goal": title,
+                    "slide_outline": slide_outline,
+                },
+                title=title,
+                include_outline_overview=payload.bundle_type != "presentation_kr",
+                visual_assets=visual_assets,
+            )
+        else:
+            content = build_pptx_from_docs(docs, title=title)
         media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         ext = "pptx"
     else:

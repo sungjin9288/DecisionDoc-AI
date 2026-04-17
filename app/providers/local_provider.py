@@ -115,6 +115,18 @@ class LocalProvider(UsageTokenMixin, Provider):
             "Local provider does not support image/PDF OCR·vision attachment extraction."
         )
 
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        raise ProviderError(
+            "Local provider does not support direct visual asset generation."
+        )
+
     # ── Internal helpers ─────────────────────────────────────────────
 
     def _chat_completion(

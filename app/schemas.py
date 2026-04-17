@@ -148,8 +148,65 @@ class SectionRewriteRequest(BaseModel):
 class EditedDocInput(BaseModel):
     """One user-edited document section for /generate/export-edited."""
 
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     doc_type: str
     markdown: str
+    total_slides: int | None = None
+    slide_outline: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VisualAssetDocInput(BaseModel):
+    """Slide-aware document payload for visual asset generation."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    doc_type: str
+    markdown: str = ""
+    total_slides: int | None = None
+    slide_outline: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GeneratedVisualAsset(BaseModel):
+    asset_id: str
+    doc_type: str
+    slide_title: str
+    visual_type: str = ""
+    visual_brief: str = ""
+    layout_hint: str = ""
+    source_kind: str
+    source_model: str = ""
+    prompt: str = ""
+    media_type: str
+    encoding: Literal["base64"] = "base64"
+    content_base64: str
+
+
+class GenerateVisualAssetsRequest(BaseModel):
+    """Payload for POST /generate/visual-assets."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    title: str = Field(..., min_length=1)
+    goal: str = ""
+    bundle_type: str = Field(default="tech_decision", min_length=1)
+    docs: list[VisualAssetDocInput] = Field(default_factory=list, min_length=1)
+    max_assets: int = Field(default=6, ge=1, le=12)
+
+
+class GenerateVisualAssetsResponse(BaseModel):
+    title: str
+    bundle_type: str
+    count: int
+    assets: list[GeneratedVisualAsset]
+
+
+class UpdateHistoryVisualAssetsRequest(BaseModel):
+    """Payload for persisting generated visual asset snapshots onto history entries."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    visual_assets: list[GeneratedVisualAsset] = Field(default_factory=list, max_length=12)
 
 
 class PromoteKnowledgeReferenceRequest(BaseModel):
@@ -213,9 +270,11 @@ class EditedExportRequest(BaseModel):
     user-edited) docs without re-running LLM generation."""
 
     bundle_id: str = ""
+    bundle_type: str = "tech_decision"
     title: str = "문서"
     format: str  # "docx" | "pdf" | "excel" | "hwp"
     docs: list[EditedDocInput]
+    visual_assets: list[GeneratedVisualAsset] = Field(default_factory=list)
     gov_options: dict | None = None  # serialized GovDocOptions fields
 
 

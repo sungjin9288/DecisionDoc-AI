@@ -1,6 +1,7 @@
 """Tests for POST /generate/docx endpoint and build_docx() service."""
 from __future__ import annotations
 
+import zipfile
 from io import BytesIO
 
 from fastapi.testclient import TestClient
@@ -116,6 +117,40 @@ def test_build_docx_adds_export_cover_and_section_intro():
     assert "핵심 섹션:" in joined
     assert "구성 지표:" in joined
     assert " / 구성 특징:" not in joined
+
+
+def test_build_docx_embeds_generated_visual_asset_preview():
+    from docx import Document
+
+    from app.services.docx_service import build_docx
+
+    docs = [
+        {
+            "doc_type": "business_understanding",
+            "markdown": "# 제목\n\n본문 A",
+        }
+    ]
+    visual_assets = [
+        {
+            "asset_id": "asset-1",
+            "doc_type": "business_understanding",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "현장 사진",
+            "visual_brief": "운영 현장을 보여주는 생성 이미지",
+            "media_type": "image/png",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+        }
+    ]
+
+    result = build_docx(docs, title="시각자료 테스트", visual_assets=visual_assets)
+    doc = Document(BytesIO(result))
+    joined = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    assert "생성 시각자료" in joined
+    assert "사업 추진 배경" in joined
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        media_files = [name for name in zf.namelist() if name.startswith("word/media/")]
+    assert media_files
 
 
 # ── Integration tests for /generate/docx ─────────────────────────────────────

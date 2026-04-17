@@ -1,6 +1,8 @@
 """pptx_service — build in-memory PPTX files from slide structures or rendered docs."""
 from __future__ import annotations
 
+import base64
+
 from io import BytesIO
 from typing import Any
 
@@ -19,6 +21,7 @@ from app.services.markdown_utils import (
     slide_outline_message,
     slide_outline_visual,
 )
+from app.services.visual_asset_service import index_visual_assets_by_slide_title
 
 _MAX_SLIDE_LINES = 5
 _MAX_CONTENT_SLIDE_LINES = 4
@@ -453,6 +456,79 @@ def _render_visual_placeholder(
     )
 
 
+def _render_visual_image_asset(
+    slide: Any,
+    item: dict[str, Any],
+    asset: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> bool:
+    media_type = str(asset.get("media_type", "") or "").strip().lower()
+    if media_type not in {"image/png", "image/jpeg", "image/webp"}:
+        return False
+    encoded = str(asset.get("content_base64", "") or "").strip()
+    if not encoded:
+        return False
+    try:
+        raw = base64.b64decode(encoded)
+    except Exception:
+        return False
+    if not raw:
+        return False
+
+    background = slide.shapes.add_shape(
+        MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+        Inches(left),
+        Inches(top),
+        Inches(width),
+        Inches(height),
+    )
+    background.fill.solid()
+    background.fill.fore_color.rgb = _COLOR_CARD
+    background.line.color.rgb = _COLOR_BORDER
+    background.line.width = Pt(1)
+
+    _add_text_box(
+        slide,
+        left=left + 0.18,
+        top=top + 0.08,
+        width=width - 0.36,
+        height=0.28,
+        text="생성 시각자료",
+        font_size_pt=12,
+        bold=True,
+        color=_COLOR_BG_ACCENT,
+    )
+
+    try:
+        slide.shapes.add_picture(
+            BytesIO(raw),
+            Inches(left + 0.18),
+            Inches(top + 0.42),
+            width=Inches(width - 0.36),
+            height=Inches(height - 0.64),
+        )
+    except Exception:
+        return False
+
+    caption = _clean_slide_text(asset.get("visual_brief", "")) or slide_outline_visual(item)
+    if caption:
+        _add_text_box(
+            slide,
+            left=left + 0.2,
+            top=top + height - 0.24,
+            width=width - 0.4,
+            height=0.18,
+            text=caption,
+            font_size_pt=9,
+            color=_COLOR_TEXT_MUTED,
+        )
+    return True
+
+
 def _render_visual_cards(
     slide: Any,
     item: dict[str, Any],
@@ -665,12 +741,15 @@ def _render_visual_governance(
 def _render_structured_visual_panel(
     slide: Any,
     item: dict[str, Any],
+    asset: dict[str, Any] | None = None,
     *,
     left: float,
     top: float,
     width: float,
     height: float,
 ) -> None:
+    if asset and _render_visual_image_asset(slide, item, asset, left=left, top=top, width=width, height=height):
+        return
     kind = _visual_kind(item)
     if kind == "timeline":
         _render_visual_timeline(slide, item, left=left, top=top, width=width, height=height)
@@ -738,6 +817,7 @@ def _render_structured_guided_slide(
     item: dict[str, Any],
     *,
     notes: str = "",
+    asset: dict[str, Any] | None = None,
 ) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     _set_slide_background(slide, _COLOR_BG_SOFT)
@@ -781,6 +861,7 @@ def _render_structured_guided_slide(
 
     _render_structured_visual_panel(
         slide,
+        asset=asset,
         left=5.0,
         top=1.25,
         width=4.0,
@@ -836,10 +917,12 @@ def build_pptx(
     title: str,
     *,
     include_outline_overview: bool = False,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Build a PPTX from structured slide data used by presentation_kr."""
     prs = Presentation()
     slide_outline = slide_data.get("slide_outline", []) or []
+    visual_assets_by_title = index_visual_assets_by_slide_title(visual_assets or [])
 
     cover = prs.slides.add_slide(prs.slide_layouts[0])
     _set_slide_background(cover, _COLOR_BG_DARK)
@@ -920,6 +1003,7 @@ def build_pptx(
             prs,
             item,
             notes="\n".join(notes_parts),
+            asset=visual_assets_by_title.get(_clean_slide_text(item.get("title", ""))),
         )
 
     buf = BytesIO()

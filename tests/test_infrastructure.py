@@ -119,14 +119,26 @@ def test_root_html_includes_ai_rank_roster(client):
     assert 'id="results-reference-guide"' in res.text
     assert 'id="results-reference-guide-meta"' in res.text
     assert 'id="results-reference-guide-cards"' in res.text
+    assert 'id="visual-assets-btn"' in res.text
+    assert 'id="results-visual-assets"' in res.text
+    assert 'id="results-visual-assets-meta"' in res.text
+    assert 'id="results-visual-assets-cards"' in res.text
     assert "PPT 페이지 설계" in res.text
     assert "이번 생성에 반영된 우선 참조" in res.text
+    assert "생성된 시각자료" in res.text
     assert "slide_outline" in res.text
     assert "renderResultsPptGuide" in res.text
     assert "renderResultsAppliedReferences" in res.text
+    assert "renderResultsVisualAssets" in res.text
+    assert "generateVisualAssetsForResults" in res.text
+    assert "_normalizeVisualAssets" in res.text
+    assert "_persistCurrentVisualAssetsSnapshot" in res.text
+    assert "_resetVisualAssetsForFreshResult" in res.text
+    assert "buildEditedExportDocsPayload" in res.text
     assert "권장 시각자료" in res.text
     assert "시각자료 배치" in res.text
     assert "applied_references" in res.text
+    assert "/generate/visual-assets" in res.text
     assert "slide-card is-clickable" in res.text
     assert "slide-card-badges" in res.text
     assert "slide-card-badge kind" in res.text
@@ -163,9 +175,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "참조 문서:" in res.text
     assert "_formatAppliedReferenceSummary" in res.text
     assert "openHistoryReferenceModal" in res.text
+    assert "openServerHistoryEntry" in res.text
     assert "history-reference-modal" in res.text
     assert "히스토리 참조 근거" in res.text
     assert "근거 보기" in res.text
+    assert "history-open-server-btn" in res.text
     assert "promoteServerHistoryEntry" in res.text
     assert "history-promote-server-btn" in res.text
     assert "history-promote-btn" in res.text
@@ -177,6 +191,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "_markLocalHistoryPromoted" in res.text
     assert "_renderHistoryPromotionBadge" in res.text
     assert "_applyKnowledgePromotionState" in res.text
+    assert "visual_assets: _normalizeVisualAssets(result.visual_assets)" in res.text
+    assert "lastVisualAssets = _normalizeVisualAssets(result.visual_assets)" in res.text
+    assert "lastVisualAssets   = _normalizeVisualAssets(item.visual_assets)" in res.text
+    assert "_syncCurrentVisualAssetsToServerHistory" in res.text
+    assert "/visual-assets" in res.text
     assert "승인본 학습 완료" in res.text
     assert "이미 학습된 승인본" in res.text
     assert "already_promoted" in res.text

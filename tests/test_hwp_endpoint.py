@@ -93,6 +93,30 @@ def test_build_hwp_adds_export_cover_and_section_intro():
     assert " / 표 수:" not in section_xml
 
 
+def test_build_hwp_adds_visual_asset_block():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "business_understanding", "markdown": "# 제목\n\n본문 A"}]
+    visual_assets = [
+        {
+            "asset_id": "asset-1",
+            "doc_type": "business_understanding",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "타임라인",
+            "visual_brief": "단계별 마일스톤을 설명하는 시각자료",
+            "media_type": "image/svg+xml",
+            "content_base64": "PHN2Zz48L3N2Zz4=",
+        }
+    ]
+    result = build_hwp(docs, title="시각자료 테스트", visual_assets=visual_assets)
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+
+    assert "생성 시각자료" in section_xml
+    assert "사업 추진 배경 · 타임라인" in section_xml
+    assert "단계별 마일스톤을 설명하는 시각자료" in section_xml
+
+
 def test_hwp_endpoint_returns_200(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/hwp", json={"title": "HWP 테스트", "goal": "검증"})

@@ -20,6 +20,7 @@ from playwright.async_api import async_playwright
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks, render_inline_html
+from app.services.visual_asset_service import group_visual_assets_by_doc_type, visual_asset_data_uri
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +361,44 @@ def _build_css(opts: Any | None) -> str:
         font-size: 9pt;
         color: #6d7592;
     }}
+    .visual-asset-stack {{
+        display: grid;
+        gap: 12px;
+        margin: 12px 0 18px;
+    }}
+    .visual-asset-card {{
+        border: 1px solid #d7ddef;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.96);
+        padding: 12px 14px;
+        page-break-inside: avoid;
+    }}
+    .visual-asset-card .kicker {{
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #5b63d3;
+        margin-bottom: 4px;
+    }}
+    .visual-asset-card .title {{
+        font-size: 11pt;
+        font-weight: 700;
+        color: #1f2543;
+        margin-bottom: 8px;
+    }}
+    .visual-asset-card img {{
+        display: block;
+        width: 100%;
+        max-height: 260px;
+        object-fit: contain;
+        border-radius: 12px;
+        border: 1px solid #d7ddef;
+        background: #f8f9ff;
+    }}
+    .visual-asset-card .meta {{
+        margin-top: 8px;
+        font-size: 9pt;
+        color: #6d7592;
+    }}
     """
 
 
@@ -367,9 +406,11 @@ def _render_html(
     docs: list[dict[str, Any]],
     title: str,
     opts: Any | None = None,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build a full HTML document from docs list."""
     css = _build_css(opts)
+    assets_by_doc_type = group_visual_assets_by_doc_type(visual_assets or [])
 
     # Playwright header/footer templates use separate HTML via API options;
     # these are injected there, not into the page HTML.
@@ -436,6 +477,22 @@ def _render_html(
                 f"<div class='meta'>구성 지표: {_html.escape(' · '.join(summary.get('metric_items') or [summary['metrics']]))}</div>"
                 "</section>"
             )
+            visual_items = []
+            for asset in assets_by_doc_type.get(str(doc.get("doc_type", "document")), [])[:2]:
+                data_uri = visual_asset_data_uri(asset)
+                if not data_uri:
+                    continue
+                visual_items.append(
+                    "<article class='visual-asset-card'>"
+                    "<div class='kicker'>생성 시각자료</div>"
+                    f"<div class='title'>{_html.escape(str(asset.get('slide_title', '') or '시각자료'))}</div>"
+                    f"<img src='{_html.escape(data_uri, quote=True)}' alt='{_html.escape(str(asset.get('slide_title', '') or 'visual asset'))}'/>"
+                    f"<div class='meta'>{_html.escape(str(asset.get('visual_type', '') or '시각자료'))}</div>"
+                    f"<div class='meta'>{_html.escape(str(asset.get('visual_brief', '') or ''))}</div>"
+                    "</article>"
+                )
+            if visual_items:
+                parts.append(f"<section class='visual-asset-stack'>{''.join(visual_items)}</section>")
         parts.append(_markdown_to_html(doc.get("markdown", "")))
 
     if opts and opts.is_government_format:
@@ -482,6 +539,7 @@ async def build_pdf(
     docs: list[dict[str, Any]],
     title: str,
     gov_options: Any | None = None,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Build a PDF from a list of rendered docs.
 
@@ -500,7 +558,7 @@ async def build_pdf(
     left_mm   = opts.left_margin_mm   if opts else 20
     right_mm  = opts.right_margin_mm  if opts else 20
 
-    html_content = _render_html(docs, title, opts)
+    html_content = _render_html(docs, title, opts, visual_assets=visual_assets)
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()

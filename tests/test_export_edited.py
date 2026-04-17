@@ -6,6 +6,8 @@ Supported formats: docx, pdf, excel, hwp, pptx.
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from io import BytesIO
@@ -62,6 +64,118 @@ def test_export_edited_docx_valid_bytes(tmp_path, monkeypatch):
         "docs": _SAMPLE_DOCS,
     })
     assert res.content[:4] == _ZIP_MAGIC
+
+
+def test_export_edited_docx_passes_slide_outline_and_visual_assets(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _fake_build_docx(docs, title, gov_options=None, visual_assets=None):
+        captured["docs"] = docs
+        captured["visual_assets"] = visual_assets
+        return _ZIP_MAGIC + b"mock-docx"
+
+    with patch("app.routers.generate.generate_visual_assets_from_docs", return_value=[
+        {
+            "asset_id": "asset-1",
+            "doc_type": "proposal_kr",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "현장 사진",
+            "visual_brief": "운영 현장 이미지",
+            "layout_hint": "오른쪽 이미지",
+            "source_kind": "provider_image",
+            "source_model": "mock-image",
+            "prompt": "prompt",
+            "media_type": "image/png",
+            "encoding": "base64",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+        }
+    ]), patch("app.routers.generate.build_docx", side_effect=_fake_build_docx):
+        res = client.post("/generate/export-edited", json={
+            "format": "docx",
+            "title": "편집된 제안서",
+            "bundle_type": "proposal_kr",
+            "docs": [
+                {
+                    "doc_type": "proposal_kr",
+                    "markdown": "# 사업 이해\n\n본문",
+                    "total_slides": 4,
+                    "slide_outline": [
+                        {
+                            "title": "사업 추진 배경",
+                            "core_message": "핵심 메시지",
+                            "evidence_points": ["근거 1"],
+                            "visual_type": "현장 사진",
+                        }
+                    ],
+                }
+            ],
+        })
+
+    assert res.status_code == 200
+    assert res.content.startswith(_ZIP_MAGIC)
+    docs = captured["docs"]
+    assert isinstance(docs, list)
+    assert docs[0]["slide_outline"][0]["title"] == "사업 추진 배경"
+    visual_assets = captured["visual_assets"]
+    assert isinstance(visual_assets, list)
+    assert visual_assets[0]["slide_title"] == "사업 추진 배경"
+
+
+def test_export_edited_reuses_provided_visual_assets_without_regeneration(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _fake_build_docx(docs, title, gov_options=None, visual_assets=None):
+        captured["visual_assets"] = visual_assets
+        return _ZIP_MAGIC + b"mock-docx"
+
+    with patch("app.routers.generate.generate_visual_assets_from_docs") as generate_mock, patch(
+        "app.routers.generate.build_docx",
+        side_effect=_fake_build_docx,
+    ):
+        res = client.post("/generate/export-edited", json={
+            "format": "docx",
+            "title": "편집된 제안서",
+            "bundle_type": "proposal_kr",
+            "docs": [
+                {
+                    "doc_type": "proposal_kr",
+                    "markdown": "# 사업 이해\n\n본문",
+                    "total_slides": 4,
+                    "slide_outline": [
+                        {
+                            "title": "사업 추진 배경",
+                            "core_message": "핵심 메시지",
+                            "evidence_points": ["근거 1"],
+                            "visual_type": "현장 사진",
+                        }
+                    ],
+                }
+            ],
+            "visual_assets": [
+                {
+                    "asset_id": "asset-1",
+                    "doc_type": "proposal_kr",
+                    "slide_title": "사업 추진 배경",
+                    "visual_type": "현장 사진",
+                    "visual_brief": "UI에서 미리 생성된 자산",
+                    "layout_hint": "오른쪽 이미지",
+                    "source_kind": "provider_image",
+                    "source_model": "mock-image",
+                    "prompt": "prompt",
+                    "media_type": "image/png",
+                    "encoding": "base64",
+                    "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+                }
+            ],
+        })
+
+    assert res.status_code == 200
+    generate_mock.assert_not_called()
+    visual_assets = captured["visual_assets"]
+    assert isinstance(visual_assets, list)
+    assert visual_assets[0]["visual_brief"] == "UI에서 미리 생성된 자산"
 
 
 # ── /generate/export-edited — excel ────────────────────────────────────────
@@ -170,6 +284,62 @@ def test_export_edited_pptx_valid_bytes(tmp_path, monkeypatch):
         "docs": _SAMPLE_DOCS,
     })
     assert res.content[:4] == _ZIP_MAGIC
+
+
+def test_export_edited_pptx_uses_structured_slide_outline_when_present(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _fake_build_pptx(slide_data, title, *, include_outline_overview=False, visual_assets=None):
+        captured["slide_data"] = slide_data
+        captured["visual_assets"] = visual_assets
+        return _ZIP_MAGIC + b"mock-pptx"
+
+    with patch("app.routers.generate.generate_visual_assets_from_docs", return_value=[
+        {
+            "asset_id": "asset-1",
+            "doc_type": "proposal_kr",
+            "slide_title": "사업 추진 배경",
+            "visual_type": "현장 사진",
+            "visual_brief": "운영 현장 이미지",
+            "layout_hint": "오른쪽 이미지",
+            "source_kind": "provider_image",
+            "source_model": "mock-image",
+            "prompt": "prompt",
+            "media_type": "image/png",
+            "encoding": "base64",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tm8sAAAAASUVORK5CYII=",
+        }
+    ]), patch("app.routers.generate.build_pptx", side_effect=_fake_build_pptx):
+        res = client.post("/generate/export-edited", json={
+            "format": "pptx",
+            "title": "편집된 발표자료",
+            "bundle_type": "proposal_kr",
+            "docs": [
+                {
+                    "doc_type": "proposal_kr",
+                    "markdown": "# 사업 이해\n\n본문",
+                    "total_slides": 4,
+                    "slide_outline": [
+                        {
+                            "title": "사업 추진 배경",
+                            "core_message": "핵심 메시지",
+                            "evidence_points": ["근거 1"],
+                            "visual_type": "현장 사진",
+                        }
+                    ],
+                }
+            ],
+        })
+
+    assert res.status_code == 200
+    assert res.content.startswith(_ZIP_MAGIC)
+    slide_data = captured["slide_data"]
+    assert isinstance(slide_data, dict)
+    assert slide_data["slide_outline"][0]["title"] == "사업 추진 배경"
+    visual_assets = captured["visual_assets"]
+    assert isinstance(visual_assets, list)
+    assert visual_assets[0]["slide_title"] == "사업 추진 배경"
 
 
 def test_export_edited_pptx_skips_ppt_guide_sections(tmp_path, monkeypatch):

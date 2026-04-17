@@ -185,6 +185,64 @@ class OpenAIProvider(UsageTokenMixin, Provider):
         except Exception as exc:  # pragma: no cover - network dependent
             raise ProviderError("Provider request failed.") from exc
 
+    def generate_visual_asset(
+        self,
+        prompt: str,
+        *,
+        request_id: str,
+        size: str = "1536x1024",
+        style: str = "natural",
+    ) -> dict[str, Any]:
+        self._set_usage_tokens(None)
+
+        try:
+            from openai import OpenAI
+        except ImportError as exc:  # pragma: no cover - env dependent
+            raise ProviderError("Provider SDK unavailable.") from exc
+
+        _timeout = int(os.getenv("DECISIONDOC_PROVIDER_TIMEOUT", "120"))
+        client = OpenAI(api_key=self.api_key, max_retries=0, timeout=_timeout)
+        model = os.getenv("DECISIONDOC_OPENAI_IMAGE_MODEL", "gpt-image-1")
+
+        async def _call_with_timeout():
+            with anyio.fail_after(_timeout):
+                return await anyio.to_thread.run_sync(
+                    lambda: client.images.generate(
+                        model=model,
+                        prompt=prompt,
+                        size=size,
+                        style=style,
+                        quality=os.getenv("DECISIONDOC_OPENAI_IMAGE_QUALITY", "auto"),
+                        output_format="png",
+                        response_format="b64_json",
+                    )
+                )
+
+        try:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                response = anyio.run(_call_with_timeout)
+            else:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    response = executor.submit(anyio.run, _call_with_timeout).result()
+
+            data = getattr(response, "data", None) or []
+            first = data[0] if data else None
+            b64_json = getattr(first, "b64_json", None) if first is not None else None
+            if not b64_json:
+                raise ProviderError("Provider returned empty image payload.")
+            return {
+                "media_type": "image/png",
+                "data": base64.b64decode(b64_json),
+                "revised_prompt": getattr(first, "revised_prompt", "") or "",
+                "model": model,
+            }
+        except ProviderError:
+            raise
+        except Exception as exc:  # pragma: no cover - network dependent
+            raise ProviderError("Provider request failed.") from exc
+
 
 def _detect_attachment_mime_type(filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()

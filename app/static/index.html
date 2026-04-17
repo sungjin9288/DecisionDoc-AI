@@ -4971,6 +4971,7 @@
         <button class="action-btn" id="review-btn" title="AI 품질 검토">🔍 AI 검토</button>
         <button class="action-btn" id="translate-btn" title="한국어↔영어 번역">🌐 번역</button>
         <button class="action-btn" id="related-btn" title="관련 문서 추천">🔗 관련 추천</button>
+        <button class="action-btn" id="visual-assets-btn" title="슬라이드별 시각자료를 생성합니다" style="display:none">🖼️ 시각자료 생성</button>
         <button class="action-btn" id="sketch-again-btn" title="현재 입력 기준으로 페이지 구성 스케치를 다시 봅니다">🗂️ 페이지 스케치</button>
         <button class="action-btn" id="ppt-doc-btn" title="현재 입력을 발표 자료 번들로 다시 구성합니다">📊 PPT 문서로 재구성</button>
         <button class="action-btn" id="knowledge-promote-btn" title="현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다" style="display:none">🧠 승인본으로 학습</button>
@@ -5022,6 +5023,16 @@
         </div>
       </div>
       <div id="results-reference-guide-cards" class="slide-card-row"></div>
+    </div>
+
+    <div id="results-visual-assets" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.55rem;">
+        <div>
+          <div style="font-size:.8rem;font-weight:800;color:var(--p1);">🖼️ 생성된 시각자료</div>
+          <div id="results-visual-assets-meta" style="font-size:.76rem;color:var(--muted);">slide_outline를 바탕으로 생성한 이미지/SVG 자산입니다.</div>
+        </div>
+      </div>
+      <div id="results-visual-assets-cards" class="slide-card-row"></div>
     </div>
 
     <!-- 일괄 다운로드 버튼 -->
@@ -6084,6 +6095,7 @@
   let generatedDocs  = [];
   let activeTab      = 0;
   let lastMeta       = {};
+  let lastVisualAssets = [];
   let currentRating  = 0;
   let lastRequestPayload = null;
   let _lastSketchResult = null;
@@ -8279,6 +8291,7 @@
         const data = await res.json();
         generatedDocs = data.docs;
         lastMeta = data;
+        _resetVisualAssetsForFreshResult(data);
         lastRequestPayload = JSON.parse(payloadJson);
         setStatus('', '');
         if (progressBar) progressBar.style.width = '100%';
@@ -8736,6 +8749,123 @@
     panel.style.display = 'block';
   }
 
+  function _canGenerateVisualAssets() {
+    return Array.isArray(generatedDocs) && generatedDocs.some(doc => Array.isArray(doc?.slide_outline) && doc.slide_outline.length);
+  }
+
+  function _applyVisualAssetActionState() {
+    const btn = $id('visual-assets-btn');
+    if (!btn) return;
+    if (_canGenerateVisualAssets()) {
+      btn.style.display = '';
+      btn.disabled = false;
+      btn.textContent = lastVisualAssets.length ? '🔄 시각자료 다시 생성' : '🖼️ 시각자료 생성';
+      return;
+    }
+    btn.style.display = 'none';
+    btn.disabled = true;
+  }
+
+  function renderResultsVisualAssets() {
+    const panel = $id('results-visual-assets');
+    const cardsEl = $id('results-visual-assets-cards');
+    const metaEl = $id('results-visual-assets-meta');
+    if (!panel || !cardsEl) return;
+
+    const items = Array.isArray(lastVisualAssets) ? lastVisualAssets : [];
+    if (!items.length) {
+      panel.style.display = 'none';
+      cardsEl.innerHTML = '';
+      return;
+    }
+
+    cardsEl.innerHTML = items.map(item => {
+      const src = `data:${item.media_type};base64,${item.content_base64}`;
+      const sourceLabel = item.source_kind === 'provider_image' ? 'AI 이미지' : 'SVG 자산';
+      return `
+        <div class="slide-card">
+          <div class="slide-page-num">${escapeHtml(item.doc_type || 'document')}</div>
+          <div class="slide-card-badges">
+            <span class="slide-card-badge kind">${escapeHtml(item.visual_type || '시각자료')}</span>
+            <span class="slide-card-badge kind">${escapeHtml(sourceLabel)}</span>
+          </div>
+          <div class="slide-title">${escapeHtml(item.slide_title || '슬라이드')}</div>
+          <div style="margin:.55rem 0;border-radius:12px;overflow:hidden;border:1px solid rgba(99,102,241,.12);background:rgba(15,23,42,.03);">
+            <img src="${src}" alt="${escapeHtml(item.slide_title || 'visual asset')}" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover;background:#fff;" />
+          </div>
+          ${item.visual_brief ? `<div class="slide-content">${escapeHtml(_truncateGuideText(item.visual_brief, 96))}</div>` : ''}
+          ${item.layout_hint ? `
+            <div class="slide-guide-section">
+              <span class="slide-guide-label">배치 가이드</span>
+              <div class="slide-guide-text">${escapeHtml(_truncateGuideText(item.layout_hint, 88))}</div>
+            </div>
+          ` : ''}
+          <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.5rem;">
+            <a href="${src}" download="${escapeHtml((item.slide_title || 'visual').replace(/[\\/:*?\"<>|]+/g, '_'))}.${item.media_type === 'image/svg+xml' ? 'svg' : 'png'}"
+               style="padding:.32rem .72rem;border-radius:8px;background:var(--p-light);color:var(--p1);border:1px solid var(--p-ring);font-size:.76rem;font-weight:700;text-decoration:none;">
+              다운로드
+            </a>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (metaEl) {
+      const providerCount = items.filter(item => item.source_kind === 'provider_image').length;
+      const svgCount = items.filter(item => item.source_kind !== 'provider_image').length;
+      metaEl.textContent = `${items.length}개 자산 생성 완료 · AI 이미지 ${providerCount}개 · SVG 도식 ${svgCount}개`;
+    }
+    panel.style.display = 'block';
+  }
+
+  async function generateVisualAssetsForResults() {
+    if (!_canGenerateVisualAssets()) {
+      showNotification('slide_outline가 있는 결과에서만 시각자료를 생성할 수 있습니다.', 'info');
+      return;
+    }
+    const btn = $id('visual-assets-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ 시각자료 생성 중...';
+    }
+    try {
+      const payload = {
+        title: lastMeta?.title || lastRequestPayload?.title || '문서',
+        goal: lastRequestPayload?.goal || '',
+        bundle_type: lastRequestPayload?.bundle_type || lastMeta?.bundle_id || 'tech_decision',
+        docs: (Array.isArray(generatedDocs) ? generatedDocs : []).map(doc => ({
+          doc_type: doc.doc_type,
+          markdown: doc.markdown || '',
+          total_slides: doc.total_slides || null,
+          slide_outline: Array.isArray(doc.slide_outline) ? doc.slide_outline : [],
+        })),
+        max_assets: 6,
+      };
+      const res = await fetch('/generate/visual-assets', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || `HTTP ${res.status}`);
+      }
+      lastVisualAssets = Array.isArray(data.assets) ? data.assets : [];
+      _persistCurrentVisualAssetsSnapshot(lastVisualAssets);
+      try {
+        await _syncCurrentVisualAssetsToServerHistory(lastVisualAssets);
+      } catch (syncError) {
+        showNotification(`시각자료 snapshot 저장 실패: ${syncError.message || syncError}`, 'warn');
+      }
+      renderResultsVisualAssets();
+      showNotification(`${lastVisualAssets.length}개 시각자료를 생성했습니다.`, 'success');
+    } catch (e) {
+      showNotification(`시각자료 생성 실패: ${e.message || e}`, 'error');
+    } finally {
+      _applyVisualAssetActionState();
+    }
+  }
+
   function _renderAppliedReferenceCards(items) {
     return items.map((doc, index) => {
       const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
@@ -8989,6 +9119,7 @@
             clearTimeout(timeoutId);
             generatedDocs = data.docs;
             lastMeta = data;
+            _resetVisualAssetsForFreshResult(data);
             lastRequestPayload = JSON.parse(payloadJson);
             setStatus('', '');
             if (progressBar) progressBar.style.width = '100%';
@@ -9114,6 +9245,10 @@
     if (knowledgePromoteBtn) {
       _applyKnowledgePromotionState();
     }
+    const visualAssetsBtn = $id('visual-assets-btn');
+    if (visualAssetsBtn) {
+      _applyVisualAssetActionState();
+    }
     const knowledgePromoteDocsBtn = $id('knowledge-promote-docs-btn');
     if (knowledgePromoteDocsBtn) {
       _applyKnowledgePromotionDocsState();
@@ -9132,6 +9267,7 @@
     renderResultsStoryboard();
     renderResultsPptGuide();
     renderResultsAppliedReferences();
+    renderResultsVisualAssets();
 
     const compareBtn = $id('compare-btn');
     if (compareBtn) compareBtn.style.display = '';
@@ -9494,6 +9630,9 @@
   $id('knowledge-promote-btn').addEventListener('click', () => {
     openKnowledgePromoteModal();
   });
+  $id('visual-assets-btn').addEventListener('click', () => {
+    generateVisualAssetsForResults();
+  });
   $id('knowledge-promote-docs-btn').addEventListener('click', () => {
     openPromotedKnowledgeDocsModal(
       lastMeta?.title || lastRequestPayload?.title || '승인본 학습',
@@ -9613,6 +9752,57 @@
   });
 
   /* ── 생성 이력 ────────────────────────────────────────────────── */
+  function _normalizeVisualAssets(assets) {
+    if (!Array.isArray(assets)) return [];
+    return assets
+      .filter(asset => asset && typeof asset === 'object')
+      .map(asset => ({ ...asset }));
+  }
+
+  function _resetVisualAssetsForFreshResult(meta = null) {
+    lastVisualAssets = [];
+    if (meta && typeof meta === 'object') meta.visual_assets = [];
+  }
+
+  function _persistCurrentVisualAssetsSnapshot(assets = null) {
+    const snapshot = _normalizeVisualAssets(assets == null ? lastVisualAssets : assets);
+    lastVisualAssets = snapshot;
+    if (lastMeta && typeof lastMeta === 'object') {
+      lastMeta.visual_assets = _normalizeVisualAssets(snapshot);
+    }
+    const requestId = String(lastMeta?.request_id || lastMeta?.id || '');
+    if (requestId) {
+      try {
+        const h = loadHistory();
+        const idx = h.findIndex(item => String(item?.id || '') === requestId);
+        if (idx >= 0) {
+          h[idx].visual_assets = _normalizeVisualAssets(snapshot);
+          localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(h));
+        }
+      } catch {}
+    }
+    const bundleKey = lastRequestPayload?.bundle_type || lastMeta?.bundle_type || lastMeta?.bundle_id || '';
+    if (bundleKey && window._batchResults?.[bundleKey]) {
+      window._batchResults[bundleKey].visual_assets = _normalizeVisualAssets(snapshot);
+    }
+  }
+
+  async function _syncCurrentVisualAssetsToServerHistory(assets = null) {
+    const snapshot = _normalizeVisualAssets(assets == null ? lastVisualAssets : assets);
+    const entryId = String(lastMeta?.request_id || lastMeta?.id || '');
+    if (!entryId || !snapshot.length) return false;
+    const res = await fetch(`/history/${encodeURIComponent(entryId)}/visual-assets`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ visual_assets: snapshot }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+    }
+    return true;
+  }
+
   function saveHistory(meta, docs, payload) {
     try {
       const h = loadHistory();
@@ -9625,6 +9815,7 @@
         provider:    meta.provider || '',
         cache_hit:   meta.cache_hit,
         applied_references: Array.isArray(meta.applied_references) ? meta.applied_references : [],
+        visual_assets: _normalizeVisualAssets(meta.visual_assets),
         docs,
         payload,
       });
@@ -9700,6 +9891,7 @@
         if (!item) return;
         generatedDocs      = item.docs;
         lastMeta           = { ...item };
+        lastVisualAssets   = _normalizeVisualAssets(item.visual_assets);
         lastRequestPayload = item.payload;
         $id('history-panel').style.display = 'none';
         renderResults();
@@ -9826,6 +10018,12 @@
                    border:1px solid var(--p-ring);font-size:.75rem;cursor:pointer;font-weight:600;flex-shrink:0;">
             재사용
           </button>
+          <button type="button" class="history-open-server-btn"
+            data-entry-id="${escapeHtml(item.entry_id || '')}"
+            style="padding:.2rem .55rem;border-radius:6px;background:var(--surface);color:var(--text);
+                   border:1px solid var(--border);font-size:.75rem;cursor:pointer;font-weight:600;flex-shrink:0;">
+            보기
+          </button>
           ${!item.knowledge_promoted && item.project_id ? `
             <button type="button" class="history-promote-server-btn"
               data-entry-id="${escapeHtml(item.entry_id || '')}"
@@ -9854,6 +10052,12 @@
           const item = items.find(candidate => String(candidate.entry_id || '') === entryId);
           if (!item) return;
           openHistoryReferenceModal(item.title, item.applied_references);
+        });
+      });
+      list.querySelectorAll('.history-open-server-btn').forEach(btn => {
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
+          openServerHistoryEntry(btn.dataset.entryId || '');
         });
       });
       list.querySelectorAll('.history-promote-server-btn').forEach(btn => {
@@ -9917,6 +10121,41 @@
 
   function reuseServerHistory(requestId) {
     showNotification('재사용: request_id=' + requestId, 'info');
+  }
+
+  async function openServerHistoryEntry(entryId) {
+    if (!entryId) return;
+    try {
+      const res = await fetch(`/history/${encodeURIComponent(entryId)}`, { headers: getAuthHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || err.message || `서버 오류 ${res.status}`);
+      }
+      const item = await res.json();
+      generatedDocs = Array.isArray(item.docs) ? item.docs : [];
+      lastMeta = item;
+      _resetVisualAssetsForFreshResult(item);
+      lastVisualAssets = _normalizeVisualAssets(item.visual_assets);
+      lastRequestPayload = {
+        title: item.title || '',
+        goal: '',
+        bundle_type: item.bundle_type || item.bundle_id || 'tech_decision',
+        project_id: item.project_id || '',
+      };
+      $id('history-panel').style.display = 'none';
+      renderResults();
+      renderDownloadButtons(item.request_id || item.entry_id || '', item.title || '문서');
+      if (item.bundle_type || item.bundle_id) {
+        const id = item.bundle_type || item.bundle_id;
+        const bCard = document.querySelector(`.bundle-card[data-id="${id}"]`);
+        const bBundle = bCard ? { id, name_ko: bCard.dataset.name || id, icon: bCard.querySelector('.card-icon')?.textContent || '' } : null;
+        if (bCard && bBundle) selectBundle(bBundle, bCard);
+      }
+      $id('results').style.display = 'block';
+      $id('results').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      showNotification(`이력 열기 실패: ${e.message || e}`, 'error');
+    }
   }
 
   /* ── Quick feedback bar ────────────────────────────────────────── */
@@ -10808,6 +11047,7 @@
     if (!result?.docs) return;
     generatedDocs = result.docs;
     lastMeta = result;
+    lastVisualAssets = _normalizeVisualAssets(result.visual_assets);
     lastRequestPayload = {
       ...(lastRequestPayload || {}),
       bundle_type: bundleId,
@@ -10829,7 +11069,14 @@
       const res = await fetch('/generate/export-edited', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-        body: JSON.stringify({ bundle_id: bundleId, title: result.title || 'document', format, docs: result.docs }),
+        body: JSON.stringify({
+          bundle_id: bundleId,
+          bundle_type: result.bundle_type || bundleId || 'tech_decision',
+          title: result.title || 'document',
+          format,
+          docs: buildEditedExportDocsPayload(result.docs, { preferEdited: true }),
+          visual_assets: _normalizeVisualAssets(result.visual_assets),
+        }),
       });
       if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
       const blob = await res.blob();
@@ -11054,16 +11301,15 @@
        Returns a Blob, or null if no edits are present. */
     const hasEdits = generatedDocs.some(d => d._editedMarkdown);
     if (!hasEdits) return null;
-    const docs = generatedDocs.map(d => ({
-      doc_type: d.doc_type,
-      markdown: d._editedMarkdown || d.markdown || '',
-    }));
+    const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: true });
     const govOpts = getGovOptions();
     const body = JSON.stringify({
       bundle_id: lastMeta?.bundle_id || '',
+      bundle_type: lastRequestPayload?.bundle_type || window._selectedBundleId || 'tech_decision',
       title: lastRequestPayload?.title || '문서',
       format,
       docs,
+      visual_assets: Array.isArray(lastVisualAssets) ? lastVisualAssets : [],
       gov_options: govOpts,
     });
     const res = await fetch('/generate/export-edited', {
@@ -11090,15 +11336,14 @@
         const govOpts = getGovOptions();
         if (govOpts) {
           // Use export-edited endpoint to carry gov_options
-          const docs = generatedDocs.map(d => ({
-            doc_type: d.doc_type,
-            markdown: d.markdown || '',
-          }));
+          const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: false });
           const body = JSON.stringify({
             bundle_id: lastMeta?.bundle_id || '',
+            bundle_type: lastRequestPayload?.bundle_type || window._selectedBundleId || 'tech_decision',
             title: lastRequestPayload?.title || '문서',
             format,
             docs,
+            visual_assets: Array.isArray(lastVisualAssets) ? lastVisualAssets : [],
             gov_options: govOpts,
           });
           const res = await fetch('/generate/export-edited', {
@@ -12420,6 +12665,15 @@
       govOptions: getGovOptions(),
       projectId: lastRequestPayload?.project_id || '',
     };
+  }
+
+  function buildEditedExportDocsPayload(docs, { preferEdited = true } = {}) {
+    return (Array.isArray(docs) ? docs : []).map(doc => ({
+      doc_type: doc?.doc_type || '',
+      markdown: preferEdited ? (doc?._editedMarkdown || doc?.markdown || '') : (doc?.markdown || ''),
+      total_slides: Number(doc?.total_slides) > 0 ? Number(doc.total_slides) : null,
+      slide_outline: Array.isArray(doc?.slide_outline) ? doc.slide_outline : [],
+    }));
   }
 
   function getCurrentApprovalRequestSource() {
@@ -19650,6 +19904,7 @@
   function applyGeneratedResponse(data, requestPayload = null) {
     generatedDocs = data.docs || [];
     lastMeta = data;
+    _resetVisualAssetsForFreshResult(data);
     lastRequestPayload = requestPayload || {
       title: data.title || '',
       goal: '',

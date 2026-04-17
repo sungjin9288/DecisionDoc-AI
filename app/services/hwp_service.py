@@ -20,6 +20,7 @@ from typing import Any
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.markdown_utils import parse_markdown_blocks
+from app.services.visual_asset_service import group_visual_assets_by_doc_type
 
 # HWPX namespaces
 _NS_HH = "http://www.hancom.com/hwpml/2012/core"
@@ -241,9 +242,11 @@ def _section_xml(
     bot_mm: int,
     left_mm: int,
     right_mm: int,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the body section XML with page layout and paragraph content."""
     paras: list[str] = []
+    assets_by_doc_type = group_visual_assets_by_doc_type(visual_assets or [])
 
     # 공문서 헤더 블록
     if opts and opts.is_government_format:
@@ -268,6 +271,18 @@ def _section_xml(
             paras.append(_para_xml(f"검토 초점: {section_text}", "본문"))
             paras.append(_para_xml(f"구성 지표: {metric_text}", "본문"))
             paras.append(_para_xml(""))
+            visual_items = assets_by_doc_type.get(str(doc.get("doc_type", "document")), [])
+            if visual_items:
+                paras.append(_para_xml("생성 시각자료", "제목3"))
+                for asset in visual_items[:2]:
+                    slide_title = str(asset.get("slide_title", "")).strip() or "시각자료"
+                    visual_type = str(asset.get("visual_type", "")).strip()
+                    visual_brief = str(asset.get("visual_brief", "")).strip()
+                    title_line = slide_title + (f" · {visual_type}" if visual_type else "")
+                    paras.append(_para_xml(title_line, "본문"))
+                    if visual_brief:
+                        paras.append(_para_xml(visual_brief, "본문"))
+                paras.append(_para_xml(""))
         for block in parse_markdown_blocks(doc.get("markdown", "")):
             block_type = block.get("type")
             if block_type == "heading":
@@ -347,6 +362,7 @@ def build_hwp(
     docs: list[dict[str, Any]],
     title: str,
     gov_options: Any | None = None,
+    visual_assets: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Build an hwpx file from a list of rendered docs.
 
@@ -381,7 +397,7 @@ def build_hwp(
         )
         zf.writestr(
             "Contents/section0.xml",
-            _section_xml(docs, title, opts, top_mm, bot_mm, left_mm, right_mm),
+            _section_xml(docs, title, opts, top_mm, bot_mm, left_mm, right_mm, visual_assets=visual_assets),
         )
         zf.writestr("Contents/settings.xml", _settings_xml())
     return buf.getvalue()
