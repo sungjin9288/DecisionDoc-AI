@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 
 from app.auth.api_key import require_api_key
-from app.providers.factory import get_provider
+from app.providers.factory import get_provider_for_capability
 from app.schemas import PromoteKnowledgeReferenceRequest, UpdateKnowledgeMetadataRequest
 
 router = APIRouter(tags=["knowledge"])
@@ -100,7 +100,7 @@ async def upload_knowledge_document(
         text = extract_text_with_ai_fallback(
             filename,
             raw,
-            provider=get_provider(),
+            provider=get_provider_for_capability("attachment"),
             request_id=getattr(request.state, "request_id", ""),
         )
     except AttachmentError as exc:
@@ -111,7 +111,7 @@ async def upload_knowledge_document(
     if analyze_style.strip() in ("1", "true", "yes"):
         try:
             from app.services.style_analyzer import analyze_document_style
-            provider = get_provider()
+            provider = get_provider_for_capability("generation")
             style_profile = await analyze_document_style(
                 filename=filename,
                 raw=raw,

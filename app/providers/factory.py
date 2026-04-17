@@ -8,6 +8,12 @@ from app.providers.local_provider import LocalProvider
 from app.providers.mock_provider import MockProvider
 from app.providers.openai_provider import OpenAIProvider
 
+CAPABILITY_PROVIDER_ENV = {
+    "generation": "DECISIONDOC_PROVIDER_GENERATION",
+    "attachment": "DECISIONDOC_PROVIDER_ATTACHMENT",
+    "visual": "DECISIONDOC_PROVIDER_VISUAL",
+}
+
 
 def _get_int(name: str, default: int) -> int:
     """Read an integer env var with a safe fallback."""
@@ -18,6 +24,39 @@ def _get_int(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _parse_provider_names(raw: str) -> list[str]:
+    return [n.strip() for n in str(raw or "").lower().split(",") if n.strip()]
+
+
+def _resolve_provider_names(capability: str | None = None) -> list[str]:
+    if capability:
+        env_name = CAPABILITY_PROVIDER_ENV.get(capability)
+        if env_name:
+            override = os.getenv(env_name, "")
+            if override.strip():
+                names = _parse_provider_names(override)
+                if names:
+                    return names
+    names = _parse_provider_names(os.getenv("DECISIONDOC_PROVIDER", "mock"))
+    if not names:
+        raise ProviderError("Provider configuration error.")
+    return names
+
+
+def _build_provider_chain(names: list[str], *, model_override: str | None = None) -> Provider:
+    providers = [_make_single_provider(n, model_override=model_override) for n in names]
+    if len(providers) == 1:
+        return providers[0]
+    return FallbackPipeline(providers)
+
+
+def configured_provider_names() -> set[str]:
+    names: set[str] = set(_resolve_provider_names())
+    for capability in CAPABILITY_PROVIDER_ENV:
+        names.update(_resolve_provider_names(capability))
+    return names
 
 
 def _make_single_provider(name: str, model_override: str | None = None) -> Provider:
@@ -73,14 +112,12 @@ def get_provider(model_override: str | None = None) -> Provider:
         ProviderError: If any provider name is unrecognised or required credentials
                        are missing (raised by the provider's __init__).
     """
-    raw = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
-    names = [n.strip() for n in raw.split(",") if n.strip()]
-    if not names:
-        raise ProviderError("Provider configuration error.")
-    providers = [_make_single_provider(n, model_override=model_override) for n in names]
-    if len(providers) == 1:
-        return providers[0]
-    return FallbackPipeline(providers)
+    return _build_provider_chain(_resolve_provider_names(), model_override=model_override)
+
+
+def get_provider_for_capability(capability: str, model_override: str | None = None) -> Provider:
+    """Return a provider using a capability-specific chain when configured."""
+    return _build_provider_chain(_resolve_provider_names(capability), model_override=model_override)
 
 
 def get_provider_for_bundle(bundle_id: str | None, tenant_id: str) -> Provider:
@@ -102,7 +139,7 @@ def get_provider_for_bundle(bundle_id: str | None, tenant_id: str) -> Provider:
         if active_model and active_model.get("status") == "ready":
             model_id = active_model.get("model_id", "")
             if model_id and not model_id.startswith("pending:"):
-                return get_provider(model_override=model_id)
+                return get_provider_for_capability("generation", model_override=model_id)
     except Exception:
         pass  # Silently fall back to default provider
-    return get_provider()
+    return get_provider_for_capability("generation")

@@ -28,7 +28,7 @@ from app.services.search_service import SearchService
 from app.services.decision_council_service import DecisionCouncilService
 from app.services.meeting_recording_service import MeetingRecordingService
 from app.services.voice_brief_import_service import VoiceBriefImportService
-from app.providers.factory import get_provider
+from app.providers.factory import configured_provider_names, get_provider, get_provider_for_capability
 from app.services.generation_service import GenerationService
 from app.storage.factory import get_storage
 from app.storage.approval_store import ApprovalStore
@@ -73,8 +73,7 @@ def create_app() -> FastAPI:
     if environment == "prod" and not get_allowed_api_keys():
         raise RuntimeError("An API key is required when DECISIONDOC_ENV=prod.")
 
-    configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
-    provider_names = [n.strip() for n in configured_provider.split(",") if n.strip()]
+    provider_names = configured_provider_names()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     template_dir = Path(__file__).resolve().parent / "templates" / template_version
 
@@ -114,8 +113,14 @@ def create_app() -> FastAPI:
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
+
+    def _generation_provider_factory():
+        if os.getenv("DECISIONDOC_PROVIDER_GENERATION", "").strip():
+            return get_provider_for_capability("generation")
+        return get_provider()
+
     service = GenerationService(
-        provider_factory=get_provider,
+        provider_factory=_generation_provider_factory,
         template_dir=template_dir,
         data_dir=data_dir,
         storage=storage,

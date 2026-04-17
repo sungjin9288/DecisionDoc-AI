@@ -108,7 +108,7 @@ def _validate_provider_env(provider_names: list[str]) -> None:
 
 def _build_service():
     """Construct GenerationService directly (no HTTP server needed)."""
-    from app.providers.factory import get_provider
+    from app.providers.factory import get_provider_for_capability
     from app.services.generation_service import GenerationService
 
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
@@ -119,7 +119,7 @@ def _build_service():
 
     data_dir = Path(os.getenv("DATA_DIR", "./data"))
     return GenerationService(
-        provider_factory=get_provider,
+        provider_factory=lambda: get_provider_for_capability("generation"),
         template_dir=template_dir,
         data_dir=data_dir,
         storage=None,
@@ -263,7 +263,7 @@ def main() -> int:
         parser.error("--goal is required (or provide via --from-json)")
 
     # Provider validation
-    configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
+    configured_provider = (os.getenv("DECISIONDOC_PROVIDER_GENERATION") or os.getenv("DECISIONDOC_PROVIDER", "mock")).lower()
     provider_names = [n.strip() for n in configured_provider.split(",") if n.strip()]
     _validate_provider_env(provider_names)
 

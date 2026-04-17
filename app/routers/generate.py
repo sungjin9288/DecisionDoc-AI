@@ -52,7 +52,7 @@ from app.dependencies import require_admin as _require_admin, require_auth as _r
 from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
 from app.observability.logging import log_event
 from app.observability.timing import Timer
-from app.providers.factory import get_provider, get_provider_for_bundle
+from app.providers.factory import get_provider_for_bundle, get_provider_for_capability
 from app.schemas import (
     EditedExportRequest,
     FeedbackRequest,
@@ -211,7 +211,7 @@ def _generate_visual_assets_for_docs(
             docs,
             title=title,
             goal=goal,
-            provider=get_provider_for_bundle(bundle_type, tenant_id),
+            provider=get_provider_for_capability("visual"),
             request_id=request_id,
             max_assets=6,
         )
@@ -757,7 +757,7 @@ def generate_with_attachments(
             from app.services.rfp_parser import build_rfp_context
             combined = extract_multiple(
                 file_data,
-                provider=get_provider(),
+                provider=get_provider_for_capability("attachment"),
                 request_id=request.state.request_id,
             )
             procurement_context = _build_procurement_attachment_context(file_data)
@@ -795,7 +795,7 @@ def generate_from_documents(
 
     combined_text, parsed_filenames, procurement_context = _extract_uploaded_documents(
         files,
-        provider=get_provider(),
+        provider=get_provider_for_capability("attachment"),
         request_id=request.state.request_id,
     )
     doc_types_list = [dt.strip() for dt in doc_types.split(",") if dt.strip()]
@@ -1497,9 +1497,10 @@ def generate_sketch_endpoint(
     data_dir = request.app.state.data_dir
     search_service = request.app.state.search_service
     request_id = request.state.request_id
+    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     ensure_bundle_access(request, payload.bundle_type)
     bundle_spec = get_bundle_spec(payload.bundle_type)
-    provider = get_provider()
+    provider = get_provider_for_bundle(payload.bundle_type, tenant_id)
     result = generate_sketch(
         payload.model_dump(),
         provider,
@@ -1555,7 +1556,7 @@ def generate_refine_endpoint(payload: dict, request: Request) -> dict:
         prompt += f"\n[문서 맥락 참고]\n{context[:1000]}\n"
     prompt += "\n[개선된 섹션]"
 
-    provider = get_provider()
+    provider = get_provider_for_capability("generation")
     request_id = request.state.request_id
     try:
         refined = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=2000)
@@ -1664,7 +1665,7 @@ def generate_summary_endpoint(payload: dict, request: Request) -> dict:
         "[요약]"
     )
 
-    provider = get_provider()
+    provider = get_provider_for_capability("generation")
     request_id = request.state.request_id
     try:
         summary = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=500)
@@ -1774,7 +1775,7 @@ def generate_review_endpoint(payload: dict, request: Request) -> dict:
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors, "request_id": request_id})
 
-    provider = get_provider()
+    provider = get_provider_for_capability("generation")
 
     bundle_hint = f"\n번들 유형: {bundle_type}" if bundle_type else ""
     prompt = (
@@ -1859,7 +1860,7 @@ def generate_translate_endpoint(payload: dict, request: Request) -> dict:
         f"{content[:15000]}"
     )
 
-    provider = get_provider()
+    provider = get_provider_for_capability("generation")
     request_id = request.state.request_id
     try:
         translated = provider.generate_raw(

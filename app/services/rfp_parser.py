@@ -72,8 +72,8 @@ def parse_rfp_fields(
         ``"rfp_analysis_kr"``).
     """
     if provider is None:
-        from app.providers.factory import get_provider
-        provider = get_provider()
+        from app.providers.factory import get_provider_for_capability
+        provider = get_provider_for_capability("generation")
 
     prompt = _RFP_PROMPT_TEMPLATE.format(text=attachment_text[:8_000])
 

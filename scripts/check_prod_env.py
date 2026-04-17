@@ -11,6 +11,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 SUPPORTED_PROVIDERS = {"openai", "gemini", "claude", "local", "mock"}
 SUPPORTED_STORAGES = {"local", "s3"}
+PROVIDER_ENV_KEYS = (
+    "DECISIONDOC_PROVIDER",
+    "DECISIONDOC_PROVIDER_GENERATION",
+    "DECISIONDOC_PROVIDER_ATTACHMENT",
+    "DECISIONDOC_PROVIDER_VISUAL",
+)
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -77,32 +83,39 @@ def _validate_required(env: dict[str, str], errors: list[str]) -> None:
 
 
 def _validate_provider(env: dict[str, str], errors: list[str], warnings: list[str]) -> list[str]:
-    providers = _split_csv(env.get("DECISIONDOC_PROVIDER", ""))
-    if not providers:
+    base_providers = _split_csv(env.get("DECISIONDOC_PROVIDER", ""))
+    if not base_providers:
         errors.append("DECISIONDOC_PROVIDER is required")
         return []
-    unknown = [provider for provider in providers if provider not in SUPPORTED_PROVIDERS]
-    if unknown:
-        errors.append(f"Unsupported DECISIONDOC_PROVIDER value(s): {', '.join(unknown)}")
     if env.get("DECISIONDOC_ENV", "").strip() != "prod":
         errors.append("DECISIONDOC_ENV must be prod for production deployment")
-    if "openai" in providers:
+
+    all_providers: set[str] = set()
+    for env_key in PROVIDER_ENV_KEYS:
+        raw = env.get(env_key, "").strip()
+        providers = _split_csv(raw) if raw else (base_providers if env_key == "DECISIONDOC_PROVIDER" else [])
+        unknown = [provider for provider in providers if provider not in SUPPORTED_PROVIDERS]
+        if unknown:
+            errors.append(f"Unsupported {env_key} value(s): {', '.join(unknown)}")
+        all_providers.update(providers)
+        if "mock" in providers:
+            warnings.append(f"{env_key} includes mock; verify this is intentional for prod")
+
+    if "openai" in all_providers:
         openai_key = env.get("OPENAI_API_KEY", "").strip()
         if _is_placeholder(openai_key):
             errors.append("OPENAI_API_KEY is missing or still uses a placeholder value")
         elif not (openai_key.startswith("sk-") or openai_key.startswith("sk-proj-")):
             errors.append("OPENAI_API_KEY does not look like a real OpenAI API key")
-    if "gemini" in providers:
+    if "gemini" in all_providers:
         gemini_key = env.get("GEMINI_API_KEY", "").strip()
         if _is_placeholder(gemini_key):
             errors.append("GEMINI_API_KEY is missing or still uses a placeholder value")
-    if "claude" in providers:
+    if "claude" in all_providers:
         claude_key = env.get("ANTHROPIC_API_KEY", "").strip()
         if _is_placeholder(claude_key):
             errors.append("ANTHROPIC_API_KEY is missing or still uses a placeholder value")
-    if "mock" in providers:
-        warnings.append("DECISIONDOC_PROVIDER includes mock; verify this is intentional for prod")
-    return providers
+    return list(all_providers)
 
 
 def _validate_storage(env: dict[str, str], errors: list[str]) -> None:

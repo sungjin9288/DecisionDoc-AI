@@ -192,6 +192,20 @@ def test_claude_provider_missing_key_raises_at_startup(tmp_path, monkeypatch):
         create_app()
 
 
+def test_visual_provider_missing_key_raises_at_startup(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "claude")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is required"):
+        create_app()
+
+
 def test_bundle_schema_validation_missing_required_key_returns_provider_failed(tmp_path, monkeypatch):
     import app.main as main_module
     from app.providers.mock_provider import MockProvider

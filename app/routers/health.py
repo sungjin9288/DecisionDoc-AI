@@ -19,6 +19,7 @@ from app.config import (
     is_realtime_events_enabled,
 )
 from app.maintenance.mode import is_maintenance_mode
+from app.providers.factory import configured_provider_names
 from app.schemas import HealthResponse
 
 router = APIRouter(tags=["health"])
@@ -30,7 +31,7 @@ def health(request: Request) -> HealthResponse:
     checks: dict[str, str] = {}
 
     configured_provider = os.getenv("DECISIONDOC_PROVIDER", "mock")
-    provider_names = [n.strip() for n in configured_provider.split(",") if n.strip()]
+    provider_names = configured_provider_names()
     data_dir = request.app.state.data_dir
     storage_kind = os.getenv("DECISIONDOC_STORAGE", "local").lower()
     storage = request.app.state.storage

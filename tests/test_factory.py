@@ -4,7 +4,7 @@ import pytest
 from app.ai.pipeline import FallbackPipeline
 from app.providers.base import ProviderError
 from app.providers.claude_provider import ClaudeProvider
-from app.providers.factory import get_provider
+from app.providers.factory import get_provider, get_provider_for_capability
 from app.providers.mock_provider import MockProvider
 
 
@@ -98,5 +98,23 @@ def test_get_provider_claude_pipeline_trims_spaces(monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", " mock , claude ")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     provider = get_provider()
+    assert isinstance(provider, FallbackPipeline)
+    assert [p.name for p in provider._providers] == ["mock", "claude"]
+
+
+def test_get_provider_for_capability_uses_visual_override(monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "mock,claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    provider = get_provider_for_capability("visual")
+    assert isinstance(provider, FallbackPipeline)
+    assert [p.name for p in provider._providers] == ["mock", "claude"]
+
+
+def test_get_provider_for_capability_falls_back_to_default_chain(monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock,claude")
+    monkeypatch.delenv("DECISIONDOC_PROVIDER_ATTACHMENT", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    provider = get_provider_for_capability("attachment")
     assert isinstance(provider, FallbackPipeline)
     assert [p.name for p in provider._providers] == ["mock", "claude"]

@@ -143,3 +143,40 @@ def test_check_prod_env_accepts_valid_claude_prod_env(tmp_path: Path) -> None:
     )
 
     assert exit_code == 0
+
+
+def test_check_prod_env_accepts_capability_specific_provider_chains(tmp_path: Path) -> None:
+    checker = _load_script_module("decisiondoc_check_prod_env_capabilities", "scripts/check_prod_env.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DECISIONDOC_ENV=prod",
+                "DECISIONDOC_PROVIDER=openai",
+                "DECISIONDOC_PROVIDER_GENERATION=claude,gemini,openai",
+                "DECISIONDOC_PROVIDER_ATTACHMENT=gemini,claude,openai",
+                "DECISIONDOC_PROVIDER_VISUAL=openai,claude",
+                "DECISIONDOC_STORAGE=local",
+                "JWT_SECRET_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "ALLOWED_ORIGINS=https://admin.decisiondoc.kr",
+                "DECISIONDOC_API_KEYS=ddoc_api_key_1",
+                "DECISIONDOC_OPS_KEY=ddoc_ops_key_1",
+                "OPENAI_API_KEY=sk-proj-valid-openai-key",
+                "GEMINI_API_KEY=AIza-valid-key",
+                "ANTHROPIC_API_KEY=sk-ant-valid-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = checker.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--expected-origin",
+            "https://admin.decisiondoc.kr",
+        ]
+    )
+
+    assert exit_code == 0
