@@ -288,7 +288,10 @@ def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
         assert "with-attachments" in content
         assert "from-documents" in content
         assert "proxy_read_timeout" in content
+        assert "600s" in content
         assert "300s" in content
+        assert re.search(r"with-attachments[\s\S]*proxy_read_timeout\s+600s;", content)
+        assert re.search(r"from-documents[\s\S]*proxy_read_timeout\s+600s;", content)
         assert re.search(r"location\s*/\s*\{[\s\S]*proxy_read_timeout\s+300s;", content)
 
 
