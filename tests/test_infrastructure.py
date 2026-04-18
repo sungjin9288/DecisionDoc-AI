@@ -289,6 +289,7 @@ def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
         assert "from-documents" in content
         assert "proxy_read_timeout" in content
         assert "300s" in content
+        assert re.search(r"location\s*/\s*\{[\s\S]*proxy_read_timeout\s+300s;", content)
 
 
 def test_dockerfile_sets_shared_playwright_browser_path_for_non_root_runtime():
