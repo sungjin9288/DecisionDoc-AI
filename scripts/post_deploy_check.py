@@ -114,6 +114,10 @@ def _extract_smoke_failure_details(*, stdout: str, stderr: str) -> dict[str, Any
     if retry_after_seconds:
         details["retry_after_seconds"] = int(retry_after_seconds.group(1))
 
+    smoke_exception_type = re.search(r"\b((?:httpx|httpcore)\.[A-Za-z]+)\b", combined)
+    if smoke_exception_type:
+        details["smoke_exception_type"] = smoke_exception_type.group(1)
+
     if failure_line:
         details["failure_line"] = failure_line
 
@@ -131,6 +135,9 @@ def _build_failure_suffix(details: dict[str, Any]) -> str:
     retry_after_seconds = details.get("retry_after_seconds")
     if isinstance(retry_after_seconds, int):
         parts.append(f"retry_after_seconds={retry_after_seconds}")
+    smoke_exception_type = str(details.get("smoke_exception_type", "")).strip()
+    if smoke_exception_type:
+        parts.append(f"smoke_exception_type={smoke_exception_type}")
     return f" ({'; '.join(parts)})" if parts else ""
 
 
@@ -260,6 +267,9 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         retry_after_seconds = check.get("retry_after_seconds")
         if isinstance(retry_after_seconds, int):
             summary["retry_after_seconds"] = retry_after_seconds
+        smoke_exception_type = str(check.get("smoke_exception_type", "")).strip()
+        if smoke_exception_type:
+            summary["smoke_exception_type"] = smoke_exception_type
         return summary
     return {}
 

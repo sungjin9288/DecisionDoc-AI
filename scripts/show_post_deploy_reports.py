@@ -38,6 +38,7 @@ def _format_smoke_failure_summary(entry: dict[str, Any]) -> str | None:
     smoke_response_code = str(entry.get("smoke_response_code", "")).strip()
     provider_error_code = str(entry.get("provider_error_code", "")).strip()
     smoke_message = str(entry.get("smoke_message", "")).strip()
+    smoke_exception_type = str(entry.get("smoke_exception_type", "")).strip()
     retry_after_seconds = entry.get("retry_after_seconds")
     parts: list[str] = []
     if smoke_response_code:
@@ -46,6 +47,8 @@ def _format_smoke_failure_summary(entry: dict[str, Any]) -> str | None:
         parts.append(f"provider_error_code={provider_error_code}")
     if isinstance(retry_after_seconds, int):
         parts.append(f"retry_after_seconds={retry_after_seconds}")
+    if smoke_exception_type:
+        parts.append(f"exception={smoke_exception_type}")
     if smoke_message:
         parts.append(f"message={smoke_message}")
     if not parts:

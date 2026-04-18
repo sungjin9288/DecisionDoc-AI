@@ -807,6 +807,7 @@ class PostDeployReportSummary(BaseModel):
     provider_error_code: str | None = None
     smoke_message: str | None = None
     retry_after_seconds: int | None = None
+    smoke_exception_type: str | None = None
 
 
 class PostDeployReportCheck(BaseModel):
@@ -817,6 +818,7 @@ class PostDeployReportCheck(BaseModel):
     provider_error_code: str | None = None
     smoke_message: str | None = None
     retry_after_seconds: int | None = None
+    smoke_exception_type: str | None = None
     failure_line: str | None = None
     stdout: str | None = None
     stderr: str | None = None
@@ -836,6 +838,7 @@ class PostDeployLatestDetailsResponse(BaseModel):
     provider_error_code: str | None = None
     smoke_message: str | None = None
     retry_after_seconds: int | None = None
+    smoke_exception_type: str | None = None
 
 
 class OpsPostDeployReportsResponse(BaseModel):

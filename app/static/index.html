@@ -20824,9 +20824,10 @@ function getPostDeploySmokeFailureState(source) {
     smokeResponseCode: String(payload.smoke_response_code || '').trim(),
     providerErrorCode: String(payload.provider_error_code || '').trim(),
     smokeMessage: String(payload.smoke_message || '').trim(),
+    smokeExceptionType: String(payload.smoke_exception_type || '').trim(),
     retryAfterSeconds: Number.isInteger(payload.retry_after_seconds) ? payload.retry_after_seconds : null,
   };
-  if (direct.smokeResponseCode || direct.providerErrorCode || direct.smokeMessage || Number.isInteger(direct.retryAfterSeconds)) {
+  if (direct.smokeResponseCode || direct.providerErrorCode || direct.smokeMessage || direct.smokeExceptionType || Number.isInteger(direct.retryAfterSeconds)) {
     return direct;
   }
   const checks = Array.isArray(payload.checks) ? payload.checks : [];
@@ -20839,6 +20840,7 @@ function getPostDeploySmokeFailureState(source) {
     smokeResponseCode: String(smokeCheck.smoke_response_code || '').trim(),
     providerErrorCode: String(smokeCheck.provider_error_code || '').trim(),
     smokeMessage: String(smokeCheck.smoke_message || '').trim(),
+    smokeExceptionType: String(smokeCheck.smoke_exception_type || '').trim(),
     retryAfterSeconds: Number.isInteger(smokeCheck.retry_after_seconds) ? smokeCheck.retry_after_seconds : null,
   };
 }
@@ -20852,6 +20854,7 @@ function buildPostDeploySmokeFailureSummary(source, options = {}) {
   if (summary.smokeResponseCode) badges.push(`code=${summary.smokeResponseCode}`);
   if (summary.providerErrorCode) badges.push(`provider_error_code=${summary.providerErrorCode}`);
   if (Number.isInteger(summary.retryAfterSeconds)) badges.push(`retry_after_seconds=${summary.retryAfterSeconds}`);
+  if (summary.smokeExceptionType) badges.push(`exception=${summary.smokeExceptionType}`);
   return `
     <div class="ops-post-deploy-smoke-failure" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.18);">
       <div style="color:#fca5a5;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;margin-bottom:${compact ? '.35rem' : '.45rem'};">${escapeHtml(title)}</div>

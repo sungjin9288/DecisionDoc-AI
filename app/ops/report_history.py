@@ -116,6 +116,9 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         retry_after_seconds = check.get("retry_after_seconds")
         if isinstance(retry_after_seconds, int):
             summary["retry_after_seconds"] = retry_after_seconds
+        smoke_exception_type = str(check.get("smoke_exception_type", "")).strip()
+        if smoke_exception_type:
+            summary["smoke_exception_type"] = smoke_exception_type
         return summary
     return {}
 
