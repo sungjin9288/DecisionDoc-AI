@@ -298,8 +298,12 @@ def test_health_returns_checks_dict(tmp_path: Path, monkeypatch) -> None:
     assert isinstance(data["checks"], dict)
     assert "provider_routes" in data
     assert "provider_route_checks" in data
+    assert "provider_policy_checks" in data
+    assert "provider_policy_issues" in data
     assert isinstance(data["provider_routes"], dict)
     assert isinstance(data["provider_route_checks"], dict)
+    assert isinstance(data["provider_policy_checks"], dict)
+    assert isinstance(data["provider_policy_issues"], dict)
 
 
 def test_health_ok_with_mock_provider(tmp_path: Path, monkeypatch) -> None:
@@ -315,6 +319,11 @@ def test_health_ok_with_mock_provider(tmp_path: Path, monkeypatch) -> None:
     assert data["provider_routes"]["default"] == "mock"
     assert data["provider_routes"]["generation"] == "mock"
     assert data["provider_route_checks"]["generation"] == "ok"
+    assert data["provider_policy_checks"]["quality_first"] == "degraded"
+    assert any(
+        "default route must include claude, gemini, openai" in issue
+        for issue in data["provider_policy_issues"]["quality_first"]
+    )
 
 
 def test_health_marks_visual_route_degraded_when_capability_key_missing(tmp_path: Path, monkeypatch) -> None:
@@ -336,3 +345,32 @@ def test_health_marks_visual_route_degraded_when_capability_key_missing(tmp_path
     assert data["checks"]["provider_visual"] == "degraded"
     assert data["provider_routes"]["visual"] == "claude"
     assert data["provider_route_checks"]["visual"] == "degraded"
+    assert data["provider_policy_checks"]["quality_first"] == "degraded"
+    assert any(
+        "visual route must be exactly openai" in issue
+        for issue in data["provider_policy_issues"]["quality_first"]
+    )
+
+
+def test_health_marks_quality_first_ready_when_capability_routes_are_explicit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "claude,gemini,openai")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "claude,gemini,openai")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "gemini,claude,openai")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "openai")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_SEARCH_ENABLED", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    import app.main as main_module
+    from fastapi.testclient import TestClient
+
+    client = TestClient(main_module.create_app())
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["checks"]["provider"] == "ok"
+    assert data["provider_policy_checks"]["quality_first"] == "ok"
+    assert data["provider_policy_issues"]["quality_first"] == []
