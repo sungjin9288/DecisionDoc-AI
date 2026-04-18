@@ -24,6 +24,7 @@ def _load_report_history_module():
 
 _report_history = _load_report_history_module()
 _extract_provider_route_summary = _report_history._extract_provider_route_summary
+_extract_smoke_failure_summary = _report_history._extract_smoke_failure_summary
 build_post_deploy_reports_payload = _report_history.build_post_deploy_reports_payload
 get_default_post_deploy_report_dir = _report_history.get_default_post_deploy_report_dir
 load_report_json = _report_history.load_report_json
@@ -31,6 +32,25 @@ load_report_json = _report_history.load_report_json
 
 DEFAULT_REPORT_DIR = get_default_post_deploy_report_dir()
 DEFAULT_LIMIT = 5
+
+
+def _format_smoke_failure_summary(entry: dict[str, Any]) -> str | None:
+    smoke_response_code = str(entry.get("smoke_response_code", "")).strip()
+    provider_error_code = str(entry.get("provider_error_code", "")).strip()
+    smoke_message = str(entry.get("smoke_message", "")).strip()
+    retry_after_seconds = entry.get("retry_after_seconds")
+    parts: list[str] = []
+    if smoke_response_code:
+        parts.append(f"code={smoke_response_code}")
+    if provider_error_code:
+        parts.append(f"provider_error_code={provider_error_code}")
+    if isinstance(retry_after_seconds, int):
+        parts.append(f"retry_after_seconds={retry_after_seconds}")
+    if smoke_message:
+        parts.append(f"message={smoke_message}")
+    if not parts:
+        return None
+    return "  smoke_failure: " + " | ".join(parts)
 
 
 def _print_entry(entry: dict[str, Any]) -> None:
@@ -49,12 +69,18 @@ def _print_entry(entry: dict[str, Any]) -> None:
             f"visual={provider_routes.get('visual', '-')}",
             flush=True,
         )
+    smoke_failure = _format_smoke_failure_summary(entry)
+    if smoke_failure:
+        print(smoke_failure, flush=True)
 
 
 def _print_latest_details(report_dir: Path) -> None:
     latest_path = Path(report_dir).expanduser() / "latest.json"
     payload = load_report_json(latest_path)
-    for key, value in _extract_provider_route_summary(payload).items():
+    extracted_summary: dict[str, Any] = {}
+    extracted_summary.update(_extract_provider_route_summary(payload))
+    extracted_summary.update(_extract_smoke_failure_summary(payload))
+    for key, value in extracted_summary.items():
         payload.setdefault(key, value)
     print("", flush=True)
     print("Latest report details", flush=True)
@@ -85,6 +111,9 @@ def _print_latest_details(report_dir: Path) -> None:
             f"visual:{provider_route_checks.get('visual', '-')}",
             flush=True,
         )
+    smoke_failure = _format_smoke_failure_summary(payload)
+    if smoke_failure:
+        print(smoke_failure.replace("  ", "- ", 1), flush=True)
     checks = payload.get("checks", [])
     print("Checks", flush=True)
     for check in checks:

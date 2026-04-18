@@ -94,6 +94,32 @@ def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list):
+        return {}
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if str(check.get("name", "")).strip() != "deployed smoke":
+            continue
+        summary: dict[str, Any] = {}
+        smoke_response_code = str(check.get("smoke_response_code", "")).strip()
+        if smoke_response_code:
+            summary["smoke_response_code"] = smoke_response_code
+        provider_error_code = str(check.get("provider_error_code", "")).strip()
+        if provider_error_code:
+            summary["provider_error_code"] = provider_error_code
+        smoke_message = str(check.get("smoke_message", "")).strip()
+        if smoke_message:
+            summary["smoke_message"] = smoke_message
+        retry_after_seconds = check.get("retry_after_seconds")
+        if isinstance(retry_after_seconds, int):
+            summary["retry_after_seconds"] = retry_after_seconds
+        return summary
+    return {}
+
+
 def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
     index_payload, index_path = resolve_report_index(report_dir)
     reports = list(index_payload.get("reports", []))
@@ -111,7 +137,9 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
     if latest:
         latest_path = Path(report_dir).expanduser() / "latest.json"
         latest_payload = load_report_json(latest_path)
-        extracted_summary = _extract_provider_route_summary(latest_payload)
+        extracted_summary: dict[str, Any] = {}
+        extracted_summary.update(_extract_provider_route_summary(latest_payload))
+        extracted_summary.update(_extract_smoke_failure_summary(latest_payload))
         for key, value in extracted_summary.items():
             latest_payload.setdefault(key, value)
         payload["latest_details"] = latest_payload

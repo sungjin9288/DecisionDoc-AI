@@ -20817,6 +20817,62 @@ function buildPostDeployProviderRouteSummary(providerRoutes, providerRouteChecks
   `;
 }
 
+function getPostDeploySmokeFailureState(source) {
+  const payload = source && typeof source === 'object' ? source : null;
+  if (!payload) return null;
+  const direct = {
+    smokeResponseCode: String(payload.smoke_response_code || '').trim(),
+    providerErrorCode: String(payload.provider_error_code || '').trim(),
+    smokeMessage: String(payload.smoke_message || '').trim(),
+    retryAfterSeconds: Number.isInteger(payload.retry_after_seconds) ? payload.retry_after_seconds : null,
+  };
+  if (direct.smokeResponseCode || direct.providerErrorCode || direct.smokeMessage || Number.isInteger(direct.retryAfterSeconds)) {
+    return direct;
+  }
+  const checks = Array.isArray(payload.checks) ? payload.checks : [];
+  const smokeCheck = checks.find((check) => {
+    return String(check?.name || '').trim() === 'deployed smoke'
+      && String(check?.status || '').trim().toLowerCase() === 'failed';
+  });
+  if (!smokeCheck) return null;
+  return {
+    smokeResponseCode: String(smokeCheck.smoke_response_code || '').trim(),
+    providerErrorCode: String(smokeCheck.provider_error_code || '').trim(),
+    smokeMessage: String(smokeCheck.smoke_message || '').trim(),
+    retryAfterSeconds: Number.isInteger(smokeCheck.retry_after_seconds) ? smokeCheck.retry_after_seconds : null,
+  };
+}
+
+function buildPostDeploySmokeFailureSummary(source, options = {}) {
+  const summary = getPostDeploySmokeFailureState(source);
+  if (!summary) return '';
+  const compact = options.compact === true;
+  const title = options.title || 'Smoke failure';
+  const badges = [];
+  if (summary.smokeResponseCode) badges.push(`code=${summary.smokeResponseCode}`);
+  if (summary.providerErrorCode) badges.push(`provider_error_code=${summary.providerErrorCode}`);
+  if (Number.isInteger(summary.retryAfterSeconds)) badges.push(`retry_after_seconds=${summary.retryAfterSeconds}`);
+  return `
+    <div class="ops-post-deploy-smoke-failure" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.18);">
+      <div style="color:#fca5a5;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;margin-bottom:${compact ? '.35rem' : '.45rem'};">${escapeHtml(title)}</div>
+      ${badges.length ? `
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;">
+          ${badges.map((badge) => `
+            <span class="ops-post-deploy-smoke-failure-badge" style="display:inline-flex;align-items:center;padding:.14rem .45rem;border-radius:999px;background:rgba(255,255,255,.08);color:#fecaca;font-size:.66rem;font-weight:800;">
+              ${escapeHtml(badge)}
+            </span>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${summary.smokeMessage ? `
+        <div style="margin-top:${badges.length ? '.4rem' : '0'};color:#fecaca;font-size:${compact ? '.7rem' : '.74rem'};line-height:1.45;">
+          ${escapeHtml(summary.smokeMessage)}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function formatOpsReportTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -20863,6 +20919,9 @@ function getOpsPostDeployFilteredReports(payload) {
       report?.base_url,
       report?.status,
       report?.skip_smoke ? 'skip smoke' : 'smoke 포함',
+      report?.smoke_response_code,
+      report?.provider_error_code,
+      report?.smoke_message,
     ]
       .filter(Boolean)
       .join(' ')
@@ -21009,6 +21068,8 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
   const rightError = truncateOpsReportError(right.error, 200);
   const leftProviderRoutes = buildPostDeployProviderRouteSummary(left.provider_routes, left.provider_route_checks, { compact: true, title: 'Provider route' });
   const rightProviderRoutes = buildPostDeployProviderRouteSummary(right.provider_routes, right.provider_route_checks, { compact: true, title: 'Provider route' });
+  const leftSmokeFailure = buildPostDeploySmokeFailureSummary(left, { compact: true, title: 'Smoke failure' });
+  const rightSmokeFailure = buildPostDeploySmokeFailureSummary(right, { compact: true, title: 'Smoke failure' });
   const leftChecks = buildOpsPostDeployCheckMap(left);
   const rightChecks = buildOpsPostDeployCheckMap(right);
   const providerRouteDiffRows = buildOpsPostDeployProviderRouteDiffRows(left, right);
@@ -21051,6 +21112,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           <div style="margin-top:.3rem;color:#cbd5e1;font-size:.72rem;">${escapeHtml(left.base_url || '-')}</div>
           ${leftError ? `<div style="margin-top:.3rem;color:#fecaca;font-size:.72rem;">${escapeHtml(leftError)}</div>` : ''}
           ${leftProviderRoutes}
+          ${leftSmokeFailure}
         </div>
         <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:.65rem .75rem;">
           <div style="display:flex;align-items:center;gap:.4rem;">
@@ -21066,6 +21128,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           <div style="margin-top:.3rem;color:#cbd5e1;font-size:.72rem;">${escapeHtml(right.base_url || '-')}</div>
           ${rightError ? `<div style="margin-top:.3rem;color:#fecaca;font-size:.72rem;">${escapeHtml(rightError)}</div>` : ''}
           ${rightProviderRoutes}
+          ${rightSmokeFailure}
         </div>
       </div>
       <div>
@@ -21234,6 +21297,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
     details.provider_route_checks,
     { title: 'Provider route' }
   );
+  const smokeFailureSummary = buildPostDeploySmokeFailureSummary(details, { title: 'Smoke failure' });
   const detailError = details.error
     ? `<div style="margin-top:.65rem;color:#fecaca;font-size:.78rem;line-height:1.5;">${escapeHtml(details.error)}</div>`
     : '';
@@ -21255,6 +21319,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
         </div>
         ${detailError}
         ${providerRouteSummary}
+        ${smokeFailureSummary}
       </div>
       <div style="display:inline-flex;align-items:center;padding:.22rem .55rem;border-radius:999px;background:${details.skip_smoke ? 'rgba(251,191,36,.16)' : 'rgba(134,239,172,.14)'};color:${details.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:800;">
         ${details.skip_smoke ? 'skip smoke' : 'smoke 포함'}
@@ -21331,6 +21396,10 @@ function renderOpsPostDeployReports(data) {
     latest?.provider_route_checks || allReports[0]?.provider_route_checks,
     { title: 'Provider route' }
   );
+  const latestSmokeFailureSummary = buildPostDeploySmokeFailureSummary(
+    latest || allReports[0] || null,
+    { title: 'Smoke failure' }
+  );
   const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
   const compareState = getOpsPostDeployCompareState(data, allReports);
   const compareOptions = allReports
@@ -21356,6 +21425,7 @@ function renderOpsPostDeployReports(data) {
         </div>
         ${latestError}
         ${latestProviderRouteSummary}
+        ${latestSmokeFailureSummary}
       </div>
       <div style="min-width:180px;background:rgba(255,255,255,.06);border:1px solid rgba(196,181,253,.15);border-radius:12px;padding:.8rem .95rem;">
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;">최근 점검 범위</div>
@@ -21387,6 +21457,10 @@ function renderOpsPostDeployReports(data) {
           report.provider_route_checks,
           { compact: true, title: 'Provider route' }
         );
+        const smokeFailureSummary = buildPostDeploySmokeFailureSummary(
+          report,
+          { compact: true, title: 'Smoke failure' }
+        );
         return `
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">
             <div>
@@ -21401,6 +21475,7 @@ function renderOpsPostDeployReports(data) {
               </div>
               ${errorSnippet ? `<div style="margin-top:.35rem;color:#fca5a5;font-size:.76rem;">오류: ${escapeHtml(errorSnippet)}</div>` : ''}
               ${providerRouteSummary}
+              ${smokeFailureSummary}
             </div>
             <div style="display:grid;justify-items:end;gap:.45rem;">
               <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">

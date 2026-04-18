@@ -238,6 +238,32 @@ def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list):
+        return {}
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if str(check.get("name", "")).strip() != "deployed smoke":
+            continue
+        summary: dict[str, Any] = {}
+        smoke_response_code = str(check.get("smoke_response_code", "")).strip()
+        if smoke_response_code:
+            summary["smoke_response_code"] = smoke_response_code
+        provider_error_code = str(check.get("provider_error_code", "")).strip()
+        if provider_error_code:
+            summary["provider_error_code"] = provider_error_code
+        smoke_message = str(check.get("smoke_message", "")).strip()
+        if smoke_message:
+            summary["smoke_message"] = smoke_message
+        retry_after_seconds = check.get("retry_after_seconds")
+        if isinstance(retry_after_seconds, int):
+            summary["retry_after_seconds"] = retry_after_seconds
+        return summary
+    return {}
+
+
 def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "file": report_file.name,
@@ -251,6 +277,7 @@ def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[st
     if error:
         entry["error"] = error
     entry.update(_extract_provider_route_summary(payload))
+    entry.update(_extract_smoke_failure_summary(payload))
     return entry
 
 

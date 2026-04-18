@@ -434,6 +434,58 @@ def test_post_deploy_check_captures_deployed_smoke_failure_details(tmp_path: Pat
     assert smoke_check["failure_line"].startswith("POST /generate (auth) expected 200, got 503")
     assert smoke_check["stdout"] == "GET /health -> 200 request_id=req-1\n"
     assert "provider_error_code=insufficient_quota" in smoke_check["stderr"]
+    assert payload["checks"][-1]["smoke_response_code"] == "PROVIDER_FAILED"
+
+
+def test_post_deploy_check_indexes_smoke_failure_summary(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_script_module("decisiondoc_post_deploy_check_smoke_index", "scripts/post_deploy_check.py")
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    compose_file = tmp_path / "docker-compose.prod.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    report_dir = tmp_path / "reports" / "post-deploy"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        _ = url, timeout
+        return _FakeResponse(_health_payload())
+
+    def _fake_run(command, cwd=None, check=False, **kwargs):
+        _ = cwd, check, kwargs
+        command_list = list(command)
+        if command_list[:2] == [checker.sys.executable, "scripts/run_deployed_smoke.py"] and "--preflight" not in command_list:
+            return SimpleNamespace(
+                returncode=1,
+                stdout="GET /health -> 200 request_id=req-1\n",
+                stderr=(
+                    "POST /generate (auth) expected 200, got 503 "
+                    "(code=PROVIDER_FAILED; message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.; "
+                    "provider_error_code=insufficient_quota)\n"
+                ),
+            )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(checker.subprocess, "run", _fake_run)
+
+    try:
+        checker.main(
+            [
+                "--env-file",
+                str(env_file),
+                "--compose-file",
+                str(compose_file),
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("Expected failing deployed smoke")
+
+    index_payload = json.loads((report_dir / "index.json").read_text(encoding="utf-8"))
+    assert index_payload["reports"][0]["smoke_response_code"] == "PROVIDER_FAILED"
+    assert index_payload["reports"][0]["provider_error_code"] == "insufficient_quota"
 
 
 def test_post_deploy_check_rejects_report_file_and_report_dir_together(tmp_path: Path) -> None:

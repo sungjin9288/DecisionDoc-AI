@@ -47,6 +47,8 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
                             "attachment": "gemini,claude,openai",
                             "visual": "openai,claude,gemini",
                         },
+                        "smoke_response_code": "PROVIDER_FAILED",
+                        "provider_error_code": "insufficient_quota",
                     },
                     {
                         "file": "post-deploy-20260414T031000Z.json",
@@ -71,6 +73,7 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
     assert "Recent reports (limit=1)" in captured
     assert "post-deploy-20260414T041000Z.json" in captured
     assert "provider_routes: generation=claude,gemini,openai" in captured
+    assert "smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota" in captured
     assert "post-deploy-20260414T031000Z.json" not in captured
 
 
@@ -86,7 +89,7 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                 "started_at": "2026-04-14T04:09:00+00:00",
                 "finished_at": "2026-04-14T04:10:00+00:00",
                 "skip_smoke": False,
-                "error": "docker compose ps failed with exit code 17",
+                "error": "deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)",
                 "checks": [
                     {"name": "health", "status": "passed"},
                     {
@@ -105,7 +108,14 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                             "visual": "degraded",
                         },
                     },
-                    {"name": "docker compose ps", "status": "failed", "exit_code": 17},
+                    {
+                        "name": "deployed smoke",
+                        "status": "failed",
+                        "exit_code": 1,
+                        "smoke_response_code": "PROVIDER_FAILED",
+                        "provider_error_code": "insufficient_quota",
+                        "smoke_message": "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.",
+                    },
                 ],
             }
         ),
@@ -125,6 +135,8 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                         "started_at": "2026-04-14T04:09:00+00:00",
                         "finished_at": "2026-04-14T04:10:00+00:00",
                         "skip_smoke": False,
+                        "smoke_response_code": "PROVIDER_FAILED",
+                        "provider_error_code": "insufficient_quota",
                     }
                 ],
             }
@@ -137,11 +149,12 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
     captured = capsys.readouterr().out
     assert result == 0
     assert "Latest report details" in captured
-    assert "- error=docker compose ps failed with exit code 17" in captured
+    assert "- error=deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)" in captured
     assert "- provider_routes=default:claude,gemini,openai generation:claude,gemini,openai attachment:gemini,claude,openai visual:openai,claude,gemini" in captured
     assert "- provider_route_checks=default:ok generation:ok attachment:ok visual:degraded" in captured
+    assert "- smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota | message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요." in captured
     assert "- [passed] health" in captured
-    assert "- [failed] docker compose ps exit_code=17" in captured
+    assert "- [failed] deployed smoke exit_code=1" in captured
 
 
 def test_show_post_deploy_reports_prints_json_summary(tmp_path: Path, capsys) -> None:
@@ -199,7 +212,7 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
         "started_at": "2026-04-14T04:09:00+00:00",
         "finished_at": "2026-04-14T04:10:00+00:00",
         "skip_smoke": False,
-        "error": "docker compose ps failed with exit code 17",
+        "error": "deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)",
         "checks": [
             {"name": "health", "status": "passed"},
             {
@@ -218,7 +231,13 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
                     "visual": "ok",
                 },
             },
-            {"name": "docker compose ps", "status": "failed", "exit_code": 17},
+            {
+                "name": "deployed smoke",
+                "status": "failed",
+                "exit_code": 1,
+                "smoke_response_code": "PROVIDER_FAILED",
+                "provider_error_code": "insufficient_quota",
+            },
         ],
     }
     (report_dir / "latest.json").write_text(json.dumps(latest_payload), encoding="utf-8")
@@ -236,6 +255,8 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
                         "started_at": "2026-04-14T04:09:00+00:00",
                         "finished_at": "2026-04-14T04:10:00+00:00",
                         "skip_smoke": False,
+                        "smoke_response_code": "PROVIDER_FAILED",
+                        "provider_error_code": "insufficient_quota",
                     }
                 ],
             }
@@ -248,10 +269,11 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     payload = json.loads(capsys.readouterr().out)
     assert result == 0
     assert payload["latest_details"]["status"] == "failed"
-    assert payload["latest_details"]["error"] == "docker compose ps failed with exit code 17"
+    assert payload["latest_details"]["error"] == "deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)"
     assert payload["latest_details"]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert payload["latest_details"]["provider_route_checks"]["visual"] == "ok"
-    assert payload["latest_details"]["checks"][2]["exit_code"] == 17
+    assert payload["latest_details"]["provider_error_code"] == "insufficient_quota"
+    assert payload["latest_details"]["checks"][2]["exit_code"] == 1
 
 
 def test_show_post_deploy_reports_loads_without_app_ops_package_import(tmp_path: Path, capsys, monkeypatch) -> None:

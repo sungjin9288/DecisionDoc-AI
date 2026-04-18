@@ -803,12 +803,23 @@ class PostDeployReportSummary(BaseModel):
     error: str | None = None
     provider_routes: dict[str, str] | None = None
     provider_route_checks: dict[str, str] | None = None
+    smoke_response_code: str | None = None
+    provider_error_code: str | None = None
+    smoke_message: str | None = None
+    retry_after_seconds: int | None = None
 
 
 class PostDeployReportCheck(BaseModel):
     name: str
     status: str
     exit_code: int | None = None
+    smoke_response_code: str | None = None
+    provider_error_code: str | None = None
+    smoke_message: str | None = None
+    retry_after_seconds: int | None = None
+    failure_line: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
 
 
 class PostDeployLatestDetailsResponse(BaseModel):
@@ -821,6 +832,10 @@ class PostDeployLatestDetailsResponse(BaseModel):
     checks: list[PostDeployReportCheck] = Field(default_factory=list)
     provider_routes: dict[str, str] | None = None
     provider_route_checks: dict[str, str] | None = None
+    smoke_response_code: str | None = None
+    provider_error_code: str | None = None
+    smoke_message: str | None = None
+    retry_after_seconds: int | None = None
 
 
 class OpsPostDeployReportsResponse(BaseModel):

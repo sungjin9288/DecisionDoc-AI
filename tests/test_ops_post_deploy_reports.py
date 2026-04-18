@@ -28,11 +28,12 @@ def _create_client(tmp_path: Path, monkeypatch, *, report_dir: Path) -> TestClie
 def _write_report_history(report_dir: Path) -> None:
     report_dir.mkdir(parents=True, exist_ok=True)
     latest_payload = {
-        "status": "passed",
+        "status": "failed",
         "base_url": "https://admin.decisiondoc.kr",
         "started_at": "2026-04-14T04:09:00+00:00",
         "finished_at": "2026-04-14T04:10:00+00:00",
         "skip_smoke": False,
+        "error": "deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)",
         "checks": [
             {"name": "health", "status": "passed"},
             {
@@ -51,7 +52,14 @@ def _write_report_history(report_dir: Path) -> None:
                     "visual": "degraded",
                 },
             },
-            {"name": "smoke", "status": "passed", "exit_code": 0},
+            {
+                "name": "deployed smoke",
+                "status": "failed",
+                "exit_code": 1,
+                "smoke_response_code": "PROVIDER_FAILED",
+                "provider_error_code": "insufficient_quota",
+                "smoke_message": "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.",
+            },
         ],
     }
     previous_payload = {
@@ -90,6 +98,8 @@ def _write_report_history(report_dir: Path) -> None:
                     "attachment": "ok",
                     "visual": "degraded",
                 },
+                "smoke_response_code": "PROVIDER_FAILED",
+                "provider_error_code": "insufficient_quota",
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -135,6 +145,7 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert len(body["reports"]) == 1
     assert body["reports"][0]["file"] == "post-deploy-20260414T041000Z.json"
     assert body["reports"][0]["provider_routes"]["generation"] == "claude,gemini,openai"
+    assert body["reports"][0]["provider_error_code"] == "insufficient_quota"
     assert body["latest_details"] is None
 
 
@@ -151,10 +162,11 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
 
     assert response.status_code == 200
     body = response.json()
-    assert body["latest_details"]["status"] == "passed"
+    assert body["latest_details"]["status"] == "failed"
     assert body["latest_details"]["provider_route_checks"]["visual"] == "degraded"
-    assert body["latest_details"]["checks"][2]["name"] == "smoke"
-    assert body["latest_details"]["checks"][2]["exit_code"] == 0
+    assert body["latest_details"]["provider_error_code"] == "insufficient_quota"
+    assert body["latest_details"]["checks"][2]["name"] == "deployed smoke"
+    assert body["latest_details"]["checks"][2]["exit_code"] == 1
 
 
 def test_ops_post_deploy_reports_returns_404_when_missing(tmp_path: Path, monkeypatch) -> None:
