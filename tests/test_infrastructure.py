@@ -198,9 +198,18 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "ops-post-deploy-smoke-failure-badge" in res.text
     assert "ops-post-deploy-provider-route-status" in res.text
     assert "ops-post-deploy-provider-route-diff-row" in res.text
+    assert "ops-post-deploy-provider-policy" in res.text
+    assert "ops-post-deploy-provider-policy-status" in res.text
+    assert "ops-post-deploy-provider-policy-issues" in res.text
+    assert "ops-post-deploy-provider-policy-diff-row" in res.text
     assert "Provider route" in res.text
     assert "Provider route 차이" in res.text
+    assert "Quality-first readiness" in res.text
+    assert "Quality-first 차이" in res.text
     assert "Smoke failure" in res.text
+    assert "buildPostDeployProviderPolicySummary" in res.text
+    assert "buildOpsPostDeployProviderPolicyDiffRows" in res.text
+    assert "getPostDeployPolicyCheckMeta" in res.text
     assert "knowledge-promote-docs-btn" in res.text
     assert "openPromotedKnowledgeDocsModal" in res.text
     assert "학습 문서 보기" in res.text
