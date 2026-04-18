@@ -47,6 +47,9 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
                             "attachment": "gemini,claude,openai",
                             "visual": "openai,claude,gemini",
                         },
+                        "provider_policy_checks": {
+                            "quality_first": "degraded",
+                        },
                         "smoke_response_code": "PROVIDER_FAILED",
                         "provider_error_code": "insufficient_quota",
                     },
@@ -73,6 +76,7 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
     assert "Recent reports (limit=1)" in captured
     assert "post-deploy-20260414T041000Z.json" in captured
     assert "provider_routes: generation=claude,gemini,openai" in captured
+    assert "provider_policy: quality_first=degraded" in captured
     assert "smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota" in captured
     assert "post-deploy-20260414T031000Z.json" not in captured
 
@@ -106,6 +110,14 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                             "generation": "ok",
                             "attachment": "ok",
                             "visual": "degraded",
+                        },
+                        "provider_policy_checks": {
+                            "quality_first": "degraded",
+                        },
+                        "provider_policy_issues": {
+                            "quality_first": [
+                                "visual route must be exactly openai because direct visual asset generation is only implemented for OpenAI in this deployment"
+                            ],
                         },
                     },
                     {
@@ -152,6 +164,8 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
     assert "- error=deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)" in captured
     assert "- provider_routes=default:claude,gemini,openai generation:claude,gemini,openai attachment:gemini,claude,openai visual:openai,claude,gemini" in captured
     assert "- provider_route_checks=default:ok generation:ok attachment:ok visual:degraded" in captured
+    assert "- provider_policy_checks=quality_first:degraded" in captured
+    assert "- provider_policy_issues=quality_first:visual route must be exactly openai" in captured
     assert "- smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota | message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요." in captured
     assert "- [passed] health" in captured
     assert "- [failed] deployed smoke exit_code=1" in captured
@@ -230,6 +244,12 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
                     "attachment": "ok",
                     "visual": "ok",
                 },
+                "provider_policy_checks": {
+                    "quality_first": "ok",
+                },
+                "provider_policy_issues": {
+                    "quality_first": [],
+                },
             },
             {
                 "name": "deployed smoke",
@@ -272,6 +292,8 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     assert payload["latest_details"]["error"] == "deployed smoke failed with exit code 1 (smoke_response_code=PROVIDER_FAILED; provider_error_code=insufficient_quota)"
     assert payload["latest_details"]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert payload["latest_details"]["provider_route_checks"]["visual"] == "ok"
+    assert payload["latest_details"]["provider_policy_checks"]["quality_first"] == "ok"
+    assert payload["latest_details"]["provider_policy_issues"]["quality_first"] == []
     assert payload["latest_details"]["provider_error_code"] == "insufficient_quota"
     assert payload["latest_details"]["checks"][2]["exit_code"] == 1
 

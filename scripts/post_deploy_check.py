@@ -22,7 +22,9 @@ DEFAULT_REPORT_DIR = REPO_ROOT / "reports" / "post-deploy"
 DEFAULT_REPORT_INDEX_LIMIT = 20
 REQUIRED_PROVIDER_ROUTE_KEYS = ("default", "generation", "attachment", "visual")
 REQUIRED_PROVIDER_CHECK_KEYS = ("provider", "provider_generation", "provider_attachment", "provider_visual")
+REQUIRED_PROVIDER_POLICY_KEYS = ("quality_first",)
 ALLOWED_PROVIDER_ROUTE_STATUSES = {"ok", "degraded"}
+ALLOWED_PROVIDER_POLICY_STATUSES = {"ok", "degraded"}
 MAX_CAPTURED_OUTPUT_CHARS = 4000
 
 
@@ -241,6 +243,20 @@ def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
                 for key, value in provider_route_checks.items()
                 if str(key).strip() and str(value).strip()
             }
+        provider_policy_checks = check.get("provider_policy_checks")
+        provider_policy_issues = check.get("provider_policy_issues")
+        if isinstance(provider_policy_checks, dict):
+            summary["provider_policy_checks"] = {
+                key: str(value)
+                for key, value in provider_policy_checks.items()
+                if str(key).strip() and str(value).strip()
+            }
+        if isinstance(provider_policy_issues, dict):
+            summary["provider_policy_issues"] = {
+                key: [str(item) for item in value if str(item).strip()]
+                for key, value in provider_policy_issues.items()
+                if str(key).strip() and isinstance(value, list)
+            }
         return summary
     return {}
 
@@ -396,10 +412,53 @@ def _validate_health_provider_routing(payload: dict[str, Any]) -> dict[str, Any]
     if invalid_checks:
         raise SystemExit(f"Health check has invalid provider check values: {invalid_checks}")
 
+    provider_policy_checks = payload.get("provider_policy_checks")
+    if not isinstance(provider_policy_checks, dict):
+        raise SystemExit("Health check missing provider_policy_checks metadata.")
+    missing_policy_checks = [key for key in REQUIRED_PROVIDER_POLICY_KEYS if key not in provider_policy_checks]
+    if missing_policy_checks:
+        raise SystemExit(
+            f"Health check missing provider_policy_checks keys: {', '.join(missing_policy_checks)}"
+        )
+    invalid_policy_checks = {
+        key: provider_policy_checks.get(key)
+        for key in REQUIRED_PROVIDER_POLICY_KEYS
+        if provider_policy_checks.get(key) not in ALLOWED_PROVIDER_POLICY_STATUSES
+    }
+    if invalid_policy_checks:
+        raise SystemExit(f"Health check has invalid provider_policy_checks values: {invalid_policy_checks}")
+
+    provider_policy_issues = payload.get("provider_policy_issues")
+    if not isinstance(provider_policy_issues, dict):
+        raise SystemExit("Health check missing provider_policy_issues metadata.")
+    missing_policy_issue_keys = [key for key in REQUIRED_PROVIDER_POLICY_KEYS if key not in provider_policy_issues]
+    if missing_policy_issue_keys:
+        raise SystemExit(
+            f"Health check missing provider_policy_issues keys: {', '.join(missing_policy_issue_keys)}"
+        )
+    invalid_policy_issues = {
+        key: value
+        for key, value in provider_policy_issues.items()
+        if key in REQUIRED_PROVIDER_POLICY_KEYS
+        and not (
+            isinstance(value, list)
+            and all(isinstance(item, str) for item in value)
+        )
+    }
+    if invalid_policy_issues:
+        raise SystemExit(f"Health check has invalid provider_policy_issues values: {invalid_policy_issues}")
+
     return {
         "provider_routes": {key: str(provider_routes[key]) for key in REQUIRED_PROVIDER_ROUTE_KEYS},
         "provider_route_checks": {key: str(provider_route_checks[key]) for key in REQUIRED_PROVIDER_ROUTE_KEYS},
         "checks": {key: str(checks[key]) for key in REQUIRED_PROVIDER_CHECK_KEYS},
+        "provider_policy_checks": {
+            key: str(provider_policy_checks[key]) for key in REQUIRED_PROVIDER_POLICY_KEYS
+        },
+        "provider_policy_issues": {
+            key: [str(item) for item in provider_policy_issues[key]]
+            for key in REQUIRED_PROVIDER_POLICY_KEYS
+        },
     }
 
 
@@ -473,7 +532,8 @@ def run_post_deploy_check(
             "PASS health provider routing -> "
             f"generation={provider_routing['provider_routes']['generation']} "
             f"attachment={provider_routing['provider_routes']['attachment']} "
-            f"visual={provider_routing['provider_routes']['visual']}",
+            f"visual={provider_routing['provider_routes']['visual']} "
+            f"quality_first={provider_routing['provider_policy_checks']['quality_first']}",
             flush=True,
         )
 

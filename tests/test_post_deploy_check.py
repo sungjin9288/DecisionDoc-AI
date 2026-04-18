@@ -45,6 +45,8 @@ def _health_payload(
     attachment_route_status: str = "ok",
     visual_route_status: str = "ok",
     provider_check_status: str = "ok",
+    quality_first_status: str = "degraded",
+    quality_first_issues: list[str] | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -67,6 +69,14 @@ def _health_payload(
                 "generation": generation_route_status,
                 "attachment": attachment_route_status,
                 "visual": visual_route_status,
+            },
+            "provider_policy_checks": {
+                "quality_first": quality_first_status,
+            },
+            "provider_policy_issues": {
+                "quality_first": quality_first_issues
+                if quality_first_issues is not None
+                else ["default route must include claude, gemini, openai for quality-first readiness"],
             },
         }
     )
@@ -252,6 +262,8 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
     assert index_payload["reports"][0]["provider_route_checks"]["visual"] == "ok"
+    assert index_payload["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
+    assert index_payload["reports"][0]["provider_policy_issues"]["quality_first"][0].startswith("default route must include")
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name

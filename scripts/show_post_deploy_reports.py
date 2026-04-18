@@ -64,12 +64,19 @@ def _print_entry(entry: dict[str, Any]) -> None:
     skip_smoke = "yes" if entry.get("skip_smoke") else "no"
     print(f"- [{status}] {finished_at}  file={file_name}  base_url={base_url}  skip_smoke={skip_smoke}", flush=True)
     provider_routes = entry.get("provider_routes")
+    provider_policy_checks = entry.get("provider_policy_checks")
     if isinstance(provider_routes, dict) and provider_routes:
         print(
             "  provider_routes: "
             f"generation={provider_routes.get('generation', '-')} "
             f"attachment={provider_routes.get('attachment', '-')} "
             f"visual={provider_routes.get('visual', '-')}",
+            flush=True,
+        )
+    if isinstance(provider_policy_checks, dict) and provider_policy_checks:
+        print(
+            "  provider_policy: "
+            f"quality_first={provider_policy_checks.get('quality_first', '-')}",
             flush=True,
         )
     smoke_failure = _format_smoke_failure_summary(entry)
@@ -96,6 +103,8 @@ def _print_latest_details(report_dir: Path) -> None:
         print(f"- error={payload['error']}", flush=True)
     provider_routes = payload.get("provider_routes")
     provider_route_checks = payload.get("provider_route_checks")
+    provider_policy_checks = payload.get("provider_policy_checks")
+    provider_policy_issues = payload.get("provider_policy_issues")
     if isinstance(provider_routes, dict) and provider_routes:
         print(
             "- provider_routes="
@@ -114,6 +123,17 @@ def _print_latest_details(report_dir: Path) -> None:
             f"visual:{provider_route_checks.get('visual', '-')}",
             flush=True,
         )
+    if isinstance(provider_policy_checks, dict) and provider_policy_checks:
+        print(
+            "- provider_policy_checks="
+            f"quality_first:{provider_policy_checks.get('quality_first', '-')}",
+            flush=True,
+        )
+    if isinstance(provider_policy_issues, dict) and provider_policy_issues.get("quality_first"):
+        issues = provider_policy_issues.get("quality_first") or []
+        issue_text = " | ".join(str(item) for item in issues if str(item).strip())
+        if issue_text:
+            print(f"- provider_policy_issues=quality_first:{issue_text}", flush=True)
     smoke_failure = _format_smoke_failure_summary(payload)
     if smoke_failure:
         print(smoke_failure.replace("  ", "- ", 1), flush=True)

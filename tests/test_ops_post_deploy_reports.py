@@ -51,6 +51,14 @@ def _write_report_history(report_dir: Path) -> None:
                     "attachment": "ok",
                     "visual": "degraded",
                 },
+                "provider_policy_checks": {
+                    "quality_first": "degraded",
+                },
+                "provider_policy_issues": {
+                    "quality_first": [
+                        "visual route must be exactly openai because direct visual asset generation is only implemented for OpenAI in this deployment"
+                    ],
+                },
             },
             {
                 "name": "deployed smoke",
@@ -97,6 +105,14 @@ def _write_report_history(report_dir: Path) -> None:
                     "generation": "ok",
                     "attachment": "ok",
                     "visual": "degraded",
+                },
+                "provider_policy_checks": {
+                    "quality_first": "degraded",
+                },
+                "provider_policy_issues": {
+                    "quality_first": [
+                        "visual route must be exactly openai because direct visual asset generation is only implemented for OpenAI in this deployment"
+                    ],
                 },
                 "smoke_response_code": "PROVIDER_FAILED",
                 "provider_error_code": "insufficient_quota",
@@ -145,6 +161,7 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert len(body["reports"]) == 1
     assert body["reports"][0]["file"] == "post-deploy-20260414T041000Z.json"
     assert body["reports"][0]["provider_routes"]["generation"] == "claude,gemini,openai"
+    assert body["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
     assert body["reports"][0]["provider_error_code"] == "insufficient_quota"
     assert body["latest_details"] is None
 
@@ -164,6 +181,8 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
     body = response.json()
     assert body["latest_details"]["status"] == "failed"
     assert body["latest_details"]["provider_route_checks"]["visual"] == "degraded"
+    assert body["latest_details"]["provider_policy_checks"]["quality_first"] == "degraded"
+    assert body["latest_details"]["provider_policy_issues"]["quality_first"][0].startswith("visual route must be exactly openai")
     assert body["latest_details"]["provider_error_code"] == "insufficient_quota"
     assert body["latest_details"]["checks"][2]["name"] == "deployed smoke"
     assert body["latest_details"]["checks"][2]["exit_code"] == 1

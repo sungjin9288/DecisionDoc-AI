@@ -805,6 +805,8 @@ class PostDeployReportSummary(BaseModel):
     error: str | None = None
     provider_routes: dict[str, str] | None = None
     provider_route_checks: dict[str, str] | None = None
+    provider_policy_checks: dict[str, str] | None = None
+    provider_policy_issues: dict[str, list[str]] | None = None
     smoke_response_code: str | None = None
     provider_error_code: str | None = None
     smoke_message: str | None = None
@@ -836,6 +838,8 @@ class PostDeployLatestDetailsResponse(BaseModel):
     checks: list[PostDeployReportCheck] = Field(default_factory=list)
     provider_routes: dict[str, str] | None = None
     provider_route_checks: dict[str, str] | None = None
+    provider_policy_checks: dict[str, str] | None = None
+    provider_policy_issues: dict[str, list[str]] | None = None
     smoke_response_code: str | None = None
     provider_error_code: str | None = None
     smoke_message: str | None = None

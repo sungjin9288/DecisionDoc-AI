@@ -78,6 +78,8 @@ def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
         summary: dict[str, Any] = {}
         provider_routes = check.get("provider_routes")
         provider_route_checks = check.get("provider_route_checks")
+        provider_policy_checks = check.get("provider_policy_checks")
+        provider_policy_issues = check.get("provider_policy_issues")
         if isinstance(provider_routes, dict):
             summary["provider_routes"] = {
                 key: str(value)
@@ -89,6 +91,18 @@ def _extract_provider_route_summary(payload: dict[str, Any]) -> dict[str, Any]:
                 key: str(value)
                 for key, value in provider_route_checks.items()
                 if str(key).strip() and str(value).strip()
+            }
+        if isinstance(provider_policy_checks, dict):
+            summary["provider_policy_checks"] = {
+                key: str(value)
+                for key, value in provider_policy_checks.items()
+                if str(key).strip() and str(value).strip()
+            }
+        if isinstance(provider_policy_issues, dict):
+            summary["provider_policy_issues"] = {
+                key: [str(item) for item in value if str(item).strip()]
+                for key, value in provider_policy_issues.items()
+                if str(key).strip() and isinstance(value, list)
             }
         return summary
     return {}
