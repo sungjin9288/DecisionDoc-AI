@@ -11,12 +11,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 SUPPORTED_PROVIDERS = {"openai", "gemini", "claude", "local", "mock"}
 SUPPORTED_STORAGES = {"local", "s3"}
+SUPPORTED_PROVIDER_PROFILES = {"standard", "quality-first"}
 PROVIDER_ENV_KEYS = (
     "DECISIONDOC_PROVIDER",
     "DECISIONDOC_PROVIDER_GENERATION",
     "DECISIONDOC_PROVIDER_ATTACHMENT",
     "DECISIONDOC_PROVIDER_VISUAL",
 )
+CAPABILITY_PROVIDER_ENV = {
+    "generation": "DECISIONDOC_PROVIDER_GENERATION",
+    "attachment": "DECISIONDOC_PROVIDER_ATTACHMENT",
+    "visual": "DECISIONDOC_PROVIDER_VISUAL",
+}
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
@@ -82,18 +88,41 @@ def _validate_required(env: dict[str, str], errors: list[str]) -> None:
             errors.append(f"{key} is missing or still uses a placeholder value")
 
 
-def _validate_provider(env: dict[str, str], errors: list[str], warnings: list[str]) -> list[str]:
+def _resolve_provider_routes(
+    env: dict[str, str],
+) -> tuple[list[str], dict[str, list[str]], dict[str, bool]]:
     base_providers = _split_csv(env.get("DECISIONDOC_PROVIDER", ""))
+    routes: dict[str, list[str]] = {"default": list(base_providers)}
+    explicit_routes: dict[str, bool] = {}
+    for capability, env_key in CAPABILITY_PROVIDER_ENV.items():
+        raw = env.get(env_key, "").strip()
+        explicit_routes[capability] = bool(raw)
+        routes[capability] = _split_csv(raw) if raw else list(base_providers)
+    return base_providers, routes, explicit_routes
+
+
+def _validate_provider(
+    env: dict[str, str],
+    errors: list[str],
+    warnings: list[str],
+) -> tuple[list[str], dict[str, list[str]], dict[str, bool]]:
+    base_providers, routes, explicit_routes = _resolve_provider_routes(env)
     if not base_providers:
         errors.append("DECISIONDOC_PROVIDER is required")
-        return []
+        return base_providers, routes, explicit_routes
     if env.get("DECISIONDOC_ENV", "").strip() != "prod":
         errors.append("DECISIONDOC_ENV must be prod for production deployment")
 
     all_providers: set[str] = set()
     for env_key in PROVIDER_ENV_KEYS:
-        raw = env.get(env_key, "").strip()
-        providers = _split_csv(raw) if raw else (base_providers if env_key == "DECISIONDOC_PROVIDER" else [])
+        if env_key == "DECISIONDOC_PROVIDER":
+            providers = list(base_providers)
+        else:
+            capability = next(
+                (name for name, configured_env_key in CAPABILITY_PROVIDER_ENV.items() if configured_env_key == env_key),
+                "",
+            )
+            providers = list(routes.get(capability, []))
         unknown = [provider for provider in providers if provider not in SUPPORTED_PROVIDERS]
         if unknown:
             errors.append(f"Unsupported {env_key} value(s): {', '.join(unknown)}")
@@ -115,7 +144,63 @@ def _validate_provider(env: dict[str, str], errors: list[str], warnings: list[st
         claude_key = env.get("ANTHROPIC_API_KEY", "").strip()
         if _is_placeholder(claude_key):
             errors.append("ANTHROPIC_API_KEY is missing or still uses a placeholder value")
-    return list(all_providers)
+    return base_providers, routes, explicit_routes
+
+
+def _validate_quality_first_provider_profile(
+    env: dict[str, str],
+    *,
+    base_providers: list[str],
+    routes: dict[str, list[str]],
+    explicit_routes: dict[str, bool],
+    errors: list[str],
+) -> None:
+    expected_default = {"claude", "gemini", "openai"}
+    missing_default = expected_default - set(base_providers)
+    if missing_default:
+        errors.append(
+            "DECISIONDOC_PROVIDER must include claude, gemini, openai when --provider-profile=quality-first"
+        )
+    if base_providers and base_providers[0] not in {"claude", "gemini"}:
+        errors.append(
+            "DECISIONDOC_PROVIDER must prioritize claude or gemini ahead of openai when --provider-profile=quality-first"
+        )
+    if any(provider in {"mock", "local"} for provider in base_providers):
+        errors.append("DECISIONDOC_PROVIDER cannot include mock/local when --provider-profile=quality-first")
+
+    for capability, env_key in CAPABILITY_PROVIDER_ENV.items():
+        if not explicit_routes.get(capability):
+            errors.append(f"{env_key} must be explicitly set when --provider-profile=quality-first")
+
+    generation_route = routes.get("generation", [])
+    if {"claude", "gemini"} - set(generation_route):
+        errors.append(
+            "DECISIONDOC_PROVIDER_GENERATION must include both claude and gemini when --provider-profile=quality-first"
+        )
+    if generation_route and generation_route[0] not in {"claude", "gemini"}:
+        errors.append(
+            "DECISIONDOC_PROVIDER_GENERATION must prioritize claude or gemini first when --provider-profile=quality-first"
+        )
+    if any(provider in {"mock", "local"} for provider in generation_route):
+        errors.append("DECISIONDOC_PROVIDER_GENERATION cannot include mock/local when --provider-profile=quality-first")
+
+    attachment_route = routes.get("attachment", [])
+    if {"claude", "gemini"} - set(attachment_route):
+        errors.append(
+            "DECISIONDOC_PROVIDER_ATTACHMENT must include both claude and gemini when --provider-profile=quality-first"
+        )
+    if attachment_route and attachment_route[0] not in {"gemini", "claude"}:
+        errors.append(
+            "DECISIONDOC_PROVIDER_ATTACHMENT must prioritize gemini or claude first when --provider-profile=quality-first"
+        )
+    if any(provider in {"mock", "local"} for provider in attachment_route):
+        errors.append("DECISIONDOC_PROVIDER_ATTACHMENT cannot include mock/local when --provider-profile=quality-first")
+
+    visual_route = routes.get("visual", [])
+    if visual_route != ["openai"]:
+        errors.append(
+            "DECISIONDOC_PROVIDER_VISUAL must be exactly openai when --provider-profile=quality-first because direct visual asset generation is only implemented for OpenAI in this deployment"
+        )
 
 
 def _validate_storage(env: dict[str, str], errors: list[str]) -> None:
@@ -170,11 +255,24 @@ def _validate_origins(env: dict[str, str], expected_origin: str, errors: list[st
             warnings.append(f"ALLOWED_ORIGINS contains a non-HTTPS origin: {origin}")
 
 
-def validate_prod_env(env: dict[str, str], *, expected_origin: str = "") -> tuple[list[str], list[str]]:
+def validate_prod_env(
+    env: dict[str, str],
+    *,
+    expected_origin: str = "",
+    provider_profile: str = "standard",
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     _validate_required(env, errors)
-    _validate_provider(env, errors, warnings)
+    base_providers, routes, explicit_routes = _validate_provider(env, errors, warnings)
+    if provider_profile == "quality-first":
+        _validate_quality_first_provider_profile(
+            env,
+            base_providers=base_providers,
+            routes=routes,
+            explicit_routes=explicit_routes,
+            errors=errors,
+        )
     _validate_storage(env, errors)
     _validate_keys(env, errors, warnings)
     _validate_origins(env, expected_origin.strip(), errors, warnings)
@@ -195,6 +293,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="Require ALLOWED_ORIGINS to include this origin",
     )
+    parser.add_argument(
+        "--provider-profile",
+        choices=sorted(SUPPORTED_PROVIDER_PROFILES),
+        default="standard",
+        help="Provider routing policy to enforce. Use quality-first to require explicit multi-provider generation/attachment routes and an openai visual route.",
+    )
     return parser
 
 
@@ -202,9 +306,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
     env_file = Path(args.env_file).expanduser()
     env = _load_env_file(env_file)
-    errors, warnings = validate_prod_env(env, expected_origin=str(args.expected_origin or ""))
+    errors, warnings = validate_prod_env(
+        env,
+        expected_origin=str(args.expected_origin or ""),
+        provider_profile=str(args.provider_profile or "standard"),
+    )
 
     print(f"Validated env file: {env_file}")
+    print(f"Provider profile: {args.provider_profile}")
     if warnings:
         for warning in warnings:
             print(f"WARN  {warning}")

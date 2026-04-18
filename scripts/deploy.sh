@@ -8,6 +8,7 @@ IMAGE_INPUT=${2:-latest}
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
 POST_DEPLOY_REPORT_DIR="./reports/post-deploy"
+PROVIDER_PROFILE=${DECISIONDOC_DEPLOY_PROVIDER_PROFILE:-standard}
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     ENV_FILE=".env.prod"
@@ -28,6 +29,7 @@ echo "Deploying DecisionDoc AI"
 echo "   Environment: $ENVIRONMENT"
 echo "   Env file: $ENV_FILE"
 echo "   Image: $IMAGE_REF"
+echo "   Provider profile: $PROVIDER_PROFILE"
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     echo "WARNING: Production deploy — confirmation required."
@@ -38,7 +40,7 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     fi
 
     echo "Running production env preflight..."
-    python3 scripts/check_prod_env.py --env-file "$ENV_FILE"
+    python3 scripts/check_prod_env.py --env-file "$ENV_FILE" --provider-profile "$PROVIDER_PROFILE"
 fi
 
 if [[ -x "./scripts/backup.sh" && -d "./data" ]]; then
