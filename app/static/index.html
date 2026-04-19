@@ -20952,6 +20952,64 @@ function buildPostDeploySmokeFailureSummary(source, options = {}) {
   `;
 }
 
+function getPostDeploySmokeResults(source) {
+  const payload = source && typeof source === 'object' ? source : null;
+  if (!payload) return [];
+  const direct = Array.isArray(payload.smoke_results)
+    ? payload.smoke_results.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (direct.length) return direct;
+  const checks = Array.isArray(payload.checks) ? payload.checks : [];
+  const smokeCheck = checks.find((check) => {
+    return String(check?.name || '').trim() === 'deployed smoke';
+  });
+  if (!Array.isArray(smokeCheck?.smoke_results)) return [];
+  return smokeCheck.smoke_results.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function buildPostDeploySmokeResultsSummary(source, options = {}) {
+  const results = getPostDeploySmokeResults(source);
+  if (!results.length) return '';
+  const compact = options.compact === true;
+  const title = options.title || 'Smoke checks';
+  let displayResults = results;
+  if (compact && results.length > 3) {
+    const prioritized = [];
+    if (results[0]) prioritized.push(results[0]);
+    results.forEach((line) => {
+      if (prioritized.length >= 3) return;
+      if (!/with-attachments|from-documents/.test(line)) return;
+      if (!prioritized.includes(line)) prioritized.push(line);
+    });
+    results.forEach((line) => {
+      if (prioritized.length >= 3) return;
+      if (!prioritized.includes(line)) prioritized.push(line);
+    });
+    displayResults = prioritized;
+  }
+  const hiddenCount = Math.max(0, results.length - displayResults.length);
+  return `
+    <div class="ops-post-deploy-smoke-results" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.18);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;">
+        <div style="color:#cbd5e1;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;">${escapeHtml(title)}</div>
+        <span class="ops-post-deploy-smoke-results-count" style="display:inline-flex;align-items:center;padding:.14rem .45rem;border-radius:999px;background:rgba(255,255,255,.08);color:#e2e8f0;font-size:.66rem;font-weight:800;">
+          ${escapeHtml(String(results.length))} checks
+        </span>
+      </div>
+      <div style="display:grid;gap:${compact ? '.22rem' : '.28rem'};margin-top:${compact ? '.35rem' : '.45rem'};">
+        ${displayResults.map((line) => `
+          <code style="font-size:${compact ? '.66rem' : '.71rem'};line-height:1.45;color:#e2e8f0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(line)}</code>
+        `).join('')}
+      </div>
+      ${hiddenCount ? `
+        <div style="margin-top:${compact ? '.32rem' : '.4rem'};color:#cbd5e1;font-size:${compact ? '.66rem' : '.7rem'};line-height:1.45;">
+          ${escapeHtml(String(hiddenCount))}개 결과는 latest/detail JSON에서 확인할 수 있습니다.
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function formatOpsReportTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -21001,6 +21059,7 @@ function getOpsPostDeployFilteredReports(payload) {
       report?.smoke_response_code,
       report?.provider_error_code,
       report?.smoke_message,
+      Array.isArray(report?.smoke_results) ? report.smoke_results.join(' ') : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -21192,6 +21251,8 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
   const rightProviderPolicy = buildPostDeployProviderPolicySummary(right.provider_policy_checks, right.provider_policy_issues, { compact: true, title: 'Quality-first readiness' });
   const leftSmokeFailure = buildPostDeploySmokeFailureSummary(left, { compact: true, title: 'Smoke failure' });
   const rightSmokeFailure = buildPostDeploySmokeFailureSummary(right, { compact: true, title: 'Smoke failure' });
+  const leftSmokeResults = buildPostDeploySmokeResultsSummary(left, { compact: true, title: 'Smoke checks' });
+  const rightSmokeResults = buildPostDeploySmokeResultsSummary(right, { compact: true, title: 'Smoke checks' });
   const leftChecks = buildOpsPostDeployCheckMap(left);
   const rightChecks = buildOpsPostDeployCheckMap(right);
   const providerRouteDiffRows = buildOpsPostDeployProviderRouteDiffRows(left, right);
@@ -21237,6 +21298,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           ${leftProviderRoutes}
           ${leftProviderPolicy}
           ${leftSmokeFailure}
+          ${leftSmokeResults}
         </div>
         <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:.65rem .75rem;">
           <div style="display:flex;align-items:center;gap:.4rem;">
@@ -21254,6 +21316,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           ${rightProviderRoutes}
           ${rightProviderPolicy}
           ${rightSmokeFailure}
+          ${rightSmokeResults}
         </div>
       </div>
       <div>
@@ -21432,6 +21495,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
     { title: 'Quality-first readiness' }
   );
   const smokeFailureSummary = buildPostDeploySmokeFailureSummary(details, { title: 'Smoke failure' });
+  const smokeResultsSummary = buildPostDeploySmokeResultsSummary(details, { title: 'Smoke checks' });
   const detailError = details.error
     ? `<div style="margin-top:.65rem;color:#fecaca;font-size:.78rem;line-height:1.5;">${escapeHtml(details.error)}</div>`
     : '';
@@ -21455,6 +21519,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
         ${providerRouteSummary}
         ${providerPolicySummary}
         ${smokeFailureSummary}
+        ${smokeResultsSummary}
       </div>
       <div style="display:inline-flex;align-items:center;padding:.22rem .55rem;border-radius:999px;background:${details.skip_smoke ? 'rgba(251,191,36,.16)' : 'rgba(134,239,172,.14)'};color:${details.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:800;">
         ${details.skip_smoke ? 'skip smoke' : 'smoke 포함'}
@@ -21540,6 +21605,10 @@ function renderOpsPostDeployReports(data) {
     latest || allReports[0] || null,
     { title: 'Smoke failure' }
   );
+  const latestSmokeResultsSummary = buildPostDeploySmokeResultsSummary(
+    latest || allReports[0] || null,
+    { title: 'Smoke checks' }
+  );
   const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
   const compareState = getOpsPostDeployCompareState(data, allReports);
   const compareOptions = allReports
@@ -21567,6 +21636,7 @@ function renderOpsPostDeployReports(data) {
         ${latestProviderRouteSummary}
         ${latestProviderPolicySummary}
         ${latestSmokeFailureSummary}
+        ${latestSmokeResultsSummary}
       </div>
       <div style="min-width:180px;background:rgba(255,255,255,.06);border:1px solid rgba(196,181,253,.15);border-radius:12px;padding:.8rem .95rem;">
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;">최근 점검 범위</div>
@@ -21607,6 +21677,10 @@ function renderOpsPostDeployReports(data) {
           report,
           { compact: true, title: 'Smoke failure' }
         );
+        const smokeResultsSummary = buildPostDeploySmokeResultsSummary(
+          report,
+          { compact: true, title: 'Smoke checks' }
+        );
         return `
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">
             <div>
@@ -21623,6 +21697,7 @@ function renderOpsPostDeployReports(data) {
               ${providerRouteSummary}
               ${providerPolicySummary}
               ${smokeFailureSummary}
+              ${smokeResultsSummary}
             </div>
             <div style="display:grid;justify-items:end;gap:.45rem;">
               <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">

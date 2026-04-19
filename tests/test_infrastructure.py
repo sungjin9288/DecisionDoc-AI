@@ -190,12 +190,16 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "history-promote-btn" in res.text
     assert "buildPostDeployProviderRouteSummary" in res.text
     assert "buildPostDeploySmokeFailureSummary" in res.text
+    assert "buildPostDeploySmokeResultsSummary" in res.text
     assert "getPostDeploySmokeFailureState" in res.text
+    assert "getPostDeploySmokeResults" in res.text
     assert "buildOpsPostDeployProviderRouteDiffRows" in res.text
     assert "getPostDeployRouteCheckMeta" in res.text
     assert "ops-post-deploy-provider-routes" in res.text
     assert "ops-post-deploy-smoke-failure" in res.text
     assert "ops-post-deploy-smoke-failure-badge" in res.text
+    assert "ops-post-deploy-smoke-results" in res.text
+    assert "ops-post-deploy-smoke-results-count" in res.text
     assert "ops-post-deploy-provider-route-status" in res.text
     assert "ops-post-deploy-provider-route-diff-row" in res.text
     assert "ops-post-deploy-provider-policy" in res.text
@@ -207,6 +211,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "Quality-first readiness" in res.text
     assert "Quality-first 차이" in res.text
     assert "Smoke failure" in res.text
+    assert "Smoke checks" in res.text
     assert "buildPostDeployProviderPolicySummary" in res.text
     assert "buildOpsPostDeployProviderPolicyDiffRows" in res.text
     assert "getPostDeployPolicyCheckMeta" in res.text
