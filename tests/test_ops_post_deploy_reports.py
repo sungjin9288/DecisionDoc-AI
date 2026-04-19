@@ -67,6 +67,11 @@ def _write_report_history(report_dir: Path) -> None:
                 "smoke_response_code": "PROVIDER_FAILED",
                 "provider_error_code": "insufficient_quota",
                 "smoke_message": "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.",
+                "smoke_results": [
+                    "GET /health -> 200 request_id=req-1",
+                    "POST /generate/with-attachments (no key) -> 401",
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+                ],
             },
         ],
     }
@@ -116,6 +121,11 @@ def _write_report_history(report_dir: Path) -> None:
                 },
                 "smoke_response_code": "PROVIDER_FAILED",
                 "provider_error_code": "insufficient_quota",
+                "smoke_results": [
+                    "GET /health -> 200 request_id=req-1",
+                    "POST /generate/with-attachments (no key) -> 401",
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+                ],
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -163,6 +173,7 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert body["reports"][0]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert body["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
     assert body["reports"][0]["provider_error_code"] == "insufficient_quota"
+    assert body["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
     assert body["latest_details"] is None
 
 
@@ -184,6 +195,7 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
     assert body["latest_details"]["provider_policy_checks"]["quality_first"] == "degraded"
     assert body["latest_details"]["provider_policy_issues"]["quality_first"][0].startswith("visual route must be exactly openai")
     assert body["latest_details"]["provider_error_code"] == "insufficient_quota"
+    assert body["latest_details"]["smoke_results"][2].startswith("POST /generate/with-attachments (auth) -> 200")
     assert body["latest_details"]["checks"][2]["name"] == "deployed smoke"
     assert body["latest_details"]["checks"][2]["exit_code"] == 1
 

@@ -184,6 +184,17 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
 
     def _fake_run(command, cwd=None, check=False, **kwargs):
         _ = cwd, check, kwargs
+        command_list = list(command)
+        if command_list[:2] == [checker.sys.executable, "scripts/run_deployed_smoke.py"] and "--preflight" not in command_list:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "GET /health -> 200 request_id=req-1\n"
+                    "POST /generate/with-attachments (no key) -> 401\n"
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4\n"
+                ),
+                stderr="",
+            )
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -226,6 +237,17 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
 
     def _fake_run(command, cwd=None, check=False, **kwargs):
         _ = cwd, check, kwargs
+        command_list = list(command)
+        if command_list[:2] == [checker.sys.executable, "scripts/run_deployed_smoke.py"] and "--preflight" not in command_list:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "GET /health -> 200 request_id=req-1\n"
+                    "POST /generate/with-attachments (no key) -> 401\n"
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4\n"
+                ),
+                stderr="",
+            )
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -259,11 +281,18 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert latest_payload["status"] == "passed"
     assert history_payload["checks"][-1]["name"] == "deployed smoke"
     assert latest_payload["checks"][-1]["name"] == "deployed smoke"
+    assert history_payload["checks"][-1]["smoke_results"] == [
+        "GET /health -> 200 request_id=req-1",
+        "POST /generate/with-attachments (no key) -> 401",
+        "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+    ]
+    assert latest_payload["smoke_results"] == history_payload["checks"][-1]["smoke_results"]
     assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
     assert index_payload["reports"][0]["provider_route_checks"]["visual"] == "ok"
     assert index_payload["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
     assert index_payload["reports"][0]["provider_policy_issues"]["quality_first"][0].startswith("default route must include")
+    assert index_payload["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name
@@ -447,6 +476,7 @@ def test_post_deploy_check_captures_deployed_smoke_failure_details(tmp_path: Pat
     assert smoke_check["stdout"] == "GET /health -> 200 request_id=req-1\n"
     assert "provider_error_code=insufficient_quota" in smoke_check["stderr"]
     assert payload["checks"][-1]["smoke_response_code"] == "PROVIDER_FAILED"
+    assert smoke_check["smoke_results"] == ["GET /health -> 200 request_id=req-1"]
 
 
 def test_post_deploy_check_indexes_smoke_failure_summary(tmp_path: Path, monkeypatch) -> None:
@@ -498,6 +528,7 @@ def test_post_deploy_check_indexes_smoke_failure_summary(tmp_path: Path, monkeyp
     index_payload = json.loads((report_dir / "index.json").read_text(encoding="utf-8"))
     assert index_payload["reports"][0]["smoke_response_code"] == "PROVIDER_FAILED"
     assert index_payload["reports"][0]["provider_error_code"] == "insufficient_quota"
+    assert index_payload["reports"][0]["smoke_results"] == ["GET /health -> 200 request_id=req-1"]
 
 
 def test_post_deploy_check_captures_deployed_smoke_timeout_summary(tmp_path: Path, monkeypatch) -> None:
@@ -546,6 +577,10 @@ def test_post_deploy_check_captures_deployed_smoke_timeout_summary(tmp_path: Pat
     smoke_check = payload["checks"][-1]
     assert payload["error"] == "deployed smoke failed with exit code 1 (smoke_exception_type=httpx.ReadTimeout)"
     assert smoke_check["smoke_exception_type"] == "httpx.ReadTimeout"
+    assert smoke_check["smoke_results"] == [
+        "GET /health -> 200 request_id=req-1",
+        "POST /generate/from-documents (no key) -> 401",
+    ]
 
 
 def test_post_deploy_check_rejects_report_file_and_report_dir_together(tmp_path: Path) -> None:

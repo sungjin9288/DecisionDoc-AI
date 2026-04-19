@@ -52,6 +52,11 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
                         },
                         "smoke_response_code": "PROVIDER_FAILED",
                         "provider_error_code": "insufficient_quota",
+                        "smoke_results": [
+                            "GET /health -> 200 request_id=req-1",
+                            "POST /generate/with-attachments (no key) -> 401",
+                            "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+                        ],
                     },
                     {
                         "file": "post-deploy-20260414T031000Z.json",
@@ -78,6 +83,7 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
     assert "provider_routes: generation=claude,gemini,openai" in captured
     assert "provider_policy: quality_first=degraded" in captured
     assert "smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota" in captured
+    assert "smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401" in captured
     assert "post-deploy-20260414T031000Z.json" not in captured
 
 
@@ -127,6 +133,11 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                         "smoke_response_code": "PROVIDER_FAILED",
                         "provider_error_code": "insufficient_quota",
                         "smoke_message": "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요.",
+                        "smoke_results": [
+                            "GET /health -> 200 request_id=req-1",
+                            "POST /generate/with-attachments (no key) -> 401",
+                            "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+                        ],
                     },
                 ],
             }
@@ -167,8 +178,10 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
     assert "- provider_policy_checks=quality_first:degraded" in captured
     assert "- provider_policy_issues=quality_first:visual route must be exactly openai" in captured
     assert "- smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota | message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요." in captured
+    assert "- smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401 | POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4" in captured
     assert "- [passed] health" in captured
     assert "- [failed] deployed smoke exit_code=1" in captured
+    assert "  - smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401 | POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4" in captured
 
 
 def test_show_post_deploy_reports_prints_json_summary(tmp_path: Path, capsys) -> None:
@@ -257,6 +270,10 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
                 "exit_code": 1,
                 "smoke_response_code": "PROVIDER_FAILED",
                 "provider_error_code": "insufficient_quota",
+                "smoke_results": [
+                    "GET /health -> 200 request_id=req-1",
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
+                ],
             },
         ],
     }
@@ -295,6 +312,7 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     assert payload["latest_details"]["provider_policy_checks"]["quality_first"] == "ok"
     assert payload["latest_details"]["provider_policy_issues"]["quality_first"] == []
     assert payload["latest_details"]["provider_error_code"] == "insufficient_quota"
+    assert payload["latest_details"]["smoke_results"][1].startswith("POST /generate/with-attachments (auth) -> 200")
     assert payload["latest_details"]["checks"][2]["exit_code"] == 1
 
 

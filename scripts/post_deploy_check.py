@@ -126,6 +126,22 @@ def _extract_smoke_failure_details(*, stdout: str, stderr: str) -> dict[str, Any
     return details
 
 
+def _extract_smoke_result_details(*, stdout: str, stderr: str) -> dict[str, Any]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for raw_line in "\n".join(part for part in (stdout, stderr) if str(part or "").strip()).splitlines():
+        line = str(raw_line).strip()
+        if not line.startswith(("GET /", "POST /")) or "->" not in line:
+            continue
+        if line in seen:
+            continue
+        seen.add(line)
+        results.append(line)
+    if not results:
+        return {}
+    return {"smoke_results": results}
+
+
 def _build_failure_suffix(details: dict[str, Any]) -> str:
     parts: list[str] = []
     smoke_response_code = str(details.get("smoke_response_code", "")).strip()
@@ -149,6 +165,7 @@ def _run_command_with_report(
     *,
     label: str,
     capture_output: bool = False,
+    output_parser: Callable[..., dict[str, Any]] | None = None,
     failure_parser: Callable[..., dict[str, Any]] | None = None,
 ) -> None:
     completed = subprocess.run(
@@ -162,6 +179,7 @@ def _run_command_with_report(
     stderr = str(getattr(completed, "stderr", "") or "")
     if capture_output:
         _replay_captured_output(stdout=stdout, stderr=stderr)
+    parsed_output = output_parser(stdout=stdout, stderr=stderr) if output_parser is not None else {}
 
     if completed.returncode != 0:
         step_details: dict[str, Any] = {
@@ -174,11 +192,19 @@ def _run_command_with_report(
             step_details["stdout"] = stdout_tail
         if stderr_tail is not None:
             step_details["stderr"] = stderr_tail
+        step_details.update(parsed_output)
         parsed_details = failure_parser(stdout=stdout, stderr=stderr) if failure_parser is not None else {}
         step_details.update(parsed_details)
         _append_step(report, name=label, status="failed", **step_details)
         raise SystemExit(f"{label} failed with exit code {completed.returncode}{_build_failure_suffix(parsed_details)}")
-    _append_step(report, name=label, status="passed", command=command, exit_code=completed.returncode)
+    _append_step(
+        report,
+        name=label,
+        status="passed",
+        command=command,
+        exit_code=completed.returncode,
+        **parsed_output,
+    )
 
 
 def _write_json_report(report_file: Path, payload: dict[str, Any]) -> None:
@@ -286,6 +312,11 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         smoke_exception_type = str(check.get("smoke_exception_type", "")).strip()
         if smoke_exception_type:
             summary["smoke_exception_type"] = smoke_exception_type
+        smoke_results = check.get("smoke_results")
+        if isinstance(smoke_results, list):
+            normalized_results = [str(item).strip() for item in smoke_results if str(item).strip()]
+            if normalized_results:
+                summary["smoke_results"] = normalized_results
         return summary
     return {}
 
@@ -352,6 +383,8 @@ def _persist_reports(
     report_file: Path | None,
     latest_file: Path | None,
 ) -> None:
+    payload.update(_extract_provider_route_summary(payload))
+    payload.update(_extract_smoke_failure_summary(payload))
     if report_file is not None:
         _write_json_report(report_file, payload)
     if latest_file is not None:
@@ -587,6 +620,7 @@ def run_post_deploy_check(
                 ],
                 label="deployed smoke",
                 capture_output=True,
+                output_parser=_extract_smoke_result_details,
                 failure_parser=_extract_smoke_failure_details,
             )
             print("PASS deployed smoke", flush=True)

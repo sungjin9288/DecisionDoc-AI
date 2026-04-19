@@ -133,6 +133,11 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         smoke_exception_type = str(check.get("smoke_exception_type", "")).strip()
         if smoke_exception_type:
             summary["smoke_exception_type"] = smoke_exception_type
+        smoke_results = check.get("smoke_results")
+        if isinstance(smoke_results, list):
+            normalized_results = [str(item).strip() for item in smoke_results if str(item).strip()]
+            if normalized_results:
+                summary["smoke_results"] = normalized_results
         return summary
     return {}
 

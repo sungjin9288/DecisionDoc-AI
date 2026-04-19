@@ -56,6 +56,16 @@ def _format_smoke_failure_summary(entry: dict[str, Any]) -> str | None:
     return "  smoke_failure: " + " | ".join(parts)
 
 
+def _format_smoke_results_summary(entry: dict[str, Any]) -> str | None:
+    smoke_results = entry.get("smoke_results")
+    if not isinstance(smoke_results, list):
+        return None
+    normalized_results = [str(item).strip() for item in smoke_results if str(item).strip()]
+    if not normalized_results:
+        return None
+    return "  smoke_results: " + " | ".join(normalized_results)
+
+
 def _print_entry(entry: dict[str, Any]) -> None:
     status = str(entry.get("status", "unknown")).upper()
     finished_at = str(entry.get("finished_at", "-"))
@@ -82,6 +92,9 @@ def _print_entry(entry: dict[str, Any]) -> None:
     smoke_failure = _format_smoke_failure_summary(entry)
     if smoke_failure:
         print(smoke_failure, flush=True)
+    smoke_results = _format_smoke_results_summary(entry)
+    if smoke_results:
+        print(smoke_results, flush=True)
 
 
 def _print_latest_details(report_dir: Path) -> None:
@@ -137,6 +150,9 @@ def _print_latest_details(report_dir: Path) -> None:
     smoke_failure = _format_smoke_failure_summary(payload)
     if smoke_failure:
         print(smoke_failure.replace("  ", "- ", 1), flush=True)
+    smoke_results = _format_smoke_results_summary(payload)
+    if smoke_results:
+        print(smoke_results.replace("  ", "- ", 1), flush=True)
     checks = payload.get("checks", [])
     print("Checks", flush=True)
     for check in checks:
@@ -145,6 +161,9 @@ def _print_latest_details(report_dir: Path) -> None:
         exit_code = check.get("exit_code")
         suffix = f" exit_code={exit_code}" if exit_code is not None else ""
         print(f"- [{status}] {name}{suffix}", flush=True)
+        check_smoke_results = _format_smoke_results_summary(check)
+        if check_smoke_results:
+            print(check_smoke_results.replace("  ", "  - ", 1), flush=True)
 
 
 def _build_json_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
