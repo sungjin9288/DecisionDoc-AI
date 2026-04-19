@@ -4892,7 +4892,7 @@
         <small>(선택 · PDF/Office/HWPX/JSON/XML/HTML/YAML/RTF/ODT/ZIP/이미지 · 최대 12,000자/파일)</small>
       </div>
       <input type="file" id="f-attachments" multiple
-             accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp">
+             accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp">
       <label for="f-attachments" class="attachment-trigger">+ 파일 선택</label>
       <button type="button" class="attachment-trigger" onclick="openFromDocumentsModal()"
               style="background:linear-gradient(135deg,#2563eb,#38bdf8);border-color:transparent;color:#fff;margin-left:.4rem;">📚 문서로 초안 생성</button>
@@ -5800,7 +5800,7 @@
         <div style="color:var(--muted);font-size:.85rem;margin-top:4px">.txt .md .pdf .docx .pptx .hwpx .xlsx .csv .json .xml .html .yaml .rtf .odt .zip .png .jpg .webp</div>
         <div id="from-documents-filenames" style="margin-top:12px;color:var(--p1);font-weight:600;display:none"></div>
       </div>
-      <input type="file" id="from-documents-file-input" multiple accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.hwp,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp" style="display:none" onchange="fromDocumentsFilesSelected(this)">
+      <input type="file" id="from-documents-file-input" multiple accept=".txt,.md,.log,.ini,.cfg,.conf,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.ods,.odp,.zip,.png,.jpg,.jpeg,.webp" style="display:none" onchange="fromDocumentsFilesSelected(this)">
 
       <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
         <div>
@@ -7808,21 +7808,50 @@
   }
 
   /* ── File attachment chips ─────────────────────────────────────── */
+  const LEGACY_BINARY_HWP_WARNING = '구형 .hwp 파일은 직접 분석하지 못합니다. HWPX, PDF 또는 DOCX로 변환해서 다시 업로드하세요.';
+
+  function isLegacyBinaryHwpFile(fileOrName) {
+    const name = typeof fileOrName === 'string' ? fileOrName : fileOrName?.name;
+    const lower = String(name || '').toLowerCase();
+    return lower.endsWith('.hwp') && !lower.endsWith('.hwpx');
+  }
+
+  function filterLegacyBinaryHwpFiles(files, { input = null, notify = true } = {}) {
+    const accepted = [];
+    const blocked = [];
+    Array.from(files || []).forEach(file => {
+      if (isLegacyBinaryHwpFile(file)) blocked.push(file);
+      else accepted.push(file);
+    });
+    if (input) {
+      const dt = new DataTransfer();
+      accepted.forEach(file => dt.items.add(file));
+      input.files = dt.files;
+    }
+    if (notify && blocked.length) {
+      const preview = blocked.slice(0, 3).map(file => file.name).join(', ');
+      const extra = blocked.length > 3 ? ` 외 ${blocked.length - 3}건` : '';
+      showNotification(`${preview}${extra}: ${LEGACY_BINARY_HWP_WARNING}`, 'warn');
+    }
+    return { accepted, blocked };
+  }
+
   function renderAttachmentList() {
     const input   = $id('f-attachments');
     const list    = $id('attachment-list');
     const rfpBtn  = $id('rfp-parse-btn');
     if (!input || !list) return;
     list.innerHTML = '';
-    const hasFiles = input.files.length > 0;
+    const { accepted } = filterLegacyBinaryHwpFiles(input.files, { input });
+    const hasFiles = accepted.length > 0;
     if (rfpBtn) rfpBtn.style.display = hasFiles ? 'inline-flex' : 'none';
-    Array.from(input.files).forEach((file, idx) => {
+    accepted.forEach((file, idx) => {
       const chip = document.createElement('span');
       chip.className = 'attachment-chip';
       chip.innerHTML = `📄 ${file.name} <button type="button" title="삭제" aria-label="${file.name} 삭제">×</button>`;
       chip.querySelector('button').addEventListener('click', () => {
         const dt = new DataTransfer();
-        Array.from(input.files).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+        accepted.forEach((f, i) => { if (i !== idx) dt.items.add(f); });
         input.files = dt.files;
         renderAttachmentList();
       });
@@ -20029,12 +20058,18 @@
   }
 
   function fromDocumentsFilesSelected(input) {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    _fromDocumentsFiles = files;
+    const { accepted } = filterLegacyBinaryHwpFiles(input.files, { input });
+    if (!accepted.length) {
+      _showFromDocumentsError(LEGACY_BINARY_HWP_WARNING);
+      const filenames = document.getElementById('from-documents-filenames');
+      filenames.style.display = 'none';
+      input.value = '';
+      return;
+    }
+    _fromDocumentsFiles = accepted;
     const el = document.getElementById('from-documents-filenames');
-    const names = files.map(file => file.name).join(', ');
-    el.textContent = `✅ ${files.length}개 파일 선택됨: ${names}`;
+    const names = accepted.map(file => file.name).join(', ');
+    el.textContent = `✅ ${accepted.length}개 파일 선택됨: ${names}`;
     el.style.display = 'block';
     document.getElementById('from-documents-error').style.display = 'none';
     document.getElementById('from-documents-submit-btn').disabled = false;

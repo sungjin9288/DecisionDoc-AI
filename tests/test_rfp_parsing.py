@@ -24,6 +24,9 @@ def _make_client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "mock")
     monkeypatch.delenv("DECISIONDOC_API_KEY",  raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -389,6 +392,17 @@ class TestParseRFPEndpoint:
         )
         # endpoint succeeds (parse-rfp is lenient) or returns 400 with detail
         assert res.status_code in (200, 400)
+
+    def test_legacy_hwp_returns_422_with_conversion_guidance(self, tmp_path, monkeypatch):
+        client = _make_client(tmp_path, monkeypatch)
+        res = client.post(
+            "/attachments/parse-rfp",
+            files=[("files", ("legacy.hwp", b"binary", "application/x-hwp"))],
+        )
+        assert res.status_code == 422
+        data = res.json()
+        assert data["code"] == "ATTACHMENT_ERROR"
+        assert "HWPX, PDF 또는 DOCX로 변환" in data["message"]
 
     def test_files_processed_list(self, tmp_path, monkeypatch):
         client = _make_client(tmp_path, monkeypatch)

@@ -184,6 +184,9 @@ def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "mock")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -245,6 +248,18 @@ class TestGenerateWithAttachments:
             files=[("attachments", ("bad.exe", io.BytesIO(b"data"), "application/octet-stream"))],
         )
         assert res.status_code == 200
+
+    def test_legacy_hwp_file_returns_422_with_conversion_guidance(self, tmp_path, monkeypatch):
+        client = _create_client(tmp_path, monkeypatch)
+        res = client.post(
+            "/generate/with-attachments",
+            data={"payload": self._payload()},
+            files=[("attachments", ("legacy.hwp", io.BytesIO(b"binary"), "application/x-hwp"))],
+        )
+        assert res.status_code == 422
+        body = res.json()
+        assert body["code"] == "ATTACHMENT_ERROR"
+        assert "HWPX, PDF 또는 DOCX로 변환" in body["message"]
 
     def test_invalid_payload_json_returns_422(self, tmp_path, monkeypatch):
         client = _create_client(tmp_path, monkeypatch)

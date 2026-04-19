@@ -101,6 +101,7 @@ _PROCUREMENT_BUNDLE_LABELS = {
     "performance_plan_kr": "수행계획",
 }
 _DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {"bid_decision_kr", "proposal_kr"}
+_LEGACY_BINARY_HWP_GUIDANCE = "구형 바이너리 .hwp 파일은 직접 분석하지 못합니다. HWPX, PDF 또는 DOCX로 변환해 다시 업로드하세요."
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────────
@@ -117,6 +118,25 @@ def _resolve_gov_options(gov_options_dict: dict | None) -> GovDocOptions | None:
         return GovDocOptions(**gov_options_dict)
     except (TypeError, ValueError):
         return None
+
+
+def _legacy_binary_hwp_upload_names(files: list[UploadFile]) -> list[str]:
+    blocked: list[str] = []
+    for upload in files:
+        filename = str(getattr(upload, "filename", "") or "").strip()
+        lower = filename.lower()
+        if lower.endswith(".hwp") and not lower.endswith(".hwpx"):
+            blocked.append(filename or "attachment.hwp")
+    return blocked
+
+
+def _raise_if_legacy_binary_hwp_uploads(files: list[UploadFile]) -> None:
+    blocked = _legacy_binary_hwp_upload_names(files)
+    if not blocked:
+        return
+    preview = ", ".join(blocked[:3])
+    extra = f" 외 {len(blocked) - 3}건" if len(blocked) > 3 else ""
+    raise AttachmentError(f"{preview}{extra}: {_LEGACY_BINARY_HWP_GUIDANCE}")
 
 
 def _extract_uploaded_documents(
@@ -745,6 +765,7 @@ def generate_with_attachments(
         raise HTTPException(status_code=422, detail=f"Invalid payload JSON: {exc}") from exc
 
     if attachments:
+        _raise_if_legacy_binary_hwp_uploads(attachments)
         file_data: list[tuple[str, bytes]] = []
         for upload in attachments:
             if not upload.filename:
@@ -793,6 +814,7 @@ def generate_from_documents(
     """Upload one or more documents and generate a bundle directly from them."""
     from app.schemas import GenerateRequest as _GenerateRequest
 
+    _raise_if_legacy_binary_hwp_uploads(files)
     combined_text, parsed_filenames, procurement_context = _extract_uploaded_documents(
         files,
         provider=get_provider_for_capability("attachment"),
@@ -2098,6 +2120,7 @@ async def parse_rfp_endpoint(
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     request_id = request.state.request_id
 
+    _raise_if_legacy_binary_hwp_uploads(files)
     file_data: list[tuple[str, bytes]] = []
     for f in files:
         raw = await f.read()

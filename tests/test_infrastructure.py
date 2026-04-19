@@ -264,6 +264,26 @@ def test_index_html_expands_attachment_accept_lists_for_structured_docs():
     assert ".png,.jpg,.jpeg,.webp" in content
 
 
+def test_index_html_blocks_legacy_hwp_uploads_in_generation_flows():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    attachment_match = re.search(r'<input type="file" id="f-attachments"[^>]*accept="([^"]+)"', content)
+    from_documents_match = re.search(
+        r'<input type="file" id="from-documents-file-input"[^>]*accept="([^"]+)"',
+        content,
+    )
+    assert attachment_match is not None
+    assert from_documents_match is not None
+    attachment_accept = attachment_match.group(1)
+    from_documents_accept = from_documents_match.group(1)
+    assert "LEGACY_BINARY_HWP_WARNING" in content
+    assert "filterLegacyBinaryHwpFiles" in content
+    assert "구형 .hwp 파일은 직접 분석하지 못합니다." in content
+    assert ".hwpx" in attachment_accept
+    assert ".hwpx" in from_documents_accept
+    assert ".hwp," not in attachment_accept and not attachment_accept.endswith(".hwp")
+    assert ".hwp," not in from_documents_accept and not from_documents_accept.endswith(".hwp")
+
+
 def test_index_html_rfp_parse_uses_auth_headers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(

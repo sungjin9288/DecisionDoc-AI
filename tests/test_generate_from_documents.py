@@ -11,6 +11,9 @@ def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "mock")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
 
@@ -187,6 +190,21 @@ def test_generate_from_documents_rejects_invalid_extension(tmp_path, monkeypatch
 
     assert response.status_code == 422
     assert "지원하지 않는 파일 형식" in response.json()["detail"]
+
+
+def test_generate_from_documents_rejects_legacy_hwp_with_conversion_guidance(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/generate/from-documents",
+        data={"doc_types": "adr"},
+        files={"files": ("legacy.hwp", io.BytesIO(b"binary"), "application/x-hwp")},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "ATTACHMENT_ERROR"
+    assert "HWPX, PDF 또는 DOCX로 변환" in body["message"]
 
 
 def test_generate_from_documents_requires_api_key_when_enabled(tmp_path, monkeypatch):
