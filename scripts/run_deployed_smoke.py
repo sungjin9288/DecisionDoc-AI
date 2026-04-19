@@ -19,6 +19,8 @@ DEFAULT_SMOKE_CHECKS = [
     "POST /generate (no key) -> 401",
     "POST /generate (auth) -> 200",
     "POST /generate/export (auth) -> 200",
+    "POST /generate/with-attachments (no key) -> 401",
+    "POST /generate/with-attachments (auth) -> 200",
     "POST /generate/from-documents (no key) -> 401",
     "POST /generate/from-documents (auth) -> 200",
 ]

@@ -179,6 +179,70 @@ def _document_upload_files() -> list[tuple[str, tuple[str, bytes, str]]]:
     ]
 
 
+def _attachment_generation_files() -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [
+        (
+            "attachments",
+            (
+                "smoke-attachment.txt",
+                _DOCUMENT_UPLOAD_SAMPLE,
+                "text/plain",
+            ),
+        )
+    ]
+
+
+def _run_attachment_generation_smoke(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    api_key: str,
+) -> None:
+    payload = json.dumps(
+        {
+            "title": "Smoke Attachment",
+            "goal": "Verify uploaded attachment generation",
+            "context": "attachment smoke",
+        }
+    )
+
+    no_auth = client.post(
+        f"{base_url}/generate/with-attachments",
+        data={"payload": payload},
+        files=_attachment_generation_files(),
+    )
+    no_auth_body = _assert_status("POST /generate/with-attachments (no key)", no_auth, 401)
+    if no_auth_body.get("code") != "UNAUTHORIZED":
+        raise SystemExit("POST /generate/with-attachments (no key) did not return UNAUTHORIZED")
+    _print_result(
+        "POST /generate/with-attachments (no key)",
+        no_auth.status_code,
+        request_id=str(no_auth_body.get("request_id", "")),
+    )
+
+    uploaded = client.post(
+        f"{base_url}/generate/with-attachments",
+        headers={"X-DecisionDoc-Api-Key": api_key},
+        data={"payload": payload},
+        files=_attachment_generation_files(),
+    )
+    uploaded_body = _assert_status("POST /generate/with-attachments (auth)", uploaded, 200)
+    uploaded_bundle_id = str(uploaded_body.get("bundle_id", ""))
+    uploaded_request_id = str(uploaded_body.get("request_id", ""))
+    docs = uploaded_body.get("docs")
+    if not uploaded_bundle_id:
+        raise SystemExit("POST /generate/with-attachments (auth) missing bundle_id")
+    if not isinstance(docs, list) or not docs:
+        raise SystemExit("POST /generate/with-attachments (auth) missing docs")
+    _print_result(
+        "POST /generate/with-attachments (auth)",
+        uploaded.status_code,
+        request_id=uploaded_request_id,
+        bundle_id=uploaded_bundle_id,
+        extra=f"files=1 docs={len(docs)}",
+    )
+
+
 def _run_document_upload_smoke(
     client: httpx.Client,
     *,
@@ -933,6 +997,12 @@ def main() -> int:
             request_id=export_request_id,
             bundle_id=export_bundle_id,
             extra=f"files={len(files)}",
+        )
+
+        _run_attachment_generation_smoke(
+            client,
+            base_url=base_url,
+            api_key=api_key,
         )
 
         _run_document_upload_smoke(
