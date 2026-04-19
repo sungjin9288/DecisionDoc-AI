@@ -191,8 +191,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "buildPostDeployProviderRouteSummary" in res.text
     assert "buildPostDeploySmokeFailureSummary" in res.text
     assert "buildPostDeploySmokeResultsSummary" in res.text
+    assert "buildOpsPostDeploySmokeResultDiffRows" in res.text
     assert "getPostDeploySmokeFailureState" in res.text
     assert "getPostDeploySmokeResults" in res.text
+    assert "parsePostDeploySmokeResultLine" in res.text
+    assert "normalizePostDeploySmokeResultDetail" in res.text
     assert "buildOpsPostDeployProviderRouteDiffRows" in res.text
     assert "getPostDeployRouteCheckMeta" in res.text
     assert "ops-post-deploy-provider-routes" in res.text
@@ -200,6 +203,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "ops-post-deploy-smoke-failure-badge" in res.text
     assert "ops-post-deploy-smoke-results" in res.text
     assert "ops-post-deploy-smoke-results-count" in res.text
+    assert "ops-post-deploy-smoke-results-diff-row" in res.text
     assert "ops-post-deploy-provider-route-status" in res.text
     assert "ops-post-deploy-provider-route-diff-row" in res.text
     assert "ops-post-deploy-provider-policy" in res.text
@@ -212,6 +216,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "Quality-first 차이" in res.text
     assert "Smoke failure" in res.text
     assert "Smoke checks" in res.text
+    assert "Smoke checks 차이" in res.text
     assert "buildPostDeployProviderPolicySummary" in res.text
     assert "buildOpsPostDeployProviderPolicyDiffRows" in res.text
     assert "getPostDeployPolicyCheckMeta" in res.text

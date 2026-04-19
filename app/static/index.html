@@ -20967,6 +20967,77 @@ function getPostDeploySmokeResults(source) {
   return smokeCheck.smoke_results.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+function normalizePostDeploySmokeResultDetail(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  return text
+    .replace(/\brequest_id=[^\s)]+/g, '')
+    .replace(/\bbundle_id=[^\s)]+/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+\)/g, ')')
+    .trim() || '—';
+}
+
+function parsePostDeploySmokeResultLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return { key: '', label: '', detail: '' };
+  const expectedMatch = text.match(/^(.*?)(expected\s+\d+,\s+got\s+.+)$/i);
+  if (expectedMatch) {
+    const label = expectedMatch[1].trim();
+    return {
+      key: label,
+      label,
+      detail: normalizePostDeploySmokeResultDetail(expectedMatch[2].trim()),
+    };
+  }
+  const arrowIndex = text.indexOf('->');
+  if (arrowIndex >= 0) {
+    const label = text.slice(0, arrowIndex).trim();
+    const detail = text.slice(arrowIndex + 2).trim();
+    return {
+      key: label,
+      label,
+      detail: normalizePostDeploySmokeResultDetail(detail),
+    };
+  }
+  return {
+    key: text,
+    label: text,
+    detail: normalizePostDeploySmokeResultDetail(text),
+  };
+}
+
+function buildOpsPostDeploySmokeResultDiffRows(leftDetails, rightDetails) {
+  const leftMap = new Map();
+  const rightMap = new Map();
+  getPostDeploySmokeResults(leftDetails).forEach((line) => {
+    const parsed = parsePostDeploySmokeResultLine(line);
+    if (!parsed.key) return;
+    leftMap.set(parsed.key, parsed.detail);
+  });
+  getPostDeploySmokeResults(rightDetails).forEach((line) => {
+    const parsed = parsePostDeploySmokeResultLine(line);
+    if (!parsed.key) return;
+    rightMap.set(parsed.key, parsed.detail);
+  });
+  const keys = Array.from(new Set([...leftMap.keys(), ...rightMap.keys()]));
+  const changed = keys.filter((key) => String(leftMap.get(key) || '—') !== String(rightMap.get(key) || '—'));
+  if (!changed.length) {
+    return '<p style="margin:.2rem 0;color:#cbd5e1;font-size:.76rem;">두 리포트의 smoke checks 결과가 동일합니다.</p>';
+  }
+  return changed.map((key) => {
+    const leftDetail = String(leftMap.get(key) || '—');
+    const rightDetail = String(rightMap.get(key) || '—');
+    return `
+      <div class="ops-post-deploy-smoke-results-diff-row" style="display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:.5rem;align-items:start;padding:.45rem .55rem;border-radius:8px;background:rgba(255,255,255,.04);">
+        <span style="color:#e2e8f0;font-size:.74rem;">${escapeHtml(key)}</span>
+        <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(leftDetail)}</code>
+        <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(rightDetail)}</code>
+      </div>
+    `;
+  }).join('');
+}
+
 function buildPostDeploySmokeResultsSummary(source, options = {}) {
   const results = getPostDeploySmokeResults(source);
   if (!results.length) return '';
@@ -21253,6 +21324,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
   const rightSmokeFailure = buildPostDeploySmokeFailureSummary(right, { compact: true, title: 'Smoke failure' });
   const leftSmokeResults = buildPostDeploySmokeResultsSummary(left, { compact: true, title: 'Smoke checks' });
   const rightSmokeResults = buildPostDeploySmokeResultsSummary(right, { compact: true, title: 'Smoke checks' });
+  const smokeResultDiffRows = buildOpsPostDeploySmokeResultDiffRows(left, right);
   const leftChecks = buildOpsPostDeployCheckMap(left);
   const rightChecks = buildOpsPostDeployCheckMap(right);
   const providerRouteDiffRows = buildOpsPostDeployProviderRouteDiffRows(left, right);
@@ -21326,6 +21398,10 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
       <div>
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">Quality-first 차이</div>
         <div style="display:grid;gap:.35rem;">${providerPolicyDiffRows}</div>
+      </div>
+      <div>
+        <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">Smoke checks 차이</div>
+        <div style="display:grid;gap:.35rem;">${smokeResultDiffRows}</div>
       </div>
       <div>
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">체크 차이</div>
