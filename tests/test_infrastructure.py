@@ -196,6 +196,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "getPostDeploySmokeResults" in res.text
     assert "parsePostDeploySmokeResultLine" in res.text
     assert "normalizePostDeploySmokeResultDetail" in res.text
+    assert "resetOpsPostDeployDetailCache" in res.text
     assert "buildOpsPostDeployProviderRouteDiffRows" in res.text
     assert "getPostDeployRouteCheckMeta" in res.text
     assert "ops-post-deploy-provider-routes" in res.text
@@ -220,6 +221,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "buildPostDeployProviderPolicySummary" in res.text
     assert "buildOpsPostDeployProviderPolicyDiffRows" in res.text
     assert "getPostDeployPolicyCheckMeta" in res.text
+    assert "resetOpsPostDeployDetailCache();" in res.text
     assert "knowledge-promote-docs-btn" in res.text
     assert "openPromotedKnowledgeDocsModal" in res.text
     assert "학습 문서 보기" in res.text
