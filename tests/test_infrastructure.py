@@ -203,6 +203,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "ops-post-deploy-smoke-failure" in res.text
     assert "ops-post-deploy-smoke-failure-badge" in res.text
     assert "ops-post-deploy-smoke-results" in res.text
+    assert "ops-post-deploy-smoke-results-empty" in res.text
     assert "ops-post-deploy-smoke-results-count" in res.text
     assert "ops-post-deploy-smoke-results-diff-row" in res.text
     assert "ops-post-deploy-provider-route-status" in res.text
@@ -218,6 +219,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "Smoke failure" in res.text
     assert "Smoke checks" in res.text
     assert "Smoke checks 차이" in res.text
+    assert "저장된 smoke summary가 없습니다." in res.text
     assert "buildPostDeployProviderPolicySummary" in res.text
     assert "buildOpsPostDeployProviderPolicyDiffRows" in res.text
     assert "getPostDeployPolicyCheckMeta" in res.text

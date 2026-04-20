@@ -21040,9 +21040,25 @@ function buildOpsPostDeploySmokeResultDiffRows(leftDetails, rightDetails) {
 
 function buildPostDeploySmokeResultsSummary(source, options = {}) {
   const results = getPostDeploySmokeResults(source);
-  if (!results.length) return '';
   const compact = options.compact === true;
   const title = options.title || 'Smoke checks';
+  if (!results.length) {
+    if (options.showEmpty !== true) return '';
+    const emptyMessage = String(options.emptyMessage || '저장된 smoke summary가 없습니다.');
+    return `
+      <div class="ops-post-deploy-smoke-results ops-post-deploy-smoke-results-empty" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.18);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;">
+          <div style="color:#cbd5e1;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;">${escapeHtml(title)}</div>
+          <span class="ops-post-deploy-smoke-results-count" style="display:inline-flex;align-items:center;padding:.14rem .45rem;border-radius:999px;background:rgba(255,255,255,.08);color:#e2e8f0;font-size:.66rem;font-weight:800;">
+            0 checks
+          </span>
+        </div>
+        <div style="margin-top:${compact ? '.35rem' : '.45rem'};color:#cbd5e1;font-size:${compact ? '.66rem' : '.7rem'};line-height:1.45;">
+          ${escapeHtml(emptyMessage)}
+        </div>
+      </div>
+    `;
+  }
   let displayResults = results;
   if (compact && results.length > 3) {
     const prioritized = [];
@@ -21326,8 +21342,18 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
   const rightProviderPolicy = buildPostDeployProviderPolicySummary(right.provider_policy_checks, right.provider_policy_issues, { compact: true, title: 'Quality-first readiness' });
   const leftSmokeFailure = buildPostDeploySmokeFailureSummary(left, { compact: true, title: 'Smoke failure' });
   const rightSmokeFailure = buildPostDeploySmokeFailureSummary(right, { compact: true, title: 'Smoke failure' });
-  const leftSmokeResults = buildPostDeploySmokeResultsSummary(left, { compact: true, title: 'Smoke checks' });
-  const rightSmokeResults = buildPostDeploySmokeResultsSummary(right, { compact: true, title: 'Smoke checks' });
+  const leftSmokeResults = buildPostDeploySmokeResultsSummary(left, {
+    compact: true,
+    title: 'Smoke checks',
+    showEmpty: true,
+    emptyMessage: '저장된 smoke summary가 없습니다.',
+  });
+  const rightSmokeResults = buildPostDeploySmokeResultsSummary(right, {
+    compact: true,
+    title: 'Smoke checks',
+    showEmpty: true,
+    emptyMessage: '저장된 smoke summary가 없습니다.',
+  });
   const smokeResultDiffRows = buildOpsPostDeploySmokeResultDiffRows(left, right);
   const leftChecks = buildOpsPostDeployCheckMap(left);
   const rightChecks = buildOpsPostDeployCheckMap(right);
