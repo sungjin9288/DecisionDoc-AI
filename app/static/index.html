@@ -21621,7 +21621,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
     { title: 'Quality-first readiness' }
   );
   const smokeFailureSummary = buildPostDeploySmokeFailureSummary(details, { title: 'Smoke failure' });
-  const smokeResultsSummary = buildPostDeploySmokeResultsSummary(details, { title: 'Smoke checks' });
+  const smokeResultsSummary = buildPostDeploySmokeResultsSummary(details, { title: 'Smoke checks', showEmpty: true });
   const detailError = details.error
     ? `<div style="margin-top:.65rem;color:#fecaca;font-size:.78rem;line-height:1.5;">${escapeHtml(details.error)}</div>`
     : '';
@@ -21733,7 +21733,7 @@ function renderOpsPostDeployReports(data) {
   );
   const latestSmokeResultsSummary = buildPostDeploySmokeResultsSummary(
     latest || allReports[0] || null,
-    { title: 'Smoke checks' }
+    { title: 'Smoke checks', showEmpty: true }
   );
   const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
   const compareState = getOpsPostDeployCompareState(data, allReports);
@@ -21805,7 +21805,7 @@ function renderOpsPostDeployReports(data) {
         );
         const smokeResultsSummary = buildPostDeploySmokeResultsSummary(
           report,
-          { compact: true, title: 'Smoke checks' }
+          { compact: true, title: 'Smoke checks', showEmpty: true }
         );
         return `
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">

@@ -192,6 +192,9 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "buildPostDeploySmokeFailureSummary" in res.text
     assert "buildPostDeploySmokeResultsSummary" in res.text
     assert "getPostDeploySmokeResultsAvailability" in res.text
+    assert "buildPostDeploySmokeResultsSummary(details, { title: 'Smoke checks', showEmpty: true })" in res.text
+    assert "{ title: 'Smoke checks', showEmpty: true }" in res.text
+    assert "{ compact: true, title: 'Smoke checks', showEmpty: true }" in res.text
     assert "buildOpsPostDeploySmokeResultDiffRows" in res.text
     assert "getPostDeploySmokeFailureState" in res.text
     assert "getPostDeploySmokeResults" in res.text
