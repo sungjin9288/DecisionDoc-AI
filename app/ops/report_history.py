@@ -142,6 +142,15 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _apply_extracted_summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    extracted_summary: dict[str, Any] = {}
+    extracted_summary.update(_extract_provider_route_summary(payload))
+    extracted_summary.update(_extract_smoke_failure_summary(payload))
+    for key, value in extracted_summary.items():
+        payload.setdefault(key, value)
+    return payload
+
+
 def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:
     index_payload, index_path = resolve_report_index(report_dir)
     reports = list(index_payload.get("reports", []))
@@ -158,18 +167,14 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
     }
     if latest:
         latest_path = Path(report_dir).expanduser() / "latest.json"
-        latest_payload = load_report_json(latest_path)
-        extracted_summary: dict[str, Any] = {}
-        extracted_summary.update(_extract_provider_route_summary(latest_payload))
-        extracted_summary.update(_extract_smoke_failure_summary(latest_payload))
-        for key, value in extracted_summary.items():
-            latest_payload.setdefault(key, value)
+        latest_payload = _apply_extracted_summary_fields(load_report_json(latest_path))
         payload["latest_details"] = latest_payload
     return payload
 
 
 def build_post_deploy_report_detail_payload(*, report_dir: Path, report_file: str) -> dict[str, Any]:
     payload, resolved_path = resolve_named_report(report_dir, report_file)
+    payload = _apply_extracted_summary_fields(payload)
     return {
         "report_dir": str(Path(report_dir).expanduser()),
         "report_file": payload.get("report_file") or resolved_path.name,

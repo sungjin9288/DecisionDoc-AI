@@ -231,6 +231,79 @@ def test_ops_post_deploy_report_detail_returns_selected_file(tmp_path: Path, mon
     assert body["details"]["checks"][1]["exit_code"] == 17
 
 
+def test_ops_post_deploy_report_detail_backfills_provider_route_and_smoke_summary(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "reports" / "post-deploy"
+    _write_report_history(report_dir)
+    legacy_detail = {
+        "status": "passed",
+        "base_url": "https://admin.decisiondoc.kr",
+        "started_at": "2026-04-14T02:09:00+00:00",
+        "finished_at": "2026-04-14T02:10:00+00:00",
+        "skip_smoke": False,
+        "checks": [
+            {"name": "health", "status": "passed"},
+            {
+                "name": "health provider routing",
+                "status": "passed",
+                "provider_routes": {
+                    "default": "claude,gemini,openai",
+                    "generation": "claude,openai,gemini",
+                    "attachment": "gemini,claude,openai",
+                    "visual": "openai",
+                },
+                "provider_route_checks": {
+                    "default": "ok",
+                    "generation": "ok",
+                    "attachment": "ok",
+                    "visual": "ok",
+                },
+                "provider_policy_checks": {
+                    "quality_first": "ok",
+                },
+                "provider_policy_issues": {
+                    "quality_first": [],
+                },
+            },
+            {
+                "name": "deployed smoke",
+                "status": "passed",
+                "exit_code": 0,
+                "smoke_results": [
+                    "GET /health -> 200 request_id=req-legacy",
+                    "POST /generate/with-attachments (auth) -> 200 request_id=req-legacy bundle_id=bundle-legacy files=1 docs=2",
+                ],
+            },
+        ],
+    }
+    (report_dir / "post-deploy-20260414T021000Z.json").write_text(json.dumps(legacy_detail), encoding="utf-8")
+    index_payload = json.loads((report_dir / "index.json").read_text(encoding="utf-8"))
+    index_payload["reports"].append(
+        {
+            "file": "post-deploy-20260414T021000Z.json",
+            "status": "passed",
+            "base_url": "https://admin.decisiondoc.kr",
+            "started_at": "2026-04-14T02:09:00+00:00",
+            "finished_at": "2026-04-14T02:10:00+00:00",
+            "skip_smoke": False,
+        }
+    )
+    (report_dir / "index.json").write_text(json.dumps(index_payload), encoding="utf-8")
+    client = _create_client(tmp_path, monkeypatch, report_dir=report_dir)
+
+    response = client.get(
+        "/ops/post-deploy/reports/post-deploy-20260414T021000Z.json",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["details"]["provider_routes"]["generation"] == "claude,openai,gemini"
+    assert body["details"]["provider_route_checks"]["visual"] == "ok"
+    assert body["details"]["provider_policy_checks"]["quality_first"] == "ok"
+    assert body["details"]["provider_policy_issues"]["quality_first"] == []
+    assert body["details"]["smoke_results"][1].startswith("POST /generate/with-attachments (auth) -> 200")
+
+
 def test_ops_post_deploy_report_detail_rejects_unknown_file(tmp_path: Path, monkeypatch) -> None:
     report_dir = tmp_path / "reports" / "post-deploy"
     _write_report_history(report_dir)
