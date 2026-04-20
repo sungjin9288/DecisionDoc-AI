@@ -139,7 +139,7 @@ def _extract_smoke_result_details(*, stdout: str, stderr: str) -> dict[str, Any]
         results.append(line)
     if not results:
         return {}
-    return {"smoke_results": results}
+    return {"smoke_results": results, "smoke_results_available": True}
 
 
 def _build_failure_suffix(details: dict[str, Any]) -> str:
@@ -313,12 +313,29 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         if smoke_exception_type:
             summary["smoke_exception_type"] = smoke_exception_type
         smoke_results = check.get("smoke_results")
+        summary["smoke_results_available"] = isinstance(smoke_results, list)
         if isinstance(smoke_results, list):
             normalized_results = [str(item).strip() for item in smoke_results if str(item).strip()]
             if normalized_results:
                 summary["smoke_results"] = normalized_results
         return summary
     return {}
+
+
+def _annotate_smoke_results_availability(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    has_available_results = False
+    if isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            if str(check.get("name", "")).strip() != "deployed smoke":
+                continue
+            available = isinstance(check.get("smoke_results"), list)
+            check.setdefault("smoke_results_available", available)
+            has_available_results = has_available_results or available
+    payload.setdefault("smoke_results_available", has_available_results)
+    return payload
 
 
 def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[str, Any]:
@@ -333,6 +350,7 @@ def _build_index_entry(*, report_file: Path, payload: dict[str, Any]) -> dict[st
     error = _normalize_index_error(payload.get("error"))
     if error:
         entry["error"] = error
+    entry["smoke_results_available"] = bool(payload.get("smoke_results_available"))
     entry.update(_extract_provider_route_summary(payload))
     entry.update(_extract_smoke_failure_summary(payload))
     return entry
@@ -383,6 +401,7 @@ def _persist_reports(
     report_file: Path | None,
     latest_file: Path | None,
 ) -> None:
+    _annotate_smoke_results_availability(payload)
     payload.update(_extract_provider_route_summary(payload))
     payload.update(_extract_smoke_failure_summary(payload))
     if report_file is not None:

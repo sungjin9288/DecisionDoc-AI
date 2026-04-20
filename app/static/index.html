@@ -20967,6 +20967,22 @@ function getPostDeploySmokeResults(source) {
   return smokeCheck.smoke_results.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+function getPostDeploySmokeResultsAvailability(source) {
+  const payload = source && typeof source === 'object' ? source : null;
+  if (!payload) return false;
+  if (typeof payload.smoke_results_available === 'boolean') return payload.smoke_results_available;
+  if (Array.isArray(payload.smoke_results)) return true;
+  const checks = Array.isArray(payload.checks) ? payload.checks : [];
+  const smokeCheck = checks.find((check) => {
+    return String(check?.name || '').trim() === 'deployed smoke';
+  });
+  if (!smokeCheck || typeof smokeCheck !== 'object') return false;
+  if (typeof smokeCheck.smoke_results_available === 'boolean') {
+    return smokeCheck.smoke_results_available;
+  }
+  return Array.isArray(smokeCheck.smoke_results);
+}
+
 function normalizePostDeploySmokeResultDetail(value) {
   const text = String(value || '').trim();
   if (!text) return '—';
@@ -21040,11 +21056,17 @@ function buildOpsPostDeploySmokeResultDiffRows(leftDetails, rightDetails) {
 
 function buildPostDeploySmokeResultsSummary(source, options = {}) {
   const results = getPostDeploySmokeResults(source);
+  const smokeResultsAvailable = getPostDeploySmokeResultsAvailability(source);
   const compact = options.compact === true;
   const title = options.title || 'Smoke checks';
   if (!results.length) {
     if (options.showEmpty !== true) return '';
-    const emptyMessage = String(options.emptyMessage || '저장된 smoke summary가 없습니다.');
+    const emptyMessage = String(
+      options.emptyMessage
+      || (smokeResultsAvailable
+        ? '저장된 smoke summary가 없습니다.'
+        : 'legacy report라 저장된 smoke summary가 없습니다.')
+    );
     return `
       <div class="ops-post-deploy-smoke-results ops-post-deploy-smoke-results-empty" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.18);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;">
@@ -21346,13 +21368,11 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
     compact: true,
     title: 'Smoke checks',
     showEmpty: true,
-    emptyMessage: '저장된 smoke summary가 없습니다.',
   });
   const rightSmokeResults = buildPostDeploySmokeResultsSummary(right, {
     compact: true,
     title: 'Smoke checks',
     showEmpty: true,
-    emptyMessage: '저장된 smoke summary가 없습니다.',
   });
   const smokeResultDiffRows = buildOpsPostDeploySmokeResultDiffRows(left, right);
   const leftChecks = buildOpsPostDeployCheckMap(left);

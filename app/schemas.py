@@ -812,6 +812,7 @@ class PostDeployReportSummary(BaseModel):
     smoke_message: str | None = None
     retry_after_seconds: int | None = None
     smoke_exception_type: str | None = None
+    smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
 
 
@@ -827,6 +828,7 @@ class PostDeployReportCheck(BaseModel):
     failure_line: str | None = None
     stdout: str | None = None
     stderr: str | None = None
+    smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
 
 
@@ -847,6 +849,7 @@ class PostDeployLatestDetailsResponse(BaseModel):
     smoke_message: str | None = None
     retry_after_seconds: int | None = None
     smoke_exception_type: str | None = None
+    smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
 
 

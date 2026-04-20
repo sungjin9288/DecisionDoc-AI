@@ -134,6 +134,7 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
         if smoke_exception_type:
             summary["smoke_exception_type"] = smoke_exception_type
         smoke_results = check.get("smoke_results")
+        summary["smoke_results_available"] = isinstance(smoke_results, list)
         if isinstance(smoke_results, list):
             normalized_results = [str(item).strip() for item in smoke_results if str(item).strip()]
             if normalized_results:
@@ -143,6 +144,18 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_extracted_summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    has_available_results = False
+    if isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            if str(check.get("name", "")).strip() != "deployed smoke":
+                continue
+            available = isinstance(check.get("smoke_results"), list)
+            check.setdefault("smoke_results_available", available)
+            has_available_results = has_available_results or available
+    payload.setdefault("smoke_results_available", has_available_results)
     extracted_summary: dict[str, Any] = {}
     extracted_summary.update(_extract_provider_route_summary(payload))
     extracted_summary.update(_extract_smoke_failure_summary(payload))
@@ -158,12 +171,22 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
         raise ValueError(f"No reports listed in index: {index_path}")
 
     normalized_limit = max(1, int(limit))
+    normalized_reports: list[dict[str, Any]] = []
+    for entry in reports[:normalized_limit]:
+        if not isinstance(entry, dict):
+            continue
+        normalized_entry = dict(entry)
+        normalized_entry.setdefault(
+            "smoke_results_available",
+            isinstance(normalized_entry.get("smoke_results"), list),
+        )
+        normalized_reports.append(normalized_entry)
     payload: dict[str, Any] = {
         "report_dir": str(Path(report_dir).expanduser()),
         "index_file": str(index_path),
         "latest_report": index_payload.get("latest_report", "-"),
         "updated_at": index_payload.get("updated_at", "-"),
-        "reports": [entry for entry in reports[:normalized_limit] if isinstance(entry, dict)],
+        "reports": normalized_reports,
     }
     if latest:
         latest_path = Path(report_dir).expanduser() / "latest.json"

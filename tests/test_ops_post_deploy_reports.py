@@ -173,6 +173,7 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert body["reports"][0]["provider_routes"]["generation"] == "claude,gemini,openai"
     assert body["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
     assert body["reports"][0]["provider_error_code"] == "insufficient_quota"
+    assert body["reports"][0]["smoke_results_available"] is True
     assert body["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
     assert body["latest_details"] is None
 
@@ -195,9 +196,11 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
     assert body["latest_details"]["provider_policy_checks"]["quality_first"] == "degraded"
     assert body["latest_details"]["provider_policy_issues"]["quality_first"][0].startswith("visual route must be exactly openai")
     assert body["latest_details"]["provider_error_code"] == "insufficient_quota"
+    assert body["latest_details"]["smoke_results_available"] is True
     assert body["latest_details"]["smoke_results"][2].startswith("POST /generate/with-attachments (auth) -> 200")
     assert body["latest_details"]["checks"][2]["name"] == "deployed smoke"
     assert body["latest_details"]["checks"][2]["exit_code"] == 1
+    assert body["latest_details"]["checks"][2]["smoke_results_available"] is True
 
 
 def test_ops_post_deploy_reports_returns_404_when_missing(tmp_path: Path, monkeypatch) -> None:
@@ -228,6 +231,7 @@ def test_ops_post_deploy_report_detail_returns_selected_file(tmp_path: Path, mon
     assert body["report_file"] == "post-deploy-20260414T031000Z.json"
     assert body["details"]["status"] == "failed"
     assert body["details"]["error"] == "docker compose ps failed with exit code 17"
+    assert body["details"]["smoke_results_available"] is False
     assert body["details"]["checks"][1]["exit_code"] == 17
 
 
@@ -301,6 +305,7 @@ def test_ops_post_deploy_report_detail_backfills_provider_route_and_smoke_summar
     assert body["details"]["provider_route_checks"]["visual"] == "ok"
     assert body["details"]["provider_policy_checks"]["quality_first"] == "ok"
     assert body["details"]["provider_policy_issues"]["quality_first"] == []
+    assert body["details"]["smoke_results_available"] is True
     assert body["details"]["smoke_results"][1].startswith("POST /generate/with-attachments (auth) -> 200")
 
 

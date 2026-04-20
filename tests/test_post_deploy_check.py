@@ -286,13 +286,16 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
         "POST /generate/with-attachments (no key) -> 401",
         "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
     ]
+    assert history_payload["checks"][-1]["smoke_results_available"] is True
     assert latest_payload["smoke_results"] == history_payload["checks"][-1]["smoke_results"]
+    assert latest_payload["smoke_results_available"] is True
     assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
     assert index_payload["reports"][0]["provider_route_checks"]["visual"] == "ok"
     assert index_payload["reports"][0]["provider_policy_checks"]["quality_first"] == "degraded"
     assert index_payload["reports"][0]["provider_policy_issues"]["quality_first"][0].startswith("default route must include")
     assert index_payload["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
+    assert index_payload["reports"][0]["smoke_results_available"] is True
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name
