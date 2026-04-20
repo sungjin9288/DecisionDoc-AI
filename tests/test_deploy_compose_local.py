@@ -17,6 +17,13 @@ def _load_script_module(module_name: str, relative_path: str):
     return module
 
 
+def test_prod_compose_mounts_post_deploy_reports_into_app() -> None:
+    compose_text = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert "DECISIONDOC_POST_DEPLOY_REPORT_DIR=/app/reports/post-deploy" in compose_text
+    assert "./reports:/app/reports:ro" in compose_text
+
+
 def test_deploy_compose_local_builds_and_rolls_out(tmp_path: Path, monkeypatch) -> None:
     deployer = _load_script_module("decisiondoc_deploy_compose_local_default", "scripts/deploy_compose_local.py")
     env_file = tmp_path / ".env.prod"

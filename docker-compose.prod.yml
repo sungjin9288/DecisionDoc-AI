@@ -21,6 +21,7 @@ services:
       - DECISIONDOC_API_KEYS=${DECISIONDOC_API_KEYS:-}
       - DECISIONDOC_API_KEY=${DECISIONDOC_API_KEY:-}
       - DECISIONDOC_OPS_KEY=${DECISIONDOC_OPS_KEY:-}
+      - DECISIONDOC_POST_DEPLOY_REPORT_DIR=/app/reports/post-deploy
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - SMTP_HOST=${SMTP_HOST:-}
@@ -33,6 +34,7 @@ services:
       - DECISIONDOC_TEMPLATE_VERSION=${DECISIONDOC_TEMPLATE_VERSION:-v1}
     volumes:
       - decisiondoc_data:/app/data
+      - ./reports:/app/reports:ro
     deploy:
       resources:
         limits:
