@@ -79,6 +79,11 @@ python scripts/load_test_full.py \
   --output load_test_report.json
 ```
 
+### UAT 시작 전 preflight
+```bash
+python3 scripts/uat_preflight.py --env-file .env.prod --report-dir ./reports/post-deploy
+```
+
 ---
 
 ## 3.1 현재 단계 판단
