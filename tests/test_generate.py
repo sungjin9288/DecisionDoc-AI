@@ -8,6 +8,7 @@ import pytest
 from app.providers.base import ProviderError
 from app.providers.factory import get_provider
 from app.providers.mock_provider import MockProvider
+from app.services.auth_service import create_access_token
 from app.services.generation_service import _apply_finished_doc_quality_guard
 from app.services.validator import validate_docs
 
@@ -24,6 +25,16 @@ def _create_client(tmp_path, monkeypatch, provider="mock"):
 
     app = create_app()
     return TestClient(app)
+
+
+def _auth_headers(user_id: str = "testuser") -> dict[str, str]:
+    token = create_access_token(
+        user_id=user_id,
+        tenant_id="system",
+        role="admin",
+        username=user_id,
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_generate_minimal_payload_returns_all_docs(tmp_path, monkeypatch):
@@ -77,6 +88,92 @@ def test_generate_accepts_optional_style_profile_id(tmp_path, monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["provider"] == "mock"
+
+
+def test_generate_history_detail_preserves_slide_outline_metadata(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch, provider="mock")
+    bundle_id = "history-slide-outline-001"
+
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "historyadmin",
+            "display_name": "History Admin",
+            "email": "history@example.com",
+            "password": "HistoryPass1!",
+        },
+    )
+    assert register.status_code == 200
+    auth_headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    def _fake_generate_documents(req, *, request_id: str, tenant_id: str):  # noqa: ANN001
+        assert req.bundle_type == "presentation_kr"
+        assert tenant_id == "system"
+        return {
+            "docs": [
+                {
+                    "doc_type": "slide_structure",
+                    "markdown": "# 발표 구조\n\n본문",
+                },
+                {
+                    "doc_type": "slide_script",
+                    "markdown": "# 스크립트\n\n본문",
+                },
+            ],
+            "raw_bundle": {
+                "slide_structure": {
+                    "total_slides": 2,
+                    "slide_outline": [
+                        {
+                            "title": "오프닝 질문",
+                            "core_message": "청중의 문제 인식을 연다.",
+                            "visual_type": "현장 사진",
+                        },
+                        {
+                            "title": "핵심 제안",
+                            "core_message": "제안의 차별성을 요약한다.",
+                            "visual_type": "타임라인",
+                        },
+                    ],
+                }
+            },
+            "metadata": {
+                "bundle_id": bundle_id,
+                "provider": "mock",
+                "schema_version": "v1",
+                "cache_hit": False,
+                "bundle_type": "presentation_kr",
+                "doc_count": 2,
+                "applied_references": [],
+                "timings_ms": {},
+            },
+        }
+
+    client.app.state.service.generate_documents = _fake_generate_documents
+
+    response = client.post(
+        "/generate",
+        json={
+            "title": "히스토리 metadata 보존 검증",
+            "goal": "history detail에 slide outline metadata가 남아야 한다.",
+            "bundle_type": "presentation_kr",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    entry_id = body["request_id"]
+    assert body["bundle_id"] == bundle_id
+    assert body["docs"][0]["total_slides"] == 2
+    assert body["docs"][0]["slide_outline"][0]["title"] == "오프닝 질문"
+
+    detail = client.get(f"/history/{entry_id}", headers=auth_headers)
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["docs"][0]["total_slides"] == 2
+    assert detail_body["docs"][0]["slide_outline"][0]["title"] == "오프닝 질문"
+    assert detail_body["docs"][0]["slide_outline"][1]["visual_type"] == "타임라인"
 
 
 def test_missing_required_fields_return_422(tmp_path, monkeypatch):

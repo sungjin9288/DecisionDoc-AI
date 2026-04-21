@@ -701,7 +701,11 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         from datetime import datetime, timezone
         from app.storage.history_store import HistoryStore, HistoryEntry
         user_id = getattr(request.state, "user_id", None) or "anonymous"
-        HistoryStore(tenant_id).add(HistoryEntry(
+        HistoryStore(
+            tenant_id,
+            base_dir=str(request.app.state.data_dir),
+            backend=request.app.state.state_backend,
+        ).add(HistoryEntry(
             entry_id=request_id,
             tenant_id=tenant_id,
             user_id=user_id,
@@ -715,7 +719,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
             score=0.0,
             tags=[],
             applied_references=metadata.get("applied_references", []),
-            docs=result["docs"],
+            docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
         ))
     except Exception as _he:
         logger.warning("[History] 이력 저장 실패 (무시): %s", _he)
