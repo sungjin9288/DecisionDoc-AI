@@ -112,6 +112,13 @@ python3 scripts/record_uat_result.py \
   --follow-up "아니오"
 ```
 
+### UAT 세션 요약 확인
+```bash
+python3 scripts/show_uat_session.py \
+  --session-file ./reports/uat/uat-session-<timestamp>-business-uat.md \
+  --limit 5
+```
+
 ---
 
 ## 3.1 현재 단계 판단
