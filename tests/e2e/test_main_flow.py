@@ -217,6 +217,11 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "post-deploy-20260414T031000Z.json" in panel_text
     assert "health" in panel_text
     assert "smoke" in panel_text
+    assert "Smoke checks" in panel_text
+    assert "2 checks" in panel_text
+    assert "0 checks" in panel_text
+    assert "POST /generate/with-attachments (auth) -> 200 files=1 docs=4" in panel_text
+    assert "legacy report라 저장된 smoke summary가 없습니다." in panel_text
     assert "https://admin.decisiondoc.kr" in panel_text
     assert "JSON 보기" in panel_text
     assert "JSON 다운로드" in panel_text
@@ -296,6 +301,9 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "선택한 리포트" in detail_text
     assert "post-deploy-20260414T041000Z.json" in detail_text
     assert "smoke 포함" in detail_text
+    assert "Smoke checks" in detail_text
+    assert "2 checks" in detail_text
+    assert "POST /generate/with-attachments (auth) -> 200 files=1 docs=4" in detail_text
 
     pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').click()
     pg.wait_for_function(
@@ -306,6 +314,9 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "docker compose ps failed with exit code 17" in selected_detail
     assert "실패" in selected_detail
     assert "exit 17" in selected_detail
+    assert "Smoke checks" in selected_detail
+    assert "0 checks" in selected_detail
+    assert "legacy report라 저장된 smoke summary가 없습니다." in selected_detail
     assert not console_messages
 
     ctx.close()

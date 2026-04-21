@@ -58,6 +58,11 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
         "started_at": "2026-04-14T04:09:00+00:00",
         "finished_at": "2026-04-14T04:10:00+00:00",
         "skip_smoke": False,
+        "smoke_results_available": True,
+        "smoke_results": [
+            "GET /health -> 200 request_id=req-latest",
+            "POST /generate/with-attachments (auth) -> 200 files=1 docs=4",
+        ],
         "checks": [
             {"name": "health", "status": "passed"},
             {"name": "smoke", "status": "passed", "exit_code": 0},
@@ -70,6 +75,7 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
         "finished_at": "2026-04-14T03:10:00+00:00",
         "skip_smoke": True,
         "error": "docker compose ps failed with exit code 17",
+        "smoke_results_available": False,
         "checks": [
             {"name": "health", "status": "passed"},
             {"name": "smoke", "status": "failed", "exit_code": 17},
@@ -87,6 +93,11 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
                 "started_at": "2026-04-14T04:09:00+00:00",
                 "finished_at": "2026-04-14T04:10:00+00:00",
                 "skip_smoke": False,
+                "smoke_results_available": True,
+                "smoke_results": [
+                    "GET /health -> 200 request_id=req-latest",
+                    "POST /generate/with-attachments (auth) -> 200 files=1 docs=4",
+                ],
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -96,6 +107,7 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
                 "finished_at": "2026-04-14T03:10:00+00:00",
                 "skip_smoke": True,
                 "error": "docker compose ps failed with exit code 17",
+                "smoke_results_available": False,
             },
         ],
     }
