@@ -368,6 +368,8 @@ def test_proposal_quality_guard_rewrites_sparse_attachment_hallucinations():
     assert tech["tech_stack"][0].startswith("데이터 수집·연계 |")
     assert tech["technical_summary"]
     assert "AWS Lambda" not in tech["technical_summary"]
+    assert "초안을 작성한다." not in tech["ai_approach"]
+    assert tech["ai_approach"].startswith("AI 기능은 현장 위험 징후를 분석하고 대응 우선순위를 정리해")
     assert execution["milestones"][0].startswith("착수 및 요구사항 정리 |")
     assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
     assert "180%" not in impact["impact_summary"]
