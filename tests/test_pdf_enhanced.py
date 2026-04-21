@@ -222,6 +222,20 @@ def test_pdf_source_in_prompt():
     assert "This is the PDF raw text content" in prompt
 
 
+def test_quality_prompt_forbids_ungrounded_specifics():
+    from app.domain.schema import build_bundle_prompt
+
+    prompt = build_bundle_prompt(
+        {
+            "title": "Decision",
+            "goal": "Test",
+        },
+        schema_version="v1",
+    )
+
+    assert "근거 없는 날짜, 예산, 기관명, 기술명, 배점, 일정의 임의 생성" in prompt
+
+
 def test_procurement_page_hints_in_prompt_for_slide_outline_bundle():
     from app.bundle_catalog.bundles.proposal_kr import PROPOSAL_KR
     from app.domain.schema import build_bundle_prompt

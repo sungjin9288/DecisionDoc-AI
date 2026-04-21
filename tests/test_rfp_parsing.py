@@ -252,6 +252,14 @@ class TestBuildRFPContext:
         ctx = build_rfp_context("내용")
         assert "바탕으로 문서를 작성하세요" in ctx
 
+    def test_contains_grounding_rules_for_missing_details(self):
+        from app.services.rfp_parser import build_rfp_context
+
+        ctx = build_rfp_context("내용")
+
+        assert "날짜, 예산, 기관명, 기술명, 배점, 수치는 임의로 만들지 마세요" in ctx
+        assert "예시 기술 스택이나 마감일을 추정해서 채우지 마세요" in ctx
+
     def test_includes_normalized_procurement_context_when_provided(self):
         from app.services.rfp_parser import build_rfp_context
 
