@@ -256,6 +256,11 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     )
     compare_text = pg.locator("#ops-post-deploy-compare-result").inner_text()
     assert "exit 17" in compare_text
+    assert "Smoke checks 차이" in compare_text
+    assert "Smoke checks" in compare_text
+    assert "2 checks" in compare_text
+    assert "0 checks" in compare_text
+    assert "legacy report라 저장된 smoke summary가 없습니다." in compare_text
 
     pg.click("#ops-post-deploy-clear-filters-btn")
     pg.wait_for_function(
