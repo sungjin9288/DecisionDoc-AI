@@ -84,6 +84,16 @@ python scripts/load_test_full.py \
 python3 scripts/uat_preflight.py --env-file .env.prod --report-dir ./reports/post-deploy
 ```
 
+### UAT 세션 파일 생성
+```bash
+python3 scripts/create_uat_session.py \
+  --env-file .env.prod \
+  --report-dir ./reports/post-deploy \
+  --output-dir ./reports/uat \
+  --session-name business-uat \
+  --owner "<담당자>"
+```
+
 ---
 
 ## 3.1 현재 단계 판단
