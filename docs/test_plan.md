@@ -94,6 +94,24 @@ python3 scripts/create_uat_session.py \
   --owner "<담당자>"
 ```
 
+### UAT 결과 기록 추가
+```bash
+python3 scripts/record_uat_result.py \
+  --session-file ./reports/uat/uat-session-<timestamp>-business-uat.md \
+  --owner "<담당자>" \
+  --scenario "시나리오 1. 기본 사업 제안서 생성" \
+  --bundle proposal_kr \
+  --input-data "기본 입력 요약" \
+  --attachments "intro.pdf,concept.pptx" \
+  --generation-status "성공" \
+  --export-status "DOCX/PDF 성공" \
+  --visual-asset-status "일치" \
+  --history-restore-status "확인 완료" \
+  --quality-notes "문서 구조는 안정적이나 결론 문장이 다소 장문임" \
+  --issues "없음" \
+  --follow-up "아니오"
+```
+
 ---
 
 ## 3.1 현재 단계 판단
