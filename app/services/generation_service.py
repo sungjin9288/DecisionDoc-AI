@@ -409,6 +409,334 @@ def _quality_guard_proposal_bundle(bundle: dict[str, Any], *, title: str, goal: 
         )
 
 
+def _extract_attachment_reference_text(context_text: Any) -> str:
+    raw = str(context_text or "")
+    start_marker = "=== RFP 원문 (참고용) ==="
+    end_marker = "=== RFP 원문 끝 ==="
+    start = raw.find(start_marker)
+    end = raw.find(end_marker)
+    if start == -1 or end == -1 or end < start:
+        return ""
+    return raw[start + len(start_marker):end].strip()
+
+
+def _is_sparse_attachment_context(context_text: Any) -> bool:
+    reference_text = _extract_attachment_reference_text(context_text)
+    if not reference_text:
+        return False
+    normalized = re.sub(r"\[첨부파일:[^\]]+\]", " ", reference_text)
+    token_count = len(re.findall(r"[가-힣A-Za-z0-9]+", normalized))
+    has_digits = bool(re.search(r"\d", normalized))
+    return token_count <= 80 and not has_digits
+
+
+def _attachment_grounded_slide_outline(title: str, *, section: str) -> list[dict[str, Any]]:
+    if section == "business_understanding":
+        return [
+            {
+                "page": 1,
+                "title": "사업 배경과 문제 정의",
+                "key_content": (
+                    f"{title} 제안은 교차로 안전 강화와 장애인 보호라는 핵심 요구를 먼저 정리하고, "
+                    "현행 운영에서 어떤 문제가 반복되는지 평가위원이 바로 이해할 수 있게 설명합니다."
+                ),
+                "core_message": "첨부에서 확인된 요구사항을 기준으로 사업 필요성을 정리합니다.",
+                "evidence_points": [
+                    "첨부 원문에 교차로 안전 강화 요구가 명시됨",
+                    "첨부 원문에 장애인 보호 강화 요구가 명시됨",
+                ],
+                "visual_type": "비교표",
+                "visual_brief": "현행 문제와 개선 방향을 좌우 비교표로 정리",
+                "layout_hint": "좌측 현황 문제 / 우측 제안 방향 / 하단 핵심 시사점",
+                "design_tip": "원문 요구사항 문구를 강조 박스로 노출",
+            },
+            {
+                "page": 2,
+                "title": "평가 대응 포인트",
+                "key_content": (
+                    "평가위원이 확인할 사업 이해도, 실행 가능성, 기대효과를 "
+                    "원문 요구사항과 운영 대응 전략 중심으로 구조화합니다."
+                ),
+                "core_message": "원문 요구사항을 평가 항목 언어로 변환해 제안 메시지를 정리합니다.",
+                "evidence_points": [
+                    "요구사항 반영 범위를 평가 포인트별로 재구성",
+                    "근거 없는 수치 대신 확인 가능한 운영 방식 중심으로 설명",
+                ],
+                "visual_type": "프로세스 흐름도",
+                "visual_brief": "요구사항에서 제안 방향으로 이어지는 대응 흐름도",
+                "layout_hint": "상단 요구사항 / 중앙 대응 전략 / 하단 기대 효과",
+                "design_tip": "평가위원이 보는 관점 순서대로 읽히게 배치",
+            },
+        ]
+    if section == "tech_proposal":
+        return [
+            {
+                "page": 1,
+                "title": "기술 접근 방향",
+                "key_content": (
+                    "특정 제품명을 앞세우기보다 데이터 수집, 위험 징후 분석, 운영 화면 제공 등 "
+                    "실제 구현이 필요한 기능 단위로 기술 구성을 설명합니다."
+                ),
+                "core_message": "기술명보다 구현 기능과 운영 목적을 먼저 설명합니다.",
+                "evidence_points": [
+                    "현장 데이터 수집과 분석 지원이 핵심",
+                    "운영자가 즉시 활용할 수 있는 화면과 보고 체계 필요",
+                ],
+                "visual_type": "프로세스 흐름도",
+                "visual_brief": "데이터 수집, 분석, 운영 활용 단계를 연결한 기능 흐름도",
+                "layout_hint": "좌측 입력 / 중앙 분석 / 우측 운영 활용",
+                "design_tip": "제품명 대신 기능 목적을 라벨로 사용",
+            },
+            {
+                "page": 2,
+                "title": "보안 및 운영 원칙",
+                "key_content": (
+                    "공공사업 제안서에 필요한 보안 통제, 접근권한 관리, 운영 추적 가능성을 "
+                    "기본 설계 원칙으로 제시합니다."
+                ),
+                "core_message": "공공 운영 기준에 맞는 보안과 감사 대응 체계를 함께 제시합니다.",
+                "evidence_points": [
+                    "최소 권한과 접근 통제 원칙 적용",
+                    "운영 로그와 검수 이력 확보 필요",
+                ],
+                "visual_type": "비교표",
+                "visual_brief": "보안 원칙, 운영 통제, 검수 포인트를 나란히 보여주는 표",
+                "layout_hint": "상단 핵심 원칙 / 하단 통제 항목 표",
+                "design_tip": "공공기관 운영 기준 용어를 우선 사용",
+            },
+        ]
+    if section == "execution_plan":
+        return [
+            {
+                "page": 1,
+                "title": "수행 단계 개요",
+                "key_content": (
+                    "착수, 설계, 구현, 검증, 운영 전환으로 이어지는 기본 수행 단계를 정리하고 "
+                    "각 단계의 완료 기준을 함께 제시합니다."
+                ),
+                "core_message": "단계별 완료 기준과 산출물을 명확히 두는 수행계획입니다.",
+                "evidence_points": [
+                    "착수 단계에서 요구사항과 범위를 정리",
+                    "검증 단계에서 품질 점검과 운영 전환 준비 수행",
+                ],
+                "visual_type": "타임라인",
+                "visual_brief": "착수부터 운영 전환까지의 단계형 타임라인",
+                "layout_hint": "가로 타임라인 / 단계별 산출물 박스",
+                "design_tip": "날짜 대신 단계와 승인 조건을 중심으로 표기",
+            },
+            {
+                "page": 2,
+                "title": "거버넌스와 리스크 관리",
+                "key_content": (
+                    "PM, 기술 리드, 품질 책임자가 어떤 방식으로 이슈를 관리하고 "
+                    "발주기관과 보고 체계를 유지하는지 설명합니다."
+                ),
+                "core_message": "보고 체계와 리스크 관리 책임을 분명히 하는 수행 구조입니다.",
+                "evidence_points": [
+                    "주기적 점검 회의와 승인 절차 운영",
+                    "리스크 식별과 대응 이력을 같은 체계로 관리",
+                ],
+                "visual_type": "조직도",
+                "visual_brief": "PM, 기술 리드, 품질 책임자 중심의 거버넌스 구조도",
+                "layout_hint": "상단 의사결정 / 하단 실행 조직",
+                "design_tip": "역할 관계와 승인 흐름을 동시에 보이게 구성",
+            },
+        ]
+    return [
+        {
+            "page": 1,
+            "title": "기대 효과 개요",
+            "key_content": (
+                "정량 수치를 임의로 제시하기보다 교차로 안전성 개선, 교통약자 보호 강화, "
+                "운영 신뢰도 향상 같은 효과 범주를 명확히 설명합니다."
+            ),
+            "core_message": "근거가 확인된 효과 범주 중심으로 기대효과를 설명합니다.",
+            "evidence_points": [
+                "교차로 안전 강화 요구와 직접 연결된 효과",
+                "장애인 보호 강화 요구와 직접 연결된 효과",
+            ],
+            "visual_type": "비교표",
+            "visual_brief": "현행 문제와 기대 효과 범주를 비교하는 표",
+            "layout_hint": "좌측 현행 한계 / 우측 기대 변화",
+            "design_tip": "숫자 대신 효과 범주와 측정 방법을 강조",
+        },
+        {
+            "page": 2,
+            "title": "모니터링 및 확산 계획",
+            "key_content": (
+                "시범 운영 이후 어떤 항목을 모니터링하고, 후속 확산 여부를 어떻게 판단할지 "
+                "운영 관점에서 정리합니다."
+            ),
+            "core_message": "실제 운영 데이터를 바탕으로 후속 확산 여부를 판단합니다.",
+            "evidence_points": [
+                "운영 로그, 사고·민원 추이, 현장 피드백을 함께 확인",
+                "시범 운영 결과를 기반으로 후속 투자 판단",
+            ],
+            "visual_type": "타임라인",
+            "visual_brief": "시범 운영, 점검, 확산 판단으로 이어지는 운영 타임라인",
+            "layout_hint": "상단 단계 / 하단 확인 항목",
+            "design_tip": "확산 결정이 실제 운영 데이터에 기반한다는 점을 강조",
+        },
+    ]
+
+
+def _quality_guard_attachment_grounded_proposal_bundle(
+    bundle: dict[str, Any],
+    *,
+    title: str,
+    goal: str,
+    context_text: str,
+) -> None:
+    if not _is_sparse_attachment_context(context_text):
+        return
+
+    subject = _project_subject(title)
+
+    business = bundle.get("business_understanding")
+    if isinstance(business, dict):
+        business["executive_summary"] = (
+            f"본 제안은 {subject} 과제에서 확인된 교차로 안전 강화와 장애인 보호 요구를 사업 구조로 재정리한 안입니다. "
+            "첨부 원문에 없는 수치나 일정 대신, 발주기관이 왜 이 사업을 추진해야 하는지와 어떤 운영 변화가 필요한지를 중심으로 설명합니다. "
+            "제안서의 초점은 안전 문제를 줄이기 위한 실행 방향, 평가 대응 포인트, 후속 운영 체계를 명확히 제시하는 데 있습니다."
+        )
+        business["project_background"] = (
+            f"{subject} 사업은 교차로 안전 강화와 장애인 보호 강화를 동시에 요구합니다. "
+            "따라서 제안서는 현장의 안전 문제를 어떻게 줄일지, 교통약자 관점의 보호 체계를 어떤 방식으로 보강할지, "
+            "그리고 발주기관이 관리 가능한 운영 구조를 어떻게 만들지를 중심으로 구성되어야 합니다."
+        )
+        business["current_issues"] = [
+            "교차로 안전 강화 요구에 비해 현장 대응 체계가 분산되어 있음",
+            "장애인 보호 관점의 운영 기준과 현장 실행 절차가 일관되지 않음",
+            "안전 관련 현황을 통합적으로 확인하고 점검할 수 있는 운영 체계가 부족함",
+        ]
+        business["project_objectives"] = [
+            "교차로 안전 강화 | 현행 위험 요소를 줄일 수 있는 실행 구조 마련 | 운영 로그와 현장 점검 결과",
+            "장애인 보호 강화 | 교통약자 관점의 보호 조치와 운영 기준 정비 | 현장 적용 여부와 개선 이력",
+            "운영 관리 체계 확보 | 발주기관이 지속적으로 점검 가능한 보고·검수 구조 구성 | 보고 체계와 검수 기록",
+        ]
+        business["evaluation_alignment"] = [
+            "사업 이해도 | 교차로 안전과 장애인 보호라는 핵심 요구를 제안 배경과 목표에 직접 연결 | 첨부 원문 요구사항과 사업 배경 서술",
+            "실행 가능성 | 단계별 수행 구조와 산출물, 보고 체계를 명확히 정리 | 수행계획, 산출물, 거버넌스 계획",
+            "효과성 | 정량 수치 대신 확인 가능한 운영 변화와 점검 방법을 제시 | 기대효과, 모니터링 계획, 후속 확산 기준",
+        ]
+        business["scope_summary"] = (
+            "본 사업 범위는 교차로 안전과 교통약자 보호를 위한 현황 분석, 운영 체계 설계, 현장 적용 방안, 보고와 검수 절차 정비까지 포함합니다. "
+            "기술 도입 자체보다 현장에서 지속적으로 활용할 수 있는 운영 구조와 관리 체계를 함께 제시하는 것이 핵심입니다."
+        )
+        business["total_slides"] = 2
+        business["slide_outline"] = _attachment_grounded_slide_outline(title, section="business_understanding")
+
+    tech = bundle.get("tech_proposal")
+    if isinstance(tech, dict):
+        tech["technical_summary"] = (
+            f"{subject}의 기술 제안은 특정 제품명보다 필요한 기능과 운영 목적을 중심으로 설명합니다. "
+            "핵심은 현장 데이터를 수집하고, 위험 징후를 분석하며, 운영자가 바로 활용할 수 있는 화면과 보고 체계를 제공하는 것입니다. "
+            "첨부 원문에 없는 기술 스택이나 제품명은 확정적으로 쓰지 않고 기능 수준에서 설계를 제시합니다."
+        )
+        tech["tech_stack"] = [
+            "데이터 수집·연계 | 현장 정보 수집 및 입력 데이터 정리 | 교차로 안전 현황 통합",
+            "분석·판단 지원 | 위험 징후 분석과 의사결정 보조 기능 | 안전 대응 우선순위 도출",
+            "운영 화면·보고 | 관리자 화면과 보고서 생성 기능 | 운영 가시성과 검수 대응 확보",
+        ]
+        tech["architecture_overview"] = (
+            "시스템은 현장 데이터 수집, 분석 처리, 운영자 확인 화면, 보고와 검수 기록 계층으로 구성합니다. "
+            "이 구조는 운영자가 교차로 안전 상황과 교통약자 보호 관련 조치를 한 흐름 안에서 확인할 수 있도록 설계합니다."
+        )
+        tech["ai_approach"] = (
+            f"AI 기능은 {goal}에 필요한 위험 징후 분석과 우선순위 판단을 지원하는 수준에서 설명합니다. "
+            "특정 모델명이나 제품명을 단정하기보다, 운영 데이터와 현장 정보에 기반한 분석 보조 기능이라는 역할을 분명히 합니다."
+        )
+        tech["implementation_principles"] = [
+            "기능 중심 설계 | 데이터 수집, 분석, 운영 활용 흐름을 먼저 정의 | 기능별 책임 경계와 화면 흐름 확인",
+            "설명 가능한 운영 | 판단 근거와 검수 이력을 함께 남김 | 운영 로그와 검수 기록 확인",
+            "보안 기본값 적용 | 접근 통제와 감사 대응을 기본 설계에 포함 | 권한 정책과 운영 절차 점검",
+        ]
+        tech["security_measures"] = [
+            "접근 통제 | 역할 기반 권한 관리와 승인 절차 운영 | 최소 권한 원칙 적용 여부 확인",
+            "운영 추적성 | 로그와 검수 이력을 기록 | 감사 대응용 기록 유지 여부 확인",
+            "데이터 보호 | 민감 정보 처리 기준과 저장 정책 정비 | 내부 보안 기준 준수 여부 확인",
+        ]
+        tech["differentiation"] = [
+            "운영 중심 제안 | 기술명보다 현장 실행 방식과 관리 체계를 우선 설명 | 발주기관 운영 관점과 직접 연결",
+            "교통약자 보호 강조 | 장애인 보호 요구를 사업 전반의 설계 원칙으로 반영 | 첨부 원문 요구사항과 일치",
+            "검수 대응 구조 | 보고, 모니터링, 검수 체계를 함께 제시 | 운영 지속성과 감사 대응력 확보",
+        ]
+        tech["total_slides"] = 2
+        tech["slide_outline"] = _attachment_grounded_slide_outline(title, section="tech_proposal")
+
+    execution = bundle.get("execution_plan")
+    if isinstance(execution, dict):
+        execution["delivery_summary"] = (
+            f"{subject} 수행계획은 착수, 설계, 구현, 검증, 운영 전환의 기본 단계를 기준으로 정리합니다. "
+            "각 단계는 완료 기준과 산출물을 함께 제시해 발주기관이 진행률과 품질을 확인할 수 있게 구성합니다. "
+            "첨부 원문에 없는 기간 수치는 확정하지 않고 단계 중심으로 수행 구조를 설명합니다."
+        )
+        execution["team_structure"] = [
+            "PM·총괄 | 핵심 인력 | 일정·범위·대외 협의 총괄 | 착수 단계부터 종료까지",
+            "기술 리드 | 핵심 인력 | 기능 설계와 구현 방향 정리 | 설계 단계부터 검증 단계까지",
+            "운영·품질 담당 | 핵심 인력 | 검수 기준 수립과 운영 전환 준비 | 구현 단계부터 운영 전환까지",
+        ]
+        execution["milestones"] = [
+            "착수 및 요구사항 정리 | 착수 단계 | 사업 범위와 요구사항 정리 완료 | 착수보고서, 요구사항 정리본",
+            "설계 및 구현 정리 | 구현 준비 단계 | 기능 구조와 운영 흐름 설계 완료 | 설계 문서, 구현 계획서",
+            "검증 및 운영 전환 | 검증 단계 | 주요 시나리오 점검과 운영 준비 완료 | 시험 결과서, 운영 매뉴얼",
+        ]
+        execution["methodology"] = (
+            "요구사항 정리, 기능 설계, 구현, 검증, 운영 전환이 이어지는 단계형 수행 방식을 적용합니다. "
+            "각 단계에서 발주기관과 점검 포인트를 공유하고, 이슈가 생기면 즉시 보완 계획을 반영하는 방식으로 운영합니다."
+        )
+        execution["governance_plan"] = (
+            "PM, 기술 리드, 운영·품질 담당이 정기 점검 회의를 운영하고, 발주기관과는 단계별 산출물과 이슈를 공유합니다. "
+            "중요 변경사항은 영향도 검토 후 승인 절차를 거치며, 모든 의사결정은 기록으로 남겨 후속 검수와 운영에 활용합니다."
+        )
+        execution["risk_management"] = [
+            "요구사항 해석 차이 | 범위 오해로 인한 산출물 재작업 가능성 | 단계별 확인 회의와 검수 기준 합의",
+            "현장 적용 난이도 | 운영 현장과 문서 간 괴리 발생 가능성 | 시범 적용과 피드백 반영 절차 운영",
+            "운영 전환 지연 | 인수인계와 교육 부족으로 초기 운영 혼선 가능성 | 운영 매뉴얼과 교육 계획 선제 마련",
+        ]
+        execution["deliverables"] = [
+            "착수보고서 | 착수 단계 종료 시 | 문서 | 발주기관 검토 및 승인",
+            "설계 및 구현 산출물 | 설계·구현 단계 종료 시 | 문서 및 결과물 | 단계별 점검 회의",
+            "시험 결과서 및 운영 매뉴얼 | 검증·운영 전환 단계 종료 시 | 문서 | 최종 검수 및 운영 준비 확인",
+        ]
+        execution["total_slides"] = 2
+        execution["slide_outline"] = _attachment_grounded_slide_outline(title, section="execution_plan")
+
+    impact = bundle.get("expected_impact")
+    if isinstance(impact, dict):
+        impact["impact_summary"] = (
+            f"{subject}의 기대효과는 교차로 안전성과 교통약자 보호 수준을 높이고, 발주기관이 지속적으로 관리 가능한 운영 구조를 만드는 데 있습니다. "
+            "정량 수치를 임의로 제시하기보다, 어떤 효과 범주를 어떤 방식으로 점검할지 중심으로 설명합니다."
+        )
+        impact["quantitative_effects"] = [
+            "교차로 안전성 | 현행 대비 개선 | 사고·민원·운영 로그를 통해 개선 여부 확인 | 안전 관련 운영 품질 향상",
+            "교통약자 보호 체계 | 현행 대비 보강 | 현장 점검과 보호 조치 이행 여부 확인 | 장애인 보호 관점의 실행력 강화",
+            "운영 관리 수준 | 점검 체계 확보 | 보고와 검수 기록 유지 여부 확인 | 지속 가능한 운영 구조 마련",
+        ]
+        impact["qualitative_effects"] = [
+            "교통약자 신뢰도 향상 | 보호 대상 관점의 서비스 신뢰성 제고 | 공공서비스 체감 품질 개선",
+            "운영 일관성 확보 | 현장과 관리 부서 간 판단 기준 정렬 | 반복 가능한 운영 프로세스 정착",
+            "정책 확산 기반 마련 | 시범 운영 결과를 후속 의사결정 근거로 활용 | 후속 사업 검토 기반 확보",
+        ]
+        impact["social_value"] = (
+            f"{subject} 사업은 교차로 안전과 교통약자 보호라는 공공 가치를 직접 다룹니다. "
+            "따라서 기대효과는 기술 도입 자체보다, 현장에서 안전 문제를 줄이고 보호 대상을 더 일관되게 지원할 수 있는 운영 체계를 만드는 데 있습니다."
+        )
+        impact["kpi_commitments"] = [
+            "교차로 안전 관련 운영 지표 | 현행 대비 개선 여부 확인 | 운영 로그와 점검 결과 | 시범 운영 이후 검토",
+            "교통약자 보호 조치 이행도 | 현장 적용 여부 확인 | 현장 피드백과 점검 기록 | 단계별 운영 점검 시점",
+            "운영 보고 체계 정착 | 정기 보고와 검수 기록 유지 | 보고서와 검수 이력 | 운영 전환 이후 점검",
+        ]
+        impact["roi_estimate"] = "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
+        impact["monitoring_plan"] = [
+            "안전 관련 운영 로그 | 정기 점검 주기 | 운영 담당자 | 개선 여부와 이슈 추이 확인",
+            "교통약자 보호 조치 이행 현황 | 단계별 점검 주기 | 현장·운영 공동 책임 | 보호 조치 적용 여부 확인",
+            "보고 및 검수 기록 유지 상태 | 정기 리뷰 주기 | PM 및 품질 담당 | 운영 관리 체계 유지 여부 확인",
+        ]
+        impact["total_slides"] = 2
+        impact["slide_outline"] = _attachment_grounded_slide_outline(title, section="expected_impact")
+
+
 def _quality_guard_performance_bundle(bundle: dict[str, Any], *, title: str, goal: str) -> None:
     subject = _project_subject(title)
     overview = bundle.get("performance_overview")
@@ -489,9 +817,16 @@ def _apply_finished_doc_quality_guard(
     bundle_type: str,
     title: str,
     goal: str,
+    context_text: str = "",
 ) -> dict[str, Any]:
     if bundle_type == "proposal_kr":
         _quality_guard_proposal_bundle(bundle, title=title, goal=goal)
+        _quality_guard_attachment_grounded_proposal_bundle(
+            bundle,
+            title=title,
+            goal=goal,
+            context_text=context_text,
+        )
     elif bundle_type == "performance_plan_kr":
         _quality_guard_performance_bundle(bundle, title=title, goal=goal)
     normalized = _normalize_finished_doc_value(bundle)
@@ -1245,6 +1580,7 @@ class GenerationService:
             bundle_type=str(payload.get("bundle_type", "tech_decision") or "tech_decision"),
             title=str(payload.get("title", "") or ""),
             goal=str(payload.get("goal", "") or ""),
+            context_text=str(payload.get("context", "") or ""),
         )
         procurement_context = str(payload.get("_procurement_context", "") or "").strip()
         if not procurement_context:

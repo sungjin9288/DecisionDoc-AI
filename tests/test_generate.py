@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from app.providers.base import ProviderError
 from app.providers.factory import get_provider
 from app.providers.mock_provider import MockProvider
+from app.services.generation_service import _apply_finished_doc_quality_guard
 from app.services.validator import validate_docs
 
 
@@ -287,6 +289,121 @@ def test_provider_quota_exhausted_returns_503_with_quota_guidance(tmp_path, monk
     assert body["code"] == "PROVIDER_FAILED"
     assert body["message"] == "AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요."
     assert body["errors"] == ["provider_error_code=insufficient_quota"]
+
+
+def _proposal_bundle_with_hallucinated_attachment_fields() -> dict:
+    return {
+        "business_understanding": {
+            "executive_summary": "원문에 없는 20% 사고 감소와 3억원 예산 절감을 약속합니다.",
+            "project_background": "원문에 없는 2027년 완료 계획과 정량 KPI를 제시합니다.",
+            "current_issues": ["사고율 20% 증가", "AWS 도입 필요"],
+            "project_objectives": ["사고율 30% 절감 | 3억원 예산 확보 | ROI 180%"],
+            "evaluation_alignment": ["정량 KPI 중심 설명"],
+            "scope_summary": "2027년 1분기까지 전면 구축합니다.",
+            "total_slides": 7,
+            "slide_outline": [{"page": 1, "title": "기존 슬라이드"}],
+        },
+        "tech_proposal": {
+            "technical_summary": "AWS Lambda와 Vertex AI를 사용해 즉시 구축합니다.",
+            "tech_stack": ["AWS Lambda | 서버리스", "Vertex AI | 분석"],
+            "architecture_overview": "2027년까지 확장 가능한 구조입니다.",
+            "ai_approach": "Claude Opus와 Gemini를 혼합 적용합니다.",
+            "implementation_principles": ["원문 없는 구현 원칙"],
+            "security_measures": ["원문 없는 보안 조치"],
+            "differentiation": ["원문 없는 차별화 포인트"],
+            "total_slides": 8,
+            "slide_outline": [{"page": 1, "title": "기존 기술 슬라이드"}],
+        },
+        "execution_plan": {
+            "delivery_summary": "12개월 내 3억원 예산으로 완료합니다.",
+            "team_structure": ["PM 4명 | 12개월 투입"],
+            "milestones": ["2027-01 완료"],
+            "methodology": "애자일 12스프린트 방식",
+            "governance_plan": "월간 운영위원회",
+            "risk_management": ["ROI 180% 미달 리스크"],
+            "deliverables": ["최종 보고서"],
+            "total_slides": 9,
+            "slide_outline": [{"page": 1, "title": "기존 수행 슬라이드"}],
+        },
+        "expected_impact": {
+            "impact_summary": "ROI 180%와 연간 3억원 절감을 달성합니다.",
+            "quantitative_effects": ["사고율 20% 감소"],
+            "qualitative_effects": ["원문 없는 기대효과"],
+            "social_value": "원문 없는 사회적 가치",
+            "kpi_commitments": ["KPI 달성률 95%"],
+            "roi_estimate": "3년 ROI 180%",
+            "monitoring_plan": ["월별 KPI 점검"],
+            "total_slides": 6,
+            "slide_outline": [{"page": 1, "title": "기존 효과 슬라이드"}],
+        },
+    }
+
+
+def test_proposal_quality_guard_rewrites_sparse_attachment_hallucinations():
+    sparse_context = (
+        "=== RFP 원문 (참고용) ===\n"
+        "[첨부파일: uat-attachment.txt]\n"
+        "국토교통 제안의 핵심 요구사항은 교차로 안전 강화와 장애인 보호 강화이다.\n"
+        "=== RFP 원문 끝 ==="
+    )
+
+    guarded = _apply_finished_doc_quality_guard(
+        deepcopy(_proposal_bundle_with_hallucinated_attachment_fields()),
+        bundle_type="proposal_kr",
+        title="국토교통 교차로 안전 제안",
+        goal="국토교통 분야 교차로 안전 사업 제안서 초안을 작성한다.",
+        context_text=sparse_context,
+    )
+
+    business = guarded["business_understanding"]
+    tech = guarded["tech_proposal"]
+    execution = guarded["execution_plan"]
+    impact = guarded["expected_impact"]
+
+    assert business["current_issues"] == [
+        "교차로 안전 강화 요구에 비해 현장 대응 체계가 분산되어 있음",
+        "장애인 보호 관점의 운영 기준과 현장 실행 절차가 일관되지 않음",
+        "안전 관련 현황을 통합적으로 확인하고 점검할 수 있는 운영 체계가 부족함",
+    ]
+    assert tech["tech_stack"][0].startswith("데이터 수집·연계 |")
+    assert tech["technical_summary"]
+    assert "AWS Lambda" not in tech["technical_summary"]
+    assert execution["milestones"][0].startswith("착수 및 요구사항 정리 |")
+    assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
+    assert "180%" not in impact["impact_summary"]
+    assert impact["monitoring_plan"][0].startswith("안전 관련 운영 로그 |")
+    assert business["total_slides"] == 2
+    assert tech["total_slides"] == 2
+    assert execution["total_slides"] == 2
+    assert impact["total_slides"] == 2
+
+
+def test_proposal_quality_guard_keeps_non_sparse_attachment_fields():
+    dense_context = (
+        "=== RFP 원문 (참고용) ===\n"
+        "[첨부파일: uat-attachment.txt]\n"
+        "국토교통 제안의 핵심 요구사항은 교차로 안전 강화와 장애인 보호 강화이며, "
+        "2026년 시범 운영과 2027년 본사업 전환, 12개월 단계 운영 검토, 현장 점검 지표 정리를 포함합니다.\n"
+        "=== RFP 원문 끝 ==="
+    )
+
+    guarded = _apply_finished_doc_quality_guard(
+        deepcopy(_proposal_bundle_with_hallucinated_attachment_fields()),
+        bundle_type="proposal_kr",
+        title="국토교통 교차로 안전 제안",
+        goal="국토교통 분야 교차로 안전 사업 제안서 초안을 작성한다.",
+        context_text=dense_context,
+    )
+
+    business = guarded["business_understanding"]
+    tech = guarded["tech_proposal"]
+    impact = guarded["expected_impact"]
+
+    assert business["current_issues"] == ["사고율 20% 증가", "AWS 도입 필요"]
+    assert tech["tech_stack"] == ["AWS Lambda | 서버리스", "Vertex AI | 분석"]
+    assert impact["roi_estimate"] == "3년 ROI 180%"
+    assert business["total_slides"] == 7
+    assert tech["total_slides"] == 8
 
 
 @pytest.mark.parametrize("fixture_path", sorted(Path(__file__).parent.joinpath("fixtures").glob("*.json")))
