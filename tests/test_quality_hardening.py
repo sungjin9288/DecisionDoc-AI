@@ -1,3 +1,4 @@
+import base64
 import json
 import sys
 import types
@@ -188,3 +189,40 @@ def test_openai_retries_disabled(monkeypatch):
     bundle = provider.generate_bundle({"title": "x", "goal": "y"}, schema_version="v1", request_id="req")
     assert captured["max_retries"] == 0
     assert "adr" in bundle
+
+
+def test_openai_visual_asset_request_uses_gpt_image_compatible_params(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("DECISIONDOC_OPENAI_IMAGE_MODEL", "gpt-image-1")
+    captured = {}
+
+    png_bytes = base64.b64encode(b"fake-png-bytes").decode("ascii")
+
+    class FakeImages:
+        def generate(self, **kwargs):
+            captured.update(kwargs)
+            return types.SimpleNamespace(
+                data=[types.SimpleNamespace(b64_json=png_bytes, revised_prompt="revised prompt")]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+            self.images = FakeImages()
+
+    fake_module = types.SimpleNamespace(OpenAI=FakeOpenAI)
+    monkeypatch.setitem(sys.modules, "openai", fake_module)
+
+    provider = OpenAIProvider()
+    asset = provider.generate_visual_asset("visual prompt", request_id="req-visual")
+
+    assert captured["client_kwargs"]["max_retries"] == 0
+    assert captured["model"] == "gpt-image-1"
+    assert captured["prompt"] == "visual prompt"
+    assert captured["size"] == "1536x1024"
+    assert captured["quality"] == "auto"
+    assert captured["output_format"] == "png"
+    assert "response_format" not in captured
+    assert "style" not in captured
+    assert asset["media_type"] == "image/png"
+    assert asset["data"] == b"fake-png-bytes"

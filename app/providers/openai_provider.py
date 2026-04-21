@@ -211,10 +211,8 @@ class OpenAIProvider(UsageTokenMixin, Provider):
                         model=model,
                         prompt=prompt,
                         size=size,
-                        style=style,
                         quality=os.getenv("DECISIONDOC_OPENAI_IMAGE_QUALITY", "auto"),
                         output_format="png",
-                        response_format="b64_json",
                     )
                 )
 
