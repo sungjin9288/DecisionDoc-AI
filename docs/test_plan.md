@@ -119,6 +119,13 @@ python3 scripts/show_uat_session.py \
   --limit 5
 ```
 
+### UAT 최종 요약 보고서 생성
+```bash
+python3 scripts/finalize_uat_session.py \
+  --session-file ./reports/uat/uat-session-<timestamp>-business-uat.md \
+  --output-dir ./reports/uat
+```
+
 ---
 
 ## 3.1 현재 단계 판단
