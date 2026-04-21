@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,8 @@ def _load_show_uat_module():
 _show_uat = _load_show_uat_module()
 parse_uat_session = _show_uat.parse_uat_session
 
+_SCENARIO_FAMILY_RE = re.compile(r"^(시나리오\s+\d+)")
+
 
 def _is_success_text(value: str) -> bool:
     text = str(value or "").strip().lower()
@@ -38,16 +41,32 @@ def _needs_follow_up(value: str) -> bool:
     text = str(value or "").strip().lower()
     if not text or text == "-":
         return False
-    return text not in {"아니오", "no", "n", "none"}
+    return not (
+        text in {"아니오", "no", "n", "none"}
+        or text.startswith("아니오")
+        or text.startswith("no")
+    )
+
+
+def _scenario_family(value: str) -> str:
+    text = str(value or "").strip()
+    match = _SCENARIO_FAMILY_RE.match(text)
+    if match:
+        return match.group(1)
+    return text or "-"
 
 
 def summarize_uat_payload(payload: dict) -> dict:
     entries = list(payload.get("entries") or [])
+    latest_by_family: dict[str, dict[str, str]] = {}
+    for entry in entries:
+        latest_by_family[_scenario_family(entry.get("scenario", "-"))] = entry
+    scenario_entries = list(latest_by_family.values())
     blockers: list[dict[str, str]] = []
     follow_ups: list[dict[str, str]] = []
     passes = 0
 
-    for entry in entries:
+    for entry in scenario_entries:
         generation_ok = _is_success_text(entry.get("generation_status", ""))
         export_ok = _is_success_text(entry.get("export_status", ""))
         visual_ok = _is_success_text(entry.get("visual_asset_status", ""))
@@ -73,16 +92,18 @@ def summarize_uat_payload(payload: dict) -> dict:
                 }
             )
 
-    status = "READY_FOR_PILOT" if entries and not blockers and not follow_ups else "FOLLOW_UP_REQUIRED"
+    status = "READY_FOR_PILOT" if scenario_entries and not blockers and not follow_ups else "FOLLOW_UP_REQUIRED"
     return {
         "session_title": payload.get("session_title", "-"),
         "session_file": payload.get("session_file", "-"),
         "entry_count": len(entries),
+        "scenario_count": len(scenario_entries),
         "pass_count": passes,
         "blockers": blockers,
         "follow_ups": follow_ups,
         "status": status,
         "entries": entries,
+        "latest_entries": scenario_entries,
     }
 
 
@@ -118,6 +139,7 @@ def build_uat_summary_markdown(*, summary: dict, generated_at: datetime) -> str:
 ## Summary
 
 - recorded_entries: `{summary.get('entry_count', 0)}`
+- scenario_count: `{summary.get('scenario_count', 0)}`
 - pass_count: `{summary.get('pass_count', 0)}`
 - blocker_count: `{len(blockers)}`
 - follow_up_count: `{len(follow_ups)}`

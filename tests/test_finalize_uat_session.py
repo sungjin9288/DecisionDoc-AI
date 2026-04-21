@@ -43,6 +43,45 @@ def test_summarize_uat_payload_marks_ready_when_all_entries_closed() -> None:
 
     assert summary["status"] == "READY_FOR_PILOT"
     assert summary["entry_count"] == 2
+    assert summary["scenario_count"] == 2
+    assert summary["blockers"] == []
+    assert summary["follow_ups"] == []
+
+
+def test_summarize_uat_payload_uses_latest_retry_entry_for_scenario_status() -> None:
+    payload = {
+        "session_title": "business-uat",
+        "session_file": "/tmp/session.md",
+        "entries": [
+            {
+                "scenario": "시나리오 2. 첨부 기반 제안서 생성",
+                "recorded_at": "2026-04-21T09:57:24+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "미검증",
+                "visual_asset_status": "미검증",
+                "history_restore_status": "미검증",
+                "issues": "내용 품질 이슈: 근거 없는 세부사항 hallucination",
+                "follow_up": "예 - 실제 PDF/PPTX/HWPX 첨부와 품질 보정 필요",
+            },
+            {
+                "scenario": "시나리오 2 3차 재시험. sparse attachment AI 접근 문장 polish 검증",
+                "recorded_at": "2026-04-21T11:06:38+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "미검증",
+                "visual_asset_status": "미검증",
+                "history_restore_status": "미검증",
+                "issues": "없음",
+                "follow_up": "아니오 - sparse attachment proposal_kr 기준 핵심 품질 이슈 해소",
+            },
+        ],
+    }
+
+    summary = summarize_uat_payload(payload)
+
+    assert summary["status"] == "READY_FOR_PILOT"
+    assert summary["scenario_count"] == 1
     assert summary["blockers"] == []
     assert summary["follow_ups"] == []
 
