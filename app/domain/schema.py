@@ -102,6 +102,12 @@ def _clean_requirements_for_prompt(requirements: dict[str, Any]) -> dict[str, An
     }
 
 
+def _has_attachment_grounding_context(requirements: dict[str, Any]) -> bool:
+    context = str(requirements.get("context", "") or "")
+    procurement_context = str(requirements.get("_procurement_context", "") or "")
+    return "=== RFP 원문 (참고용) ===" in context or "[첨부파일:" in context or bool(procurement_context)
+
+
 def build_bundle_prompt(
     requirements: dict[str, Any],
     schema_version: str,
@@ -196,6 +202,14 @@ def build_bundle_prompt(
         f"schema={schema_json}\n"
         f"requirements={json.dumps(_clean_requirements_for_prompt(requirements), ensure_ascii=False)}"
     )
+    if _has_attachment_grounding_context(requirements):
+        prompt += (
+            "\n\n[첨부/RFP grounding strict mode]\n"
+            "- requirements, 첨부 원문, 정규화 요약에 없는 날짜, 예산, 기관명, 기술명, 배점, 수치, 일정은 임의로 만들지 마세요.\n"
+            "- 근거가 없는 세부사항은 `미기재`, `확인 필요` 또는 일반 표현으로 유지하세요.\n"
+            "- source text에 없는 기술 스택, 제품명, 마감일, KPI 수치를 예시처럼 채우지 마세요.\n"
+            "- 정량 목표가 필요해도 근거가 없으면 정성 목표 중심으로 작성하세요.\n"
+        )
     # PDF source injection — appears before feedback to give the LLM full context
     pdf_source = requirements.get("pdf_source", "") if isinstance(requirements, dict) else ""
     if pdf_source:

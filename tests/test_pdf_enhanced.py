@@ -236,6 +236,27 @@ def test_quality_prompt_forbids_ungrounded_specifics():
     assert "근거 없는 날짜, 예산, 기관명, 기술명, 배점, 일정의 임의 생성" in prompt
 
 
+def test_attachment_grounding_strict_mode_in_prompt():
+    from app.domain.schema import build_bundle_prompt
+
+    prompt = build_bundle_prompt(
+        {
+            "title": "국토교통 교차로 안전 제안",
+            "goal": "첨부 기반 제안서 초안을 작성한다.",
+            "context": (
+                "=== RFP 원문 (참고용) ===\n"
+                "[첨부파일: uat-attachment.txt]\n"
+                "국토교통 제안의 핵심 요구사항은 교차로 안전 강화와 장애인 보호 강화이다.\n"
+                "=== RFP 원문 끝 ==="
+            ),
+        },
+        schema_version="v1",
+    )
+
+    assert "[첨부/RFP grounding strict mode]" in prompt
+    assert "source text에 없는 기술 스택, 제품명, 마감일, KPI 수치를 예시처럼 채우지 마세요." in prompt
+
+
 def test_procurement_page_hints_in_prompt_for_slide_outline_bundle():
     from app.bundle_catalog.bundles.proposal_kr import PROPOSAL_KR
     from app.domain.schema import build_bundle_prompt
