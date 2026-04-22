@@ -167,6 +167,15 @@ python3 scripts/show_pilot_run.py \
   --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md
 ```
 
+### Pilot sample Run 1/Run 2 실제 실행 및 기록
+```bash
+python3 scripts/run_pilot_sample.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md \
+  --base-url https://admin.decisiondoc.kr \
+  --operator "<담당자>" \
+  --business-owner "<business owner>"
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
