@@ -97,3 +97,5 @@ def test_publish_pilot_delivery_latest_overview_writes_markdown(tmp_path):
     assert "readiness: **PASS**" in content
     assert "latest-pilot-delivery-readiness.json" in content
     assert "latest-pilot-delivery-readiness.md" in content
+    assert "delivery-status.json" in content
+    assert "delivery-audit.md" in content

@@ -70,8 +70,8 @@ def _build_markdown(
 
 ## Snapshot Files
 
-- delivery_status_snapshot: `{status_payload.get("generated_from", "-")}`
-- delivery_audit_snapshot: `{status_payload.get("audit_file", "-")}`
+- delivery_status_snapshot: `{readiness_payload.get("snapshot_file", "-")}`
+- delivery_audit_snapshot: `{readiness_payload.get("audit_file", "-")}`
 - readiness_status_snapshot: `{readiness_payload.get("snapshot_file", "-")}`
 
 ## Notes
