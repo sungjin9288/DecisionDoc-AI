@@ -311,6 +311,13 @@ python3 scripts/check_pilot_delivery_latest_artifacts_ready.py \
   --output-dir ./reports/pilot
 ```
 
+최종 readiness 결과 자체를 stable JSON으로 남기려면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_readiness.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
