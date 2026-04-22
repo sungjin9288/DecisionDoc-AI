@@ -135,6 +135,13 @@ python3 scripts/create_pilot_handoff.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot launch checklist 생성
+```bash
+python3 scripts/create_pilot_launch_checklist.py \
+  --handoff-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot.md \
+  --output-dir ./reports/pilot
+```
+
 ---
 
 ## 3.1 현재 단계 판단
