@@ -284,6 +284,13 @@ python3 scripts/publish_pilot_delivery_latest_audit.py \
   --output-dir ./reports/pilot
 ```
 
+latest status JSON과 latest audit markdown을 같이 동기화하려면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_artifacts.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 gate 용도로 latest 상태만 판정하려면:
 ```bash
 python3 scripts/assert_pilot_delivery_ready.py \
