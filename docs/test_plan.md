@@ -339,6 +339,12 @@ python3 scripts/publish_pilot_delivery_latest_overview.py \
   --output-dir ./reports/pilot
 ```
 
+현재 stable latest 파일들이 모두 맞는지 read-only로 보려면:
+```bash
+python3 scripts/show_pilot_delivery_latest_summary.py \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
