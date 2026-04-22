@@ -149,6 +149,13 @@ python3 scripts/create_pilot_run_sheet.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot close-out 생성
+```bash
+python3 scripts/finalize_pilot_run.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md \
+  --output-dir ./reports/pilot
+```
+
 ---
 
 ## 3.1 현재 단계 판단
