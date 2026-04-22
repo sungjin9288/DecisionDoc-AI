@@ -40,6 +40,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Bundle SHA256: {result.get('bundle_sha256', '-')}", flush=True)
     print(f"Entry count: {result.get('entry_count', 0)}", flush=True)
     print(f"Receipt matches: {str(result.get('receipt_matches', False)).lower()}", flush=True)
+    print(f"Stale: {str(result.get('stale', False)).lower()}", flush=True)
+    stale_artifacts = result.get("stale_artifacts") or []
+    print(f"Stale artifacts: {', '.join(stale_artifacts) if stale_artifacts else '-'}", flush=True)
     for item in result.get("checks") or []:
         print(f"{item['name']}: {item['status']} -> {item['path']}", flush=True)
     errors = result.get("verification_errors") or []

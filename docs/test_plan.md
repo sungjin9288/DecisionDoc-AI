@@ -259,6 +259,8 @@ python3 scripts/show_pilot_delivery_chain.py \
   --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md
 ```
 
+closeout이 더 최신이면 `Stale: true`와 stale artifact 목록이 출력된다. 이 경우 `refresh_pilot_delivery_chain.py`를 먼저 다시 실행하는 것이 맞다.
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \

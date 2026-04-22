@@ -43,6 +43,28 @@ def _derive_delivery_paths(closeout_file: Path) -> dict[str, Path]:
     }
 
 
+def _collect_stale_artifacts(*, closeout_file: Path, checks: list[dict[str, str]]) -> list[str]:
+    generated_names = {
+        "share_note",
+        "completion_report",
+        "delivery_index",
+        "bundle",
+        "manifest",
+        "receipt",
+        "audit",
+    }
+    closeout_mtime = closeout_file.stat().st_mtime
+    stale: list[str] = []
+    for item in checks:
+        name = item["name"]
+        if name not in generated_names or item["status"] != "ok":
+            continue
+        path = Path(item["path"])
+        if path.stat().st_mtime < closeout_mtime:
+            stale.append(name)
+    return stale
+
+
 def _parse_receipt(receipt_file: Path) -> dict[str, str]:
     if not receipt_file.exists():
         return {}
@@ -83,6 +105,10 @@ def build_pilot_delivery_audit_payload(*, closeout_file: Path) -> dict[str, obje
         checks.append({"name": key, "path": str(path), "status": "ok" if ok else "missing"})
         all_ok = all_ok and ok
 
+    stale_artifacts = _collect_stale_artifacts(closeout_file=closeout_file, checks=checks)
+    if stale_artifacts:
+        all_ok = False
+
     verification = {"ok": False, "errors": ["bundle or manifest missing"], "bundle_sha256": "-", "entry_count": 0}
     manifest = {"bundle_sha256": "-", "entry_count": 0}
     if delivery_paths["bundle"].exists() and delivery_paths["manifest"].exists():
@@ -118,6 +144,8 @@ def build_pilot_delivery_audit_payload(*, closeout_file: Path) -> dict[str, obje
         "verification_errors": verification.get("errors") or [],
         "receipt_matches": receipt_matches,
         "receipt_file": str(delivery_paths["receipt"]),
+        "stale": bool(stale_artifacts),
+        "stale_artifacts": stale_artifacts,
     }
 
 
@@ -148,6 +176,8 @@ def build_pilot_delivery_audit_markdown(*, payload: dict[str, object], generated
 
 - receipt_file: `{payload.get('receipt_file', '-')}`
 - receipt_matches_current_verification: `{str(payload.get('receipt_matches', False)).lower()}`
+- stale: `{str(payload.get('stale', False)).lower()}`
+- stale_artifacts: `{", ".join(payload.get('stale_artifacts') or []) or "-"}`
 
 ## Verification Errors
 

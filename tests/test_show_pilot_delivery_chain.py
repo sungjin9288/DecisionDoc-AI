@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from scripts.refresh_pilot_delivery_chain import refresh_pilot_delivery_chain
@@ -86,4 +87,34 @@ def test_show_pilot_delivery_chain_reports_current_status(tmp_path):
 
     assert result["status"] == "PASS"
     assert result["receipt_matches"] is True
+    assert result["stale"] is False
     assert any(item["name"] == "bundle" and item["status"] == "ok" for item in result["checks"])
+
+
+def test_show_pilot_delivery_chain_marks_stale_generated_artifacts(tmp_path):
+    pilot_dir = tmp_path / "reports" / "pilot"
+    uat_dir = tmp_path / "reports" / "uat"
+    pilot_dir.mkdir(parents=True)
+    uat_dir.mkdir(parents=True)
+
+    closeout_file = pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md"
+    closeout_file.write_text(_closeout_text(tmp_path), encoding="utf-8")
+
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot.md").write_text("handoff", encoding="utf-8")
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist.md").write_text("checklist", encoding="utf-8")
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist-run-sheet.md").write_text("run-sheet", encoding="utf-8")
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-share-note.md").write_text("share-note", encoding="utf-8")
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-completion-report.md").write_text("completion", encoding="utf-8")
+    (pilot_dir / "uat-session-20260421T091014Z-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-delivery-index.md").write_text("delivery-index", encoding="utf-8")
+    (uat_dir / "uat-session-20260421T091014Z-business-uat-summary.md").write_text("summary", encoding="utf-8")
+
+    refresh_pilot_delivery_chain(closeout_file=closeout_file, output_dir=pilot_dir)
+    stat = closeout_file.stat()
+    os.utime(closeout_file, (stat.st_atime + 5, stat.st_mtime + 5))
+
+    result = show_pilot_delivery_chain(closeout_file=closeout_file)
+
+    assert result["status"] == "FAIL"
+    assert result["stale"] is True
+    assert "bundle" in result["stale_artifacts"]
+    assert "receipt" in result["stale_artifacts"]
