@@ -2,14 +2,24 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from pathlib import Path
 from typing import Sequence
 
-from scripts.finalize_pilot_run import (
-    _has_value,
-    build_pilot_closeout_payload,
-    parse_pilot_run_sheet,
-)
+
+def _load_finalize_module():
+    path = Path(__file__).with_name("finalize_pilot_run.py")
+    spec = importlib.util.spec_from_file_location("decisiondoc_finalize_pilot_run", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+_FINALIZE = _load_finalize_module()
+_has_value = _FINALIZE._has_value
+build_pilot_closeout_payload = _FINALIZE.build_pilot_closeout_payload
+parse_pilot_run_sheet = _FINALIZE.parse_pilot_run_sheet
 
 
 REQUIRED_RUN_FIELDS = ("started_at", "operator", "request_id", "bundle_id", "stop_decision")
