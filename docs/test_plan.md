@@ -261,6 +261,8 @@ python3 scripts/show_pilot_delivery_chain.py \
 
 closeout이 더 최신이면 `Stale: true`와 stale artifact 목록이 출력된다. 이 경우 `refresh_pilot_delivery_chain.py`를 먼저 다시 실행하는 것이 맞다.
 
+자동화에서 파싱해야 하면 `--json` 옵션을 사용한다.
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \

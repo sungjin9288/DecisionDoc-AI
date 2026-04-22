@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 from typing import Sequence
 
@@ -30,12 +31,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Show current pilot delivery chain status without regenerating artifacts.",
     )
     parser.add_argument("--closeout-file", required=True, help="Pilot close-out markdown file path.")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable JSON output.")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
     result = show_pilot_delivery_chain(closeout_file=Path(args.closeout_file))
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
+        return 0 if result.get("status") == "PASS" else 1
+
     print(f"Pilot delivery status: {result.get('status', 'FAIL')}", flush=True)
     print(f"Bundle SHA256: {result.get('bundle_sha256', '-')}", flush=True)
     print(f"Entry count: {result.get('entry_count', 0)}", flush=True)
