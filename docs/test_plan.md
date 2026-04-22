@@ -161,6 +161,12 @@ python3 scripts/record_pilot_run.py \
   --field "stop_decision=continue"
 ```
 
+### Pilot run sheet 상태 요약 확인
+```bash
+python3 scripts/show_pilot_run.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
