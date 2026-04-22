@@ -182,6 +182,13 @@ python3 scripts/prepare_pilot_closeout.py \
   --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md
 ```
 
+### Pilot close-out 최종 판정 반영 및 artifact 생성
+```bash
+python3 scripts/complete_pilot_closeout.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md \
+  --accepted-for-next-batch yes
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
