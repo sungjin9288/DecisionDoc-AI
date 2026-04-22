@@ -277,6 +277,13 @@ python3 scripts/publish_pilot_delivery_latest_status.py \
   --output-dir ./reports/pilot
 ```
 
+사람이 바로 읽을 latest audit markdown이 필요하면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_audit.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 gate 용도로 latest 상태만 판정하려면:
 ```bash
 python3 scripts/assert_pilot_delivery_ready.py \
