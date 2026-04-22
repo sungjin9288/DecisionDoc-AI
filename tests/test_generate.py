@@ -528,6 +528,9 @@ def test_proposal_quality_guard_rewrites_sparse_non_attachment_hallucinations():
     assert "180%" not in impact["impact_summary"]
     assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
     assert impact["monitoring_plan"][0].startswith("안전 관련 운영 로그 |")
+    assert business["total_slides"] == 2
+    assert execution["total_slides"] == 2
+    assert impact["total_slides"] == 2
 
 
 def test_proposal_quality_guard_keeps_dense_non_attachment_fields():
