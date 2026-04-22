@@ -263,6 +263,13 @@ closeout이 더 최신이면 `Stale: true`와 stale artifact 목록이 출력된
 
 자동화에서 파싱해야 하면 `--json` 옵션을 사용한다.
 
+상태를 artifact로 남겨야 하면:
+```bash
+python3 scripts/create_pilot_delivery_status_snapshot.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
