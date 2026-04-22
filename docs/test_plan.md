@@ -142,6 +142,13 @@ python3 scripts/create_pilot_launch_checklist.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot run sheet 생성
+```bash
+python3 scripts/create_pilot_run_sheet.py \
+  --checklist-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist.md \
+  --output-dir ./reports/pilot
+```
+
 ---
 
 ## 3.1 현재 단계 판단
