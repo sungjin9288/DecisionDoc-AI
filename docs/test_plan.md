@@ -149,6 +149,18 @@ python3 scripts/create_pilot_run_sheet.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot run sheet 기록 업데이트
+```bash
+python3 scripts/record_pilot_run.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md \
+  --target run1 \
+  --field "started_at=2026-04-22T09:00:00+09:00" \
+  --field "operator=<담당자>" \
+  --field "request_id=<request_id>" \
+  --field "bundle_id=<bundle_id>" \
+  --field "stop_decision=continue"
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
