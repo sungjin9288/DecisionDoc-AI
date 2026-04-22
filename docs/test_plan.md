@@ -253,6 +253,12 @@ python3 scripts/refresh_pilot_delivery_chain.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot delivery chain 현재 상태 조회
+```bash
+python3 scripts/show_pilot_delivery_chain.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
