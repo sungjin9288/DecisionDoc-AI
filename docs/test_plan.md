@@ -196,6 +196,13 @@ python3 scripts/create_pilot_completion_report.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot stakeholder share note 생성
+```bash
+python3 scripts/create_pilot_share_note.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
