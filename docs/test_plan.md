@@ -176,6 +176,12 @@ python3 scripts/run_pilot_sample.py \
   --business-owner "<business owner>"
 ```
 
+### Pilot close-out evidence 사전 채우기
+```bash
+python3 scripts/prepare_pilot_closeout.py \
+  --run-sheet-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet.md
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
