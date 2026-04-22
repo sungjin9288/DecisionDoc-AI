@@ -126,6 +126,15 @@ python3 scripts/finalize_uat_session.py \
   --output-dir ./reports/uat
 ```
 
+### Pilot handoff 생성
+```bash
+python3 scripts/create_pilot_handoff.py \
+  --summary-file ./reports/uat/uat-session-<timestamp>-business-uat-summary.md \
+  --env-file .env.prod \
+  --report-dir ./reports/post-deploy \
+  --output-dir ./reports/pilot
+```
+
 ---
 
 ## 3.1 현재 단계 판단
