@@ -283,6 +283,13 @@ python3 scripts/assert_pilot_delivery_ready.py \
   --status-file ./reports/pilot/latest-pilot-delivery-status.json
 ```
 
+latest publish와 gate를 한 번에 실행하려면:
+```bash
+python3 scripts/check_pilot_delivery_ready.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
