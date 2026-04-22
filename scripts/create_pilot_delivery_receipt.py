@@ -3,11 +3,25 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import importlib.util
 from pathlib import Path
 from typing import Sequence
 
-from scripts.create_pilot_delivery_manifest import parse_pilot_delivery_manifest  # type: ignore[attr-defined]
-from scripts.verify_pilot_delivery_bundle import verify_pilot_delivery_bundle
+
+def _load_module(filename: str, module_name: str):
+    path = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+_MANIFEST = _load_module("create_pilot_delivery_manifest.py", "decisiondoc_create_pilot_delivery_manifest")
+_VERIFY = _load_module("verify_pilot_delivery_bundle.py", "decisiondoc_verify_pilot_delivery_bundle")
+
+parse_pilot_delivery_manifest = _MANIFEST.parse_pilot_delivery_manifest
+verify_pilot_delivery_bundle = _VERIFY.verify_pilot_delivery_bundle
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

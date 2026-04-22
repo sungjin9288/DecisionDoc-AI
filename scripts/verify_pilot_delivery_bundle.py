@@ -3,11 +3,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 from pathlib import Path
 from typing import Sequence
 import zipfile
 
-from scripts.create_pilot_delivery_manifest import parse_pilot_delivery_manifest
+
+def _load_module(filename: str, module_name: str):
+    path = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+_MANIFEST = _load_module("create_pilot_delivery_manifest.py", "decisiondoc_create_pilot_delivery_manifest")
+parse_pilot_delivery_manifest = _MANIFEST.parse_pilot_delivery_manifest
 
 
 def _sha256_bytes(content: bytes) -> str:
