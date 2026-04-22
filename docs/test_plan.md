@@ -332,6 +332,13 @@ python3 scripts/publish_pilot_delivery_latest_readiness_artifacts.py \
   --output-dir ./reports/pilot
 ```
 
+운영자용 latest overview markdown 한 장을 만들려면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_overview.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
