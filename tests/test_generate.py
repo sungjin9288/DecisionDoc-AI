@@ -505,6 +505,52 @@ def test_proposal_quality_guard_keeps_non_sparse_attachment_fields():
     assert tech["total_slides"] == 8
 
 
+def test_proposal_quality_guard_rewrites_sparse_non_attachment_hallucinations():
+    sparse_context = "첨부 없이도 교차로 안전 강화와 교통약자 보호를 위한 기본 제안 구조를 확인한다."
+
+    guarded = _apply_finished_doc_quality_guard(
+        deepcopy(_proposal_bundle_with_hallucinated_attachment_fields()),
+        bundle_type="proposal_kr",
+        title="국토교통 교차로 안전 제안",
+        goal="국토교통 분야 교차로 안전 사업 제안서 초안을 작성한다.",
+        context_text=sparse_context,
+    )
+
+    business = guarded["business_understanding"]
+    execution = guarded["execution_plan"]
+    impact = guarded["expected_impact"]
+
+    assert "20%" not in business["executive_summary"]
+    assert "2027" not in business["project_background"]
+    assert business["project_objectives"][0] == "현장 위험 징후를 조기에 식별하고 대응 기준을 정리한다."
+    assert "2027" not in execution["delivery_summary"]
+    assert execution["milestones"][0].startswith("착수 및 요구사항 정리 |")
+    assert "180%" not in impact["impact_summary"]
+    assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
+    assert impact["monitoring_plan"][0].startswith("안전 관련 운영 로그 |")
+
+
+def test_proposal_quality_guard_keeps_dense_non_attachment_fields():
+    dense_context = (
+        "2026년 시범 운영과 2027년 확대 적용 검토를 포함해 일정과 검증 지표를 함께 제시하는 "
+        "교차로 안전 강화 사업 제안서 초안을 작성한다."
+    )
+
+    guarded = _apply_finished_doc_quality_guard(
+        deepcopy(_proposal_bundle_with_hallucinated_attachment_fields()),
+        bundle_type="proposal_kr",
+        title="국토교통 교차로 안전 제안",
+        goal="국토교통 분야 교차로 안전 사업 제안서 초안을 작성한다.",
+        context_text=dense_context,
+    )
+
+    business = guarded["business_understanding"]
+    impact = guarded["expected_impact"]
+
+    assert business["project_objectives"] == ["사고율 30% 절감 | 3억원 예산 확보 | ROI 180%"]
+    assert impact["roi_estimate"] == "3년 ROI 180%"
+
+
 @pytest.mark.parametrize("fixture_path", sorted(Path(__file__).parent.joinpath("fixtures").glob("*.json")))
 def test_regression_fixtures_generate_valid_docs(tmp_path, monkeypatch, fixture_path):
     client = _create_client(tmp_path, monkeypatch)
