@@ -270,6 +270,13 @@ python3 scripts/create_pilot_delivery_status_snapshot.py \
   --output-dir ./reports/pilot
 ```
 
+stable latest 경로가 필요하면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_status.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
