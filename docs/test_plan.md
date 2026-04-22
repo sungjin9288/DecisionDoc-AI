@@ -325,6 +325,13 @@ python3 scripts/publish_pilot_delivery_latest_readiness_note.py \
   --output-dir ./reports/pilot
 ```
 
+latest readiness JSON과 markdown을 같은 시점으로 같이 발행하려면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_readiness_artifacts.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
