@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Sequence
 import zipfile
 
+from scripts.create_pilot_delivery_manifest import parse_pilot_delivery_manifest
+
 
 def _sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
@@ -18,48 +20,6 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def parse_pilot_delivery_manifest(*, manifest_file: Path) -> dict[str, object]:
-    if not manifest_file.exists():
-        raise SystemExit(f"Pilot delivery manifest not found: {manifest_file}")
-
-    lines = manifest_file.read_text(encoding="utf-8").splitlines()
-    bundle_sha256 = "-"
-    entry_count = 0
-    entries: list[dict[str, object]] = []
-    current_entry: dict[str, object] | None = None
-
-    for raw_line in lines:
-        line = raw_line.strip()
-        if line.startswith("- bundle_sha256:"):
-            bundle_sha256 = line.split("`", 2)[1]
-            continue
-        if line.startswith("- entry_count:"):
-            entry_count = int(line.split("`", 2)[1])
-            continue
-        if line.startswith("### "):
-            if current_entry:
-                entries.append(current_entry)
-            current_entry = {"name": line.removeprefix("### ").strip()}
-            continue
-        if not current_entry or not line.startswith("- "):
-            continue
-        if line.startswith("- size_bytes:"):
-            current_entry["size_bytes"] = int(line.split("`", 2)[1])
-        elif line.startswith("- compressed_size_bytes:"):
-            current_entry["compressed_size_bytes"] = int(line.split("`", 2)[1])
-        elif line.startswith("- sha256:"):
-            current_entry["sha256"] = line.split("`", 2)[1]
-
-    if current_entry:
-        entries.append(current_entry)
-
-    return {
-        "bundle_sha256": bundle_sha256,
-        "entry_count": entry_count,
-        "entries": entries,
-    }
 
 
 def verify_pilot_delivery_bundle(*, bundle_file: Path, manifest_file: Path) -> dict[str, object]:

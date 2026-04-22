@@ -231,6 +231,14 @@ python3 scripts/verify_pilot_delivery_bundle.py \
   --manifest-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-delivery-bundle-manifest.md
 ```
 
+### Pilot delivery receipt 생성
+```bash
+python3 scripts/create_pilot_delivery_receipt.py \
+  --bundle-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-delivery-bundle.zip \
+  --manifest-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-delivery-bundle-manifest.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \

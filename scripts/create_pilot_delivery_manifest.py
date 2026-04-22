@@ -99,6 +99,48 @@ def create_pilot_delivery_manifest(*, bundle_file: Path, output_dir: Path) -> tu
     return payload, output_path
 
 
+def parse_pilot_delivery_manifest(*, manifest_file: Path) -> dict[str, object]:
+    if not manifest_file.exists():
+        raise SystemExit(f"Pilot delivery manifest not found: {manifest_file}")
+
+    lines = manifest_file.read_text(encoding="utf-8").splitlines()
+    bundle_sha256 = "-"
+    entry_count = 0
+    entries: list[dict[str, object]] = []
+    current_entry: dict[str, object] | None = None
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if line.startswith("- bundle_sha256:"):
+            bundle_sha256 = line.split("`", 2)[1]
+            continue
+        if line.startswith("- entry_count:"):
+            entry_count = int(line.split("`", 2)[1])
+            continue
+        if line.startswith("### "):
+            if current_entry:
+                entries.append(current_entry)
+            current_entry = {"name": line.removeprefix("### ").strip()}
+            continue
+        if not current_entry or not line.startswith("- "):
+            continue
+        if line.startswith("- size_bytes:"):
+            current_entry["size_bytes"] = int(line.split("`", 2)[1])
+        elif line.startswith("- compressed_size_bytes:"):
+            current_entry["compressed_size_bytes"] = int(line.split("`", 2)[1])
+        elif line.startswith("- sha256:"):
+            current_entry["sha256"] = line.split("`", 2)[1]
+
+    if current_entry:
+        entries.append(current_entry)
+
+    return {
+        "bundle_sha256": bundle_sha256,
+        "entry_count": entry_count,
+        "entries": entries,
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create a SHA256 manifest for the pilot delivery bundle and its included files.",
