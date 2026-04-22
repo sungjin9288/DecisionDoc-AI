@@ -318,6 +318,13 @@ python3 scripts/publish_pilot_delivery_latest_readiness.py \
   --output-dir ./reports/pilot
 ```
 
+사람이 바로 읽을 latest readiness markdown이 필요하면:
+```bash
+python3 scripts/publish_pilot_delivery_latest_readiness_note.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
