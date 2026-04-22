@@ -20,6 +20,13 @@ _FINALIZE = _load_module("finalize_pilot_run.py", "decisiondoc_finalize_pilot_ru
 _RECORD = _load_module("record_pilot_run.py", "decisiondoc_record_pilot_run")
 _SHOW = _load_module("show_pilot_run.py", "decisiondoc_show_pilot_run")
 
+_PENDING_MARKERS = (
+    "pending",
+    "manual business acceptance",
+    "최종 판정",
+    "go/no-go",
+)
+
 
 def _normalize_decision(value: str) -> str:
     text = str(value or "").strip()
@@ -34,6 +41,13 @@ def _normalize_decision(value: str) -> str:
     raise SystemExit(
         f"Unsupported accepted-for-next-batch value: {value}. Use yes/no or 예/아니오."
     )
+
+
+def _looks_like_placeholder(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized or normalized == "-":
+        return True
+    return any(marker in normalized for marker in _PENDING_MARKERS)
 
 
 def complete_pilot_closeout(
@@ -54,7 +68,7 @@ def complete_pilot_closeout(
     decision_yes = normalized_decision == "예"
 
     final_overall_result = str(overall_result or existing_closeout.get("overall_result", "")).strip()
-    if not final_overall_result or final_overall_result == "-":
+    if not overall_result and _looks_like_placeholder(final_overall_result):
         final_overall_result = (
             "Pilot sample execution completed and approved for next batch."
             if decision_yes
@@ -62,7 +76,7 @@ def complete_pilot_closeout(
         )
 
     final_follow_up = str(follow_up_items or existing_closeout.get("follow_up_items", "")).strip()
-    if not final_follow_up or final_follow_up == "-":
+    if not follow_up_items and _looks_like_placeholder(final_follow_up):
         final_follow_up = "없음" if decision_yes else "business owner follow-up required"
 
     _RECORD.record_pilot_run(

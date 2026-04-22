@@ -95,7 +95,9 @@ def test_complete_pilot_closeout_marks_complete_for_yes(tmp_path: Path) -> None:
     content = run_sheet_file.read_text(encoding="utf-8")
     closeout = output_path.read_text(encoding="utf-8")
     assert payload["closeout_status"] == "PILOT_COMPLETE"
+    assert "- overall_result: Pilot sample execution completed and approved for next batch." in content
     assert "- accepted_for_next_batch: 예" in content
+    assert "- follow_up_items: 없음" in content
     assert "closeout_status: **PILOT_COMPLETE**" in closeout
     assert "Proceed to next pilot batch" in closeout
 
@@ -115,6 +117,7 @@ def test_complete_pilot_closeout_preserves_incomplete_for_no(tmp_path: Path) -> 
     content = run_sheet_file.read_text(encoding="utf-8")
     closeout = output_path.read_text(encoding="utf-8")
     assert payload["closeout_status"] == "INCOMPLETE"
+    assert "- overall_result: Pilot sample execution completed but additional follow-up is required before the next batch." in content
     assert "- accepted_for_next_batch: 아니오" in content
     assert "- follow_up_items: 추가 검수 필요" in content
     assert "closeout_status: **INCOMPLETE**" in closeout
