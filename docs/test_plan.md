@@ -277,6 +277,12 @@ python3 scripts/publish_pilot_delivery_latest_status.py \
   --output-dir ./reports/pilot
 ```
 
+gate 용도로 latest 상태만 판정하려면:
+```bash
+python3 scripts/assert_pilot_delivery_ready.py \
+  --status-file ./reports/pilot/latest-pilot-delivery-status.json
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
