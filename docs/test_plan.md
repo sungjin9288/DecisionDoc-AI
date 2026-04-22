@@ -217,6 +217,13 @@ python3 scripts/create_pilot_delivery_bundle.py \
   --output-dir ./reports/pilot
 ```
 
+### Pilot delivery manifest 생성
+```bash
+python3 scripts/create_pilot_delivery_manifest.py \
+  --bundle-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout-delivery-bundle.zip \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
