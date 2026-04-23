@@ -145,8 +145,12 @@ jobs:
             IMAGE_REPO="$(printf '%s' 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
             export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"
             # Backup data
-            mkdir -p /backup
-            tar czf /backup/data-$(date +%Y%m%d-%H%M%S).tar.gz /opt/decisiondoc/data/ || true
+            BACKUP_DIR="${DECISIONDOC_BACKUP_DIR:-./backups}"
+            if mkdir -p "$BACKUP_DIR"; then
+              tar czf "$BACKUP_DIR/data-$(date +%Y%m%d-%H%M%S).tar.gz" /opt/decisiondoc/data/ || true
+            else
+              echo "Backup directory unavailable; continuing without data backup"
+            fi
             docker compose --env-file .env.prod -f docker-compose.prod.yml pull
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
             # Wait for health

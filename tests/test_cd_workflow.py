@@ -96,3 +96,17 @@ def test_cd_production_uses_release_tag_from_lowercase_image_repository():
 
     assert 'export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"' in production_script
     assert "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" not in production_script
+
+
+def test_cd_production_backup_uses_writable_repo_local_default():
+    workflow = _load_cd_workflow()
+    production_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Deploy to production"
+    )
+
+    assert 'BACKUP_DIR="${DECISIONDOC_BACKUP_DIR:-./backups}"' in production_script
+    assert 'mkdir -p "$BACKUP_DIR"' in production_script
+    assert "mkdir -p /backup" not in production_script
+    assert "tar czf /backup" not in production_script

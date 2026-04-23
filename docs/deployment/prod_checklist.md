@@ -110,6 +110,7 @@ Docker server CD 필수 GitHub Secrets:
 - `v*.*.*` tag production deploy는 staging job에 의존하지 않고 Docker image build/push 성공 후 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` preflight를 통과해야 실행된다.
 - Docker server CD는 원격 `/opt/decisiondoc` checkout을 해당 GitHub SHA로 맞춘 뒤 `docker-compose.prod.yml`을 실행한다. staging은 GHCR `main` tag를, production은 release tag(`github.ref_name`)를 사용한다.
 - Docker server CD는 GHCR repository 이름을 lowercase로 정규화하고, 모든 remote compose 명령은 `--env-file .env.prod`를 명시한다. `docker compose pull/up` 실패는 job failure로 처리되어야 한다.
+- Production deploy의 사전 data backup은 `DECISIONDOC_BACKUP_DIR`가 있으면 해당 경로, 없으면 `/opt/decisiondoc/backups` 상대 경로(`./backups`)를 사용한다. backup directory 생성 실패는 경고 후 배포를 계속하지만 compose pull/up 실패는 실패로 처리한다.
 
 참고:
 - GHCR 로그인은 현재 `.github/workflows/cd.yml`에서 built-in `GITHUB_TOKEN`과 `packages:write` 권한으로 처리한다.
