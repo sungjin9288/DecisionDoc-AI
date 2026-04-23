@@ -69,7 +69,6 @@ def _pick_top_reasons(row: dict) -> list[str]:
 
 
 def _winner_for_fixture(rows_by_provider: dict[str, dict]) -> str:
-    best_provider = "tie"
     best_pass = False
     best_score = -1
     tie = False
@@ -79,7 +78,6 @@ def _winner_for_fixture(rows_by_provider: dict[str, dict]) -> str:
         provider_pass = bool(row.get("pass", False)) and not bool(row.get("provider_error", False))
         provider_score = int(row.get("heuristic", {}).get("score", 0))
         if (provider_pass, provider_score) > (best_pass, best_score):
-            best_provider = provider
             best_pass = provider_pass
             best_score = provider_score
             tie = False

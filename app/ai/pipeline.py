@@ -21,6 +21,7 @@ Usage:
     raw = pipeline.generate_raw(prompt, request_id="req")
     bundle = pipeline.generate_bundle(requirements, schema_version="v1", request_id="req")
 """
+import inspect
 from typing import Any
 
 from app.providers.base import Provider, ProviderError
@@ -66,7 +67,8 @@ class FallbackPipeline(Provider):
         errors: list[str] = []
         for provider in self._providers:
             try:
-                raw = provider.generate_raw(
+                raw = self._generate_raw_with_compatible_signature(
+                    provider,
                     prompt,
                     request_id=request_id,
                     max_output_tokens=max_output_tokens,
@@ -78,6 +80,28 @@ class FallbackPipeline(Provider):
         raise ProviderError(
             "All providers in fallback chain failed:\n" + "\n".join(errors)
         )
+
+    @staticmethod
+    def _generate_raw_with_compatible_signature(
+        provider: Provider,
+        prompt: str,
+        *,
+        request_id: str,
+        max_output_tokens: int | None,
+    ) -> str:
+        parameters = inspect.signature(provider.generate_raw).parameters.values()
+        supports_max_output_tokens = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            or parameter.name == "max_output_tokens"
+            for parameter in parameters
+        )
+        if supports_max_output_tokens:
+            return provider.generate_raw(
+                prompt,
+                request_id=request_id,
+                max_output_tokens=max_output_tokens,
+            )
+        return provider.generate_raw(prompt, request_id=request_id)
 
     def generate_bundle(
         self,

@@ -56,7 +56,7 @@ def collect_pptx_preview_lines(raw: bytes, *, limit: int = 16) -> list[str]:
 def collect_hwpx_preview_lines(raw: bytes, *, limit: int = 16) -> list[str]:
     with zipfile.ZipFile(BytesIO(raw), "r") as archive:
         xml = archive.read("Contents/section0.xml").decode("utf-8", errors="ignore")
-    texts = re.findall(r"<hh:t>(.*?)</hh:t>", xml, flags=re.DOTALL)
+    texts = re.findall(r"<(?:\w+:)?t>(.*?)</(?:\w+:)?t>", xml, flags=re.DOTALL)
     cleaned = [html.unescape(re.sub(r"\s+", " ", text)).strip() for text in texts]
     return _dedupe_lines(cleaned, limit)
 

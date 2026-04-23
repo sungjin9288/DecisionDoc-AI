@@ -81,7 +81,6 @@ from app.services.attachment_service import (
 )
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
-from app.services.generation_service import BundleNotSupportedError
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx, build_pptx_from_docs
 from app.services.visual_asset_service import generate_visual_assets_from_docs
