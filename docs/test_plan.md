@@ -345,6 +345,13 @@ python3 scripts/show_pilot_delivery_latest_summary.py \
   --output-dir ./reports/pilot
 ```
 
+latest overview까지 갱신한 뒤 바로 current latest summary를 보려면:
+```bash
+python3 scripts/check_pilot_delivery_latest_summary_ready.py \
+  --closeout-file ./reports/pilot/uat-session-<timestamp>-business-uat-summary-pilot-launch-checklist-run-sheet-closeout.md \
+  --output-dir ./reports/pilot
+```
+
 ### Pilot close-out 생성
 ```bash
 python3 scripts/finalize_pilot_run.py \
