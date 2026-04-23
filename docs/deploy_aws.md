@@ -170,6 +170,10 @@ bash scripts/check-github-actions-config.sh \
   --voice-brief-smoke
 ```
 
+이 helper는 현재 stage에 맞는 Docker CD SSH secret도 같이 검사합니다.
+- `dev` stage: `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`
+- `prod` stage: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`
+
 Security note:
 
 - `.github-actions.env` is a local-only secret file and must remain untracked.

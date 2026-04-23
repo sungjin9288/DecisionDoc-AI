@@ -85,6 +85,11 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 STAGE_UPPER=$(printf '%s' "$STAGE" | tr '[:lower:]' '[:upper:]')
+if [[ "$STAGE" == "dev" ]]; then
+  DEPLOY_SECRET_PREFIX="STAGING"
+else
+  DEPLOY_SECRET_PREFIX="PROD"
+fi
 
 required=(
   AWS_REGION
@@ -93,6 +98,9 @@ required=(
   "AWS_ROLE_ARN_${STAGE_UPPER}"
   "DECISIONDOC_S3_BUCKET_${STAGE_UPPER}"
   "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_${STAGE_UPPER}"
+  "${DEPLOY_SECRET_PREFIX}_HOST"
+  "${DEPLOY_SECRET_PREFIX}_USER"
+  "${DEPLOY_SECRET_PREFIX}_SSH_KEY"
 )
 
 optional=()

@@ -154,6 +154,11 @@ source "$ENV_FILE"
 set +a
 
 STAGE_UPPER=$(printf '%s' "$STAGE" | tr '[:lower:]' '[:upper:]')
+if [[ "$STAGE" == "dev" ]]; then
+  DEPLOY_SECRET_PREFIX="STAGING"
+else
+  DEPLOY_SECRET_PREFIX="PROD"
+fi
 
 secrets=(
   AWS_REGION
@@ -161,6 +166,9 @@ secrets=(
   DECISIONDOC_OPS_KEY
   "AWS_ROLE_ARN_${STAGE_UPPER}"
   "DECISIONDOC_S3_BUCKET_${STAGE_UPPER}"
+  "${DEPLOY_SECRET_PREFIX}_HOST"
+  "${DEPLOY_SECRET_PREFIX}_USER"
+  "${DEPLOY_SECRET_PREFIX}_SSH_KEY"
 )
 
 variables=()

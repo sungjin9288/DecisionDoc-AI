@@ -63,6 +63,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate staging deploy secrets
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          test -n "$STAGING_HOST" || { echo "::error::Missing staging secret: STAGING_HOST"; exit 1; }
+          test -n "$STAGING_USER" || { echo "::error::Missing staging secret: STAGING_USER"; exit 1; }
+          test -n "$STAGING_SSH_KEY" || { echo "::error::Missing staging secret: STAGING_SSH_KEY"; exit 1; }
+
       - name: Deploy to staging server
         uses: appleboy/ssh-action@v1
         with:
@@ -96,6 +106,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate production deploy secrets
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          test -n "$PROD_HOST" || { echo "::error::Missing production secret: PROD_HOST"; exit 1; }
+          test -n "$PROD_USER" || { echo "::error::Missing production secret: PROD_USER"; exit 1; }
+          test -n "$PROD_SSH_KEY" || { echo "::error::Missing production secret: PROD_SSH_KEY"; exit 1; }
 
       - name: Deploy to production
         uses: appleboy/ssh-action@v1
