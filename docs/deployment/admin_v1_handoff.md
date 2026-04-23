@@ -25,6 +25,7 @@
 | 회사 담당자 | [Sales Pack 인덱스](../sales/README.md) | 소개 자료와 설명 흐름 확인 |
 | 회사 담당자 | [회사 전달 가이드](../sales/company_delivery_guide.md) | 실제 전달 순서와 발송 문구 확인 |
 | 회사 담당자 | [DecisionDoc AI v1 완료 스냅샷](../v1_completion_snapshot.md) | 이번 완료 범위와 다음 phase 경계 확인 |
+| 운영/인수인계 담당자 | [Admin v1 Acceptance Record 2026-04-23](./admin_v1_acceptance_20260423.md) | 최신 release, smoke, delivery pack acceptance 증적 확인 |
 
 ## 2. 인수인계 실행 순서
 
@@ -34,6 +35,7 @@
    - `python3 scripts/run_deployed_smoke.py --env-file .env.prod`
    - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy`
    - `./reports/post-deploy/latest.json`
+   - 최신 acceptance record: [Admin v1 Acceptance Record 2026-04-23](./admin_v1_acceptance_20260423.md)
 4. 운영/API 키 보관 상태를 확인합니다.
    - `DECISIONDOC_API_KEYS`
    - `DECISIONDOC_OPS_KEY`
