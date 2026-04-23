@@ -15,7 +15,7 @@
 2. `python3 scripts/run_deployed_smoke.py --env-file .env.prod` 최근 실행 결과가 성공이다.
 3. `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy` 최신 결과가 성공이다.
 4. `docs/deployment/admin_v1_handoff.md` 와 현재 운영 상태가 일치한다.
-5. 전달할 PDF 4종을 1회 육안 검수했다.
+5. 전달할 PDF 5종을 1회 육안 검수했다.
 
 ## 2. 회사에 넘기는 패키지 구성
 
@@ -27,6 +27,7 @@
 - `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
 - `output/pdf/decisiondoc_ai_notebooklm_comparison_ko.pdf`
 - `output/pdf/decisiondoc_ai_internal_deployment_brief_ko.pdf`
+- `output/pdf/decisiondoc_ai_company_delivery_guide_ko.pdf`
 
 ### B. 운영 문서
 
