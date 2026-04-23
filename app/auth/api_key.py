@@ -11,14 +11,22 @@ class UnauthorizedError(Exception):
 
 
 def get_allowed_api_keys() -> list[str]:
+    keys: list[str] = []
     raw_multiple = os.getenv("DECISIONDOC_API_KEYS")
     if raw_multiple is not None:
-        return [item.strip() for item in raw_multiple.split(",") if item.strip()]
+        keys.extend(item.strip() for item in raw_multiple.split(",") if item.strip())
 
     raw_legacy = os.getenv("DECISIONDOC_API_KEY", "").strip()
     if raw_legacy:
-        return [raw_legacy]
-    return []
+        keys.append(raw_legacy)
+
+    # Preserve declaration order while allowing legacy single-key fallback
+    # to remain valid even when DECISIONDOC_API_KEYS is also present.
+    deduped: list[str] = []
+    for key in keys:
+        if key not in deduped:
+            deduped.append(key)
+    return deduped
 
 
 def has_valid_api_key_header(request: Request) -> bool:

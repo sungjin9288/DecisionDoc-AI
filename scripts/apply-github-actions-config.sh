@@ -149,6 +149,8 @@ fi
 bash "$SCRIPT_DIR/check-github-actions-config.sh" "${check_args[@]}"
 
 set -a
+# Prefer values from the supplied env file over any inherited shell state.
+unset DECISIONDOC_API_KEYS
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
