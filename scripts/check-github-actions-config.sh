@@ -98,9 +98,6 @@ required=(
   "AWS_ROLE_ARN_${STAGE_UPPER}"
   "DECISIONDOC_S3_BUCKET_${STAGE_UPPER}"
   "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_${STAGE_UPPER}"
-  "${DEPLOY_SECRET_PREFIX}_HOST"
-  "${DEPLOY_SECRET_PREFIX}_USER"
-  "${DEPLOY_SECRET_PREFIX}_SSH_KEY"
 )
 
 optional=()
@@ -127,6 +124,9 @@ fi
 optional+=("G2B_API_KEY_${STAGE_UPPER}")
 optional+=("STATUSPAGE_PAGE_ID")
 optional+=("STATUSPAGE_API_KEY")
+optional+=("${DEPLOY_SECRET_PREFIX}_HOST")
+optional+=("${DEPLOY_SECRET_PREFIX}_USER")
+optional+=("${DEPLOY_SECRET_PREFIX}_SSH_KEY")
 
 if [[ "$ENABLE_PROCUREMENT_SMOKE" -eq 1 ]]; then
   required+=("G2B_API_KEY_${STAGE_UPPER}")
@@ -199,6 +199,23 @@ if [[ -n "$openai_base_url_value" ]] && is_local_only_url "$openai_base_url_valu
   echo "Invalid entries:"
   echo "  INVALID $openai_base_url_name (loopback URLs do not work from Lambda runtime)"
   invalid+=("$openai_base_url_name")
+fi
+
+deploy_host_name="${DEPLOY_SECRET_PREFIX}_HOST"
+deploy_user_name="${DEPLOY_SECRET_PREFIX}_USER"
+deploy_key_name="${DEPLOY_SECRET_PREFIX}_SSH_KEY"
+deploy_host_value=${!deploy_host_name-}
+deploy_user_value=${!deploy_user_name-}
+deploy_key_value=${!deploy_key_name-}
+deploy_secret_count=0
+[[ -n "$deploy_host_value" ]] && deploy_secret_count=$((deploy_secret_count + 1))
+[[ -n "$deploy_user_value" ]] && deploy_secret_count=$((deploy_secret_count + 1))
+[[ -n "$deploy_key_value" ]] && deploy_secret_count=$((deploy_secret_count + 1))
+if [[ "$deploy_secret_count" -ne 0 && "$deploy_secret_count" -ne 3 ]]; then
+  echo
+  echo "Invalid entries:"
+  echo "  INVALID ${DEPLOY_SECRET_PREFIX}_* (set ${deploy_host_name}, ${deploy_user_name}, and ${deploy_key_name} together)"
+  invalid+=("${DEPLOY_SECRET_PREFIX}_*")
 fi
 
 echo

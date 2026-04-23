@@ -63,17 +63,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate staging deploy secrets
+      - name: Check staging deploy configuration
+        id: staging_config
         env:
           STAGING_HOST: ${{ secrets.STAGING_HOST }}
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
         run: |
-          test -n "$STAGING_HOST" || { echo "::error::Missing staging secret: STAGING_HOST"; exit 1; }
-          test -n "$STAGING_USER" || { echo "::error::Missing staging secret: STAGING_USER"; exit 1; }
-          test -n "$STAGING_SSH_KEY" || { echo "::error::Missing staging secret: STAGING_SSH_KEY"; exit 1; }
+          if [ -n "$STAGING_HOST" ] && [ -n "$STAGING_USER" ] && [ -n "$STAGING_SSH_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Staging deploy secrets are configured."
+          elif [ -z "$STAGING_HOST" ] && [ -z "$STAGING_USER" ] && [ -z "$STAGING_SSH_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Staging deploy secrets are not configured; skipping staging deploy and smoke test."
+          else
+            echo "::error::Staging deploy secrets are partially configured. Set STAGING_HOST, STAGING_USER, and STAGING_SSH_KEY together."
+            exit 1
+          fi
 
       - name: Deploy to staging server
+        if: steps.staging_config.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STAGING_HOST }}
@@ -87,6 +96,7 @@ jobs:
             echo "Deployed: $DOCKER_IMAGE"
 
       - name: Smoke test
+        if: steps.staging_config.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STAGING_HOST }}

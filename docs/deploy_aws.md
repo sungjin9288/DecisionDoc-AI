@@ -170,7 +170,7 @@ bash scripts/check-github-actions-config.sh \
   --voice-brief-smoke
 ```
 
-이 helper는 현재 stage에 맞는 Docker CD SSH secret도 같이 검사합니다.
+이 helper는 현재 stage에 맞는 Docker CD SSH secret도 optional로 검사합니다. 세 값이 모두 비어 있으면 Docker server CD deploy는 build-only로 skip할 수 있고, 일부만 있으면 invalid로 처리합니다.
 - `dev` stage: `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`
 - `prod` stage: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`
 

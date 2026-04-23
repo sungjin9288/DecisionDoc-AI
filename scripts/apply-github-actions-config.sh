@@ -166,12 +166,12 @@ secrets=(
   DECISIONDOC_OPS_KEY
   "AWS_ROLE_ARN_${STAGE_UPPER}"
   "DECISIONDOC_S3_BUCKET_${STAGE_UPPER}"
-  "${DEPLOY_SECRET_PREFIX}_HOST"
-  "${DEPLOY_SECRET_PREFIX}_USER"
-  "${DEPLOY_SECRET_PREFIX}_SSH_KEY"
 )
 
 variables=()
+deploy_host_name="${DEPLOY_SECRET_PREFIX}_HOST"
+deploy_user_name="${DEPLOY_SECRET_PREFIX}_USER"
+deploy_key_name="${DEPLOY_SECRET_PREFIX}_SSH_KEY"
 procurement_flag_name="DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_${STAGE_UPPER}"
 openai_api_key_name="OPENAI_API_KEY_${STAGE_UPPER}"
 openai_api_base_url_name="OPENAI_API_BASE_URL_${STAGE_UPPER}"
@@ -194,6 +194,12 @@ variables+=("$procurement_flag_name")
 
 if has_value "DECISIONDOC_API_KEYS"; then
   secrets+=("DECISIONDOC_API_KEYS")
+fi
+
+if has_value "$deploy_host_name"; then
+  secrets+=("$deploy_host_name")
+  secrets+=("$deploy_user_name")
+  secrets+=("$deploy_key_name")
 fi
 
 if has_value "$openai_api_key_name"; then
