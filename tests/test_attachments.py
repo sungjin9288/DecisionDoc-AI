@@ -121,6 +121,18 @@ class TestExtractStructuredFormats:
         assert '"name": "DecisionDoc"' in result
         assert '"items": [' in result
 
+    def test_xml_extracts_text_nodes(self):
+        raw = """<?xml version="1.0" encoding="UTF-8"?>
+        <root><title>DecisionDoc</title><section><p>XML 본문</p></section></root>""".encode("utf-8")
+        result = extract_text("sample.xml", raw)
+        assert "DecisionDoc" in result
+        assert "XML 본문" in result
+
+    def test_invalid_xml_returns_plain_text_fallback(self):
+        raw = b"<root><title>broken</root>"
+        result = extract_text("broken.xml", raw)
+        assert "broken" in result
+
     def test_yaml_extracts(self):
         raw = b"name: DecisionDoc\nfeatures:\n  - export\n  - attachments\n"
         result = extract_text("config.yaml", raw)

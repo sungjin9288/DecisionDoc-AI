@@ -27,7 +27,8 @@ import re
 import zipfile
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree as ET
+
+from defusedxml import ElementTree as SafeET
 
 _log = logging.getLogger("decisiondoc.attachment")
 
@@ -667,8 +668,8 @@ def _extract_yaml(raw: bytes, filename: str) -> str:
 def _extract_xml(raw: bytes, filename: str) -> str:
     text = _extract_plain(raw)
     try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
+        root = SafeET.fromstring(text)
+    except SafeET.ParseError:
         return text[:MAX_CHARS_PER_FILE]
 
     parts: list[str] = []
@@ -732,8 +733,8 @@ def _extract_opendocument(raw: bytes, filename: str) -> str:
         ) from exc
 
     try:
-        root = ET.fromstring(xml)
-    except ET.ParseError as exc:
+        root = SafeET.fromstring(xml)
+    except SafeET.ParseError as exc:
         raise AttachmentError(f"{filename}: OpenDocument XML 파싱 실패") from exc
 
     parts: list[str] = []
