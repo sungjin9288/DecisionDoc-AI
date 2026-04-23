@@ -114,6 +114,18 @@ Secret transfer must use a separate secure channel approved by the operator.
 | company delivery pack | `ACCEPTED` |
 | ready for company handoff | `YES` |
 
+## 7. Post-Acceptance Repo Baseline
+
+운영 acceptance 이후 `main` repo baseline도 다시 정리했습니다. 이 항목은 **새 production deploy 기록이 아니라**, handoff 이후 repo hardening과 CI 상태를 고정하기 위한 참고 증적입니다.
+
+| 항목 | 결과 |
+|------|------|
+| latest main head | `b064c6a` |
+| latest main CI run | `https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/24847952826` |
+| CI result | `success` |
+| latest repo hardening scope | `XML attachment parsing defusedxml 전환` + `Security Scan advisory false red 제거` |
+| production acceptance decision changed | `NO` |
+
 Remaining exclusions:
 
 - `dawool.decisiondoc.kr` live rollout is not included in this acceptance.

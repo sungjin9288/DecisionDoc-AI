@@ -18,12 +18,14 @@ and this project follows Semantic Versioning.
 - **Live dev runtime hardening** — Lambda local `/tmp` state 의존을 S3-backed durable state로 옮기고, login/bootstrap/UI shell 동작을 정리해 project/procurement flow가 실제 dev 배포에서 안정적으로 동작하도록 개선
 - **Project detail integration** — procurement 문서가 기존 `/generate/stream`, project documents, approval, share, history 흐름을 그대로 재사용하도록 연결
 - **CI alignment** — full `pytest tests/ -q --tb=short` 경로를 기본 test lane으로 고정하고, lint/security job은 advisory lane으로 정리
+- **CI advisory signal cleanup** — legacy `Safety` auth requirement 때문에 advisory security lane이 false red로 남지 않도록, CI 환경에서는 exit status를 기록만 하고 non-blocking으로 처리하도록 정리
 - **Dependency policy** — tracked `requirements.txt` / `requirements-lambda.txt`를 검증된 exact version으로 pinning하고 LDAP optional dependency `ldap3==2.9.1`까지 반영
 - **Notification polling lifecycle** — unauth/login 화면, logout, hidden tab에서는 unread-count polling을 멈추고, visible tab 복귀 시 SSE 유무에 따라 single refresh 또는 polling restart만 수행하도록 frontend bootstrap을 정리
 - **Procurement observability** — 기존 request/generate structured logs에 procurement action, recommendation, score status, hard-failure/checklist counts, downstream handoff usage를 추가해 별도 analytics subsystem 없이 운영 데이터 추적이 가능해짐
 
 ### Security
 - `bandit` 주요 finding을 모두 해소하고 SAML fallback parser를 fail-closed extractor로 교체
+- attachment `.xml` / OpenDocument XML parsing을 `defusedxml` 기반 fail-closed path로 교체해 `Bandit B314` medium finding 2건 제거
 - dependency scan 기준에서 tracked requirements의 `0 vulnerabilities reported`, `0 vulnerabilities ignored` 상태를 확보
 
 ### Fixed

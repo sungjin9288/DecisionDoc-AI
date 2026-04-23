@@ -36,6 +36,7 @@
    - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy`
    - `./reports/post-deploy/latest.json`
    - 최신 acceptance record: [Admin v1 Acceptance Record 2026-04-23](./admin_v1_acceptance_20260423.md)
+   - latest `main` CI green baseline 확인: `GitHub Actions CI run 24847952826 (success)`
 4. 운영/API 키 보관 상태를 확인합니다.
    - `DECISIONDOC_API_KEYS`
    - `DECISIONDOC_OPS_KEY`
@@ -87,6 +88,7 @@ python3 scripts/build_sales_pack.py
 - AWS SAM `stage-first / prod promote-only` 모델은 roadmap에 반영되어 있지만, 현재 handoff 기준 운영 경로는 아닙니다.
 - `POST /ops/post-deploy/run` 은 서버에서 docker/compose 접근이 가능한 host에서만 동작합니다.
 - sales PDF 5종은 자동 생성 가능하지만 최종 전달 전 1회 육안 검수를 권장합니다.
+- latest repo baseline은 `main` 기준 CI green 상태를 전제로 하지만, 이것이 곧바로 새로운 production deploy를 의미하지는 않습니다.
 
 ## 5. 장애 시 Escalation 순서
 
