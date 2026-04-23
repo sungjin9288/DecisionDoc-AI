@@ -90,7 +90,9 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             cd /opt/decisiondoc
-            export DOCKER_IMAGE=ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+            git fetch --prune origin
+            git -c advice.detachedHead=false checkout --force ${{ github.sha }}
+            export DOCKER_IMAGE=ghcr.io/${{ github.repository }}:main
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             echo "Deployed: $DOCKER_IMAGE"
@@ -135,6 +137,8 @@ jobs:
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
             cd /opt/decisiondoc
+            git fetch --prune origin
+            git -c advice.detachedHead=false checkout --force ${{ github.sha }}
             export DOCKER_IMAGE=ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             # Backup data
             tar czf /backup/data-$(date +%Y%m%d-%H%M%S).tar.gz /opt/decisiondoc/data/ || true

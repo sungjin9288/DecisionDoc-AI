@@ -29,3 +29,35 @@ def test_cd_staging_deploy_remains_main_branch_only_and_optional():
     assert deploy_staging["needs"] == "build-and-push"
     assert deploy_staging["if"] == "github.ref == 'refs/heads/main'"
     assert "Check staging deploy configuration" in step_names
+
+
+def test_cd_remote_deploy_scripts_sync_server_checkout_before_compose():
+    workflow = _load_cd_workflow()
+
+    staging_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-staging"]["steps"]
+        if step.get("name") == "Deploy to staging server"
+    )
+    production_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Deploy to production"
+    )
+
+    assert "git fetch --prune origin" in staging_script
+    assert "git -c advice.detachedHead=false checkout --force ${{ github.sha }}" in staging_script
+    assert "git fetch --prune origin" in production_script
+    assert "git -c advice.detachedHead=false checkout --force ${{ github.sha }}" in production_script
+
+
+def test_cd_staging_uses_branch_image_tag_that_metadata_action_publishes():
+    workflow = _load_cd_workflow()
+    staging_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-staging"]["steps"]
+        if step.get("name") == "Deploy to staging server"
+    )
+
+    assert "ghcr.io/${{ github.repository }}:main" in staging_script
+    assert "sha-${{ github.sha }}" not in staging_script
