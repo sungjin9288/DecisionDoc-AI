@@ -46,6 +46,11 @@
   - 외부/내부 발송 문구 템플릿
   - 첨부 패키지와 보안 경계 기준
 
+- `company_delivery_message_20260423.md`
+  - v1.1.4 기준 실제 발송용 메일/메신저 문안
+  - 1차 의사결정자용, 2차 운영/보안 담당자용 문안 분리
+  - 첨부 파일 목록과 비밀값 전달 금지 기준
+
 ## PDF 재생성
 
 - 단일 소개서:
@@ -70,3 +75,4 @@
 5. 경쟁 제품 비교 질문 대응: `notebooklm_comparison.md`
 6. 보안/설치/운영 질문 대응: `internal_deployment_brief.md`
 7. 실제 회사 전달 문구/순서: `company_delivery_guide.md`
+8. 바로 보낼 발송 문안: `company_delivery_message_20260423.md`
