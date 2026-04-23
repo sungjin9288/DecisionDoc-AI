@@ -89,12 +89,14 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
+            set -eu
             cd /opt/decisiondoc
             git fetch --prune origin
             git -c advice.detachedHead=false checkout --force ${{ github.sha }}
-            export DOCKER_IMAGE=ghcr.io/${{ github.repository }}:main
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            IMAGE_REPO="$(printf '%s' 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+            export DOCKER_IMAGE="${IMAGE_REPO}:main"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
             echo "Deployed: $DOCKER_IMAGE"
 
       - name: Smoke test
@@ -136,14 +138,17 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
+            set -eu
             cd /opt/decisiondoc
             git fetch --prune origin
             git -c advice.detachedHead=false checkout --force ${{ github.sha }}
-            export DOCKER_IMAGE=ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            IMAGE_REPO="$(printf '%s' 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+            export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"
             # Backup data
+            mkdir -p /backup
             tar czf /backup/data-$(date +%Y%m%d-%H%M%S).tar.gz /opt/decisiondoc/data/ || true
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
             # Wait for health
             for i in {1..12}; do
               if curl -sf http://localhost:8000/health; then

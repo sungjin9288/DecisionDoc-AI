@@ -59,5 +59,40 @@ def test_cd_staging_uses_branch_image_tag_that_metadata_action_publishes():
         if step.get("name") == "Deploy to staging server"
     )
 
-    assert "ghcr.io/${{ github.repository }}:main" in staging_script
+    assert "tr '[:upper:]' '[:lower:]'" in staging_script
+    assert 'export DOCKER_IMAGE="${IMAGE_REPO}:main"' in staging_script
     assert "sha-${{ github.sha }}" not in staging_script
+
+
+def test_cd_remote_deploy_scripts_fail_fast_and_use_prod_env_file():
+    workflow = _load_cd_workflow()
+
+    staging_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-staging"]["steps"]
+        if step.get("name") == "Deploy to staging server"
+    )
+    production_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Deploy to production"
+    )
+
+    for script in (staging_script, production_script):
+        assert script.startswith("set -eu\n")
+        assert "tr '[:upper:]' '[:lower:]'" in script
+        assert "docker compose --env-file .env.prod -f docker-compose.prod.yml pull" in script
+        assert "docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans" in script
+        assert "docker compose -f docker-compose.prod.yml" not in script
+
+
+def test_cd_production_uses_release_tag_from_lowercase_image_repository():
+    workflow = _load_cd_workflow()
+    production_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Deploy to production"
+    )
+
+    assert 'export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"' in production_script
+    assert "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" not in production_script
