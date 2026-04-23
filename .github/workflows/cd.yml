@@ -143,7 +143,9 @@ jobs:
             git fetch --prune origin
             git -c advice.detachedHead=false checkout --force ${{ github.sha }}
             IMAGE_REPO="$(printf '%s' 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-            export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"
+            IMAGE_TAG="${{ github.ref_name }}"
+            IMAGE_TAG="${IMAGE_TAG#v}"
+            export DOCKER_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
             # Backup data
             BACKUP_DIR="${DECISIONDOC_BACKUP_DIR:-./backups}"
             if mkdir -p "$BACKUP_DIR"; then

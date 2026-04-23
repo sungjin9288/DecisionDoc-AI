@@ -94,7 +94,9 @@ def test_cd_production_uses_release_tag_from_lowercase_image_repository():
         if step.get("name") == "Deploy to production"
     )
 
-    assert 'export DOCKER_IMAGE="${IMAGE_REPO}:${{ github.ref_name }}"' in production_script
+    assert 'IMAGE_TAG="${{ github.ref_name }}"' in production_script
+    assert 'IMAGE_TAG="${IMAGE_TAG#v}"' in production_script
+    assert 'export DOCKER_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"' in production_script
     assert "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" not in production_script
 
 
