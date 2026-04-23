@@ -50,6 +50,8 @@ def _make_client(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_SEARCH_ENABLED", "0")
     monkeypatch.setenv("DECISIONDOC_OPS_KEY", _OPS_KEY)
     monkeypatch.setenv("JWT_SECRET_KEY", _JWT_SECRET)
+    monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     import app.main as main_module
     from fastapi.testclient import TestClient
     return TestClient(main_module.create_app())

@@ -208,11 +208,15 @@ def test_ab_test_api_endpoints(tmp_path, monkeypatch):
 
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "test-api-key")
     monkeypatch.setenv("DECISIONDOC_OPS_KEY", "test-ops-key")
 
     application = main_module.create_app()
     client = TestClient(application)
-    ops_headers = {"X-DecisionDoc-Ops-Key": "test-ops-key"}
+    auth_headers = {
+        "X-DecisionDoc-Api-Key": "test-api-key",
+        "X-DecisionDoc-Ops-Key": "test-ops-key",
+    }
 
     def _tests(resp):
         """Extract test list from either bare list or wrapped {"tests": [...]} format."""
@@ -220,11 +224,11 @@ def test_ab_test_api_endpoints(tmp_path, monkeypatch):
         return data["tests"] if isinstance(data, dict) and "tests" in data else data
 
     # 초기 상태: 빈 목록
-    resp = client.get("/ab-tests/active", headers=ops_headers)
+    resp = client.get("/ab-tests/active", headers=auth_headers)
     assert resp.status_code == 200
     assert _tests(resp) == []
 
-    resp = client.get("/ab-tests/concluded", headers=ops_headers)
+    resp = client.get("/ab-tests/concluded", headers=auth_headers)
     assert resp.status_code == 200
     assert _tests(resp) == []
 
@@ -232,7 +236,7 @@ def test_ab_test_api_endpoints(tmp_path, monkeypatch):
     ab_store = ABTestStore(tmp_path)
     ab_store.create_test("tech_decision", "hint_a", "hint_b", min_samples=5)
 
-    resp = client.get("/ab-tests/active", headers=ops_headers)
+    resp = client.get("/ab-tests/active", headers=auth_headers)
     assert resp.status_code == 200
     active = _tests(resp)
     assert len(active) == 1
@@ -240,13 +244,13 @@ def test_ab_test_api_endpoints(tmp_path, monkeypatch):
     assert active[0]["status"] == "active"
 
     # Reset (delete) 테스트
-    resp = client.post("/ab-tests/tech_decision/reset", headers=ops_headers)
+    resp = client.post("/ab-tests/tech_decision/reset", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["deleted"] is True
     assert body["bundle_id"] == "tech_decision"
 
     # 삭제 후 active 목록이 비었는지 확인
-    resp = client.get("/ab-tests/active", headers=ops_headers)
+    resp = client.get("/ab-tests/active", headers=auth_headers)
     assert resp.status_code == 200
     assert _tests(resp) == []
