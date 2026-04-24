@@ -130,6 +130,9 @@ def live_server(tmp_path_factory):
     os.environ.update(
         {
             "DECISIONDOC_PROVIDER": "mock",
+            "DECISIONDOC_PROVIDER_GENERATION": "",
+            "DECISIONDOC_PROVIDER_ATTACHMENT": "",
+            "DECISIONDOC_PROVIDER_VISUAL": "",
             "DATA_DIR": str(tmp),
             "DECISIONDOC_ENV": "dev",
             "DECISIONDOC_MAINTENANCE": "0",
@@ -137,6 +140,7 @@ def live_server(tmp_path_factory):
             "DECISIONDOC_OPS_KEY": "ops-secret",
             "DECISIONDOC_POST_DEPLOY_REPORT_DIR": str(report_dir),
             "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED": "1",
+            "JWT_SECRET_KEY": "e2e-test-secret-key-32chars-minimum!!",
         }
     )
     os.environ.pop("DECISIONDOC_API_KEY", None)

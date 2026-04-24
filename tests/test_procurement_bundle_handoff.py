@@ -36,6 +36,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_API_KEY", "test-key")
     monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     return TestClient(create_app())
 
 
@@ -48,6 +51,9 @@ def disabled_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_API_KEY", "test-key")
     monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     return TestClient(create_app())
 
 

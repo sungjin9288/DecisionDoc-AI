@@ -20,6 +20,9 @@ def _create_client(tmp_path, monkeypatch, provider="mock"):
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
 
     from app.main import create_app
 
