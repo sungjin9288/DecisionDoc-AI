@@ -6163,7 +6163,7 @@
   let _approvalRequestSource = null;
   let _knowledgePromotionTarget = null;
   let _serverVersionInfo = {
-    version: '1.1.0',
+    version: '1.1.6',
     features: {
       procurement_copilot: false,
       realtime_events: true,
@@ -7725,7 +7725,7 @@
         };
         const footerVersion = document.getElementById('footer-version');
         if (footerVersion) {
-          footerVersion.textContent = `DecisionDoc AI v${_serverVersionInfo.version || '1.1.0'}`;
+          footerVersion.textContent = `DecisionDoc AI v${_serverVersionInfo.version || '1.1.6'}`;
         }
         return _serverVersionInfo;
       })
@@ -22747,7 +22747,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.0</span>
+      <span id="footer-version">DecisionDoc AI v1.1.6</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
