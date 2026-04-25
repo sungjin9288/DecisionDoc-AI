@@ -185,6 +185,45 @@ class MockProvider(Provider):
                 "confidence": 0.85,
             }, ensure_ascii=False)
 
+        if "report workflow planner" in prompt.lower():
+            return _json.dumps({
+                "objective": "보고서 목적과 승인 흐름을 한눈에 이해할 수 있게 구성합니다.",
+                "audience": "PM, 대표, 최종 의사결정권자",
+                "executive_message": "기획 승인 후 장표 제작으로 이어지는 단계형 보고서 품질 관리를 적용합니다.",
+                "table_of_contents": ["핵심 메시지", "현황 진단", "제안 방향", "실행 계획", "기대 효과", "승인 요청"],
+                "slide_plans": [
+                    {
+                        "slide_id": f"slide-{idx:03d}",
+                        "page": idx,
+                        "title": title,
+                        "purpose": f"{title} 내용을 의사결정자가 검토할 수 있게 설명합니다.",
+                        "key_message": f"{title} 기준의 핵심 판단 포인트를 제시합니다.",
+                        "layout": "상단 핵심 메시지, 좌측 근거, 우측 시각자료",
+                        "visual_direction": "요약 카드와 흐름도 중심",
+                        "required_evidence": ["입력 요구사항", "첨부자료 요약"],
+                    }
+                    for idx, title in enumerate(["핵심 메시지", "현황 진단", "제안 방향", "실행 계획", "기대 효과", "승인 요청"], start=1)
+                ],
+                "open_questions": ["최종 승인자는 누구인지 확인이 필요합니다."],
+                "risk_notes": ["첨부자료가 부족하면 장표별 근거가 약해질 수 있습니다."],
+            }, ensure_ascii=False)
+
+        if "slide draft generator" in prompt.lower():
+            return _json.dumps({
+                "slides": [
+                    {
+                        "slide_id": f"slide-{idx:03d}",
+                        "page": idx,
+                        "title": title,
+                        "body": f"{title} 장표는 핵심 메시지, 근거, 실행 포인트를 3개 bullet로 정리합니다.",
+                        "visual_spec": "우측에 요약 카드와 간단한 프로세스 다이어그램 배치",
+                        "speaker_note": f"PM은 {title}에서 의사결정 포인트와 다음 액션을 설명합니다.",
+                        "source_refs": ["approved_planning"],
+                    }
+                    for idx, title in enumerate(["핵심 메시지", "현황 진단", "제안 방향", "실행 계획", "기대 효과", "승인 요청"], start=1)
+                ]
+            }, ensure_ascii=False)
+
         # Default: sketch prompt
         is_ppt = "ppt_slides" in prompt and '"page"' in prompt
 

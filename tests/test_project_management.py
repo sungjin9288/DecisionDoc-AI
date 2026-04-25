@@ -559,6 +559,9 @@ class TestGenerateRequestSchema:
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
@@ -592,6 +595,9 @@ def _auth_headers(client: TestClient, username: str = "project-user") -> dict[st
 
 def _disabled_procurement_client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")

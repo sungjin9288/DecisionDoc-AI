@@ -608,11 +608,20 @@ def client(tmp_path_factory):
     import os
     tmp_dir = tmp_path_factory.mktemp("approval_workflow_data")
     _saved = {k: os.environ.pop(k, None)
-              for k in ("DECISIONDOC_API_KEY", "DECISIONDOC_API_KEYS")}
+              for k in (
+                  "DECISIONDOC_API_KEY",
+                  "DECISIONDOC_API_KEYS",
+                  "DECISIONDOC_PROVIDER_GENERATION",
+                  "DECISIONDOC_PROVIDER_ATTACHMENT",
+                  "DECISIONDOC_PROVIDER_VISUAL",
+              )}
     old_data_dir = os.environ.get("DATA_DIR")
     os.environ["DATA_DIR"] = str(tmp_dir)
     os.environ["DECISIONDOC_ENV"] = "dev"
     os.environ["DECISIONDOC_PROVIDER"] = "mock"
+    os.environ["DECISIONDOC_PROVIDER_GENERATION"] = ""
+    os.environ["DECISIONDOC_PROVIDER_ATTACHMENT"] = ""
+    os.environ["DECISIONDOC_PROVIDER_VISUAL"] = ""
     _client = TestClient(create_app())
     yield _client
     # Restore env

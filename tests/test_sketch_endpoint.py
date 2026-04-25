@@ -5,6 +5,9 @@ from fastapi.testclient import TestClient
 
 def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")

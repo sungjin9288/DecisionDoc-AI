@@ -3781,6 +3781,7 @@
     body.auth-pending #onboarding-banner,
     body.auth-pending #main-content,
     body.auth-pending #project-page,
+    body.auth-pending #report-workflow-page,
     body.auth-pending #knowledge-page,
     body.auth-pending #approval-page,
     body.auth-pending #locations-page,
@@ -4587,6 +4588,7 @@
   <button class="page-tab" data-page="dashboard" role="tab" aria-selected="false" onclick="switchPage('dashboard')">📊 AI 성능</button>
   <button class="page-tab" data-page="approval" role="tab" aria-selected="false" onclick="switchPage('approval')">📋 결재함</button>
   <button class="page-tab" data-page="project-page" role="tab" aria-selected="false" onclick="switchPage('project-page')">📁 프로젝트</button>
+  <button class="page-tab" data-page="report-workflow-page" role="tab" aria-selected="false" onclick="switchPage('report-workflow-page')">🧭 보고서 워크플로우</button>
   <button class="page-tab" data-page="knowledge-page" role="tab" aria-selected="false" onclick="switchPage('knowledge-page')">📚 지식 관리</button>
   <button class="page-tab" id="locations-tab" data-page="locations-page" role="tab" aria-selected="false" onclick="switchPage('locations-page')" style="display:none">🏢 거점 관리</button>
 </nav>
@@ -5430,6 +5432,50 @@
   </div>
 </section>
 
+<!-- ── 단계형 보고서 워크플로우 ───────────────────────────────────── -->
+<section id="report-workflow-page" style="display:none; max-width:1120px; margin:0 auto; padding:1.5rem 1rem;" aria-label="보고서 워크플로우">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+    <div>
+      <div style="font-size:.78rem; font-weight:800; color:var(--p1); letter-spacing:.08em; text-transform:uppercase;">Report Workflow ERP</div>
+      <h2 style="font-size:1.45rem; font-weight:900; margin:.2rem 0;">🧭 단계형 보고서 제작</h2>
+      <p style="margin:0; color:var(--muted); font-size:.9rem;">기획안 승인 후 장표 제작, 장표별 승인, 최종 승인과 PPTX export까지 관리합니다.</p>
+    </div>
+    <button type="button" class="action-btn" onclick="loadReportWorkflows()">🔄 새로고침</button>
+  </div>
+
+  <div style="display:grid; grid-template-columns:minmax(260px, .8fr) minmax(0, 1.4fr); gap:1rem; align-items:start;">
+    <div style="background:var(--surface-solid); border:1px solid var(--border); border-radius:18px; padding:1rem;">
+      <h3 style="margin:0 0 .75rem; font-size:1rem; font-weight:850;">프로젝트 생성</h3>
+      <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">제목</label>
+      <input id="rw-title" class="gov-input" placeholder="예: 2026 스마트공장 제안서" style="width:100%;">
+      <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">목표</label>
+      <textarea id="rw-goal" class="gov-input" rows="3" placeholder="승인 대상과 보고서 목적을 입력" style="width:100%; resize:vertical;"></textarea>
+      <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">고객/기관</label>
+      <input id="rw-client" class="gov-input" placeholder="예: 국토교통부" style="width:100%;">
+      <div style="display:grid; grid-template-columns:1fr 110px; gap:.5rem;">
+        <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">대상 독자
+          <input id="rw-audience" class="gov-input" placeholder="PM, 대표" style="width:100%; margin-top:.25rem;">
+        </label>
+        <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">장표 수
+          <input id="rw-slide-count" class="gov-input" type="number" min="1" max="40" value="6" style="width:100%; margin-top:.25rem;">
+        </label>
+      </div>
+      <label style="display:flex; align-items:center; gap:.45rem; font-size:.82rem; color:var(--muted); margin:.8rem 0;">
+        <input id="rw-learning-opt-in" type="checkbox">
+        승인된 기획안/장표 원문을 학습 후보로 저장
+      </label>
+      <button type="button" class="action-btn" onclick="createReportWorkflow()" style="width:100%; background:var(--p1); color:#fff; border-color:transparent;">+ 워크플로우 생성</button>
+    </div>
+
+    <div>
+      <div id="report-workflow-list" style="display:flex; flex-direction:column; gap:.75rem; margin-bottom:1rem;"></div>
+      <div id="report-workflow-detail" style="background:var(--surface-solid); border:1px solid var(--border); border-radius:18px; padding:1rem; min-height:220px;">
+        <div style="text-align:center; color:var(--muted); padding:3rem 1rem;">워크플로우를 선택하면 단계별 작업 상태가 표시됩니다.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ── 결재함 ────────────────────────────────────────────────────── -->
 <section id="approval-page" style="display:none; max-width:900px; margin:0 auto; padding:1.5rem 1rem;" aria-label="결재함">
   <h2 style="font-size:1.25rem; font-weight:800; margin-bottom:1rem;">📋 결재함</h2>
@@ -6150,6 +6196,7 @@
     const perfDash = $id('perf-dashboard');
     const approvalPage = $id('approval-page');
     const projectPage = $id('project-page');
+    const reportWorkflowPage = $id('report-workflow-page');
     const stylePage = $id('style-page');
     const knowledgePage = $id('knowledge-page');
     const locationsPage = $id('locations-page');
@@ -6158,6 +6205,7 @@
       if (perfDash) perfDash.style.display = 'block';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6168,6 +6216,7 @@
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'block';
       if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6177,16 +6226,28 @@
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'block';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
       loadProjects();
       loadProjectSelector();
+    } else if (page === 'report-workflow-page') {
+      if (main) main.style.display = 'none';
+      if (perfDash) perfDash.style.display = 'none';
+      if (approvalPage) approvalPage.style.display = 'none';
+      if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'block';
+      if (stylePage) stylePage.style.display = 'none';
+      if (knowledgePage) knowledgePage.style.display = 'none';
+      if (locationsPage) locationsPage.style.display = 'none';
+      loadReportWorkflows();
     } else if (page === 'knowledge-page') {
       if (main) main.style.display = 'none';
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'block';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6196,6 +6257,7 @@
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'block';
@@ -6206,11 +6268,258 @@
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
     }
   };
+
+  /* ── Report Workflow ERP ─────────────────────────────────────── */
+  let _reportWorkflowCurrentId = '';
+
+  const REPORT_WORKFLOW_STATUS_LABELS = {
+    planning_required: '기획 필요',
+    planning_draft: '기획 초안',
+    planning_changes_requested: '기획 수정 요청',
+    planning_approved: '기획 승인',
+    slides_draft: '장표 초안',
+    slides_changes_requested: '장표 수정 요청',
+    slides_approved: '장표 승인 완료',
+    final_review: '최종 검토',
+    final_approved: '최종 승인',
+    delivered: '전달 완료',
+  };
+
+  function reportWorkflowStatusLabel(status) {
+    return REPORT_WORKFLOW_STATUS_LABELS[status] || status || 'unknown';
+  }
+
+  function reportWorkflowBadge(status) {
+    const color = status === 'final_approved' ? '#16a34a'
+      : status === 'final_review' ? '#f59e0b'
+      : status && status.includes('changes') ? '#ef4444'
+      : status && status.includes('approved') ? '#2563eb'
+      : '#6b7280';
+    return `<span style="display:inline-flex;align-items:center;border-radius:999px;padding:.15rem .5rem;background:${color}18;color:${color};font-size:.72rem;font-weight:800;">${escapeHtml(reportWorkflowStatusLabel(status))}</span>`;
+  }
+
+  async function loadReportWorkflows() {
+    const list = $id('report-workflow-list');
+    if (!list) return;
+    list.innerHTML = '<div style="color:var(--muted);font-size:.85rem;">불러오는 중...</div>';
+    try {
+      const res = await fetch('/report-workflows', { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const workflows = data.report_workflows || [];
+      if (!workflows.length) {
+        list.innerHTML = '<div style="background:var(--surface-solid);border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);">아직 생성된 보고서 워크플로우가 없습니다.</div>';
+      } else {
+        list.innerHTML = workflows.map(item => `
+          <button type="button" class="action-btn" onclick="selectReportWorkflow('${escapeHtml(item.report_workflow_id)}')"
+            style="display:block;width:100%;text-align:left;background:${item.report_workflow_id === _reportWorkflowCurrentId ? 'var(--p-light)' : 'var(--surface-solid)'};border:1px solid var(--border);border-radius:14px;padding:.85rem;">
+            <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;">
+              <strong style="font-size:.92rem;">${escapeHtml(item.title || '보고서')}</strong>
+              ${reportWorkflowBadge(item.status)}
+            </div>
+            <div style="margin-top:.35rem;color:var(--muted);font-size:.78rem;">${escapeHtml(item.client || item.audience || '대상 미지정')} · ${Number(item.slide_count || 0)}장</div>
+          </button>
+        `).join('');
+      }
+      if (_reportWorkflowCurrentId) await loadReportWorkflowDetail(_reportWorkflowCurrentId);
+    } catch (err) {
+      list.innerHTML = `<div style="color:#ef4444;font-size:.85rem;">워크플로우 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  async function createReportWorkflow() {
+    const title = ($id('rw-title')?.value || '').trim();
+    if (!title) {
+      showNotification('보고서 제목을 입력해주세요.', 'warn');
+      return;
+    }
+    const payload = {
+      title,
+      goal: ($id('rw-goal')?.value || '').trim(),
+      client: ($id('rw-client')?.value || '').trim(),
+      audience: ($id('rw-audience')?.value || '').trim(),
+      slide_count: Number($id('rw-slide-count')?.value || 6),
+      learning_opt_in: !!$id('rw-learning-opt-in')?.checked,
+      report_type: 'proposal_presentation',
+      source_bundle_id: 'presentation_kr',
+    };
+    try {
+      const res = await fetch('/report-workflows', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _reportWorkflowCurrentId = data.report_workflow_id;
+      showNotification('보고서 워크플로우를 생성했습니다.', 'success');
+      await loadReportWorkflows();
+    } catch (err) {
+      showNotification('워크플로우 생성 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function selectReportWorkflow(id) {
+    _reportWorkflowCurrentId = id;
+    await loadReportWorkflows();
+  }
+
+  async function loadReportWorkflowDetail(id) {
+    const el = $id('report-workflow-detail');
+    if (!el) return;
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const item = await res.json();
+      renderReportWorkflowDetail(item);
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">상세 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  function renderReportWorkflowDetail(item) {
+    const el = $id('report-workflow-detail');
+    if (!el) return;
+    const planning = item.planning || null;
+    const slides = Array.isArray(item.slides) ? item.slides : [];
+    const planningApproved = planning?.status === 'approved';
+    const allSlidesApproved = slides.length > 0 && slides.every(s => s.status === 'approved');
+    const finalLocked = ['final_approved', 'delivered'].includes(item.status);
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap;margin-bottom:1rem;">
+        <div>
+          <h3 style="margin:0;font-size:1.15rem;font-weight:900;">${escapeHtml(item.title || '보고서')}</h3>
+          <div style="color:var(--muted);font-size:.82rem;margin-top:.25rem;">${escapeHtml(item.goal || '목표 미입력')}</div>
+        </div>
+        ${reportWorkflowBadge(item.status)}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-bottom:1rem;">
+        ${renderReportWorkflowStep('1. 기획', planning ? reportWorkflowStatusLabel(item.status) : '대기', !!planning)}
+        ${renderReportWorkflowStep('2. 장표 제작', slides.length ? `${slides.filter(s => s.status === 'approved').length}/${slides.length} 승인` : '대기', slides.length > 0)}
+        ${renderReportWorkflowStep('3. 최종 승인', item.final_approved_at ? '승인 완료' : (item.status === 'final_review' ? '검토 중' : '대기'), item.status === 'final_review' || finalLocked)}
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','planning/generate')" ${finalLocked ? 'disabled' : ''}>🧠 기획안 생성</button>
+        <button class="action-btn" onclick="requestReportWorkflowPlanningChange('${escapeHtml(item.report_workflow_id)}')" ${(!planning || finalLocked) ? 'disabled' : ''}>📝 기획 수정 요청</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','planning/approve')" ${(!planning || planningApproved || finalLocked) ? 'disabled' : ''}>✅ 기획 승인</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','slides/generate', {})" ${(!planningApproved || finalLocked) ? 'disabled' : ''}>🎞 장표 생성</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/submit')" ${(!allSlidesApproved || item.status === 'final_review' || finalLocked) ? 'disabled' : ''}>📤 최종 검토 요청</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/approve')" ${item.status !== 'final_review' ? 'disabled' : ''}>🏁 최종 승인</button>
+        <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:1rem;align-items:start;">
+        <div>${renderReportWorkflowPlanning(planning, item)}</div>
+        <div>${renderReportWorkflowSlides(slides, item)}</div>
+      </div>
+      ${item.learning_opt_in ? '<div style="margin-top:1rem;color:#16a34a;font-size:.78rem;font-weight:700;">학습 opt-in 활성화 · 승인/수정 artifact 저장 중</div>' : '<div style="margin-top:1rem;color:var(--muted);font-size:.78rem;">학습 opt-in 비활성화 · 원문 artifact 저장 안 함</div>'}
+      ${Array.isArray(item.quality_warnings) && item.quality_warnings.length ? `<div style="margin-top:.5rem;color:#f59e0b;font-size:.78rem;">품질 경고: ${escapeHtml(item.quality_warnings.join(', '))}</div>` : ''}
+    `;
+  }
+
+  function renderReportWorkflowStep(title, caption, active) {
+    return `<div style="border:1px solid ${active ? 'var(--p-ring)' : 'var(--border)'};background:${active ? 'var(--p-light)' : 'var(--surface)'};border-radius:14px;padding:.75rem;">
+      <div style="font-weight:850;font-size:.84rem;">${escapeHtml(title)}</div>
+      <div style="color:var(--muted);font-size:.76rem;margin-top:.25rem;">${escapeHtml(caption)}</div>
+    </div>`;
+  }
+
+  function renderReportWorkflowPlanning(planning, item) {
+    if (!planning) return '<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);">기획안을 먼저 생성하세요.</div>';
+    const plans = Array.isArray(planning.slide_plans) ? planning.slide_plans : [];
+    return `<div style="border:1px solid var(--border);border-radius:14px;padding:1rem;background:var(--surface);">
+      <h4 style="margin:0 0 .5rem;font-size:.95rem;">1. 기획안</h4>
+      <div style="font-size:.82rem;line-height:1.55;"><strong>핵심 메시지:</strong> ${escapeHtml(planning.executive_message || '')}</div>
+      <div style="margin-top:.7rem;display:flex;flex-direction:column;gap:.45rem;">
+        ${plans.map(plan => `<div style="border:1px solid var(--border);border-radius:10px;padding:.55rem;background:rgba(255,255,255,.45);">
+          <strong style="font-size:.82rem;">${escapeHtml(plan.page)}. ${escapeHtml(plan.title || '')}</strong>
+          <div style="font-size:.76rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(plan.key_message || plan.purpose || '')}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function renderReportWorkflowSlides(slides, item) {
+    if (!slides.length) return '<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);">기획 승인 후 장표를 생성하세요.</div>';
+    const finalLocked = ['final_approved', 'delivered'].includes(item.status);
+    return `<div style="border:1px solid var(--border);border-radius:14px;padding:1rem;background:var(--surface);">
+      <h4 style="margin:0 0 .5rem;font-size:.95rem;">2. 장표 제작</h4>
+      <div style="display:flex;flex-direction:column;gap:.55rem;">
+        ${slides.map(slide => `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.45);">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start;">
+            <strong style="font-size:.84rem;">${escapeHtml(slide.page)}. ${escapeHtml(slide.title || '')}</strong>
+            ${reportWorkflowBadge(slide.status)}
+          </div>
+          <div style="font-size:.76rem;color:var(--muted);margin:.35rem 0;">${escapeHtml((slide.body || '').slice(0, 180))}</div>
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+            <button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','slides/${escapeHtml(slide.slide_id)}/approve')" ${(slide.status === 'approved' || finalLocked) ? 'disabled' : ''}>승인</button>
+            <button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="requestReportWorkflowSlideChange('${escapeHtml(item.report_workflow_id)}','${escapeHtml(slide.slide_id)}')" ${finalLocked ? 'disabled' : ''}>수정 요청</button>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  async function runReportWorkflowAction(id, action, body = null) {
+    const actor = (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator';
+    const payload = body === null ? { username: actor, comment: '' } : body;
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/${action}`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _reportWorkflowCurrentId = data.report_workflow_id || id;
+      renderReportWorkflowDetail(data);
+      await loadReportWorkflows();
+      showNotification('워크플로우 상태를 업데이트했습니다.', 'success');
+    } catch (err) {
+      showNotification('워크플로우 처리 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function requestReportWorkflowSlideChange(id, slideId) {
+    const comment = window.prompt('수정 요청 내용을 입력하세요.');
+    if (!comment) return;
+    await runReportWorkflowAction(id, `slides/${slideId}/request-changes`, {
+      username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+      comment,
+    });
+  }
+
+  async function requestReportWorkflowPlanningChange(id) {
+    const comment = window.prompt('기획안 수정 요청 내용을 입력하세요.');
+    if (!comment) return;
+    await runReportWorkflowAction(id, 'planning/request-changes', {
+      username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+      comment,
+    });
+  }
+
+  async function downloadReportWorkflowPptx(id) {
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/export/pptx`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'report_workflow.pptx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showNotification('PPTX 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
 
   /* ── Knowledge Management ────────────────────────────────────── */
   let _knowledgeCurrentProject = '';
@@ -12449,11 +12758,13 @@
       const perfDash = $id('perf-dashboard');
       const approvalPage = $id('approval-page');
       const projectPage = $id('project-page');
+      const reportWorkflowPage = $id('report-workflow-page');
       if (page === 'dashboard') {
         if (main) main.style.display = 'none';
         if (perfDash) perfDash.style.display = 'block';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         loadDashboard();
         loadUserDashboard();
@@ -12462,6 +12773,7 @@
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'block';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         loadApprovals();
       } else if (page === 'project-page') {
@@ -12469,6 +12781,7 @@
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'block';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         loadProjects();
@@ -12478,14 +12791,26 @@
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'block');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         loadStyleProfiles();
+      } else if (page === 'report-workflow-page') {
+        if (main) main.style.display = 'none';
+        if (perfDash) perfDash.style.display = 'none';
+        if (approvalPage) approvalPage.style.display = 'none';
+        if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'block';
+        $id('style-page') && ($id('style-page').style.display = 'none');
+        $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
+        $id('locations-page') && ($id('locations-page').style.display = 'none');
+        loadReportWorkflows();
       } else if (page === 'knowledge-page') {
         if (main) main.style.display = 'none';
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'block');
         $id('locations-page') && ($id('locations-page').style.display = 'none');
@@ -12495,6 +12820,7 @@
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         $id('locations-page') && ($id('locations-page').style.display = 'block');
@@ -12504,6 +12830,7 @@
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         $id('locations-page') && ($id('locations-page').style.display = 'none');

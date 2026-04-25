@@ -331,6 +331,60 @@ class AddDocumentToProjectRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class CreateReportWorkflowRequest(BaseModel):
+    """Payload for POST /report-workflows."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    title: str = Field(..., min_length=1)
+    goal: str = ""
+    client: str = ""
+    report_type: str = "proposal_presentation"
+    audience: str = ""
+    owner: str = ""
+    source_bundle_id: str = "presentation_kr"
+    source_request_id: str = ""
+    slide_count: int = Field(default=6, ge=1, le=40)
+    attachments_context: str = ""
+    source_refs: list[str] = Field(default_factory=list)
+    learning_opt_in: bool = False
+
+
+class ReportWorkflowActionRequest(BaseModel):
+    """Payload for report workflow approval/change actions."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    comment: str = ""
+
+
+class UpdateReportPlanningRequest(BaseModel):
+    """Payload for future manual planning updates."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    planning: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateReportSlideRequest(BaseModel):
+    """Payload for future manual slide updates."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    slide: dict[str, Any] = Field(default_factory=dict)
+
+
+class GenerateReportSlidesRequest(BaseModel):
+    """Payload for POST /report-workflows/{id}/slides/generate."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    regenerate: bool = False
+
+
 class ImportVoiceBriefDocumentRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 

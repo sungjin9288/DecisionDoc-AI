@@ -13,6 +13,9 @@ _PPTX_MAGIC = b"PK\x03\x04"  # ZIP/OOXML magic bytes — all .pptx files start w
 
 def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_ATTACHMENT", "")
+    monkeypatch.setenv("DECISIONDOC_PROVIDER_VISUAL", "")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
