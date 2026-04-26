@@ -27,6 +27,7 @@ class ReportWorkflowStatus(str, Enum):
     SLIDES_CHANGES_REQUESTED = "slides_changes_requested"
     SLIDES_APPROVED = "slides_approved"
     FINAL_REVIEW = "final_review"
+    FINAL_CHANGES_REQUESTED = "final_changes_requested"
     FINAL_APPROVED = "final_approved"
     DELIVERED = "delivered"
 
@@ -112,6 +113,17 @@ class SlideDraft:
 
 
 @dataclass
+class ApprovalStep:
+    step_id: str
+    stage: str
+    label: str
+    status: str = "pending"
+    actor: str | None = None
+    decided_at: str | None = None
+    comment: str = ""
+
+
+@dataclass
 class ReportWorkflowRecord:
     report_workflow_id: str
     tenant_id: str
@@ -135,6 +147,7 @@ class ReportWorkflowRecord:
     planning: PlanningVersion | None = None
     slides: list[SlideDraft] = field(default_factory=list)
     comments: list[WorkflowComment] = field(default_factory=list)
+    approval_steps: list[ApprovalStep] = field(default_factory=list)
     quality_warnings: list[str] = field(default_factory=list)
     learning_artifacts: list[dict[str, Any]] = field(default_factory=list)
     final_submitted_at: str | None = None
@@ -254,6 +267,18 @@ class ReportWorkflowStore(BaseJsonStore):
             comments=[cls._comment_from_dict(item) for item in data.get("comments", [])],
         )
 
+    @staticmethod
+    def _approval_step_from_dict(data: dict) -> ApprovalStep:
+        return ApprovalStep(
+            step_id=data.get("step_id") or str(uuid.uuid4()),
+            stage=data.get("stage", ""),
+            label=data.get("label", ""),
+            status=data.get("status", "pending"),
+            actor=data.get("actor"),
+            decided_at=data.get("decided_at"),
+            comment=data.get("comment", ""),
+        )
+
     @classmethod
     def _from_dict(cls, data: dict) -> ReportWorkflowRecord:
         return ReportWorkflowRecord(
@@ -279,6 +304,7 @@ class ReportWorkflowStore(BaseJsonStore):
             planning=cls._planning_from_dict(data.get("planning")),
             slides=[cls._slide_from_dict(item) for item in data.get("slides", [])],
             comments=[cls._comment_from_dict(item) for item in data.get("comments", [])],
+            approval_steps=[cls._approval_step_from_dict(item) for item in data.get("approval_steps", [])],
             quality_warnings=list(data.get("quality_warnings") or []),
             learning_artifacts=list(data.get("learning_artifacts") or []),
             final_submitted_at=data.get("final_submitted_at"),
@@ -342,6 +368,20 @@ class ReportWorkflowStore(BaseJsonStore):
             "created_at": _now_iso(),
             "payload": payload,
         }
+
+    @staticmethod
+    def _default_approval_steps() -> list[ApprovalStep]:
+        return [
+            ApprovalStep(step_id=str(uuid.uuid4()), stage="pm_review", label="PM 검토"),
+            ApprovalStep(step_id=str(uuid.uuid4()), stage="executive_review", label="대표 최종 승인"),
+        ]
+
+    @staticmethod
+    def _approval_step(rec: ReportWorkflowRecord, stage: str) -> ApprovalStep:
+        step = next((item for item in rec.approval_steps if item.stage == stage), None)
+        if step is None:
+            raise ValueError(f"결재 단계를 찾을 수 없습니다: {stage}")
+        return step
 
     def create(
         self,
@@ -421,6 +461,7 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_submitted_at = None
             rec.final_approved_by = None
             rec.final_approved_at = None
+            rec.approval_steps = []
             rec.status = ReportWorkflowStatus.PLANNING_DRAFT.value
             rec.quality_warnings.extend(quality_warnings or [])
             return self._flush(tid, records, idx, rec)
@@ -513,6 +554,10 @@ class ReportWorkflowStore(BaseJsonStore):
                 slide.approved_at = None
             rec.slides = slides
             rec.status = ReportWorkflowStatus.SLIDES_DRAFT.value
+            rec.final_submitted_at = None
+            rec.final_approved_by = None
+            rec.final_approved_at = None
+            rec.approval_steps = []
             rec.quality_warnings.extend(quality_warnings or [])
             return self._flush(tid, records, idx, rec)
 
@@ -604,6 +649,9 @@ class ReportWorkflowStore(BaseJsonStore):
                 raise ValueError("모든 장표가 승인되어야 최종 검토로 이동할 수 있습니다.")
             rec.status = ReportWorkflowStatus.FINAL_REVIEW.value
             rec.final_submitted_at = _now_iso()
+            rec.final_approved_by = None
+            rec.final_approved_at = None
+            rec.approval_steps = self._default_approval_steps()
             rec.comments.append(WorkflowComment(
                 comment_id=str(uuid.uuid4()),
                 target_type="final",
@@ -613,6 +661,104 @@ class ReportWorkflowStore(BaseJsonStore):
                 created_at=_now_iso(),
                 is_change_request=False,
             ))
+            return self._flush(tid, records, idx, rec)
+
+    def approve_final_step(
+        self,
+        report_workflow_id: str,
+        *,
+        stage: str,
+        author: str,
+        comment: str = "",
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
+                raise ValueError("최종 검토 상태에서만 결재할 수 있습니다.")
+            if not rec.approval_steps:
+                rec.approval_steps = self._default_approval_steps()
+            if stage == "executive_review":
+                pm_step = self._approval_step(rec, "pm_review")
+                if pm_step.status != "approved":
+                    raise ValueError("PM 검토 승인 후 대표 최종 승인을 진행할 수 있습니다.")
+            step = self._approval_step(rec, stage)
+            if step.status == "approved":
+                raise ValueError("이미 승인된 결재 단계입니다.")
+            step.status = "approved"
+            step.actor = author
+            step.decided_at = _now_iso()
+            step.comment = comment
+            rec.comments.append(WorkflowComment(
+                comment_id=str(uuid.uuid4()),
+                target_type="final",
+                target_id=stage,
+                author=author,
+                content=comment or f"{step.label} 승인",
+                created_at=_now_iso(),
+                is_change_request=False,
+            ))
+            if stage == "executive_review":
+                rec.status = ReportWorkflowStatus.FINAL_APPROVED.value
+                rec.final_approved_by = author
+                rec.final_approved_at = step.decided_at
+            if rec.learning_opt_in and stage == "executive_review":
+                rec.learning_artifacts.append(self._learning_artifact(
+                    "final_approved",
+                    {
+                        "planning": asdict(rec.planning) if rec.planning else None,
+                        "slides": [asdict(item) for item in rec.slides],
+                        "approval_steps": [asdict(item) for item in rec.approval_steps],
+                        "quality_warnings": rec.quality_warnings,
+                    },
+                    actor=author,
+                ))
+            return self._flush(tid, records, idx, rec)
+
+    def request_final_changes(
+        self,
+        report_workflow_id: str,
+        *,
+        author: str,
+        comment: str,
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            self._ensure_mutable(rec)
+            if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
+                raise ValueError("최종 검토 상태에서만 수정 요청할 수 있습니다.")
+            if not rec.approval_steps:
+                rec.approval_steps = self._default_approval_steps()
+            pending_step = next((item for item in rec.approval_steps if item.status != "approved"), rec.approval_steps[-1])
+            pending_step.status = "changes_requested"
+            pending_step.actor = author
+            pending_step.decided_at = _now_iso()
+            pending_step.comment = comment
+            rec.status = ReportWorkflowStatus.FINAL_CHANGES_REQUESTED.value
+            rec.final_approved_by = None
+            rec.final_approved_at = None
+            rec.comments.append(WorkflowComment(
+                comment_id=str(uuid.uuid4()),
+                target_type="final",
+                target_id=pending_step.stage,
+                author=author,
+                content=comment,
+                created_at=_now_iso(),
+                is_change_request=True,
+            ))
+            if rec.learning_opt_in:
+                rec.learning_artifacts.append(self._learning_artifact(
+                    "final_change_request",
+                    {"stage": pending_step.stage, "comment": comment},
+                    actor=author,
+                ))
             return self._flush(tid, records, idx, rec)
 
     def approve_final(
@@ -629,15 +775,25 @@ class ReportWorkflowStore(BaseJsonStore):
             tid, records, idx, rec = result
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 최종 승인할 수 있습니다.")
+            if not rec.approval_steps:
+                rec.approval_steps = self._default_approval_steps()
+            now = _now_iso()
+            for step in rec.approval_steps:
+                if step.status != "approved":
+                    step.status = "approved"
+                    step.actor = author
+                    step.decided_at = now
+                    step.comment = step.comment or "legacy final approve"
             rec.status = ReportWorkflowStatus.FINAL_APPROVED.value
             rec.final_approved_by = author
-            rec.final_approved_at = _now_iso()
+            rec.final_approved_at = now
             if rec.learning_opt_in:
                 rec.learning_artifacts.append(self._learning_artifact(
                     "final_approved",
                     {
                         "planning": asdict(rec.planning) if rec.planning else None,
                         "slides": [asdict(item) for item in rec.slides],
+                        "approval_steps": [asdict(item) for item in rec.approval_steps],
                         "quality_warnings": rec.quality_warnings,
                     },
                     actor=author,

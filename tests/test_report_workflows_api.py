@@ -113,6 +113,7 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
 
     final_submit = client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "pm", "comment": ""})
     assert final_submit.status_code == 200
+    assert [step["stage"] for step in final_submit.json()["approval_steps"]] == ["pm_review", "executive_review"]
     final_approve = client.post(f"/report-workflows/{workflow_id}/final/approve", json={"username": "ceo", "comment": ""})
     assert final_approve.status_code == 200
     assert final_approve.json()["status"] == "final_approved"
@@ -121,6 +122,68 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
     pptx = client.get(f"/report-workflows/{workflow_id}/export/pptx")
     assert pptx.status_code == 200
     assert pptx.content[:4] == _PPTX_MAGIC
+
+
+def test_pm_and_executive_final_approval_chain_api(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+
+    blocked = client.post(
+        f"/report-workflows/{workflow_id}/final/executive-approve",
+        json={"username": "ceo", "comment": ""},
+    )
+    assert blocked.status_code == 400
+
+    pm = client.post(
+        f"/report-workflows/{workflow_id}/final/pm-approve",
+        json={"username": "pm", "comment": "실무 승인"},
+    )
+    assert pm.status_code == 200
+    assert pm.json()["status"] == "final_review"
+    assert pm.json()["approval_steps"][0]["status"] == "approved"
+
+    executive = client.post(
+        f"/report-workflows/{workflow_id}/final/executive-approve",
+        json={"username": "ceo", "comment": "대표 승인"},
+    )
+    assert executive.status_code == 200
+    assert executive.json()["status"] == "final_approved"
+    assert executive.json()["approval_steps"][1]["status"] == "approved"
+
+
+def test_final_change_request_api(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+    changes = client.post(
+        f"/report-workflows/{workflow_id}/final/request-changes",
+        json={"username": "pm", "comment": "근거 보완"},
+    )
+
+    assert changes.status_code == 200
+    assert changes.json()["status"] == "final_changes_requested"
+    assert changes.json()["approval_steps"][0]["status"] == "changes_requested"
 
 
 def test_invalid_provider_json_uses_quality_warning_fallback(tmp_path, monkeypatch):

@@ -252,6 +252,74 @@ def approve_report_final(
     return asdict(rec)
 
 
+@router.post(
+    "/report-workflows/{report_workflow_id}/final/pm-approve",
+    dependencies=[Depends(require_api_key)],
+)
+def approve_report_final_pm(
+    report_workflow_id: str,
+    payload: ReportWorkflowActionRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_store(request).approve_final_step(
+            report_workflow_id,
+            stage="pm_review",
+            author=_actor(request, payload.username),
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/final/executive-approve",
+    dependencies=[Depends(require_api_key)],
+)
+def approve_report_final_executive(
+    report_workflow_id: str,
+    payload: ReportWorkflowActionRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_store(request).approve_final_step(
+            report_workflow_id,
+            stage="executive_review",
+            author=_actor(request, payload.username),
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/final/request-changes",
+    dependencies=[Depends(require_api_key)],
+)
+def request_report_final_changes(
+    report_workflow_id: str,
+    payload: ReportWorkflowActionRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_store(request).request_final_changes(
+            report_workflow_id,
+            author=_actor(request, payload.username),
+            comment=payload.comment,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)
+
+
 @router.get(
     "/report-workflows/{report_workflow_id}/export/pptx",
     dependencies=[Depends(require_api_key)],

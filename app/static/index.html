@@ -6287,8 +6287,12 @@
     slides_changes_requested: '장표 수정 요청',
     slides_approved: '장표 승인 완료',
     final_review: '최종 검토',
+    final_changes_requested: '최종 수정 요청',
     final_approved: '최종 승인',
     delivered: '전달 완료',
+    pending: '대기',
+    approved: '승인',
+    changes_requested: '수정 요청',
   };
 
   function reportWorkflowStatusLabel(status) {
@@ -6391,6 +6395,10 @@
     const planningApproved = planning?.status === 'approved';
     const allSlidesApproved = slides.length > 0 && slides.every(s => s.status === 'approved');
     const finalLocked = ['final_approved', 'delivered'].includes(item.status);
+    const pmStep = getReportWorkflowApprovalStep(item, 'pm_review');
+    const executiveStep = getReportWorkflowApprovalStep(item, 'executive_review');
+    const pmApproved = pmStep?.status === 'approved';
+    const executiveApproved = executiveStep?.status === 'approved';
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap;margin-bottom:1rem;">
         <div>
@@ -6402,7 +6410,7 @@
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-bottom:1rem;">
         ${renderReportWorkflowStep('1. 기획', planning ? reportWorkflowStatusLabel(item.status) : '대기', !!planning)}
         ${renderReportWorkflowStep('2. 장표 제작', slides.length ? `${slides.filter(s => s.status === 'approved').length}/${slides.length} 승인` : '대기', slides.length > 0)}
-        ${renderReportWorkflowStep('3. 최종 승인', item.final_approved_at ? '승인 완료' : (item.status === 'final_review' ? '검토 중' : '대기'), item.status === 'final_review' || finalLocked)}
+        ${renderReportWorkflowStep('3. 최종 결재', item.final_approved_at ? '승인 완료' : (item.status === 'final_review' ? `PM ${pmApproved ? '승인' : '대기'} · 대표 ${executiveApproved ? '승인' : '대기'}` : (item.status === 'final_changes_requested' ? '수정 요청' : '대기')), item.status === 'final_review' || item.status === 'final_changes_requested' || finalLocked)}
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','planning/generate')" ${finalLocked ? 'disabled' : ''}>🧠 기획안 생성</button>
@@ -6410,9 +6418,12 @@
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','planning/approve')" ${(!planning || planningApproved || finalLocked) ? 'disabled' : ''}>✅ 기획 승인</button>
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','slides/generate', {})" ${(!planningApproved || finalLocked) ? 'disabled' : ''}>🎞 장표 생성</button>
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/submit')" ${(!allSlidesApproved || item.status === 'final_review' || finalLocked) ? 'disabled' : ''}>📤 최종 검토 요청</button>
-        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/approve')" ${item.status !== 'final_review' ? 'disabled' : ''}>🏁 최종 승인</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/pm-approve')" ${(item.status !== 'final_review' || pmApproved) ? 'disabled' : ''}>✅ PM 승인</button>
+        <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/executive-approve')" ${(item.status !== 'final_review' || !pmApproved || executiveApproved) ? 'disabled' : ''}>🏁 대표 승인</button>
+        <button class="action-btn" onclick="requestReportWorkflowFinalChange('${escapeHtml(item.report_workflow_id)}')" ${(item.status !== 'final_review' || finalLocked) ? 'disabled' : ''}>↩ 최종 수정 요청</button>
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
       </div>
+      ${renderReportWorkflowFinalApproval(item)}
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:1rem;align-items:start;">
         <div>${renderReportWorkflowPlanning(planning, item)}</div>
         <div>${renderReportWorkflowSlides(slides, item)}</div>
@@ -6420,6 +6431,41 @@
       ${item.learning_opt_in ? '<div style="margin-top:1rem;color:#16a34a;font-size:.78rem;font-weight:700;">학습 opt-in 활성화 · 승인/수정 artifact 저장 중</div>' : '<div style="margin-top:1rem;color:var(--muted);font-size:.78rem;">학습 opt-in 비활성화 · 원문 artifact 저장 안 함</div>'}
       ${Array.isArray(item.quality_warnings) && item.quality_warnings.length ? `<div style="margin-top:.5rem;color:#f59e0b;font-size:.78rem;">품질 경고: ${escapeHtml(item.quality_warnings.join(', '))}</div>` : ''}
     `;
+  }
+
+  function getReportWorkflowApprovalStep(item, stage) {
+    const steps = Array.isArray(item?.approval_steps) ? item.approval_steps : [];
+    return steps.find(step => step.stage === stage) || null;
+  }
+
+  function renderReportWorkflowApprovalStep(step, fallbackLabel) {
+    const status = step?.status || 'pending';
+    const label = step?.label || fallbackLabel;
+    const actor = step?.actor ? ` · ${step.actor}` : '';
+    const comment = step?.comment ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(step.comment)}</div>` : '';
+    return `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.45);">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;">
+        <strong style="font-size:.78rem;">${escapeHtml(label)}</strong>
+        ${reportWorkflowBadge(status)}
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(step?.decided_at ? `${step.decided_at}${actor}` : `대기${actor}`)}</div>
+      ${comment}
+    </div>`;
+  }
+
+  function renderReportWorkflowFinalApproval(item) {
+    const steps = Array.isArray(item?.approval_steps) ? item.approval_steps : [];
+    if (!steps.length && ['final_approved', 'delivered'].includes(item?.status)) return '';
+    if (!steps.length && !['final_review', 'final_changes_requested', 'final_approved', 'delivered'].includes(item?.status)) return '';
+    const pmStep = getReportWorkflowApprovalStep(item, 'pm_review');
+    const executiveStep = getReportWorkflowApprovalStep(item, 'executive_review');
+    return `<div style="border:1px solid var(--border);border-radius:14px;padding:.85rem;background:var(--surface);margin-bottom:1rem;">
+      <div style="font-size:.84rem;font-weight:850;margin-bottom:.55rem;">3. 최종 결재 체인</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.55rem;">
+        ${renderReportWorkflowApprovalStep(pmStep, 'PM 검토')}
+        ${renderReportWorkflowApprovalStep(executiveStep, '대표 최종 승인')}
+      </div>
+    </div>`;
   }
 
   function renderReportWorkflowStep(title, caption, active) {
@@ -6535,6 +6581,15 @@
     const comment = window.prompt('기획안 수정 요청 내용을 입력하세요.');
     if (!comment) return;
     await runReportWorkflowAction(id, 'planning/request-changes', {
+      username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+      comment,
+    });
+  }
+
+  async function requestReportWorkflowFinalChange(id) {
+    const comment = window.prompt('최종 결재 수정 요청 내용을 입력하세요.');
+    if (!comment) return;
+    await runReportWorkflowAction(id, 'final/request-changes', {
       username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
       comment,
     });

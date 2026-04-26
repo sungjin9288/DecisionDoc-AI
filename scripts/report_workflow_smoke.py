@@ -192,15 +192,33 @@ def run_report_workflow_smoke(
             raise SystemExit(f"final/submit expected final_review, got {final_submit_body.get('status')}")
         _print_result("POST /final/submit", final_submit.status_code)
 
-        final_approve = http.post(
-            f"{base_url}/report-workflows/{workflow_id}/final/approve",
+        blocked_executive = http.post(
+            f"{base_url}/report-workflows/{workflow_id}/final/executive-approve",
             headers=auth_headers,
-            json={"username": "smoke-exec", "comment": "final smoke approved"},
+            json={"username": "smoke-exec", "comment": "executive smoke should wait for PM"},
         )
-        final_approve_body = _assert_status("POST /final/approve", final_approve, 200)
+        _assert_status("POST /final/executive-approve before PM", blocked_executive, 400)
+        _print_result("POST /final/executive-approve before PM", blocked_executive.status_code)
+
+        pm_approve = http.post(
+            f"{base_url}/report-workflows/{workflow_id}/final/pm-approve",
+            headers=auth_headers,
+            json={"username": "smoke-pm", "comment": "final PM smoke approved"},
+        )
+        pm_approve_body = _assert_status("POST /final/pm-approve", pm_approve, 200)
+        if pm_approve_body.get("status") != "final_review":
+            raise SystemExit(f"final/pm-approve expected final_review, got {pm_approve_body.get('status')}")
+        _print_result("POST /final/pm-approve", pm_approve.status_code)
+
+        final_approve = http.post(
+            f"{base_url}/report-workflows/{workflow_id}/final/executive-approve",
+            headers=auth_headers,
+            json={"username": "smoke-exec", "comment": "final executive smoke approved"},
+        )
+        final_approve_body = _assert_status("POST /final/executive-approve", final_approve, 200)
         if final_approve_body.get("status") != "final_approved":
-            raise SystemExit(f"final/approve expected final_approved, got {final_approve_body.get('status')}")
-        _print_result("POST /final/approve", final_approve.status_code)
+            raise SystemExit(f"final/executive-approve expected final_approved, got {final_approve_body.get('status')}")
+        _print_result("POST /final/executive-approve", final_approve.status_code)
 
         pptx = http.get(f"{base_url}/report-workflows/{workflow_id}/export/pptx", headers=auth_headers)
         if pptx.status_code != 200:

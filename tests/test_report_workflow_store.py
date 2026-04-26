@@ -137,9 +137,80 @@ def test_full_approval_flow_and_immutability(tmp_path):
 
     assert slides_approved.status == ReportWorkflowStatus.SLIDES_APPROVED.value
     assert final_review.status == ReportWorkflowStatus.FINAL_REVIEW.value
+    assert [step.stage for step in final_review.approval_steps] == ["pm_review", "executive_review"]
     assert final.status == ReportWorkflowStatus.FINAL_APPROVED.value
+    assert all(step.status == "approved" for step in final.approval_steps)
     with pytest.raises(ValueError):
         store.request_slide_changes(rec.report_workflow_id, "slide-001", author="pm", comment="수정", tenant_id="t1")
+
+
+def test_final_approval_chain_requires_pm_before_executive(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서")
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-001", author="pm", tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-002", author="pm", tenant_id="t1")
+    submitted = store.submit_final(rec.report_workflow_id, author="owner", tenant_id="t1")
+
+    with pytest.raises(ValueError, match="PM 검토 승인 후"):
+        store.approve_final_step(
+            rec.report_workflow_id,
+            stage="executive_review",
+            author="ceo",
+            tenant_id="t1",
+        )
+
+    pm_approved = store.approve_final_step(
+        rec.report_workflow_id,
+        stage="pm_review",
+        author="pm",
+        comment="실무 승인",
+        tenant_id="t1",
+    )
+    final = store.approve_final_step(
+        rec.report_workflow_id,
+        stage="executive_review",
+        author="ceo",
+        comment="최종 승인",
+        tenant_id="t1",
+    )
+
+    assert submitted.status == ReportWorkflowStatus.FINAL_REVIEW.value
+    assert pm_approved.status == ReportWorkflowStatus.FINAL_REVIEW.value
+    assert pm_approved.approval_steps[0].status == "approved"
+    assert final.status == ReportWorkflowStatus.FINAL_APPROVED.value
+    assert final.final_approved_by == "ceo"
+    assert final.approval_steps[1].status == "approved"
+
+
+def test_final_change_request_blocks_until_resubmitted(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서")
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-001", author="pm", tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-002", author="pm", tenant_id="t1")
+    store.submit_final(rec.report_workflow_id, author="owner", tenant_id="t1")
+
+    changes = store.request_final_changes(
+        rec.report_workflow_id,
+        author="pm",
+        comment="근거 보완",
+        tenant_id="t1",
+    )
+
+    assert changes.status == ReportWorkflowStatus.FINAL_CHANGES_REQUESTED.value
+    assert changes.approval_steps[0].status == "changes_requested"
+    with pytest.raises(ValueError):
+        store.approve_final_step(
+            rec.report_workflow_id,
+            stage="pm_review",
+            author="pm",
+            tenant_id="t1",
+        )
 
 
 def test_learning_artifacts_only_when_opted_in(tmp_path):

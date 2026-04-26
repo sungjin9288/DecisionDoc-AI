@@ -217,8 +217,11 @@ UI guard:
 - `app/storage/report_workflow_store.py`
   - `ApprovalStep` dataclass 추가
   - `approval_steps: list[ApprovalStep]` 필드 추가
-- `app/services/report_workflow_approval_service.py`
+- `app/storage/report_workflow_store.py`
   - final submit 시 PM/대표 approval chain 생성
+  - PM 승인 전 executive 승인 차단
+  - final changes requested 상태와 comment 저장 담당
+- 후속 `app/services/report_workflow_approval_service.py`
   - ApprovalStore 연결 및 status mirror 담당
 - `app/routers/report_workflows.py`
   - `POST /report-workflows/{id}/final/submit`
@@ -232,16 +235,12 @@ UI guard:
 @dataclass
 class ApprovalStep:
     step_id: str
-    workflow_id: str
-    sequence: int
     stage: str  # pm_review | executive_review
-    required_role: str
-    assignee_user_id: str = ""
+    label: str
     status: str = "pending"
-    decided_by: str = ""
+    actor: str | None = None
     decided_at: str | None = None
     comment: str = ""
-    snapshot_ref: str = ""
 ```
 
 상태 규칙:

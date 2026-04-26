@@ -17,7 +17,13 @@ def test_report_workflow_tab_and_stepper_present():
     assert "의사결정 질문" in html
     assert "장표 승인 기준" in html
     assert "2. 장표 제작" in html
-    assert "3. 최종 승인" in html
+    assert "3. 최종 결재" in html
+    assert "PM 승인" in html
+    assert "대표 승인" in html
+    assert "최종 수정 요청" in html
+    assert "final/pm-approve" in html
+    assert "final/executive-approve" in html
+    assert "final/request-changes" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -27,5 +33,7 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "planning/generate" in html
     assert "planning/request-changes" in html
     assert "slides/generate" in html
-    assert "final/approve" in html
+    assert "final/pm-approve" in html
+    assert "final/executive-approve" in html
+    assert "final/request-changes" in html
     assert "/export/pptx" in html
