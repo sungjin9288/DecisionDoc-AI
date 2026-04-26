@@ -11,6 +11,8 @@ from typing import Any, Callable
 
 from app.services.pptx_service import build_pptx
 from app.storage.approval_store import ApprovalStatus, ApprovalStore
+from app.storage.knowledge_store import KnowledgeEntry, KnowledgeStore
+from app.storage.project_store import ProjectDocument, ProjectStore
 from app.storage.report_workflow_store import (
     PlanningVersion,
     ReportWorkflowRecord,
@@ -77,10 +79,14 @@ class ReportWorkflowService:
         store: ReportWorkflowStore,
         provider_factory: ProviderFactory,
         approval_store: ApprovalStore | None = None,
+        project_store: ProjectStore | None = None,
+        data_dir: str = "data",
     ) -> None:
         self.store = store
         self._provider_factory = provider_factory
         self._approval_store = approval_store
+        self._project_store = project_store
+        self._data_dir = data_dir
 
     def generate_planning(
         self,
@@ -296,6 +302,77 @@ class ReportWorkflowService:
             tenant_id=tenant_id,
         )
 
+    def promote_final_artifacts(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        project_id: str,
+        promote_to_knowledge: bool = False,
+        tags: list[str] | None = None,
+        quality_tier: str = "gold",
+        success_state: str = "approved",
+        source_organization: str = "",
+        reference_year: int | None = None,
+        notes: str = "",
+    ) -> ReportWorkflowRecord:
+        if self._project_store is None:
+            raise ValueError("프로젝트 저장소가 설정되어 있지 않습니다.")
+        rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        if rec.status != "final_approved":
+            raise ValueError("최종 승인된 보고서 워크플로우만 프로젝트로 승격할 수 있습니다.")
+        if rec.project_document_id and rec.project_id and rec.project_id != project_id:
+            raise ValueError("이미 다른 프로젝트로 승격된 보고서 워크플로우입니다.")
+
+        project = self._project_store.get(project_id, tenant_id=tenant_id)
+        if project is None:
+            raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+        docs = self._approval_docs(rec)
+        resolved_tags = self._promotion_tags(rec, tags or [])
+        project_doc: ProjectDocument | None = None
+        if not rec.project_document_id:
+            project_doc = self._project_store.add_document(
+                project_id=project_id,
+                request_id=self._approval_request_id(rec),
+                bundle_id="report_workflow",
+                title=rec.title,
+                docs=docs,
+                approval_id=rec.final_approval_id,
+                tags=resolved_tags,
+                tenant_id=tenant_id,
+                source_kind="report_workflow",
+            )
+            rec = self.store.mark_project_promoted(
+                report_workflow_id,
+                project_id=project_id,
+                project_document_id=project_doc.doc_id,
+                tenant_id=tenant_id,
+            )
+
+        if promote_to_knowledge:
+            if not rec.learning_opt_in:
+                raise ValueError("learning_opt_in=true인 워크플로우만 지식 후보로 승격할 수 있습니다.")
+            knowledge_payload = self._promote_docs_to_knowledge(
+                rec,
+                project_id=project_id,
+                docs=docs,
+                tags=resolved_tags,
+                quality_tier=quality_tier,
+                success_state=success_state,
+                source_organization=source_organization,
+                reference_year=reference_year,
+                notes=notes,
+            )
+            rec = self.store.mark_knowledge_promoted(
+                report_workflow_id,
+                project_id=project_id,
+                document_count=len(knowledge_payload),
+                documents=knowledge_payload,
+                tenant_id=tenant_id,
+            )
+        return rec
+
     def _require_record(self, report_workflow_id: str, *, tenant_id: str) -> ReportWorkflowRecord:
         rec = self.store.get(report_workflow_id, tenant_id=tenant_id)
         if rec is None:
@@ -305,6 +382,91 @@ class ReportWorkflowService:
     @staticmethod
     def _approval_request_id(rec: ReportWorkflowRecord) -> str:
         return f"report_workflow:{rec.report_workflow_id}:slides:{rec.current_slide_version}"
+
+    @staticmethod
+    def _promotion_tags(rec: ReportWorkflowRecord, tags: list[str]) -> list[str]:
+        result = ["report_workflow", rec.report_type or "proposal_presentation"]
+        if rec.client:
+            result.append(rec.client)
+        for tag in tags:
+            normalized = str(tag or "").strip()
+            if normalized:
+                result.append(normalized)
+        deduped: list[str] = []
+        for tag in result:
+            if tag and tag not in deduped:
+                deduped.append(tag)
+        return deduped
+
+    @staticmethod
+    def _knowledge_filename(title: str, doc_type: str) -> str:
+        safe_title = re.sub(r'[\\/:*?"<>|]+', "-", str(title or "report-workflow").strip())
+        safe_type = re.sub(r"[^0-9A-Za-z가-힣_-]+", "-", str(doc_type or "doc").strip()) or "doc"
+        return f"{safe_title} - {safe_type}.md"
+
+    @staticmethod
+    def _knowledge_entry_payload(entry: KnowledgeEntry, *, doc_type: str, reused: bool) -> dict[str, Any]:
+        return {
+            "doc_id": entry.doc_id,
+            "filename": entry.filename,
+            "doc_type": doc_type,
+            "learning_mode": entry.learning_mode,
+            "quality_tier": entry.quality_tier,
+            "success_state": entry.success_state,
+            "source_bundle_id": entry.source_bundle_id,
+            "source_request_id": entry.source_request_id,
+            "source_doc_type": entry.source_doc_type,
+            "reused": reused,
+        }
+
+    def _promote_docs_to_knowledge(
+        self,
+        rec: ReportWorkflowRecord,
+        *,
+        project_id: str,
+        docs: list[dict[str, Any]],
+        tags: list[str],
+        quality_tier: str,
+        success_state: str,
+        source_organization: str,
+        reference_year: int | None,
+        notes: str,
+    ) -> list[dict[str, Any]]:
+        store = KnowledgeStore(project_id, data_dir=self._data_dir)
+        source_request_id = self._approval_request_id(rec)
+        promoted: list[dict[str, Any]] = []
+        for item in docs:
+            markdown = str(item.get("markdown") or "").strip()
+            doc_type = str(item.get("doc_type") or "report_workflow").strip()
+            if not markdown:
+                continue
+            existing = store.find_promoted_document(
+                source_request_id=source_request_id,
+                source_doc_type=doc_type,
+                source_bundle_id="report_workflow",
+            )
+            if existing is not None:
+                promoted.append(self._knowledge_entry_payload(existing, doc_type=doc_type, reused=True))
+                continue
+            entry = store.add_document(
+                filename=self._knowledge_filename(rec.title, doc_type),
+                text=markdown,
+                tags=tags + [doc_type],
+                learning_mode="approved_output",
+                quality_tier=quality_tier,
+                applicable_bundles=["report_workflow", rec.report_type],
+                source_organization=source_organization or rec.client,
+                reference_year=reference_year,
+                success_state=success_state,
+                notes=notes or f"Report Workflow final approved artifact: {rec.report_workflow_id}",
+                source_bundle_id="report_workflow",
+                source_request_id=source_request_id,
+                source_doc_type=doc_type,
+            )
+            promoted.append(self._knowledge_entry_payload(entry, doc_type=doc_type, reused=False))
+        if not promoted:
+            raise ValueError("지식 후보로 승격할 승인 산출물이 없습니다.")
+        return promoted
 
     @staticmethod
     def _approval_gov_options(rec: ReportWorkflowRecord) -> dict[str, Any]:

@@ -175,6 +175,99 @@ def test_pm_and_executive_final_approval_chain_api(tmp_path, monkeypatch):
     assert linked_approval["status"] == "approved"
 
 
+def test_final_approved_workflow_promotes_to_project_and_knowledge(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    project = client.post(
+        "/projects",
+        json={"name": "워크플로우 산출물", "client": "다울", "description": "승인본 저장소"},
+    ).json()
+    created = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/pm-approve", json={"username": "pm", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/executive-approve", json={"username": "ceo", "comment": ""})
+
+    promoted = client.post(
+        f"/report-workflows/{workflow_id}/promote",
+        json={
+            "project_id": project["project_id"],
+            "promote_to_knowledge": True,
+            "tags": ["승인본"],
+            "quality_tier": "gold",
+            "success_state": "approved",
+        },
+    )
+
+    assert promoted.status_code == 200
+    body = promoted.json()
+    assert body["project_id"] == project["project_id"]
+    assert body["project_document_id"]
+    assert body["knowledge_project_id"] == project["project_id"]
+    assert body["knowledge_document_count"] == 2
+    assert {doc["doc_type"] for doc in body["knowledge_documents"]} == {
+        "report_workflow_planning",
+        "report_workflow_slides",
+    }
+
+    project_detail = client.get(f"/projects/{project['project_id']}").json()
+    assert len(project_detail["documents"]) == 1
+    assert project_detail["documents"][0]["source_kind"] == "report_workflow"
+
+    knowledge = client.get(f"/knowledge/{project['project_id']}/documents").json()
+    assert knowledge["count"] == 2
+
+    duplicate = client.post(
+        f"/report-workflows/{workflow_id}/promote",
+        json={"project_id": project["project_id"], "promote_to_knowledge": True},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["project_document_id"] == body["project_document_id"]
+    assert duplicate.json()["knowledge_document_count"] == 2
+
+
+def test_promote_to_knowledge_requires_learning_opt_in(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    project = client.post("/projects", json={"name": "학습 비동의"}).json()
+    created = _create_workflow(client, slide_count=2, learning_opt_in=False)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/pm-approve", json={"username": "pm", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/executive-approve", json={"username": "ceo", "comment": ""})
+
+    blocked = client.post(
+        f"/report-workflows/{workflow_id}/promote",
+        json={"project_id": project["project_id"], "promote_to_knowledge": True},
+    )
+    assert blocked.status_code == 400
+    assert "learning_opt_in=true" in blocked.json()["detail"]
+
+    project_only = client.post(
+        f"/report-workflows/{workflow_id}/promote",
+        json={"project_id": project["project_id"], "promote_to_knowledge": False},
+    )
+    assert project_only.status_code == 200
+    assert project_only.json()["project_document_id"]
+    assert project_only.json()["knowledge_document_count"] == 0
+
+
 def test_final_change_request_api(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client, slide_count=2)

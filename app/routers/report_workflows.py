@@ -14,6 +14,7 @@ from app.maintenance.mode import require_not_maintenance
 from app.schemas import (
     CreateReportWorkflowRequest,
     GenerateReportSlidesRequest,
+    PromoteReportWorkflowRequest,
     ReportWorkflowActionRequest,
 )
 
@@ -346,3 +347,31 @@ def export_report_workflow_pptx(report_workflow_id: str, request: Request) -> Re
             )
         },
     )
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/promote",
+    dependencies=[Depends(require_api_key)],
+)
+def promote_report_workflow(
+    report_workflow_id: str,
+    payload: PromoteReportWorkflowRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_service(request).promote_final_artifacts(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            project_id=payload.project_id,
+            promote_to_knowledge=payload.promote_to_knowledge,
+            tags=payload.tags,
+            quality_tier=payload.quality_tier,
+            success_state=payload.success_state,
+            source_organization=payload.source_organization,
+            reference_year=payload.reference_year,
+            notes=payload.notes,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)

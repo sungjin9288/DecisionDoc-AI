@@ -156,6 +156,13 @@ class ReportWorkflowRecord:
     final_approval_id: str | None = None
     final_approval_status: str | None = None
     final_approval_synced_at: str | None = None
+    project_id: str | None = None
+    project_document_id: str | None = None
+    project_promoted_at: str | None = None
+    knowledge_project_id: str | None = None
+    knowledge_document_count: int = 0
+    knowledge_documents: list[dict[str, Any]] = field(default_factory=list)
+    knowledge_promoted_at: str | None = None
 
 
 class ReportWorkflowStore(BaseJsonStore):
@@ -316,6 +323,13 @@ class ReportWorkflowStore(BaseJsonStore):
             final_approval_id=data.get("final_approval_id"),
             final_approval_status=data.get("final_approval_status"),
             final_approval_synced_at=data.get("final_approval_synced_at"),
+            project_id=data.get("project_id"),
+            project_document_id=data.get("project_document_id"),
+            project_promoted_at=data.get("project_promoted_at"),
+            knowledge_project_id=data.get("knowledge_project_id"),
+            knowledge_document_count=int(data.get("knowledge_document_count") or 0),
+            knowledge_documents=list(data.get("knowledge_documents") or []),
+            knowledge_promoted_at=data.get("knowledge_promoted_at"),
         )
 
     def _find(
@@ -470,6 +484,13 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_approval_id = None
             rec.final_approval_status = None
             rec.final_approval_synced_at = None
+            rec.project_id = None
+            rec.project_document_id = None
+            rec.project_promoted_at = None
+            rec.knowledge_project_id = None
+            rec.knowledge_document_count = 0
+            rec.knowledge_documents = []
+            rec.knowledge_promoted_at = None
             rec.approval_steps = []
             rec.status = ReportWorkflowStatus.PLANNING_DRAFT.value
             rec.quality_warnings.extend(quality_warnings or [])
@@ -569,6 +590,13 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_approval_id = None
             rec.final_approval_status = None
             rec.final_approval_synced_at = None
+            rec.project_id = None
+            rec.project_document_id = None
+            rec.project_promoted_at = None
+            rec.knowledge_project_id = None
+            rec.knowledge_document_count = 0
+            rec.knowledge_documents = []
+            rec.knowledge_promoted_at = None
             rec.approval_steps = []
             rec.quality_warnings.extend(quality_warnings or [])
             return self._flush(tid, records, idx, rec)
@@ -718,6 +746,48 @@ class ReportWorkflowStore(BaseJsonStore):
                 return rec
             rec.final_approval_status = approval_status
             rec.final_approval_synced_at = _now_iso()
+            return self._flush(tid, records, idx, rec)
+
+    def mark_project_promoted(
+        self,
+        report_workflow_id: str,
+        *,
+        project_id: str,
+        project_document_id: str,
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if rec.status != ReportWorkflowStatus.FINAL_APPROVED.value:
+                raise ValueError("최종 승인된 보고서 워크플로우만 프로젝트로 승격할 수 있습니다.")
+            rec.project_id = project_id
+            rec.project_document_id = project_document_id
+            rec.project_promoted_at = rec.project_promoted_at or _now_iso()
+            return self._flush(tid, records, idx, rec)
+
+    def mark_knowledge_promoted(
+        self,
+        report_workflow_id: str,
+        *,
+        project_id: str,
+        document_count: int,
+        documents: list[dict[str, Any]],
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if rec.status != ReportWorkflowStatus.FINAL_APPROVED.value:
+                raise ValueError("최종 승인된 보고서 워크플로우만 지식 후보로 승격할 수 있습니다.")
+            rec.knowledge_project_id = project_id
+            rec.knowledge_document_count = int(document_count)
+            rec.knowledge_documents = list(documents)
+            rec.knowledge_promoted_at = rec.knowledge_promoted_at or _now_iso()
             return self._flush(tid, records, idx, rec)
 
     def approve_final_step(

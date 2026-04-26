@@ -20,6 +20,7 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
     smoke = _load_smoke_module()
     state = {
         "workflow_id": "wf-smoke",
+        "project_id": "project-smoke",
         "slides_approved": set(),
     }
     slides = [
@@ -104,6 +105,17 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
             return httpx.Response(200, json={"status": "final_review", "final_approval_status": "in_review"})
         if path.endswith("/final/executive-approve"):
             return httpx.Response(200, json={"status": "final_approved", "final_approval_status": "approved"})
+        if path == "/projects" and request.method == "POST":
+            return httpx.Response(200, json={"project_id": state["project_id"], "name": "smoke project"})
+        if path.endswith("/promote") and request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "project_id": state["project_id"],
+                    "project_document_id": "doc-smoke",
+                    "knowledge_document_count": 0,
+                },
+            )
         if path.endswith("/export/pptx"):
             return httpx.Response(200, content=smoke.PPTX_MAGIC + b"payload")
         return httpx.Response(404, json={"detail": path})
@@ -118,6 +130,7 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
 
     assert result == {
         "workflow_id": "wf-smoke",
+        "project_id": "project-smoke",
         "slide_count": 2,
         "pptx_bytes": len(smoke.PPTX_MAGIC + b"payload"),
         "status": "passed",

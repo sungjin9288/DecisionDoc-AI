@@ -236,6 +236,39 @@ def run_report_workflow_smoke(
             )
         _print_result("POST /final/executive-approve", final_approve.status_code)
 
+        project = http.post(
+            f"{base_url}/projects",
+            headers=auth_headers,
+            json={
+                "name": f"[SMOKE] Report Workflow Project {run_id}",
+                "description": "스모크 테스트용 report workflow project promotion 대상입니다.",
+                "client": "DecisionDoc Smoke",
+            },
+        )
+        project_body = _assert_status("POST /projects", project, 200)
+        project_id = str(project_body.get("project_id") or "")
+        if not project_id:
+            raise SystemExit("POST /projects missing project_id")
+        _print_result("POST /projects", project.status_code, project_id=project_id)
+
+        promoted = http.post(
+            f"{base_url}/report-workflows/{workflow_id}/promote",
+            headers=auth_headers,
+            json={
+                "project_id": project_id,
+                "promote_to_knowledge": False,
+                "tags": ["smoke", "report_workflow"],
+            },
+        )
+        promoted_body = _assert_status("POST /report-workflows/{id}/promote", promoted, 200)
+        if promoted_body.get("project_id") != project_id or not promoted_body.get("project_document_id"):
+            raise SystemExit("report workflow promote did not store project promotion metadata")
+        _print_result(
+            "POST /report-workflows/{id}/promote",
+            promoted.status_code,
+            project_document_id=promoted_body.get("project_document_id"),
+        )
+
         pptx = http.get(f"{base_url}/report-workflows/{workflow_id}/export/pptx", headers=auth_headers)
         if pptx.status_code != 200:
             raise SystemExit(f"GET /export/pptx expected 200, got {pptx.status_code}: {pptx.text[:500]}")
@@ -245,6 +278,7 @@ def run_report_workflow_smoke(
 
         return {
             "workflow_id": workflow_id,
+            "project_id": project_id,
             "slide_count": slide_count,
             "pptx_bytes": len(pptx.content),
             "status": "passed",

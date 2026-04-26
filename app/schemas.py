@@ -385,6 +385,22 @@ class GenerateReportSlidesRequest(BaseModel):
     regenerate: bool = False
 
 
+class PromoteReportWorkflowRequest(BaseModel):
+    """Payload for promoting a final-approved report workflow into project/knowledge rails."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    project_id: str = Field(..., min_length=1)
+    username: str = ""
+    promote_to_knowledge: bool = False
+    tags: list[str] = Field(default_factory=list)
+    quality_tier: str = "gold"
+    success_state: str = "approved"
+    source_organization: str = ""
+    reference_year: int | None = None
+    notes: str = ""
+
+
 class ImportVoiceBriefDocumentRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
