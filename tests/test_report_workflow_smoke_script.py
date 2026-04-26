@@ -89,14 +89,21 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
             state["slides_approved"].add(path.split("/")[-2])
             return httpx.Response(200, json={"status": "slides_approved"})
         if path.endswith("/final/submit"):
-            return httpx.Response(200, json={"status": "final_review"})
+            return httpx.Response(
+                200,
+                json={
+                    "status": "final_review",
+                    "final_approval_id": "approval-smoke",
+                    "final_approval_status": "in_review",
+                },
+            )
         if path.endswith("/final/executive-approve") and not state.get("pm_final_approved"):
             return httpx.Response(400, json={"detail": "PM 검토 승인 후 대표 최종 승인을 진행할 수 있습니다."})
         if path.endswith("/final/pm-approve"):
             state["pm_final_approved"] = True
-            return httpx.Response(200, json={"status": "final_review"})
+            return httpx.Response(200, json={"status": "final_review", "final_approval_status": "in_review"})
         if path.endswith("/final/executive-approve"):
-            return httpx.Response(200, json={"status": "final_approved"})
+            return httpx.Response(200, json={"status": "final_approved", "final_approval_status": "approved"})
         if path.endswith("/export/pptx"):
             return httpx.Response(200, content=smoke.PPTX_MAGIC + b"payload")
         return httpx.Response(404, json={"detail": path})

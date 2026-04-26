@@ -153,6 +153,9 @@ class ReportWorkflowRecord:
     final_submitted_at: str | None = None
     final_approved_by: str | None = None
     final_approved_at: str | None = None
+    final_approval_id: str | None = None
+    final_approval_status: str | None = None
+    final_approval_synced_at: str | None = None
 
 
 class ReportWorkflowStore(BaseJsonStore):
@@ -310,6 +313,9 @@ class ReportWorkflowStore(BaseJsonStore):
             final_submitted_at=data.get("final_submitted_at"),
             final_approved_by=data.get("final_approved_by"),
             final_approved_at=data.get("final_approved_at"),
+            final_approval_id=data.get("final_approval_id"),
+            final_approval_status=data.get("final_approval_status"),
+            final_approval_synced_at=data.get("final_approval_synced_at"),
         )
 
     def _find(
@@ -461,6 +467,9 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_submitted_at = None
             rec.final_approved_by = None
             rec.final_approved_at = None
+            rec.final_approval_id = None
+            rec.final_approval_status = None
+            rec.final_approval_synced_at = None
             rec.approval_steps = []
             rec.status = ReportWorkflowStatus.PLANNING_DRAFT.value
             rec.quality_warnings.extend(quality_warnings or [])
@@ -557,6 +566,9 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_submitted_at = None
             rec.final_approved_by = None
             rec.final_approved_at = None
+            rec.final_approval_id = None
+            rec.final_approval_status = None
+            rec.final_approval_synced_at = None
             rec.approval_steps = []
             rec.quality_warnings.extend(quality_warnings or [])
             return self._flush(tid, records, idx, rec)
@@ -651,6 +663,9 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_submitted_at = _now_iso()
             rec.final_approved_by = None
             rec.final_approved_at = None
+            rec.final_approval_id = None
+            rec.final_approval_status = None
+            rec.final_approval_synced_at = None
             rec.approval_steps = self._default_approval_steps()
             rec.comments.append(WorkflowComment(
                 comment_id=str(uuid.uuid4()),
@@ -661,6 +676,48 @@ class ReportWorkflowStore(BaseJsonStore):
                 created_at=_now_iso(),
                 is_change_request=False,
             ))
+            return self._flush(tid, records, idx, rec)
+
+    def link_final_approval(
+        self,
+        report_workflow_id: str,
+        *,
+        approval_id: str,
+        approval_status: str,
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if rec.status not in {
+                ReportWorkflowStatus.FINAL_REVIEW.value,
+                ReportWorkflowStatus.FINAL_APPROVED.value,
+                ReportWorkflowStatus.FINAL_CHANGES_REQUESTED.value,
+            }:
+                raise ValueError("최종 결재 단계에서만 결재함 항목을 연결할 수 있습니다.")
+            rec.final_approval_id = approval_id
+            rec.final_approval_status = approval_status
+            rec.final_approval_synced_at = _now_iso()
+            return self._flush(tid, records, idx, rec)
+
+    def sync_final_approval_status(
+        self,
+        report_workflow_id: str,
+        *,
+        approval_status: str,
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if not rec.final_approval_id:
+                return rec
+            rec.final_approval_status = approval_status
+            rec.final_approval_synced_at = _now_iso()
             return self._flush(tid, records, idx, rec)
 
     def approve_final_step(

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.services.pptx_service import build_pptx
+from app.storage.approval_store import ApprovalStatus, ApprovalStore
 from app.storage.report_workflow_store import (
     PlanningVersion,
     ReportWorkflowRecord,
@@ -70,9 +71,16 @@ def _now_iso() -> str:
 class ReportWorkflowService:
     """Generate and export staged report workflow artifacts."""
 
-    def __init__(self, *, store: ReportWorkflowStore, provider_factory: ProviderFactory) -> None:
+    def __init__(
+        self,
+        *,
+        store: ReportWorkflowStore,
+        provider_factory: ProviderFactory,
+        approval_store: ApprovalStore | None = None,
+    ) -> None:
         self.store = store
         self._provider_factory = provider_factory
+        self._approval_store = approval_store
 
     def generate_planning(
         self,
@@ -150,11 +158,209 @@ class ReportWorkflowService:
         }
         return build_pptx(slide_data, title=rec.title, include_outline_overview=True)
 
+    def submit_final(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        author: str,
+    ) -> ReportWorkflowRecord:
+        rec = self.store.submit_final(report_workflow_id, author=author, tenant_id=tenant_id)
+        if self._approval_store is None:
+            return rec
+
+        approval = self._approval_store.create(
+            tenant_id=tenant_id,
+            request_id=self._approval_request_id(rec),
+            bundle_id="report_workflow",
+            title=f"[보고서 워크플로우] {rec.title}",
+            drafter=author,
+            docs=self._approval_docs(rec),
+            gov_options=self._approval_gov_options(rec),
+        )
+        approval = self._approval_store.submit_for_review(
+            approval.approval_id,
+            reviewer="pm_review",
+            tenant_id=tenant_id,
+        )
+        approval = self._approval_store.submit_for_approval(
+            approval.approval_id,
+            approver="executive_review",
+            tenant_id=tenant_id,
+        )
+        return self.store.link_final_approval(
+            report_workflow_id,
+            approval_id=approval.approval_id,
+            approval_status=approval.status,
+            tenant_id=tenant_id,
+        )
+
+    def approve_final_step(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        stage: str,
+        author: str,
+        comment: str = "",
+    ) -> ReportWorkflowRecord:
+        rec = self.store.approve_final_step(
+            report_workflow_id,
+            stage=stage,
+            author=author,
+            comment=comment,
+            tenant_id=tenant_id,
+        )
+        if self._approval_store is None or not rec.final_approval_id:
+            return rec
+
+        approval_status = rec.final_approval_status or ApprovalStatus.IN_REVIEW.value
+        if stage == "pm_review":
+            approval = self._approval_store.approve_review(
+                rec.final_approval_id,
+                author=author,
+                comment=comment,
+                tenant_id=tenant_id,
+            )
+            approval_status = approval.status
+        elif stage == "executive_review":
+            approval = self._approval_store.approve_final(
+                rec.final_approval_id,
+                author=author,
+                comment=comment,
+                tenant_id=tenant_id,
+            )
+            approval_status = approval.status
+        return self.store.sync_final_approval_status(
+            report_workflow_id,
+            approval_status=approval_status,
+            tenant_id=tenant_id,
+        )
+
+    def approve_final(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        author: str,
+        comment: str = "",
+    ) -> ReportWorkflowRecord:
+        rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        if not rec.final_approval_id:
+            return self.store.approve_final(report_workflow_id, author=author, tenant_id=tenant_id)
+
+        pm_step = next((item for item in rec.approval_steps if item.stage == "pm_review"), None)
+        if pm_step is None or pm_step.status != "approved":
+            rec = self.approve_final_step(
+                report_workflow_id,
+                tenant_id=tenant_id,
+                stage="pm_review",
+                author=author,
+                comment=comment or "legacy final approve: PM 검토 자동 승인",
+            )
+        if rec.status == "final_approved":
+            return rec
+        return self.approve_final_step(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            stage="executive_review",
+            author=author,
+            comment=comment,
+        )
+
+    def request_final_changes(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        author: str,
+        comment: str,
+    ) -> ReportWorkflowRecord:
+        rec = self.store.request_final_changes(
+            report_workflow_id,
+            author=author,
+            comment=comment,
+            tenant_id=tenant_id,
+        )
+        if self._approval_store is None or not rec.final_approval_id:
+            return rec
+        approval = self._approval_store.request_changes(
+            rec.final_approval_id,
+            author=author,
+            comment=comment,
+            tenant_id=tenant_id,
+        )
+        return self.store.sync_final_approval_status(
+            report_workflow_id,
+            approval_status=approval.status,
+            tenant_id=tenant_id,
+        )
+
     def _require_record(self, report_workflow_id: str, *, tenant_id: str) -> ReportWorkflowRecord:
         rec = self.store.get(report_workflow_id, tenant_id=tenant_id)
         if rec is None:
             raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
         return rec
+
+    @staticmethod
+    def _approval_request_id(rec: ReportWorkflowRecord) -> str:
+        return f"report_workflow:{rec.report_workflow_id}:slides:{rec.current_slide_version}"
+
+    @staticmethod
+    def _approval_gov_options(rec: ReportWorkflowRecord) -> dict[str, Any]:
+        return {
+            "source_kind": "report_workflow",
+            "report_workflow_id": rec.report_workflow_id,
+            "workflow_status": rec.status,
+            "current_plan_version": rec.current_plan_version,
+            "current_slide_version": rec.current_slide_version,
+            "learning_opt_in": rec.learning_opt_in,
+        }
+
+    @staticmethod
+    def _approval_docs(rec: ReportWorkflowRecord) -> list[dict[str, Any]]:
+        planning = rec.planning
+        planning_summary = ""
+        if planning is not None:
+            planning_summary = "\n".join([
+                f"# 기획 설계서: {rec.title}",
+                "",
+                f"- 목적: {planning.objective}",
+                f"- 대상: {planning.audience}",
+                f"- 핵심 메시지: {planning.executive_message}",
+                "",
+                "## Narrative Arc",
+                *[f"- {item}" for item in planning.narrative_arc],
+                "",
+                "## Quality Bar",
+                *[f"- {item}" for item in planning.quality_bar],
+            ]).strip()
+        slide_summary = "\n\n".join(
+            [
+                "\n".join([
+                    f"## {slide.page}. {slide.title}",
+                    "",
+                    slide.body,
+                    "",
+                    f"- 시각화: {slide.visual_spec}",
+                    f"- 발표 노트: {slide.speaker_note}",
+                    f"- 출처: {', '.join(slide.source_refs) if slide.source_refs else 'n/a'}",
+                ]).strip()
+                for slide in sorted(rec.slides, key=lambda item: item.page)
+            ]
+        )
+        return [
+            {
+                "doc_type": "report_workflow_planning",
+                "title": f"{rec.title} 기획 설계서",
+                "markdown": planning_summary or f"# 기획 설계서: {rec.title}",
+            },
+            {
+                "doc_type": "report_workflow_slides",
+                "title": f"{rec.title} 승인 장표 초안",
+                "markdown": f"# 승인 장표 초안: {rec.title}\n\n{slide_summary}".strip(),
+            },
+        ]
 
     def _build_planning_prompt(self, rec: ReportWorkflowRecord) -> str:
         return f"""

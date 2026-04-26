@@ -114,9 +114,16 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
     final_submit = client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "pm", "comment": ""})
     assert final_submit.status_code == 200
     assert [step["stage"] for step in final_submit.json()["approval_steps"]] == ["pm_review", "executive_review"]
+    assert final_submit.json()["final_approval_id"]
+    assert final_submit.json()["final_approval_status"] == "in_review"
+    approval = client.get(f"/approvals/{final_submit.json()['final_approval_id']}")
+    assert approval.status_code == 200
+    assert approval.json()["bundle_id"] == "report_workflow"
+    assert approval.json()["status"] == "in_review"
     final_approve = client.post(f"/report-workflows/{workflow_id}/final/approve", json={"username": "ceo", "comment": ""})
     assert final_approve.status_code == 200
     assert final_approve.json()["status"] == "final_approved"
+    assert final_approve.json()["final_approval_status"] == "approved"
     assert final_approve.json()["learning_artifacts"]
 
     pptx = client.get(f"/report-workflows/{workflow_id}/export/pptx")
@@ -152,6 +159,9 @@ def test_pm_and_executive_final_approval_chain_api(tmp_path, monkeypatch):
     assert pm.status_code == 200
     assert pm.json()["status"] == "final_review"
     assert pm.json()["approval_steps"][0]["status"] == "approved"
+    linked_approval = client.get(f"/approvals/{pm.json()['final_approval_id']}").json()
+    assert linked_approval["reviewer_approved"] is True
+    assert linked_approval["status"] == "in_review"
 
     executive = client.post(
         f"/report-workflows/{workflow_id}/final/executive-approve",
@@ -160,6 +170,9 @@ def test_pm_and_executive_final_approval_chain_api(tmp_path, monkeypatch):
     assert executive.status_code == 200
     assert executive.json()["status"] == "final_approved"
     assert executive.json()["approval_steps"][1]["status"] == "approved"
+    assert executive.json()["final_approval_status"] == "approved"
+    linked_approval = client.get(f"/approvals/{executive.json()['final_approval_id']}").json()
+    assert linked_approval["status"] == "approved"
 
 
 def test_final_change_request_api(tmp_path, monkeypatch):
@@ -184,6 +197,7 @@ def test_final_change_request_api(tmp_path, monkeypatch):
     assert changes.status_code == 200
     assert changes.json()["status"] == "final_changes_requested"
     assert changes.json()["approval_steps"][0]["status"] == "changes_requested"
+    assert changes.json()["final_approval_status"] == "changes_requested"
 
 
 def test_invalid_provider_json_uses_quality_warning_fallback(tmp_path, monkeypatch):

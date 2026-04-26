@@ -160,6 +160,7 @@ def create_app() -> FastAPI:
     report_workflow_service = ReportWorkflowService(
         store=report_workflow_store,
         provider_factory=lambda: get_provider_for_capability("generation"),
+        approval_store=approval_store,
     )
 
     @asynccontextmanager

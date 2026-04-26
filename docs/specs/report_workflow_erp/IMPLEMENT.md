@@ -275,7 +275,8 @@ Static admin UI는 다음처럼 기능을 나눈다.
 연동 방향:
 
 - `ReportWorkflowRecord`를 기존 project document로 등록한다.
-- 최종 승인 시 기존 `/approvals` record를 자동 생성하거나 연결한다.
+- 최종 제출 시 기존 `/approvals` record를 자동 생성하고 `final_approval_id`, `final_approval_status`로 workflow에 연결한다.
+- PM 승인은 linked approval의 review approval로 mirror하고, 대표 승인은 linked approval의 final approval로 mirror한다.
 - 승인된 report workflow를 project knowledge로 promote 가능하게 한다.
 - 자동 promote는 MVP에서는 하지 않고, `promote` button 또는 explicit API로 분리한다.
 
@@ -284,6 +285,7 @@ Static admin UI는 다음처럼 기능을 나눈다.
 - 기존 `ApprovalStore`를 무리하게 확장하지 않는다.
 - 보고서 제작 중간 상태는 `ReportWorkflowStore`가 책임지고, 조직 결재/다운로드는 `ApprovalStore`와 연결한다.
 - 기존 `ApprovalStore.get()`는 tenant boundary route guard를 통해 사용해야 하므로, 새 연동 service는 항상 `tenant_id`를 명시한다.
+- linked approval side effect가 실패할 수 있으므로 `ReportWorkflowService`에서 오케스트레이션하고, workflow store에는 재조회/재시도 가능한 연결 metadata만 저장한다.
 
 ## 6. Test Plan
 
@@ -311,6 +313,7 @@ tests/test_report_workflow_service.py
 - PM changes requested 시 final_changes_requested 저장
 - final approval 이후 ApprovalStore와 workflow final mirror 일치
 - 결재함에는 final approval item만 노출되고 planning/slide 내부 승인 이벤트는 노출되지 않음
+- final submit 시 linked ApprovalStore record가 `in_review`로 생성되고, executive approve 후 `approved`로 동기화됨
 
 Regression tests:
 

@@ -221,7 +221,7 @@ def submit_report_final(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        rec = _get_store(request).submit_final(
+        rec = _get_service(request).submit_final(
             report_workflow_id,
             author=_actor(request, payload.username),
             tenant_id=tenant_id,
@@ -242,9 +242,10 @@ def approve_report_final(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        rec = _get_store(request).approve_final(
+        rec = _get_service(request).approve_final(
             report_workflow_id,
             author=_actor(request, payload.username),
+            comment=payload.comment,
             tenant_id=tenant_id,
         )
     except (KeyError, ValueError) as exc:
@@ -263,7 +264,7 @@ def approve_report_final_pm(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        rec = _get_store(request).approve_final_step(
+        rec = _get_service(request).approve_final_step(
             report_workflow_id,
             stage="pm_review",
             author=_actor(request, payload.username),
@@ -286,7 +287,7 @@ def approve_report_final_executive(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        rec = _get_store(request).approve_final_step(
+        rec = _get_service(request).approve_final_step(
             report_workflow_id,
             stage="executive_review",
             author=_actor(request, payload.username),
@@ -309,7 +310,7 @@ def request_report_final_changes(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        rec = _get_store(request).request_final_changes(
+        rec = _get_service(request).request_final_changes(
             report_workflow_id,
             author=_actor(request, payload.username),
             comment=payload.comment,

@@ -190,7 +190,14 @@ def run_report_workflow_smoke(
         final_submit_body = _assert_status("POST /final/submit", final_submit, 200)
         if final_submit_body.get("status") != "final_review":
             raise SystemExit(f"final/submit expected final_review, got {final_submit_body.get('status')}")
-        _print_result("POST /final/submit", final_submit.status_code)
+        approval_id = str(final_submit_body.get("final_approval_id") or "")
+        if not approval_id:
+            raise SystemExit("final/submit missing linked final_approval_id")
+        if final_submit_body.get("final_approval_status") != "in_review":
+            raise SystemExit(
+                f"final/submit expected linked approval in_review, got {final_submit_body.get('final_approval_status')}"
+            )
+        _print_result("POST /final/submit", final_submit.status_code, approval_id=approval_id)
 
         blocked_executive = http.post(
             f"{base_url}/report-workflows/{workflow_id}/final/executive-approve",
@@ -208,6 +215,10 @@ def run_report_workflow_smoke(
         pm_approve_body = _assert_status("POST /final/pm-approve", pm_approve, 200)
         if pm_approve_body.get("status") != "final_review":
             raise SystemExit(f"final/pm-approve expected final_review, got {pm_approve_body.get('status')}")
+        if pm_approve_body.get("final_approval_status") != "in_review":
+            raise SystemExit(
+                f"final/pm-approve expected linked approval in_review, got {pm_approve_body.get('final_approval_status')}"
+            )
         _print_result("POST /final/pm-approve", pm_approve.status_code)
 
         final_approve = http.post(
@@ -218,6 +229,11 @@ def run_report_workflow_smoke(
         final_approve_body = _assert_status("POST /final/executive-approve", final_approve, 200)
         if final_approve_body.get("status") != "final_approved":
             raise SystemExit(f"final/executive-approve expected final_approved, got {final_approve_body.get('status')}")
+        if final_approve_body.get("final_approval_status") != "approved":
+            raise SystemExit(
+                "final/executive-approve expected linked approval approved, "
+                f"got {final_approve_body.get('final_approval_status')}"
+            )
         _print_result("POST /final/executive-approve", final_approve.status_code)
 
         pptx = http.get(f"{base_url}/report-workflows/{workflow_id}/export/pptx", headers=auth_headers)
