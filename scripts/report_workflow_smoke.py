@@ -94,7 +94,7 @@ def run_report_workflow_smoke(
     *,
     base_url: str,
     api_key: str,
-    tenant_id: str = "smoke",
+    tenant_id: str = "",
     timeout_sec: float = DEFAULT_TIMEOUT_SEC,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
@@ -223,7 +223,7 @@ def run_report_workflow_smoke(
 def main() -> int:
     base_url = _required_env("SMOKE_BASE_URL")
     api_key = _required_env("SMOKE_API_KEY")
-    tenant_id = os.getenv("SMOKE_TENANT_ID", "smoke").strip() or "smoke"
+    tenant_id = os.getenv("SMOKE_TENANT_ID", "").strip()
     timeout_sec = float(os.getenv("SMOKE_TIMEOUT_SEC", str(DEFAULT_TIMEOUT_SEC)))
 
     result = run_report_workflow_smoke(

@@ -113,6 +113,12 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
     assert "PASS POST /planning/generate -> 200 slide_plans=2" in capsys.readouterr().out
 
 
+def test_report_workflow_smoke_does_not_send_tenant_header_by_default():
+    smoke = _load_smoke_module()
+
+    assert smoke._headers("key", "") == {"X-DecisionDoc-Api-Key": "key"}
+
+
 def test_report_workflow_smoke_fails_when_blueprint_fields_are_missing():
     smoke = _load_smoke_module()
 
