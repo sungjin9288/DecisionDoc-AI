@@ -7,6 +7,15 @@ def test_report_workflow_tab_and_stepper_present():
     assert 'data-page="report-workflow-page"' in html
     assert "보고서 워크플로우" in html
     assert "1. 기획" in html
+    assert "1. 기획 설계서" in html
+    assert "기획 브리프" in html
+    assert "독자 의사결정 기준" in html
+    assert "보고서 스토리라인" in html
+    assert "자료/근거 전략" in html
+    assert "템플릿/디자인 가이드" in html
+    assert "완성 기준" in html
+    assert "의사결정 질문" in html
+    assert "장표 승인 기준" in html
     assert "2. 장표 제작" in html
     assert "3. 최종 승인" in html
 

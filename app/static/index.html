@@ -6429,16 +6429,53 @@
     </div>`;
   }
 
+  function reportWorkflowArray(value) {
+    if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+    const text = String(value || '').trim();
+    return text ? [text] : [];
+  }
+
+  function renderReportWorkflowMiniList(title, items, emptyText = '') {
+    const rows = reportWorkflowArray(items);
+    if (!rows.length && !emptyText) return '';
+    return `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.42);">
+      <div style="font-size:.76rem;font-weight:850;margin-bottom:.35rem;color:#1f2a44;">${escapeHtml(title)}</div>
+      ${rows.length ? `<ul style="margin:0;padding-left:1rem;color:var(--muted);font-size:.74rem;line-height:1.55;">${rows.map(row => `<li>${escapeHtml(row)}</li>`).join('')}</ul>` : `<div style="color:var(--muted);font-size:.74rem;">${escapeHtml(emptyText)}</div>`}
+    </div>`;
+  }
+
   function renderReportWorkflowPlanning(planning, item) {
     if (!planning) return '<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);">기획안을 먼저 생성하세요.</div>';
     const plans = Array.isArray(planning.slide_plans) ? planning.slide_plans : [];
+    const planningSections = [
+      ['독자 의사결정 기준', planning.audience_decision_needs, 'PM/대표가 승인 전 확인할 기준을 정의하세요.'],
+      ['보고서 스토리라인', planning.narrative_arc, '문제 정의부터 승인 요청까지 흐름을 정의하세요.'],
+      ['자료/근거 전략', planning.source_strategy, '첨부자료와 근거를 장표별로 매핑하세요.'],
+      ['템플릿/디자인 가이드', planning.template_guidance, '장표 구조와 시각화 규칙을 정의하세요.'],
+      ['완성 기준', planning.quality_bar, '기획 승인 기준을 정의하세요.'],
+    ];
     return `<div style="border:1px solid var(--border);border-radius:14px;padding:1rem;background:var(--surface);">
-      <h4 style="margin:0 0 .5rem;font-size:.95rem;">1. 기획안</h4>
-      <div style="font-size:.82rem;line-height:1.55;"><strong>핵심 메시지:</strong> ${escapeHtml(planning.executive_message || '')}</div>
+      <h4 style="margin:0 0 .3rem;font-size:.95rem;">1. 기획 설계서</h4>
+      <div style="font-size:.78rem;color:var(--muted);line-height:1.5;margin-bottom:.65rem;">기획 승인 전에 목적, 독자 판단 기준, 근거 전략, 장표별 승인 기준을 먼저 확정합니다.</div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.75rem;background:rgba(255,255,255,.55);">
+        <div style="font-size:.8rem;line-height:1.55;"><strong>기획 브리프:</strong> ${escapeHtml(planning.planning_brief || planning.objective || item.goal || '')}</div>
+        <div style="font-size:.8rem;line-height:1.55;margin-top:.35rem;"><strong>핵심 메시지:</strong> ${escapeHtml(planning.executive_message || '')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.55rem;margin-top:.7rem;">
+        ${planningSections.map(([title, values, emptyText]) => renderReportWorkflowMiniList(title, values, emptyText)).join('')}
+      </div>
       <div style="margin-top:.7rem;display:flex;flex-direction:column;gap:.45rem;">
         ${plans.map(plan => `<div style="border:1px solid var(--border);border-radius:10px;padding:.55rem;background:rgba(255,255,255,.45);">
           <strong style="font-size:.82rem;">${escapeHtml(plan.page)}. ${escapeHtml(plan.title || '')}</strong>
-          <div style="font-size:.76rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(plan.key_message || plan.purpose || '')}</div>
+          <div style="font-size:.76rem;color:var(--muted);margin-top:.25rem;">${escapeHtml(plan.key_message || plan.purpose || '')}</div>
+          <div style="font-size:.74rem;line-height:1.45;margin-top:.45rem;"><strong>의사결정 질문:</strong> ${escapeHtml(plan.decision_question || '미정')}</div>
+          <div style="font-size:.74rem;line-height:1.45;margin-top:.2rem;"><strong>스토리 역할:</strong> ${escapeHtml(plan.narrative_role || plan.purpose || '미정')}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.4rem;margin-top:.5rem;">
+            ${renderReportWorkflowMiniList('콘텐츠 블록', plan.content_blocks, '핵심 메시지/근거/액션 블록 미정')}
+            ${renderReportWorkflowMiniList('필요 데이터', plan.data_needs || plan.required_evidence, '추가 데이터 미정')}
+            ${renderReportWorkflowMiniList('디자인 지시', plan.design_notes || [plan.layout, plan.visual_direction], '시각화 방향 미정')}
+            ${renderReportWorkflowMiniList('승인 기준', plan.acceptance_criteria, '장표 승인 기준 미정')}
+          </div>
         </div>`).join('')}
       </div>
     </div>`;

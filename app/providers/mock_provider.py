@@ -190,6 +190,33 @@ class MockProvider(Provider):
                 "objective": "보고서 목적과 승인 흐름을 한눈에 이해할 수 있게 구성합니다.",
                 "audience": "PM, 대표, 최종 의사결정권자",
                 "executive_message": "기획 승인 후 장표 제작으로 이어지는 단계형 보고서 품질 관리를 적용합니다.",
+                "planning_brief": "보고서 제작 전 승인권자가 검토할 의사결정 질문, 근거 전략, 장표별 완성 기준을 먼저 확정합니다.",
+                "audience_decision_needs": [
+                    "프로젝트 목적과 승인 요청 범위가 명확한가",
+                    "첨부자료 근거가 핵심 주장에 충분히 연결되는가",
+                    "실행 계획과 리스크 대응이 승인 가능한 수준인가",
+                ],
+                "narrative_arc": [
+                    "핵심 메시지로 의사결정 안건을 먼저 제시",
+                    "현황 진단에서 문제와 근거를 연결",
+                    "제안 방향과 실행 계획으로 해결 가능성을 설명",
+                    "기대 효과와 승인 요청으로 다음 액션을 명확화",
+                ],
+                "source_strategy": [
+                    "입력 요구사항은 표지/핵심 메시지 장표에 반영",
+                    "첨부자료 요약은 현황 진단과 제안 방향의 required_evidence로 매핑",
+                    "근거가 부족한 항목은 open_questions와 data_needs로 분리",
+                ],
+                "template_guidance": [
+                    "각 장표는 headline, evidence, decision block 구조를 기본으로 사용",
+                    "정량 근거는 카드 또는 표, 실행 흐름은 단계형 다이어그램으로 표현",
+                    "승인 요청 장표는 결정 항목과 후속 액션을 분리해 표시",
+                ],
+                "quality_bar": [
+                    "장표별 decision_question이 key_message와 직접 연결됨",
+                    "각 장표의 required_evidence와 data_needs가 구분됨",
+                    "PM이 수정 요청 없이 제작 담당자에게 넘길 수 있을 만큼 구체적임",
+                ],
                 "table_of_contents": ["핵심 메시지", "현황 진단", "제안 방향", "실행 계획", "기대 효과", "승인 요청"],
                 "slide_plans": [
                     {
@@ -198,9 +225,15 @@ class MockProvider(Provider):
                         "title": title,
                         "purpose": f"{title} 내용을 의사결정자가 검토할 수 있게 설명합니다.",
                         "key_message": f"{title} 기준의 핵심 판단 포인트를 제시합니다.",
+                        "decision_question": f"{title} 장표에서 승인권자가 판단해야 할 핵심 질문은 무엇인가?",
+                        "narrative_role": "전체 보고서 흐름에서 다음 의사결정으로 넘어가기 위한 근거를 제공합니다.",
                         "layout": "상단 핵심 메시지, 좌측 근거, 우측 시각자료",
                         "visual_direction": "요약 카드와 흐름도 중심",
                         "required_evidence": ["입력 요구사항", "첨부자료 요약"],
+                        "content_blocks": ["핵심 주장", "근거 요약", "승인 판단 포인트"],
+                        "data_needs": ["정량 수치 확인", "첨부자료 출처 매핑"],
+                        "design_notes": ["headline은 한 문장 결론으로 작성", "근거와 의사결정 블록을 시각적으로 분리"],
+                        "acceptance_criteria": ["핵심 질문에 대한 답이 명확함", "필요 근거와 추가 확인 항목이 구분됨"],
                     }
                     for idx, title in enumerate(["핵심 메시지", "현황 진단", "제안 방향", "실행 계획", "기대 효과", "승인 요청"], start=1)
                 ],

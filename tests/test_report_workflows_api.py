@@ -67,7 +67,17 @@ def test_planning_and_slides_generation_with_mock_provider(tmp_path, monkeypatch
     planning = client.post(f"/report-workflows/{workflow_id}/planning/generate")
     assert planning.status_code == 200
     assert planning.json()["status"] == "planning_draft"
-    assert len(planning.json()["planning"]["slide_plans"]) == 4
+    planning_payload = planning.json()["planning"]
+    assert len(planning_payload["slide_plans"]) == 4
+    assert planning_payload["planning_brief"]
+    assert planning_payload["audience_decision_needs"]
+    assert planning_payload["narrative_arc"]
+    assert planning_payload["source_strategy"]
+    assert planning_payload["template_guidance"]
+    assert planning_payload["quality_bar"]
+    assert planning_payload["slide_plans"][0]["decision_question"]
+    assert planning_payload["slide_plans"][0]["content_blocks"]
+    assert planning_payload["slide_plans"][0]["acceptance_criteria"]
 
     approved = client.post(
         f"/report-workflows/{workflow_id}/planning/approve",
@@ -129,7 +139,11 @@ def test_invalid_provider_json_uses_quality_warning_fallback(tmp_path, monkeypat
     planning = client.post(f"/report-workflows/{workflow_id}/planning/generate")
     assert planning.status_code == 200
     assert planning.json()["quality_warnings"]
-    assert len(planning.json()["planning"]["slide_plans"]) == 2
+    planning_payload = planning.json()["planning"]
+    assert len(planning_payload["slide_plans"]) == 2
+    assert planning_payload["planning_brief"]
+    assert planning_payload["quality_bar"]
+    assert planning_payload["slide_plans"][0]["decision_question"]
 
 
 def test_missing_workflow_and_missing_slide_return_404(tmp_path, monkeypatch):

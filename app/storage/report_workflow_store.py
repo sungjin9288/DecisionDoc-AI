@@ -59,9 +59,15 @@ class SlidePlan:
     title: str
     purpose: str = ""
     key_message: str = ""
+    decision_question: str = ""
+    narrative_role: str = ""
     layout: str = ""
     visual_direction: str = ""
     required_evidence: list[str] = field(default_factory=list)
+    content_blocks: list[str] = field(default_factory=list)
+    data_needs: list[str] = field(default_factory=list)
+    design_notes: list[str] = field(default_factory=list)
+    acceptance_criteria: list[str] = field(default_factory=list)
     approval_status: str = "pending"
 
 
@@ -79,6 +85,12 @@ class PlanningVersion:
     risk_notes: list[str]
     created_by: str
     created_at: str
+    planning_brief: str = ""
+    audience_decision_needs: list[str] = field(default_factory=list)
+    narrative_arc: list[str] = field(default_factory=list)
+    template_guidance: list[str] = field(default_factory=list)
+    source_strategy: list[str] = field(default_factory=list)
+    quality_bar: list[str] = field(default_factory=list)
     approved_by: str | None = None
     approved_at: str | None = None
 
@@ -186,9 +198,15 @@ class ReportWorkflowStore(BaseJsonStore):
             title=data.get("title", ""),
             purpose=data.get("purpose", ""),
             key_message=data.get("key_message", ""),
+            decision_question=data.get("decision_question", ""),
+            narrative_role=data.get("narrative_role", ""),
             layout=data.get("layout", ""),
             visual_direction=data.get("visual_direction", ""),
             required_evidence=list(data.get("required_evidence") or []),
+            content_blocks=list(data.get("content_blocks") or []),
+            data_needs=list(data.get("data_needs") or []),
+            design_notes=list(data.get("design_notes") or []),
+            acceptance_criteria=list(data.get("acceptance_criteria") or []),
             approval_status=data.get("approval_status", "pending"),
         )
 
@@ -209,6 +227,12 @@ class ReportWorkflowStore(BaseJsonStore):
             risk_notes=list(data.get("risk_notes") or []),
             created_by=data.get("created_by", "ai"),
             created_at=data.get("created_at", _now_iso()),
+            planning_brief=data.get("planning_brief", ""),
+            audience_decision_needs=list(data.get("audience_decision_needs") or []),
+            narrative_arc=list(data.get("narrative_arc") or []),
+            template_guidance=list(data.get("template_guidance") or []),
+            source_strategy=list(data.get("source_strategy") or []),
+            quality_bar=list(data.get("quality_bar") or []),
             approved_by=data.get("approved_by"),
             approved_at=data.get("approved_at"),
         )

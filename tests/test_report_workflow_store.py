@@ -26,13 +26,27 @@ def _planning() -> PlanningVersion:
         executive_message="핵심 메시지",
         table_of_contents=["1장", "2장"],
         slide_plans=[
-            SlidePlan(slide_id="slide-001", page=1, title="1장", key_message="A"),
+            SlidePlan(
+                slide_id="slide-001",
+                page=1,
+                title="1장",
+                key_message="A",
+                decision_question="A를 승인할 것인가?",
+                content_blocks=["메시지", "근거"],
+                acceptance_criteria=["판단 기준이 명확함"],
+            ),
             SlidePlan(slide_id="slide-002", page=2, title="2장", key_message="B"),
         ],
         open_questions=[],
         risk_notes=[],
         created_by="ai",
         created_at="2026-04-25T00:00:00+00:00",
+        planning_brief="목적과 승인 기준을 먼저 확정한다.",
+        audience_decision_needs=["승인 범위 확인"],
+        narrative_arc=["문제", "해결", "승인"],
+        template_guidance=["headline/evidence/decision 구조"],
+        source_strategy=["첨부자료를 장표별 근거로 매핑"],
+        quality_bar=["장표별 승인 기준 명확화"],
     )
 
 
@@ -92,6 +106,10 @@ def test_planning_change_request_then_reapproval(tmp_path):
 
     assert updated.status == ReportWorkflowStatus.PLANNING_DRAFT.value
     assert approved.status == ReportWorkflowStatus.PLANNING_APPROVED.value
+    assert approved.planning is not None
+    assert approved.planning.planning_brief == "목적과 승인 기준을 먼저 확정한다."
+    assert approved.planning.slide_plans[0].decision_question == "A를 승인할 것인가?"
+    assert approved.planning.slide_plans[0].acceptance_criteria == ["판단 기준이 명확함"]
 
 
 def test_final_submit_blocked_until_all_slides_approved(tmp_path):

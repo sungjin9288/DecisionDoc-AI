@@ -52,6 +52,10 @@ def _as_list(value: Any) -> list:
     return [value]
 
 
+def _string_list(value: Any) -> list[str]:
+    return [str(item).strip() for item in _as_list(value) if str(item).strip()]
+
+
 def _safe_slide_id(value: Any, page: int) -> str:
     raw = str(value or "").strip()
     if raw:
@@ -82,7 +86,7 @@ class ReportWorkflowService:
         prompt = self._build_planning_prompt(rec)
         warnings: list[str] = []
         try:
-            raw = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=3500)
+            raw = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=5200)
             data = json.loads(_clean_json_text(raw))
         except Exception as exc:
             logger.warning("report planning provider output fallback: %s", exc)
@@ -162,6 +166,12 @@ JSON shape:
   "objective": "보고서 목적",
   "audience": "대상 독자",
   "executive_message": "핵심 메시지",
+  "planning_brief": "보고서가 해결해야 할 의사결정 맥락과 기획 전제",
+  "audience_decision_needs": ["독자가 승인 전에 확인해야 할 판단 기준"],
+  "narrative_arc": ["문제 정의", "근거", "해결 방향", "승인 요청처럼 이어지는 보고서 흐름"],
+  "source_strategy": ["첨부자료/외부자료를 어떤 장표 근거로 사용할지"],
+  "template_guidance": ["톤앤매너, 표지/본문/요약 장표 템플릿 방향"],
+  "quality_bar": ["기획 승인 기준 또는 완성도 체크 기준"],
   "table_of_contents": ["..."],
   "slide_plans": [
     {{
@@ -170,9 +180,15 @@ JSON shape:
       "title": "장표 제목",
       "purpose": "장표 목적",
       "key_message": "핵심 주장",
+      "decision_question": "이 장표에서 승인권자가 답해야 할 질문",
+      "narrative_role": "전체 보고서 스토리에서 이 장표의 역할",
       "layout": "장표 레이아웃 설명",
       "visual_direction": "시각화 방향",
-      "required_evidence": ["필요 근거"]
+      "required_evidence": ["필요 근거"],
+      "content_blocks": ["장표에 들어갈 주요 블록"],
+      "data_needs": ["추가로 필요한 데이터 또는 검증 항목"],
+      "design_notes": ["색상/도표/컴포넌트/배치 지시"],
+      "acceptance_criteria": ["이 장표를 승인할 수 있는 기준"]
     }}
   ],
   "open_questions": ["..."],
@@ -189,6 +205,7 @@ Report:
 - attachments_context: {rec.attachments_context[:4000]}
 - source_refs: {", ".join(rec.source_refs)}
 
+First design the report before drafting copy. Make the plan detailed enough that a PM can approve, request changes, or assign slide production without additional explanation.
 Create exactly {rec.slide_count} slide_plans unless the input clearly requires fewer.
 """.strip()
 
@@ -231,6 +248,36 @@ Approved planning snapshot:
         toc = _as_list(data.get("table_of_contents"))
         if not toc:
             toc = [plan.title for plan in slide_plans]
+        planning_brief = str(
+            data.get("planning_brief")
+            or data.get("brief")
+            or f"{rec.title}의 목적, 독자, 근거 사용 방향을 먼저 확정한 뒤 장표 제작으로 전환합니다."
+        )
+        audience_decision_needs = _string_list(data.get("audience_decision_needs")) or [
+            "보고서 목적과 승인 요청 사항이 명확한가",
+            "핵심 근거가 의사결정 기준에 충분히 연결되는가",
+            "실행 계획과 리스크 대응이 승인 가능한 수준인가",
+        ]
+        narrative_arc = _string_list(data.get("narrative_arc")) or [
+            "왜 지금 이 보고서가 필요한지 정의",
+            "첨부자료와 근거로 현재 상태를 진단",
+            "해결 방향과 실행안을 장표별로 구체화",
+            "PM/대표 승인에 필요한 결정 사항을 명확히 제시",
+        ]
+        source_strategy = _string_list(data.get("source_strategy")) or [
+            "첨부자료는 장표별 required_evidence에 매핑",
+            "근거가 부족한 장표는 data_needs와 open_questions에 남김",
+            "최종 장표에는 출처 또는 검증 필요 항목을 표시",
+        ]
+        template_guidance = _string_list(data.get("template_guidance")) or [
+            "각 장표는 headline, evidence, action/decision block으로 구성",
+            "정량 근거는 카드/표, 프로세스는 흐름도, 비교는 매트릭스로 표현",
+        ]
+        quality_bar = _string_list(data.get("quality_bar")) or [
+            "장표별 decision_question과 key_message가 서로 연결됨",
+            "승인권자가 수정 요청 없이 다음 단계 판단을 할 수 있음",
+            "근거 부족, 리스크, 추가 질문이 숨겨지지 않고 표시됨",
+        ]
         return PlanningVersion(
             plan_id=str(uuid.uuid4()),
             version=0,
@@ -244,6 +291,12 @@ Approved planning snapshot:
             risk_notes=[str(item) for item in _as_list(data.get("risk_notes"))],
             created_by="ai",
             created_at=_now_iso(),
+            planning_brief=planning_brief,
+            audience_decision_needs=audience_decision_needs,
+            narrative_arc=narrative_arc,
+            template_guidance=template_guidance,
+            source_strategy=source_strategy,
+            quality_bar=quality_bar,
         )
 
     def _normalize_slide_plans(self, raw: Any, rec: ReportWorkflowRecord) -> list[SlidePlan]:
@@ -259,9 +312,18 @@ Approved planning snapshot:
                 title=title,
                 purpose=str(item.get("purpose") or item.get("key_content") or "보고서 핵심 내용을 설명합니다."),
                 key_message=str(item.get("key_message") or item.get("key_content") or title),
+                decision_question=str(item.get("decision_question") or f"{title}에서 승인권자가 판단해야 할 핵심 질문은 무엇인가?"),
+                narrative_role=str(item.get("narrative_role") or item.get("role") or "전체 보고서 흐름에서 핵심 판단 근거를 제공합니다."),
                 layout=str(item.get("layout") or item.get("design_tip") or "상단 핵심 메시지와 하단 근거/시각자료 배치"),
                 visual_direction=str(item.get("visual_direction") or item.get("visual") or "핵심 흐름을 도식화"),
                 required_evidence=[str(value) for value in _as_list(item.get("required_evidence") or item.get("evidence"))],
+                content_blocks=_string_list(item.get("content_blocks") or item.get("sections") or item.get("blocks")),
+                data_needs=_string_list(item.get("data_needs") or item.get("data_requirements") or item.get("required_evidence") or item.get("evidence")),
+                design_notes=_string_list(item.get("design_notes") or item.get("design_guidance") or item.get("design_tip") or item.get("layout")),
+                acceptance_criteria=_string_list(item.get("acceptance_criteria") or item.get("approval_criteria") or item.get("checks")) or [
+                    "핵심 메시지가 독자 의사결정 질문에 직접 답합니다.",
+                    "필요 근거와 검증 공백이 구분되어 있습니다.",
+                ],
             ))
         return plans[: max(1, min(rec.slide_count, 40))]
 
@@ -277,9 +339,15 @@ Approved planning snapshot:
                 title=title,
                 purpose=f"{rec.title} 보고서의 {title} 내용을 정리합니다.",
                 key_message=rec.goal or title,
+                decision_question=f"{title} 단계에서 승인권자가 확인해야 할 핵심 판단은 무엇인가?",
+                narrative_role="문제 인식에서 승인 요청까지 이어지는 보고서 흐름을 구성합니다.",
                 layout="상단 핵심 메시지, 본문 근거, 우측 시각자료",
                 visual_direction="요약 카드와 흐름도 중심",
                 required_evidence=rec.source_refs[:3],
+                content_blocks=["핵심 메시지", "근거 요약", "의사결정 포인트"],
+                data_needs=["첨부자료 근거 매핑", "정량 수치 또는 사례 확인"],
+                design_notes=["한 장표당 하나의 결론만 강조", "상단 headline과 하단 evidence 영역 분리"],
+                acceptance_criteria=["목적과 핵심 메시지가 한 문장으로 설명됨", "근거 출처 또는 검증 필요 항목이 명확함"],
             ))
         return plans
 

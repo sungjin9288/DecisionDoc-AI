@@ -61,7 +61,19 @@
 
 - `ReportWorkflowRecord`
 - `PlanningVersion`
+  - `planning_brief`: 기획 전제와 승인 요청 범위
+  - `audience_decision_needs`: 독자/승인권자가 확인해야 할 판단 기준
+  - `narrative_arc`: 문제 정의에서 승인 요청까지 이어지는 보고서 흐름
+  - `source_strategy`: 첨부자료와 근거를 장표별로 매핑하는 전략
+  - `template_guidance`: 공통 장표 구조, 시각화 규칙, 톤앤매너
+  - `quality_bar`: 기획 승인 및 장표 제작 전환 기준
 - `SlidePlan`
+  - `decision_question`: 장표별 승인권자 판단 질문
+  - `narrative_role`: 전체 보고서 흐름에서 장표가 맡는 역할
+  - `content_blocks`: 장표 내 구성 블록
+  - `data_needs`: 추가 데이터와 검증 필요 항목
+  - `design_notes`: 레이아웃/시각화 상세 지시
+  - `acceptance_criteria`: 장표별 승인 기준
 - `SlideDraft`
 - `WorkflowComment`
 
@@ -151,9 +163,15 @@ POST /report-workflows/{id}/final/approve
   - `2. 장표 제작`
   - `3. 최종 승인`
 - Planning view:
+  - 기획 브리프
   - 전체 메시지
+  - 독자 의사결정 기준
+  - 보고서 스토리라인
+  - 자료/근거 전략
+  - 템플릿/디자인 가이드
+  - 완성 기준
   - 목차
-  - 장표별 계획 카드
+  - 장표별 계획 카드: 의사결정 질문, narrative role, content blocks, data needs, design notes, acceptance criteria
   - 수정 요청
   - 승인 버튼
 - Slides view:
