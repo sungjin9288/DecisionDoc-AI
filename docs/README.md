@@ -53,6 +53,7 @@
 - `python3 scripts/smoke.py` — 로컬/직접 환경변수 주입용 기본 API smoke (`/generate`, `/generate/export`, `/generate/from-documents`)
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod` — 배포 서버 `.env.prod` 기준 API smoke
 - `python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight` — 배포 smoke 입력값과 포함 라우트 확인
+- `SMOKE_BASE_URL=https://admin.decisiondoc.kr SMOKE_API_KEY=<runtime-key> python3 scripts/report_workflow_smoke.py` — Report Workflow ERP smoke (`/report-workflows` 기획 설계서, 장표 승인, 최종 승인, PPTX export)
 - `python3 scripts/post_deploy_check.py --env-file .env.prod` — health(+provider route visibility), compose 상태, nginx 설정, deployed smoke preflight, deployed smoke를 묶은 post-deploy check
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-file ./reports/post-deploy.json` — post-deploy check 결과를 JSON 리포트로 저장
 - `python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy` — timestamped report, `latest.json`, `index.json`을 함께 저장

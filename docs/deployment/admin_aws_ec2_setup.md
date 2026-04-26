@@ -319,6 +319,17 @@ cd /opt/decisiondoc
 python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy
 ```
 
+Report Workflow ERP까지 확인하려면 별도 smoke를 실행합니다. 이 smoke는 `[SMOKE]` workflow를 하나 생성하고, 기획 설계서 생성, 기획 승인 전 장표 생성 차단, 장표 생성/승인, 최종 승인, PPTX export를 확인합니다.
+
+```bash
+cd /opt/decisiondoc
+SMOKE_BASE_URL=https://admin.decisiondoc.kr \
+SMOKE_API_KEY=<runtime-api-key> \
+python3 scripts/report_workflow_smoke.py
+```
+
+기본값은 `X-Tenant-ID`를 보내지 않습니다. tenant별 운영 검증이 필요할 때만 `SMOKE_TENANT_ID=<tenant-id>`를 추가합니다.
+
 이 경우 아래 파일들이 같이 갱신됩니다.
 
 - `./reports/post-deploy/post-deploy-<timestamp>.json`
