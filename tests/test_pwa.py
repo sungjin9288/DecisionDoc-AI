@@ -245,7 +245,7 @@ def test_sw_js_has_notificationclick_handler():
 
 def test_sw_js_uses_versioned_cache_name():
     content = open("app/static/sw.js").read()
-    assert "decisiondoc-v1.1.15" in content
+    assert "decisiondoc-v1.1.16" in content
 
 
 def test_sw_js_does_not_precache_html_shell():
@@ -348,6 +348,7 @@ def test_index_html_reloads_on_service_worker_update():
     content = open("app/static/index.html").read()
     assert "controllerchange" in content
     assert "SKIP_WAITING" in content
+    assert "_swHadControllerAtStartup" in content
     assert "window.location.reload()" in content
 
 
