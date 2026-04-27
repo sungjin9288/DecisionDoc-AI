@@ -2,7 +2,7 @@ import logging
 import os
 
 _cfg_log = logging.getLogger("decisiondoc.config")
-APP_VERSION = "1.1.22"
+APP_VERSION = "1.1.23"
 
 
 def is_enabled(value: str) -> bool:
