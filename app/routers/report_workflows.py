@@ -44,6 +44,29 @@ def _handle_store_error(exc: Exception) -> None:
     raise exc
 
 
+def _redact_visual_asset_payload(value):
+    if isinstance(value, list):
+        return [_redact_visual_asset_payload(item) for item in value]
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if key == "content_base64":
+                redacted["has_content_base64"] = bool(item)
+                redacted["content_base64_len"] = len(str(item or ""))
+                continue
+            redacted[key] = _redact_visual_asset_payload(item)
+        return redacted
+    return value
+
+
+def _workflow_list_item(rec) -> dict:
+    raw = asdict(rec)
+    visual_assets = raw.get("visual_assets") if isinstance(raw.get("visual_assets"), list) else []
+    item = _redact_visual_asset_payload(raw)
+    item["visual_asset_count"] = len(visual_assets)
+    return item
+
+
 @router.post(
     "/report-workflows",
     dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
@@ -73,7 +96,7 @@ def create_report_workflow(payload: CreateReportWorkflowRequest, request: Reques
 def list_report_workflows(request: Request, status: str | None = None) -> dict:
     tenant_id = get_tenant_id(request)
     records = _get_store(request).list_by_tenant(tenant_id, status=status)
-    return {"report_workflows": [asdict(rec) for rec in records], "total": len(records)}
+    return {"report_workflows": [_workflow_list_item(rec) for rec in records], "total": len(records)}
 
 
 @router.get("/report-workflows/{report_workflow_id}", dependencies=[Depends(require_api_key)])

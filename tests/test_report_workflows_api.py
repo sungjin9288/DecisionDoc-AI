@@ -8,6 +8,14 @@ from fastapi.testclient import TestClient
 _PPTX_MAGIC = b"PK\x03\x04"
 
 
+def _contains_key(value, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_contains_key(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_key(item, key) for item in value)
+    return False
+
+
 def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "")
@@ -230,6 +238,33 @@ def test_report_workflow_generates_visual_assets_and_attaches_first_candidates(t
     selected_slide = selected.json()["slides"][0]
     assert selected_slide["selected_asset_id"] == updated_slides[0]["generated_asset_ids"][0]
     assert selected_slide["selected_asset"]["asset_id"] == selected_slide["selected_asset_id"]
+
+
+def test_report_workflow_list_redacts_visual_asset_payloads(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/slides/generate", json={})
+    generated = client.post(
+        f"/report-workflows/{workflow_id}/visual-assets/generate",
+        json={"username": "designer", "max_assets": 2, "select_first": True},
+    )
+    assert generated.status_code == 200
+
+    detail = client.get(f"/report-workflows/{workflow_id}")
+    assert detail.status_code == 200
+    assert _contains_key(detail.json(), "content_base64") is True
+
+    listed = client.get("/report-workflows")
+    assert listed.status_code == 200
+    item = listed.json()["report_workflows"][0]
+    assert item["visual_asset_count"] == 2
+    assert _contains_key(item, "content_base64") is False
+    assert _contains_key(item, "content_base64_len") is True
+    assert _contains_key(item, "has_content_base64") is True
 
 
 def test_slide_visual_asset_metadata_api_respects_final_approval_lock(tmp_path, monkeypatch):
