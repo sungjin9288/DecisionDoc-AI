@@ -6424,6 +6424,7 @@
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
       </div>
       ${renderReportWorkflowFinalApproval(item)}
+      ${renderReportWorkflowPromotion(item)}
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:1rem;align-items:start;">
         <div>${renderReportWorkflowPlanning(planning, item)}</div>
         <div>${renderReportWorkflowSlides(slides, item)}</div>
@@ -6431,6 +6432,7 @@
       ${item.learning_opt_in ? '<div style="margin-top:1rem;color:#16a34a;font-size:.78rem;font-weight:700;">학습 opt-in 활성화 · 승인/수정 artifact 저장 중</div>' : '<div style="margin-top:1rem;color:var(--muted);font-size:.78rem;">학습 opt-in 비활성화 · 원문 artifact 저장 안 함</div>'}
       ${Array.isArray(item.quality_warnings) && item.quality_warnings.length ? `<div style="margin-top:.5rem;color:#f59e0b;font-size:.78rem;">품질 경고: ${escapeHtml(item.quality_warnings.join(', '))}</div>` : ''}
     `;
+    setTimeout(() => loadReportWorkflowProjectOptions(item.project_id || ''), 0);
   }
 
   function getReportWorkflowApprovalStep(item, stage) {
@@ -6466,6 +6468,111 @@
         ${renderReportWorkflowApprovalStep(executiveStep, '대표 최종 승인')}
       </div>
     </div>`;
+  }
+
+  function renderReportWorkflowPromotion(item) {
+    const finalApproved = item?.status === 'final_approved';
+    const projectPromoted = !!item?.project_document_id;
+    const knowledgePromoted = Number(item?.knowledge_document_count || 0) > 0;
+    const learningEnabled = !!item?.learning_opt_in;
+    const disabledAttr = finalApproved ? '' : 'disabled';
+    const knowledgeDisabled = finalApproved && learningEnabled ? '' : 'disabled';
+    const projectMeta = projectPromoted
+      ? `<div style="font-size:.74rem;color:#16a34a;margin-top:.35rem;">Project 저장 완료 · document=${escapeHtml(item.project_document_id || '')}${item.project_promoted_at ? ` · ${escapeHtml(item.project_promoted_at)}` : ''}</div>`
+      : '<div style="font-size:.74rem;color:var(--muted);margin-top:.35rem;">최종 승인 후 프로젝트 문서로 저장할 수 있습니다.</div>';
+    const knowledgeMeta = knowledgePromoted
+      ? `<div style="font-size:.74rem;color:#16a34a;margin-top:.35rem;">Knowledge 저장 완료 · ${Number(item.knowledge_document_count || 0)}개 문서${item.knowledge_promoted_at ? ` · ${escapeHtml(item.knowledge_promoted_at)}` : ''}</div>`
+      : `<div style="font-size:.74rem;color:${learningEnabled ? 'var(--muted)' : '#9ca3af'};margin-top:.35rem;">${learningEnabled ? '체크하면 승인된 기획/장표/final metadata를 Knowledge 후보로 저장합니다.' : '학습 opt-in 비활성화: Knowledge 승격 불가, 프로젝트 저장만 가능'}</div>`;
+    return `<div style="border:1px solid var(--border);border-radius:14px;padding:.9rem;background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(59,130,246,.08));margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.84rem;font-weight:900;">4. 프로젝트 산출물로 저장</div>
+          <div style="font-size:.76rem;color:var(--muted);line-height:1.45;margin-top:.25rem;">최종 승인된 보고서를 Project document로 고정하고, opt-in 된 경우에만 Knowledge 학습 후보로 승격합니다.</div>
+          ${projectMeta}
+          ${knowledgeMeta}
+        </div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end;">
+          ${projectPromoted ? '<span style="font-size:.72rem;font-weight:800;color:#16a34a;background:#dcfce7;border-radius:999px;padding:.2rem .5rem;">Project 저장 완료</span>' : ''}
+          ${knowledgePromoted ? '<span style="font-size:.72rem;font-weight:800;color:#0369a1;background:#e0f2fe;border-radius:999px;padding:.2rem .5rem;">Knowledge 저장 완료</span>' : ''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,.7fr) minmax(140px,.55fr);gap:.55rem;align-items:end;margin-top:.8rem;">
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">저장할 프로젝트
+          <select id="rw-promote-project" class="gov-input" style="width:100%;margin-top:.25rem;" ${disabledAttr}>
+            <option value="">프로젝트 목록 불러오는 중...</option>
+          </select>
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">태그
+          <input id="rw-promote-tags" class="gov-input" placeholder="proposal, approved" value="${escapeHtml(reportWorkflowArray(item.tags).join(', '))}" style="width:100%;margin-top:.25rem;" ${disabledAttr}>
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;display:flex;gap:.35rem;align-items:center;padding-bottom:.5rem;">
+          <input id="rw-promote-knowledge" type="checkbox" ${knowledgeDisabled}> Knowledge 저장
+        </label>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:.7rem;">
+        <div style="font-size:.72rem;color:var(--muted);">최종 승인 상태에서만 실행됩니다. 이미 같은 프로젝트에 저장된 경우 Knowledge 저장만 추가 실행할 수 있습니다.</div>
+        <button class="action-btn" onclick="promoteReportWorkflow('${escapeHtml(item.report_workflow_id)}')" ${disabledAttr}>📁 프로젝트 산출물로 저장</button>
+      </div>
+    </div>`;
+  }
+
+  async function loadReportWorkflowProjectOptions(selectedId = '') {
+    const sel = $id('rw-promote-project');
+    if (!sel) return;
+    const previous = selectedId || sel.value || '';
+    try {
+      const res = await fetch('/projects?status=active', { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const projects = Array.isArray(data.projects) ? data.projects : (Array.isArray(data) ? data : []);
+      sel.innerHTML = '<option value="">프로젝트를 선택하세요</option>' + projects.map(project => {
+        const value = String(project.project_id || project.id || '').trim();
+        const label = `${project.name || value}${project.fiscal_year ? ` (${project.fiscal_year}년)` : ''}`;
+        return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+      }).join('');
+      if (previous && projects.some(project => String(project.project_id || project.id || '') === previous)) {
+        sel.value = previous;
+      }
+    } catch (err) {
+      sel.innerHTML = '<option value="">프로젝트 목록 로드 실패</option>';
+    }
+  }
+
+  async function promoteReportWorkflow(id) {
+    const projectId = ($id('rw-promote-project')?.value || '').trim();
+    if (!projectId) {
+      showNotification('저장할 프로젝트를 선택하세요.', 'warning');
+      return;
+    }
+    const knowledgeCheckbox = $id('rw-promote-knowledge');
+    const promoteToKnowledge = !!(knowledgeCheckbox && !knowledgeCheckbox.disabled && knowledgeCheckbox.checked);
+    const tags = ($id('rw-promote-tags')?.value || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
+    const payload = {
+      project_id: projectId,
+      username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+      promote_to_knowledge: promoteToKnowledge,
+      tags,
+      quality_tier: 'gold',
+      success_state: 'approved',
+    };
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/promote`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _reportWorkflowCurrentId = data.report_workflow_id || id;
+      renderReportWorkflowDetail(data);
+      await loadReportWorkflows();
+      showNotification(promoteToKnowledge ? '프로젝트와 Knowledge 후보로 저장했습니다.' : '프로젝트 산출물로 저장했습니다.', 'success');
+    } catch (err) {
+      showNotification('산출물 저장 실패: ' + (err.message || err), 'error');
+    }
   }
 
   function renderReportWorkflowStep(title, caption, active) {

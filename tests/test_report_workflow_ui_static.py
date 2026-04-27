@@ -21,6 +21,12 @@ def test_report_workflow_tab_and_stepper_present():
     assert "PM 승인" in html
     assert "대표 승인" in html
     assert "최종 수정 요청" in html
+    assert "4. 프로젝트 산출물로 저장" in html
+    assert "Project document" in html
+    assert "Knowledge 저장" in html
+    assert "rw-promote-project" in html
+    assert "rw-promote-knowledge" in html
+    assert "promoteReportWorkflow" in html
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html
@@ -36,4 +42,7 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html
+    assert "report-workflows/${encodeURIComponent(id)}/promote" in html
+    assert "promote_to_knowledge" in html
+    assert "loadReportWorkflowProjectOptions" in html
     assert "/export/pptx" in html
