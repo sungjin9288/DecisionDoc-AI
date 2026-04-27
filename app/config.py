@@ -72,6 +72,16 @@ def get_markitdown_max_chars() -> int:
     return _get_int("DECISIONDOC_MARKITDOWN_MAX_CHARS", 12_000)
 
 
+def get_report_workflow_visual_asset_max_base64_chars() -> int:
+    """Maximum base64 payload characters stored per report workflow visual asset."""
+    return max(0, _get_int("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_BASE64_CHARS", 2_000_000))
+
+
+def get_report_workflow_visual_asset_max_count() -> int:
+    """Maximum visual assets retained in one report workflow gallery."""
+    return max(1, _get_int("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_COUNT", 48))
+
+
 def get_auto_expand_threshold() -> int:
     """Minimum number of unmatched requests before auto bundle expansion triggers.
 

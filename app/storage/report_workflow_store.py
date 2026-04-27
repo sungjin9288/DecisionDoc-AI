@@ -14,6 +14,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config import (
+    get_report_workflow_visual_asset_max_base64_chars,
+    get_report_workflow_visual_asset_max_count,
+)
 from app.storage.base import BaseJsonStore, atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
 
@@ -402,7 +406,25 @@ class ReportWorkflowStore(BaseJsonStore):
         }
 
     @staticmethod
-    def _merge_visual_assets(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _sanitize_visual_asset(asset: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(asset)
+        raw_content = sanitized.get("content_base64")
+        if raw_content in (None, ""):
+            sanitized.pop("content_base64", None)
+            return sanitized
+        encoded = str(raw_content)
+        limit = get_report_workflow_visual_asset_max_base64_chars()
+        sanitized["content_base64_len"] = len(encoded)
+        if limit and len(encoded) > limit:
+            sanitized.pop("content_base64", None)
+            sanitized["content_base64_dropped"] = True
+            sanitized["content_base64_limit"] = limit
+            return sanitized
+        sanitized["content_base64"] = encoded
+        return sanitized
+
+    @classmethod
+    def _merge_visual_assets(cls, existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
         order: list[str] = []
         for asset in [*existing, *incoming]:
@@ -413,8 +435,9 @@ class ReportWorkflowStore(BaseJsonStore):
                 continue
             if asset_id not in merged:
                 order.append(asset_id)
-            merged[asset_id] = dict(asset)
-        return [merged[asset_id] for asset_id in order][-48:]
+            merged[asset_id] = cls._sanitize_visual_asset(asset)
+        max_count = get_report_workflow_visual_asset_max_count()
+        return [merged[asset_id] for asset_id in order][-max_count:]
 
     @staticmethod
     def _default_approval_steps() -> list[ApprovalStep]:
@@ -730,7 +753,7 @@ class ReportWorkflowStore(BaseJsonStore):
                 str(item).strip() for item in (generated_asset_ids or []) if str(item).strip()
             ][:12]
             slide.selected_asset_id = str(selected_asset_id or "").strip()[:200]
-            slide.selected_asset = dict(selected_asset or {})
+            slide.selected_asset = self._sanitize_visual_asset(dict(selected_asset or {})) if selected_asset else {}
             if slide.selected_asset:
                 rec.visual_assets = self._merge_visual_assets(rec.visual_assets, [slide.selected_asset])
             if rec.learning_opt_in:

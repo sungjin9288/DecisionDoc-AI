@@ -307,6 +307,34 @@ def test_slide_visual_asset_gallery_selection(tmp_path):
     assert selected.learning_artifacts[-1]["kind"] == "slide_visual_asset_selected"
 
 
+def test_visual_asset_gallery_applies_payload_size_and_count_limits(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_BASE64_CHARS", "8")
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_COUNT", "2")
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서")
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+
+    updated = store.add_visual_assets(
+        rec.report_workflow_id,
+        [
+            {"asset_id": "asset-a", "slide_title": "1장", "content_base64": "12345678"},
+            {"asset_id": "asset-b", "slide_title": "1장", "content_base64": "123456789"},
+            {"asset_id": "asset-c", "slide_title": "2장", "content_base64": "abc"},
+        ],
+        tenant_id="t1",
+    )
+
+    assert [asset["asset_id"] for asset in updated.visual_assets] == ["asset-b", "asset-c"]
+    oversized = updated.visual_assets[0]
+    assert "content_base64" not in oversized
+    assert oversized["content_base64_dropped"] is True
+    assert oversized["content_base64_len"] == 9
+    assert oversized["content_base64_limit"] == 8
+    assert updated.visual_assets[1]["content_base64"] == "abc"
+
+
 def test_final_approved_workflow_locks_slide_visual_asset_metadata(tmp_path):
     store = _store(tmp_path)
     rec = store.create(tenant_id="t1", title="보고서")
