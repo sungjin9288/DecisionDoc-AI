@@ -196,6 +196,9 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "knowledge-temporal-graph-workflow" in res.text
     assert "_readKnowledgeTemporalGraphInputs" in res.text
     assert "요청 필터" in res.text
+    assert "copyKnowledgeTemporalGraphJson" in res.text
+    assert "downloadKnowledgeTemporalGraphJson" in res.text
+    assert "_knowledgeTemporalGraphLastData" in res.text
     assert "Temporal Graph Summary" in res.text
     assert "Relationships" in res.text
     assert "_formatKnowledgeMatchedTerms" in res.text

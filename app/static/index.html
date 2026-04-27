@@ -5327,7 +5327,11 @@
       </div>
       <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;">
         <span id="knowledge-temporal-graph-filter-summary" style="font-size:.73rem;color:var(--muted);"></span>
-        <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeTemporalGraph({ useInputs: true })">필터 적용</button>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+          <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeTemporalGraph({ useInputs: true })">필터 적용</button>
+          <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="copyKnowledgeTemporalGraphJson()">JSON 복사</button>
+          <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="downloadKnowledgeTemporalGraphJson()">JSON 다운로드</button>
+        </div>
       </div>
       <div id="knowledge-temporal-graph-summary"
         style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;"></div>
@@ -7021,6 +7025,7 @@
 
   /* ── Knowledge Management ────────────────────────────────────── */
   let _knowledgeCurrentProject = '';
+  let _knowledgeTemporalGraphLastData = null;
 
   async function loadKnowledgeProjectSelector() {
     const sel = $id('knowledge-project-select');
@@ -7893,6 +7898,7 @@
     if (!modal || !pre) return;
     pre.textContent = '불러오는 중...';
     if (summaryEl) summaryEl.textContent = '';
+    _knowledgeTemporalGraphLastData = null;
     modal.style.display = 'flex';
     try {
       const defaults = _buildKnowledgeContextPreviewDefaults();
@@ -7916,6 +7922,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || data.message || `서버 오류 ${res.status}`);
+      _knowledgeTemporalGraphLastData = data;
       const scope = data.applied_scope || {};
       const summary = data.summary || {};
       const nodeCounts = _formatKnowledgeGraphCounts(summary.node_counts);
@@ -7961,6 +7968,45 @@
     } catch(e) {
       pre.textContent = '불러오기 실패: ' + (e.message || e);
     }
+  }
+
+  function _getKnowledgeTemporalGraphJsonText() {
+    if (!_knowledgeTemporalGraphLastData) return '';
+    return JSON.stringify(_knowledgeTemporalGraphLastData, null, 2);
+  }
+
+  function copyKnowledgeTemporalGraphJson() {
+    const text = _getKnowledgeTemporalGraphJsonText();
+    if (!text) {
+      showNotification('복사할 관계 그래프 결과가 없습니다. 먼저 그래프를 조회하세요.', 'warn');
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => showNotification('관계 그래프 JSON을 복사했습니다.', 'success'))
+        .catch(() => showNotification('클립보드 복사에 실패했습니다.', 'error'));
+      return;
+    }
+    showNotification('이 브라우저에서는 클립보드 복사를 지원하지 않습니다.', 'error');
+  }
+
+  function downloadKnowledgeTemporalGraphJson() {
+    const text = _getKnowledgeTemporalGraphJsonText();
+    if (!text) {
+      showNotification('다운로드할 관계 그래프 결과가 없습니다. 먼저 그래프를 조회하세요.', 'warn');
+      return;
+    }
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const projectId = String(_knowledgeCurrentProject || 'knowledge').replace(/[\\/:*?"<>|]+/g, '_');
+    a.href = url;
+    a.download = `${projectId}_temporal_graph.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showNotification('관계 그래프 JSON을 다운로드했습니다.', 'success');
   }
 
   async function updateKnowledgeBadge(projectId) {
@@ -23522,7 +23568,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.38</span>
+      <span id="footer-version">DecisionDoc AI v1.1.39</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
