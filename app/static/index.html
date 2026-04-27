@@ -7029,6 +7029,7 @@
                    ${(doc.tags && doc.tags.length) ? _renderKnowledgeTagBadges(doc.tags) : ''}
                  </div>`
               : ''}
+            ${_renderKnowledgeScopeLine(doc.knowledge_scope)}
             ${doc.notes ? `<div style="font-size:.76rem;color:var(--text);margin-top:.38rem;line-height:1.45;">${escapeHtml(String(doc.notes).slice(0, 180))}</div>` : ''}
           </div>
           <div style="display:flex;flex-direction:column;gap:.35rem;align-items:flex-end;">
@@ -7122,6 +7123,26 @@
       .slice(0, 4)
       .map(tag => _knowledgePill(tag, 'tag'))
       .join(' ');
+  }
+
+  function _formatKnowledgeScope(scope, options = {}) {
+    const s = (scope && typeof scope === 'object') ? scope : {};
+    const bits = [];
+    if (s.project_id) bits.push(`project ${s.project_id}`);
+    if (s.organization) bits.push(`org ${s.organization}`);
+    if (s.report_workflow_id) bits.push(`workflow ${s.report_workflow_id}`);
+    const bundles = Array.isArray(s.bundle_types) ? s.bundle_types.filter(Boolean) : [];
+    const topics = Array.isArray(s.topic_tags) ? s.topic_tags.filter(Boolean) : [];
+    const limit = Number(options.limit || 3);
+    if (bundles.length) bits.push(`bundles ${bundles.slice(0, limit).join(', ')}`);
+    if (topics.length) bits.push(`topics ${topics.slice(0, limit).join(', ')}`);
+    return bits.join(' · ');
+  }
+
+  function _renderKnowledgeScopeLine(scope) {
+    const text = _formatKnowledgeScope(scope);
+    if (!text) return '';
+    return `<div style="font-size:.74rem;color:var(--muted);margin-top:.28rem;">scope: ${escapeHtml(text)}</div>`;
   }
 
   function _formatKnowledgeScoreBreakdown(items) {
@@ -7642,6 +7663,8 @@
             if (doc.reference_year) bits.push(String(doc.reference_year));
             const lines = [bits.join(' · ')];
             if (doc.selection_reason) lines.push(`   - 선정 이유: ${doc.selection_reason}`);
+            const scope = _formatKnowledgeScope(doc.knowledge_scope);
+            if (scope) lines.push(`   - scope: ${scope}`);
             const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
             if (breakdown) lines.push(`   - 점수 구성: ${breakdown}`);
             return lines.join('\n');
@@ -9730,6 +9753,12 @@
           <div class="slide-title">${escapeHtml(doc.filename || doc.doc_id || 'reference document')}</div>
           <div class="slide-card-badges">${badges}${tags ? ` ${tags}` : ''}</div>
           ${metaBits.length ? `<div class="slide-content">${metaBits.join(' · ')}</div>` : ''}
+          ${_formatKnowledgeScope(doc.knowledge_scope) ? `
+            <div class="slide-guide-section">
+              <span class="slide-guide-label">참조 Scope</span>
+              <div class="slide-guide-text">${escapeHtml(_formatKnowledgeScope(doc.knowledge_scope))}</div>
+            </div>
+          ` : ''}
           ${doc.selection_reason ? `
             <div class="slide-guide-section">
               <span class="slide-guide-label">선정 이유</span>
@@ -23204,7 +23233,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.28</span>
+      <span id="footer-version">DecisionDoc AI v1.1.29</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
