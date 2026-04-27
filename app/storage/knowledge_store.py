@@ -69,6 +69,9 @@ _REFERENCE_SUCCESS_LABELS = {
     "approved": "승인",
     "awarded": "수주",
 }
+_ORGANIZATION_MATCH_SCORE = 80
+_REPORT_WORKFLOW_MATCH_SCORE = 110
+_REPORT_WORKFLOW_SOURCE_SCORE = 45
 
 
 def _normalize_string(value: Any) -> str:
@@ -127,6 +130,46 @@ def _tokenize_reference_text(*values: str) -> set[str]:
     return tokens
 
 
+def _matches_text_scope(value: Any, expected: str) -> bool:
+    actual = _normalize_string(value).lower()
+    needle = _normalize_string(expected).lower()
+    if not actual or not needle:
+        return False
+    return actual in needle or needle in actual
+
+
+def _matches_report_workflow_id(value: Any, report_workflow_id: str) -> bool:
+    source = _normalize_string(value)
+    workflow_id = _normalize_string(report_workflow_id)
+    if not source or not workflow_id:
+        return False
+    return (
+        source == workflow_id
+        or source.startswith(f"report_workflow:{workflow_id}:")
+        or f":{workflow_id}:" in source
+    )
+
+
+def _is_report_workflow_source(value: Any) -> bool:
+    source = _normalize_string(value).lower()
+    return source == "report_workflow"
+
+
+def _reference_recency_score(created_at: Any, *, now: float | None = None) -> int:
+    try:
+        created = float(created_at)
+    except (TypeError, ValueError):
+        return 0
+    age_days = max(0.0, ((time.time() if now is None else now) - created) / 86_400)
+    if age_days <= 30:
+        return 32
+    if age_days <= 180:
+        return 18
+    if age_days <= 365:
+        return 8
+    return 0
+
+
 def _format_reference_ranking_reason(
     *,
     bundle_type: str | None,
@@ -135,8 +178,18 @@ def _format_reference_ranking_reason(
     success_state: str,
     quality_tier: str,
     overlap: int,
+    organization_match: bool = False,
+    report_workflow_match: bool = False,
+    workflow_source: bool = False,
+    recency_score: int = 0,
 ) -> str:
     reasons: list[str] = []
+    if report_workflow_match:
+        reasons.append("동일 Report Workflow 산출물")
+    elif workflow_source:
+        reasons.append("Report Workflow 승인본 출처")
+    if organization_match:
+        reasons.append("기관/고객 scope 일치")
     if bundle_match and bundle_type:
         reasons.append(f"bundle `{bundle_type}` 일치")
     elif bundle_type and applicable_bundles:
@@ -147,6 +200,8 @@ def _format_reference_ranking_reason(
         reasons.append(f"{_QUALITY_TIER_LABELS[quality_tier]} 등급")
     if overlap > 0:
         reasons.append(f"핵심어 {overlap}개 겹침")
+    if recency_score:
+        reasons.append("최근 등록 reference")
     if not reasons:
         reasons.append("기본 참고문서 조건 충족")
     return " · ".join(reasons)
@@ -162,6 +217,10 @@ def _build_reference_score_breakdown(
     bundle_match: bool,
     applicable_bundles: list[str],
     tag_count: int,
+    organization_match: bool = False,
+    report_workflow_match: bool = False,
+    workflow_source: bool = False,
+    recency_score: int = 0,
 ) -> list[dict[str, Any]]:
     breakdown: list[dict[str, Any]] = [
         {
@@ -192,6 +251,30 @@ def _build_reference_score_breakdown(
                 "score": overlap * 28,
             }
         )
+    if report_workflow_match:
+        breakdown.append(
+            {
+                "label": "동일 workflow",
+                "detail": "Report Workflow source_request_id 일치",
+                "score": _REPORT_WORKFLOW_MATCH_SCORE,
+            }
+        )
+    elif workflow_source:
+        breakdown.append(
+            {
+                "label": "workflow 출처",
+                "detail": "Report Workflow 승인본",
+                "score": _REPORT_WORKFLOW_SOURCE_SCORE,
+            }
+        )
+    if organization_match:
+        breakdown.append(
+            {
+                "label": "기관 scope 일치",
+                "detail": "source_organization 일치",
+                "score": _ORGANIZATION_MATCH_SCORE,
+            }
+        )
     if bundle_match and bundle_type:
         breakdown.append(
             {
@@ -215,6 +298,14 @@ def _build_reference_score_breakdown(
                 "label": "태그 밀도",
                 "detail": f"{min(tag_count, 4)}개 반영",
                 "score": tag_bonus,
+            }
+        )
+    if recency_score:
+        breakdown.append(
+            {
+                "label": "최근성",
+                "detail": "최근 등록 reference",
+                "score": recency_score,
             }
         )
     return breakdown
@@ -474,8 +565,10 @@ class KnowledgeStore:
         bundle_type: str | None = None,
         title: str = "",
         goal: str = "",
+        source_organization: str = "",
+        report_workflow_id: str = "",
     ) -> list[dict[str, Any]]:
-        query_tokens = _tokenize_reference_text(title, goal, bundle_type or "")
+        query_tokens = _tokenize_reference_text(title, goal, bundle_type or "", source_organization)
         ranked: list[dict[str, Any]] = []
         for meta in self._load_index():
             tags = _normalize_list(meta.get("tags"))
@@ -492,6 +585,13 @@ class KnowledgeStore:
             success_state = _normalize_success_state(meta.get("success_state"))
             applicable_bundles = _normalize_list(meta.get("applicable_bundles"))
             bundle_match = bool(bundle_type) and bundle_type in applicable_bundles
+            organization_match = _matches_text_scope(meta.get("source_organization"), source_organization)
+            report_workflow_match = (
+                _matches_report_workflow_id(meta.get("source_request_id"), report_workflow_id)
+                or _matches_report_workflow_id(meta.get("source_bundle_id"), report_workflow_id)
+            )
+            workflow_source = _is_report_workflow_source(meta.get("source_bundle_id"))
+            recency_score = _reference_recency_score(meta.get("created_at"))
             tag_bonus = min(len(tags), 4) * 4
             score = (
                 _LEARNING_MODE_WEIGHTS[learning_mode]
@@ -499,6 +599,10 @@ class KnowledgeStore:
                 + _REFERENCE_SUCCESS_WEIGHTS[success_state]
                 + overlap * 28
                 + (140 if bundle_match else 0)
+                + (_ORGANIZATION_MATCH_SCORE if organization_match else 0)
+                + (_REPORT_WORKFLOW_MATCH_SCORE if report_workflow_match else 0)
+                + (_REPORT_WORKFLOW_SOURCE_SCORE if workflow_source and not report_workflow_match else 0)
+                + recency_score
                 + tag_bonus
             )
             if bundle_type and applicable_bundles and not bundle_match:
@@ -512,6 +616,22 @@ class KnowledgeStore:
                 bundle_match=bundle_match,
                 applicable_bundles=applicable_bundles,
                 tag_count=len(tags),
+                organization_match=organization_match,
+                report_workflow_match=report_workflow_match,
+                workflow_source=workflow_source,
+                recency_score=recency_score,
+            )
+            scope_summary = _format_reference_ranking_reason(
+                bundle_type=bundle_type,
+                bundle_match=bundle_match,
+                applicable_bundles=applicable_bundles,
+                success_state=success_state,
+                quality_tier=quality_tier,
+                overlap=overlap,
+                organization_match=organization_match,
+                report_workflow_match=report_workflow_match,
+                workflow_source=workflow_source,
+                recency_score=recency_score,
             )
             ranked.append({
                 **meta,
@@ -523,15 +643,13 @@ class KnowledgeStore:
                 "score": score,
                 "query_overlap": overlap,
                 "bundle_match": bundle_match,
+                "organization_match": organization_match,
+                "report_workflow_match": report_workflow_match,
+                "workflow_source": workflow_source,
+                "recency_score": recency_score,
+                "scope_summary": scope_summary,
                 "learning_mode_label": _LEARNING_MODE_LABELS[learning_mode],
-                "selection_reason": _format_reference_ranking_reason(
-                    bundle_type=bundle_type,
-                    bundle_match=bundle_match,
-                    applicable_bundles=applicable_bundles,
-                    success_state=success_state,
-                    quality_tier=quality_tier,
-                    overlap=overlap,
-                ),
+                "selection_reason": scope_summary,
                 "score_breakdown": score_breakdown,
             })
         ranked.sort(
@@ -547,6 +665,8 @@ class KnowledgeStore:
         bundle_type: str | None = None,
         title: str = "",
         goal: str = "",
+        source_organization: str = "",
+        report_workflow_id: str = "",
     ) -> str:
         """생성 프롬프트에 주입할 컨텍스트 문자열 반환.
 
@@ -556,6 +676,8 @@ class KnowledgeStore:
             bundle_type=bundle_type,
             title=title,
             goal=goal,
+            source_organization=source_organization,
+            report_workflow_id=report_workflow_id,
         )
         if not index:
             return ""
@@ -576,6 +698,8 @@ class KnowledgeStore:
                 header_lines.append(f"- 우선 적용 문서: {bundle_type}")
             elif meta.get("applicable_bundles"):
                 header_lines.append(f"- 적용 문서: {', '.join(meta['applicable_bundles'])}")
+            if meta.get("selection_reason"):
+                header_lines.append(f"- 선정 이유: {meta['selection_reason']}")
             if meta.get("source_organization") or meta.get("reference_year"):
                 org_bits = [meta.get("source_organization", "")]
                 if meta.get("reference_year"):

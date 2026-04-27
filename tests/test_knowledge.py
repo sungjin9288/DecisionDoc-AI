@@ -154,6 +154,8 @@ class TestKnowledgeStore:
             source_organization="파주시",
             reference_year=2025,
             success_state="approved",
+            source_bundle_id="report_workflow",
+            source_request_id="report_workflow:rw-paju-001:slides:2",
         )
 
         updated = store.update_metadata(
@@ -167,23 +169,80 @@ class TestKnowledgeStore:
             bundle_type="proposal_kr",
             title="파주시 모빌리티 제안",
             goal="승인 가능한 제안서 작성",
+            source_organization="파주시",
+            report_workflow_id="rw-paju-001",
         )
         assert ranked[0]["doc_id"] == targeted.doc_id
         assert ranked[0]["bundle_match"] is True
+        assert ranked[0]["organization_match"] is True
+        assert ranked[0]["report_workflow_match"] is True
+        assert ranked[0]["workflow_source"] is True
+        assert ranked[0]["recency_score"] > 0
         assert ranked[0]["learning_mode"] == "approved_output"
+        assert "동일 Report Workflow 산출물" in ranked[0]["selection_reason"]
+        assert "기관/고객 scope 일치" in ranked[0]["selection_reason"]
         assert "bundle `proposal_kr` 일치" in ranked[0]["selection_reason"]
         assert any(item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"])
+        assert any(item["label"] == "동일 workflow" for item in ranked[0]["score_breakdown"])
+        assert any(item["label"] == "기관 scope 일치" for item in ranked[0]["score_breakdown"])
         assert ranked[1]["doc_id"] == generic.doc_id
 
         ctx = store.build_context(
             bundle_type="proposal_kr",
             title="파주시 모빌리티 제안",
             goal="승인 가능한 제안서 작성",
+            source_organization="파주시",
+            report_workflow_id="rw-paju-001",
         )
         assert "프로젝트 지식 학습 컨텍스트" in ctx
         assert "우선 적용 문서: proposal_kr" in ctx
+        assert "선정 이유: 동일 Report Workflow 산출물" in ctx
         assert "품질 등급: gold" in ctx
         assert "출처: 파주시 / 2025" in ctx
+
+    def test_report_workflow_scope_can_prioritize_matching_approved_artifact(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore("proj-rw-scope", data_dir=str(tmp_path))
+        other_workflow = store.add_document(
+            "other-approved.md",
+            "다른 workflow 승인본",
+            learning_mode="approved_output",
+            quality_tier="gold",
+            applicable_bundles=["report_workflow", "proposal_presentation"],
+            source_organization="서울시",
+            success_state="approved",
+            source_bundle_id="report_workflow",
+            source_request_id="report_workflow:rw-other:slides:1",
+        )
+        matching_workflow = store.add_document(
+            "matching-approved.md",
+            "동일 workflow 승인본",
+            learning_mode="approved_output",
+            quality_tier="gold",
+            applicable_bundles=["report_workflow", "proposal_presentation"],
+            source_organization="서울시",
+            success_state="approved",
+            source_bundle_id="report_workflow",
+            source_request_id="report_workflow:rw-target:slides:3",
+        )
+
+        ranked = store.rank_documents_for_context(
+            bundle_type="report_workflow",
+            title="서울시 스마트 교통 보고서",
+            goal="승인된 장표 구조 재사용",
+            source_organization="서울시",
+            report_workflow_id="rw-target",
+        )
+
+        assert ranked[0]["doc_id"] == matching_workflow.doc_id
+        assert ranked[0]["report_workflow_match"] is True
+        assert ranked[0]["workflow_source"] is True
+        assert ranked[0]["organization_match"] is True
+        assert ranked[0]["scope_summary"].startswith("동일 Report Workflow 산출물")
+        assert ranked[1]["doc_id"] == other_workflow.doc_id
+        assert ranked[1]["report_workflow_match"] is False
+        assert ranked[1]["workflow_source"] is True
 
     def test_find_promoted_document_by_source_request_and_doc_type(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
@@ -365,6 +424,7 @@ class TestKnowledgeAPI:
                 "bundle_type": "proposal_kr",
                 "title": "파주시 제안",
                 "goal": "승인 가능한 제안서 작성",
+                "source_organization": "파주시",
             },
         )
         assert resp.status_code == 200
@@ -372,7 +432,9 @@ class TestKnowledgeAPI:
         assert "context" in body
         assert "Important project knowledge" in body["context"]
         assert body["bundle_type"] == "proposal_kr"
+        assert body["source_organization"] == "파주시"
         assert body["ranked_documents"][0]["bundle_match"] is True
+        assert body["ranked_documents"][0]["organization_match"] is True
         assert body["ranked_documents"][0]["quality_tier"] == "gold"
         assert "selection_reason" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
