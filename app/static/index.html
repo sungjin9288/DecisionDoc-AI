@@ -7163,6 +7163,14 @@
     return `<div style="font-size:.74rem;color:var(--muted);margin-top:.28rem;">scope: ${escapeHtml(text)}</div>`;
   }
 
+  function _formatKnowledgeMatchedTerms(doc, limit = 8) {
+    const terms = Array.isArray(doc?.matched_query_terms) ? doc.matched_query_terms.filter(Boolean) : [];
+    if (!terms.length) return '';
+    const backend = String(doc?.search_backend || '').trim();
+    const suffix = backend ? ` via ${backend}` : '';
+    return `${terms.slice(0, limit).join(', ')}${suffix}`;
+  }
+
   function _formatKnowledgeScoreBreakdown(items) {
     if (!Array.isArray(items) || !items.length) return '';
     return items
@@ -7768,6 +7776,8 @@
             if (doc.selection_reason) lines.push(`   - 선정 이유: ${doc.selection_reason}`);
             const scope = _formatKnowledgeScope(doc.knowledge_scope);
             if (scope) lines.push(`   - scope: ${scope}`);
+            const terms = _formatKnowledgeMatchedTerms(doc);
+            if (terms) lines.push(`   - matched terms: ${terms}`);
             const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
             if (breakdown) lines.push(`   - 점수 구성: ${breakdown}`);
             return lines.join('\n');
@@ -9866,6 +9876,12 @@
             <div class="slide-guide-section">
               <span class="slide-guide-label">선정 이유</span>
               <div class="slide-guide-text">${escapeHtml(doc.selection_reason)}</div>
+            </div>
+          ` : ''}
+          ${_formatKnowledgeMatchedTerms(doc) ? `
+            <div class="slide-guide-section">
+              <span class="slide-guide-label">Matched Terms</span>
+              <div class="slide-guide-text">${escapeHtml(_formatKnowledgeMatchedTerms(doc))}</div>
             </div>
           ` : ''}
           ${breakdown ? `
@@ -23336,7 +23352,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.33</span>
+      <span id="footer-version">DecisionDoc AI v1.1.34</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

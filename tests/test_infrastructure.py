@@ -188,6 +188,9 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "ranking_summary" in res.text
     assert "Ranking Summary" in res.text
     assert "서버 적용 필터" in res.text
+    assert "_formatKnowledgeMatchedTerms" in res.text
+    assert "matched terms" in res.text
+    assert "Matched Terms" in res.text
     assert "report_workflow_id" in res.text
     assert "참조 문서:" in res.text
     assert "_formatAppliedReferenceSummary" in res.text
