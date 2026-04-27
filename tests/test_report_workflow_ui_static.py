@@ -27,6 +27,10 @@ def test_report_workflow_tab_and_stepper_present():
     assert "rw-promote-project" in html
     assert "rw-promote-knowledge" in html
     assert "promoteReportWorkflow" in html
+    assert "프로젝트에서 보기" in html
+    assert "지식 관리에서 보기" in html
+    assert "openReportWorkflowProject" in html
+    assert "openReportWorkflowKnowledge" in html
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html
@@ -45,4 +49,6 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "report-workflows/${encodeURIComponent(id)}/promote" in html
     assert "promote_to_knowledge" in html
     assert "loadReportWorkflowProjectOptions" in html
+    assert "switchPage('project-page')" in html
+    assert "switchPage('knowledge-page')" in html
     assert "/export/pptx" in html
