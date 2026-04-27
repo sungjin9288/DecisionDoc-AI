@@ -34,6 +34,13 @@ def test_report_workflow_tab_and_stepper_present():
     assert "focusProjectDocument" in html
     assert "data-project-doc-id" in html
     assert "project-doc-focus" in html
+    assert "reportWorkflowNextAction" in html
+    assert "renderReportWorkflowListSignals" in html
+    assert "다음: 프로젝트 산출물 저장" in html
+    assert "완료: 승인본 저장됨" in html
+    assert "Project 저장" in html
+    assert "Knowledge 저장" in html
+    assert "학습 opt-in" in html
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html

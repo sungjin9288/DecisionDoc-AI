@@ -6314,6 +6314,41 @@
     return `<span style="display:inline-flex;align-items:center;border-radius:999px;padding:.15rem .5rem;background:${color}18;color:${color};font-size:.72rem;font-weight:800;">${escapeHtml(reportWorkflowStatusLabel(status))}</span>`;
   }
 
+  function reportWorkflowNextAction(item) {
+    const status = item?.status || '';
+    const planning = item?.planning || null;
+    const slides = Array.isArray(item?.slides) ? item.slides : [];
+    const approvedSlides = slides.filter(slide => slide.status === 'approved').length;
+    const allSlidesApproved = slides.length > 0 && approvedSlides === slides.length;
+    const pmStep = getReportWorkflowApprovalStep(item, 'pm_review');
+    const executiveStep = getReportWorkflowApprovalStep(item, 'executive_review');
+    if (['final_approved', 'delivered'].includes(status)) {
+      if (!item?.project_document_id) return '다음: 프로젝트 산출물 저장';
+      if (item?.learning_opt_in && !Number(item?.knowledge_document_count || 0)) return '다음: Knowledge 저장 선택';
+      return '완료: 승인본 저장됨';
+    }
+    if (status === 'final_review') {
+      if (pmStep?.status !== 'approved') return '다음: PM 승인';
+      if (executiveStep?.status !== 'approved') return '다음: 대표 승인';
+      return '다음: 최종 승인 확정';
+    }
+    if (status === 'final_changes_requested') return '다음: 최종 수정 반영';
+    if (allSlidesApproved) return '다음: 최종 검토 요청';
+    if (slides.length) return `다음: 장표 승인 ${approvedSlides}/${slides.length}`;
+    if (planning?.status === 'approved') return '다음: 장표 생성';
+    if (planning) return '다음: 기획 승인 또는 수정';
+    return '다음: 기획안 생성';
+  }
+
+  function renderReportWorkflowListSignals(item) {
+    const signals = [];
+    if (item?.project_document_id) signals.push(['Project 저장', '#16a34a', '#dcfce7']);
+    if (Number(item?.knowledge_document_count || 0) > 0) signals.push(['Knowledge 저장', '#0369a1', '#e0f2fe']);
+    if (item?.learning_opt_in) signals.push(['학습 opt-in', '#7c3aed', '#ede9fe']);
+    if (!signals.length) return '';
+    return `<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem;">${signals.map(([label, color, bg]) => `<span style="font-size:.68rem;font-weight:850;color:${color};background:${bg};border-radius:999px;padding:.15rem .45rem;">${escapeHtml(label)}</span>`).join('')}</div>`;
+  }
+
   async function loadReportWorkflows() {
     const list = $id('report-workflow-list');
     if (!list) return;
@@ -6334,6 +6369,8 @@
               ${reportWorkflowBadge(item.status)}
             </div>
             <div style="margin-top:.35rem;color:var(--muted);font-size:.78rem;">${escapeHtml(item.client || item.audience || '대상 미지정')} · ${Number(item.slide_count || 0)}장</div>
+            <div style="margin-top:.28rem;color:#1f2a44;font-size:.74rem;font-weight:850;">${escapeHtml(reportWorkflowNextAction(item))}</div>
+            ${renderReportWorkflowListSignals(item)}
           </button>
         `).join('');
       }
@@ -23011,7 +23048,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.18</span>
+      <span id="footer-version">DecisionDoc AI v1.1.19</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
