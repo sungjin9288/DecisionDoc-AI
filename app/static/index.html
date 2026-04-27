@@ -6466,6 +6466,7 @@
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/pm-approve')" ${(item.status !== 'final_review' || pmApproved) ? 'disabled' : ''}>✅ PM 승인</button>
         <button class="action-btn" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','final/executive-approve')" ${(item.status !== 'final_review' || !pmApproved || executiveApproved) ? 'disabled' : ''}>🏁 대표 승인</button>
         <button class="action-btn" onclick="requestReportWorkflowFinalChange('${escapeHtml(item.report_workflow_id)}')" ${(item.status !== 'final_review' || finalLocked) ? 'disabled' : ''}>↩ 최종 수정 요청</button>
+        <button class="action-btn" onclick="generateReportWorkflowVisualAssets('${escapeHtml(item.report_workflow_id)}')" ${(!slides.length || finalLocked) ? 'disabled' : ''}>🖼️ 시각자료 후보 생성</button>
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
       </div>
       ${renderReportWorkflowFinalApproval(item)}
@@ -6819,6 +6820,29 @@
       showNotification('장표 visual asset metadata를 저장했습니다.', 'success');
     } catch (err) {
       showNotification('시각자료 metadata 저장 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function generateReportWorkflowVisualAssets(id) {
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/visual-assets/generate`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          max_assets: 6,
+          select_first: true,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const item = data.report_workflow || {};
+      _reportWorkflowCurrentId = item.report_workflow_id || id;
+      renderReportWorkflowDetail(item);
+      await loadReportWorkflows();
+      showNotification(`시각자료 후보 ${Number(data.count || 0)}개를 생성하고 장표에 연결했습니다.`, 'success');
+    } catch (err) {
+      showNotification('시각자료 후보 생성 실패: ' + (err.message || err), 'error');
     }
   }
 

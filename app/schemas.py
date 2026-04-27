@@ -398,6 +398,16 @@ class UpdateReportSlideVisualAssetsRequest(BaseModel):
     selected_asset: dict[str, Any] = Field(default_factory=dict)
 
 
+class GenerateReportWorkflowVisualAssetsRequest(BaseModel):
+    """Payload for generating visual asset candidates from workflow slide drafts."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    max_assets: int = Field(default=6, ge=1, le=12)
+    select_first: bool = True
+
+
 class PromoteReportWorkflowRequest(BaseModel):
     """Payload for promoting a final-approved report workflow into project/knowledge rails."""
 

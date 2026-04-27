@@ -198,6 +198,31 @@ def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monke
     assert "선택 시각자료 ID: asset-rw-1" in first_outline["design_tip"]
 
 
+def test_report_workflow_generates_visual_assets_and_attaches_first_candidates(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+
+    generated = client.post(
+        f"/report-workflows/{workflow_id}/visual-assets/generate",
+        json={"username": "designer", "max_assets": 2, "select_first": True},
+    )
+
+    assert generated.status_code == 200
+    body = generated.json()
+    assert body["count"] == 2
+    assert len(body["assets"]) == 2
+    updated_slides = body["report_workflow"]["slides"]
+    assert updated_slides[0]["generated_asset_ids"]
+    assert updated_slides[0]["selected_asset_id"] == updated_slides[0]["generated_asset_ids"][0]
+    assert updated_slides[0]["selected_asset"]["asset_id"] == updated_slides[0]["selected_asset_id"]
+    assert updated_slides[0]["status"] == slides_payload["slides"][0]["status"]
+
+
 def test_slide_visual_asset_metadata_api_respects_final_approval_lock(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client, slide_count=2)
@@ -217,6 +242,31 @@ def test_slide_visual_asset_metadata_api_respects_final_approval_lock(tmp_path, 
     blocked = client.put(
         f"/report-workflows/{workflow_id}/slides/{slides_payload['slides'][0]['slide_id']}/visual-assets",
         json={"visual_prompt": "승인 후 변경"},
+    )
+
+    assert blocked.status_code == 400
+    assert "최종 승인된" in blocked.json()["detail"]
+
+
+def test_report_workflow_visual_asset_generation_respects_final_approval_lock(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/approve", json={"username": "ceo", "comment": ""})
+
+    blocked = client.post(
+        f"/report-workflows/{workflow_id}/visual-assets/generate",
+        json={"max_assets": 2},
     )
 
     assert blocked.status_code == 400

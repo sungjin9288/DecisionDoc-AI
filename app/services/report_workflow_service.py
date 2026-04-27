@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.services.pptx_service import build_pptx
+from app.services.visual_asset_service import generate_visual_assets_from_docs, index_visual_assets_by_slide_title
 from app.storage.approval_store import ApprovalStatus, ApprovalStore
 from app.storage.knowledge_store import KnowledgeEntry, KnowledgeStore
 from app.storage.project_store import ProjectDocument, ProjectStore
@@ -78,12 +79,14 @@ class ReportWorkflowService:
         *,
         store: ReportWorkflowStore,
         provider_factory: ProviderFactory,
+        visual_provider_factory: ProviderFactory | None = None,
         approval_store: ApprovalStore | None = None,
         project_store: ProjectStore | None = None,
         data_dir: str = "data",
     ) -> None:
         self.store = store
         self._provider_factory = provider_factory
+        self._visual_provider_factory = visual_provider_factory or provider_factory
         self._approval_store = approval_store
         self._project_store = project_store
         self._data_dir = data_dir
@@ -179,6 +182,70 @@ class ReportWorkflowService:
             include_outline_overview=True,
             visual_assets=visual_assets,
         )
+
+    def generate_visual_assets(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        request_id: str,
+        author: str = "",
+        max_assets: int = 6,
+        select_first: bool = True,
+    ) -> dict[str, Any]:
+        rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        if not rec.slides:
+            raise ValueError("시각자료를 생성할 장표가 없습니다.")
+        if rec.status in {"final_approved", "delivered"}:
+            raise ValueError("최종 승인된 보고서 워크플로우는 수정할 수 없습니다.")
+        provider = self._visual_provider_factory()
+        slide_outline = [
+            {
+                "page": slide.page,
+                "title": slide.title,
+                "key_content": slide.body,
+                "message": slide.body,
+                "visual_type": slide.visual_prompt or slide.visual_spec or "장표 시각자료",
+                "visual_brief": slide.visual_prompt or slide.visual_spec,
+                "layout_hint": slide.visual_spec,
+                "evidence": [*slide.source_refs, *slide.reference_refs],
+            }
+            for slide in sorted(rec.slides, key=lambda item: item.page)
+        ]
+        assets = generate_visual_assets_from_docs(
+            [{"doc_type": "report_workflow", "markdown": "", "slide_outline": slide_outline}],
+            title=rec.title,
+            goal=rec.goal,
+            provider=provider,
+            request_id=request_id,
+            max_assets=max(1, min(int(max_assets or 6), 12)),
+        )
+        assets_by_title = index_visual_assets_by_slide_title(assets)
+        updated = rec
+        for slide in sorted(rec.slides, key=lambda item: item.page):
+            asset = assets_by_title.get(slide.title)
+            if asset is None:
+                continue
+            existing_ids = list(slide.generated_asset_ids or [])
+            asset_id = str(asset.get("asset_id") or "").strip()
+            generated_asset_ids = [*existing_ids, asset_id] if asset_id and asset_id not in existing_ids else existing_ids
+            selected_asset_id = slide.selected_asset_id
+            selected_asset = dict(slide.selected_asset or {})
+            if select_first and asset_id:
+                selected_asset_id = asset_id
+                selected_asset = asset
+            updated = self.store.update_slide_visual_assets(
+                report_workflow_id,
+                slide.slide_id,
+                visual_prompt=slide.visual_prompt or slide.visual_spec,
+                reference_refs=slide.reference_refs,
+                generated_asset_ids=generated_asset_ids,
+                selected_asset_id=selected_asset_id,
+                selected_asset=selected_asset,
+                author=author,
+                tenant_id=tenant_id,
+            )
+        return {"report_workflow": updated, "assets": assets}
 
     def submit_final(
         self,

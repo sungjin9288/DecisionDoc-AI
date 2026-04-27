@@ -47,6 +47,8 @@ def test_report_workflow_tab_and_stepper_present():
     assert "Visual Asset Workspace" in html
     assert "asset metadata 저장" in html
     assert "editReportWorkflowSlideVisualAssets" in html
+    assert "시각자료 후보 생성" in html
+    assert "generateReportWorkflowVisualAssets" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -67,3 +69,5 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "/export/pptx" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html
+    assert "visual-assets/generate" in html
+    assert "select_first" in html

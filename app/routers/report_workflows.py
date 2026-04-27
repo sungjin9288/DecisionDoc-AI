@@ -13,6 +13,7 @@ from app.dependencies import get_tenant_id, get_username
 from app.maintenance.mode import require_not_maintenance
 from app.schemas import (
     CreateReportWorkflowRequest,
+    GenerateReportWorkflowVisualAssetsRequest,
     GenerateReportSlidesRequest,
     PromoteReportWorkflowRequest,
     ReportWorkflowActionRequest,
@@ -238,6 +239,36 @@ def update_report_slide_visual_assets(
     except (KeyError, ValueError) as exc:
         _handle_store_error(exc)
     return asdict(rec)
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/visual-assets/generate",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+)
+def generate_report_workflow_visual_assets(
+    report_workflow_id: str,
+    payload: GenerateReportWorkflowVisualAssetsRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        result = _get_service(request).generate_visual_assets(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            request_id=request.state.request_id,
+            author=_actor(request, payload.username),
+            max_assets=payload.max_assets,
+            select_first=payload.select_first,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    rec = result["report_workflow"]
+    assets = result["assets"]
+    return {
+        "report_workflow": asdict(rec),
+        "count": len(assets),
+        "assets": assets,
+    }
 
 
 @router.post(
