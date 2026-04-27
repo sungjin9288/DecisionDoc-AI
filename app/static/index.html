@@ -5249,6 +5249,12 @@
              background:var(--surface); border:1px solid var(--border); cursor:pointer; font-weight:600;">
       👁 컨텍스트 미리보기
     </button>
+    <button id="knowledge-temporal-graph-btn"
+      onclick="previewKnowledgeTemporalGraph()"
+      style="padding:.3rem .8rem; border-radius:8px; font-size:.8rem;
+             background:var(--surface); border:1px solid var(--border); cursor:pointer; font-weight:600;">
+      🕸 관계 그래프
+    </button>
   </div>
   <div id="knowledge-doc-list"
     style="display:flex; flex-direction:column; gap:.6rem; min-height:80px;">
@@ -5289,6 +5295,28 @@
         <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeContext({ useInputs: true })">필터 적용</button>
       </div>
       <pre id="knowledge-context-text"
+        style="background:#f8f8ff; border-radius:8px; padding:1rem; font-size:.78rem;
+               white-space:pre-wrap; word-break:break-word; color:var(--text); border:1px solid var(--border);">
+      </pre>
+    </div>
+  </div>
+
+  <!-- 관계 그래프 모달 -->
+  <div id="knowledge-temporal-graph-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+           z-index:9000; align-items:center; justify-content:center;">
+    <div style="background:var(--surface-solid); border-radius:var(--radius-md); padding:1.5rem;
+                max-width:720px; width:92%; max-height:80vh; overflow-y:auto; position:relative;">
+      <button onclick="$id('knowledge-temporal-graph-modal').style.display='none'"
+        style="position:absolute; top:.75rem; right:.75rem; background:none; border:none;
+               cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
+      <h3 style="margin:0 0 1rem; font-size:1rem; font-weight:800;">🕸 Knowledge 관계 그래프</h3>
+      <div style="font-size:.78rem; color:var(--muted); margin-bottom:.75rem;">
+        프로젝트 지식의 산출물, 기관, Report Workflow, bundle, topic 관계를 읽기 전용 graph로 확인합니다.
+      </div>
+      <div id="knowledge-temporal-graph-summary"
+        style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;"></div>
+      <pre id="knowledge-temporal-graph-text"
         style="background:#f8f8ff; border-radius:8px; padding:1rem; font-size:.78rem;
                white-space:pre-wrap; word-break:break-word; color:var(--text); border:1px solid var(--border);">
       </pre>
@@ -7790,6 +7818,98 @@
       pre.textContent = parts.join('\n');
     } catch(e) {
       pre.textContent = '불러오기 실패: ' + e.message;
+    }
+  }
+
+  function _formatKnowledgeGraphCounts(counts) {
+    if (!counts || typeof counts !== 'object') return '';
+    return Object.entries(counts)
+      .filter(([, value]) => Number(value || 0) > 0)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(' · ');
+  }
+
+  function _formatKnowledgeGraphNodeLabel(nodes, nodeId) {
+    const node = (Array.isArray(nodes) ? nodes : []).find(item => item?.node_id === nodeId);
+    if (!node) return nodeId || 'unknown';
+    const label = String(node.label || node.node_id || '').trim();
+    const type = String(node.node_type || '').trim();
+    return type ? `${label} (${type})` : label;
+  }
+
+  function _formatKnowledgeGraphEdge(edge, nodes) {
+    const source = _formatKnowledgeGraphNodeLabel(nodes, edge?.source_node_id);
+    const target = _formatKnowledgeGraphNodeLabel(nodes, edge?.target_node_id);
+    const relation = String(edge?.relation_type || '').trim() || 'related_to';
+    const evidence = String(edge?.evidence_doc_id || '').trim();
+    return `${source} --${relation}--> ${target}${evidence ? ` [evidence ${evidence}]` : ''}`;
+  }
+
+  async function previewKnowledgeTemporalGraph() {
+    if (!_knowledgeCurrentProject) {
+      showNotification('프로젝트를 먼저 선택해주세요.', 'error');
+      return;
+    }
+    const modal = $id('knowledge-temporal-graph-modal');
+    const pre = $id('knowledge-temporal-graph-text');
+    const summaryEl = $id('knowledge-temporal-graph-summary');
+    if (!modal || !pre) return;
+    pre.textContent = '불러오는 중...';
+    if (summaryEl) summaryEl.textContent = '';
+    modal.style.display = 'flex';
+    try {
+      const defaults = _buildKnowledgeContextPreviewDefaults();
+      const params = new URLSearchParams();
+      if (defaults.bundle_type) params.set('bundle_type', defaults.bundle_type);
+      if (defaults.source_organization) params.set('source_organization', defaults.source_organization);
+      if (defaults.report_workflow_id) params.set('report_workflow_id', defaults.report_workflow_id);
+      const query = params.toString();
+      const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/temporal-graph${query ? `?${query}` : ''}`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.message || `서버 오류 ${res.status}`);
+      const scope = data.applied_scope || {};
+      const summary = data.summary || {};
+      const nodeCounts = _formatKnowledgeGraphCounts(summary.node_counts);
+      const relationCounts = _formatKnowledgeGraphCounts(summary.relation_counts);
+      const filterBits = [
+        scope.bundle_type ? `bundle=${scope.bundle_type}` : '',
+        scope.source_organization ? `org=${scope.source_organization}` : '',
+        scope.report_workflow_id ? `workflow=${scope.report_workflow_id}` : '',
+      ].filter(Boolean);
+      if (summaryEl) {
+        summaryEl.textContent = [
+          filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음',
+          `nodes=${summary.node_count ?? 0}`,
+          `edges=${summary.edge_count ?? 0}`,
+        ].join(' | ');
+      }
+      const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+      const edges = Array.isArray(data.edges) ? data.edges : [];
+      const parts = [];
+      parts.push([
+        '=== Temporal Graph Summary ===',
+        `- graph version: ${data.graph_version || 'unknown'}`,
+        `- node count: ${summary.node_count ?? 0}`,
+        `- edge count: ${summary.edge_count ?? 0}`,
+        nodeCounts ? `- node types: ${nodeCounts}` : '',
+        relationCounts ? `- relations: ${relationCounts}` : '',
+      ].filter(Boolean).join('\n'));
+      if (nodes.length) {
+        parts.push('=== Nodes ===\n' + nodes.slice(0, 30).map(node => {
+          const type = String(node?.node_type || '').trim();
+          const label = String(node?.label || node?.node_id || '').trim();
+          return `- ${type}: ${label}`;
+        }).join('\n'));
+      }
+      if (edges.length) {
+        parts.push('=== Relationships ===\n' + edges.slice(0, 40).map(edge => `- ${_formatKnowledgeGraphEdge(edge, nodes)}`).join('\n'));
+      }
+      if (!edges.length) parts.push('(관계 그래프를 만들 지식 문서가 없습니다)');
+      pre.textContent = parts.join('\n\n');
+    } catch(e) {
+      pre.textContent = '불러오기 실패: ' + (e.message || e);
     }
   }
 
@@ -23352,7 +23472,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.36</span>
+      <span id="footer-version">DecisionDoc AI v1.1.37</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

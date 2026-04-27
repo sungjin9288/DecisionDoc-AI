@@ -188,6 +188,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "ranking_summary" in res.text
     assert "Ranking Summary" in res.text
     assert "서버 적용 필터" in res.text
+    assert "knowledge-temporal-graph-btn" in res.text
+    assert "knowledge-temporal-graph-modal" in res.text
+    assert "previewKnowledgeTemporalGraph" in res.text
+    assert "Temporal Graph Summary" in res.text
+    assert "Relationships" in res.text
     assert "_formatKnowledgeMatchedTerms" in res.text
     assert "matched terms" in res.text
     assert "Matched Terms" in res.text
