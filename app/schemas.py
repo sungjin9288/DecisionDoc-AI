@@ -408,6 +408,15 @@ class GenerateReportWorkflowVisualAssetsRequest(BaseModel):
     select_first: bool = True
 
 
+class SelectReportSlideVisualAssetRequest(BaseModel):
+    """Payload for selecting one persisted workflow visual asset for a slide."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    asset_id: str = Field(..., min_length=1, max_length=200)
+
+
 class PromoteReportWorkflowRequest(BaseModel):
     """Payload for promoting a final-approved report workflow into project/knowledge rails."""
 

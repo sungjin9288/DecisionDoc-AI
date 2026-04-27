@@ -17,6 +17,7 @@ from app.schemas import (
     GenerateReportSlidesRequest,
     PromoteReportWorkflowRequest,
     ReportWorkflowActionRequest,
+    SelectReportSlideVisualAssetRequest,
     UpdateReportSlideVisualAssetsRequest,
 )
 
@@ -233,6 +234,30 @@ def update_report_slide_visual_assets(
             generated_asset_ids=payload.generated_asset_ids,
             selected_asset_id=payload.selected_asset_id,
             selected_asset=payload.selected_asset,
+            author=_actor(request, payload.username),
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/slides/{slide_id}/visual-assets/select",
+    dependencies=[Depends(require_api_key)],
+)
+def select_report_slide_visual_asset(
+    report_workflow_id: str,
+    slide_id: str,
+    payload: SelectReportSlideVisualAssetRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_store(request).select_slide_visual_asset(
+            report_workflow_id,
+            slide_id,
+            asset_id=payload.asset_id,
             author=_actor(request, payload.username),
             tenant_id=tenant_id,
         )

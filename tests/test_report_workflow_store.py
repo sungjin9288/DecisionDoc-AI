@@ -272,7 +272,39 @@ def test_slide_visual_asset_metadata_updates_without_changing_approval_status(tm
     assert slide.generated_asset_ids == ["asset-1", "asset-2"]
     assert slide.selected_asset_id == "asset-2"
     assert slide.selected_asset["slide_title"] == "1장"
+    assert updated.visual_assets[0]["asset_id"] == "asset-2"
     assert updated.learning_artifacts[-1]["kind"] == "slide_visual_asset_updated"
+
+
+def test_slide_visual_asset_gallery_selection(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서", learning_opt_in=True)
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.add_visual_assets(
+        rec.report_workflow_id,
+        [
+            {"asset_id": "asset-a", "slide_title": "1장", "content_base64": "aaa"},
+            {"asset_id": "asset-b", "slide_title": "1장", "content_base64": "bbb"},
+        ],
+        tenant_id="t1",
+    )
+
+    selected = store.select_slide_visual_asset(
+        rec.report_workflow_id,
+        "slide-001",
+        asset_id="asset-b",
+        author="designer",
+        tenant_id="t1",
+    )
+
+    slide = selected.slides[0]
+    assert len(selected.visual_assets) == 2
+    assert slide.selected_asset_id == "asset-b"
+    assert slide.selected_asset["content_base64"] == "bbb"
+    assert "asset-b" in slide.generated_asset_ids
+    assert selected.learning_artifacts[-1]["kind"] == "slide_visual_asset_selected"
 
 
 def test_final_approved_workflow_locks_slide_visual_asset_metadata(tmp_path):

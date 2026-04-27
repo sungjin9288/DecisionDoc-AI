@@ -209,18 +209,27 @@ def test_report_workflow_generates_visual_assets_and_attaches_first_candidates(t
 
     generated = client.post(
         f"/report-workflows/{workflow_id}/visual-assets/generate",
-        json={"username": "designer", "max_assets": 2, "select_first": True},
+        json={"username": "designer", "max_assets": 2, "select_first": False},
     )
 
     assert generated.status_code == 200
     body = generated.json()
     assert body["count"] == 2
     assert len(body["assets"]) == 2
+    assert len(body["report_workflow"]["visual_assets"]) == 2
     updated_slides = body["report_workflow"]["slides"]
     assert updated_slides[0]["generated_asset_ids"]
-    assert updated_slides[0]["selected_asset_id"] == updated_slides[0]["generated_asset_ids"][0]
-    assert updated_slides[0]["selected_asset"]["asset_id"] == updated_slides[0]["selected_asset_id"]
+    assert updated_slides[0]["selected_asset_id"] == ""
     assert updated_slides[0]["status"] == slides_payload["slides"][0]["status"]
+
+    selected = client.post(
+        f"/report-workflows/{workflow_id}/slides/{updated_slides[0]['slide_id']}/visual-assets/select",
+        json={"username": "designer", "asset_id": updated_slides[0]["generated_asset_ids"][0]},
+    )
+    assert selected.status_code == 200
+    selected_slide = selected.json()["slides"][0]
+    assert selected_slide["selected_asset_id"] == updated_slides[0]["generated_asset_ids"][0]
+    assert selected_slide["selected_asset"]["asset_id"] == selected_slide["selected_asset_id"]
 
 
 def test_slide_visual_asset_metadata_api_respects_final_approval_lock(tmp_path, monkeypatch):

@@ -6756,6 +6756,17 @@
     return `${title}.${ext}`;
   }
 
+  function reportWorkflowVisualAssetsForSlide(item, slide) {
+    const assets = Array.isArray(item?.visual_assets) ? item.visual_assets : [];
+    const generatedIds = new Set(Array.isArray(slide?.generated_asset_ids) ? slide.generated_asset_ids.filter(Boolean) : []);
+    const title = String(slide?.title || '').trim();
+    return assets.filter(asset => {
+      const assetId = String(asset?.asset_id || '').trim();
+      const slideTitle = String(asset?.slide_title || '').trim();
+      return (assetId && generatedIds.has(assetId)) || (title && slideTitle === title);
+    }).slice(0, 6);
+  }
+
   function renderReportWorkflowSlideVisualWorkspace(slide, item, finalLocked) {
     const prompt = String(slide.visual_prompt || slide.visual_spec || '').trim();
     const selectedId = String(slide.selected_asset_id || (slide.selected_asset && slide.selected_asset.asset_id) || '').trim();
@@ -6765,6 +6776,7 @@
     const downloadName = reportWorkflowVisualAssetDownloadName(slide, selectedAsset);
     const generatedIds = Array.isArray(slide.generated_asset_ids) ? slide.generated_asset_ids.filter(Boolean) : [];
     const refs = Array.isArray(slide.reference_refs) ? slide.reference_refs.filter(Boolean) : [];
+    const candidateAssets = reportWorkflowVisualAssetsForSlide(item, slide);
     return `<div style="border:1px dashed rgba(99,102,241,.32);border-radius:10px;padding:.5rem;margin:.45rem 0;background:rgba(99,102,241,.045);">
       <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;">
         <strong style="font-size:.75rem;color:var(--ink);">🖼️ Visual Asset Workspace</strong>
@@ -6779,6 +6791,20 @@
         <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.7rem;color:var(--muted);">
           <span>${escapeHtml(selectedSource)} · ${escapeHtml(selectedAsset.media_type || 'media')}</span>
           <a href="${escapeHtml(selectedSrc)}" download="${escapeHtml(downloadName)}" style="color:var(--p1);font-weight:850;">선택 asset 다운로드</a>
+        </div>
+      ` : ''}
+      ${candidateAssets.length ? `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:.45rem;margin-top:.55rem;">
+          ${candidateAssets.map(asset => {
+            const src = reportWorkflowVisualAssetDataUri(asset);
+            const assetId = String(asset?.asset_id || '').trim();
+            const isSelected = selectedId && assetId === selectedId;
+            return `<div style="border:1px solid ${isSelected ? 'rgba(37,99,235,.55)' : 'rgba(99,102,241,.16)'};border-radius:10px;padding:.35rem;background:${isSelected ? 'rgba(37,99,235,.06)' : '#fff'};">
+              ${src ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(asset.slide_title || 'candidate visual asset')}" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#fff;" />` : '<div style="aspect-ratio:16/9;border-radius:8px;background:rgba(99,102,241,.08);"></div>'}
+              <div style="font-size:.66rem;color:var(--muted);margin-top:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(assetId || 'asset')}</div>
+              <button class="action-btn" style="font-size:.66rem;padding:.16rem .42rem;margin-top:.25rem;width:100%;" onclick="selectReportWorkflowSlideVisualAsset('${escapeHtml(item.report_workflow_id)}','${escapeHtml(slide.slide_id)}','${escapeHtml(assetId)}')" ${(finalLocked || !assetId || isSelected) ? 'disabled' : ''}>${isSelected ? '선택됨' : '선택'}</button>
+            </div>`;
+          }).join('')}
         </div>
       ` : ''}
       ${generatedIds.length ? `<div style="font-size:.7rem;color:var(--muted);">Generated IDs: ${escapeHtml(generatedIds.join(', '))}</div>` : ''}
@@ -6848,6 +6874,28 @@
       showNotification('장표 visual asset metadata를 저장했습니다.', 'success');
     } catch (err) {
       showNotification('시각자료 metadata 저장 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function selectReportWorkflowSlideVisualAsset(id, slideId, assetId) {
+    if (!assetId) return;
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/slides/${encodeURIComponent(slideId)}/visual-assets/select`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          asset_id: assetId,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _reportWorkflowCurrentId = data.report_workflow_id || id;
+      renderReportWorkflowDetail(data);
+      await loadReportWorkflows();
+      showNotification('선택 시각자료를 변경했습니다.', 'success');
+    } catch (err) {
+      showNotification('시각자료 선택 실패: ' + (err.message || err), 'error');
     }
   }
 

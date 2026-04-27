@@ -51,6 +51,8 @@ def test_report_workflow_tab_and_stepper_present():
     assert "generateReportWorkflowVisualAssets" in html
     assert "reportWorkflowVisualAssetDataUri" in html
     assert "선택 asset 다운로드" in html
+    assert "reportWorkflowVisualAssetsForSlide" in html
+    assert "selectReportWorkflowSlideVisualAsset" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -74,3 +76,4 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "visual-assets/generate" in html
     assert "select_first" in html
     assert "content_base64" in html
+    assert "visual-assets/select" in html

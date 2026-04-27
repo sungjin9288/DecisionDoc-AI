@@ -155,6 +155,7 @@ class ReportWorkflowRecord:
     approval_steps: list[ApprovalStep] = field(default_factory=list)
     quality_warnings: list[str] = field(default_factory=list)
     learning_artifacts: list[dict[str, Any]] = field(default_factory=list)
+    visual_assets: list[dict[str, Any]] = field(default_factory=list)
     final_submitted_at: str | None = None
     final_approved_by: str | None = None
     final_approved_at: str | None = None
@@ -327,6 +328,7 @@ class ReportWorkflowStore(BaseJsonStore):
             approval_steps=[cls._approval_step_from_dict(item) for item in data.get("approval_steps", [])],
             quality_warnings=list(data.get("quality_warnings") or []),
             learning_artifacts=list(data.get("learning_artifacts") or []),
+            visual_assets=list(data.get("visual_assets") or []),
             final_submitted_at=data.get("final_submitted_at"),
             final_approved_by=data.get("final_approved_by"),
             final_approved_at=data.get("final_approved_at"),
@@ -398,6 +400,21 @@ class ReportWorkflowStore(BaseJsonStore):
             "created_at": _now_iso(),
             "payload": payload,
         }
+
+    @staticmethod
+    def _merge_visual_assets(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for asset in [*existing, *incoming]:
+            if not isinstance(asset, dict):
+                continue
+            asset_id = str(asset.get("asset_id") or "").strip()
+            if not asset_id:
+                continue
+            if asset_id not in merged:
+                order.append(asset_id)
+            merged[asset_id] = dict(asset)
+        return [merged[asset_id] for asset_id in order][-48:]
 
     @staticmethod
     def _default_approval_steps() -> list[ApprovalStep]:
@@ -501,6 +518,7 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.knowledge_document_count = 0
             rec.knowledge_documents = []
             rec.knowledge_promoted_at = None
+            rec.visual_assets = []
             rec.approval_steps = []
             rec.status = ReportWorkflowStatus.PLANNING_DRAFT.value
             rec.quality_warnings.extend(quality_warnings or [])
@@ -607,6 +625,7 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.knowledge_document_count = 0
             rec.knowledge_documents = []
             rec.knowledge_promoted_at = None
+            rec.visual_assets = []
             rec.approval_steps = []
             rec.quality_warnings.extend(quality_warnings or [])
             return self._flush(tid, records, idx, rec)
@@ -712,6 +731,8 @@ class ReportWorkflowStore(BaseJsonStore):
             ][:12]
             slide.selected_asset_id = str(selected_asset_id or "").strip()[:200]
             slide.selected_asset = dict(selected_asset or {})
+            if slide.selected_asset:
+                rec.visual_assets = self._merge_visual_assets(rec.visual_assets, [slide.selected_asset])
             if rec.learning_opt_in:
                 rec.learning_artifacts.append(self._learning_artifact(
                     "slide_visual_asset_updated",
@@ -723,6 +744,59 @@ class ReportWorkflowStore(BaseJsonStore):
                         "selected_asset_id": slide.selected_asset_id,
                         "selected_asset": slide.selected_asset,
                     },
+                    actor=author,
+                ))
+            return self._flush(tid, records, idx, rec)
+
+    def add_visual_assets(
+        self,
+        report_workflow_id: str,
+        assets: list[dict[str, Any]],
+        *,
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            self._ensure_mutable(rec)
+            rec.visual_assets = self._merge_visual_assets(rec.visual_assets, assets)
+            return self._flush(tid, records, idx, rec)
+
+    def select_slide_visual_asset(
+        self,
+        report_workflow_id: str,
+        slide_id: str,
+        *,
+        asset_id: str,
+        author: str = "",
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            self._ensure_mutable(rec)
+            slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
+            if slide is None:
+                raise KeyError(f"장표를 찾을 수 없습니다: {slide_id}")
+            normalized_asset_id = str(asset_id or "").strip()
+            selected_asset = next(
+                (asset for asset in rec.visual_assets if str(asset.get("asset_id") or "").strip() == normalized_asset_id),
+                None,
+            )
+            if selected_asset is None:
+                raise KeyError(f"시각자료 asset을 찾을 수 없습니다: {normalized_asset_id}")
+            slide.selected_asset_id = normalized_asset_id
+            slide.selected_asset = dict(selected_asset)
+            if normalized_asset_id not in slide.generated_asset_ids:
+                slide.generated_asset_ids = [*slide.generated_asset_ids, normalized_asset_id][:12]
+            if rec.learning_opt_in:
+                rec.learning_artifacts.append(self._learning_artifact(
+                    "slide_visual_asset_selected",
+                    {"slide_id": slide_id, "asset_id": normalized_asset_id},
                     actor=author,
                 ))
             return self._flush(tid, records, idx, rec)

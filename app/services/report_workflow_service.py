@@ -220,6 +220,8 @@ class ReportWorkflowService:
             request_id=request_id,
             max_assets=max(1, min(int(max_assets or 6), 12)),
         )
+        if assets:
+            rec = self.store.add_visual_assets(report_workflow_id, assets, tenant_id=tenant_id)
         assets_by_title = index_visual_assets_by_slide_title(assets)
         updated = rec
         for slide in sorted(rec.slides, key=lambda item: item.page):
