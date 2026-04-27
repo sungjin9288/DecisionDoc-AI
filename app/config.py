@@ -57,6 +57,21 @@ def is_realtime_events_enabled() -> bool:
     return env_is_enabled("DECISIONDOC_REALTIME_EVENTS_ENABLED", default)
 
 
+def is_markitdown_enabled() -> bool:
+    """Whether uploaded documents may fall back to MarkItDown conversion."""
+    return env_is_enabled("DECISIONDOC_MARKITDOWN_ENABLED", "0")
+
+
+def is_markitdown_plugins_enabled() -> bool:
+    """Whether optional MarkItDown plugins are enabled for upload conversion."""
+    return env_is_enabled("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "0")
+
+
+def get_markitdown_max_chars() -> int:
+    """Maximum MarkItDown fallback text returned per uploaded file."""
+    return _get_int("DECISIONDOC_MARKITDOWN_MAX_CHARS", 12_000)
+
+
 def get_auto_expand_threshold() -> int:
     """Minimum number of unmatched requests before auto bundle expansion triggers.
 

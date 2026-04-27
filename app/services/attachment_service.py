@@ -117,6 +117,9 @@ def extract_text_with_ai_fallback(
     try:
         return extract_text(filename, raw)
     except AttachmentError as exc:
+        markitdown_text = _try_markitdown_fallback(filename, raw, exc)
+        if markitdown_text:
+            return markitdown_text
         if provider is None or not _should_try_provider_fallback(filename, exc):
             raise
         try:
@@ -128,6 +131,28 @@ def extract_text_with_ai_fallback(
         if not text.strip():
             raise AttachmentError(f"{filename}: OCR/비전 추출 결과가 비어 있습니다")
         return text[:MAX_CHARS_PER_FILE]
+
+
+def _try_markitdown_fallback(filename: str, raw: bytes, exc: AttachmentError) -> str | None:
+    """Best-effort MarkItDown fallback for already-uploaded file bytes."""
+    if _should_try_provider_fallback(filename, exc):
+        return None
+    try:
+        from app.services.markitdown_adapter import (
+            MarkItDownAdapterError,
+            convert_upload_to_markdown,
+            should_try_markitdown,
+        )
+    except Exception as import_exc:  # pragma: no cover - defensive import boundary
+        _log.debug("[Attachment] MarkItDown adapter unavailable: %s", import_exc)
+        return None
+    if not should_try_markitdown(filename):
+        return None
+    try:
+        return convert_upload_to_markdown(filename, raw)[:MAX_CHARS_PER_FILE]
+    except MarkItDownAdapterError as md_exc:
+        _log.info("[Attachment] MarkItDown fallback skipped for %s: %s", filename, md_exc)
+        return None
 
 
 def _should_try_provider_fallback(filename: str, exc: AttachmentError) -> bool:

@@ -88,3 +88,24 @@ python3 scripts/run_ingestion_harness.py ./samples/요구사항정의서.docx \
 3. 원문 문서를 보관해야 하면 `data/ingest/`에 원본과 변환본을 같이 저장한다.
 
 이 흐름은 문서 인제션을 “하네스” 형태로 반복 가능하게 만드는 가장 가벼운 방법이다.
+
+---
+
+## 5) 서버 업로드 fallback 모드
+
+운영 서버에서 업로드 문서의 기본 parser가 실패했을 때만 MarkItDown을 보조 변환기로
+사용할 수 있다. 기본값은 비활성화다.
+
+```bash
+DECISIONDOC_MARKITDOWN_ENABLED=1
+DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED=0
+DECISIONDOC_MARKITDOWN_MAX_CHARS=12000
+```
+
+안전 원칙:
+
+- 서버 runtime은 사용자가 업로드한 bytes만 `convert_stream()`으로 변환한다.
+- 사용자 입력 filename은 basename과 확장자 힌트로만 사용한다.
+- URL, `file://`, `data:` 같은 remote/local URI 변환 경로는 사용하지 않는다.
+- plugin은 기본 비활성화이며, 별도 검토 후에만 `DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED=1`로 켠다.
+- 기존 PDF 조달 정규화와 스캔 PDF provider OCR fallback은 유지한다.
