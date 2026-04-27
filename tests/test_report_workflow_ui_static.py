@@ -31,6 +31,9 @@ def test_report_workflow_tab_and_stepper_present():
     assert "지식 관리에서 보기" in html
     assert "openReportWorkflowProject" in html
     assert "openReportWorkflowKnowledge" in html
+    assert "focusProjectDocument" in html
+    assert "data-project-doc-id" in html
+    assert "project-doc-focus" in html
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html

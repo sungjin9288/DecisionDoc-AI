@@ -4284,6 +4284,12 @@
       background: rgba(99,102,241,.03);
       transform: translateX(2px);
     }
+    .doc-item.project-doc-focus {
+      border-left-color: #22c55e;
+      background: rgba(34,197,94,.10);
+      box-shadow: 0 0 0 3px rgba(34,197,94,.16);
+      transform: translateX(2px);
+    }
 
     /* ── Enhanced G2B result items ───────────────────────────────── */
     .g2b-result-item {
@@ -6485,7 +6491,7 @@
       : `<div style="font-size:.74rem;color:${learningEnabled ? 'var(--muted)' : '#9ca3af'};margin-top:.35rem;">${learningEnabled ? '체크하면 승인된 기획/장표/final metadata를 Knowledge 후보로 저장합니다.' : '학습 opt-in 비활성화: Knowledge 승격 불가, 프로젝트 저장만 가능'}</div>`;
     const projectId = String(item?.project_id || '').trim();
     const promotedActions = [
-      projectPromoted ? `<button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="openReportWorkflowProject('${escapeHtml(projectId)}')">📂 프로젝트에서 보기</button>` : '',
+      projectPromoted ? `<button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="openReportWorkflowProject('${escapeHtml(projectId)}','${escapeHtml(item.project_document_id || '')}')">📂 프로젝트에서 보기</button>` : '',
       knowledgePromoted ? `<button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="openReportWorkflowKnowledge('${escapeHtml(item.knowledge_project_id || projectId)}')">📚 지식 관리에서 보기</button>` : '',
     ].filter(Boolean).join('');
     return `<div style="border:1px solid var(--border);border-radius:14px;padding:.9rem;background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(59,130,246,.08));margin-bottom:1rem;">
@@ -6522,7 +6528,7 @@
     </div>`;
   }
 
-  async function openReportWorkflowProject(projectId) {
+  async function openReportWorkflowProject(projectId, docId = '') {
     const normalizedProjectId = String(projectId || '').trim();
     if (!normalizedProjectId) {
       showNotification('연결된 프로젝트가 없습니다.', 'warning');
@@ -6530,6 +6536,17 @@
     }
     switchPage('project-page');
     await loadProjectDetail(normalizedProjectId);
+    focusProjectDocument(docId);
+  }
+
+  function focusProjectDocument(docId) {
+    const normalizedDocId = String(docId || '').trim();
+    if (!normalizedDocId) return;
+    const target = document.querySelector(`[data-project-doc-id="${CSS.escape(normalizedDocId)}"]`);
+    if (!target) return;
+    document.querySelectorAll('.doc-item.project-doc-focus').forEach(el => el.classList.remove('project-doc-focus'));
+    target.classList.add('project-doc-focus');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   async function openReportWorkflowKnowledge(projectId) {
@@ -16413,7 +16430,7 @@
           const councilDocStatus = getDecisionCouncilDocumentStatusMeta(d, decisionCouncilSession);
           const councilFollowUpLabel = getProjectDocumentDecisionCouncilFollowUpLabel(councilDocStatus);
           return `
-          <div class="doc-item">
+          <div class="doc-item" data-project-doc-id="${escapeHtml(d.doc_id || '')}">
             <div class="doc-item-left">
               <span class="doc-bundle-badge">${_bundleNameMap[d.bundle_id] || d.bundle_id}</span>
               <span class="doc-title">${d.title}</span>
@@ -22994,7 +23011,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.17</span>
+      <span id="footer-version">DecisionDoc AI v1.1.18</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
