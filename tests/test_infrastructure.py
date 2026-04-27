@@ -191,6 +191,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "knowledge-temporal-graph-btn" in res.text
     assert "knowledge-temporal-graph-modal" in res.text
     assert "previewKnowledgeTemporalGraph" in res.text
+    assert "knowledge-temporal-graph-bundle" in res.text
+    assert "knowledge-temporal-graph-org" in res.text
+    assert "knowledge-temporal-graph-workflow" in res.text
+    assert "_readKnowledgeTemporalGraphInputs" in res.text
+    assert "요청 필터" in res.text
     assert "Temporal Graph Summary" in res.text
     assert "Relationships" in res.text
     assert "_formatKnowledgeMatchedTerms" in res.text

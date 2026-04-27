@@ -5314,6 +5314,21 @@
       <div style="font-size:.78rem; color:var(--muted); margin-bottom:.75rem;">
         프로젝트 지식의 산출물, 기관, Report Workflow, bundle, topic 관계를 읽기 전용 graph로 확인합니다.
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin-bottom:.75rem;">
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">Bundle
+          <input id="knowledge-temporal-graph-bundle" class="gov-input" placeholder="proposal_kr" style="width:100%;margin-top:.24rem;">
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">기관/고객
+          <input id="knowledge-temporal-graph-org" class="gov-input" placeholder="국토교통부" style="width:100%;margin-top:.24rem;">
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">Report Workflow ID
+          <input id="knowledge-temporal-graph-workflow" class="gov-input" placeholder="rw-..." style="width:100%;margin-top:.24rem;">
+        </label>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;">
+        <span id="knowledge-temporal-graph-filter-summary" style="font-size:.73rem;color:var(--muted);"></span>
+        <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeTemporalGraph({ useInputs: true })">필터 적용</button>
+      </div>
       <div id="knowledge-temporal-graph-summary"
         style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;"></div>
       <pre id="knowledge-temporal-graph-text"
@@ -7845,7 +7860,28 @@
     return `${source} --${relation}--> ${target}${evidence ? ` [evidence ${evidence}]` : ''}`;
   }
 
-  async function previewKnowledgeTemporalGraph() {
+  function _setKnowledgeTemporalGraphInputs(defaults) {
+    const fieldMap = {
+      'knowledge-temporal-graph-bundle': defaults.bundle_type || '',
+      'knowledge-temporal-graph-org': defaults.source_organization || '',
+      'knowledge-temporal-graph-workflow': defaults.report_workflow_id || '',
+    };
+    Object.entries(fieldMap).forEach(([id, value]) => {
+      const el = $id(id);
+      if (el) el.value = value;
+    });
+  }
+
+  function _readKnowledgeTemporalGraphInputs(defaults) {
+    const read = (id, fallback = '') => String($id(id)?.value || fallback || '').trim();
+    return {
+      bundle_type: read('knowledge-temporal-graph-bundle', defaults.bundle_type),
+      source_organization: read('knowledge-temporal-graph-org', defaults.source_organization),
+      report_workflow_id: read('knowledge-temporal-graph-workflow', defaults.report_workflow_id),
+    };
+  }
+
+  async function previewKnowledgeTemporalGraph(options = {}) {
     if (!_knowledgeCurrentProject) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
       return;
@@ -7853,16 +7889,27 @@
     const modal = $id('knowledge-temporal-graph-modal');
     const pre = $id('knowledge-temporal-graph-text');
     const summaryEl = $id('knowledge-temporal-graph-summary');
+    const filterSummaryEl = $id('knowledge-temporal-graph-filter-summary');
     if (!modal || !pre) return;
     pre.textContent = '불러오는 중...';
     if (summaryEl) summaryEl.textContent = '';
     modal.style.display = 'flex';
     try {
       const defaults = _buildKnowledgeContextPreviewDefaults();
+      if (!options.useInputs) _setKnowledgeTemporalGraphInputs(defaults);
+      const filter = _readKnowledgeTemporalGraphInputs(defaults);
       const params = new URLSearchParams();
-      if (defaults.bundle_type) params.set('bundle_type', defaults.bundle_type);
-      if (defaults.source_organization) params.set('source_organization', defaults.source_organization);
-      if (defaults.report_workflow_id) params.set('report_workflow_id', defaults.report_workflow_id);
+      if (filter.bundle_type) params.set('bundle_type', filter.bundle_type);
+      if (filter.source_organization) params.set('source_organization', filter.source_organization);
+      if (filter.report_workflow_id) params.set('report_workflow_id', filter.report_workflow_id);
+      if (filterSummaryEl) {
+        const filterBits = [
+          filter.bundle_type ? `bundle=${filter.bundle_type}` : '',
+          filter.source_organization ? `org=${filter.source_organization}` : '',
+          filter.report_workflow_id ? `workflow=${filter.report_workflow_id}` : '',
+        ].filter(Boolean);
+        filterSummaryEl.textContent = filterBits.length ? `요청 필터: ${filterBits.join(' · ')}` : '요청 필터 없음';
+      }
       const query = params.toString();
       const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/temporal-graph${query ? `?${query}` : ''}`, {
         headers: getAuthHeaders(),
@@ -7878,6 +7925,9 @@
         scope.source_organization ? `org=${scope.source_organization}` : '',
         scope.report_workflow_id ? `workflow=${scope.report_workflow_id}` : '',
       ].filter(Boolean);
+      if (filterSummaryEl) {
+        filterSummaryEl.textContent = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
+      }
       if (summaryEl) {
         summaryEl.textContent = [
           filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음',
@@ -23472,7 +23522,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.37</span>
+      <span id="footer-version">DecisionDoc AI v1.1.38</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
