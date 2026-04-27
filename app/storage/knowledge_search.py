@@ -30,7 +30,7 @@ def tokenize_knowledge_text(*values: Any) -> set[str]:
     for value in values:
         text = _normalize_text(value)
         if text:
-            tokens.update(re.findall(r"[0-9a-zA-Z가-힣]{2,}", text))
+            tokens.update(re.findall(r"[0-9a-zA-Z가-힣_]{2,}", text))
     return tokens
 
 
