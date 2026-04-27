@@ -358,6 +358,22 @@ def preview_knowledge_context(
         report_workflow_id=report_workflow_id,
     )
     style_context = store.build_style_context()
+    applied_scope = {
+        "scope_version": "knowledge_context_preview.v1",
+        "project_id": project_id,
+        "bundle_type": bundle_type,
+        "title": title,
+        "goal": goal,
+        "source_organization": source_organization,
+        "report_workflow_id": report_workflow_id,
+        "has_filters": any([
+            bool(bundle_type),
+            bool(title),
+            bool(goal),
+            bool(source_organization),
+            bool(report_workflow_id),
+        ]),
+    }
     return {
         "project_id": project_id,
         "bundle_type": bundle_type,
@@ -365,6 +381,7 @@ def preview_knowledge_context(
         "goal": goal,
         "source_organization": source_organization,
         "report_workflow_id": report_workflow_id,
+        "applied_scope": applied_scope,
         "context": context,
         "style_context": style_context,
         "context_len": len(context),

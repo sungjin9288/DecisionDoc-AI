@@ -432,6 +432,7 @@ class TestKnowledgeAPI:
                 "title": "파주시 제안",
                 "goal": "승인 가능한 제안서 작성",
                 "source_organization": "파주시",
+                "report_workflow_id": "rw-context-001",
             },
         )
         assert resp.status_code == 200
@@ -440,6 +441,17 @@ class TestKnowledgeAPI:
         assert "Important project knowledge" in body["context"]
         assert body["bundle_type"] == "proposal_kr"
         assert body["source_organization"] == "파주시"
+        assert body["report_workflow_id"] == "rw-context-001"
+        assert body["applied_scope"] == {
+            "scope_version": "knowledge_context_preview.v1",
+            "project_id": "proj-ctx",
+            "bundle_type": "proposal_kr",
+            "title": "파주시 제안",
+            "goal": "승인 가능한 제안서 작성",
+            "source_organization": "파주시",
+            "report_workflow_id": "rw-context-001",
+            "has_filters": True,
+        }
         assert body["ranked_documents"][0]["bundle_match"] is True
         assert body["ranked_documents"][0]["organization_match"] is True
         assert body["ranked_documents"][0]["quality_tier"] == "gold"

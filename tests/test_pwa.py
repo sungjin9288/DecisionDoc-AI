@@ -245,7 +245,7 @@ def test_sw_js_has_notificationclick_handler():
 
 def test_sw_js_uses_versioned_cache_name():
     content = open("app/static/sw.js").read()
-    assert "decisiondoc-v1.1.30" in content
+    assert "decisiondoc-v1.1.31" in content
 
 
 def test_sw_js_does_not_precache_html_shell():

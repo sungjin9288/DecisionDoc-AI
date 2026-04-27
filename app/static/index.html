@@ -7724,6 +7724,15 @@
         headers: getAuthHeaders()
       });
       const data = await res.json();
+      if (summary && data.applied_scope) {
+        const applied = data.applied_scope || {};
+        const filterBits = [
+          applied.bundle_type ? `bundle=${applied.bundle_type}` : '',
+          applied.source_organization ? `org=${applied.source_organization}` : '',
+          applied.report_workflow_id ? `workflow=${applied.report_workflow_id}` : '',
+        ].filter(Boolean);
+        summary.textContent = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
+      }
       const parts = [];
       if (Array.isArray(data.ranked_documents) && data.ranked_documents.length) {
         parts.push(
@@ -23309,7 +23318,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.30</span>
+      <span id="footer-version">DecisionDoc AI v1.1.31</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
