@@ -155,6 +155,18 @@ def _is_report_workflow_source(value: Any) -> bool:
     return source == "report_workflow"
 
 
+def _extract_report_workflow_id(*values: Any) -> str:
+    for value in values:
+        source = _normalize_string(value)
+        if not source:
+            continue
+        if source.startswith("report_workflow:"):
+            parts = source.split(":")
+            if len(parts) >= 2 and parts[1]:
+                return parts[1]
+    return ""
+
+
 def _reference_recency_score(created_at: Any, *, now: float | None = None) -> int:
     try:
         created = float(created_at)
@@ -332,6 +344,7 @@ class KnowledgeEntry:
         source_bundle_id: str = "",
         source_request_id: str = "",
         source_doc_type: str = "",
+        knowledge_scope: dict[str, Any] | None = None,
     ) -> None:
         self.doc_id = doc_id
         self.filename = filename
@@ -349,6 +362,7 @@ class KnowledgeEntry:
         self.source_bundle_id = _normalize_string(source_bundle_id)
         self.source_request_id = _normalize_string(source_request_id)
         self.source_doc_type = _normalize_string(source_doc_type)
+        self.knowledge_scope = dict(knowledge_scope or {})
 
     def to_meta(self) -> dict[str, Any]:
         """index.json에 저장할 메타데이터 (text 제외)."""
@@ -369,6 +383,7 @@ class KnowledgeEntry:
             "source_bundle_id": self.source_bundle_id,
             "source_request_id": self.source_request_id,
             "source_doc_type": self.source_doc_type,
+            "knowledge_scope": self.knowledge_scope,
         }
 
 
@@ -477,7 +492,7 @@ class KnowledgeStore:
             updated = True
             break
         if updated:
-            self._atomic_write_json(self._index_path, index)
+            self._atomic_write_json(self._index_path, [self._normalize_meta(item) for item in index])
         return updated
 
     def delete_document(self, doc_id: str) -> bool:
@@ -526,6 +541,7 @@ class KnowledgeStore:
             source_bundle_id=meta.get("source_bundle_id", ""),
             source_request_id=meta.get("source_request_id", ""),
             source_doc_type=meta.get("source_doc_type", ""),
+            knowledge_scope=meta.get("knowledge_scope", {}),
         )
 
     def find_promoted_document(
@@ -586,11 +602,14 @@ class KnowledgeStore:
             applicable_bundles = _normalize_list(meta.get("applicable_bundles"))
             bundle_match = bool(bundle_type) and bundle_type in applicable_bundles
             organization_match = _matches_text_scope(meta.get("source_organization"), source_organization)
+            knowledge_scope = meta.get("knowledge_scope") if isinstance(meta.get("knowledge_scope"), dict) else {}
+            scope_report_workflow_id = knowledge_scope.get("report_workflow_id", "")
             report_workflow_match = (
-                _matches_report_workflow_id(meta.get("source_request_id"), report_workflow_id)
+                _matches_report_workflow_id(scope_report_workflow_id, report_workflow_id)
+                or _matches_report_workflow_id(meta.get("source_request_id"), report_workflow_id)
                 or _matches_report_workflow_id(meta.get("source_bundle_id"), report_workflow_id)
             )
-            workflow_source = _is_report_workflow_source(meta.get("source_bundle_id"))
+            workflow_source = _is_report_workflow_source(meta.get("source_bundle_id")) or bool(scope_report_workflow_id)
             recency_score = _reference_recency_score(meta.get("created_at"))
             tag_bonus = min(len(tags), 4) * 4
             score = (
@@ -651,6 +670,7 @@ class KnowledgeStore:
                 "learning_mode_label": _LEARNING_MODE_LABELS[learning_mode],
                 "selection_reason": scope_summary,
                 "score_breakdown": score_breakdown,
+                "knowledge_scope": knowledge_scope,
             })
         ranked.sort(
             key=lambda item: (item.get("score", 0), item.get("created_at", 0)),
@@ -769,9 +789,12 @@ class KnowledgeStore:
         if not self._index_path.exists():
             return []
         try:
-            return json.loads(self._index_path.read_text(encoding="utf-8"))
+            data = json.loads(self._index_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return []
+        if not isinstance(data, list):
+            return []
+        return [self._normalize_meta(item) for item in data if isinstance(item, dict)]
 
     def _save_entry(self, entry: KnowledgeEntry) -> None:
         # 최대 문서 수 초과 시 가장 오래된 것 삭제
@@ -791,8 +814,37 @@ class KnowledgeStore:
             )
 
         # 인덱스 갱신
-        index.append(entry.to_meta())
+        meta = self._normalize_meta(entry.to_meta())
+        entry.knowledge_scope = dict(meta.get("knowledge_scope") or {})
+        index.append(meta)
         self._atomic_write_json(self._index_path, index)
+
+    def _normalize_meta(self, meta: dict[str, Any]) -> dict[str, Any]:
+        item = dict(meta)
+        item["tags"] = _normalize_list(item.get("tags"))
+        item["applicable_bundles"] = _normalize_list(item.get("applicable_bundles"))
+        item["source_organization"] = _normalize_string(item.get("source_organization"))
+        item["source_bundle_id"] = _normalize_string(item.get("source_bundle_id"))
+        item["source_request_id"] = _normalize_string(item.get("source_request_id"))
+        item["source_doc_type"] = _normalize_string(item.get("source_doc_type"))
+        item["knowledge_scope"] = self._build_knowledge_scope(item)
+        return item
+
+    def _build_knowledge_scope(self, meta: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "scope_version": "knowledge_scope.v1",
+            "project_id": self.project_id,
+            "organization": _normalize_string(meta.get("source_organization")),
+            "report_workflow_id": _extract_report_workflow_id(
+                meta.get("source_request_id"),
+                meta.get("source_bundle_id"),
+            ),
+            "bundle_types": _normalize_list(meta.get("applicable_bundles")),
+            "topic_tags": _normalize_list(meta.get("tags")),
+            "source_bundle_id": _normalize_string(meta.get("source_bundle_id")),
+            "source_request_id": _normalize_string(meta.get("source_request_id")),
+            "source_doc_type": _normalize_string(meta.get("source_doc_type")),
+        }
 
     def _atomic_write(self, path: Path, text: str) -> None:
         import os as _os

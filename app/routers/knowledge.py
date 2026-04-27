@@ -51,6 +51,7 @@ def _serialize_entry(entry) -> dict:
         "source_bundle_id": entry.source_bundle_id,
         "source_request_id": entry.source_request_id,
         "source_doc_type": entry.source_doc_type,
+        "knowledge_scope": entry.knowledge_scope,
     }
 
 
@@ -179,6 +180,10 @@ def get_knowledge_document(project_id: str, doc_id: str) -> dict:
         "reference_year": entry.reference_year,
         "success_state": entry.success_state,
         "notes": entry.notes,
+        "source_bundle_id": entry.source_bundle_id,
+        "source_request_id": entry.source_request_id,
+        "source_doc_type": entry.source_doc_type,
+        "knowledge_scope": entry.knowledge_scope,
     }
 
 

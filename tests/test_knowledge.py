@@ -133,6 +133,10 @@ class TestKnowledgeStore:
         assert fetched.reference_year == 2025
         assert fetched.success_state == "awarded"
         assert fetched.notes == "PPT 요약과 본문 표 구조가 우수함"
+        assert fetched.knowledge_scope["project_id"] == "proj_meta"
+        assert fetched.knowledge_scope["organization"] == "국토교통부"
+        assert fetched.knowledge_scope["bundle_types"] == ["proposal_kr", "performance_plan_kr"]
+        assert fetched.knowledge_scope["topic_tags"] == ["공공", "교통"]
 
     def test_update_metadata_and_rank_documents_for_context(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
@@ -179,6 +183,9 @@ class TestKnowledgeStore:
         assert ranked[0]["workflow_source"] is True
         assert ranked[0]["recency_score"] > 0
         assert ranked[0]["learning_mode"] == "approved_output"
+        assert ranked[0]["knowledge_scope"]["project_id"] == "proj_rank"
+        assert ranked[0]["knowledge_scope"]["report_workflow_id"] == "rw-paju-001"
+        assert ranked[0]["knowledge_scope"]["bundle_types"] == ["proposal_kr"]
         assert "동일 Report Workflow 산출물" in ranked[0]["selection_reason"]
         assert "기관/고객 scope 일치" in ranked[0]["selection_reason"]
         assert "bundle `proposal_kr` 일치" in ranked[0]["selection_reason"]
@@ -438,6 +445,8 @@ class TestKnowledgeAPI:
         assert body["ranked_documents"][0]["quality_tier"] == "gold"
         assert "selection_reason" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
+        assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
+        assert body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"
 
     def test_update_document_metadata(self, client, tmp_path):
         upload = client.post(
@@ -470,6 +479,8 @@ class TestKnowledgeAPI:
         assert body["reference_year"] == 2026
         assert body["success_state"] == "awarded"
         assert body["notes"] == "실수주 사례"
+        assert body["knowledge_scope"]["organization"] == "국토교통부"
+        assert body["knowledge_scope"]["bundle_types"] == ["proposal_kr"]
 
     def test_promote_generated_documents_to_knowledge(self, client, tmp_path):
         from app.storage.history_store import HistoryEntry, HistoryStore
@@ -517,6 +528,8 @@ class TestKnowledgeAPI:
         assert body["documents"][0]["learning_mode"] == "approved_output"
         assert body["documents"][0]["quality_tier"] == "gold"
         assert body["documents"][0]["applicable_bundles"] == ["proposal_kr"]
+        assert body["documents"][0]["knowledge_scope"]["project_id"] == "proj-promote"
+        assert body["documents"][0]["knowledge_scope"]["bundle_types"] == ["proposal_kr"]
 
         history_item = HistoryStore("system", base_dir=str(tmp_path)).get_for_user("test-user")[0]
         assert history_item["knowledge_promoted"] is True

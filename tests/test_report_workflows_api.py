@@ -410,6 +410,14 @@ def test_final_approved_workflow_promotes_to_project_and_knowledge(tmp_path, mon
 
     knowledge = client.get(f"/knowledge/{project['project_id']}/documents").json()
     assert knowledge["count"] == 2
+    assert {
+        doc["knowledge_scope"]["report_workflow_id"]
+        for doc in knowledge["documents"]
+    } == {workflow_id}
+    assert {
+        doc["knowledge_scope"]["project_id"]
+        for doc in knowledge["documents"]
+    } == {project["project_id"]}
 
     duplicate = client.post(
         f"/report-workflows/{workflow_id}/promote",
