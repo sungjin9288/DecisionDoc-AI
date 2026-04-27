@@ -9,6 +9,7 @@ Endpoints:
     PUT    /knowledge/{project_id}/documents/{id}/metadata  학습 메타 수정
     DELETE /knowledge/{project_id}/documents/{id}  문서 삭제
     GET    /knowledge/{project_id}/context         컨텍스트 미리보기
+    GET    /knowledge/{project_id}/temporal-graph  관계 그래프 조회
 """
 from __future__ import annotations
 
@@ -400,3 +401,34 @@ def preview_knowledge_context(
         "style_context_len": len(style_context),
         "ranked_documents": ranking[:5],
     }
+
+
+@router.get("/knowledge/{project_id}/temporal-graph", dependencies=[Depends(require_api_key)])
+def get_knowledge_temporal_graph(
+    project_id: str,
+    source_organization: str = Query(default=""),
+    report_workflow_id: str = Query(default=""),
+    bundle_type: str = Query(default=""),
+) -> dict:
+    """지식 메타데이터에서 프로젝트/기관/workflow/bundle 관계 그래프를 생성."""
+    from app.storage.knowledge_store import KnowledgeStore
+
+    graph = KnowledgeStore(project_id).build_temporal_graph(
+        source_organization=source_organization,
+        report_workflow_id=report_workflow_id,
+        bundle_type=bundle_type,
+    )
+    graph["project_id"] = project_id
+    graph["applied_scope"] = {
+        "scope_version": "knowledge_temporal_graph_scope.v1",
+        "project_id": project_id,
+        "source_organization": source_organization,
+        "report_workflow_id": report_workflow_id,
+        "bundle_type": bundle_type,
+        "has_filters": any([
+            bool(source_organization),
+            bool(report_workflow_id),
+            bool(bundle_type),
+        ]),
+    }
+    return graph

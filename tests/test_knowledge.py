@@ -474,6 +474,45 @@ class TestKnowledgeAPI:
         assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
         assert body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"
 
+    def test_temporal_graph_endpoint(self, client, tmp_path):
+        client.post(
+            "/knowledge/proj-graph-api/documents",
+            headers=HEADERS,
+            files={"file": ("approved.txt", b"Approved workflow artifact", "text/plain")},
+            data={
+                "tags": "교통,안전",
+                "learning_mode": "approved_output",
+                "quality_tier": "gold",
+                "applicable_bundles": "proposal_kr,report_workflow",
+                "source_organization": "국토교통부",
+                "success_state": "approved",
+            },
+        )
+        resp = client.get(
+            "/knowledge/proj-graph-api/temporal-graph",
+            headers=HEADERS,
+            params={
+                "bundle_type": "proposal_kr",
+                "source_organization": "국토교통부",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["graph_version"] == "knowledge_temporal_graph.v1"
+        assert body["project_id"] == "proj-graph-api"
+        assert body["applied_scope"] == {
+            "scope_version": "knowledge_temporal_graph_scope.v1",
+            "project_id": "proj-graph-api",
+            "source_organization": "국토교통부",
+            "report_workflow_id": "",
+            "bundle_type": "proposal_kr",
+            "has_filters": True,
+        }
+        assert body["summary"]["node_counts"]["artifact"] == 1
+        assert body["summary"]["relation_counts"]["contains_artifact"] == 1
+        assert body["summary"]["relation_counts"]["scoped_to_organization"] == 1
+        assert body["summary"]["relation_counts"]["approved_for_reuse"] == 1
+
     def test_update_document_metadata(self, client, tmp_path):
         upload = client.post(
             "/knowledge/proj-meta/documents",

@@ -30,6 +30,7 @@ from app.storage.knowledge_search import (
     KnowledgeSearchQuery,
     LocalKeywordBackend,
 )
+from app.storage.knowledge_temporal_graph import build_knowledge_temporal_graph
 
 _log = logging.getLogger("decisiondoc.knowledge")
 
@@ -680,6 +681,23 @@ class KnowledgeStore:
             reverse=True,
         )
         return ranked
+
+    def build_temporal_graph(
+        self,
+        *,
+        source_organization: str = "",
+        report_workflow_id: str = "",
+        bundle_type: str = "",
+    ) -> dict[str, Any]:
+        """Build a read-only temporal relationship graph from knowledge metadata."""
+        graph = build_knowledge_temporal_graph(
+            project_id=self.project_id,
+            documents=self._load_index(),
+            source_organization=source_organization,
+            report_workflow_id=report_workflow_id,
+            bundle_type=bundle_type,
+        )
+        return graph.to_dict()
 
     def build_context(
         self,
