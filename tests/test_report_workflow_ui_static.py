@@ -44,6 +44,9 @@ def test_report_workflow_tab_and_stepper_present():
     assert "final/pm-approve" in html
     assert "final/executive-approve" in html
     assert "final/request-changes" in html
+    assert "Visual Asset Workspace" in html
+    assert "asset metadata 저장" in html
+    assert "editReportWorkflowSlideVisualAssets" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -62,3 +65,5 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "switchPage('project-page')" in html
     assert "switchPage('knowledge-page')" in html
     assert "/export/pptx" in html
+    assert "visual-assets" in html
+    assert "method: 'PUT'" in html

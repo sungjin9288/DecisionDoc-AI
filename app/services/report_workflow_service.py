@@ -147,22 +147,38 @@ class ReportWorkflowService:
         if not rec.slides:
             raise ValueError("PPTX로 내보낼 장표가 없습니다.")
         slide_outline = []
+        visual_assets: list[dict[str, Any]] = []
         for slide in sorted(rec.slides, key=lambda item: item.page):
+            selected_asset = dict(slide.selected_asset or {})
+            selected_asset_id = slide.selected_asset_id or selected_asset.get("asset_id", "")
+            selected_asset_note = ""
+            if selected_asset_id:
+                selected_asset_note = f"선택 시각자료 ID: {selected_asset_id}"
+            if slide.visual_prompt:
+                selected_asset_note = " | ".join(bit for bit in [selected_asset_note, f"Visual prompt: {slide.visual_prompt}"] if bit)
+            design_tip = "\n".join(bit for bit in [slide.speaker_note, selected_asset_note] if bit)
             slide_outline.append({
                 "page": slide.page,
                 "title": slide.title,
                 "key_content": slide.body,
                 "message": slide.body,
-                "visual": slide.visual_spec,
+                "visual": slide.visual_prompt or slide.visual_spec,
                 "layout": slide.visual_spec,
-                "design_tip": slide.speaker_note,
-                "evidence": slide.source_refs,
+                "design_tip": design_tip,
+                "evidence": [*slide.source_refs, *slide.reference_refs],
             })
+            if selected_asset.get("content_base64") and selected_asset.get("slide_title"):
+                visual_assets.append(selected_asset)
         slide_data = {
             "presentation_goal": rec.goal,
             "slide_outline": slide_outline,
         }
-        return build_pptx(slide_data, title=rec.title, include_outline_overview=True)
+        return build_pptx(
+            slide_data,
+            title=rec.title,
+            include_outline_overview=True,
+            visual_assets=visual_assets,
+        )
 
     def submit_final(
         self,

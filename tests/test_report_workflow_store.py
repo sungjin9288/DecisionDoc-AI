@@ -243,3 +243,53 @@ def test_slide_change_request_updates_slide_status(tmp_path):
 
     assert updated.status == ReportWorkflowStatus.SLIDES_CHANGES_REQUESTED.value
     assert updated.slides[0].status == SlideStatus.CHANGES_REQUESTED.value
+
+
+def test_slide_visual_asset_metadata_updates_without_changing_approval_status(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서", learning_opt_in=True)
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-001", author="pm", tenant_id="t1")
+
+    updated = store.update_slide_visual_assets(
+        rec.report_workflow_id,
+        "slide-001",
+        visual_prompt="스마트 교차로 관제 흐름도",
+        reference_refs=["concept-board-1"],
+        generated_asset_ids=["asset-1", "asset-2"],
+        selected_asset_id="asset-2",
+        selected_asset={"asset_id": "asset-2", "slide_title": "1장"},
+        author="designer",
+        tenant_id="t1",
+    )
+
+    slide = updated.slides[0]
+    assert slide.status == SlideStatus.APPROVED.value
+    assert slide.visual_prompt == "스마트 교차로 관제 흐름도"
+    assert slide.reference_refs == ["concept-board-1"]
+    assert slide.generated_asset_ids == ["asset-1", "asset-2"]
+    assert slide.selected_asset_id == "asset-2"
+    assert slide.selected_asset["slide_title"] == "1장"
+    assert updated.learning_artifacts[-1]["kind"] == "slide_visual_asset_updated"
+
+
+def test_final_approved_workflow_locks_slide_visual_asset_metadata(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(tenant_id="t1", title="보고서")
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-001", author="pm", tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-002", author="pm", tenant_id="t1")
+    store.submit_final(rec.report_workflow_id, author="owner", tenant_id="t1")
+    store.approve_final(rec.report_workflow_id, author="ceo", tenant_id="t1")
+
+    with pytest.raises(ValueError, match="최종 승인된"):
+        store.update_slide_visual_assets(
+            rec.report_workflow_id,
+            "slide-001",
+            visual_prompt="승인 후 변경",
+            tenant_id="t1",
+        )

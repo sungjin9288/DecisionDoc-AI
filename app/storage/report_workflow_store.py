@@ -110,6 +110,11 @@ class SlideDraft:
     approved_by: str | None = None
     approved_at: str | None = None
     comments: list[WorkflowComment] = field(default_factory=list)
+    visual_prompt: str = ""
+    reference_refs: list[str] = field(default_factory=list)
+    generated_asset_ids: list[str] = field(default_factory=list)
+    selected_asset_id: str = ""
+    selected_asset: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -275,6 +280,11 @@ class ReportWorkflowStore(BaseJsonStore):
             approved_by=data.get("approved_by"),
             approved_at=data.get("approved_at"),
             comments=[cls._comment_from_dict(item) for item in data.get("comments", [])],
+            visual_prompt=data.get("visual_prompt", ""),
+            reference_refs=list(data.get("reference_refs") or []),
+            generated_asset_ids=list(data.get("generated_asset_ids") or []),
+            selected_asset_id=data.get("selected_asset_id", ""),
+            selected_asset=dict(data.get("selected_asset") or {}),
         )
 
     @staticmethod
@@ -670,6 +680,51 @@ class ReportWorkflowStore(BaseJsonStore):
                 rec.status = ReportWorkflowStatus.SLIDES_APPROVED.value
             else:
                 rec.status = ReportWorkflowStatus.SLIDES_DRAFT.value
+            return self._flush(tid, records, idx, rec)
+
+    def update_slide_visual_assets(
+        self,
+        report_workflow_id: str,
+        slide_id: str,
+        *,
+        visual_prompt: str = "",
+        reference_refs: list[str] | None = None,
+        generated_asset_ids: list[str] | None = None,
+        selected_asset_id: str = "",
+        selected_asset: dict[str, Any] | None = None,
+        author: str = "",
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            self._ensure_mutable(rec)
+            slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
+            if slide is None:
+                raise KeyError(f"장표를 찾을 수 없습니다: {slide_id}")
+
+            slide.visual_prompt = str(visual_prompt or "").strip()[:4000]
+            slide.reference_refs = [str(item).strip() for item in (reference_refs or []) if str(item).strip()][:12]
+            slide.generated_asset_ids = [
+                str(item).strip() for item in (generated_asset_ids or []) if str(item).strip()
+            ][:12]
+            slide.selected_asset_id = str(selected_asset_id or "").strip()[:200]
+            slide.selected_asset = dict(selected_asset or {})
+            if rec.learning_opt_in:
+                rec.learning_artifacts.append(self._learning_artifact(
+                    "slide_visual_asset_updated",
+                    {
+                        "slide_id": slide_id,
+                        "visual_prompt": slide.visual_prompt,
+                        "reference_refs": slide.reference_refs,
+                        "generated_asset_ids": slide.generated_asset_ids,
+                        "selected_asset_id": slide.selected_asset_id,
+                        "selected_asset": slide.selected_asset,
+                    },
+                    actor=author,
+                ))
             return self._flush(tid, records, idx, rec)
 
     def submit_final(

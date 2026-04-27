@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 
@@ -129,6 +131,96 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
     pptx = client.get(f"/report-workflows/{workflow_id}/export/pptx")
     assert pptx.status_code == 200
     assert pptx.content[:4] == _PPTX_MAGIC
+
+
+def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    slide = slides_payload["slides"][0]
+
+    selected_asset = {
+        "asset_id": "asset-rw-1",
+        "doc_type": "report_workflow",
+        "slide_title": slide["title"],
+        "visual_type": "concept diagram",
+        "visual_brief": "교통 안전 AI 관제 흐름도",
+        "layout_hint": "right visual panel",
+        "source_kind": "provider_image",
+        "source_model": "test-model",
+        "prompt": "스마트 교차로 관제 흐름도",
+        "media_type": "image/png",
+        "encoding": "base64",
+        "content_base64": "iVBORw0KGgo=",
+    }
+    updated = client.put(
+        f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/visual-assets",
+        json={
+            "username": "designer",
+            "visual_prompt": "스마트 교차로 관제 흐름도",
+            "reference_refs": ["uploaded-concept.png"],
+            "generated_asset_ids": ["asset-rw-1"],
+            "selected_asset_id": "asset-rw-1",
+            "selected_asset": selected_asset,
+        },
+    )
+
+    assert updated.status_code == 200
+    updated_slide = updated.json()["slides"][0]
+    assert updated_slide["visual_prompt"] == "스마트 교차로 관제 흐름도"
+    assert updated_slide["reference_refs"] == ["uploaded-concept.png"]
+    assert updated_slide["generated_asset_ids"] == ["asset-rw-1"]
+    assert updated_slide["selected_asset_id"] == "asset-rw-1"
+    assert updated_slide["selected_asset"]["asset_id"] == "asset-rw-1"
+    assert updated_slide["status"] == slide["status"]
+
+    captured = {}
+
+    def _fake_build_pptx(slide_data, title, *, include_outline_overview=False, visual_assets=None):
+        captured["slide_data"] = slide_data
+        captured["title"] = title
+        captured["include_outline_overview"] = include_outline_overview
+        captured["visual_assets"] = visual_assets
+        return _PPTX_MAGIC + b"fake"
+
+    with patch("app.services.report_workflow_service.build_pptx", side_effect=_fake_build_pptx):
+        pptx = client.get(f"/report-workflows/{workflow_id}/export/pptx")
+
+    assert pptx.status_code == 200
+    assert pptx.content[:4] == _PPTX_MAGIC
+    assert captured["visual_assets"][0]["asset_id"] == "asset-rw-1"
+    first_outline = captured["slide_data"]["slide_outline"][0]
+    assert first_outline["visual"] == "스마트 교차로 관제 흐름도"
+    assert "선택 시각자료 ID: asset-rw-1" in first_outline["design_tip"]
+
+
+def test_slide_visual_asset_metadata_api_respects_final_approval_lock(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2)
+    workflow_id = created["report_workflow_id"]
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+    client.post(f"/report-workflows/{workflow_id}/final/submit", json={"username": "owner", "comment": ""})
+    client.post(f"/report-workflows/{workflow_id}/final/approve", json={"username": "ceo", "comment": ""})
+
+    blocked = client.put(
+        f"/report-workflows/{workflow_id}/slides/{slides_payload['slides'][0]['slide_id']}/visual-assets",
+        json={"visual_prompt": "승인 후 변경"},
+    )
+
+    assert blocked.status_code == 400
+    assert "최종 승인된" in blocked.json()["detail"]
 
 
 def test_pm_and_executive_final_approval_chain_api(tmp_path, monkeypatch):

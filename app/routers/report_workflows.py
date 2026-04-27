@@ -16,6 +16,7 @@ from app.schemas import (
     GenerateReportSlidesRequest,
     PromoteReportWorkflowRequest,
     ReportWorkflowActionRequest,
+    UpdateReportSlideVisualAssetsRequest,
 )
 
 router = APIRouter(tags=["report-workflows"])
@@ -203,6 +204,34 @@ def approve_report_slide(
         rec = _get_store(request).approve_slide(
             report_workflow_id,
             slide_id,
+            author=_actor(request, payload.username),
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return asdict(rec)
+
+
+@router.put(
+    "/report-workflows/{report_workflow_id}/slides/{slide_id}/visual-assets",
+    dependencies=[Depends(require_api_key)],
+)
+def update_report_slide_visual_assets(
+    report_workflow_id: str,
+    slide_id: str,
+    payload: UpdateReportSlideVisualAssetsRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        rec = _get_store(request).update_slide_visual_assets(
+            report_workflow_id,
+            slide_id,
+            visual_prompt=payload.visual_prompt,
+            reference_refs=payload.reference_refs,
+            generated_asset_ids=payload.generated_asset_ids,
+            selected_asset_id=payload.selected_asset_id,
+            selected_asset=payload.selected_asset,
             author=_actor(request, payload.username),
             tenant_id=tenant_id,
         )

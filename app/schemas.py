@@ -385,6 +385,19 @@ class GenerateReportSlidesRequest(BaseModel):
     regenerate: bool = False
 
 
+class UpdateReportSlideVisualAssetsRequest(BaseModel):
+    """Payload for attaching visual asset workspace metadata to a workflow slide."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    visual_prompt: str = Field(default="", max_length=4000)
+    reference_refs: list[str] = Field(default_factory=list, max_length=12)
+    generated_asset_ids: list[str] = Field(default_factory=list, max_length=12)
+    selected_asset_id: str = Field(default="", max_length=200)
+    selected_asset: dict[str, Any] = Field(default_factory=dict)
+
+
 class PromoteReportWorkflowRequest(BaseModel):
     """Payload for promoting a final-approved report workflow into project/knowledge rails."""
 

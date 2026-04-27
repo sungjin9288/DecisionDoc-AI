@@ -6283,6 +6283,7 @@
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */
   let _reportWorkflowCurrentId = '';
+  let _reportWorkflowCurrent = null;
 
   const REPORT_WORKFLOW_STATUS_LABELS = {
     planning_required: '기획 필요',
@@ -6433,6 +6434,7 @@
   function renderReportWorkflowDetail(item) {
     const el = $id('report-workflow-detail');
     if (!el) return;
+    _reportWorkflowCurrent = item || null;
     const planning = item.planning || null;
     const slides = Array.isArray(item.slides) ? item.slides : [];
     const planningApproved = planning?.status === 'approved';
@@ -6728,12 +6730,30 @@
             ${reportWorkflowBadge(slide.status)}
           </div>
           <div style="font-size:.76rem;color:var(--muted);margin:.35rem 0;">${escapeHtml((slide.body || '').slice(0, 180))}</div>
+          ${renderReportWorkflowSlideVisualWorkspace(slide, item, finalLocked)}
           <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
             <button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="runReportWorkflowAction('${escapeHtml(item.report_workflow_id)}','slides/${escapeHtml(slide.slide_id)}/approve')" ${(slide.status === 'approved' || finalLocked) ? 'disabled' : ''}>승인</button>
             <button class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="requestReportWorkflowSlideChange('${escapeHtml(item.report_workflow_id)}','${escapeHtml(slide.slide_id)}')" ${finalLocked ? 'disabled' : ''}>수정 요청</button>
           </div>
         </div>`).join('')}
       </div>
+    </div>`;
+  }
+
+  function renderReportWorkflowSlideVisualWorkspace(slide, item, finalLocked) {
+    const prompt = String(slide.visual_prompt || slide.visual_spec || '').trim();
+    const selectedId = String(slide.selected_asset_id || (slide.selected_asset && slide.selected_asset.asset_id) || '').trim();
+    const generatedIds = Array.isArray(slide.generated_asset_ids) ? slide.generated_asset_ids.filter(Boolean) : [];
+    const refs = Array.isArray(slide.reference_refs) ? slide.reference_refs.filter(Boolean) : [];
+    return `<div style="border:1px dashed rgba(99,102,241,.32);border-radius:10px;padding:.5rem;margin:.45rem 0;background:rgba(99,102,241,.045);">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;">
+        <strong style="font-size:.75rem;color:var(--ink);">🖼️ Visual Asset Workspace</strong>
+        <button class="action-btn" style="font-size:.68rem;padding:.2rem .5rem;" onclick="editReportWorkflowSlideVisualAssets('${escapeHtml(item.report_workflow_id)}','${escapeHtml(slide.slide_id)}')" ${finalLocked ? 'disabled' : ''}>asset metadata 저장</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:.25rem;">Prompt: ${escapeHtml(prompt || '장표 visual prompt 미정')}</div>
+      <div style="font-size:.72rem;color:var(--muted);">Selected: ${escapeHtml(selectedId || '선택 asset 없음')}</div>
+      ${generatedIds.length ? `<div style="font-size:.7rem;color:var(--muted);">Generated IDs: ${escapeHtml(generatedIds.join(', '))}</div>` : ''}
+      ${refs.length ? `<div style="font-size:.7rem;color:var(--muted);">References: ${escapeHtml(refs.join(', '))}</div>` : ''}
     </div>`;
   }
 
@@ -6764,6 +6784,42 @@
       username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
       comment,
     });
+  }
+
+  async function editReportWorkflowSlideVisualAssets(id, slideId) {
+    const current = _reportWorkflowCurrent && Array.isArray(_reportWorkflowCurrent.slides)
+      ? _reportWorkflowCurrent.slides.find(s => s.slide_id === slideId)
+      : null;
+    const visualPrompt = window.prompt('장표 visual prompt를 입력하세요.', current?.visual_prompt || current?.visual_spec || '');
+    if (visualPrompt === null) return;
+    const selectedAssetId = window.prompt('선택한 asset_id를 입력하세요. 실제 이미지 payload는 후속 생성 단계에서 연결됩니다.', current?.selected_asset_id || '');
+    if (selectedAssetId === null) return;
+    const generatedIds = window.prompt('생성 asset ID 목록을 콤마로 입력하세요.', (current?.generated_asset_ids || []).join(', '));
+    if (generatedIds === null) return;
+    const referenceRefs = window.prompt('참조 이미지/자료 ID 목록을 콤마로 입력하세요.', (current?.reference_refs || []).join(', '));
+    if (referenceRefs === null) return;
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/slides/${encodeURIComponent(slideId)}/visual-assets`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          visual_prompt: visualPrompt,
+          selected_asset_id: selectedAssetId,
+          generated_asset_ids: generatedIds.split(',').map(x => x.trim()).filter(Boolean),
+          reference_refs: referenceRefs.split(',').map(x => x.trim()).filter(Boolean),
+          selected_asset: current?.selected_asset || {},
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _reportWorkflowCurrentId = data.report_workflow_id || id;
+      renderReportWorkflowDetail(data);
+      await loadReportWorkflows();
+      showNotification('장표 visual asset metadata를 저장했습니다.', 'success');
+    } catch (err) {
+      showNotification('시각자료 metadata 저장 실패: ' + (err.message || err), 'error');
+    }
   }
 
   async function requestReportWorkflowPlanningChange(id) {
@@ -23048,7 +23104,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.21</span>
+      <span id="footer-version">DecisionDoc AI v1.1.22</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
