@@ -180,6 +180,11 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "knowledge_scope" in res.text
     assert "_formatKnowledgeScope" in res.text
     assert "참조 Scope" in res.text
+    assert "knowledge-context-bundle" in res.text
+    assert "knowledge-context-org" in res.text
+    assert "knowledge-context-workflow" in res.text
+    assert "_buildKnowledgeContextPreviewDefaults" in res.text
+    assert "report_workflow_id" in res.text
     assert "참조 문서:" in res.text
     assert "_formatAppliedReferenceSummary" in res.text
     assert "openHistoryReferenceModal" in res.text

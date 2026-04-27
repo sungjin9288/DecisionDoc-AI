@@ -5268,7 +5268,25 @@
                cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
       <h3 style="margin:0 0 1rem; font-size:1rem; font-weight:800;">👁 생성 프롬프트 컨텍스트 미리보기</h3>
       <div style="font-size:.78rem; color:var(--muted); margin-bottom:.75rem;">
-        실제 문서 생성 시 AI에게 전달되는 내용입니다
+        실제 문서 생성 시 AI에게 전달되는 내용입니다. Scope 필터를 조정하면 참조 우선순위가 어떻게 바뀌는지 확인할 수 있습니다.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;margin-bottom:.75rem;">
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">Bundle
+          <input id="knowledge-context-bundle" class="gov-input" placeholder="proposal_kr" style="width:100%;margin-top:.24rem;">
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">기관/고객
+          <input id="knowledge-context-org" class="gov-input" placeholder="파주시, 국토교통부" style="width:100%;margin-top:.24rem;">
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">제목/주제
+          <input id="knowledge-context-title" class="gov-input" placeholder="보고서 제목 또는 주제" style="width:100%;margin-top:.24rem;">
+        </label>
+        <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">Report Workflow ID
+          <input id="knowledge-context-workflow" class="gov-input" placeholder="rw-..." style="width:100%;margin-top:.24rem;">
+        </label>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;">
+        <span id="knowledge-context-filter-summary" style="font-size:.73rem;color:var(--muted);"></span>
+        <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeContext({ useInputs: true })">필터 적용</button>
       </div>
       <pre id="knowledge-context-text"
         style="background:#f8f8ff; border-radius:8px; padding:1rem; font-size:.78rem;
@@ -7627,21 +7645,79 @@
     }
   }
 
-  async function previewKnowledgeContext() {
+  function _buildKnowledgeContextPreviewDefaults() {
+    const promotionProjectId = _getPromotionProjectId();
+    const workflowProjectId = String(_reportWorkflowCurrent?.knowledge_project_id || _reportWorkflowCurrent?.project_id || '').trim();
+    const workflowMatchesProject = !!(_knowledgeCurrentProject && workflowProjectId && workflowProjectId === _knowledgeCurrentProject);
+    const generationMatchesProject = !!(_knowledgeCurrentProject && promotionProjectId && promotionProjectId === _knowledgeCurrentProject);
+    const defaults = {};
+    if (generationMatchesProject) {
+      defaults.bundle_type = String(lastRequestPayload?.bundle_type || '').trim();
+      defaults.title = String(lastRequestPayload?.title || '').trim();
+      defaults.goal = String(lastRequestPayload?.goal || '').trim();
+      defaults.source_organization = String(lastRequestPayload?.source_organization || '').trim();
+    }
+    if (workflowMatchesProject) {
+      defaults.bundle_type = defaults.bundle_type || String(_reportWorkflowCurrent?.report_type || 'report_workflow').trim();
+      defaults.title = defaults.title || String(_reportWorkflowCurrent?.title || '').trim();
+      defaults.goal = defaults.goal || String(_reportWorkflowCurrent?.goal || '').trim();
+      defaults.source_organization = defaults.source_organization || String(_reportWorkflowCurrent?.client || '').trim();
+      defaults.report_workflow_id = String(_reportWorkflowCurrent?.report_workflow_id || '').trim();
+    }
+    return defaults;
+  }
+
+  function _setKnowledgeContextPreviewInputs(defaults) {
+    const fieldMap = {
+      'knowledge-context-bundle': defaults.bundle_type || '',
+      'knowledge-context-title': defaults.title || '',
+      'knowledge-context-org': defaults.source_organization || '',
+      'knowledge-context-workflow': defaults.report_workflow_id || '',
+    };
+    Object.entries(fieldMap).forEach(([id, value]) => {
+      const el = $id(id);
+      if (el) el.value = value;
+    });
+  }
+
+  function _readKnowledgeContextPreviewInputs(defaults) {
+    const read = (id, fallback = '') => String($id(id)?.value || fallback || '').trim();
+    return {
+      bundle_type: read('knowledge-context-bundle', defaults.bundle_type),
+      title: read('knowledge-context-title', defaults.title),
+      goal: defaults.goal || '',
+      source_organization: read('knowledge-context-org', defaults.source_organization),
+      report_workflow_id: read('knowledge-context-workflow', defaults.report_workflow_id),
+    };
+  }
+
+  async function previewKnowledgeContext(options = {}) {
     if (!_knowledgeCurrentProject) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
       return;
     }
     const modal = $id('knowledge-context-modal');
     const pre = $id('knowledge-context-text');
+    const summary = $id('knowledge-context-filter-summary');
     pre.textContent = '불러오는 중...';
     modal.style.display = 'flex';
     try {
+      const defaults = _buildKnowledgeContextPreviewDefaults();
+      if (!options.useInputs) _setKnowledgeContextPreviewInputs(defaults);
+      const filter = _readKnowledgeContextPreviewInputs(defaults);
       const params = new URLSearchParams();
-      if (_getPromotionProjectId() === _knowledgeCurrentProject) {
-        if (lastRequestPayload?.bundle_type) params.set('bundle_type', lastRequestPayload.bundle_type);
-        if (lastRequestPayload?.title) params.set('title', lastRequestPayload.title);
-        if (lastRequestPayload?.goal) params.set('goal', lastRequestPayload.goal);
+      if (filter.bundle_type) params.set('bundle_type', filter.bundle_type);
+      if (filter.title) params.set('title', filter.title);
+      if (filter.goal) params.set('goal', filter.goal);
+      if (filter.source_organization) params.set('source_organization', filter.source_organization);
+      if (filter.report_workflow_id) params.set('report_workflow_id', filter.report_workflow_id);
+      if (summary) {
+        const filterBits = [
+          filter.bundle_type ? `bundle=${filter.bundle_type}` : '',
+          filter.source_organization ? `org=${filter.source_organization}` : '',
+          filter.report_workflow_id ? `workflow=${filter.report_workflow_id}` : '',
+        ].filter(Boolean);
+        summary.textContent = filterBits.length ? `적용 필터: ${filterBits.join(' · ')}` : '적용 필터 없음';
       }
       const query = params.toString();
       const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/context${query ? `?${query}` : ''}`, {
@@ -23233,7 +23309,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.29</span>
+      <span id="footer-version">DecisionDoc AI v1.1.30</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
