@@ -452,6 +452,14 @@ class TestKnowledgeAPI:
             "report_workflow_id": "rw-context-001",
             "has_filters": True,
         }
+        assert body["ranking_summary"]["total_ranked_documents"] == 1
+        assert body["ranking_summary"]["returned_documents"] == 1
+        assert body["ranking_summary"]["bundle_matches"] == 1
+        assert body["ranking_summary"]["organization_matches"] == 1
+        assert body["ranking_summary"]["report_workflow_matches"] == 0
+        assert body["ranking_summary"]["top_score"] > 0
+        assert body["ranking_summary"]["top_selection_reason"]
+        assert body["ranking_summary"]["has_context"] is True
         assert body["ranked_documents"][0]["bundle_match"] is True
         assert body["ranked_documents"][0]["organization_match"] is True
         assert body["ranked_documents"][0]["quality_tier"] == "gold"

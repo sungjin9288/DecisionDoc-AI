@@ -7726,14 +7726,32 @@
       const data = await res.json();
       if (summary && data.applied_scope) {
         const applied = data.applied_scope || {};
+        const ranking = data.ranking_summary || {};
         const filterBits = [
           applied.bundle_type ? `bundle=${applied.bundle_type}` : '',
           applied.source_organization ? `org=${applied.source_organization}` : '',
           applied.report_workflow_id ? `workflow=${applied.report_workflow_id}` : '',
         ].filter(Boolean);
-        summary.textContent = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
+        const rankBits = [
+          Number.isFinite(Number(ranking.total_ranked_documents)) ? `ranked=${ranking.total_ranked_documents}` : '',
+          Number.isFinite(Number(ranking.bundle_matches)) ? `bundle match=${ranking.bundle_matches}` : '',
+          Number.isFinite(Number(ranking.organization_matches)) ? `org match=${ranking.organization_matches}` : '',
+          Number.isFinite(Number(ranking.report_workflow_matches)) ? `workflow match=${ranking.report_workflow_matches}` : '',
+        ].filter(Boolean);
+        const filterText = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
+        summary.textContent = rankBits.length ? `${filterText} | ${rankBits.join(' · ')}` : filterText;
       }
       const parts = [];
+      if (data.ranking_summary) {
+        const ranking = data.ranking_summary || {};
+        parts.push([
+          '=== Ranking Summary ===',
+          `- ranked documents: ${ranking.total_ranked_documents ?? 0}`,
+          `- returned documents: ${ranking.returned_documents ?? 0}`,
+          `- scope matches: bundle ${ranking.bundle_matches ?? 0}, org ${ranking.organization_matches ?? 0}, workflow ${ranking.report_workflow_matches ?? 0}`,
+          ranking.top_selection_reason ? `- top reason: ${ranking.top_selection_reason}` : '',
+        ].filter(Boolean).join('\n'));
+      }
       if (Array.isArray(data.ranked_documents) && data.ranked_documents.length) {
         parts.push(
           '=== 우선 참조 후보 ===\n' +
@@ -23318,7 +23336,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.31</span>
+      <span id="footer-version">DecisionDoc AI v1.1.32</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

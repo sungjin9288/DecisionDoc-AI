@@ -374,6 +374,17 @@ def preview_knowledge_context(
             bool(report_workflow_id),
         ]),
     }
+    ranking_summary = {
+        "total_ranked_documents": len(ranking),
+        "returned_documents": min(len(ranking), 5),
+        "bundle_matches": sum(1 for item in ranking if item.get("bundle_match")),
+        "organization_matches": sum(1 for item in ranking if item.get("organization_match")),
+        "report_workflow_matches": sum(1 for item in ranking if item.get("report_workflow_match")),
+        "workflow_source_matches": sum(1 for item in ranking if item.get("workflow_source")),
+        "top_score": ranking[0].get("score", 0) if ranking else 0,
+        "top_selection_reason": ranking[0].get("selection_reason", "") if ranking else "",
+        "has_context": bool(context),
+    }
     return {
         "project_id": project_id,
         "bundle_type": bundle_type,
@@ -382,6 +393,7 @@ def preview_knowledge_context(
         "source_organization": source_organization,
         "report_workflow_id": report_workflow_id,
         "applied_scope": applied_scope,
+        "ranking_summary": ranking_summary,
         "context": context,
         "style_context": style_context,
         "context_len": len(context),
