@@ -20,11 +20,16 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+from app.storage.knowledge_search import (
+    KnowledgeSearchBackend,
+    KnowledgeSearchQuery,
+    LocalKeywordBackend,
+)
 
 _log = logging.getLogger("decisiondoc.knowledge")
 
@@ -118,16 +123,6 @@ def _normalize_reference_year(value: Any) -> int | None:
     if 1900 <= parsed <= 2100:
         return parsed
     return None
-
-
-def _tokenize_reference_text(*values: str) -> set[str]:
-    tokens: set[str] = set()
-    for value in values:
-        text = _normalize_string(value).lower()
-        if not text:
-            continue
-        tokens.update(re.findall(r"[0-9a-zA-Z가-힣]{2,}", text))
-    return tokens
 
 
 def _matches_text_scope(value: Any, expected: str) -> bool:
@@ -390,8 +385,14 @@ class KnowledgeEntry:
 class KnowledgeStore:
     """프로젝트별 문서 지식을 로컬 파일로 저장/조회."""
 
-    def __init__(self, project_id: str, data_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        project_id: str,
+        data_dir: str | None = None,
+        search_backend: KnowledgeSearchBackend | None = None,
+    ) -> None:
         self.project_id = project_id
+        self._search_backend = search_backend or LocalKeywordBackend()
         base = Path(data_dir or os.getenv("DATA_DIR", "data"))
         self._dir = base / "knowledge" / project_id
         self._index_path = self._dir / "index.json"
@@ -584,18 +585,17 @@ class KnowledgeStore:
         source_organization: str = "",
         report_workflow_id: str = "",
     ) -> list[dict[str, Any]]:
-        query_tokens = _tokenize_reference_text(title, goal, bundle_type or "", source_organization)
+        query = KnowledgeSearchQuery(
+            title=title,
+            goal=goal,
+            bundle_type=bundle_type or "",
+            source_organization=source_organization,
+        )
         ranked: list[dict[str, Any]] = []
         for meta in self._load_index():
             tags = _normalize_list(meta.get("tags"))
-            doc_tokens = _tokenize_reference_text(
-                meta.get("filename", ""),
-                " ".join(tags),
-                " ".join(meta.get("applicable_bundles", []) or []),
-                meta.get("source_organization", ""),
-                meta.get("notes", ""),
-            )
-            overlap = len(query_tokens & doc_tokens)
+            search_match = self._search_backend.match(query, meta)
+            overlap = search_match.overlap
             learning_mode = _normalize_learning_mode(meta.get("learning_mode"))
             quality_tier = _normalize_quality_tier(meta.get("quality_tier"))
             success_state = _normalize_success_state(meta.get("success_state"))
@@ -661,6 +661,9 @@ class KnowledgeStore:
                 "applicable_bundles": applicable_bundles,
                 "score": score,
                 "query_overlap": overlap,
+                "query_terms": search_match.query_terms,
+                "matched_query_terms": search_match.matched_terms,
+                "search_backend": self._search_backend.name,
                 "bundle_match": bundle_match,
                 "organization_match": organization_match,
                 "report_workflow_match": report_workflow_match,

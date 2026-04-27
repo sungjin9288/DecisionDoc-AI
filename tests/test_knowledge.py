@@ -183,6 +183,10 @@ class TestKnowledgeStore:
         assert ranked[0]["workflow_source"] is True
         assert ranked[0]["recency_score"] > 0
         assert ranked[0]["learning_mode"] == "approved_output"
+        assert ranked[0]["search_backend"] == "local_keyword"
+        assert ranked[0]["query_overlap"] == len(ranked[0]["matched_query_terms"])
+        assert {"모빌리티", "제안", "파주시"}.issubset(set(ranked[0]["matched_query_terms"]))
+        assert "모빌리티" in ranked[0]["query_terms"]
         assert ranked[0]["knowledge_scope"]["project_id"] == "proj_rank"
         assert ranked[0]["knowledge_scope"]["report_workflow_id"] == "rw-paju-001"
         assert ranked[0]["knowledge_scope"]["bundle_types"] == ["proposal_kr"]
@@ -463,6 +467,8 @@ class TestKnowledgeAPI:
         assert body["ranked_documents"][0]["bundle_match"] is True
         assert body["ranked_documents"][0]["organization_match"] is True
         assert body["ranked_documents"][0]["quality_tier"] == "gold"
+        assert body["ranked_documents"][0]["search_backend"] == "local_keyword"
+        assert body["ranked_documents"][0]["matched_query_terms"]
         assert "selection_reason" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
         assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
