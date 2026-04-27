@@ -298,7 +298,10 @@ def create_app() -> FastAPI:
         index_path = static_dir / "index.html"
         if not index_path.exists():
             return {"status": "DecisionDoc AI API", "docs": "/docs"}
-        return HTMLResponse(index_path.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            index_path.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.api_route("/favicon.ico", methods=["GET", "HEAD"])
     async def serve_favicon():
@@ -331,7 +334,10 @@ def create_app() -> FastAPI:
             return _FR(
                 str(path),
                 media_type="application/javascript",
-                headers={"Service-Worker-Allowed": "/"},
+                headers={
+                    "Service-Worker-Allowed": "/",
+                    "Cache-Control": "no-cache",
+                },
             )
         raise HTTPException(404, "sw.js not found")
 

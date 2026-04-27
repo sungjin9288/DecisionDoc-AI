@@ -50,6 +50,13 @@ def test_root_returns_html(tmp_path, monkeypatch):
     assert "text/html" in res.headers.get("content-type", "")
 
 
+def test_root_disables_html_shell_cache(tmp_path, monkeypatch):
+    """GET / should not let browsers keep stale admin HTML after deploys."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.get("/")
+    assert res.headers.get("cache-control") == "no-store"
+
+
 def test_root_head_returns_html_headers(tmp_path, monkeypatch):
     """HEAD / should return 200 with HTML headers."""
     client = _make_client(tmp_path, monkeypatch)
@@ -94,6 +101,13 @@ def test_sw_js_service_worker_allowed_header(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
     res = client.get("/sw.js")
     assert res.headers.get("service-worker-allowed") == "/"
+
+
+def test_sw_js_disables_http_cache(tmp_path, monkeypatch):
+    """GET /sw.js should revalidate so new deployment workers activate quickly."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.get("/sw.js")
+    assert res.headers.get("cache-control") == "no-cache"
 
 
 def test_sw_js_javascript_content_type(tmp_path, monkeypatch):
@@ -229,6 +243,26 @@ def test_sw_js_has_notificationclick_handler():
     assert "addEventListener('notificationclick'" in content
 
 
+def test_sw_js_uses_versioned_cache_name():
+    content = open("app/static/sw.js").read()
+    assert "decisiondoc-v1.1.15" in content
+
+
+def test_sw_js_does_not_precache_html_shell():
+    content = open("app/static/sw.js").read()
+    precache_block = content.split("const PRECACHE_URLS = [", 1)[1].split("];", 1)[0]
+    assert "'/'" not in precache_block
+    assert "'/static/index.html'" not in precache_block
+    assert "HTML_SHELL_PATHS" in content
+    assert "networkFirstHtmlStrategy" in content
+
+
+def test_sw_js_supports_skip_waiting_message():
+    content = open("app/static/sw.js").read()
+    assert "addEventListener('message'" in content
+    assert "SKIP_WAITING" in content
+
+
 # ── Icon file tests ────────────────────────────────────────────────────────────
 
 
@@ -308,6 +342,13 @@ def test_index_html_has_sw_registration():
     content = open("app/static/index.html").read()
     assert "serviceWorker" in content
     assert "register('/sw.js'" in content
+
+
+def test_index_html_reloads_on_service_worker_update():
+    content = open("app/static/index.html").read()
+    assert "controllerchange" in content
+    assert "SKIP_WAITING" in content
+    assert "window.location.reload()" in content
 
 
 def test_index_html_has_install_prompt():

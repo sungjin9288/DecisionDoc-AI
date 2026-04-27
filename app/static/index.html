@@ -20817,10 +20817,28 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(reg => {
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        reg.addEventListener('updatefound', () => {
+          const nextWorker = reg.installing;
+          if (!nextWorker) return;
+          nextWorker.addEventListener('statechange', () => {
+            if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              nextWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
         // Check for updates every hour
         setInterval(() => reg.update(), 3600000);
       })
       .catch(err => console.warn('[PWA] SW registration failed:', err));
+  });
+  let _swReloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_swReloadedForUpdate) return;
+    _swReloadedForUpdate = true;
+    window.location.reload();
   });
 }
 
@@ -22946,7 +22964,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.14</span>
+      <span id="footer-version">DecisionDoc AI v1.1.15</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

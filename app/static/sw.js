@@ -1,10 +1,9 @@
-const CACHE_NAME = 'decisiondoc-v1';
+const CACHE_NAME = 'decisiondoc-v1.1.15';
 const OFFLINE_URL = '/offline.html';
+const HTML_SHELL_PATHS = new Set(['/', '/static/index.html']);
 
 // Static assets to cache on install
 const PRECACHE_URLS = [
-  '/',
-  '/static/index.html',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
@@ -42,6 +41,12 @@ self.addEventListener('activate', event => {
   );
 });
 
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Fetch strategy
 self.addEventListener('fetch', event => {
   const { request } = event;
@@ -61,20 +66,26 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // HTML shell: always prefer the network so deployments are visible after reload.
+  if (HTML_SHELL_PATHS.has(url.pathname) || request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(networkFirstHtmlStrategy(request));
+    return;
+  }
+
   // Static assets: cache-first
   if (url.pathname.startsWith('/static/')) {
     event.respondWith(cacheFirstStrategy(request));
     return;
   }
-
-  // HTML navigation: network-first with offline fallback
-  if (request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(OFFLINE_URL))
-    );
-    return;
-  }
 });
+
+async function networkFirstHtmlStrategy(request) {
+  try {
+    return await fetch(request, { cache: 'no-store' });
+  } catch {
+    return caches.match(OFFLINE_URL);
+  }
+}
 
 async function networkFirstStrategy(request) {
   try {
