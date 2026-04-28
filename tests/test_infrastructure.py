@@ -201,6 +201,12 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "copyKnowledgeTemporalGraphJson" in res.text
     assert "downloadKnowledgeTemporalGraphJson" in res.text
     assert "_knowledgeTemporalGraphLastData" in res.text
+    assert "_knowledgeTemporalGraphLastFilter" in res.text
+    assert "_buildKnowledgeTemporalGraphQuery" in res.text
+    assert "_filenameFromContentDisposition" in res.text
+    assert "/temporal-graph/export" in res.text
+    assert "Artifact 다운로드" in res.text
+    assert "관계 그래프 artifact를 다운로드했습니다." in res.text
     assert "graph 관계" in res.text
     assert "graph boost" in res.text
     assert "Temporal Graph Summary" in res.text

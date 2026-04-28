@@ -5330,7 +5330,7 @@
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
           <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="previewKnowledgeTemporalGraph({ useInputs: true })">필터 적용</button>
           <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="copyKnowledgeTemporalGraphJson()">JSON 복사</button>
-          <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="downloadKnowledgeTemporalGraphJson()">JSON 다운로드</button>
+          <button type="button" class="action-btn" style="font-size:.76rem;padding:.3rem .7rem;" onclick="downloadKnowledgeTemporalGraphJson()">Artifact 다운로드</button>
         </div>
       </div>
       <div id="knowledge-temporal-graph-summary"
@@ -7026,6 +7026,7 @@
   /* ── Knowledge Management ────────────────────────────────────── */
   let _knowledgeCurrentProject = '';
   let _knowledgeTemporalGraphLastData = null;
+  let _knowledgeTemporalGraphLastFilter = null;
 
   async function loadKnowledgeProjectSelector() {
     const sel = $id('knowledge-project-select');
@@ -7892,6 +7893,14 @@
     };
   }
 
+  function _buildKnowledgeTemporalGraphQuery(filter = {}) {
+    const params = new URLSearchParams();
+    if (filter.bundle_type) params.set('bundle_type', filter.bundle_type);
+    if (filter.source_organization) params.set('source_organization', filter.source_organization);
+    if (filter.report_workflow_id) params.set('report_workflow_id', filter.report_workflow_id);
+    return params.toString();
+  }
+
   async function previewKnowledgeTemporalGraph(options = {}) {
     if (!_knowledgeCurrentProject) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
@@ -7905,15 +7914,13 @@
     pre.textContent = '불러오는 중...';
     if (summaryEl) summaryEl.textContent = '';
     _knowledgeTemporalGraphLastData = null;
+    _knowledgeTemporalGraphLastFilter = null;
     modal.style.display = 'flex';
     try {
       const defaults = _buildKnowledgeContextPreviewDefaults();
       if (!options.useInputs) _setKnowledgeTemporalGraphInputs(defaults);
       const filter = _readKnowledgeTemporalGraphInputs(defaults);
-      const params = new URLSearchParams();
-      if (filter.bundle_type) params.set('bundle_type', filter.bundle_type);
-      if (filter.source_organization) params.set('source_organization', filter.source_organization);
-      if (filter.report_workflow_id) params.set('report_workflow_id', filter.report_workflow_id);
+      _knowledgeTemporalGraphLastFilter = filter;
       if (filterSummaryEl) {
         const filterBits = [
           filter.bundle_type ? `bundle=${filter.bundle_type}` : '',
@@ -7922,7 +7929,7 @@
         ].filter(Boolean);
         filterSummaryEl.textContent = filterBits.length ? `요청 필터: ${filterBits.join(' · ')}` : '요청 필터 없음';
       }
-      const query = params.toString();
+      const query = _buildKnowledgeTemporalGraphQuery(filter);
       const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/temporal-graph${query ? `?${query}` : ''}`, {
         headers: getAuthHeaders(),
       });
@@ -7996,23 +8003,54 @@
     showNotification('이 브라우저에서는 클립보드 복사를 지원하지 않습니다.', 'error');
   }
 
-  function downloadKnowledgeTemporalGraphJson() {
-    const text = _getKnowledgeTemporalGraphJsonText();
-    if (!text) {
-      showNotification('다운로드할 관계 그래프 결과가 없습니다. 먼저 그래프를 조회하세요.', 'warn');
+  function _filenameFromContentDisposition(contentDisposition, fallback) {
+    const raw = String(contentDisposition || '');
+    const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+      try { return decodeURIComponent(utf8Match[1].replace(/"/g, '').trim()); } catch {}
+    }
+    const asciiMatch = raw.match(/filename="?([^";]+)"?/i);
+    if (asciiMatch) return asciiMatch[1].trim();
+    return fallback;
+  }
+
+  async function downloadKnowledgeTemporalGraphJson() {
+    if (!_knowledgeCurrentProject) {
+      showNotification('프로젝트를 먼저 선택해주세요.', 'error');
       return;
     }
-    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const projectId = String(_knowledgeCurrentProject || 'knowledge').replace(/[\\/:*?"<>|]+/g, '_');
-    a.href = url;
-    a.download = `${projectId}_temporal_graph.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showNotification('관계 그래프 JSON을 다운로드했습니다.', 'success');
+    try {
+      const defaults = _buildKnowledgeContextPreviewDefaults();
+      const filter = _knowledgeTemporalGraphLastFilter || _readKnowledgeTemporalGraphInputs(defaults);
+      const query = _buildKnowledgeTemporalGraphQuery(filter);
+      const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/temporal-graph/export${query ? `?${query}` : ''}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        let message = `서버 오류 ${res.status}`;
+        try {
+          const data = await res.json();
+          message = data.detail || data.message || message;
+        } catch {}
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const fallbackProjectId = String(_knowledgeCurrentProject || 'knowledge').replace(/[\\/:*?"<>|]+/g, '_');
+      a.href = url;
+      a.download = _filenameFromContentDisposition(
+        res.headers.get('content-disposition'),
+        `decisiondoc-knowledge-graph-${fallbackProjectId}.json`
+      );
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showNotification('관계 그래프 artifact를 다운로드했습니다.', 'success');
+    } catch (e) {
+      showNotification('관계 그래프 artifact 다운로드 실패: ' + (e.message || e), 'error');
+    }
   }
 
   async function updateKnowledgeBadge(projectId) {
@@ -23574,7 +23612,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.49</span>
+      <span id="footer-version">DecisionDoc AI v1.1.50</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
