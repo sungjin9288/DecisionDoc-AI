@@ -203,6 +203,12 @@ def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monke
     assert captured["visual_assets"][0]["asset_id"] == "asset-rw-1"
     first_outline = captured["slide_data"]["slide_outline"][0]
     assert first_outline["visual"] == "스마트 교차로 관제 흐름도"
+    assert first_outline["core_message"]
+    assert first_outline["decision_question"]
+    assert first_outline["acceptance_criteria"]
+    assert first_outline["layout_hint"]
+    assert first_outline["evidence_points"]
+    assert "Editable PPTX" in first_outline["design_tip"]
     assert "선택 시각자료 ID: asset-rw-1" in first_outline["design_tip"]
 
 

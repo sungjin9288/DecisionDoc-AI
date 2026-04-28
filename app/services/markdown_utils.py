@@ -163,13 +163,21 @@ def _outline_list(value: Any) -> list[str]:
 
 
 def slide_outline_message(slide: dict[str, Any]) -> str:
-    return _outline_text(slide.get("core_message") or slide.get("key_content"))
+    return _outline_text(slide.get("core_message") or slide.get("message") or slide.get("key_message") or slide.get("key_content"))
 
 
 def slide_outline_evidence(slide: dict[str, Any]) -> list[str]:
-    explicit = _outline_list(slide.get("evidence_points"))
+    explicit: list[str] = []
+    for key in ("evidence_points", "required_evidence", "source_refs", "reference_refs"):
+        explicit.extend(_outline_list(slide.get(key)))
     if explicit:
-        return explicit[:3]
+        deduped: list[str] = []
+        for item in explicit:
+            if item not in deduped:
+                deduped.append(item)
+            if len(deduped) >= 4:
+                break
+        return deduped
 
     raw = _outline_text(slide.get("key_content"))
     if not raw:
@@ -192,7 +200,7 @@ def slide_outline_evidence(slide: dict[str, Any]) -> list[str]:
 
 def slide_outline_visual(slide: dict[str, Any]) -> str:
     visual_type = _outline_text(slide.get("visual_type"))
-    visual_brief = _outline_text(slide.get("visual_brief"))
+    visual_brief = _outline_text(slide.get("visual_brief") or slide.get("visual") or slide.get("visual_spec"))
     if visual_type and visual_brief:
         return f"{visual_type} — {visual_brief}"
     if visual_brief:
@@ -226,7 +234,7 @@ def slide_outline_visual(slide: dict[str, Any]) -> str:
 
 
 def slide_outline_layout(slide: dict[str, Any]) -> str:
-    return _outline_text(slide.get("layout_hint") or slide.get("design_tip"))
+    return _outline_text(slide.get("layout_hint") or slide.get("layout") or slide.get("design_tip"))
 
 
 def build_slide_outline_table(slides: list[dict[str, Any]]) -> str:

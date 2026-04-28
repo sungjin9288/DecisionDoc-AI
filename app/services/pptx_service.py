@@ -428,6 +428,10 @@ def _visual_kind(item: dict[str, Any]) -> str:
         return "governance"
     if any(keyword in visual for keyword in ["프로세스", "흐름도", "절차", "플로우"]):
         return "flow"
+    if any(keyword in visual for keyword in ["매트릭스", "matrix", "평가표", "우선순위"]) or "matrix" in lowered:
+        return "matrix"
+    if any(keyword in visual for keyword in ["KPI", "지표", "성과", "metric", "scorecard"]) or "kpi" in lowered:
+        return "kpi"
     if any(keyword in visual for keyword in ["비교", "카드", "차트", "지표", "목표", "매트릭스"]) or "card" in lowered:
         return "cards"
     return "placeholder"
@@ -565,6 +569,106 @@ def _render_visual_cards(
             title_color=_COLOR_TEXT_DARK,
             body_color=_COLOR_TEXT_MUTED,
         )
+
+
+def _render_visual_kpi(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="KPI / 핵심 지표",
+        body="성과 지표를 editable scorecard로 배치",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    points = slide_outline_evidence(item)[:4] or _structured_visual_lines(item)[1:4]
+    if not points:
+        points = ["성과 지표", "운영 효과", "승인 기준"]
+    positions = [(left, top + 0.85), (left + 2.05, top + 0.85), (left, top + 2.0), (left + 2.05, top + 2.0)]
+    for idx, (point, (card_left, card_top)) in enumerate(zip(points[:4], positions, strict=False), start=1):
+        _add_card(
+            slide,
+            left=card_left,
+            top=card_top,
+            width=1.9,
+            height=0.95,
+            title=f"KPI {idx}",
+            body=_expand_slide_line(point, max_len=18)[:2],
+            fill_color=_COLOR_CARD,
+            title_color=_COLOR_BG_ACCENT,
+            body_color=_COLOR_TEXT_DARK,
+        )
+
+
+def _render_visual_matrix(
+    slide: Any,
+    item: dict[str, Any],
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    _add_card(
+        slide,
+        left=left,
+        top=top,
+        width=width,
+        height=0.55,
+        title="의사결정 매트릭스",
+        body="기준별 판단을 editable table로 정리",
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+    criteria = item.get("acceptance_criteria")
+    if not isinstance(criteria, list) or not criteria:
+        criteria = slide_outline_evidence(item)[:3]
+    rows = []
+    for idx, criterion in enumerate(criteria[:4], start=1):
+        rows.append([
+            f"기준 {idx}",
+            _clean_slide_text(criterion),
+            "확인 필요",
+        ])
+    if not rows:
+        rows = [["기준 1", "핵심 메시지와 근거 정합성", "확인 필요"]]
+
+    table_shape = slide.shapes.add_table(
+        len(rows) + 1,
+        3,
+        Inches(left),
+        Inches(top + 0.85),
+        Inches(width),
+        Inches(min(2.15, height - 0.9)),
+    )
+    table = table_shape.table
+    headers = ["판단 기준", "내용", "상태"]
+    for col_idx, header in enumerate(headers):
+        cell = table.cell(0, col_idx)
+        cell.text = header
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = _COLOR_BG_ACCENT
+        _style_text_frame(cell.text_frame, font_size_pt=9, bold=True, color=_COLOR_TEXT_LIGHT, align=PP_ALIGN.CENTER)
+    for row_idx, row in enumerate(rows, start=1):
+        for col_idx, value in enumerate(row):
+            cell = table.cell(row_idx, col_idx)
+            cell.text = value
+            if row_idx % 2 == 1:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = RGBColor(250, 250, 255)
+            _style_text_frame(cell.text_frame, font_size_pt=8, color=_COLOR_TEXT_DARK)
 
 
 def _render_visual_timeline(
@@ -760,6 +864,12 @@ def _render_structured_visual_panel(
     if kind == "governance":
         _render_visual_governance(slide, item, left=left, top=top, width=width, height=height)
         return
+    if kind == "matrix":
+        _render_visual_matrix(slide, item, left=left, top=top, width=width, height=height)
+        return
+    if kind == "kpi":
+        _render_visual_kpi(slide, item, left=left, top=top, width=width, height=height)
+        return
     if kind == "cards":
         _render_visual_cards(slide, item, left=left, top=top, width=width, height=height)
         return
@@ -812,6 +922,24 @@ def _structured_slide_guidance(item: dict[str, Any]) -> list[str]:
     return guidance[:3]
 
 
+def _structured_slide_decision_question(item: dict[str, Any]) -> str:
+    return _clean_slide_text(item.get("decision_question", "")) or "이 장표에서 승인권자가 판단해야 할 결론은 무엇인가?"
+
+
+def _structured_slide_acceptance_criteria(item: dict[str, Any]) -> list[str]:
+    raw = item.get("acceptance_criteria")
+    if isinstance(raw, list):
+        criteria = [_clean_slide_text(value) for value in raw if _clean_slide_text(value)]
+    else:
+        criteria = []
+    if criteria:
+        return criteria[:3]
+    evidence = slide_outline_evidence(item)
+    if evidence:
+        return [f"근거 확인: {value}" for value in evidence[:3]]
+    return ["핵심 메시지, 근거, 시각화가 한 장표 안에서 연결됨"]
+
+
 def _render_structured_guided_slide(
     prs: Presentation,
     item: dict[str, Any],
@@ -838,12 +966,38 @@ def _render_structured_guided_slide(
         left=0.65,
         top=1.25,
         width=4.15,
-        height=4.1,
+        height=2.05,
         title="핵심 메시지",
         body=content_lines or ["핵심 메시지 없음"],
         fill_color=_COLOR_CARD,
         title_color=_COLOR_TEXT_DARK,
         body_color=_COLOR_TEXT_DARK,
+    )
+
+    _add_card(
+        slide,
+        left=0.65,
+        top=3.48,
+        width=4.15,
+        height=0.76,
+        title="의사결정 질문",
+        body=_expand_slide_line(_structured_slide_decision_question(item), max_len=34)[:2],
+        fill_color=_COLOR_CARD_SOFT,
+        title_color=_COLOR_BG_ACCENT,
+        body_color=_COLOR_TEXT_DARK,
+    )
+
+    _add_card(
+        slide,
+        left=0.65,
+        top=4.42,
+        width=4.15,
+        height=0.98,
+        title="승인 기준",
+        body=_structured_slide_acceptance_criteria(item),
+        fill_color=_COLOR_CARD,
+        title_color=_COLOR_TEXT_DARK,
+        body_color=_COLOR_TEXT_MUTED,
     )
 
     _add_card(

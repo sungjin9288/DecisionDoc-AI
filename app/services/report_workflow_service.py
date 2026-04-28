@@ -71,6 +71,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _dedupe_strings(values: list[Any], *, limit: int = 8) -> list[str]:
+    deduped: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in deduped:
+            deduped.append(text)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
 class ReportWorkflowService:
     """Generate and export staged report workflow artifacts."""
 
@@ -151,7 +162,11 @@ class ReportWorkflowService:
             raise ValueError("PPTX로 내보낼 장표가 없습니다.")
         slide_outline = []
         visual_assets: list[dict[str, Any]] = []
+        plans_by_id = {plan.slide_id: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
+        plans_by_page = {plan.page: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
+        plans_by_title = {plan.title: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
         for slide in sorted(rec.slides, key=lambda item: item.page):
+            plan = plans_by_id.get(slide.slide_id) or plans_by_page.get(slide.page) or plans_by_title.get(slide.title)
             selected_asset = dict(slide.selected_asset or {})
             selected_asset_id = slide.selected_asset_id or selected_asset.get("asset_id", "")
             selected_asset_note = ""
@@ -159,16 +174,47 @@ class ReportWorkflowService:
                 selected_asset_note = f"선택 시각자료 ID: {selected_asset_id}"
             if slide.visual_prompt:
                 selected_asset_note = " | ".join(bit for bit in [selected_asset_note, f"Visual prompt: {slide.visual_prompt}"] if bit)
-            design_tip = "\n".join(bit for bit in [slide.speaker_note, selected_asset_note] if bit)
+            planning_notes = []
+            if plan is not None:
+                planning_notes = [
+                    *plan.design_notes[:3],
+                    *plan.acceptance_criteria[:3],
+                ]
+            design_tip = "\n".join(bit for bit in [
+                "Editable PPTX: 텍스트, 카드, 표, 흐름도는 PowerPoint에서 직접 편집 가능한 shape로 구성",
+                slide.speaker_note,
+                *planning_notes,
+                selected_asset_note,
+            ] if bit)
+            content_blocks = plan.content_blocks if plan is not None else []
+            evidence_points = _dedupe_strings([
+                *(plan.required_evidence if plan is not None else []),
+                *slide.source_refs,
+                *slide.reference_refs,
+            ], limit=6)
+            visual_type = slide.visual_prompt or slide.visual_spec or (plan.visual_direction if plan is not None else "")
+            visual_brief = plan.visual_direction if plan is not None else slide.visual_spec
+            layout_hint = (plan.layout if plan is not None else "") or slide.visual_spec
             slide_outline.append({
                 "page": slide.page,
                 "title": slide.title,
+                "core_message": (plan.key_message if plan is not None and plan.key_message else slide.body),
                 "key_content": slide.body,
                 "message": slide.body,
-                "visual": slide.visual_prompt or slide.visual_spec,
-                "layout": slide.visual_spec,
+                "visual": visual_type,
+                "visual_type": visual_type,
+                "visual_brief": visual_brief,
+                "layout": layout_hint,
+                "layout_hint": layout_hint,
                 "design_tip": design_tip,
-                "evidence": [*slide.source_refs, *slide.reference_refs],
+                "evidence": evidence_points,
+                "evidence_points": evidence_points,
+                "source_refs": slide.source_refs,
+                "reference_refs": slide.reference_refs,
+                "decision_question": plan.decision_question if plan is not None else "",
+                "narrative_role": plan.narrative_role if plan is not None else "",
+                "content_blocks": content_blocks,
+                "acceptance_criteria": plan.acceptance_criteria if plan is not None else [],
             })
             if selected_asset.get("content_base64") and selected_asset.get("slide_title"):
                 visual_assets.append(selected_asset)
@@ -648,6 +694,14 @@ JSON shape:
   "risk_notes": ["..."]
 }}
 
+Editable PPTX quality contract:
+- Design every slide so it can be exported as native PowerPoint text boxes, cards, tables, timelines, matrices, or flow shapes.
+- Avoid image-only slides unless the slide explicitly requires a selected visual asset.
+- Put one decision-level headline in key_message, not a generic topic label.
+- Make layout and visual_direction concrete enough for an automated python-pptx renderer.
+- Make acceptance_criteria checkable by PM/대표 before slide production.
+- Prefer PowerPoint-safe font guidance and simple shapes over web-only effects.
+
 Report:
 - title: {rec.title}
 - goal: {rec.goal}
@@ -682,6 +736,13 @@ JSON shape:
     }}
   ]
 }}
+
+Editable PPTX production rules:
+- Use the approved planning snapshot as the source of truth; do not invent a different structure.
+- Keep body concise enough to fit editable PowerPoint text boxes.
+- visual_spec must name a native shape pattern such as matrix, timeline, process flow, governance chart, comparison cards, table, KPI cards, or image placeholder.
+- speaker_note should explain how the PM should present the decision point.
+- source_refs must preserve planning.required_evidence where available.
 
 Report title: {rec.title}
 Report goal: {rec.goal}

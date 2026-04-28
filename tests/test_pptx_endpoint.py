@@ -164,6 +164,44 @@ def test_pptx_structured_slides_include_visual_and_layout_guidance(tmp_path, mon
     assert "배치 가이드:" in content_text
 
 
+def test_pptx_structured_slides_include_decision_and_approval_contract():
+    from app.services.pptx_service import build_pptx
+
+    deck = build_pptx(
+        {
+            "presentation_goal": "단계형 보고서 승인",
+            "slide_outline": [
+                {
+                    "page": 1,
+                    "title": "교차로 안전 AI 적용 방안",
+                    "core_message": "우회전 일시정지 감지와 보행자 보호를 우선 적용한다.",
+                    "key_content": "AI 영상 분석으로 위험 이벤트를 조기 탐지하고 운영자 알림을 자동화한다.",
+                    "evidence_points": ["사고 위험 구간", "운영자 대응 시간", "CCTV 연계 가능성"],
+                    "visual_type": "의사결정 매트릭스",
+                    "visual_brief": "기준별 도입 우선순위 평가표",
+                    "layout_hint": "좌측 메시지, 우측 매트릭스, 하단 승인 기준",
+                    "decision_question": "1차 구축 범위를 교차로 안전으로 승인할 것인가?",
+                    "acceptance_criteria": ["도입 범위가 명확함", "근거 자료가 장표에 연결됨", "PM 승인 질문에 답함"],
+                }
+            ],
+        },
+        title="테스트 보고서",
+        include_outline_overview=True,
+    )
+
+    prs = Presentation(BytesIO(deck))
+    joined = "\n".join(
+        shape.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text") and shape.text
+    )
+    assert "의사결정 질문" in joined
+    assert "승인 기준" in joined
+    assert "의사결정 매트릭스" in joined
+    assert "1차 구축 범위를 교차로 안전으로 승인할 것인가?" in joined
+
+
 def test_pptx_structured_bundle_embeds_generated_visual_assets(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     fake_assets = [
