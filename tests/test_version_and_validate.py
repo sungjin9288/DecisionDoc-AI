@@ -46,10 +46,10 @@ def test_version_api_version_is_v1(tmp_path, monkeypatch):
     assert data["api_version"] == "v1"
 
 
-def test_version_default_app_version_is_1_1_50(tmp_path, monkeypatch):
+def test_version_default_app_version_is_1_1_51(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
-    assert data["version"] == "1.1.50"
+    assert data["version"] == "1.1.51"
 
 
 def test_version_features_is_dict(tmp_path, monkeypatch):
