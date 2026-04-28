@@ -109,3 +109,9 @@ DECISIONDOC_MARKITDOWN_MAX_CHARS=12000
 - URL, `file://`, `data:` 같은 remote/local URI 변환 경로는 사용하지 않는다.
 - plugin은 기본 비활성화이며, 별도 검토 후에만 `DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED=1`로 켠다.
 - 기존 PDF 조달 정규화와 스캔 PDF provider OCR fallback은 유지한다.
+
+운영 상태 확인:
+
+- `GET /version`의 `features.markitdown_upload_fallback` 값이 `true`이면 업로드 fallback이 켜져 있다.
+- `GET /version`의 `features.markitdown_plugins` 값이 `true`이면 MarkItDown plugin 실행도 허용된 상태다.
+- production 기본값은 둘 다 `false`이며, `markitdown_plugins=true`는 별도 보안 검토 후에만 허용한다.

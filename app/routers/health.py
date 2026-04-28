@@ -14,6 +14,8 @@ from app.config import (
     APP_VERSION,
     get_local_llm_api_key,
     get_local_llm_base_url,
+    is_markitdown_enabled,
+    is_markitdown_plugins_enabled,
     is_enabled,
     is_procurement_copilot_enabled,
     is_realtime_events_enabled,
@@ -218,5 +220,7 @@ def version_endpoint(request: Request) -> dict:
                 is_procurement_copilot_enabled(),
             ),
             "realtime_events": is_realtime_events_enabled(),
+            "markitdown_upload_fallback": is_markitdown_enabled(),
+            "markitdown_plugins": is_markitdown_plugins_enabled(),
         },
     }

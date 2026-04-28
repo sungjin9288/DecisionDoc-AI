@@ -7,6 +7,8 @@ def _create_client(tmp_path, monkeypatch, *, procurement_enabled: bool = False):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("DECISIONDOC_MARKITDOWN_ENABLED", "0")
+    monkeypatch.setenv("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "0")
     monkeypatch.setenv(
         "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED",
         "1" if procurement_enabled else "0",
@@ -41,10 +43,10 @@ def test_version_api_version_is_v1(tmp_path, monkeypatch):
     assert data["api_version"] == "v1"
 
 
-def test_version_default_app_version_is_1_1_41(tmp_path, monkeypatch):
+def test_version_default_app_version_is_1_1_42(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
-    assert data["version"] == "1.1.41"
+    assert data["version"] == "1.1.42"
 
 
 def test_version_features_is_dict(tmp_path, monkeypatch):
@@ -56,6 +58,8 @@ def test_version_features_is_dict(tmp_path, monkeypatch):
     assert "cache" in features
     assert "procurement_copilot" in features
     assert "realtime_events" in features
+    assert "markitdown_upload_fallback" in features
+    assert "markitdown_plugins" in features
 
 
 def test_version_procurement_flag_defaults_to_false(tmp_path, monkeypatch):
@@ -82,6 +86,22 @@ def test_version_realtime_events_disabled_by_default_on_lambda(tmp_path, monkeyp
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
     assert data["features"]["realtime_events"] is False
+
+
+def test_version_markitdown_flags_default_to_false(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    data = client.get("/version").json()
+    assert data["features"]["markitdown_upload_fallback"] is False
+    assert data["features"]["markitdown_plugins"] is False
+
+
+def test_version_markitdown_flags_reflect_env(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_MARKITDOWN_ENABLED", "1")
+    monkeypatch.setenv("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "1")
+    data = client.get("/version").json()
+    assert data["features"]["markitdown_upload_fallback"] is True
+    assert data["features"]["markitdown_plugins"] is True
 
 
 def test_version_is_public_even_when_users_exist(tmp_path, monkeypatch):
