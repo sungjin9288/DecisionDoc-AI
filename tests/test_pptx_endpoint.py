@@ -182,6 +182,9 @@ def test_pptx_structured_slides_include_decision_and_approval_contract():
                     "visual_brief": "기준별 도입 우선순위 평가표",
                     "layout_hint": "좌측 메시지, 우측 매트릭스, 하단 승인 기준",
                     "decision_question": "1차 구축 범위를 교차로 안전으로 승인할 것인가?",
+                    "narrative_role": "대표 승인 전에 사업 범위를 확정하는 판단 장표",
+                    "content_blocks": ["문제 정의", "도입 범위", "승인 요청"],
+                    "data_needs": ["사고 위험 구간별 CCTV 현황", "우회전 일시정지 위반 데이터"],
                     "acceptance_criteria": ["도입 범위가 명확함", "근거 자료가 장표에 연결됨", "PM 승인 질문에 답함"],
                 }
             ],
@@ -199,8 +202,12 @@ def test_pptx_structured_slides_include_decision_and_approval_contract():
     )
     assert "의사결정 질문" in joined
     assert "승인 기준" in joined
+    assert "장표 구성" in joined
+    assert "스토리 역할" in joined
+    assert "검증 필요" in joined
     assert "의사결정 매트릭스" in joined
     assert "1차 구축 범위를 교차로 안전으로 승인할 것인가?" in joined
+    assert "사고 위험 구간별 CCTV 현황" in joined
 
 
 def test_pptx_structured_bundle_embeds_generated_visual_assets(tmp_path, monkeypatch):

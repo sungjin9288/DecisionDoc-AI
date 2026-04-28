@@ -981,6 +981,35 @@ def _structured_slide_decision_question(item: dict[str, Any]) -> str:
     return _clean_slide_text(item.get("decision_question", "")) or "이 장표에서 승인권자가 판단해야 할 결론은 무엇인가?"
 
 
+def _structured_slide_narrative_role(item: dict[str, Any]) -> str:
+    return _clean_slide_text(item.get("narrative_role", ""))
+
+
+def _structured_slide_list_field(item: dict[str, Any], field: str, *, limit: int = 3) -> list[str]:
+    raw = item.get(field)
+    if isinstance(raw, list):
+        return [_clean_slide_text(value) for value in raw if _clean_slide_text(value)][:limit]
+    value = _clean_slide_text(raw)
+    return [value] if value else []
+
+
+def _structured_slide_content_blocks(item: dict[str, Any]) -> list[str]:
+    blocks = _structured_slide_list_field(item, "content_blocks", limit=3)
+    if blocks:
+        return blocks
+    evidence = slide_outline_evidence(item)
+    if evidence:
+        return [f"근거 블록: {value}" for value in evidence[:2]]
+    return ["핵심 메시지", "근거", "의사결정 포인트"]
+
+
+def _structured_slide_data_needs(item: dict[str, Any]) -> list[str]:
+    data_needs = _structured_slide_list_field(item, "data_needs", limit=2)
+    if data_needs:
+        return data_needs
+    return slide_outline_evidence(item)[:2]
+
+
 def _structured_slide_acceptance_criteria(item: dict[str, Any]) -> list[str]:
     raw = item.get("acceptance_criteria")
     if isinstance(raw, list):
@@ -1015,13 +1044,15 @@ def _render_structured_guided_slide(
 
     message_lines = _expand_slide_line(slide_outline_message(item), max_len=38)[:2]
     evidence_lines = [f"입증 포인트: {point}" for point in slide_outline_evidence(item)[:3]]
-    content_lines = message_lines + evidence_lines
+    role = _structured_slide_narrative_role(item)
+    role_lines = _expand_slide_line(f"스토리 역할: {role}", max_len=38)[:1] if role else []
+    content_lines = message_lines + role_lines + evidence_lines[:2]
     _add_card(
         slide,
         left=0.65,
         top=1.25,
         width=4.15,
-        height=2.05,
+        height=1.72,
         title="핵심 메시지",
         body=content_lines or ["핵심 메시지 없음"],
         fill_color=_COLOR_CARD,
@@ -1032,7 +1063,20 @@ def _render_structured_guided_slide(
     _add_card(
         slide,
         left=0.65,
-        top=3.48,
+        top=3.1,
+        width=4.15,
+        height=0.56,
+        title="장표 구성",
+        body=_structured_slide_content_blocks(item),
+        fill_color=_COLOR_CARD,
+        title_color=_COLOR_TEXT_DARK,
+        body_color=_COLOR_TEXT_MUTED,
+    )
+
+    _add_card(
+        slide,
+        left=0.65,
+        top=3.82,
         width=4.15,
         height=0.76,
         title="의사결정 질문",
@@ -1045,9 +1089,9 @@ def _render_structured_guided_slide(
     _add_card(
         slide,
         left=0.65,
-        top=4.42,
+        top=4.72,
         width=4.15,
-        height=0.98,
+        height=0.78,
         title="승인 기준",
         body=_structured_slide_acceptance_criteria(item),
         fill_color=_COLOR_CARD,
@@ -1061,8 +1105,11 @@ def _render_structured_guided_slide(
         top=4.45,
         width=4.0,
         height=0.95,
-        title="시각자료 배치",
-        body=_structured_slide_guidance(item) or ["배치 가이드 없음"],
+        title="시각자료 배치 / 검증 가이드",
+        body=(
+            _structured_slide_guidance(item)
+            + [f"검증 필요: {need}" for need in _structured_slide_data_needs(item)]
+        )[:4] or ["배치 가이드 없음"],
         fill_color=_COLOR_CARD,
         title_color=_COLOR_TEXT_DARK,
         body_color=_COLOR_TEXT_MUTED,

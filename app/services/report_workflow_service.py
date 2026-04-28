@@ -214,6 +214,7 @@ class ReportWorkflowService:
                 "decision_question": plan.decision_question if plan is not None else "",
                 "narrative_role": plan.narrative_role if plan is not None else "",
                 "content_blocks": content_blocks,
+                "data_needs": plan.data_needs if plan is not None else [],
                 "acceptance_criteria": plan.acceptance_criteria if plan is not None else [],
             })
             if selected_asset.get("content_base64") and selected_asset.get("slide_title"):

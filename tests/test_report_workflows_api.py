@@ -206,6 +206,9 @@ def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monke
     assert first_outline["core_message"]
     assert first_outline["decision_question"]
     assert first_outline["acceptance_criteria"]
+    assert "content_blocks" in first_outline
+    assert "data_needs" in first_outline
+    assert first_outline["narrative_role"]
     assert first_outline["layout_hint"]
     assert first_outline["evidence_points"]
     assert "Editable PPTX" in first_outline["design_tip"]
