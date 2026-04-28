@@ -1,4 +1,4 @@
-const CACHE_NAME = 'decisiondoc-v1.1.51';
+const CACHE_NAME = 'decisiondoc-v1.1.52';
 const OFFLINE_URL = '/offline.html';
 const HTML_SHELL_PATHS = new Set(['/', '/static/index.html']);
 

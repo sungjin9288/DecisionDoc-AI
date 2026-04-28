@@ -214,6 +214,8 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "Graph View" in res.text
     assert "Knowledge temporal graph visual" in res.text
     assert "knowledgeGraphArrow" in res.text
+    assert "아직 연결된 Knowledge 관계가 없습니다" in res.text
+    assert "승인본 학습 또는 참조 문서를 등록하면" in res.text
     assert "graph 관계" in res.text
     assert "graph boost" in res.text
     assert "Temporal Graph Summary" in res.text

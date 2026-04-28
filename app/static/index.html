@@ -7897,10 +7897,17 @@
   function _renderKnowledgeTemporalGraphVisual(data) {
     const nodes = (Array.isArray(data?.nodes) ? data.nodes : []).slice(0, 18);
     const edges = (Array.isArray(data?.edges) ? data.edges : []).slice(0, 40);
-    if (!nodes.length) {
+    const hasRelationshipGraph = nodes.some(node => node?.node_type === 'artifact') || edges.length > 0;
+    if (!nodes.length || !hasRelationshipGraph) {
       return `
-        <div style="padding:1.25rem;color:var(--muted);font-size:.82rem;">
-          시각화할 Knowledge graph node가 없습니다. 승인본 또는 참조 문서를 먼저 등록하세요.
+        <div style="padding:1.25rem 1.35rem;min-height:220px;display:grid;place-items:center;text-align:center;">
+          <div>
+            <div style="font-size:2rem;margin-bottom:.5rem;">🧭</div>
+            <div style="font-size:.95rem;font-weight:850;color:#1f2937;margin-bottom:.35rem;">아직 연결된 Knowledge 관계가 없습니다</div>
+            <div style="font-size:.8rem;color:var(--muted);line-height:1.55;max-width:440px;">
+              승인본 학습 또는 참조 문서를 등록하면 artifact, 기관, workflow, bundle, topic 관계가 이 graph에 표시됩니다.
+            </div>
+          </div>
         </div>
       `;
     }
@@ -23744,7 +23751,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.51</span>
+      <span id="footer-version">DecisionDoc AI v1.1.52</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>
