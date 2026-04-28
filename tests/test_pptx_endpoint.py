@@ -1,4 +1,5 @@
 """Tests for POST /generate/pptx endpoint."""
+import base64
 from io import BytesIO
 from unittest.mock import patch
 
@@ -235,6 +236,62 @@ def test_pptx_structured_bundle_embeds_generated_visual_assets(tmp_path, monkeyp
         if getattr(slide.shapes, "title", None) and slide.shapes.title.text == "사업 추진 배경"
     )
     assert any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in target_slide.shapes)
+
+
+def test_pptx_export_uses_svg_asset_labels_as_editable_visual_evidence():
+    from app.services.pptx_service import build_pptx
+
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        '<text x="100" y="100">추진 일정</text>'
+        '<text x="140" y="260">착수</text>'
+        '<text x="420" y="260">중간 점검</text>'
+        '<text x="700" y="260">최종 승인</text>'
+        "</svg>"
+    )
+    deck = build_pptx(
+        {
+            "presentation_goal": "SVG asset fallback 검증",
+            "slide_outline": [
+                {
+                    "page": 1,
+                    "title": "추진 일정",
+                    "core_message": "단계별 실행 일정을 승인한다.",
+                    "key_content": "로드맵을 기준으로 PM과 대표 승인 게이트를 확정한다.",
+                    "visual_type": "타임라인",
+                    "visual_brief": "선택된 SVG 타임라인 자산",
+                    "layout_hint": "우측 타임라인",
+                    "decision_question": "이 일정으로 착수할 것인가?",
+                    "acceptance_criteria": ["착수/점검/승인 게이트가 명확함"],
+                }
+            ],
+        },
+        title="SVG 시각자료 테스트",
+        visual_assets=[
+            {
+                "asset_id": "svg-asset-1",
+                "slide_title": "추진 일정",
+                "visual_type": "타임라인",
+                "visual_brief": "SVG로 생성된 로드맵",
+                "layout_hint": "우측 패널",
+                "media_type": "image/svg+xml",
+                "encoding": "base64",
+                "content_base64": base64.b64encode(svg.encode("utf-8")).decode("ascii"),
+            }
+        ],
+    )
+
+    prs = Presentation(BytesIO(deck))
+    joined = "\n".join(
+        shape.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text") and shape.text
+    )
+    assert "타임라인 도식" in joined
+    assert "착수" in joined
+    assert "중간 점검" in joined
+    assert "최종 승인" in joined
 
 
 def test_pptx_performance_bundle_renders_timeline_and_governance_visuals(tmp_path, monkeypatch):

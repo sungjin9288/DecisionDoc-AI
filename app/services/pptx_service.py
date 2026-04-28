@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import html
+import re
 
 from io import BytesIO
 from typing import Any
@@ -533,6 +535,57 @@ def _render_visual_image_asset(
     return True
 
 
+def _svg_asset_text_lines(asset: dict[str, Any], *, slide_title: str = "") -> list[str]:
+    media_type = str(asset.get("media_type", "") or "").strip().lower()
+    if media_type != "image/svg+xml":
+        return []
+    encoded = str(asset.get("content_base64", "") or "").strip()
+    if not encoded:
+        return []
+    try:
+        raw = base64.b64decode(encoded)
+        svg_text = raw.decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    ignored = {
+        _clean_slide_text(slide_title),
+        "Timeline Asset",
+        "Flow Asset",
+        "Governance Asset",
+        "Chart Asset",
+        "Image Fallback Asset",
+    }
+    labels: list[str] = []
+    for match in re.finditer(r"<text\b[^>]*>(.*?)</text>", svg_text, flags=re.IGNORECASE | re.DOTALL):
+        label = _clean_slide_text(re.sub(r"<[^>]+>", "", html.unescape(match.group(1))))
+        if not label or label in ignored or label.isdigit():
+            continue
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= 6:
+            break
+    return labels
+
+
+def _with_svg_asset_evidence(item: dict[str, Any], asset: dict[str, Any]) -> dict[str, Any]:
+    slide_title = _clean_slide_text(asset.get("slide_title", "")) or _clean_slide_text(item.get("title", ""))
+    labels = _svg_asset_text_lines(asset, slide_title=slide_title)
+    if not labels:
+        return item
+    enriched = dict(item)
+    existing = slide_outline_evidence(item)
+    merged: list[str] = []
+    for label in [*labels, *existing]:
+        if label and label not in merged:
+            merged.append(label)
+    enriched["evidence_points"] = merged[:6]
+    enriched["visual_type"] = _clean_slide_text(asset.get("visual_type", "")) or _clean_slide_text(item.get("visual_type", ""))
+    enriched["visual_brief"] = _clean_slide_text(asset.get("visual_brief", "")) or _clean_slide_text(item.get("visual_brief", ""))
+    enriched["layout_hint"] = _clean_slide_text(asset.get("layout_hint", "")) or _clean_slide_text(item.get("layout_hint", ""))
+    return enriched
+
+
 def _render_visual_cards(
     slide: Any,
     item: dict[str, Any],
@@ -854,6 +907,8 @@ def _render_structured_visual_panel(
 ) -> None:
     if asset and _render_visual_image_asset(slide, item, asset, left=left, top=top, width=width, height=height):
         return
+    if asset and str(asset.get("media_type", "") or "").strip().lower() == "image/svg+xml":
+        item = _with_svg_asset_evidence(item, asset)
     kind = _visual_kind(item)
     if kind == "timeline":
         _render_visual_timeline(slide, item, left=left, top=top, width=width, height=height)
