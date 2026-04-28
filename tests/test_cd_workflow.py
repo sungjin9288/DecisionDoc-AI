@@ -29,6 +29,24 @@ def test_cd_staging_deploy_remains_main_branch_only_and_optional():
     assert deploy_staging["needs"] == "build-and-push"
     assert deploy_staging["if"] == "github.ref == 'refs/heads/main'"
     assert "Check staging deploy configuration" in step_names
+    assert "Summarize staging deploy decision" in step_names
+
+
+def test_cd_staging_summary_records_skip_reason_for_unconfigured_secrets():
+    workflow = _load_cd_workflow()
+    summary_step = next(
+        step
+        for step in workflow["jobs"]["deploy-staging"]["steps"]
+        if step.get("name") == "Summarize staging deploy decision"
+    )
+
+    assert summary_step["if"] == "always()"
+    assert summary_step["env"]["STAGING_CONFIGURED"] == "${{ steps.staging_config.outputs.configured }}"
+    assert "## Staging deployment" in summary_step["run"]
+    assert 'echo "- status: skipped"' in summary_step["run"]
+    assert 'echo "- reason: staging secrets are not configured."' in summary_step["run"]
+    assert "STAGING_HOST, STAGING_USER, STAGING_SSH_KEY" in summary_step["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in summary_step["run"]
 
 
 def test_cd_remote_deploy_scripts_sync_server_checkout_before_compose():

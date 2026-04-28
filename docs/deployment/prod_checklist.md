@@ -113,6 +113,7 @@ Docker server CD 필수 GitHub Secrets:
 
 참고:
 - staging deploy secret 세 개가 모두 비어 있으면 `main` push CD는 Docker image build/push까지만 수행하고 staging deploy/smoke를 명시적으로 skip한다.
+- staging deploy skip/configured/blocked 판단은 CD run의 GitHub Step Summary `Staging deployment` 섹션에 기록된다.
 - staging deploy를 활성화하려면 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`를 반드시 함께 설정한다.
 - `v*.*.*` tag production deploy는 staging job에 의존하지 않고 Docker image build/push 성공 후 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` preflight를 통과해야 실행된다.
 - Docker server CD는 원격 `/opt/decisiondoc` checkout을 해당 GitHub SHA로 맞춘 뒤 `docker-compose.prod.yml`을 실행한다. staging은 GHCR `main` tag를, production은 Git tag의 `v` prefix를 제거한 semver image tag를 사용한다. 예: Git tag `v1.1.4` -> Docker image tag `1.1.4`.

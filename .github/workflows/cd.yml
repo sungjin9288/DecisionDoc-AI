@@ -84,6 +84,26 @@ jobs:
             exit 1
           fi
 
+      - name: Summarize staging deploy decision
+        if: always()
+        env:
+          STAGING_CONFIGURED: ${{ steps.staging_config.outputs.configured }}
+        run: |
+          {
+            echo "## Staging deployment"
+            if [ "${STAGING_CONFIGURED:-}" = "true" ]; then
+              echo "- status: configured"
+              echo "- action: deploy and smoke test will run for this main branch build."
+            elif [ "${STAGING_CONFIGURED:-}" = "false" ]; then
+              echo "- status: skipped"
+              echo "- reason: staging secrets are not configured."
+              echo "- required secrets: STAGING_HOST, STAGING_USER, STAGING_SSH_KEY"
+            else
+              echo "- status: blocked"
+              echo "- reason: staging secret preflight did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Deploy to staging server
         if: steps.staging_config.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1
