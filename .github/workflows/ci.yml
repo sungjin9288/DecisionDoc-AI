@@ -87,14 +87,27 @@ jobs:
             -o bandit-report.json
           bandit -r app/ -x app/providers/mock_provider.py -ll
 
-      - name: Run Safety legacy check (scan requires auth)
+      - name: Run Safety scan (advisory, optional auth)
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         run: |
+          if [ -z "${SAFETY_API_KEY:-}" ]; then
+            echo "SAFETY_API_KEY is not configured; skipping Safety scan to avoid interactive auth."
+            exit 0
+          fi
+
           set +e
-          HOME=/tmp safety check -r requirements.txt
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "Safety legacy check exited with status $status."
-            echo "The legacy Safety CLI requires authentication in CI; keeping this advisory step non-blocking."
+          HOME=/tmp safety \
+            --key "$SAFETY_API_KEY" \
+            --stage cicd \
+            --disable-optional-telemetry \
+            scan \
+            --target . \
+            --save-as json safety-report.json
+          scan_status=$?
+          if [ "$scan_status" -ne 0 ]; then
+            echo "Safety scan exited with status $scan_status."
+            echo "Keeping this advisory security step non-blocking."
           fi
           exit 0
 
@@ -103,7 +116,10 @@ jobs:
         if: always()
         with:
           name: security-reports
-          path: bandit-report.json
+          path: |
+            bandit-report.json
+            safety-report.json
+          if-no-files-found: ignore
 
   lint:
     name: Lint (advisory)
