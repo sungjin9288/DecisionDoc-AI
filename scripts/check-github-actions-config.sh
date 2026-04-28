@@ -7,6 +7,7 @@ ENV_FILE=""
 ENABLE_VOICE_BRIEF=0
 ENABLE_VOICE_BRIEF_SMOKE=0
 ENABLE_PROCUREMENT_SMOKE=0
+ENABLE_DOCKER_DEPLOY=0
 NON_EMPTY_TENANT=0
 
 usage() {
@@ -18,13 +19,14 @@ Options:
   --voice-brief             Require Voice Brief runtime settings for the stage
   --voice-brief-smoke       Require Voice Brief smoke settings for the stage
   --procurement-smoke       Require procurement smoke settings for the stage
+  --docker-deploy           Require Docker server deploy secrets for the stage
   --non-empty-tenant        Require smoke username/password for the stage
   -h, --help                Show this help message
 
 Examples:
   bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env
-  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke
-  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --procurement-smoke --voice-brief --voice-brief-smoke --non-empty-tenant
+  bash scripts/$SCRIPT_NAME --stage dev --env-file .github-actions.env --docker-deploy --procurement-smoke --voice-brief --voice-brief-smoke
+  bash scripts/$SCRIPT_NAME --stage prod --env-file .github-actions.env --docker-deploy --procurement-smoke --voice-brief --voice-brief-smoke --non-empty-tenant
 EOF
 }
 
@@ -49,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --procurement-smoke)
       ENABLE_PROCUREMENT_SMOKE=1
+      shift
+      ;;
+    --docker-deploy)
+      ENABLE_DOCKER_DEPLOY=1
       shift
       ;;
     --non-empty-tenant)
@@ -124,9 +130,18 @@ fi
 optional+=("G2B_API_KEY_${STAGE_UPPER}")
 optional+=("STATUSPAGE_PAGE_ID")
 optional+=("STATUSPAGE_API_KEY")
-optional+=("${DEPLOY_SECRET_PREFIX}_HOST")
-optional+=("${DEPLOY_SECRET_PREFIX}_USER")
-optional+=("${DEPLOY_SECRET_PREFIX}_SSH_KEY")
+
+deploy_secret_names=(
+  "${DEPLOY_SECRET_PREFIX}_HOST"
+  "${DEPLOY_SECRET_PREFIX}_USER"
+  "${DEPLOY_SECRET_PREFIX}_SSH_KEY"
+)
+
+if [[ "$ENABLE_DOCKER_DEPLOY" -eq 1 ]]; then
+  required+=("${deploy_secret_names[@]}")
+else
+  optional+=("${deploy_secret_names[@]}")
+fi
 
 if [[ "$ENABLE_PROCUREMENT_SMOKE" -eq 1 ]]; then
   required+=("G2B_API_KEY_${STAGE_UPPER}")

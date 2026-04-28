@@ -42,6 +42,7 @@ Rules:
 - `DECISIONDOC_API_KEY` must remain included in `DECISIONDOC_API_KEYS` during key rotation.
 - `.github-actions.env` is a local-only scaffold and must not be committed.
 - `scripts/import-github-actions-env-file.sh --stage dev|prod` may be used to copy stage-specific values from `.env` or `.env.prod` into the local scaffold.
+- `scripts/check-github-actions-config.sh --stage dev|prod --env-file .github-actions.env --docker-deploy` must pass before enabling Docker server deploy for that stage.
 
 ## 4. Normal Release Flow
 
@@ -90,6 +91,7 @@ Before `main` push:
 Before staging deploy:
 
 - [ ] `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY` are either all set or all intentionally empty.
+- [ ] If staging deploy is expected, `check-github-actions-config.sh --stage dev --docker-deploy` passes.
 - [ ] The target server has `/opt/decisiondoc` checkout and `.env.prod`.
 - [ ] The server can pull GHCR images.
 
@@ -98,5 +100,6 @@ Before production deploy:
 - [ ] CI for the target SHA is green.
 - [ ] Stage-equivalent smoke evidence exists for the same SHA.
 - [ ] `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` are all set.
+- [ ] `check-github-actions-config.sh --stage prod --docker-deploy` passes.
 - [ ] API key rotation overlap, if any, is documented.
 - [ ] Rollback owner is available.
