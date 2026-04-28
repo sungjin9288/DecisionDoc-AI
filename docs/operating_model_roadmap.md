@@ -218,6 +218,7 @@ DecisionDoc AI 현재 구조 기준으로는,
    - local admin
    - GitHub Actions deploy role
    - break-glass path
+   - source of truth: [deployment/deploy_ownership_map.md](./deployment/deploy_ownership_map.md)
 
 ## 4. Do / Don't
 

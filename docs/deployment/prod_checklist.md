@@ -100,6 +100,7 @@ docker compose --env-file .env.prod -f docker-compose.ha.yml up -d
 - **AWS manual deploy**: [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml), [`.github/workflows/deploy-smoke.yml`](../../.github/workflows/deploy-smoke.yml) 에서 `workflow_dispatch`
 
 운영 모델과 장기 release 방향은 [../operating_model_roadmap.md](../operating_model_roadmap.md) 를 기준으로 합니다.
+배포 주체, 권한 경계, secret ownership은 [deploy_ownership_map.md](./deploy_ownership_map.md) 를 기준으로 합니다.
 
 ```bash
 # Docker server production deploy
@@ -130,6 +131,8 @@ native meeting recording을 prod에서 실제로 열려면 `OPENAI_API_KEY_PROD`
 계정 보안 incident와 access key rotation 대응은 [./account_security_incident_checklist.md](./account_security_incident_checklist.md)를 기준으로 합니다.
 
 ## 6.1 프로덕션 배포 ownership
+
+상세 ownership matrix와 운영자 checklist는 [deploy_ownership_map.md](./deploy_ownership_map.md) 를 source of truth로 사용합니다.
 
 | 주체 | 역할 | 기본 경로 |
 |------|------|-----------|
