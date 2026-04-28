@@ -210,6 +210,35 @@ def test_apply_github_actions_config_dry_run_includes_stage_deploy_secrets_when_
     assert "secret   STAGING_SSH_KEY" in completed.stdout
 
 
+def test_apply_github_actions_config_dry_run_includes_prod_deploy_secrets_when_present(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "github-actions.env"
+    _write_source_env(env_file, include_api_keys=False, stage="prod", include_deploy=True)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(APPLY_SCRIPT),
+            "--stage",
+            "prod",
+            "--env-file",
+            str(env_file),
+            "--docker-deploy",
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "secret   PROD_HOST" in completed.stdout
+    assert "secret   PROD_USER" in completed.stdout
+    assert "secret   PROD_SSH_KEY" in completed.stdout
+
+
 def test_apply_github_actions_config_dry_run_requires_stage_deploy_secrets_when_enabled(
     tmp_path: Path,
 ) -> None:

@@ -11,33 +11,36 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "check-github-actions-config.sh"
 def _write_env_file(
     path: Path,
     *,
+    stage: str = "dev",
     include_g2b: bool = True,
     include_target: bool = False,
     include_deploy: bool = False,
     partial_deploy: bool = False,
 ) -> None:
+    stage_upper = stage.upper()
+    deploy_prefix = "STAGING" if stage == "dev" else "PROD"
     lines = [
         "AWS_REGION=ap-northeast-2",
         "DECISIONDOC_API_KEY=repo-api-key",
         "DECISIONDOC_OPS_KEY=repo-ops-key",
-        "AWS_ROLE_ARN_DEV=arn:aws:iam::123456789012:role/dev",
-        "DECISIONDOC_S3_BUCKET_DEV=decisiondoc-dev",
-        "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_DEV=1",
+        f"AWS_ROLE_ARN_{stage_upper}=arn:aws:iam::123456789012:role/{stage}",
+        f"DECISIONDOC_S3_BUCKET_{stage_upper}=decisiondoc-{stage}",
+        f"DECISIONDOC_PROCUREMENT_COPILOT_ENABLED_{stage_upper}=1",
     ]
     if include_g2b:
-        lines.append("G2B_API_KEY_DEV=dev-g2b-key")
+        lines.append(f"G2B_API_KEY_{stage_upper}={stage}-g2b-key")
     if include_target:
-        lines.append("PROCUREMENT_SMOKE_URL_OR_NUMBER_DEV=20260405001-00")
+        lines.append(f"PROCUREMENT_SMOKE_URL_OR_NUMBER_{stage_upper}=20260405001-00")
     if include_deploy:
         lines.extend(
             [
-                "STAGING_HOST=dev.decisiondoc.internal",
-                "STAGING_USER=ubuntu",
-                "STAGING_SSH_KEY=test-private-key",
+                f"{deploy_prefix}_HOST={stage}.decisiondoc.internal",
+                f"{deploy_prefix}_USER=ubuntu",
+                f"{deploy_prefix}_SSH_KEY=test-private-key",
             ]
         )
     if partial_deploy:
-        lines.append("STAGING_HOST=dev.decisiondoc.internal")
+        lines.append(f"{deploy_prefix}_HOST={stage}.decisiondoc.internal")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -112,6 +115,24 @@ def test_check_github_actions_config_accepts_docker_deploy_secrets_when_enabled(
     assert "OK     STAGING_HOST" in completed.stdout
     assert "OK     STAGING_USER" in completed.stdout
     assert "OK     STAGING_SSH_KEY" in completed.stdout
+
+
+def test_check_github_actions_config_accepts_prod_docker_deploy_secrets_when_enabled(tmp_path: Path) -> None:
+    env_file = tmp_path / "github-actions.env"
+    _write_env_file(env_file, stage="prod", include_deploy=True)
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "--stage", "prod", "--env-file", str(env_file), "--docker-deploy"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "OK     PROD_HOST" in completed.stdout
+    assert "OK     PROD_USER" in completed.stdout
+    assert "OK     PROD_SSH_KEY" in completed.stdout
 
 
 def test_check_github_actions_config_rejects_partial_docker_deploy_secrets_when_optional(tmp_path: Path) -> None:
