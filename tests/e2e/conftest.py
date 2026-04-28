@@ -63,9 +63,25 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
             "GET /health -> 200 request_id=req-latest",
             "POST /generate/with-attachments (auth) -> 200 files=1 docs=4",
         ],
+        "report_workflow_smoke_results_available": True,
+        "report_workflow_smoke_results": [
+            "PASS create workflow -> workflow-e2e status=planning_required",
+            "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+            "Report workflow smoke completed workflow_id=workflow-e2e slide_count=2",
+        ],
         "checks": [
             {"name": "health", "status": "passed"},
             {"name": "smoke", "status": "passed", "exit_code": 0},
+            {
+                "name": "report workflow smoke",
+                "status": "passed",
+                "exit_code": 0,
+                "report_workflow_smoke_results": [
+                    "PASS create workflow -> workflow-e2e status=planning_required",
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                    "Report workflow smoke completed workflow_id=workflow-e2e slide_count=2",
+                ],
+            },
         ],
     }
     previous_payload = {
@@ -76,6 +92,7 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
         "skip_smoke": True,
         "error": "docker compose ps failed with exit code 17",
         "smoke_results_available": False,
+        "report_workflow_smoke_results_available": False,
         "checks": [
             {"name": "health", "status": "passed"},
             {"name": "smoke", "status": "failed", "exit_code": 17},
@@ -98,6 +115,12 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
                     "GET /health -> 200 request_id=req-latest",
                     "POST /generate/with-attachments (auth) -> 200 files=1 docs=4",
                 ],
+                "report_workflow_smoke_results_available": True,
+                "report_workflow_smoke_results": [
+                    "PASS create workflow -> workflow-e2e status=planning_required",
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                    "Report workflow smoke completed workflow_id=workflow-e2e slide_count=2",
+                ],
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -108,6 +131,7 @@ def _seed_post_deploy_reports(report_dir: str) -> None:
                 "skip_smoke": True,
                 "error": "docker compose ps failed with exit code 17",
                 "smoke_results_available": False,
+                "report_workflow_smoke_results_available": False,
             },
         ],
     }

@@ -218,10 +218,14 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "health" in panel_text
     assert "smoke" in panel_text
     assert "Smoke checks" in panel_text
+    assert "Report Workflow smoke" in panel_text
     assert "2 checks" in panel_text
+    assert "3 checks" in panel_text
     assert "0 checks" in panel_text
     assert "POST /generate/with-attachments (auth) -> 200 files=1 docs=4" in panel_text
+    assert "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1" in panel_text
     assert "legacy report라 저장된 smoke summary가 없습니다." in panel_text
+    assert "legacy report라 저장된 Report Workflow smoke summary가 없습니다." in panel_text
     assert "https://admin.decisiondoc.kr" in panel_text
     assert "JSON 보기" in panel_text
     assert "JSON 다운로드" in panel_text
@@ -240,6 +244,31 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
         }"""
     )
     assert pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').count() == 1
+
+    pg.fill("#ops-post-deploy-search", "snapshot")
+    pg.wait_for_function(
+        """() => {
+          const report = document.querySelector('#ops-post-deploy-report');
+          const detail = document.querySelector('#ops-post-deploy-detail');
+          const buttons = document.querySelectorAll('[data-report-detail-btn]');
+          return report?.innerText.includes('1 / 2건')
+            && buttons.length === 1
+            && detail?.innerText.includes('post-deploy-20260414T041000Z.json')
+            && report?.innerText.includes('Report Workflow smoke');
+        }"""
+    )
+
+    pg.fill("#ops-post-deploy-search", "031000")
+    pg.wait_for_function(
+        """() => {
+          const report = document.querySelector('#ops-post-deploy-report');
+          const detail = document.querySelector('#ops-post-deploy-detail');
+          const buttons = document.querySelectorAll('[data-report-detail-btn]');
+          return report?.innerText.includes('1 / 2건')
+            && buttons.length === 1
+            && detail?.innerText.includes('post-deploy-20260414T031000Z.json');
+        }"""
+    )
     assert pg.locator("#ops-post-deploy-run-btn").count() == 1
     assert pg.locator("#ops-post-deploy-run-skip-smoke").count() == 1
     assert pg.locator("#ops-post-deploy-compare-left").count() == 1
@@ -257,10 +286,14 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     compare_text = pg.locator("#ops-post-deploy-compare-result").inner_text()
     assert "exit 17" in compare_text
     assert "Smoke checks 차이" in compare_text
+    assert "Report Workflow smoke 차이" in compare_text
     assert "Smoke checks" in compare_text
+    assert "Report Workflow smoke" in compare_text
     assert "2 checks" in compare_text
+    assert "3 checks" in compare_text
     assert "0 checks" in compare_text
     assert "legacy report라 저장된 smoke summary가 없습니다." in compare_text
+    assert "legacy report라 저장된 Report Workflow smoke summary가 없습니다." in compare_text
 
     pg.click("#ops-post-deploy-clear-filters-btn")
     pg.wait_for_function(
@@ -298,6 +331,7 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert '"latest_report": "post-deploy-20260414T041000Z.json"' in raw_json
     assert '"status": "passed"' in raw_json
     assert '"name": "health"' in raw_json
+    assert '"report_workflow_smoke_results_available": true' in raw_json
 
     pg.get_by_role("button", name="JSON 숨기기").click()
     assert not pg.locator("#ops-post-deploy-raw").is_visible()
@@ -307,8 +341,11 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "post-deploy-20260414T041000Z.json" in detail_text
     assert "smoke 포함" in detail_text
     assert "Smoke checks" in detail_text
+    assert "Report Workflow smoke" in detail_text
     assert "2 checks" in detail_text
+    assert "3 checks" in detail_text
     assert "POST /generate/with-attachments (auth) -> 200 files=1 docs=4" in detail_text
+    assert "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1" in detail_text
 
     pg.locator('[data-report-detail-btn="post-deploy-20260414T031000Z.json"]').click()
     pg.wait_for_function(
@@ -320,8 +357,10 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     assert "실패" in selected_detail
     assert "exit 17" in selected_detail
     assert "Smoke checks" in selected_detail
+    assert "Report Workflow smoke" in selected_detail
     assert "0 checks" in selected_detail
     assert "legacy report라 저장된 smoke summary가 없습니다." in selected_detail
+    assert "legacy report라 저장된 Report Workflow smoke summary가 없습니다." in selected_detail
     assert not console_messages
 
     ctx.close()
