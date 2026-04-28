@@ -7824,6 +7824,7 @@
             if (doc.selection_reason) lines.push(`   - 선정 이유: ${doc.selection_reason}`);
             const scope = _formatKnowledgeScope(doc.knowledge_scope);
             if (scope) lines.push(`   - scope: ${scope}`);
+            if (doc.graph_relationship_summary) lines.push(`   - graph 관계: ${doc.graph_relationship_summary}`);
             const terms = _formatKnowledgeMatchedTerms(doc);
             if (terms) lines.push(`   - matched terms: ${terms}`);
             const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
@@ -23568,7 +23569,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.39</span>
+      <span id="footer-version">DecisionDoc AI v1.1.40</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

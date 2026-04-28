@@ -193,9 +193,16 @@ class TestKnowledgeStore:
         assert "동일 Report Workflow 산출물" in ranked[0]["selection_reason"]
         assert "기관/고객 scope 일치" in ranked[0]["selection_reason"]
         assert "bundle `proposal_kr` 일치" in ranked[0]["selection_reason"]
+        assert "graph" in ranked[0]["selection_reason"]
+        assert ranked[0]["graph_relationships"]["relation_count"] >= 5
+        assert "produced_by_workflow" in ranked[0]["graph_relationships"]["relation_types"]
+        assert "applies_to_bundle" in ranked[0]["graph_relationships"]["relation_types"]
+        assert "approved_for_reuse" in ranked[0]["graph_relationships"]["relation_types"]
+        assert "workflow 관계" in ranked[0]["graph_relationship_summary"]
         assert any(item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"])
         assert any(item["label"] == "동일 workflow" for item in ranked[0]["score_breakdown"])
         assert any(item["label"] == "기관 scope 일치" for item in ranked[0]["score_breakdown"])
+        assert any(item["label"] == "관계 그래프" for item in ranked[0]["score_breakdown"])
         assert ranked[1]["doc_id"] == generic.doc_id
 
         ctx = store.build_context(
@@ -470,6 +477,8 @@ class TestKnowledgeAPI:
         assert body["ranked_documents"][0]["search_backend"] == "local_keyword"
         assert body["ranked_documents"][0]["matched_query_terms"]
         assert "selection_reason" in body["ranked_documents"][0]
+        assert "graph_relationships" in body["ranked_documents"][0]
+        assert "graph_relationship_summary" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
         assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
         assert body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"

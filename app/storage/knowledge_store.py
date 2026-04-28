@@ -78,6 +78,15 @@ _REFERENCE_SUCCESS_LABELS = {
 _ORGANIZATION_MATCH_SCORE = 80
 _REPORT_WORKFLOW_MATCH_SCORE = 110
 _REPORT_WORKFLOW_SOURCE_SCORE = 45
+_GRAPH_RELATION_LABELS = {
+    "contains_artifact": "프로젝트 산출물",
+    "scoped_to_organization": "기관 관계",
+    "produced_by_workflow": "workflow 관계",
+    "applies_to_bundle": "bundle 관계",
+    "tagged_as": "topic 관계",
+    "approved_for_reuse": "승인 재사용 관계",
+    "awarded_for_reuse": "수주 재사용 관계",
+}
 
 
 def _normalize_string(value: Any) -> str:
@@ -317,6 +326,48 @@ def _build_reference_score_breakdown(
             }
         )
     return breakdown
+
+
+def _build_graph_relationship_index(graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+    edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+    node_labels = {
+        _normalize_string(node.get("node_id")): _normalize_string(node.get("label"))
+        for node in nodes
+        if isinstance(node, dict)
+    }
+    by_doc: dict[str, dict[str, Any]] = {}
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        doc_id = _normalize_string(edge.get("evidence_doc_id"))
+        relation_type = _normalize_string(edge.get("relation_type"))
+        if not doc_id or not relation_type:
+            continue
+        target_label = node_labels.get(_normalize_string(edge.get("target_node_id")), "")
+        entry = by_doc.setdefault(
+            doc_id,
+            {
+                "relation_count": 0,
+                "relation_types": [],
+                "relationship_reasons": [],
+            },
+        )
+        entry["relation_count"] += 1
+        if relation_type not in entry["relation_types"]:
+            entry["relation_types"].append(relation_type)
+        label = _GRAPH_RELATION_LABELS.get(relation_type, relation_type)
+        reason = f"{label}: {target_label}" if target_label else label
+        if reason not in entry["relationship_reasons"]:
+            entry["relationship_reasons"].append(reason)
+    return by_doc
+
+
+def _format_graph_relationship_summary(graph_relationships: dict[str, Any]) -> str:
+    reasons = _normalize_list(graph_relationships.get("relationship_reasons"))
+    if not reasons:
+        return ""
+    return " · ".join(reasons[:4])
 
 
 class KnowledgeEntry:
@@ -592,6 +643,13 @@ class KnowledgeStore:
             bundle_type=bundle_type or "",
             source_organization=source_organization,
         )
+        graph_relationship_index = _build_graph_relationship_index(
+            self.build_temporal_graph(
+                source_organization=source_organization,
+                report_workflow_id=report_workflow_id,
+                bundle_type=bundle_type or "",
+            )
+        )
         ranked: list[dict[str, Any]] = []
         for meta in self._load_index():
             tags = _normalize_list(meta.get("tags"))
@@ -627,6 +685,11 @@ class KnowledgeStore:
             )
             if bundle_type and applicable_bundles and not bundle_match:
                 score -= 20
+            graph_relationships = graph_relationship_index.get(
+                _normalize_string(meta.get("doc_id")),
+                {"relation_count": 0, "relation_types": [], "relationship_reasons": []},
+            )
+            graph_relationship_summary = _format_graph_relationship_summary(graph_relationships)
             score_breakdown = _build_reference_score_breakdown(
                 learning_mode=learning_mode,
                 quality_tier=quality_tier,
@@ -641,6 +704,14 @@ class KnowledgeStore:
                 workflow_source=workflow_source,
                 recency_score=recency_score,
             )
+            if graph_relationships.get("relation_count"):
+                score_breakdown.append(
+                    {
+                        "label": "관계 그래프",
+                        "detail": graph_relationship_summary or f"{graph_relationships['relation_count']}개 relation",
+                        "score": 0,
+                    }
+                )
             scope_summary = _format_reference_ranking_reason(
                 bundle_type=bundle_type,
                 bundle_match=bundle_match,
@@ -653,6 +724,9 @@ class KnowledgeStore:
                 workflow_source=workflow_source,
                 recency_score=recency_score,
             )
+            selection_reason = scope_summary
+            if graph_relationship_summary:
+                selection_reason = f"{selection_reason} · graph {graph_relationship_summary}"
             ranked.append({
                 **meta,
                 "tags": tags,
@@ -671,8 +745,10 @@ class KnowledgeStore:
                 "workflow_source": workflow_source,
                 "recency_score": recency_score,
                 "scope_summary": scope_summary,
+                "graph_relationships": graph_relationships,
+                "graph_relationship_summary": graph_relationship_summary,
                 "learning_mode_label": _LEARNING_MODE_LABELS[learning_mode],
-                "selection_reason": scope_summary,
+                "selection_reason": selection_reason,
                 "score_breakdown": score_breakdown,
                 "knowledge_scope": knowledge_scope,
             })
