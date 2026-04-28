@@ -164,11 +164,20 @@ jobs:
             # Wait for health
             for i in {1..12}; do
               if curl -sf http://localhost:8000/health; then
-                echo "Production deploy successful"
-                exit 0
+                echo "Production local health check passed"
+                break
               fi
               echo "Waiting... ($i/12)"
               sleep 10
+              if [ "$i" = "12" ]; then
+                echo "Deploy health check timeout"
+                exit 1
+              fi
             done
-            echo "Deploy health check timeout"
-            exit 1
+            export SMOKE_TIMEOUT_SEC="${SMOKE_TIMEOUT_SEC:-180}"
+            python3 scripts/post_deploy_check.py \
+              --env-file .env.prod \
+              --compose-file docker-compose.prod.yml \
+              --base-url https://admin.decisiondoc.kr \
+              --report-dir ./reports/post-deploy
+            echo "Production deploy successful"

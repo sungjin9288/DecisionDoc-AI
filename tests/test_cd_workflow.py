@@ -112,3 +112,23 @@ def test_cd_production_backup_uses_writable_repo_local_default():
     assert 'mkdir -p "$BACKUP_DIR"' in production_script
     assert "mkdir -p /backup" not in production_script
     assert "tar czf /backup" not in production_script
+
+
+def test_cd_production_runs_authenticated_post_deploy_check_after_health():
+    workflow = _load_cd_workflow()
+    production_script = next(
+        step["with"]["script"]
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Deploy to production"
+    )
+
+    assert "Production local health check passed" in production_script
+    assert 'export SMOKE_TIMEOUT_SEC="${SMOKE_TIMEOUT_SEC:-180}"' in production_script
+    assert "python3 scripts/post_deploy_check.py" in production_script
+    assert "--env-file .env.prod" in production_script
+    assert "--compose-file docker-compose.prod.yml" in production_script
+    assert "--base-url https://admin.decisiondoc.kr" in production_script
+    assert "--report-dir ./reports/post-deploy" in production_script
+    assert production_script.index("curl -sf http://localhost:8000/health") < production_script.index(
+        "python3 scripts/post_deploy_check.py"
+    )
