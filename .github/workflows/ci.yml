@@ -49,6 +49,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
+        env:
+          NODE_OPTIONS: --no-deprecation
         run: playwright install chromium --with-deps
 
       - name: Run full test suite
