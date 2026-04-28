@@ -7794,6 +7794,7 @@
           Number.isFinite(Number(ranking.organization_matches)) ? `org match=${ranking.organization_matches}` : '',
           Number.isFinite(Number(ranking.report_workflow_matches)) ? `workflow match=${ranking.report_workflow_matches}` : '',
           Number.isFinite(Number(ranking.graph_relationship_matches)) ? `graph boost=${ranking.graph_relationship_matches}` : '',
+          ranking.search_backend ? `backend=${ranking.search_backend}` : '',
         ].filter(Boolean);
         const filterText = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
         summary.textContent = rankBits.length ? `${filterText} | ${rankBits.join(' · ')}` : filterText;
@@ -7805,6 +7806,7 @@
           '=== Ranking Summary ===',
           `- ranked documents: ${ranking.total_ranked_documents ?? 0}`,
           `- returned documents: ${ranking.returned_documents ?? 0}`,
+          ranking.search_backend ? `- search backend: ${ranking.search_backend}` : '',
           `- scope matches: bundle ${ranking.bundle_matches ?? 0}, org ${ranking.organization_matches ?? 0}, workflow ${ranking.report_workflow_matches ?? 0}`,
           `- graph boost: ${ranking.graph_relationship_matches ?? 0} docs, +${ranking.graph_relationship_score_total ?? 0} score`,
           ranking.top_selection_reason ? `- top reason: ${ranking.top_selection_reason}` : '',
@@ -23572,7 +23574,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.44</span>
+      <span id="footer-version">DecisionDoc AI v1.1.45</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

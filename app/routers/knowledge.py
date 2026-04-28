@@ -384,6 +384,7 @@ def preview_knowledge_context(
         "workflow_source_matches": sum(1 for item in ranking if item.get("workflow_source")),
         "graph_relationship_matches": sum(1 for item in ranking if item.get("graph_relationship_score", 0) > 0),
         "graph_relationship_score_total": sum(int(item.get("graph_relationship_score", 0) or 0) for item in ranking),
+        "search_backend": ranking[0].get("search_backend", "") if ranking else "",
         "top_score": ranking[0].get("score", 0) if ranking else 0,
         "top_selection_reason": ranking[0].get("selection_reason", "") if ranking else "",
         "has_context": bool(context),

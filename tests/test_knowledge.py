@@ -493,6 +493,7 @@ class TestKnowledgeAPI:
         assert body["ranking_summary"]["report_workflow_matches"] == 0
         assert body["ranking_summary"]["graph_relationship_matches"] == 0
         assert body["ranking_summary"]["graph_relationship_score_total"] == 0
+        assert body["ranking_summary"]["search_backend"] == "local_keyword"
         assert body["ranking_summary"]["top_score"] > 0
         assert body["ranking_summary"]["top_selection_reason"]
         assert body["ranking_summary"]["has_context"] is True

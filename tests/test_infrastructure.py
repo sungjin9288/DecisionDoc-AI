@@ -187,6 +187,8 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "applied_scope" in res.text
     assert "ranking_summary" in res.text
     assert "Ranking Summary" in res.text
+    assert "search backend" in res.text
+    assert "backend=" in res.text
     assert "서버 적용 필터" in res.text
     assert "knowledge-temporal-graph-btn" in res.text
     assert "knowledge-temporal-graph-modal" in res.text
