@@ -682,6 +682,8 @@ def test_generate_injects_ranked_knowledge_context(tmp_path, monkeypatch):
     assert top_ref["filename"] == "winning-proposal.docx"
     assert top_ref["selection_reason"]
     assert top_ref["bundle_match"] is True
+    assert top_ref["graph_relationship_score"] > 0
+    assert top_ref["graph_relationship_summary"]
     assert isinstance(top_ref["score_breakdown"], list)
     injected = str(captured["requirements"])
     assert "_knowledge_context" in injected

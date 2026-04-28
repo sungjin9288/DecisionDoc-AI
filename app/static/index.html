@@ -7793,6 +7793,7 @@
           Number.isFinite(Number(ranking.bundle_matches)) ? `bundle match=${ranking.bundle_matches}` : '',
           Number.isFinite(Number(ranking.organization_matches)) ? `org match=${ranking.organization_matches}` : '',
           Number.isFinite(Number(ranking.report_workflow_matches)) ? `workflow match=${ranking.report_workflow_matches}` : '',
+          Number.isFinite(Number(ranking.graph_relationship_matches)) ? `graph boost=${ranking.graph_relationship_matches}` : '',
         ].filter(Boolean);
         const filterText = filterBits.length ? `서버 적용 필터: ${filterBits.join(' · ')}` : '서버 적용 필터 없음';
         summary.textContent = rankBits.length ? `${filterText} | ${rankBits.join(' · ')}` : filterText;
@@ -7805,6 +7806,7 @@
           `- ranked documents: ${ranking.total_ranked_documents ?? 0}`,
           `- returned documents: ${ranking.returned_documents ?? 0}`,
           `- scope matches: bundle ${ranking.bundle_matches ?? 0}, org ${ranking.organization_matches ?? 0}, workflow ${ranking.report_workflow_matches ?? 0}`,
+          `- graph boost: ${ranking.graph_relationship_matches ?? 0} docs, +${ranking.graph_relationship_score_total ?? 0} score`,
           ranking.top_selection_reason ? `- top reason: ${ranking.top_selection_reason}` : '',
         ].filter(Boolean).join('\n'));
       }
@@ -7825,6 +7827,7 @@
             const scope = _formatKnowledgeScope(doc.knowledge_scope);
             if (scope) lines.push(`   - scope: ${scope}`);
             if (doc.graph_relationship_summary) lines.push(`   - graph 관계: ${doc.graph_relationship_summary}`);
+            if (Number(doc.graph_relationship_score || 0) > 0) lines.push(`   - graph boost: +${doc.graph_relationship_score}`);
             const terms = _formatKnowledgeMatchedTerms(doc);
             if (terms) lines.push(`   - matched terms: ${terms}`);
             const breakdown = _formatKnowledgeScoreBreakdown(doc.score_breakdown);
@@ -23569,7 +23572,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.40</span>
+      <span id="footer-version">DecisionDoc AI v1.1.41</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

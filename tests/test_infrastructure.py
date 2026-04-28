@@ -200,6 +200,7 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "downloadKnowledgeTemporalGraphJson" in res.text
     assert "_knowledgeTemporalGraphLastData" in res.text
     assert "graph 관계" in res.text
+    assert "graph boost" in res.text
     assert "Temporal Graph Summary" in res.text
     assert "Relationships" in res.text
     assert "_formatKnowledgeMatchedTerms" in res.text

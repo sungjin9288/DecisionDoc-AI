@@ -87,6 +87,16 @@ _GRAPH_RELATION_LABELS = {
     "approved_for_reuse": "승인 재사용 관계",
     "awarded_for_reuse": "수주 재사용 관계",
 }
+_GRAPH_RELATION_WEIGHTS = {
+    "contains_artifact": 0,
+    "scoped_to_organization": 14,
+    "produced_by_workflow": 24,
+    "applies_to_bundle": 18,
+    "tagged_as": 6,
+    "approved_for_reuse": 20,
+    "awarded_for_reuse": 28,
+}
+_GRAPH_RELATION_SCORE_CAP = 72
 
 
 def _normalize_string(value: Any) -> str:
@@ -368,6 +378,12 @@ def _format_graph_relationship_summary(graph_relationships: dict[str, Any]) -> s
     if not reasons:
         return ""
     return " · ".join(reasons[:4])
+
+
+def _graph_relationship_score(graph_relationships: dict[str, Any]) -> int:
+    relation_types = _normalize_list(graph_relationships.get("relation_types"))
+    score = sum(_GRAPH_RELATION_WEIGHTS.get(relation_type, 0) for relation_type in relation_types)
+    return min(score, _GRAPH_RELATION_SCORE_CAP)
 
 
 class KnowledgeEntry:
@@ -690,6 +706,8 @@ class KnowledgeStore:
                 {"relation_count": 0, "relation_types": [], "relationship_reasons": []},
             )
             graph_relationship_summary = _format_graph_relationship_summary(graph_relationships)
+            graph_score = _graph_relationship_score(graph_relationships)
+            score += graph_score
             score_breakdown = _build_reference_score_breakdown(
                 learning_mode=learning_mode,
                 quality_tier=quality_tier,
@@ -709,7 +727,7 @@ class KnowledgeStore:
                     {
                         "label": "관계 그래프",
                         "detail": graph_relationship_summary or f"{graph_relationships['relation_count']}개 relation",
-                        "score": 0,
+                        "score": graph_score,
                     }
                 )
             scope_summary = _format_reference_ranking_reason(
@@ -747,6 +765,7 @@ class KnowledgeStore:
                 "scope_summary": scope_summary,
                 "graph_relationships": graph_relationships,
                 "graph_relationship_summary": graph_relationship_summary,
+                "graph_relationship_score": graph_score,
                 "learning_mode_label": _LEARNING_MODE_LABELS[learning_mode],
                 "selection_reason": selection_reason,
                 "score_breakdown": score_breakdown,

@@ -1915,6 +1915,8 @@ class GenerationService:
             "score": int(item.get("score", 0) or 0),
             "query_overlap": int(item.get("query_overlap", 0) or 0),
             "bundle_match": bool(item.get("bundle_match")),
+            "graph_relationship_score": int(item.get("graph_relationship_score", 0) or 0),
+            "graph_relationship_summary": str(item.get("graph_relationship_summary", "") or ""),
             "selection_reason": str(item.get("selection_reason", "") or ""),
             "score_breakdown": list(item.get("score_breakdown") or []),
         }

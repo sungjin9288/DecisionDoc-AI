@@ -199,10 +199,11 @@ class TestKnowledgeStore:
         assert "applies_to_bundle" in ranked[0]["graph_relationships"]["relation_types"]
         assert "approved_for_reuse" in ranked[0]["graph_relationships"]["relation_types"]
         assert "workflow 관계" in ranked[0]["graph_relationship_summary"]
+        assert ranked[0]["graph_relationship_score"] == 72
         assert any(item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"])
         assert any(item["label"] == "동일 workflow" for item in ranked[0]["score_breakdown"])
         assert any(item["label"] == "기관 scope 일치" for item in ranked[0]["score_breakdown"])
-        assert any(item["label"] == "관계 그래프" for item in ranked[0]["score_breakdown"])
+        assert any(item["label"] == "관계 그래프" and item["score"] == 72 for item in ranked[0]["score_breakdown"])
         assert ranked[1]["doc_id"] == generic.doc_id
 
         ctx = store.build_context(
@@ -468,6 +469,8 @@ class TestKnowledgeAPI:
         assert body["ranking_summary"]["bundle_matches"] == 1
         assert body["ranking_summary"]["organization_matches"] == 1
         assert body["ranking_summary"]["report_workflow_matches"] == 0
+        assert body["ranking_summary"]["graph_relationship_matches"] == 0
+        assert body["ranking_summary"]["graph_relationship_score_total"] == 0
         assert body["ranking_summary"]["top_score"] > 0
         assert body["ranking_summary"]["top_selection_reason"]
         assert body["ranking_summary"]["has_context"] is True
@@ -479,6 +482,7 @@ class TestKnowledgeAPI:
         assert "selection_reason" in body["ranked_documents"][0]
         assert "graph_relationships" in body["ranked_documents"][0]
         assert "graph_relationship_summary" in body["ranked_documents"][0]
+        assert "graph_relationship_score" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
         assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
         assert body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"
