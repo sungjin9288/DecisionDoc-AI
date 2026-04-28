@@ -10,6 +10,8 @@ def _create_client(tmp_path, monkeypatch, *, procurement_enabled: bool = False):
     monkeypatch.setenv("DECISIONDOC_MARKITDOWN_ENABLED", "0")
     monkeypatch.setenv("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "0")
     monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "local_keyword")
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_BASE64_CHARS", "2000000")
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_COUNT", "48")
     monkeypatch.setenv(
         "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED",
         "1" if procurement_enabled else "0",
@@ -44,10 +46,10 @@ def test_version_api_version_is_v1(tmp_path, monkeypatch):
     assert data["api_version"] == "v1"
 
 
-def test_version_default_app_version_is_1_1_43(tmp_path, monkeypatch):
+def test_version_default_app_version_is_1_1_44(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
-    assert data["version"] == "1.1.43"
+    assert data["version"] == "1.1.44"
 
 
 def test_version_features_is_dict(tmp_path, monkeypatch):
@@ -62,6 +64,8 @@ def test_version_features_is_dict(tmp_path, monkeypatch):
     assert "markitdown_upload_fallback" in features
     assert "markitdown_plugins" in features
     assert "knowledge_search_backend" in features
+    assert "report_workflow_visual_asset_max_base64_chars" in features
+    assert "report_workflow_visual_asset_max_count" in features
 
 
 def test_version_procurement_flag_defaults_to_false(tmp_path, monkeypatch):
@@ -111,6 +115,15 @@ def test_version_knowledge_search_backend_reflects_env(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "sqlite_fts")
     data = client.get("/version").json()
     assert data["features"]["knowledge_search_backend"] == "sqlite_fts"
+
+
+def test_version_report_workflow_visual_asset_limits_reflect_env(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_BASE64_CHARS", "1234")
+    monkeypatch.setenv("DECISIONDOC_REPORT_WORKFLOW_VISUAL_ASSET_MAX_COUNT", "7")
+    data = client.get("/version").json()
+    assert data["features"]["report_workflow_visual_asset_max_base64_chars"] == 1234
+    assert data["features"]["report_workflow_visual_asset_max_count"] == 7
 
 
 def test_version_is_public_even_when_users_exist(tmp_path, monkeypatch):

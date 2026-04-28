@@ -15,6 +15,8 @@ from app.config import (
     get_knowledge_search_backend_name,
     get_local_llm_api_key,
     get_local_llm_base_url,
+    get_report_workflow_visual_asset_max_base64_chars,
+    get_report_workflow_visual_asset_max_count,
     is_markitdown_enabled,
     is_markitdown_plugins_enabled,
     is_enabled,
@@ -224,5 +226,7 @@ def version_endpoint(request: Request) -> dict:
             "markitdown_upload_fallback": is_markitdown_enabled(),
             "markitdown_plugins": is_markitdown_plugins_enabled(),
             "knowledge_search_backend": get_knowledge_search_backend_name(),
+            "report_workflow_visual_asset_max_base64_chars": get_report_workflow_visual_asset_max_base64_chars(),
+            "report_workflow_visual_asset_max_count": get_report_workflow_visual_asset_max_count(),
         },
     }
