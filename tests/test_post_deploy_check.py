@@ -166,13 +166,35 @@ def test_post_deploy_check_runs_health_nginx_and_smoke(tmp_path: Path, monkeypat
             "--base-url",
             "https://admin.decisiondoc.kr",
         ],
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            str(compose_file),
+            "exec",
+            "-T",
+            "-e",
+            "SMOKE_BASE_URL=https://admin.decisiondoc.kr",
+            "-e",
+            "SMOKE_API_KEY=runtime-key-1",
+            "-e",
+            "SMOKE_TIMEOUT_SEC=180",
+            "app",
+            "python",
+            "scripts/report_workflow_smoke.py",
+        ],
     ]
 
 
 def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsys) -> None:
     checker = _load_script_module("decisiondoc_post_deploy_check_report", "scripts/post_deploy_check.py")
     env_file = tmp_path / ".env.prod"
-    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    env_file.write_text(
+        "ALLOWED_ORIGINS=https://admin.decisiondoc.kr\nDECISIONDOC_API_KEYS=runtime-key-1\n",
+        encoding="utf-8",
+    )
     compose_file = tmp_path / "docker-compose.prod.yml"
     compose_file.write_text("services: {}\n", encoding="utf-8")
     report_file = tmp_path / "reports" / "post-deploy.json"
@@ -219,13 +241,18 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
     assert payload["base_url"] == "https://admin.decisiondoc.kr"
     assert payload["checks"][0]["name"] == "health"
     assert payload["checks"][1]["name"] == "health provider routing"
-    assert payload["checks"][-1]["name"] == "deployed smoke"
+    assert payload["checks"][-1]["name"] == "report workflow smoke"
+    assert "SMOKE_API_KEY=<redacted>" in payload["checks"][-1]["command"]
+    assert "SMOKE_API_KEY=runtime-key-1" not in payload["checks"][-1]["command"]
 
 
 def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monkeypatch, capsys) -> None:
     checker = _load_script_module("decisiondoc_post_deploy_check_report_dir", "scripts/post_deploy_check.py")
     env_file = tmp_path / ".env.prod"
-    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    env_file.write_text(
+        "ALLOWED_ORIGINS=https://admin.decisiondoc.kr\nDECISIONDOC_API_KEYS=runtime-key-1\n",
+        encoding="utf-8",
+    )
     compose_file = tmp_path / "docker-compose.prod.yml"
     compose_file.write_text("services: {}\n", encoding="utf-8")
     report_dir = tmp_path / "reports" / "post-deploy"
@@ -279,15 +306,16 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     index_payload = json.loads(index_report.read_text(encoding="utf-8"))
     assert history_payload["status"] == "passed"
     assert latest_payload["status"] == "passed"
-    assert history_payload["checks"][-1]["name"] == "deployed smoke"
-    assert latest_payload["checks"][-1]["name"] == "deployed smoke"
-    assert history_payload["checks"][-1]["smoke_results"] == [
+    deployed_smoke_check = next(item for item in history_payload["checks"] if item["name"] == "deployed smoke")
+    assert history_payload["checks"][-1]["name"] == "report workflow smoke"
+    assert latest_payload["checks"][-1]["name"] == "report workflow smoke"
+    assert deployed_smoke_check["smoke_results"] == [
         "GET /health -> 200 request_id=req-1",
         "POST /generate/with-attachments (no key) -> 401",
         "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
     ]
-    assert history_payload["checks"][-1]["smoke_results_available"] is True
-    assert latest_payload["smoke_results"] == history_payload["checks"][-1]["smoke_results"]
+    assert deployed_smoke_check["smoke_results_available"] is True
+    assert latest_payload["smoke_results"] == deployed_smoke_check["smoke_results"]
     assert latest_payload["smoke_results_available"] is True
     assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
@@ -305,7 +333,10 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
 def test_post_deploy_check_updates_index_with_newest_report_first(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script_module("decisiondoc_post_deploy_check_report_index", "scripts/post_deploy_check.py")
     env_file = tmp_path / ".env.prod"
-    env_file.write_text("ALLOWED_ORIGINS=https://admin.decisiondoc.kr\n", encoding="utf-8")
+    env_file.write_text(
+        "ALLOWED_ORIGINS=https://admin.decisiondoc.kr\nDECISIONDOC_API_KEYS=runtime-key-1\n",
+        encoding="utf-8",
+    )
     compose_file = tmp_path / "docker-compose.prod.yml"
     compose_file.write_text("services: {}\n", encoding="utf-8")
     report_dir = tmp_path / "reports" / "post-deploy"

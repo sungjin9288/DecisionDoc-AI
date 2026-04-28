@@ -60,6 +60,26 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
+def _resolve_api_key(env_values: dict[str, str]) -> str:
+    keys = _split_csv(env_values.get("DECISIONDOC_API_KEYS", ""))
+    if keys:
+        return keys[0]
+    legacy_key = env_values.get("DECISIONDOC_API_KEY", "").strip()
+    if legacy_key:
+        return legacy_key
+    raise SystemExit("Missing runtime API key. Set DECISIONDOC_API_KEYS or DECISIONDOC_API_KEY in the env file.")
+
+
+def _resolve_smoke_timeout_sec(env_values: dict[str, str]) -> str:
+    env_timeout = str(env_values.get("SMOKE_TIMEOUT_SEC", "")).strip()
+    if env_timeout:
+        return env_timeout
+    inherited_timeout = os.getenv("SMOKE_TIMEOUT_SEC", "").strip()
+    if inherited_timeout:
+        return inherited_timeout
+    return "180"
+
+
 def _resolve_base_url(base_url: str, env_values: dict[str, str]) -> str:
     normalized = str(base_url or "").strip()
     if normalized:
@@ -88,6 +108,17 @@ def _replay_captured_output(*, stdout: str, stderr: str) -> None:
         print(stdout, end="" if stdout.endswith("\n") else "\n", flush=True)
     if stderr:
         print(stderr, end="" if stderr.endswith("\n") else "\n", file=sys.stderr, flush=True)
+
+
+def _redact_command_for_report(command: Sequence[str]) -> list[str]:
+    redacted: list[str] = []
+    for item in command:
+        text = str(item)
+        if text.startswith("SMOKE_API_KEY="):
+            redacted.append("SMOKE_API_KEY=<redacted>")
+        else:
+            redacted.append(text)
+    return redacted
 
 
 def _extract_smoke_failure_details(*, stdout: str, stderr: str) -> dict[str, Any]:
@@ -142,6 +173,25 @@ def _extract_smoke_result_details(*, stdout: str, stderr: str) -> dict[str, Any]
     return {"smoke_results": results, "smoke_results_available": True}
 
 
+def _extract_report_workflow_smoke_result_details(*, stdout: str, stderr: str) -> dict[str, Any]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for raw_line in "\n".join(part for part in (stdout, stderr) if str(part or "").strip()).splitlines():
+        line = str(raw_line).strip()
+        if not line.startswith("PASS ") and not line.startswith("Report workflow smoke completed"):
+            continue
+        if line in seen:
+            continue
+        seen.add(line)
+        results.append(line)
+    if not results:
+        return {}
+    return {
+        "report_workflow_smoke_results": results,
+        "report_workflow_smoke_results_available": True,
+    }
+
+
 def _build_failure_suffix(details: dict[str, Any]) -> str:
     parts: list[str] = []
     smoke_response_code = str(details.get("smoke_response_code", "")).strip()
@@ -183,7 +233,7 @@ def _run_command_with_report(
 
     if completed.returncode != 0:
         step_details: dict[str, Any] = {
-            "command": command,
+            "command": _redact_command_for_report(command),
             "exit_code": completed.returncode,
         }
         stdout_tail = _tail_output(stdout)
@@ -201,7 +251,7 @@ def _run_command_with_report(
         report,
         name=label,
         status="passed",
-        command=command,
+        command=_redact_command_for_report(command),
         exit_code=completed.returncode,
         **parsed_output,
     )
@@ -643,6 +693,31 @@ def run_post_deploy_check(
                 failure_parser=_extract_smoke_failure_details,
             )
             print("PASS deployed smoke", flush=True)
+
+            resolved_api_key = _resolve_api_key(env_values)
+            resolved_smoke_timeout_sec = _resolve_smoke_timeout_sec(env_values)
+
+            _run_command_with_report(
+                report,
+                [
+                    *compose_prefix,
+                    "exec",
+                    "-T",
+                    "-e",
+                    f"SMOKE_BASE_URL={resolved_base_url}",
+                    "-e",
+                    f"SMOKE_API_KEY={resolved_api_key}",
+                    "-e",
+                    f"SMOKE_TIMEOUT_SEC={resolved_smoke_timeout_sec}",
+                    app_service,
+                    "python",
+                    "scripts/report_workflow_smoke.py",
+                ],
+                label="report workflow smoke",
+                capture_output=True,
+                output_parser=_extract_report_workflow_smoke_result_details,
+            )
+            print("PASS report workflow smoke", flush=True)
 
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         _persist_reports(
