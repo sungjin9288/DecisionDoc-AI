@@ -10,15 +10,18 @@ Endpoints:
     DELETE /knowledge/{project_id}/documents/{id}  문서 삭제
     GET    /knowledge/{project_id}/context         컨텍스트 미리보기
     GET    /knowledge/{project_id}/temporal-graph  관계 그래프 조회
+    GET    /knowledge/{project_id}/temporal-graph/export  관계 그래프 JSON artifact 다운로드
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
 from app.providers.factory import get_provider_for_capability
@@ -63,6 +66,41 @@ def _build_promoted_filename(title: str, doc_type: str) -> str:
     safe_title = re.sub(r'[\\/:*?"<>|]+', "-", normalized_title)
     safe_doc_type = re.sub(r"[^0-9A-Za-z가-힣_-]+", "-", str(doc_type or "").strip()) or "doc"
     return f"{safe_title} - {safe_doc_type}.md"
+
+
+def _safe_graph_export_filename(project_id: str) -> str:
+    safe_project_id = re.sub(r"[^0-9A-Za-z가-힣_.-]+", "-", str(project_id or "").strip()).strip("-")
+    return f"decisiondoc-knowledge-graph-{safe_project_id or 'project'}.json"
+
+
+def _build_temporal_graph_payload(
+    project_id: str,
+    *,
+    source_organization: str = "",
+    report_workflow_id: str = "",
+    bundle_type: str = "",
+) -> dict:
+    from app.storage.knowledge_store import KnowledgeStore
+
+    graph = KnowledgeStore(project_id).build_temporal_graph(
+        source_organization=source_organization,
+        report_workflow_id=report_workflow_id,
+        bundle_type=bundle_type,
+    )
+    graph["project_id"] = project_id
+    graph["applied_scope"] = {
+        "scope_version": "knowledge_temporal_graph_scope.v1",
+        "project_id": project_id,
+        "source_organization": source_organization,
+        "report_workflow_id": report_workflow_id,
+        "bundle_type": bundle_type,
+        "has_filters": any([
+            bool(source_organization),
+            bool(report_workflow_id),
+            bool(bundle_type),
+        ]),
+    }
+    return graph
 
 
 # ── 업로드 & 등록 ──────────────────────────────────────────────────────────────
@@ -414,24 +452,46 @@ def get_knowledge_temporal_graph(
     bundle_type: str = Query(default=""),
 ) -> dict:
     """지식 메타데이터에서 프로젝트/기관/workflow/bundle 관계 그래프를 생성."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    graph = KnowledgeStore(project_id).build_temporal_graph(
+    return _build_temporal_graph_payload(
+        project_id,
         source_organization=source_organization,
         report_workflow_id=report_workflow_id,
         bundle_type=bundle_type,
     )
-    graph["project_id"] = project_id
-    graph["applied_scope"] = {
-        "scope_version": "knowledge_temporal_graph_scope.v1",
+
+
+@router.get("/knowledge/{project_id}/temporal-graph/export", dependencies=[Depends(require_api_key)])
+def export_knowledge_temporal_graph(
+    project_id: str,
+    source_organization: str = Query(default=""),
+    report_workflow_id: str = Query(default=""),
+    bundle_type: str = Query(default=""),
+    export_format: str = Query(default="json", alias="format"),
+) -> Response:
+    """프로젝트 지식 관계 그래프를 외부 분석/시각화 도구용 JSON artifact로 내보냄."""
+    if export_format.lower() != "json":
+        raise HTTPException(400, detail="지원하지 않는 graph export format입니다.")
+
+    graph = _build_temporal_graph_payload(
+        project_id,
+        source_organization=source_organization,
+        report_workflow_id=report_workflow_id,
+        bundle_type=bundle_type,
+    )
+    payload = {
+        "export_version": "decisiondoc_knowledge_graph_export.v1",
+        "source": "DecisionDoc KnowledgeStore",
         "project_id": project_id,
-        "source_organization": source_organization,
-        "report_workflow_id": report_workflow_id,
-        "bundle_type": bundle_type,
-        "has_filters": any([
-            bool(source_organization),
-            bool(report_workflow_id),
-            bool(bundle_type),
-        ]),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "filters": {
+            "source_organization": source_organization,
+            "report_workflow_id": report_workflow_id,
+            "bundle_type": bundle_type,
+        },
+        "graph": graph,
     }
-    return graph
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{_safe_graph_export_filename(project_id)}"'},
+    )

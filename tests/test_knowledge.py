@@ -549,6 +549,61 @@ class TestKnowledgeAPI:
         assert body["summary"]["relation_counts"]["scoped_to_organization"] == 1
         assert body["summary"]["relation_counts"]["approved_for_reuse"] == 1
 
+    def test_temporal_graph_export_endpoint_returns_portable_artifact(self, client, tmp_path):
+        client.post(
+            "/knowledge/proj-graph-export/documents",
+            headers=HEADERS,
+            files={"file": ("approved.txt", b"Approved workflow artifact", "text/plain")},
+            data={
+                "tags": "교통,안전",
+                "learning_mode": "approved_output",
+                "quality_tier": "gold",
+                "applicable_bundles": "proposal_kr,report_workflow",
+                "source_organization": "국토교통부",
+                "success_state": "approved",
+            },
+        )
+
+        resp = client.get(
+            "/knowledge/proj-graph-export/temporal-graph/export",
+            headers=HEADERS,
+            params={
+                "bundle_type": "proposal_kr",
+                "source_organization": "국토교통부",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="decisiondoc-knowledge-graph-proj-graph-export.json"'
+        )
+        body = resp.json()
+        assert body["export_version"] == "decisiondoc_knowledge_graph_export.v1"
+        assert body["source"] == "DecisionDoc KnowledgeStore"
+        assert body["project_id"] == "proj-graph-export"
+        assert body["generated_at"]
+        assert body["filters"] == {
+            "source_organization": "국토교통부",
+            "report_workflow_id": "",
+            "bundle_type": "proposal_kr",
+        }
+        assert body["graph"]["graph_version"] == "knowledge_temporal_graph.v1"
+        assert body["graph"]["project_id"] == "proj-graph-export"
+        assert body["graph"]["applied_scope"]["has_filters"] is True
+        assert body["graph"]["summary"]["node_counts"]["artifact"] == 1
+        assert body["graph"]["summary"]["relation_counts"]["scoped_to_organization"] == 1
+        assert body["graph"]["summary"]["relation_counts"]["applies_to_bundle"] == 2
+
+    def test_temporal_graph_export_rejects_unsupported_format(self, client):
+        resp = client.get(
+            "/knowledge/proj-graph-export/temporal-graph/export",
+            headers=HEADERS,
+            params={"format": "html"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "지원하지 않는 graph export format입니다."
+
     def test_update_document_metadata(self, client, tmp_path):
         upload = client.post(
             "/knowledge/proj-meta/documents",
