@@ -160,11 +160,78 @@ class ReportWorkflowService:
         rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
         if not rec.slides:
             raise ValueError("PPTX로 내보낼 장표가 없습니다.")
-        slide_outline = []
+        slide_outline, visual_assets = self._pptx_export_payload(rec)
+        slide_data = {
+            "presentation_goal": rec.goal,
+            "slide_outline": slide_outline,
+        }
+        return build_pptx(
+            slide_data,
+            title=rec.title,
+            include_outline_overview=True,
+            visual_assets=visual_assets,
+        )
+
+    def build_export_snapshot(self, report_workflow_id: str, *, tenant_id: str) -> dict[str, Any]:
+        rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        if not rec.slides:
+            raise ValueError("내보낼 장표가 없습니다.")
+        slide_outline, visual_assets = self._pptx_export_payload(rec)
+        return {
+            "export_version": "decisiondoc_report_workflow_snapshot.v1",
+            "generated_at": _now_iso(),
+            "tenant_id": rec.tenant_id,
+            "report_workflow_id": rec.report_workflow_id,
+            "title": rec.title,
+            "status": rec.status,
+            "goal": rec.goal,
+            "client": rec.client,
+            "report_type": rec.report_type,
+            "audience": rec.audience,
+            "source": {
+                "source_bundle_id": rec.source_bundle_id,
+                "source_request_id": rec.source_request_id,
+                "source_refs": rec.source_refs,
+            },
+            "versions": {
+                "planning": rec.current_plan_version,
+                "slides": rec.current_slide_version,
+            },
+            "approval": {
+                "final_approval_id": rec.final_approval_id,
+                "final_approval_status": rec.final_approval_status,
+                "final_submitted_at": rec.final_submitted_at,
+                "final_approved_by": rec.final_approved_by,
+                "final_approved_at": rec.final_approved_at,
+                "approval_steps": [asdict(step) for step in rec.approval_steps],
+            },
+            "promotion": {
+                "project_id": rec.project_id,
+                "project_document_id": rec.project_document_id,
+                "project_promoted_at": rec.project_promoted_at,
+                "knowledge_project_id": rec.knowledge_project_id,
+                "knowledge_document_count": rec.knowledge_document_count,
+                "knowledge_promoted_at": rec.knowledge_promoted_at,
+                "knowledge_documents": rec.knowledge_documents,
+            },
+            "learning": {
+                "learning_opt_in": rec.learning_opt_in,
+                "learning_artifact_count": len(rec.learning_artifacts),
+            },
+            "planning": asdict(rec.planning) if rec.planning is not None else None,
+            "slide_outline": slide_outline,
+            "slides": [self._slide_snapshot_payload(slide) for slide in rec.slides],
+            "visual_assets": [self._redact_asset_payload(asset) for asset in visual_assets],
+            "quality_warnings": rec.quality_warnings,
+        }
+
+    def _pptx_export_payload(self, rec: ReportWorkflowRecord) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        slide_outline: list[dict[str, Any]] = []
         visual_assets: list[dict[str, Any]] = []
-        plans_by_id = {plan.slide_id: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
-        plans_by_page = {plan.page: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
-        plans_by_title = {plan.title: plan for plan in (rec.planning.slide_plans if rec.planning else [])}
+        plans = rec.planning.slide_plans if rec.planning else []
+        plans_by_id = {plan.slide_id: plan for plan in plans}
+        plans_by_page = {plan.page: plan for plan in plans}
+        plans_by_title = {plan.title: plan for plan in plans}
         for slide in sorted(rec.slides, key=lambda item: item.page):
             plan = plans_by_id.get(slide.slide_id) or plans_by_page.get(slide.page) or plans_by_title.get(slide.title)
             selected_asset = dict(slide.selected_asset or {})
@@ -219,16 +286,23 @@ class ReportWorkflowService:
             })
             if selected_asset.get("content_base64") and selected_asset.get("slide_title"):
                 visual_assets.append(selected_asset)
-        slide_data = {
-            "presentation_goal": rec.goal,
-            "slide_outline": slide_outline,
-        }
-        return build_pptx(
-            slide_data,
-            title=rec.title,
-            include_outline_overview=True,
-            visual_assets=visual_assets,
-        )
+        return slide_outline, visual_assets
+
+    @staticmethod
+    def _redact_asset_payload(asset: dict[str, Any]) -> dict[str, Any]:
+        redacted = dict(asset)
+        encoded = str(redacted.pop("content_base64", "") or "")
+        redacted["has_content_base64"] = bool(encoded)
+        redacted["content_base64_len"] = len(encoded)
+        return redacted
+
+    @classmethod
+    def _slide_snapshot_payload(cls, slide: SlideDraft) -> dict[str, Any]:
+        payload = asdict(slide)
+        selected_asset = payload.get("selected_asset")
+        if isinstance(selected_asset, dict):
+            payload["selected_asset"] = cls._redact_asset_payload(selected_asset)
+        return payload
 
     def generate_visual_assets(
         self,

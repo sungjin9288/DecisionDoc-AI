@@ -279,6 +279,8 @@ Static admin UI는 다음처럼 기능을 나눈다.
 - PM 승인은 linked approval의 review approval로 mirror하고, 대표 승인은 linked approval의 final approval로 mirror한다.
 - `POST /report-workflows/{id}/promote`로 final approved workflow를 project document로 등록하고, `learning_opt_in=true`일 때 project knowledge approved reference로 승격 가능하게 한다.
 - 자동 promote는 MVP에서는 하지 않고, `promote` button 또는 explicit API로 분리한다.
+- `GET /report-workflows/{id}/export/snapshot`으로 PPTX export에 사용된 slide semantics, planning, final approval chain, project/knowledge promotion metadata를 JSON artifact로 고정한다.
+- snapshot artifact는 audit/handoff 목적으로 쓰며, 시각자료 `content_base64` 본문은 저장하지 않고 존재 여부와 길이만 포함한다.
 
 주의:
 

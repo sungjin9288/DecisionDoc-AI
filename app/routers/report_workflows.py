@@ -1,6 +1,7 @@
 """Report workflow endpoints for staged report production."""
 from __future__ import annotations
 
+import json
 import re
 import urllib.parse
 from dataclasses import asdict
@@ -452,6 +453,33 @@ def export_report_workflow_pptx(report_workflow_id: str, request: Request) -> Re
             "Content-Disposition": (
                 f"attachment; filename=\"report_workflow.pptx\"; "
                 f"filename*=UTF-8''{encoded_title}.pptx"
+            )
+        },
+    )
+
+
+@router.get(
+    "/report-workflows/{report_workflow_id}/export/snapshot",
+    dependencies=[Depends(require_api_key)],
+)
+def export_report_workflow_snapshot(report_workflow_id: str, request: Request) -> Response:
+    tenant_id = get_tenant_id(request)
+    rec = _get_store(request).get(report_workflow_id, tenant_id=tenant_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="보고서 워크플로우를 찾을 수 없습니다.")
+    try:
+        snapshot = _get_service(request).build_export_snapshot(report_workflow_id, tenant_id=tenant_id)
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    safe_title = re.sub(r'[\\/*?:"<>|]', "_", rec.title)[:100] or "report_workflow"
+    encoded_title = urllib.parse.quote(f"{safe_title}-snapshot", safe="")
+    return Response(
+        content=json.dumps(snapshot, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"report_workflow_snapshot.json\"; "
+                f"filename*=UTF-8''{encoded_title}.json"
             )
         },
     )

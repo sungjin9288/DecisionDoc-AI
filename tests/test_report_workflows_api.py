@@ -140,6 +140,18 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
     assert pptx.status_code == 200
     assert pptx.content[:4] == _PPTX_MAGIC
 
+    snapshot = client.get(f"/report-workflows/{workflow_id}/export/snapshot")
+    assert snapshot.status_code == 200
+    assert snapshot.headers["content-type"].startswith("application/json")
+    assert "report_workflow_snapshot" in snapshot.headers.get("content-disposition", "")
+    snapshot_payload = snapshot.json()
+    assert snapshot_payload["export_version"] == "decisiondoc_report_workflow_snapshot.v1"
+    assert snapshot_payload["report_workflow_id"] == workflow_id
+    assert snapshot_payload["approval"]["final_approval_status"] == "approved"
+    assert snapshot_payload["slide_outline"][0]["decision_question"]
+    assert snapshot_payload["slide_outline"][0]["acceptance_criteria"]
+    assert snapshot_payload["promotion"]["project_document_id"] is None
+
 
 def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
@@ -213,6 +225,16 @@ def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monke
     assert first_outline["evidence_points"]
     assert "Editable PPTX" in first_outline["design_tip"]
     assert "선택 시각자료 ID: asset-rw-1" in first_outline["design_tip"]
+
+    snapshot = client.get(f"/report-workflows/{workflow_id}/export/snapshot")
+    assert snapshot.status_code == 200
+    snapshot_payload = snapshot.json()
+    assert snapshot_payload["visual_assets"][0]["asset_id"] == "asset-rw-1"
+    assert snapshot_payload["visual_assets"][0]["has_content_base64"] is True
+    assert snapshot_payload["visual_assets"][0]["content_base64_len"] > 0
+    assert "content_base64" not in snapshot_payload["visual_assets"][0]
+    assert snapshot_payload["slides"][0]["selected_asset"]["has_content_base64"] is True
+    assert _contains_key(snapshot_payload, "content_base64") is False
 
 
 def test_report_workflow_generates_visual_assets_and_attaches_first_candidates(tmp_path, monkeypatch):

@@ -6537,6 +6537,7 @@
         <button class="action-btn" onclick="requestReportWorkflowFinalChange('${escapeHtml(item.report_workflow_id)}')" ${(item.status !== 'final_review' || finalLocked) ? 'disabled' : ''}>↩ 최종 수정 요청</button>
         <button class="action-btn" onclick="generateReportWorkflowVisualAssets('${escapeHtml(item.report_workflow_id)}')" ${(!slides.length || finalLocked) ? 'disabled' : ''}>🖼️ 시각자료 후보 생성</button>
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
+        <button class="action-btn" onclick="downloadReportWorkflowSnapshot('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>🧾 Snapshot Export</button>
       </div>
       ${renderReportWorkflowFinalApproval(item)}
       ${renderReportWorkflowPromotion(item)}
@@ -6726,6 +6727,27 @@
       showNotification(promoteToKnowledge ? '프로젝트와 Knowledge 후보로 저장했습니다.' : '프로젝트 산출물로 저장했습니다.', 'success');
     } catch (err) {
       showNotification('산출물 저장 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function downloadReportWorkflowSnapshot(id) {
+    try {
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/export/snapshot`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-workflow-${id}-snapshot.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showNotification('Report Workflow snapshot artifact를 다운로드했습니다.', 'success');
+    } catch (err) {
+      showNotification('Snapshot 다운로드 실패: ' + (err.message || err), 'error');
     }
   }
 
@@ -23751,7 +23773,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.53</span>
+      <span id="footer-version">DecisionDoc AI v1.1.54</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

@@ -53,6 +53,9 @@ def test_report_workflow_tab_and_stepper_present():
     assert "선택 asset 다운로드" in html
     assert "reportWorkflowVisualAssetsForSlide" in html
     assert "selectReportWorkflowSlideVisualAsset" in html
+    assert "Snapshot Export" in html
+    assert "downloadReportWorkflowSnapshot" in html
+    assert "Report Workflow snapshot artifact" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -71,6 +74,7 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "switchPage('project-page')" in html
     assert "switchPage('knowledge-page')" in html
     assert "/export/pptx" in html
+    assert "/export/snapshot" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html
     assert "visual-assets/generate" in html
