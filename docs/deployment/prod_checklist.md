@@ -112,6 +112,7 @@ Docker server CD 필수 GitHub Secrets:
 - `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`
 
 참고:
+- `scripts/import-github-actions-env-file.sh --stage dev|prod` 는 stage에 맞는 `STAGING_*` 또는 `PROD_*` deploy secrets를 `.github-actions.env` scaffold로 복사한다.
 - staging deploy secret 세 개가 모두 비어 있으면 `main` push CD는 Docker image build/push까지만 수행하고 staging deploy/smoke를 명시적으로 skip한다.
 - staging deploy skip/configured/blocked 판단은 CD run의 GitHub Step Summary `Staging deployment` 섹션에 기록된다.
 - staging deploy를 활성화하려면 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`를 반드시 함께 설정한다.
