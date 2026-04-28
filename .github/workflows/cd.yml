@@ -153,6 +153,12 @@ jobs:
             else
               echo "Backup directory unavailable; continuing without data backup"
             fi
+            echo "Docker disk usage before cleanup:"
+            docker system df || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            echo "Docker disk usage after cleanup:"
+            docker system df || true
             docker compose --env-file .env.prod -f docker-compose.prod.yml pull
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
             # Wait for health
