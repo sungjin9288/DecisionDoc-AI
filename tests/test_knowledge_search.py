@@ -1,6 +1,8 @@
 from app.storage.knowledge_search import (
     KnowledgeSearchQuery,
     LocalKeywordBackend,
+    SQLiteFtsBackend,
+    get_knowledge_search_backend,
     tokenize_knowledge_text,
 )
 
@@ -47,3 +49,32 @@ def test_local_keyword_backend_accepts_comma_separated_metadata_lists():
     )
 
     assert {"안전", "교통", "proposal_kr"}.issubset(set(match.matched_terms))
+
+
+def test_sqlite_fts_backend_matches_metadata_terms():
+    query = KnowledgeSearchQuery(title="스마트 안전", source_organization="국토교통부")
+    match = SQLiteFtsBackend().match(
+        query,
+        {
+            "filename": "smart-safety-reference.pdf",
+            "tags": ["스마트", "안전"],
+            "source_organization": "국토교통부",
+            "notes": "스마트 안전 관제 승인본",
+        },
+    )
+
+    assert match.query_terms == sorted(match.query_terms)
+    assert {"스마트", "안전", "국토교통부"}.issubset(set(match.matched_terms))
+    assert match.overlap == len(match.matched_terms)
+
+
+def test_get_knowledge_search_backend_defaults_to_local(monkeypatch):
+    monkeypatch.delenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", raising=False)
+
+    assert get_knowledge_search_backend().name == "local_keyword"
+
+
+def test_get_knowledge_search_backend_can_select_sqlite_fts(monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "sqlite_fts")
+
+    assert get_knowledge_search_backend().name == "sqlite_fts"

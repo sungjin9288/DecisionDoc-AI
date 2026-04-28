@@ -219,6 +219,28 @@ class TestKnowledgeStore:
         assert "품질 등급: gold" in ctx
         assert "출처: 파주시 / 2025" in ctx
 
+    def test_rank_documents_can_use_sqlite_fts_backend(self, tmp_path, monkeypatch):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "sqlite_fts")
+        store = KnowledgeStore("proj-fts", data_dir=str(tmp_path))
+        entry = store.add_document(
+            "smart-safety-reference.pdf",
+            "본문",
+            tags=["스마트", "안전"],
+            source_organization="국토교통부",
+            notes="스마트 안전 관제 승인본",
+        )
+
+        ranked = store.rank_documents_for_context(
+            title="스마트 안전",
+            source_organization="국토교통부",
+        )
+
+        assert ranked[0]["doc_id"] == entry.doc_id
+        assert ranked[0]["search_backend"] == "sqlite_fts"
+        assert {"스마트", "안전", "국토교통부"}.issubset(set(ranked[0]["matched_query_terms"]))
+
     def test_report_workflow_scope_can_prioritize_matching_approved_artifact(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 

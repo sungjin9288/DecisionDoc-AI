@@ -9,6 +9,7 @@ def _create_client(tmp_path, monkeypatch, *, procurement_enabled: bool = False):
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.setenv("DECISIONDOC_MARKITDOWN_ENABLED", "0")
     monkeypatch.setenv("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "0")
+    monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "local_keyword")
     monkeypatch.setenv(
         "DECISIONDOC_PROCUREMENT_COPILOT_ENABLED",
         "1" if procurement_enabled else "0",
@@ -43,10 +44,10 @@ def test_version_api_version_is_v1(tmp_path, monkeypatch):
     assert data["api_version"] == "v1"
 
 
-def test_version_default_app_version_is_1_1_42(tmp_path, monkeypatch):
+def test_version_default_app_version_is_1_1_43(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
-    assert data["version"] == "1.1.42"
+    assert data["version"] == "1.1.43"
 
 
 def test_version_features_is_dict(tmp_path, monkeypatch):
@@ -60,6 +61,7 @@ def test_version_features_is_dict(tmp_path, monkeypatch):
     assert "realtime_events" in features
     assert "markitdown_upload_fallback" in features
     assert "markitdown_plugins" in features
+    assert "knowledge_search_backend" in features
 
 
 def test_version_procurement_flag_defaults_to_false(tmp_path, monkeypatch):
@@ -102,6 +104,13 @@ def test_version_markitdown_flags_reflect_env(tmp_path, monkeypatch):
     data = client.get("/version").json()
     assert data["features"]["markitdown_upload_fallback"] is True
     assert data["features"]["markitdown_plugins"] is True
+
+
+def test_version_knowledge_search_backend_reflects_env(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "sqlite_fts")
+    data = client.get("/version").json()
+    assert data["features"]["knowledge_search_backend"] == "sqlite_fts"
 
 
 def test_version_is_public_even_when_users_exist(tmp_path, monkeypatch):

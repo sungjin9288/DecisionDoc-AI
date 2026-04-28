@@ -28,7 +28,7 @@ from typing import Any
 from app.storage.knowledge_search import (
     KnowledgeSearchBackend,
     KnowledgeSearchQuery,
-    LocalKeywordBackend,
+    get_knowledge_search_backend,
 )
 from app.storage.knowledge_temporal_graph import build_knowledge_temporal_graph
 
@@ -460,7 +460,7 @@ class KnowledgeStore:
         search_backend: KnowledgeSearchBackend | None = None,
     ) -> None:
         self.project_id = project_id
-        self._search_backend = search_backend or LocalKeywordBackend()
+        self._search_backend = search_backend or get_knowledge_search_backend()
         base = Path(data_dir or os.getenv("DATA_DIR", "data"))
         self._dir = base / "knowledge" / project_id
         self._index_path = self._dir / "index.json"

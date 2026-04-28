@@ -2,7 +2,7 @@ import logging
 import os
 
 _cfg_log = logging.getLogger("decisiondoc.config")
-APP_VERSION = "1.1.42"
+APP_VERSION = "1.1.43"
 
 
 def is_enabled(value: str) -> bool:
@@ -70,6 +70,15 @@ def is_markitdown_plugins_enabled() -> bool:
 def get_markitdown_max_chars() -> int:
     """Maximum MarkItDown fallback text returned per uploaded file."""
     return _get_int("DECISIONDOC_MARKITDOWN_MAX_CHARS", 12_000)
+
+
+def get_knowledge_search_backend_name() -> str:
+    """Knowledge search backend selector.
+
+    Default stays local and dependency-free. `sqlite_fts` is opt-in and falls
+    back to local keyword matching if the runtime SQLite build lacks FTS5.
+    """
+    return os.getenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "local_keyword").strip().lower()
 
 
 def get_report_workflow_visual_asset_max_base64_chars() -> int:

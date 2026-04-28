@@ -12,6 +12,7 @@ from fastapi.responses import Response
 
 from app.config import (
     APP_VERSION,
+    get_knowledge_search_backend_name,
     get_local_llm_api_key,
     get_local_llm_base_url,
     is_markitdown_enabled,
@@ -222,5 +223,6 @@ def version_endpoint(request: Request) -> dict:
             "realtime_events": is_realtime_events_enabled(),
             "markitdown_upload_fallback": is_markitdown_enabled(),
             "markitdown_plugins": is_markitdown_plugins_enabled(),
+            "knowledge_search_backend": get_knowledge_search_backend_name(),
         },
     }
