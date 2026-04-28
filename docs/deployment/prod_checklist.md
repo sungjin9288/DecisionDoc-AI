@@ -78,7 +78,7 @@ python3 scripts/report_workflow_smoke.py
 
 `scripts/deploy_compose_local.py --post-check` 와 `./scripts/deploy.sh production <tag>` 는 기본적으로 `./reports/post-deploy/` 아래 timestamped report, `latest.json`, `index.json` 을 함께 남깁니다.
 
-`scripts/report_workflow_smoke.py` 는 `[SMOKE]` report workflow를 생성하고 planning blueprint, planning approval guard, slide generation/approval, final approval, PPTX export를 검증합니다. 기본값은 `X-Tenant-ID`를 보내지 않으며, tenant별 검증이 필요할 때만 `SMOKE_TENANT_ID=<tenant-id>`를 명시합니다.
+`scripts/report_workflow_smoke.py` 는 `[SMOKE]` report workflow를 생성하고 planning blueprint, planning approval guard, slide generation/approval, final approval, project promotion, PPTX export, snapshot export(redacted handoff artifact)를 검증합니다. 기본값은 `X-Tenant-ID`를 보내지 않으며, tenant별 검증이 필요할 때만 `SMOKE_TENANT_ID=<tenant-id>`를 명시합니다.
 
 ## 5. Docker Compose / HA
 

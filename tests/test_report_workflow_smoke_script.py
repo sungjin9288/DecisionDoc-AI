@@ -118,6 +118,27 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
             )
         if path.endswith("/export/pptx"):
             return httpx.Response(200, content=smoke.PPTX_MAGIC + b"payload")
+        if path.endswith("/export/snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "export_version": "decisiondoc_report_workflow_snapshot.v1",
+                    "report_workflow_id": state["workflow_id"],
+                    "approval": {"final_approval_status": "approved"},
+                    "promotion": {"project_document_id": "doc-smoke"},
+                    "slide_outline": [
+                        {"slide_id": "slide-001", "decision_question": "질문"},
+                        {"slide_id": "slide-002", "decision_question": "질문"},
+                    ],
+                    "visual_assets": [
+                        {
+                            "asset_id": "asset-smoke",
+                            "has_content_base64": True,
+                            "content_base64_len": 16,
+                        }
+                    ],
+                },
+            )
         return httpx.Response(404, json={"detail": path})
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://example.test")
@@ -133,9 +154,12 @@ def test_report_workflow_smoke_runs_full_flow_with_mock_transport(capsys):
         "project_id": "project-smoke",
         "slide_count": 2,
         "pptx_bytes": len(smoke.PPTX_MAGIC + b"payload"),
+        "snapshot_export_version": "decisiondoc_report_workflow_snapshot.v1",
         "status": "passed",
     }
-    assert "PASS POST /planning/generate -> 200 slide_plans=2" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "PASS POST /planning/generate -> 200 slide_plans=2" in out
+    assert "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1" in out
 
 
 def test_report_workflow_smoke_does_not_send_tenant_header_by_default():
@@ -149,3 +173,10 @@ def test_report_workflow_smoke_fails_when_blueprint_fields_are_missing():
 
     with pytest.raises(SystemExit, match="planning blueprint missing fields"):
         smoke._validate_planning_blueprint({"slide_plans": []}, expected_slide_count=2)
+
+
+def test_report_workflow_smoke_detects_content_base64_key():
+    smoke = _load_smoke_module()
+
+    assert smoke._contains_key({"visual_assets": [{"content_base64": "raw"}]}, "content_base64") is True
+    assert smoke._contains_key({"visual_assets": [{"has_content_base64": True}]}, "content_base64") is False

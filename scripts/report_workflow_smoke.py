@@ -49,6 +49,14 @@ def _print_result(label: str, status_code: int, **fields: Any) -> None:
     print(f"PASS {label} -> {status_code}{(' ' + suffix) if suffix else ''}", flush=True)
 
 
+def _contains_key(value: Any, target_key: str) -> bool:
+    if isinstance(value, dict):
+        return any(key == target_key or _contains_key(item, target_key) for key, item in value.items())
+    if isinstance(value, list):
+        return any(_contains_key(item, target_key) for item in value)
+    return False
+
+
 def _headers(api_key: str, tenant_id: str) -> dict[str, str]:
     headers = {"X-DecisionDoc-Api-Key": api_key}
     if tenant_id:
@@ -276,11 +284,35 @@ def run_report_workflow_smoke(
             raise SystemExit("GET /export/pptx did not return PPTX magic bytes")
         _print_result("GET /export/pptx", pptx.status_code, bytes=len(pptx.content))
 
+        snapshot = http.get(f"{base_url}/report-workflows/{workflow_id}/export/snapshot", headers=auth_headers)
+        snapshot_body = _assert_status("GET /export/snapshot", snapshot, 200)
+        if snapshot_body.get("export_version") != "decisiondoc_report_workflow_snapshot.v1":
+            raise SystemExit(f"GET /export/snapshot returned invalid export_version: {snapshot_body.get('export_version')}")
+        if snapshot_body.get("report_workflow_id") != workflow_id:
+            raise SystemExit("GET /export/snapshot returned mismatched report_workflow_id")
+        approval = snapshot_body.get("approval")
+        if not isinstance(approval, dict) or approval.get("final_approval_status") != "approved":
+            raise SystemExit("GET /export/snapshot missing approved final approval metadata")
+        promotion = snapshot_body.get("promotion")
+        if not isinstance(promotion, dict) or promotion.get("project_document_id") != promoted_body.get("project_document_id"):
+            raise SystemExit("GET /export/snapshot missing project promotion metadata")
+        slide_outline = snapshot_body.get("slide_outline")
+        if not isinstance(slide_outline, list) or len(slide_outline) != slide_count:
+            raise SystemExit(f"GET /export/snapshot expected {slide_count} slide outlines, got {len(slide_outline or [])}")
+        if _contains_key(snapshot_body, "content_base64"):
+            raise SystemExit("GET /export/snapshot leaked visual asset content_base64")
+        _print_result(
+            "GET /export/snapshot",
+            snapshot.status_code,
+            export_version=snapshot_body.get("export_version"),
+        )
+
         return {
             "workflow_id": workflow_id,
             "project_id": project_id,
             "slide_count": slide_count,
             "pptx_bytes": len(pptx.content),
+            "snapshot_export_version": snapshot_body.get("export_version"),
             "status": "passed",
         }
     finally:
@@ -302,7 +334,8 @@ def main() -> int:
     )
     print(
         "Report workflow smoke completed "
-        f"workflow_id={result['workflow_id']} slide_count={result['slide_count']} pptx_bytes={result['pptx_bytes']}",
+        f"workflow_id={result['workflow_id']} slide_count={result['slide_count']} "
+        f"pptx_bytes={result['pptx_bytes']} snapshot={result['snapshot_export_version']}",
         flush=True,
     )
     return 0
