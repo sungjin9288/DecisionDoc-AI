@@ -22336,6 +22336,39 @@ function getPostDeploySmokeResultsAvailability(source) {
   return Array.isArray(smokeCheck.smoke_results);
 }
 
+function getPostDeployReportWorkflowSmokeResults(source) {
+  const payload = source && typeof source === 'object' ? source : null;
+  if (!payload) return [];
+  const direct = Array.isArray(payload.report_workflow_smoke_results)
+    ? payload.report_workflow_smoke_results.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (direct.length) return direct;
+  const checks = Array.isArray(payload.checks) ? payload.checks : [];
+  const smokeCheck = checks.find((check) => {
+    return String(check?.name || '').trim() === 'report workflow smoke';
+  });
+  if (!Array.isArray(smokeCheck?.report_workflow_smoke_results)) return [];
+  return smokeCheck.report_workflow_smoke_results.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function getPostDeployReportWorkflowSmokeResultsAvailability(source) {
+  const payload = source && typeof source === 'object' ? source : null;
+  if (!payload) return false;
+  if (typeof payload.report_workflow_smoke_results_available === 'boolean') {
+    return payload.report_workflow_smoke_results_available;
+  }
+  if (Array.isArray(payload.report_workflow_smoke_results)) return true;
+  const checks = Array.isArray(payload.checks) ? payload.checks : [];
+  const smokeCheck = checks.find((check) => {
+    return String(check?.name || '').trim() === 'report workflow smoke';
+  });
+  if (!smokeCheck || typeof smokeCheck !== 'object') return false;
+  if (typeof smokeCheck.report_workflow_smoke_results_available === 'boolean') {
+    return smokeCheck.report_workflow_smoke_results_available;
+  }
+  return Array.isArray(smokeCheck.report_workflow_smoke_results);
+}
+
 function normalizePostDeploySmokeResultDetail(value) {
   const text = String(value || '').trim();
   if (!text) return '—';
@@ -22399,6 +22432,37 @@ function buildOpsPostDeploySmokeResultDiffRows(leftDetails, rightDetails) {
     const rightDetail = String(rightMap.get(key) || '—');
     return `
       <div class="ops-post-deploy-smoke-results-diff-row" style="display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:.5rem;align-items:start;padding:.45rem .55rem;border-radius:8px;background:rgba(255,255,255,.04);">
+        <span style="color:#e2e8f0;font-size:.74rem;">${escapeHtml(key)}</span>
+        <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(leftDetail)}</code>
+        <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(rightDetail)}</code>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildOpsPostDeployReportWorkflowSmokeResultDiffRows(leftDetails, rightDetails) {
+  const leftMap = new Map();
+  const rightMap = new Map();
+  getPostDeployReportWorkflowSmokeResults(leftDetails).forEach((line) => {
+    const parsed = parsePostDeploySmokeResultLine(line);
+    if (!parsed.key) return;
+    leftMap.set(parsed.key, parsed.detail);
+  });
+  getPostDeployReportWorkflowSmokeResults(rightDetails).forEach((line) => {
+    const parsed = parsePostDeploySmokeResultLine(line);
+    if (!parsed.key) return;
+    rightMap.set(parsed.key, parsed.detail);
+  });
+  const keys = Array.from(new Set([...leftMap.keys(), ...rightMap.keys()]));
+  const changed = keys.filter((key) => String(leftMap.get(key) || '—') !== String(rightMap.get(key) || '—'));
+  if (!changed.length) {
+    return '<p style="margin:.2rem 0;color:#cbd5e1;font-size:.76rem;">두 리포트의 Report Workflow smoke 결과가 동일합니다.</p>';
+  }
+  return changed.map((key) => {
+    const leftDetail = String(leftMap.get(key) || '—');
+    const rightDetail = String(rightMap.get(key) || '—');
+    return `
+      <div class="ops-post-deploy-report-workflow-smoke-results-diff-row" style="display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:.5rem;align-items:start;padding:.45rem .55rem;border-radius:8px;background:rgba(255,255,255,.04);">
         <span style="color:#e2e8f0;font-size:.74rem;">${escapeHtml(key)}</span>
         <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(leftDetail)}</code>
         <code style="font-size:.7rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">${escapeHtml(rightDetail)}</code>
@@ -22472,6 +22536,57 @@ function buildPostDeploySmokeResultsSummary(source, options = {}) {
   `;
 }
 
+function buildPostDeployReportWorkflowSmokeResultsSummary(source, options = {}) {
+  const results = getPostDeployReportWorkflowSmokeResults(source);
+  const smokeResultsAvailable = getPostDeployReportWorkflowSmokeResultsAvailability(source);
+  const compact = options.compact === true;
+  const title = options.title || 'Report Workflow smoke';
+  if (!results.length) {
+    if (options.showEmpty !== true) return '';
+    const emptyMessage = String(
+      options.emptyMessage
+      || (smokeResultsAvailable
+        ? '저장된 Report Workflow smoke summary가 없습니다.'
+        : 'legacy report라 저장된 Report Workflow smoke summary가 없습니다.')
+    );
+    return `
+      <div class="ops-post-deploy-report-workflow-smoke-results ops-post-deploy-smoke-results-empty" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.18);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;">
+          <div style="color:#bae6fd;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;">${escapeHtml(title)}</div>
+          <span class="ops-post-deploy-report-workflow-smoke-results-count" style="display:inline-flex;align-items:center;padding:.14rem .45rem;border-radius:999px;background:rgba(255,255,255,.08);color:#e0f2fe;font-size:.66rem;font-weight:800;">
+            0 checks
+          </span>
+        </div>
+        <div style="margin-top:${compact ? '.35rem' : '.45rem'};color:#cbd5e1;font-size:${compact ? '.66rem' : '.7rem'};line-height:1.45;">
+          ${escapeHtml(emptyMessage)}
+        </div>
+      </div>
+    `;
+  }
+  const displayResults = compact && results.length > 3 ? results.slice(0, 3) : results;
+  const hiddenCount = Math.max(0, results.length - displayResults.length);
+  return `
+    <div class="ops-post-deploy-report-workflow-smoke-results" style="margin-top:${compact ? '.45rem' : '.6rem'};padding:${compact ? '.55rem .65rem' : '.7rem .8rem'};border-radius:10px;background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.18);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.55rem;flex-wrap:wrap;">
+        <div style="color:#bae6fd;font-size:${compact ? '.68rem' : '.72rem'};font-weight:700;">${escapeHtml(title)}</div>
+        <span class="ops-post-deploy-report-workflow-smoke-results-count" style="display:inline-flex;align-items:center;padding:.14rem .45rem;border-radius:999px;background:rgba(255,255,255,.08);color:#e0f2fe;font-size:.66rem;font-weight:800;">
+          ${escapeHtml(String(results.length))} checks
+        </span>
+      </div>
+      <div style="display:grid;gap:${compact ? '.22rem' : '.28rem'};margin-top:${compact ? '.35rem' : '.45rem'};">
+        ${displayResults.map((line) => `
+          <code style="font-size:${compact ? '.66rem' : '.71rem'};line-height:1.45;color:#e2e8f0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(line)}</code>
+        `).join('')}
+      </div>
+      ${hiddenCount ? `
+        <div style="margin-top:${compact ? '.32rem' : '.4rem'};color:#cbd5e1;font-size:${compact ? '.66rem' : '.7rem'};line-height:1.45;">
+          ${escapeHtml(String(hiddenCount))}개 결과는 latest/detail JSON에서 확인할 수 있습니다.
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function formatOpsReportTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -22522,6 +22637,7 @@ function getOpsPostDeployFilteredReports(payload) {
       report?.provider_error_code,
       report?.smoke_message,
       Array.isArray(report?.smoke_results) ? report.smoke_results.join(' ') : '',
+      Array.isArray(report?.report_workflow_smoke_results) ? report.report_workflow_smoke_results.join(' ') : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -22727,7 +22843,18 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
     title: 'Smoke checks',
     showEmpty: true,
   });
+  const leftReportWorkflowSmokeResults = buildPostDeployReportWorkflowSmokeResultsSummary(left, {
+    compact: true,
+    title: 'Report Workflow smoke',
+    showEmpty: true,
+  });
+  const rightReportWorkflowSmokeResults = buildPostDeployReportWorkflowSmokeResultsSummary(right, {
+    compact: true,
+    title: 'Report Workflow smoke',
+    showEmpty: true,
+  });
   const smokeResultDiffRows = buildOpsPostDeploySmokeResultDiffRows(left, right);
+  const reportWorkflowSmokeResultDiffRows = buildOpsPostDeployReportWorkflowSmokeResultDiffRows(left, right);
   const leftChecks = buildOpsPostDeployCheckMap(left);
   const rightChecks = buildOpsPostDeployCheckMap(right);
   const providerRouteDiffRows = buildOpsPostDeployProviderRouteDiffRows(left, right);
@@ -22774,6 +22901,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           ${leftProviderPolicy}
           ${leftSmokeFailure}
           ${leftSmokeResults}
+          ${leftReportWorkflowSmokeResults}
         </div>
         <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:.65rem .75rem;">
           <div style="display:flex;align-items:center;gap:.4rem;">
@@ -22792,6 +22920,7 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
           ${rightProviderPolicy}
           ${rightSmokeFailure}
           ${rightSmokeResults}
+          ${rightReportWorkflowSmokeResults}
         </div>
       </div>
       <div>
@@ -22805,6 +22934,10 @@ function renderOpsPostDeployCompareResult(leftPayload, rightPayload) {
       <div>
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">Smoke checks 차이</div>
         <div style="display:grid;gap:.35rem;">${smokeResultDiffRows}</div>
+      </div>
+      <div>
+        <div style="color:#bae6fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">Report Workflow smoke 차이</div>
+        <div style="display:grid;gap:.35rem;">${reportWorkflowSmokeResultDiffRows}</div>
       </div>
       <div>
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;margin:.4rem 0;">체크 차이</div>
@@ -22975,6 +23108,10 @@ function renderOpsPostDeployReportDetail(detailPayload) {
   );
   const smokeFailureSummary = buildPostDeploySmokeFailureSummary(details, { title: 'Smoke failure' });
   const smokeResultsSummary = buildPostDeploySmokeResultsSummary(details, { title: 'Smoke checks', showEmpty: true });
+  const reportWorkflowSmokeResultsSummary = buildPostDeployReportWorkflowSmokeResultsSummary(details, {
+    title: 'Report Workflow smoke',
+    showEmpty: true,
+  });
   const detailError = details.error
     ? `<div style="margin-top:.65rem;color:#fecaca;font-size:.78rem;line-height:1.5;">${escapeHtml(details.error)}</div>`
     : '';
@@ -22999,6 +23136,7 @@ function renderOpsPostDeployReportDetail(detailPayload) {
         ${providerPolicySummary}
         ${smokeFailureSummary}
         ${smokeResultsSummary}
+        ${reportWorkflowSmokeResultsSummary}
       </div>
       <div style="display:inline-flex;align-items:center;padding:.22rem .55rem;border-radius:999px;background:${details.skip_smoke ? 'rgba(251,191,36,.16)' : 'rgba(134,239,172,.14)'};color:${details.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:800;">
         ${details.skip_smoke ? 'skip smoke' : 'smoke 포함'}
@@ -23088,6 +23226,10 @@ function renderOpsPostDeployReports(data) {
     latest || allReports[0] || null,
     { title: 'Smoke checks', showEmpty: true }
   );
+  const latestReportWorkflowSmokeResultsSummary = buildPostDeployReportWorkflowSmokeResultsSummary(
+    latest || allReports[0] || null,
+    { title: 'Report Workflow smoke', showEmpty: true }
+  );
   const latestChecks = Array.isArray(latest?.checks) ? latest.checks : [];
   const compareState = getOpsPostDeployCompareState(data, allReports);
   const compareOptions = allReports
@@ -23116,6 +23258,7 @@ function renderOpsPostDeployReports(data) {
         ${latestProviderPolicySummary}
         ${latestSmokeFailureSummary}
         ${latestSmokeResultsSummary}
+        ${latestReportWorkflowSmokeResultsSummary}
       </div>
       <div style="min-width:180px;background:rgba(255,255,255,.06);border:1px solid rgba(196,181,253,.15);border-radius:12px;padding:.8rem .95rem;">
         <div style="color:#c4b5fd;font-size:.72rem;font-weight:700;">최근 점검 범위</div>
@@ -23160,6 +23303,10 @@ function renderOpsPostDeployReports(data) {
           report,
           { compact: true, title: 'Smoke checks', showEmpty: true }
         );
+        const reportWorkflowSmokeResultsSummary = buildPostDeployReportWorkflowSmokeResultsSummary(
+          report,
+          { compact: true, title: 'Report Workflow smoke', showEmpty: true }
+        );
         return `
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:start;background:rgba(15,23,42,.34);border:1px solid rgba(196,181,253,.12);border-radius:10px;padding:.75rem .85rem;">
             <div>
@@ -23177,6 +23324,7 @@ function renderOpsPostDeployReports(data) {
               ${providerPolicySummary}
               ${smokeFailureSummary}
               ${smokeResultsSummary}
+              ${reportWorkflowSmokeResultsSummary}
             </div>
             <div style="display:grid;justify-items:end;gap:.45rem;">
               <div style="color:${report.skip_smoke ? '#fbbf24' : '#86efac'};font-size:.72rem;font-weight:700;">
@@ -23773,7 +23921,7 @@ async function checkUsageWarning() {
     <footer id="app-footer">
       <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>
       <span>·</span>
-      <span id="footer-version">DecisionDoc AI v1.1.56</span>
+      <span id="footer-version">DecisionDoc AI v1.1.57</span>
       <span>·</span>
       <span>© 2026</span>
     </footer>

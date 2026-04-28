@@ -56,6 +56,11 @@ def test_report_workflow_tab_and_stepper_present():
     assert "Snapshot Export" in html
     assert "downloadReportWorkflowSnapshot" in html
     assert "Report Workflow snapshot artifact" in html
+    assert "Report Workflow smoke" in html
+    assert "report_workflow_smoke_results" in html
+    assert "getPostDeployReportWorkflowSmokeResults" in html
+    assert "buildPostDeployReportWorkflowSmokeResultsSummary" in html
+    assert "buildOpsPostDeployReportWorkflowSmokeResultDiffRows" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():

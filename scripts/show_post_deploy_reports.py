@@ -25,6 +25,7 @@ def _load_report_history_module():
 _report_history = _load_report_history_module()
 _extract_provider_route_summary = _report_history._extract_provider_route_summary
 _extract_smoke_failure_summary = _report_history._extract_smoke_failure_summary
+_extract_report_workflow_smoke_summary = _report_history._extract_report_workflow_smoke_summary
 build_post_deploy_reports_payload = _report_history.build_post_deploy_reports_payload
 get_default_post_deploy_report_dir = _report_history.get_default_post_deploy_report_dir
 load_report_json = _report_history.load_report_json
@@ -66,6 +67,16 @@ def _format_smoke_results_summary(entry: dict[str, Any]) -> str | None:
     return "  smoke_results: " + " | ".join(normalized_results)
 
 
+def _format_report_workflow_smoke_results_summary(entry: dict[str, Any]) -> str | None:
+    results = entry.get("report_workflow_smoke_results")
+    if not isinstance(results, list):
+        return None
+    normalized_results = [str(item).strip() for item in results if str(item).strip()]
+    if not normalized_results:
+        return None
+    return "  report_workflow_smoke_results: " + " | ".join(normalized_results)
+
+
 def _print_entry(entry: dict[str, Any]) -> None:
     status = str(entry.get("status", "unknown")).upper()
     finished_at = str(entry.get("finished_at", "-"))
@@ -95,6 +106,9 @@ def _print_entry(entry: dict[str, Any]) -> None:
     smoke_results = _format_smoke_results_summary(entry)
     if smoke_results:
         print(smoke_results, flush=True)
+    report_workflow_smoke_results = _format_report_workflow_smoke_results_summary(entry)
+    if report_workflow_smoke_results:
+        print(report_workflow_smoke_results, flush=True)
 
 
 def _print_latest_details(report_dir: Path) -> None:
@@ -103,6 +117,7 @@ def _print_latest_details(report_dir: Path) -> None:
     extracted_summary: dict[str, Any] = {}
     extracted_summary.update(_extract_provider_route_summary(payload))
     extracted_summary.update(_extract_smoke_failure_summary(payload))
+    extracted_summary.update(_extract_report_workflow_smoke_summary(payload))
     for key, value in extracted_summary.items():
         payload.setdefault(key, value)
     print("", flush=True)
@@ -153,6 +168,9 @@ def _print_latest_details(report_dir: Path) -> None:
     smoke_results = _format_smoke_results_summary(payload)
     if smoke_results:
         print(smoke_results.replace("  ", "- ", 1), flush=True)
+    report_workflow_smoke_results = _format_report_workflow_smoke_results_summary(payload)
+    if report_workflow_smoke_results:
+        print(report_workflow_smoke_results.replace("  ", "- ", 1), flush=True)
     checks = payload.get("checks", [])
     print("Checks", flush=True)
     for check in checks:
@@ -164,6 +182,9 @@ def _print_latest_details(report_dir: Path) -> None:
         check_smoke_results = _format_smoke_results_summary(check)
         if check_smoke_results:
             print(check_smoke_results.replace("  ", "  - ", 1), flush=True)
+        check_report_workflow_smoke_results = _format_report_workflow_smoke_results_summary(check)
+        if check_report_workflow_smoke_results:
+            print(check_report_workflow_smoke_results.replace("  ", "  - ", 1), flush=True)
 
 
 def _build_json_payload(*, report_dir: Path, limit: int, latest: bool) -> dict[str, Any]:

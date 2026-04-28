@@ -57,6 +57,11 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
                             "POST /generate/with-attachments (no key) -> 401",
                             "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
                         ],
+                        "report_workflow_smoke_results": [
+                            "PASS create workflow -> workflow-1 status=planning_required",
+                            "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                            "Report workflow smoke completed for workflow_id=workflow-1",
+                        ],
                     },
                     {
                         "file": "post-deploy-20260414T031000Z.json",
@@ -84,6 +89,7 @@ def test_show_post_deploy_reports_lists_recent_entries(tmp_path: Path, capsys) -
     assert "provider_policy: quality_first=degraded" in captured
     assert "smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota" in captured
     assert "smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401" in captured
+    assert "report_workflow_smoke_results: PASS create workflow -> workflow-1 status=planning_required | PASS GET /export/snapshot -> 200" in captured
     assert "post-deploy-20260414T031000Z.json" not in captured
 
 
@@ -139,6 +145,16 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
                             "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
                         ],
                     },
+                    {
+                        "name": "report workflow smoke",
+                        "status": "passed",
+                        "exit_code": 0,
+                        "report_workflow_smoke_results": [
+                            "PASS create workflow -> workflow-1 status=planning_required",
+                            "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                            "Report workflow smoke completed for workflow_id=workflow-1",
+                        ],
+                    },
                 ],
             }
         ),
@@ -179,9 +195,12 @@ def test_show_post_deploy_reports_prints_latest_details(tmp_path: Path, capsys) 
     assert "- provider_policy_issues=quality_first:visual route must be exactly openai" in captured
     assert "- smoke_failure: code=PROVIDER_FAILED | provider_error_code=insufficient_quota | message=AI provider quota is exhausted. 운영 키 또는 과금 한도를 확인하세요." in captured
     assert "- smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401 | POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4" in captured
+    assert "- report_workflow_smoke_results: PASS create workflow -> workflow-1 status=planning_required | PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1 | Report workflow smoke completed for workflow_id=workflow-1" in captured
     assert "- [passed] health" in captured
     assert "- [failed] deployed smoke exit_code=1" in captured
     assert "  - smoke_results: GET /health -> 200 request_id=req-1 | POST /generate/with-attachments (no key) -> 401 | POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4" in captured
+    assert "- [passed] report workflow smoke exit_code=0" in captured
+    assert "  - report_workflow_smoke_results: PASS create workflow -> workflow-1 status=planning_required | PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1 | Report workflow smoke completed for workflow_id=workflow-1" in captured
 
 
 def test_show_post_deploy_reports_prints_json_summary(tmp_path: Path, capsys) -> None:
@@ -275,6 +294,16 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
                     "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
                 ],
             },
+            {
+                "name": "report workflow smoke",
+                "status": "passed",
+                "exit_code": 0,
+                "report_workflow_smoke_results": [
+                    "PASS create workflow -> workflow-1 status=planning_required",
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                    "Report workflow smoke completed for workflow_id=workflow-1",
+                ],
+            },
         ],
     }
     (report_dir / "latest.json").write_text(json.dumps(latest_payload), encoding="utf-8")
@@ -313,7 +342,9 @@ def test_show_post_deploy_reports_prints_json_with_latest_details(tmp_path: Path
     assert payload["latest_details"]["provider_policy_issues"]["quality_first"] == []
     assert payload["latest_details"]["provider_error_code"] == "insufficient_quota"
     assert payload["latest_details"]["smoke_results"][1].startswith("POST /generate/with-attachments (auth) -> 200")
+    assert payload["latest_details"]["report_workflow_smoke_results"][1].startswith("PASS GET /export/snapshot")
     assert payload["latest_details"]["checks"][2]["exit_code"] == 1
+    assert payload["latest_details"]["checks"][3]["report_workflow_smoke_results_available"] is True
 
 
 def test_show_post_deploy_reports_loads_without_app_ops_package_import(tmp_path: Path, capsys, monkeypatch) -> None:

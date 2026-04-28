@@ -73,6 +73,16 @@ def _write_report_history(report_dir: Path) -> None:
                     "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
                 ],
             },
+            {
+                "name": "report workflow smoke",
+                "status": "passed",
+                "exit_code": 0,
+                "report_workflow_smoke_results": [
+                    "PASS create workflow -> workflow-1 status=planning_required",
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                    "Report workflow smoke completed for workflow_id=workflow-1",
+                ],
+            },
         ],
     }
     previous_payload = {
@@ -126,6 +136,11 @@ def _write_report_history(report_dir: Path) -> None:
                     "POST /generate/with-attachments (no key) -> 401",
                     "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4",
                 ],
+                "report_workflow_smoke_results": [
+                    "PASS create workflow -> workflow-1 status=planning_required",
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+                    "Report workflow smoke completed for workflow_id=workflow-1",
+                ],
             },
             {
                 "file": "post-deploy-20260414T031000Z.json",
@@ -175,6 +190,8 @@ def test_ops_post_deploy_reports_returns_summary_for_ops_key(tmp_path: Path, mon
     assert body["reports"][0]["provider_error_code"] == "insufficient_quota"
     assert body["reports"][0]["smoke_results_available"] is True
     assert body["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
+    assert body["reports"][0]["report_workflow_smoke_results_available"] is True
+    assert body["reports"][0]["report_workflow_smoke_results"][1].startswith("PASS GET /export/snapshot")
     assert body["latest_details"] is None
 
 
@@ -198,9 +215,13 @@ def test_ops_post_deploy_reports_returns_latest_details(tmp_path: Path, monkeypa
     assert body["latest_details"]["provider_error_code"] == "insufficient_quota"
     assert body["latest_details"]["smoke_results_available"] is True
     assert body["latest_details"]["smoke_results"][2].startswith("POST /generate/with-attachments (auth) -> 200")
+    assert body["latest_details"]["report_workflow_smoke_results_available"] is True
+    assert body["latest_details"]["report_workflow_smoke_results"][2].startswith("Report workflow smoke completed")
     assert body["latest_details"]["checks"][2]["name"] == "deployed smoke"
     assert body["latest_details"]["checks"][2]["exit_code"] == 1
     assert body["latest_details"]["checks"][2]["smoke_results_available"] is True
+    assert body["latest_details"]["checks"][3]["name"] == "report workflow smoke"
+    assert body["latest_details"]["checks"][3]["report_workflow_smoke_results_available"] is True
 
 
 def test_ops_post_deploy_reports_returns_404_when_missing(tmp_path: Path, monkeypatch) -> None:

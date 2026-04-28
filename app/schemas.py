@@ -916,6 +916,8 @@ class PostDeployReportSummary(BaseModel):
     smoke_exception_type: str | None = None
     smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
+    report_workflow_smoke_results_available: bool = False
+    report_workflow_smoke_results: list[str] = Field(default_factory=list)
 
 
 class PostDeployReportCheck(BaseModel):
@@ -932,6 +934,8 @@ class PostDeployReportCheck(BaseModel):
     stderr: str | None = None
     smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
+    report_workflow_smoke_results_available: bool = False
+    report_workflow_smoke_results: list[str] = Field(default_factory=list)
 
 
 class PostDeployLatestDetailsResponse(BaseModel):
@@ -953,6 +957,8 @@ class PostDeployLatestDetailsResponse(BaseModel):
     smoke_exception_type: str | None = None
     smoke_results_available: bool = False
     smoke_results: list[str] = Field(default_factory=list)
+    report_workflow_smoke_results_available: bool = False
+    report_workflow_smoke_results: list[str] = Field(default_factory=list)
 
 
 class OpsPostDeployReportsResponse(BaseModel):

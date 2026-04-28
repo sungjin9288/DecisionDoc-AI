@@ -143,22 +143,55 @@ def _extract_smoke_failure_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _extract_report_workflow_smoke_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = payload.get("checks")
+    if not isinstance(checks, list):
+        return {}
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if str(check.get("name", "")).strip() != "report workflow smoke":
+            continue
+        summary: dict[str, Any] = {}
+        report_workflow_smoke_results = check.get("report_workflow_smoke_results")
+        summary["report_workflow_smoke_results_available"] = isinstance(report_workflow_smoke_results, list)
+        if isinstance(report_workflow_smoke_results, list):
+            normalized_results = [
+                str(item).strip()
+                for item in report_workflow_smoke_results
+                if str(item).strip()
+            ]
+            if normalized_results:
+                summary["report_workflow_smoke_results"] = normalized_results
+        return summary
+    return {}
+
+
 def _apply_extracted_summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
     checks = payload.get("checks")
     has_available_results = False
+    has_available_report_workflow_results = False
     if isinstance(checks, list):
         for check in checks:
             if not isinstance(check, dict):
                 continue
-            if str(check.get("name", "")).strip() != "deployed smoke":
+            check_name = str(check.get("name", "")).strip()
+            if check_name == "deployed smoke":
+                available = isinstance(check.get("smoke_results"), list)
+                check.setdefault("smoke_results_available", available)
+                has_available_results = has_available_results or available
                 continue
-            available = isinstance(check.get("smoke_results"), list)
-            check.setdefault("smoke_results_available", available)
-            has_available_results = has_available_results or available
+            if check_name != "report workflow smoke":
+                continue
+            available = isinstance(check.get("report_workflow_smoke_results"), list)
+            check.setdefault("report_workflow_smoke_results_available", available)
+            has_available_report_workflow_results = has_available_report_workflow_results or available
     payload.setdefault("smoke_results_available", has_available_results)
+    payload.setdefault("report_workflow_smoke_results_available", has_available_report_workflow_results)
     extracted_summary: dict[str, Any] = {}
     extracted_summary.update(_extract_provider_route_summary(payload))
     extracted_summary.update(_extract_smoke_failure_summary(payload))
+    extracted_summary.update(_extract_report_workflow_smoke_summary(payload))
     for key, value in extracted_summary.items():
         payload.setdefault(key, value)
     return payload
@@ -179,6 +212,10 @@ def build_post_deploy_reports_payload(*, report_dir: Path, limit: int, latest: b
         normalized_entry.setdefault(
             "smoke_results_available",
             isinstance(normalized_entry.get("smoke_results"), list),
+        )
+        normalized_entry.setdefault(
+            "report_workflow_smoke_results_available",
+            isinstance(normalized_entry.get("report_workflow_smoke_results"), list),
         )
         normalized_reports.append(normalized_entry)
     payload: dict[str, Any] = {

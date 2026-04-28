@@ -217,6 +217,16 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
                 ),
                 stderr="",
             )
+        if command_list[-2:] == ["python", "scripts/report_workflow_smoke.py"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "PASS create workflow -> workflow-1 status=planning_required\n"
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1\n"
+                    "Report workflow smoke completed for workflow_id=workflow-1\n"
+                ),
+                stderr="",
+            )
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(checker.request, "urlopen", _fake_urlopen)
@@ -244,6 +254,9 @@ def test_post_deploy_check_writes_json_report(tmp_path: Path, monkeypatch, capsy
     assert payload["checks"][-1]["name"] == "report workflow smoke"
     assert "SMOKE_API_KEY=<redacted>" in payload["checks"][-1]["command"]
     assert "SMOKE_API_KEY=runtime-key-1" not in payload["checks"][-1]["command"]
+    assert payload["checks"][-1]["report_workflow_smoke_results_available"] is True
+    assert payload["report_workflow_smoke_results_available"] is True
+    assert payload["report_workflow_smoke_results"][1].startswith("PASS GET /export/snapshot -> 200")
 
 
 def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -272,6 +285,16 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
                     "GET /health -> 200 request_id=req-1\n"
                     "POST /generate/with-attachments (no key) -> 401\n"
                     "POST /generate/with-attachments (auth) -> 200 request_id=req-2 bundle_id=bundle-1 files=1 docs=4\n"
+                ),
+                stderr="",
+            )
+        if command_list[-2:] == ["python", "scripts/report_workflow_smoke.py"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "PASS create workflow -> workflow-1 status=planning_required\n"
+                    "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1\n"
+                    "Report workflow smoke completed for workflow_id=workflow-1\n"
                 ),
                 stderr="",
             )
@@ -309,6 +332,7 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     deployed_smoke_check = next(item for item in history_payload["checks"] if item["name"] == "deployed smoke")
     assert history_payload["checks"][-1]["name"] == "report workflow smoke"
     assert latest_payload["checks"][-1]["name"] == "report workflow smoke"
+    report_workflow_smoke_check = history_payload["checks"][-1]
     assert deployed_smoke_check["smoke_results"] == [
         "GET /health -> 200 request_id=req-1",
         "POST /generate/with-attachments (no key) -> 401",
@@ -317,6 +341,14 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert deployed_smoke_check["smoke_results_available"] is True
     assert latest_payload["smoke_results"] == deployed_smoke_check["smoke_results"]
     assert latest_payload["smoke_results_available"] is True
+    assert report_workflow_smoke_check["report_workflow_smoke_results"] == [
+        "PASS create workflow -> workflow-1 status=planning_required",
+        "PASS GET /export/snapshot -> 200 export_version=decisiondoc_report_workflow_snapshot.v1",
+        "Report workflow smoke completed for workflow_id=workflow-1",
+    ]
+    assert report_workflow_smoke_check["report_workflow_smoke_results_available"] is True
+    assert latest_payload["report_workflow_smoke_results"] == report_workflow_smoke_check["report_workflow_smoke_results"]
+    assert latest_payload["report_workflow_smoke_results_available"] is True
     assert history_payload["checks"][1]["name"] == "health provider routing"
     assert index_payload["reports"][0]["provider_routes"]["generation"] == "openai"
     assert index_payload["reports"][0]["provider_route_checks"]["visual"] == "ok"
@@ -324,6 +356,8 @@ def test_post_deploy_check_writes_report_history_and_latest(tmp_path: Path, monk
     assert index_payload["reports"][0]["provider_policy_issues"]["quality_first"][0].startswith("default route must include")
     assert index_payload["reports"][0]["smoke_results"][1] == "POST /generate/with-attachments (no key) -> 401"
     assert index_payload["reports"][0]["smoke_results_available"] is True
+    assert index_payload["reports"][0]["report_workflow_smoke_results"][1].startswith("PASS GET /export/snapshot")
+    assert index_payload["reports"][0]["report_workflow_smoke_results_available"] is True
     assert index_payload["latest"] == "latest.json"
     assert index_payload["latest_report"] == history_reports[0].name
     assert index_payload["reports"][0]["file"] == history_reports[0].name
