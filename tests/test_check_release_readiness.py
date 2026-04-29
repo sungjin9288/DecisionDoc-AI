@@ -111,3 +111,19 @@ def test_check_release_readiness_rejects_remote_tag_lookup_failure(tmp_path: Pat
 
     assert completed.returncode == 1
     assert "failed to check remote tag on missing" in completed.stderr
+
+
+def test_check_release_readiness_warns_when_target_is_not_remote_tip(tmp_path: Path) -> None:
+    repo = _init_release_repo(tmp_path)
+    older_commit = _run_git(repo, "rev-parse", "HEAD")
+    (repo / "README.md").write_text("# newer main commit\n", encoding="utf-8")
+    _run_git(repo, "add", "README.md")
+    _run_git(repo, "commit", "-m", "newer main commit")
+    remote_tip = _run_git(repo, "rev-parse", "HEAD")
+    _run_git(repo, "push", "origin", "main")
+
+    completed = _run_script(repo, "v2.3.9", "--target-ref", older_commit)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "PASS release readiness check passed" in completed.stdout
+    assert f"WARN target commit is not the latest refs/remotes/origin/main tip: {older_commit} != {remote_tip}" in completed.stdout

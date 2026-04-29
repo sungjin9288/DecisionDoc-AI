@@ -82,6 +82,13 @@ def check_release_readiness(
             errors.append(f"failed to fetch {remote}/{branch}: {detail}")
 
     remote_ref = f"refs/remotes/{remote}/{branch}"
+    remote_tip = ""
+    try:
+        remote_tip = _git_stdout(resolved_repo, ["rev-parse", f"{remote_ref}^{{commit}}"])
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        errors.append(f"protected remote ref is not available: {remote_ref} ({detail})")
+
     target_commit = ""
     try:
         target_commit = _git_stdout(resolved_repo, ["rev-parse", f"{target_ref}^{{commit}}"])
@@ -91,6 +98,8 @@ def check_release_readiness(
 
     if target_commit and _git_returncode(resolved_repo, ["merge-base", "--is-ancestor", target_commit, remote_ref]) != 0:
         errors.append(f"target commit is not reachable from {remote_ref}: {target_commit}")
+    if target_commit and remote_tip and target_commit != remote_tip:
+        warnings.append(f"target commit is not the latest {remote_ref} tip: {target_commit} != {remote_tip}")
 
     remote_tag_exists, remote_tag_error = _remote_tag_status(resolved_repo, remote=remote, tag=tag)
     if remote_tag_error:
@@ -107,6 +116,7 @@ def check_release_readiness(
         "target_commit": target_commit,
         "current_branch": current_branch,
         "remote_ref": remote_ref,
+        "remote_tip": remote_tip,
     }
 
 
