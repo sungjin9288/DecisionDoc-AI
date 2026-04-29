@@ -52,12 +52,37 @@ def _build_release_source_script() -> str:
     return validate_step["run"]
 
 
+def _build_production_release_source_script() -> str:
+    workflow = _load_cd_workflow()
+    source_step = next(
+        step
+        for step in workflow["jobs"]["deploy-production"]["steps"]
+        if step.get("name") == "Validate production release source"
+    )
+    return source_step["run"]
+
+
 def _run_release_source_script(repo: Path, *, github_sha: str, summary_file: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["GITHUB_SHA"] = github_sha
     env["GITHUB_STEP_SUMMARY"] = str(summary_file)
     return subprocess.run(
         ["bash", "-eu", "-o", "pipefail", "-c", _build_release_source_script()],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _run_production_release_source_script(
+    repo: Path, *, github_sha: str, output_file: Path
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GITHUB_SHA"] = github_sha
+    env["GITHUB_OUTPUT"] = str(output_file)
+    return subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", _build_production_release_source_script()],
         cwd=repo,
         env=env,
         capture_output=True,
@@ -157,6 +182,50 @@ def test_cd_production_tag_must_point_to_main_history():
         deploy_step["if"]
         == "steps.production_release_source.outputs.main_ancestor == 'true' && steps.production_config.outputs.configured == 'true'"
     )
+
+
+def test_cd_production_release_source_script_accepts_annotated_tag_objects(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    _run_git(repo, "tag", "-a", "v9.9.11", "-m", "release v9.9.11", release_commit)
+    annotated_tag_object = _run_git(repo, "rev-parse", "v9.9.11")
+    output_file = tmp_path / "github_output.txt"
+
+    completed = _run_production_release_source_script(
+        repo,
+        github_sha=annotated_tag_object,
+        output_file=output_file,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"Production release tag points to a commit reachable from origin/main: {release_commit}" in completed.stdout
+    output = output_file.read_text(encoding="utf-8")
+    assert "main_ancestor=true" in output
+    assert f"release_commit={release_commit}" in output
+
+
+def test_cd_production_release_source_script_blocks_annotated_tag_outside_main(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    _run_git(repo, "checkout", "--orphan", "production-release-candidate")
+    (repo / "README.md").write_text("# off-main production release candidate\n", encoding="utf-8")
+    _run_git(repo, "add", "README.md")
+    _run_git(repo, "commit", "-m", "off-main production release candidate")
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    _run_git(repo, "tag", "-a", "v9.9.12", "-m", "release v9.9.12", release_commit)
+    annotated_tag_object = _run_git(repo, "rev-parse", "v9.9.12")
+    output_file = tmp_path / "github_output.txt"
+
+    completed = _run_production_release_source_script(
+        repo,
+        github_sha=annotated_tag_object,
+        output_file=output_file,
+    )
+
+    assert completed.returncode == 1
+    assert "Production release tags must point to commits reachable from origin/main." in completed.stdout
+    output = output_file.read_text(encoding="utf-8")
+    assert "main_ancestor=false" in output
+    assert f"release_commit={release_commit}" in output
 
 
 def test_cd_staging_deploy_remains_main_branch_only_and_optional():
