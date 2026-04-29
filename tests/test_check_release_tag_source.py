@@ -83,3 +83,13 @@ def test_check_release_tag_source_rejects_non_release_tag_name(tmp_path: Path) -
 
     assert completed.returncode == 2
     assert "Invalid release tag" in completed.stderr
+
+
+def test_check_release_tag_source_rejects_non_numeric_semver_tag_name(tmp_path: Path) -> None:
+    repo = _init_release_repo(tmp_path)
+    _run_git(repo, "tag", "vfoo.bar.baz")
+
+    completed = _run_script(repo, "vfoo.bar.baz")
+
+    assert completed.returncode == 2
+    assert "Expected vMAJOR.MINOR.PATCH" in completed.stderr

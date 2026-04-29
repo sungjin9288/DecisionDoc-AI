@@ -29,6 +29,17 @@ jobs:
       - name: Validate release tag source before image publish
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          if ! [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            {
+              echo "## Release tag source"
+              echo "- status: blocked"
+              echo "- reason: release tag name must match vMAJOR.MINOR.PATCH."
+              echo "- tag: ${GITHUB_REF_NAME}"
+              echo "- required action: move the release tag to a numeric semver tag such as v1.2.3."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Release tag name must match vMAJOR.MINOR.PATCH, for example v1.2.3."
+            exit 1
+          fi
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
           release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"
           release_source_valid=false
@@ -46,7 +57,7 @@ jobs:
               echo "- status: blocked"
               echo "- reason: release tag does not point to a commit reachable from origin/main."
               echo "- commit: $release_commit"
-              echo "- required action: move the v*.*.* tag to a verified main commit before rerunning CD."
+              echo "- required action: move the vMAJOR.MINOR.PATCH tag to a verified main commit before rerunning CD."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$release_source_valid" = "true" ]; then
@@ -185,6 +196,12 @@ jobs:
       - name: Validate production release source
         id: production_release_source
         run: |
+          if ! [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "main_ancestor=false" >> "$GITHUB_OUTPUT"
+            echo "release_commit=" >> "$GITHUB_OUTPUT"
+            echo "::error::Production release tag name must match vMAJOR.MINOR.PATCH, for example v1.2.3."
+            exit 1
+          fi
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
           release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"
           if git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then

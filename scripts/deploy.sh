@@ -20,8 +20,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 1
 fi
 
-if [[ "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v[^.]+[.][^.]+[.][^.]+$ ]]; then
+if [[ "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
     IS_RELEASE_TAG_INPUT=true
+fi
+
+if [[ "$ENVIRONMENT" == "production" && "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v && "$IS_RELEASE_TAG_INPUT" != "true" ]]; then
+    echo "ERROR: Production release tag input must match vMAJOR.MINOR.PATCH, for example v1.2.3."
+    echo "       For non-semver rollback images, pass the full image ref, for example ghcr.io/...:rollback-tag."
+    exit 1
 fi
 
 if [[ "$IMAGE_INPUT" == *"/"* || "$IMAGE_INPUT" == *":"* ]]; then
@@ -52,7 +58,7 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
         echo "Running release tag source preflight..."
         python3 scripts/check_release_tag_source.py "$IMAGE_INPUT"
     else
-        echo "Skipping release tag source preflight (image input is not a v*.*.* release tag)."
+        echo "Skipping release tag source preflight (image input is not a vMAJOR.MINOR.PATCH release tag)."
     fi
 
     echo "Running production env preflight..."

@@ -51,7 +51,7 @@ Rules:
 3. Confirm Docker CD image build success.
 4. If staging secrets are configured, confirm staging deploy and smoke success.
 5. If staging secrets are not configured, confirm CD summary explicitly says staging was skipped due missing `STAGING_*`.
-6. For production, create and push a `v*.*.*` tag only after stage-equivalent evidence exists, and only on a commit reachable from `origin/main`.
+6. For production, create and push a numeric semver `vMAJOR.MINOR.PATCH` tag only after stage-equivalent evidence exists, and only on a commit reachable from `origin/main`.
 7. Run or confirm post-deploy report and retain `reports/post-deploy/latest.json` on the target server.
 
 ## 5. Failure Classification
@@ -61,6 +61,7 @@ Rules:
 | CI unit/lint/security job fails | code or test issue | Fix in repo before deploy retry |
 | CD says staging secrets are partially configured | config issue | Set or remove all `STAGING_*` together |
 | CD says staging skipped because secrets are empty | expected optional staging skip | Continue only if this is intentional |
+| CD says release tag name is not `vMAJOR.MINOR.PATCH` | release gate issue | Recreate the release tag as numeric semver, for example `v1.2.3` |
 | CD says release tag is invalid before Docker image publish | release gate issue | Move the tag to a verified `main` commit before rerunning CD |
 | CD says production release tag is not reachable from `origin/main` | release gate issue | Move the tag to a verified `main` commit and push the tag again |
 | Docker compose pull/up fails on remote server | server/runtime issue | Inspect remote `/opt/decisiondoc`, Docker daemon, GHCR auth |
@@ -101,6 +102,8 @@ Before production deploy:
 
 - [ ] CI for the target SHA is green.
 - [ ] Stage-equivalent smoke evidence exists for the same SHA.
+- [ ] Release tag name is numeric semver, for example `v1.2.3`.
+- [ ] `python3 scripts/check_release_tag_source.py vX.Y.Z` passes before pushing the tag.
 - [ ] `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` are all set.
 - [ ] `check-github-actions-config.sh --stage prod --docker-deploy` passes.
 - [ ] API key rotation overlap, if any, is documented.

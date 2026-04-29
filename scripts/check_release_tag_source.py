@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_TAG_PATTERN = re.compile(r"^v[0-9]+[.][0-9]+[.][0-9]+$")
 
 
 def _run_git(repo: Path, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -26,8 +28,7 @@ def _git_stdout(repo: Path, args: Sequence[str]) -> str:
 
 
 def _is_release_tag(tag: str) -> bool:
-    parts = tag.strip().split(".")
-    return tag.startswith("v") and len(parts) >= 3 and all(parts)
+    return bool(RELEASE_TAG_PATTERN.fullmatch(tag.strip()))
 
 
 def check_release_tag_source(
@@ -39,7 +40,7 @@ def check_release_tag_source(
     fetch: bool = True,
 ) -> tuple[bool, str, str]:
     if not _is_release_tag(tag):
-        raise SystemExit(f"Invalid release tag: {tag}. Expected a v*.*.* tag, for example v1.2.3.")
+        raise SystemExit(f"Invalid release tag: {tag}. Expected vMAJOR.MINOR.PATCH, for example v1.2.3.")
 
     resolved_repo = Path(repo).expanduser().resolve()
     remote_ref = f"refs/remotes/{remote}/{branch}"
@@ -62,7 +63,7 @@ def check_release_tag_source(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Validate that a v*.*.* release tag points to a commit reachable from origin/main."
+        description="Validate that a vMAJOR.MINOR.PATCH release tag points to a commit reachable from origin/main."
     )
     parser.add_argument("tag", help="Release tag to validate, for example v1.2.3")
     parser.add_argument("--repo", type=Path, default=REPO_ROOT, help=f"Git repository path. Default: {REPO_ROOT}")

@@ -74,7 +74,7 @@ def test_deploy_script_runs_release_tag_source_preflight_for_production_release_
     text = _deploy_script_text()
 
     assert 'IS_RELEASE_TAG_INPUT=false' in text
-    assert '[[ "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v' in text
+    assert '[[ "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v[0-9]+' in text
     assert 'echo "Running release tag source preflight..."' in text
     assert 'python3 scripts/check_release_tag_source.py "$IMAGE_INPUT"' in text
     assert 'echo "Running production env preflight..."' in text
@@ -97,7 +97,7 @@ def test_deploy_script_allows_full_image_refs_without_release_tag_preflight() ->
 
     assert 'if [[ "$IMAGE_INPUT" == *"/"* || "$IMAGE_INPUT" == *":"* ]]; then' in text
     assert 'IMAGE_REF="$IMAGE_INPUT"' in text
-    assert 'Skipping release tag source preflight (image input is not a v*.*.* release tag).' in text
+    assert 'Skipping release tag source preflight (image input is not a vMAJOR.MINOR.PATCH release tag).' in text
 
 
 def test_deploy_script_executes_release_tag_preflight_before_prod_env_check(tmp_path: Path) -> None:
@@ -119,3 +119,12 @@ def test_deploy_script_executes_full_image_ref_without_release_tag_preflight(tmp
     assert "scripts/check_release_tag_source.py" not in python_log
     assert "python3 scripts/check_prod_env.py --env-file .env.prod --provider-profile standard" in python_log
     assert f"DOCKER_IMAGE={image_ref} docker compose" in docker_log
+
+
+def test_deploy_script_rejects_non_numeric_semver_release_tag_candidate(tmp_path: Path) -> None:
+    completed, python_log, docker_log = _run_production_deploy_fixture(tmp_path, "vfoo.bar.baz")
+
+    assert completed.returncode == 1
+    assert "Production release tag input must match vMAJOR.MINOR.PATCH" in completed.stdout
+    assert python_log == ""
+    assert docker_log == ""

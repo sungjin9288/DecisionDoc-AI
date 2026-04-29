@@ -62,9 +62,12 @@ def _build_production_release_source_script() -> str:
     return source_step["run"]
 
 
-def _run_release_source_script(repo: Path, *, github_sha: str, summary_file: Path) -> subprocess.CompletedProcess[str]:
+def _run_release_source_script(
+    repo: Path, *, github_sha: str, summary_file: Path, github_ref_name: str = "v9.9.9"
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["GITHUB_SHA"] = github_sha
+    env["GITHUB_REF_NAME"] = github_ref_name
     env["GITHUB_STEP_SUMMARY"] = str(summary_file)
     return subprocess.run(
         ["bash", "-eu", "-o", "pipefail", "-c", _build_release_source_script()],
@@ -76,10 +79,11 @@ def _run_release_source_script(repo: Path, *, github_sha: str, summary_file: Pat
 
 
 def _run_production_release_source_script(
-    repo: Path, *, github_sha: str, output_file: Path
+    repo: Path, *, github_sha: str, output_file: Path, github_ref_name: str = "v9.9.11"
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["GITHUB_SHA"] = github_sha
+    env["GITHUB_REF_NAME"] = github_ref_name
     env["GITHUB_OUTPUT"] = str(output_file)
     return subprocess.run(
         ["bash", "-eu", "-o", "pipefail", "-c", _build_production_release_source_script()],
@@ -112,6 +116,8 @@ def test_cd_release_tag_source_is_validated_before_image_publish():
     assert checkout_step["uses"] == "actions/checkout@v6"
     assert checkout_step["with"]["fetch-depth"] == 0
     assert validate_step["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert '[[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' in validate_step["run"]
+    assert "Release tag name must match vMAJOR.MINOR.PATCH" in validate_step["run"]
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in validate_step["run"]
     assert 'release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"' in validate_step["run"]
     assert 'git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main' in validate_step["run"]
@@ -161,6 +167,25 @@ def test_cd_release_tag_source_script_blocks_annotated_tag_outside_main(tmp_path
     assert f"- commit: {release_commit}" in summary
 
 
+def test_cd_release_tag_source_script_blocks_non_numeric_semver_tag_name(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    summary_file = tmp_path / "summary.md"
+
+    completed = _run_release_source_script(
+        repo,
+        github_sha=release_commit,
+        github_ref_name="vfoo.bar.baz",
+        summary_file=summary_file,
+    )
+
+    assert completed.returncode == 1
+    assert "Release tag name must match vMAJOR.MINOR.PATCH" in completed.stdout
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "- status: blocked" in summary
+    assert "- reason: release tag name must match vMAJOR.MINOR.PATCH." in summary
+
+
 def test_cd_production_tag_must_point_to_main_history():
     workflow = _load_cd_workflow()
     production_steps = workflow["jobs"]["deploy-production"]["steps"]
@@ -171,6 +196,8 @@ def test_cd_production_tag_must_point_to_main_history():
     assert checkout_step["uses"] == "actions/checkout@v6"
     assert checkout_step["with"]["fetch-depth"] == 0
     assert source_step["id"] == "production_release_source"
+    assert '[[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' in source_step["run"]
+    assert "Production release tag name must match vMAJOR.MINOR.PATCH" in source_step["run"]
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in source_step["run"]
     assert 'release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"' in source_step["run"]
     assert 'git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main' in source_step["run"]
@@ -226,6 +253,25 @@ def test_cd_production_release_source_script_blocks_annotated_tag_outside_main(t
     output = output_file.read_text(encoding="utf-8")
     assert "main_ancestor=false" in output
     assert f"release_commit={release_commit}" in output
+
+
+def test_cd_production_release_source_script_blocks_non_numeric_semver_tag_name(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    output_file = tmp_path / "github_output.txt"
+
+    completed = _run_production_release_source_script(
+        repo,
+        github_sha=release_commit,
+        github_ref_name="vfoo.bar.baz",
+        output_file=output_file,
+    )
+
+    assert completed.returncode == 1
+    assert "Production release tag name must match vMAJOR.MINOR.PATCH" in completed.stdout
+    output = output_file.read_text(encoding="utf-8")
+    assert "main_ancestor=false" in output
+    assert "release_commit=" in output
 
 
 def test_cd_staging_deploy_remains_main_branch_only_and_optional():
