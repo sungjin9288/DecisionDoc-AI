@@ -105,6 +105,7 @@ docker compose --env-file .env.prod -f docker-compose.ha.yml up -d
 ```bash
 # Docker server production deploy
 git tag v1.0.0
+python3 scripts/check_release_tag_source.py v1.0.0
 git push origin v1.0.0
 ```
 
@@ -120,6 +121,7 @@ Docker server CD 필수 GitHub Secrets:
 - staging deploy를 활성화하려면 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`를 반드시 함께 설정한다.
 - `v*.*.*` tag production deploy는 staging job에 의존하지 않고 Docker image build/push 성공 후 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` preflight를 통과해야 실행된다.
 - `v*.*.*` tag가 `origin/main`에서 도달 불가능하면 Docker image publish 전에 CD가 먼저 실패한다. 이 경우 semver GHCR image가 생성되지 않아야 한다.
+- tag push 전에는 `python3 scripts/check_release_tag_source.py vX.Y.Z` 로 동일한 release source rule을 로컬에서 먼저 확인한다.
 - Docker image publish 전 release tag source 판정은 CD run의 GitHub Step Summary `Release tag source` 섹션에 기록된다.
 - `v*.*.*` tag는 반드시 `origin/main`에서 도달 가능한 commit을 가리켜야 한다. CD가 `release tag does not point to a commit reachable from origin/main`으로 block하면 검증된 `main` commit으로 tag를 다시 잡아야 한다.
 - release tag source gate는 annotated tag와 lightweight tag를 모두 지원하기 위해 tag object를 commit으로 dereference한 뒤 `origin/main` 도달 가능성을 판정한다.
