@@ -61,6 +61,7 @@ Rules:
 | CI unit/lint/security job fails | code or test issue | Fix in repo before deploy retry |
 | CD says staging secrets are partially configured | config issue | Set or remove all `STAGING_*` together |
 | CD says staging skipped because secrets are empty | expected optional staging skip | Continue only if this is intentional |
+| CD says release tag is invalid before Docker image publish | release gate issue | Move the tag to a verified `main` commit before rerunning CD |
 | CD says production release tag is not reachable from `origin/main` | release gate issue | Move the tag to a verified `main` commit and push the tag again |
 | Docker compose pull/up fails on remote server | server/runtime issue | Inspect remote `/opt/decisiondoc`, Docker daemon, GHCR auth |
 | `deploy-smoke [prod]` blocks on missing dev evidence | release gate issue | Run `deploy-smoke [dev]` for same `main` SHA or use documented break-glass |

@@ -21,7 +21,21 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout source with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag source before image publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "Release tag points to a commit reachable from origin/main."
+          else
+            echo "::error::Release tags must point to commits reachable from origin/main before publishing Docker images."
+            exit 1
+          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4

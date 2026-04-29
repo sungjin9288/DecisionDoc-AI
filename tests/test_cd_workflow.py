@@ -22,6 +22,26 @@ def test_cd_production_tag_deploy_does_not_depend_on_staging_job():
     assert deploy_production["if"] == "startsWith(github.ref, 'refs/tags/v')"
 
 
+def test_cd_release_tag_source_is_validated_before_image_publish():
+    workflow = _load_cd_workflow()
+    build_steps = workflow["jobs"]["build-and-push"]["steps"]
+    checkout_step = next(step for step in build_steps if step.get("name") == "Checkout source with full history")
+    validate_step = next(
+        step for step in build_steps if step.get("name") == "Validate release tag source before image publish"
+    )
+    login_step = next(step for step in build_steps if step.get("name") == "Log in to GitHub Container Registry")
+    build_step = next(step for step in build_steps if step.get("name") == "Build and push")
+
+    assert checkout_step["uses"] == "actions/checkout@v6"
+    assert checkout_step["with"]["fetch-depth"] == 0
+    assert validate_step["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in validate_step["run"]
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in validate_step["run"]
+    assert "before publishing Docker images" in validate_step["run"]
+    assert build_steps.index(validate_step) < build_steps.index(login_step)
+    assert build_steps.index(validate_step) < build_steps.index(build_step)
+
+
 def test_cd_production_tag_must_point_to_main_history():
     workflow = _load_cd_workflow()
     production_steps = workflow["jobs"]["deploy-production"]["steps"]
