@@ -30,8 +30,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"
           release_source_valid=false
-          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+          if git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
             release_source_valid=true
           fi
           {
@@ -40,9 +41,11 @@ jobs:
               echo "- status: valid"
               echo "- action: Docker image publish may proceed for this release tag."
               echo "- source: tag commit is reachable from origin/main."
+              echo "- commit: $release_commit"
             else
               echo "- status: blocked"
               echo "- reason: release tag does not point to a commit reachable from origin/main."
+              echo "- commit: $release_commit"
               echo "- required action: move the v*.*.* tag to a verified main commit before rerunning CD."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -183,11 +186,14 @@ jobs:
         id: production_release_source
         run: |
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
-          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+          release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"
+          if git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
             echo "main_ancestor=true" >> "$GITHUB_OUTPUT"
-            echo "Production release tag points to a commit reachable from origin/main."
+            echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
+            echo "Production release tag points to a commit reachable from origin/main: $release_commit"
           else
             echo "main_ancestor=false" >> "$GITHUB_OUTPUT"
+            echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
             echo "::error::Production release tags must point to commits reachable from origin/main."
             exit 1
           fi
@@ -224,6 +230,7 @@ jobs:
         if: always()
         env:
           RELEASE_SOURCE_OK: ${{ steps.production_release_source.outputs.main_ancestor }}
+          RELEASE_COMMIT: ${{ steps.production_release_source.outputs.release_commit }}
           PROD_CONFIGURED: ${{ steps.production_config.outputs.configured }}
         run: |
           {
@@ -231,10 +238,12 @@ jobs:
             if [ "${RELEASE_SOURCE_OK:-}" = "false" ]; then
               echo "- status: blocked"
               echo "- reason: release tag does not point to a commit reachable from origin/main."
+              echo "- commit: ${RELEASE_COMMIT:-unknown}"
               echo "- required action: move the v*.*.* tag to a verified main commit, then push the tag again."
             elif [ "${PROD_CONFIGURED:-}" = "true" ]; then
               echo "- status: configured"
               echo "- action: production deploy and post-deploy check will run for this release tag."
+              echo "- commit: ${RELEASE_COMMIT:-unknown}"
             elif [ "${PROD_CONFIGURED:-}" = "false" ]; then
               echo "- status: blocked"
               echo "- reason: production deploy secrets are missing or incomplete."

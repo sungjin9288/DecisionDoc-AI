@@ -36,10 +36,12 @@ def test_cd_release_tag_source_is_validated_before_image_publish():
     assert checkout_step["with"]["fetch-depth"] == 0
     assert validate_step["if"] == "startsWith(github.ref, 'refs/tags/v')"
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in validate_step["run"]
-    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in validate_step["run"]
+    assert 'release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"' in validate_step["run"]
+    assert 'git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main' in validate_step["run"]
     assert "## Release tag source" in validate_step["run"]
     assert 'echo "- status: valid"' in validate_step["run"]
     assert 'echo "- status: blocked"' in validate_step["run"]
+    assert 'echo "- commit: $release_commit"' in validate_step["run"]
     assert '>> "$GITHUB_STEP_SUMMARY"' in validate_step["run"]
     assert "before publishing Docker images" in validate_step["run"]
     assert build_steps.index(validate_step) < build_steps.index(login_step)
@@ -57,9 +59,11 @@ def test_cd_production_tag_must_point_to_main_history():
     assert checkout_step["with"]["fetch-depth"] == 0
     assert source_step["id"] == "production_release_source"
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in source_step["run"]
-    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in source_step["run"]
+    assert 'release_commit="$(git rev-parse "$GITHUB_SHA^{commit}")"' in source_step["run"]
+    assert 'git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main' in source_step["run"]
     assert 'echo "main_ancestor=true" >> "$GITHUB_OUTPUT"' in source_step["run"]
     assert 'echo "main_ancestor=false" >> "$GITHUB_OUTPUT"' in source_step["run"]
+    assert 'echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"' in source_step["run"]
     assert "Production release tags must point to commits reachable from origin/main." in source_step["run"]
     assert (
         deploy_step["if"]
@@ -109,9 +113,11 @@ def test_cd_production_summary_records_secret_preflight_result():
     assert "::error::Missing production secret: PROD_SSH_KEY" in validate_step["run"]
     assert summary_step["if"] == "always()"
     assert summary_step["env"]["RELEASE_SOURCE_OK"] == "${{ steps.production_release_source.outputs.main_ancestor }}"
+    assert summary_step["env"]["RELEASE_COMMIT"] == "${{ steps.production_release_source.outputs.release_commit }}"
     assert summary_step["env"]["PROD_CONFIGURED"] == "${{ steps.production_config.outputs.configured }}"
     assert "## Production deployment" in summary_step["run"]
     assert "release tag does not point to a commit reachable from origin/main" in summary_step["run"]
+    assert 'echo "- commit: ${RELEASE_COMMIT:-unknown}"' in summary_step["run"]
     assert 'echo "- status: configured"' in summary_step["run"]
     assert 'echo "- status: blocked"' in summary_step["run"]
     assert "PROD_HOST, PROD_USER, PROD_SSH_KEY" in summary_step["run"]
