@@ -49,6 +49,27 @@ def test_cd_staging_summary_records_skip_reason_for_unconfigured_secrets():
     assert '>> "$GITHUB_STEP_SUMMARY"' in summary_step["run"]
 
 
+def test_cd_production_summary_records_secret_preflight_result():
+    workflow = _load_cd_workflow()
+    production_steps = workflow["jobs"]["deploy-production"]["steps"]
+    validate_step = next(step for step in production_steps if step.get("name") == "Validate production deploy secrets")
+    summary_step = next(step for step in production_steps if step.get("name") == "Summarize production deploy decision")
+
+    assert validate_step["id"] == "production_config"
+    assert 'echo "configured=true" >> "$GITHUB_OUTPUT"' in validate_step["run"]
+    assert 'echo "configured=false" >> "$GITHUB_OUTPUT"' in validate_step["run"]
+    assert "::error::Missing production secret: PROD_HOST" in validate_step["run"]
+    assert "::error::Missing production secret: PROD_USER" in validate_step["run"]
+    assert "::error::Missing production secret: PROD_SSH_KEY" in validate_step["run"]
+    assert summary_step["if"] == "always()"
+    assert summary_step["env"]["PROD_CONFIGURED"] == "${{ steps.production_config.outputs.configured }}"
+    assert "## Production deployment" in summary_step["run"]
+    assert 'echo "- status: configured"' in summary_step["run"]
+    assert 'echo "- status: blocked"' in summary_step["run"]
+    assert "PROD_HOST, PROD_USER, PROD_SSH_KEY" in summary_step["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in summary_step["run"]
+
+
 def test_cd_remote_deploy_scripts_sync_server_checkout_before_compose():
     workflow = _load_cd_workflow()
 

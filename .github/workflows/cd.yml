@@ -145,14 +145,52 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Validate production deploy secrets
+        id: production_config
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
         run: |
-          test -n "$PROD_HOST" || { echo "::error::Missing production secret: PROD_HOST"; exit 1; }
-          test -n "$PROD_USER" || { echo "::error::Missing production secret: PROD_USER"; exit 1; }
-          test -n "$PROD_SSH_KEY" || { echo "::error::Missing production secret: PROD_SSH_KEY"; exit 1; }
+          missing=0
+          if [ -z "$PROD_HOST" ]; then
+            echo "::error::Missing production secret: PROD_HOST"
+            missing=1
+          fi
+          if [ -z "$PROD_USER" ]; then
+            echo "::error::Missing production secret: PROD_USER"
+            missing=1
+          fi
+          if [ -z "$PROD_SSH_KEY" ]; then
+            echo "::error::Missing production secret: PROD_SSH_KEY"
+            missing=1
+          fi
+          if [ "$missing" = "0" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Production deploy secrets are configured."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Summarize production deploy decision
+        if: always()
+        env:
+          PROD_CONFIGURED: ${{ steps.production_config.outputs.configured }}
+        run: |
+          {
+            echo "## Production deployment"
+            if [ "${PROD_CONFIGURED:-}" = "true" ]; then
+              echo "- status: configured"
+              echo "- action: production deploy and post-deploy check will run for this release tag."
+            elif [ "${PROD_CONFIGURED:-}" = "false" ]; then
+              echo "- status: blocked"
+              echo "- reason: production deploy secrets are missing or incomplete."
+              echo "- required secrets: PROD_HOST, PROD_USER, PROD_SSH_KEY"
+            else
+              echo "- status: blocked"
+              echo "- reason: production secret preflight did not complete successfully."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy to production
         uses: appleboy/ssh-action@v1
