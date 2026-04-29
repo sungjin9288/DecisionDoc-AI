@@ -58,6 +58,19 @@ cd /opt/decisiondoc
 python3 scripts/build_sales_pack.py
 ```
 
+7. 회사 전달 직전에는 handoff readiness gate를 실행합니다.
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/check_company_handoff_ready.py
+```
+
+PDF를 아직 재생성하기 전 문서 링크와 acceptance 기준만 먼저 확인하려면 아래처럼 실행합니다.
+
+```bash
+python3 scripts/check_company_handoff_ready.py --skip-pdf-check
+```
+
 기본 산출 경로:
 
 - `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`

@@ -17,6 +17,15 @@
 4. `docs/deployment/admin_v1_handoff.md` 와 현재 운영 상태가 일치한다.
 5. 전달할 PDF 5종을 1회 육안 검수했다.
 
+자동 gate:
+
+```bash
+cd /opt/decisiondoc
+python3 scripts/check_company_handoff_ready.py
+```
+
+이 gate는 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인합니다. PDF 생성 전 문서만 먼저 점검할 때는 `--skip-pdf-check`를 사용합니다.
+
 ## 2. 회사에 넘기는 패키지 구성
 
 기본 전달 패키지는 아래 3덩어리로 나눕니다.
@@ -145,3 +154,4 @@ DecisionDoc AI v1 운영 기준선 전달드립니다.
 - 접속 URL이 현재 운영 기준과 일치한다.
 - post-deploy latest report 경로를 확인했다.
 - 키 전달 경로를 별도로 정했다.
+- `python3 scripts/check_company_handoff_ready.py` 가 `PASS`를 반환했다.
