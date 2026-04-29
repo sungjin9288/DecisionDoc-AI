@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -81,6 +82,8 @@ def test_company_handoff_ready_passes_with_required_docs_and_pdfs(tmp_path: Path
     assert result["ok"] is True
     assert result["errors"] == []
     assert result["release_tag"] == "v1.1.58"
+    assert result["manifest"]["markdown"][0]["exists"] is True
+    assert result["manifest"]["pdfs"][0]["path"] == "output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf"
 
 
 def test_company_handoff_ready_fails_when_pdf_pack_is_missing(tmp_path: Path) -> None:
@@ -133,3 +136,36 @@ def test_company_handoff_ready_rejects_secret_like_delivery_text(tmp_path: Path)
 
     assert result["ok"] is False
     assert "forbidden secret-like text found in docs/sales/company_delivery_guide.md: OPENAI_API_KEY=sk-" in result["errors"]
+
+
+def test_company_handoff_ready_writes_report_file(tmp_path: Path) -> None:
+    checker = _load_script_module()
+    _write_complete_handoff_docs(tmp_path)
+    _write_complete_pdfs(tmp_path)
+    report_file = tmp_path / "reports" / "company-handoff" / "readiness.json"
+
+    result = checker.main(["--repo", str(tmp_path), "--report-file", str(report_file)])
+
+    assert result == 0
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert payload["ok"] is True
+    assert payload["release_tag"] == "v1.1.58"
+    assert payload["manifest"]["pdfs"][0]["exists"] is True
+
+
+def test_company_handoff_ready_writes_report_dir_latest(tmp_path: Path) -> None:
+    checker = _load_script_module()
+    _write_complete_handoff_docs(tmp_path)
+    report_dir = tmp_path / "reports" / "company-handoff"
+
+    result = checker.main(["--repo", str(tmp_path), "--skip-pdf-check", "--report-dir", str(report_dir)])
+
+    assert result == 0
+    latest = report_dir / "latest.json"
+    assert latest.exists()
+    timestamped = sorted(report_dir.glob("company-handoff-readiness-*.json"))
+    assert len(timestamped) == 1
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["ok"] is True
+    assert payload["pdf_check"] is False
+    assert payload["manifest"]["pdfs"] == []

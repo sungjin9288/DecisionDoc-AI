@@ -21,10 +21,10 @@
 
 ```bash
 cd /opt/decisiondoc
-python3 scripts/check_company_handoff_ready.py
+python3 scripts/check_company_handoff_ready.py --report-dir ./reports/company-handoff
 ```
 
-이 gate는 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인합니다. PDF 생성 전 문서만 먼저 점검할 때는 `--skip-pdf-check`를 사용합니다.
+이 gate는 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인하고 `reports/company-handoff/latest.json` 증적을 남깁니다. PDF 생성 전 문서만 먼저 점검할 때는 `--skip-pdf-check`를 사용합니다.
 
 ## 2. 회사에 넘기는 패키지 구성
 
@@ -154,4 +154,5 @@ DecisionDoc AI v1 운영 기준선 전달드립니다.
 - 접속 URL이 현재 운영 기준과 일치한다.
 - post-deploy latest report 경로를 확인했다.
 - 키 전달 경로를 별도로 정했다.
-- `python3 scripts/check_company_handoff_ready.py` 가 `PASS`를 반환했다.
+- `python3 scripts/check_company_handoff_ready.py --report-dir ./reports/company-handoff` 가 `PASS`를 반환했다.
+- `reports/company-handoff/latest.json` 를 전달 전 내부 증적으로 보관했다.

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from datetime import UTC, datetime
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -80,6 +82,26 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _display_path(repo_root: Path, path: Path) -> str:
+    return str(path.relative_to(repo_root)) if path.is_relative_to(repo_root) else str(path)
+
+
+def _file_record(repo_root: Path, path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {
+            "path": _display_path(repo_root, path),
+            "exists": False,
+            "is_file": False,
+            "size_bytes": 0,
+        }
+    return {
+        "path": _display_path(repo_root, path),
+        "exists": True,
+        "is_file": path.is_file(),
+        "size_bytes": path.stat().st_size if path.is_file() else 0,
+    }
+
+
 def _check_markdown(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for item in REQUIRED_MARKDOWN:
@@ -111,7 +133,7 @@ def _check_pdfs(repo_root: Path, *, output_dir: Path, skip_pdf_check: bool) -> l
     resolved_output_dir = output_dir if output_dir.is_absolute() else repo_root / output_dir
     for item in REQUIRED_PDFS:
         path = resolved_output_dir / item.path
-        display_path = str(path.relative_to(repo_root)) if path.is_relative_to(repo_root) else str(path)
+        display_path = _display_path(repo_root, path)
         if not path.exists():
             errors.append(f"missing required PDF: {display_path}")
             continue
@@ -126,6 +148,16 @@ def _check_pdfs(repo_root: Path, *, output_dir: Path, skip_pdf_check: bool) -> l
             if handle.read(5) != b"%PDF-":
                 errors.append(f"required PDF does not start with %PDF-: {display_path}")
     return errors
+
+
+def _build_manifest(repo_root: Path, *, output_dir: Path, skip_pdf_check: bool) -> dict[str, object]:
+    resolved_output_dir = output_dir if output_dir.is_absolute() else repo_root / output_dir
+    markdown = [_file_record(repo_root, repo_root / item.path) for item in REQUIRED_MARKDOWN]
+    pdfs = [] if skip_pdf_check else [_file_record(repo_root, resolved_output_dir / item.path) for item in REQUIRED_PDFS]
+    return {
+        "markdown": markdown,
+        "pdfs": pdfs,
+    }
 
 
 def check_company_handoff_ready(
@@ -147,7 +179,29 @@ def check_company_handoff_ready(
         "release_tag": LATEST_RELEASE_TAG,
         "acceptance_file": LATEST_ACCEPTANCE_FILE,
         "pdf_check": not skip_pdf_check,
+        "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "manifest": _build_manifest(resolved_repo, output_dir=output_dir, skip_pdf_check=skip_pdf_check),
     }
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_reports(*, result: dict[str, object], report_file: Path | None, report_dir: Path | None) -> list[str]:
+    written: list[str] = []
+    if report_file is not None:
+        _write_json(report_file, result)
+        written.append(str(report_file))
+    if report_dir is not None:
+        generated_at = str(result["generated_at"]).replace("-", "").replace(":", "").replace("Z", "Z")
+        timestamped = report_dir / f"company-handoff-readiness-{generated_at}.json"
+        latest = report_dir / "latest.json"
+        _write_json(timestamped, result)
+        _write_json(latest, result)
+        written.extend([str(timestamped), str(latest)])
+    return written
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -161,6 +215,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only validate markdown handoff material. Use this before rebuilding the PDF pack.",
     )
+    parser.add_argument("--report-file", type=Path, help="Optional JSON report file to write.")
+    parser.add_argument("--report-dir", type=Path, help="Optional directory for timestamped and latest JSON reports.")
     return parser
 
 
@@ -171,17 +227,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output_dir,
         skip_pdf_check=args.skip_pdf_check,
     )
+    written_reports = _write_reports(result=result, report_file=args.report_file, report_dir=args.report_dir)
     if result["ok"]:
         print("PASS company handoff readiness check passed")
         print(f"release_tag={result['release_tag']}")
         print(f"acceptance_file={result['acceptance_file']}")
         print(f"pdf_check={'enabled' if result['pdf_check'] else 'skipped'}")
+        for report in written_reports:
+            print(f"report_written={report}")
         print("next_action=send sales PDFs, handoff docs, and separate secret channel details")
         return 0
 
     print("FAIL company handoff readiness check failed")
     for error in result["errors"]:
         print(f"ERROR {error}")
+    for report in written_reports:
+        print(f"report_written={report}")
     return 1
 
 

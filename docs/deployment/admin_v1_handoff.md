@@ -62,14 +62,19 @@ python3 scripts/build_sales_pack.py
 
 ```bash
 cd /opt/decisiondoc
-python3 scripts/check_company_handoff_ready.py
+python3 scripts/check_company_handoff_ready.py --report-dir ./reports/company-handoff
 ```
 
 PDF를 아직 재생성하기 전 문서 링크와 acceptance 기준만 먼저 확인하려면 아래처럼 실행합니다.
 
 ```bash
-python3 scripts/check_company_handoff_ready.py --skip-pdf-check
+python3 scripts/check_company_handoff_ready.py --skip-pdf-check --report-dir ./reports/company-handoff
 ```
+
+기본 증적 경로:
+
+- `reports/company-handoff/latest.json`
+- `reports/company-handoff/company-handoff-readiness-<timestamp>.json`
 
 기본 산출 경로:
 
