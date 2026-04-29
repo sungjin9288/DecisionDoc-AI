@@ -62,7 +62,15 @@ python3 scripts/build_sales_pack.py
 
 ```bash
 cd /opt/decisiondoc
-python3 scripts/check_company_handoff_ready.py --report-dir ./reports/company-handoff
+python3 scripts/prepare_company_handoff.py
+```
+
+이 명령은 sales PDF pack을 재생성한 뒤 `reports/company-handoff/` 아래 readiness 증적을 남깁니다.
+
+이미 PDF가 있고 readiness만 다시 확인하려면 아래처럼 실행합니다.
+
+```bash
+python3 scripts/prepare_company_handoff.py --skip-build
 ```
 
 PDF를 아직 재생성하기 전 문서 링크와 acceptance 기준만 먼저 확인하려면 아래처럼 실행합니다.
