@@ -9,6 +9,7 @@ COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
 POST_DEPLOY_REPORT_DIR="./reports/post-deploy"
 PROVIDER_PROFILE=${DECISIONDOC_DEPLOY_PROVIDER_PROFILE:-standard}
+IS_RELEASE_TAG_INPUT=false
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     ENV_FILE=".env.prod"
@@ -19,10 +20,18 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 1
 fi
 
+if [[ "$IMAGE_INPUT" != *"/"* && "$IMAGE_INPUT" != *":"* && "$IMAGE_INPUT" =~ ^v[^.]+[.][^.]+[.][^.]+$ ]]; then
+    IS_RELEASE_TAG_INPUT=true
+fi
+
 if [[ "$IMAGE_INPUT" == *"/"* || "$IMAGE_INPUT" == *":"* ]]; then
     IMAGE_REF="$IMAGE_INPUT"
 else
-    IMAGE_REF="ghcr.io/sungjin9288/decisiondoc-ai:$IMAGE_INPUT"
+    IMAGE_TAG="$IMAGE_INPUT"
+    if [[ "$ENVIRONMENT" == "production" && "$IS_RELEASE_TAG_INPUT" == "true" ]]; then
+        IMAGE_TAG="${IMAGE_INPUT#v}"
+    fi
+    IMAGE_REF="ghcr.io/sungjin9288/decisiondoc-ai:$IMAGE_TAG"
 fi
 
 echo "Deploying DecisionDoc AI"
@@ -37,6 +46,13 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     if [[ "$confirm" != "yes" ]]; then
         echo "Aborted."
         exit 0
+    fi
+
+    if [[ "$IS_RELEASE_TAG_INPUT" == "true" ]]; then
+        echo "Running release tag source preflight..."
+        python3 scripts/check_release_tag_source.py "$IMAGE_INPUT"
+    else
+        echo "Skipping release tag source preflight (image input is not a v*.*.* release tag)."
     fi
 
     echo "Running production env preflight..."

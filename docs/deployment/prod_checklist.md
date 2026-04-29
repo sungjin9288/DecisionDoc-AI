@@ -128,6 +128,7 @@ Docker server CD 필수 GitHub Secrets:
 - production tag source gate는 `git merge-base` 판정을 위해 full git history checkout을 사용한다. 이 checkout을 shallow clone으로 바꾸면 과거 `main` commit에 찍은 정상 release tag가 잘못 block될 수 있다.
 - production deploy secret preflight 결과는 CD run의 GitHub Step Summary `Production deployment` 섹션에 기록된다. `blocked`면 tag 재실행 전에 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`를 모두 설정해야 한다.
 - Docker server CD는 원격 `/opt/decisiondoc` checkout을 해당 GitHub SHA로 맞춘 뒤 `docker-compose.prod.yml`을 실행한다. staging은 GHCR `main` tag를, production은 Git tag의 `v` prefix를 제거한 semver image tag를 사용한다. 예: Git tag `v1.1.4` -> Docker image tag `1.1.4`.
+- `scripts/deploy.sh production vX.Y.Z` 도 Docker server CD와 동일하게 release tag source preflight를 실행하고 GHCR image tag `X.Y.Z`로 정규화한다. 전체 image ref를 직접 넘기는 긴급 rollback 경로는 release tag source preflight를 건너뛴다.
 - Docker server CD는 GHCR repository 이름을 lowercase로 정규화하고, 모든 remote compose 명령은 `--env-file .env.prod`를 명시한다. `docker compose pull/up` 실패는 job failure로 처리되어야 한다.
 - Production deploy의 사전 data backup은 `DECISIONDOC_BACKUP_DIR`가 있으면 해당 경로, 없으면 `/opt/decisiondoc/backups` 상대 경로(`./backups`)를 사용한다. backup directory 생성 실패는 경고 후 배포를 계속하지만 compose pull/up 실패는 실패로 처리한다.
 
