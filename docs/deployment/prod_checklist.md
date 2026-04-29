@@ -120,6 +120,7 @@ Docker server CD 필수 GitHub Secrets:
 - staging deploy를 활성화하려면 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`를 반드시 함께 설정한다.
 - `v*.*.*` tag production deploy는 staging job에 의존하지 않고 Docker image build/push 성공 후 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` preflight를 통과해야 실행된다.
 - `v*.*.*` tag는 반드시 `origin/main`에서 도달 가능한 commit을 가리켜야 한다. CD가 `release tag does not point to a commit reachable from origin/main`으로 block하면 검증된 `main` commit으로 tag를 다시 잡아야 한다.
+- production tag source gate는 `git merge-base` 판정을 위해 full git history checkout을 사용한다. 이 checkout을 shallow clone으로 바꾸면 과거 `main` commit에 찍은 정상 release tag가 잘못 block될 수 있다.
 - production deploy secret preflight 결과는 CD run의 GitHub Step Summary `Production deployment` 섹션에 기록된다. `blocked`면 tag 재실행 전에 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`를 모두 설정해야 한다.
 - Docker server CD는 원격 `/opt/decisiondoc` checkout을 해당 GitHub SHA로 맞춘 뒤 `docker-compose.prod.yml`을 실행한다. staging은 GHCR `main` tag를, production은 Git tag의 `v` prefix를 제거한 semver image tag를 사용한다. 예: Git tag `v1.1.4` -> Docker image tag `1.1.4`.
 - Docker server CD는 GHCR repository 이름을 lowercase로 정규화하고, 모든 remote compose 명령은 `--env-file .env.prod`를 명시한다. `docker compose pull/up` 실패는 job failure로 처리되어야 한다.

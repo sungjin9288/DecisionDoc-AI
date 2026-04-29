@@ -25,9 +25,12 @@ def test_cd_production_tag_deploy_does_not_depend_on_staging_job():
 def test_cd_production_tag_must_point_to_main_history():
     workflow = _load_cd_workflow()
     production_steps = workflow["jobs"]["deploy-production"]["steps"]
+    checkout_step = next(step for step in production_steps if step.get("name") == "Checkout release tag with full history")
     source_step = next(step for step in production_steps if step.get("name") == "Validate production release source")
     deploy_step = next(step for step in production_steps if step.get("name") == "Deploy to production")
 
+    assert checkout_step["uses"] == "actions/checkout@v6"
+    assert checkout_step["with"]["fetch-depth"] == 0
     assert source_step["id"] == "production_release_source"
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in source_step["run"]
     assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in source_step["run"]
