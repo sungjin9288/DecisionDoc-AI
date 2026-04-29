@@ -31,9 +31,12 @@ def _git_returncode(repo: Path, args: Sequence[str]) -> int:
     return _run_git(repo, args, check=False).returncode
 
 
-def _remote_tag_exists(repo: Path, *, remote: str, tag: str) -> bool:
+def _remote_tag_status(repo: Path, *, remote: str, tag: str) -> tuple[bool, str]:
     completed = _run_git(repo, ["ls-remote", "--tags", remote, f"refs/tags/{tag}"], check=False)
-    return completed.returncode == 0 and bool(completed.stdout.strip())
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        return False, detail or f"git ls-remote failed with exit code {completed.returncode}"
+    return bool(completed.stdout.strip()), ""
 
 
 def check_release_readiness(
@@ -89,7 +92,10 @@ def check_release_readiness(
     if target_commit and _git_returncode(resolved_repo, ["merge-base", "--is-ancestor", target_commit, remote_ref]) != 0:
         errors.append(f"target commit is not reachable from {remote_ref}: {target_commit}")
 
-    if _remote_tag_exists(resolved_repo, remote=remote, tag=tag):
+    remote_tag_exists, remote_tag_error = _remote_tag_status(resolved_repo, remote=remote, tag=tag)
+    if remote_tag_error:
+        errors.append(f"failed to check remote tag on {remote}: {remote_tag_error}")
+    elif remote_tag_exists:
         errors.append(f"remote tag already exists on {remote}: {tag}")
 
     return {

@@ -102,3 +102,12 @@ def test_check_release_readiness_rejects_existing_remote_tag(tmp_path: Path) -> 
 
     assert completed.returncode == 1
     assert "remote tag already exists on origin: v2.3.7" in completed.stderr
+
+
+def test_check_release_readiness_rejects_remote_tag_lookup_failure(tmp_path: Path) -> None:
+    repo = _init_release_repo(tmp_path)
+
+    completed = _run_script(repo, "v2.3.8", "--remote", "missing", "--no-fetch")
+
+    assert completed.returncode == 1
+    assert "failed to check remote tag on missing" in completed.stderr
