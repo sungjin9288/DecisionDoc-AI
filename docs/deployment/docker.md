@@ -45,6 +45,7 @@ python3 scripts/post_deploy_check.py --env-file .env.prod
 GHCR 이미지 태그를 명시적으로 배포할 때는 `scripts/deploy.sh` 를 사용할 수 있습니다.
 
 ```bash
+python3 scripts/check_release_readiness.py v1.0.0
 ./scripts/deploy.sh production v1.0.0
 ```
 

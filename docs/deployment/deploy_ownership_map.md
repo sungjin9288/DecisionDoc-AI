@@ -103,7 +103,7 @@ Before production deploy:
 - [ ] CI for the target SHA is green.
 - [ ] Stage-equivalent smoke evidence exists for the same SHA.
 - [ ] Release tag name is numeric semver, for example `v1.2.3`.
-- [ ] `python3 scripts/check_release_tag_source.py vX.Y.Z` passes before pushing the tag.
+- [ ] `python3 scripts/check_release_readiness.py vX.Y.Z` passes before creating or pushing the tag.
 - [ ] `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` are all set.
 - [ ] `check-github-actions-config.sh --stage prod --docker-deploy` passes.
 - [ ] API key rotation overlap, if any, is documented.
