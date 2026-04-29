@@ -18,7 +18,26 @@ def test_cd_production_tag_deploy_does_not_depend_on_staging_job():
     deploy_production = workflow["jobs"]["deploy-production"]
 
     assert deploy_production["needs"] == "build-and-push"
+    assert deploy_production["permissions"]["contents"] == "read"
     assert deploy_production["if"] == "startsWith(github.ref, 'refs/tags/v')"
+
+
+def test_cd_production_tag_must_point_to_main_history():
+    workflow = _load_cd_workflow()
+    production_steps = workflow["jobs"]["deploy-production"]["steps"]
+    source_step = next(step for step in production_steps if step.get("name") == "Validate production release source")
+    deploy_step = next(step for step in production_steps if step.get("name") == "Deploy to production")
+
+    assert source_step["id"] == "production_release_source"
+    assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in source_step["run"]
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in source_step["run"]
+    assert 'echo "main_ancestor=true" >> "$GITHUB_OUTPUT"' in source_step["run"]
+    assert 'echo "main_ancestor=false" >> "$GITHUB_OUTPUT"' in source_step["run"]
+    assert "Production release tags must point to commits reachable from origin/main." in source_step["run"]
+    assert (
+        deploy_step["if"]
+        == "steps.production_release_source.outputs.main_ancestor == 'true' && steps.production_config.outputs.configured == 'true'"
+    )
 
 
 def test_cd_staging_deploy_remains_main_branch_only_and_optional():
@@ -62,8 +81,10 @@ def test_cd_production_summary_records_secret_preflight_result():
     assert "::error::Missing production secret: PROD_USER" in validate_step["run"]
     assert "::error::Missing production secret: PROD_SSH_KEY" in validate_step["run"]
     assert summary_step["if"] == "always()"
+    assert summary_step["env"]["RELEASE_SOURCE_OK"] == "${{ steps.production_release_source.outputs.main_ancestor }}"
     assert summary_step["env"]["PROD_CONFIGURED"] == "${{ steps.production_config.outputs.configured }}"
     assert "## Production deployment" in summary_step["run"]
+    assert "release tag does not point to a commit reachable from origin/main" in summary_step["run"]
     assert 'echo "- status: configured"' in summary_step["run"]
     assert 'echo "- status: blocked"' in summary_step["run"]
     assert "PROD_HOST, PROD_USER, PROD_SSH_KEY" in summary_step["run"]

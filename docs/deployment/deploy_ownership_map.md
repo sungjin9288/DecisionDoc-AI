@@ -51,7 +51,7 @@ Rules:
 3. Confirm Docker CD image build success.
 4. If staging secrets are configured, confirm staging deploy and smoke success.
 5. If staging secrets are not configured, confirm CD summary explicitly says staging was skipped due missing `STAGING_*`.
-6. For production, create and push a `v*.*.*` tag only after stage-equivalent evidence exists.
+6. For production, create and push a `v*.*.*` tag only after stage-equivalent evidence exists, and only on a commit reachable from `origin/main`.
 7. Run or confirm post-deploy report and retain `reports/post-deploy/latest.json` on the target server.
 
 ## 5. Failure Classification
@@ -61,6 +61,7 @@ Rules:
 | CI unit/lint/security job fails | code or test issue | Fix in repo before deploy retry |
 | CD says staging secrets are partially configured | config issue | Set or remove all `STAGING_*` together |
 | CD says staging skipped because secrets are empty | expected optional staging skip | Continue only if this is intentional |
+| CD says production release tag is not reachable from `origin/main` | release gate issue | Move the tag to a verified `main` commit and push the tag again |
 | Docker compose pull/up fails on remote server | server/runtime issue | Inspect remote `/opt/decisiondoc`, Docker daemon, GHCR auth |
 | `deploy-smoke [prod]` blocks on missing dev evidence | release gate issue | Run `deploy-smoke [dev]` for same `main` SHA or use documented break-glass |
 | Lambda `UpdateFunctionCode` returns 403 in workflow and local dry-run | AWS-side restriction | Stop reruns, follow account security / AWS Support path |

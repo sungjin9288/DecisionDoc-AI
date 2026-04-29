@@ -139,10 +139,25 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Validate production release source
+        id: production_release_source
+        run: |
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "main_ancestor=true" >> "$GITHUB_OUTPUT"
+            echo "Production release tag points to a commit reachable from origin/main."
+          else
+            echo "main_ancestor=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Production release tags must point to commits reachable from origin/main."
+            exit 1
+          fi
 
       - name: Validate production deploy secrets
         id: production_config
@@ -175,11 +190,16 @@ jobs:
       - name: Summarize production deploy decision
         if: always()
         env:
+          RELEASE_SOURCE_OK: ${{ steps.production_release_source.outputs.main_ancestor }}
           PROD_CONFIGURED: ${{ steps.production_config.outputs.configured }}
         run: |
           {
             echo "## Production deployment"
-            if [ "${PROD_CONFIGURED:-}" = "true" ]; then
+            if [ "${RELEASE_SOURCE_OK:-}" = "false" ]; then
+              echo "- status: blocked"
+              echo "- reason: release tag does not point to a commit reachable from origin/main."
+              echo "- required action: move the v*.*.* tag to a verified main commit, then push the tag again."
+            elif [ "${PROD_CONFIGURED:-}" = "true" ]; then
               echo "- status: configured"
               echo "- action: production deploy and post-deploy check will run for this release tag."
             elif [ "${PROD_CONFIGURED:-}" = "false" ]; then
@@ -193,6 +213,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy to production
+        if: steps.production_release_source.outputs.main_ancestor == 'true' && steps.production_config.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PROD_HOST }}
