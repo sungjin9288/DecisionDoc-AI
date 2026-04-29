@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -11,6 +13,56 @@ CD_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "cd.yml"
 
 def _load_cd_workflow() -> dict:
     return yaml.safe_load(CD_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def _run_git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _init_release_repo(tmp_path: Path) -> Path:
+    remote = tmp_path / "origin.git"
+    worktree = tmp_path / "worktree"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "init", str(worktree)], check=True, capture_output=True, text=True)
+    _run_git(worktree, "checkout", "-b", "main")
+    _run_git(worktree, "config", "user.email", "ci@example.com")
+    _run_git(worktree, "config", "user.name", "CI")
+    (worktree / "README.md").write_text("# release source fixture\n", encoding="utf-8")
+    _run_git(worktree, "add", "README.md")
+    _run_git(worktree, "commit", "-m", "initial main commit")
+    _run_git(worktree, "remote", "add", "origin", str(remote))
+    _run_git(worktree, "push", "-u", "origin", "main")
+    return worktree
+
+
+def _build_release_source_script() -> str:
+    workflow = _load_cd_workflow()
+    validate_step = next(
+        step
+        for step in workflow["jobs"]["build-and-push"]["steps"]
+        if step.get("name") == "Validate release tag source before image publish"
+    )
+    return validate_step["run"]
+
+
+def _run_release_source_script(repo: Path, *, github_sha: str, summary_file: Path) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GITHUB_SHA"] = github_sha
+    env["GITHUB_STEP_SUMMARY"] = str(summary_file)
+    return subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", _build_release_source_script()],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_cd_production_tag_deploy_does_not_depend_on_staging_job():
@@ -46,6 +98,42 @@ def test_cd_release_tag_source_is_validated_before_image_publish():
     assert "before publishing Docker images" in validate_step["run"]
     assert build_steps.index(validate_step) < build_steps.index(login_step)
     assert build_steps.index(validate_step) < build_steps.index(build_step)
+
+
+def test_cd_release_tag_source_script_accepts_annotated_tag_objects(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    _run_git(repo, "tag", "-a", "v9.9.9", "-m", "release v9.9.9", release_commit)
+    annotated_tag_object = _run_git(repo, "rev-parse", "v9.9.9")
+    summary_file = tmp_path / "summary.md"
+
+    completed = _run_release_source_script(repo, github_sha=annotated_tag_object, summary_file=summary_file)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Release tag source validation passed." in completed.stdout
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "- status: valid" in summary
+    assert f"- commit: {release_commit}" in summary
+
+
+def test_cd_release_tag_source_script_blocks_annotated_tag_outside_main(tmp_path: Path):
+    repo = _init_release_repo(tmp_path)
+    _run_git(repo, "checkout", "--orphan", "release-candidate")
+    (repo / "README.md").write_text("# off-main release candidate\n", encoding="utf-8")
+    _run_git(repo, "add", "README.md")
+    _run_git(repo, "commit", "-m", "off-main release candidate")
+    release_commit = _run_git(repo, "rev-parse", "HEAD")
+    _run_git(repo, "tag", "-a", "v9.9.10", "-m", "release v9.9.10", release_commit)
+    annotated_tag_object = _run_git(repo, "rev-parse", "v9.9.10")
+    summary_file = tmp_path / "summary.md"
+
+    completed = _run_release_source_script(repo, github_sha=annotated_tag_object, summary_file=summary_file)
+
+    assert completed.returncode == 1
+    assert "Release tags must point to commits reachable from origin/main" in completed.stdout
+    summary = summary_file.read_text(encoding="utf-8")
+    assert "- status: blocked" in summary
+    assert f"- commit: {release_commit}" in summary
 
 
 def test_cd_production_tag_must_point_to_main_history():
