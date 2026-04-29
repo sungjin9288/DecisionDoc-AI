@@ -30,8 +30,24 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          release_source_valid=false
           if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
-            echo "Release tag points to a commit reachable from origin/main."
+            release_source_valid=true
+          fi
+          {
+            echo "## Release tag source"
+            if [ "$release_source_valid" = "true" ]; then
+              echo "- status: valid"
+              echo "- action: Docker image publish may proceed for this release tag."
+              echo "- source: tag commit is reachable from origin/main."
+            else
+              echo "- status: blocked"
+              echo "- reason: release tag does not point to a commit reachable from origin/main."
+              echo "- required action: move the v*.*.* tag to a verified main commit before rerunning CD."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$release_source_valid" = "true" ]; then
+            echo "Release tag source validation passed."
           else
             echo "::error::Release tags must point to commits reachable from origin/main before publishing Docker images."
             exit 1

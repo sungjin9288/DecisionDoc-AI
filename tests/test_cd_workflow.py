@@ -37,6 +37,10 @@ def test_cd_release_tag_source_is_validated_before_image_publish():
     assert validate_step["if"] == "startsWith(github.ref, 'refs/tags/v')"
     assert "git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main" in validate_step["run"]
     assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in validate_step["run"]
+    assert "## Release tag source" in validate_step["run"]
+    assert 'echo "- status: valid"' in validate_step["run"]
+    assert 'echo "- status: blocked"' in validate_step["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in validate_step["run"]
     assert "before publishing Docker images" in validate_step["run"]
     assert build_steps.index(validate_step) < build_steps.index(login_step)
     assert build_steps.index(validate_step) < build_steps.index(build_step)
