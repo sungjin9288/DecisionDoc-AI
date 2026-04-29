@@ -51,6 +51,7 @@ python3 scripts/check_release_readiness.py v1.0.0
 
 - `scripts/deploy.sh` 는 `.env.prod` 를 기준으로 release tag source preflight(`vMAJOR.MINOR.PATCH` 입력 시), `check_prod_env.py` preflight, compose rollout, `post_deploy_check.py`(health + nginx + smoke preflight + deployed smoke + Report Workflow ERP smoke) 및 `./reports/post-deploy/` history 저장까지 수행합니다.
 - `production vX.Y.Z` 입력은 GitHub Actions CD와 동일하게 GHCR image tag `X.Y.Z`로 정규화합니다. 전체 image ref(`ghcr.io/...:tag`)를 직접 넘기면 release tag source preflight는 건너뜁니다.
+- `check_release_readiness.py` 가 `target commit is not the latest refs/remotes/origin/main tip` 경고를 출력하면 tag 대상이 최신 main tip이 아닙니다. 긴급 rollback 또는 의도된 older main commit release가 아니라면 최신 `origin/main`에서 다시 실행합니다.
 - local build 기준의 검증된 운영 경로는 `scripts/deploy_compose_local.py` 를 우선 사용합니다.
 - AWS Lambda/SAM 경로는 이 문서가 아니라 [../deploy_aws.md](../deploy_aws.md)를 사용합니다.
 

@@ -123,6 +123,8 @@ Docker server CD 필수 GitHub Secrets:
 - `vfoo.bar.baz`처럼 numeric semver가 아닌 `v*.*.*` tag는 Docker image publish 전에 CD가 먼저 실패한다.
 - `vMAJOR.MINOR.PATCH` tag가 `origin/main`에서 도달 불가능하면 Docker image publish 전에 CD가 먼저 실패한다. 이 경우 semver GHCR image가 생성되지 않아야 한다.
 - tag 생성/push 전에는 `python3 scripts/check_release_readiness.py vX.Y.Z` 로 numeric semver, clean tracked tree, `origin/main` 도달 가능성, local/remote tag 중복 여부를 한 번에 확인한다.
+- readiness 결과에 `WARN target commit is not the latest refs/remotes/origin/main tip` 이 표시되면 해당 commit은 `origin/main`에 포함되어 있어 release 가능하지만 최신 main tip은 아니다. 의도한 hotfix/older commit release가 아니라면 최신 `origin/main`으로 이동한 뒤 새 tag를 준비한다.
+- readiness 결과의 `WARN untracked files are present and were ignored` 는 tracked release source에는 영향이 없지만, 운영자가 tag push 전에 민감한 local 파일이 섞이지 않았는지 별도로 확인해야 한다.
 - 이미 생성된 tag의 source만 단독 검증할 때는 `python3 scripts/check_release_tag_source.py vX.Y.Z` 를 사용한다.
 - Docker image publish 전 release tag source 판정은 CD run의 GitHub Step Summary `Release tag source` 섹션에 기록된다.
 - `vMAJOR.MINOR.PATCH` tag는 반드시 `origin/main`에서 도달 가능한 commit을 가리켜야 한다. CD가 `release tag does not point to a commit reachable from origin/main`으로 block하면 검증된 `main` commit으로 tag를 다시 잡아야 한다.
