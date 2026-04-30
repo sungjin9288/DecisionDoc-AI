@@ -35,13 +35,14 @@ def _write_complete_handoff_docs(repo: Path) -> None:
         "Admin v1.1.61 Acceptance Record 2026-04-30\n"
         "Admin v1.1.62 Acceptance Record 2026-04-30\n"
         "Admin v1.1.64 Acceptance Record 2026-04-30\n"
-        "admin_v1_1_64_acceptance_20260430.md\n"
+        "Admin v1.1.65 Acceptance Record 2026-04-30\n"
+        "admin_v1_1_65_acceptance_20260430.md\n"
         "Sales Pack 인덱스",
     )
     _write_fixture_doc(
         repo,
-        "docs/deployment/admin_v1_1_64_acceptance_20260430.md",
-        "v1.1.64\n"
+        "docs/deployment/admin_v1_1_65_acceptance_20260430.md",
+        "v1.1.65\n"
         "CD result | `success`\n"
         "Report Workflow ERP smoke\n"
         "ready for continued production use | `YES`",
@@ -86,8 +87,8 @@ def test_company_handoff_ready_passes_with_required_docs_and_pdfs(tmp_path: Path
 
     assert result["ok"] is True
     assert result["errors"] == []
-    assert result["release_tag"] == "v1.1.64"
-    assert result["source"]["expected_release_tag"] == "v1.1.64"
+    assert result["release_tag"] == "v1.1.65"
+    assert result["source"]["expected_release_tag"] == "v1.1.65"
     assert "source_describe" in result["source"]
     assert result["manifest"]["markdown"][0]["exists"] is True
     assert result["manifest"]["pdfs"][0]["path"] == "output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf"
@@ -117,13 +118,13 @@ def test_company_handoff_ready_fails_when_latest_acceptance_is_stale(tmp_path: P
     checker = _load_script_module()
     _write_complete_handoff_docs(tmp_path)
     _write_complete_pdfs(tmp_path)
-    acceptance = tmp_path / "docs" / "deployment" / "admin_v1_1_64_acceptance_20260430.md"
+    acceptance = tmp_path / "docs" / "deployment" / "admin_v1_1_65_acceptance_20260430.md"
     acceptance.write_text("# Fixture\n\nv1.1.61\n\n" + ("내용\n" * 80), encoding="utf-8")
 
     result = checker.check_company_handoff_ready(repo_root=tmp_path)
 
     assert result["ok"] is False
-    assert "required text not found in docs/deployment/admin_v1_1_64_acceptance_20260430.md: v1.1.64" in result["errors"]
+    assert "required text not found in docs/deployment/admin_v1_1_65_acceptance_20260430.md: v1.1.65" in result["errors"]
 
 
 def test_company_handoff_ready_rejects_secret_like_delivery_text(tmp_path: Path) -> None:
@@ -156,8 +157,8 @@ def test_company_handoff_ready_writes_report_file(tmp_path: Path) -> None:
     assert result == 0
     payload = json.loads(report_file.read_text(encoding="utf-8"))
     assert payload["ok"] is True
-    assert payload["release_tag"] == "v1.1.64"
-    assert payload["source"]["expected_release_tag"] == "v1.1.64"
+    assert payload["release_tag"] == "v1.1.65"
+    assert payload["source"]["expected_release_tag"] == "v1.1.65"
     assert payload["manifest"]["pdfs"][0]["exists"] is True
 
 
