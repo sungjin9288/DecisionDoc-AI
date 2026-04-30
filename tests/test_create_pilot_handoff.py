@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts import create_pilot_handoff as create_pilot_handoff_script
 from scripts.create_pilot_handoff import (
     build_pilot_handoff_markdown,
     build_pilot_handoff_payload,
@@ -120,3 +121,52 @@ def test_create_pilot_handoff_writes_markdown(tmp_path, monkeypatch):
     assert "pilot_status: **READY_FOR_PILOT**" in markdown
     assert "Go decision: `GO`" in markdown
     assert "generation: `claude,openai,gemini`" in markdown
+
+
+def test_create_pilot_handoff_main_explicit_base_url_does_not_require_env_file(tmp_path, monkeypatch, capsys):
+    summary_file = tmp_path / "uat-summary.md"
+    summary_file.write_text(
+        """# UAT Final Summary — business-uat
+
+- overall_status: **READY_FOR_PILOT**
+""",
+        encoding="utf-8",
+    )
+    captured_args = {}
+
+    def _fake_create_pilot_handoff(*, summary_file, base_url, report_dir, output_dir):  # noqa: ANN001
+        captured_args["summary_file"] = summary_file
+        captured_args["base_url"] = base_url
+        captured_args["report_dir"] = report_dir
+        captured_args["output_dir"] = output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "pilot-handoff.md"
+        output_path.write_text("# Pilot Handoff\n", encoding="utf-8")
+        return {"pilot_status": "READY_FOR_PILOT"}, output_path
+
+    monkeypatch.setattr(
+        create_pilot_handoff_script,
+        "create_pilot_handoff",
+        _fake_create_pilot_handoff,
+    )
+
+    result = create_pilot_handoff_script.main(
+        [
+            "--summary-file",
+            str(summary_file),
+            "--env-file",
+            str(tmp_path / "missing.env"),
+            "--base-url",
+            "https://admin.decisiondoc.kr",
+            "--report-dir",
+            str(tmp_path / "reports" / "post-deploy"),
+            "--output-dir",
+            str(tmp_path / "reports" / "pilot"),
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert captured_args["base_url"] == "https://admin.decisiondoc.kr"
+    assert captured_args["summary_file"] == summary_file
+    assert "Pilot status: READY_FOR_PILOT" in captured

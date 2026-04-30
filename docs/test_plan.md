@@ -82,12 +82,25 @@ python scripts/load_test_full.py \
 ### UAT 시작 전 preflight
 ```bash
 python3 scripts/uat_preflight.py --env-file .env.prod --report-dir ./reports/post-deploy
+
+# 로컬에 운영 .env.prod가 없고 URL을 명시할 수 있는 경우
+python3 scripts/uat_preflight.py \
+  --base-url https://admin.decisiondoc.kr \
+  --report-dir ./reports/post-deploy
 ```
 
 ### UAT 세션 파일 생성
 ```bash
 python3 scripts/create_uat_session.py \
   --env-file .env.prod \
+  --report-dir ./reports/post-deploy \
+  --output-dir ./reports/uat \
+  --session-name business-uat \
+  --owner "<담당자>"
+
+# 로컬에 운영 .env.prod가 없고 URL을 명시할 수 있는 경우
+python3 scripts/create_uat_session.py \
+  --base-url https://admin.decisiondoc.kr \
   --report-dir ./reports/post-deploy \
   --output-dir ./reports/uat \
   --session-name business-uat \

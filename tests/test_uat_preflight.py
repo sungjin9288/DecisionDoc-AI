@@ -125,6 +125,95 @@ def test_uat_preflight_reports_ready_state(tmp_path: Path, monkeypatch, capsys) 
     assert "provider_routes=default:claude,gemini,openai generation:claude,openai,gemini" in captured
 
 
+def test_uat_preflight_explicit_base_url_does_not_require_env_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    script = _load_script_module("decisiondoc_uat_preflight_base_url", "scripts/uat_preflight.py")
+    missing_env_file = tmp_path / "missing.env"
+    report_dir = tmp_path / "reports" / "post-deploy"
+    _write_report_fixture(report_dir)
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "provider": "claude,gemini,openai",
+                    "provider_routes": {
+                        "default": "claude,gemini,openai",
+                        "generation": "claude,openai,gemini",
+                        "attachment": "gemini,claude,openai",
+                        "visual": "openai",
+                    },
+                    "provider_policy_checks": {"quality_first": "ok"},
+                    "provider_policy_issues": {"quality_first": []},
+                }
+            )
+        )
+
+    monkeypatch.setattr(script.request, "urlopen", _fake_urlopen)
+
+    result = script.main(
+        [
+            "--env-file",
+            str(missing_env_file),
+            "--base-url",
+            "https://admin.decisiondoc.kr",
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert "UAT preflight target: https://admin.decisiondoc.kr" in captured
+    assert "Overall readiness: READY" in captured
+
+
+def test_uat_preflight_missing_report_history_returns_blocked(tmp_path: Path, monkeypatch, capsys) -> None:
+    script = _load_script_module("decisiondoc_uat_preflight_missing_report", "scripts/uat_preflight.py")
+    report_dir = tmp_path / "reports" / "post-deploy"
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "provider": "claude,gemini,openai",
+                    "provider_routes": {
+                        "default": "claude,gemini,openai",
+                        "generation": "claude,openai,gemini",
+                        "attachment": "gemini,claude,openai",
+                        "visual": "openai",
+                    },
+                    "provider_policy_checks": {"quality_first": "ok"},
+                    "provider_policy_issues": {"quality_first": []},
+                }
+            )
+        )
+
+    monkeypatch.setattr(script.request, "urlopen", _fake_urlopen)
+
+    result = script.main(
+        [
+            "--base-url",
+            "https://admin.decisiondoc.kr",
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    assert result == 1
+    assert "Overall readiness: BLOCKED" in captured
+    assert "FAIL latest_report (latest_report=missing)" in captured
+    assert "FAIL latest_report_status (status=unknown)" in captured
+    assert "FAIL latest_report_smoke_mode (skip_smoke=no)" in captured
+    assert "Report index not found" in captured
+
+
 def test_uat_preflight_reports_blocked_state_when_quality_or_latest_fail(tmp_path: Path, monkeypatch, capsys) -> None:
     script = _load_script_module("decisiondoc_uat_preflight_blocked", "scripts/uat_preflight.py")
     env_file = tmp_path / ".env.prod"

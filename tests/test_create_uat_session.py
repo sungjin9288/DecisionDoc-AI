@@ -141,6 +141,58 @@ def test_create_uat_session_writes_markdown_with_ready_status(tmp_path: Path, mo
     assert "Preflight status: READY" in captured
 
 
+def test_create_uat_session_explicit_base_url_does_not_require_env_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    script = _load_script_module("decisiondoc_create_uat_session_base_url", "scripts/create_uat_session.py")
+    missing_env_file = tmp_path / "missing.env"
+    report_dir = tmp_path / "reports" / "post-deploy"
+    output_dir = tmp_path / "reports" / "uat"
+    _write_report_fixture(report_dir)
+
+    def _fake_urlopen(url: str, timeout: float = 0.0):
+        assert url == "https://admin.decisiondoc.kr/health"
+        assert timeout == 10.0
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "provider": "claude,gemini,openai",
+                    "provider_routes": {
+                        "default": "claude,gemini,openai",
+                        "generation": "claude,openai,gemini",
+                        "attachment": "gemini,claude,openai",
+                        "visual": "openai",
+                    },
+                    "provider_policy_checks": {"quality_first": "ok"},
+                    "provider_policy_issues": {"quality_first": []},
+                }
+            )
+        )
+
+    monkeypatch.setattr(script._uat_preflight.request, "urlopen", _fake_urlopen)
+
+    result = script.main(
+        [
+            "--env-file",
+            str(missing_env_file),
+            "--base-url",
+            "https://admin.decisiondoc.kr",
+            "--report-dir",
+            str(report_dir),
+            "--output-dir",
+            str(output_dir),
+            "--session-name",
+            "explicit-url-uat",
+        ]
+    )
+
+    captured = capsys.readouterr().out
+    files = sorted(output_dir.glob("uat-session-*-explicit-url-uat.md"))
+    assert result == 0
+    assert len(files) == 1
+    assert "Preflight status: READY" in captured
+    assert "대상 URL: https://admin.decisiondoc.kr" in files[0].read_text(encoding="utf-8")
+
+
 def test_create_uat_session_writes_markdown_even_when_blocked(tmp_path: Path, monkeypatch, capsys) -> None:
     script = _load_script_module("decisiondoc_create_uat_session_blocked", "scripts/create_uat_session.py")
     env_file = tmp_path / ".env.prod"

@@ -63,9 +63,27 @@ def _evaluate_check(name: str, ok: bool, detail: str) -> dict[str, Any]:
     return {"name": name, "status": "pass" if ok else "fail", "detail": detail}
 
 
+def resolve_uat_base_url(*, base_url: str, env_file: Path) -> str:
+    normalized = str(base_url or "").strip()
+    if normalized:
+        return normalized.rstrip("/")
+    return _resolve_base_url("", _load_env_file(env_file))
+
+
 def build_uat_preflight_payload(*, base_url: str, report_dir: Path) -> dict[str, Any]:
     health_payload = _fetch_health_json(base_url)
-    reports_payload = build_post_deploy_reports_payload(report_dir=report_dir, limit=5, latest=True)
+    try:
+        reports_payload = build_post_deploy_reports_payload(report_dir=report_dir, limit=5, latest=True)
+    except (FileNotFoundError, ValueError) as exc:
+        reports_payload = {
+            "latest_report": "",
+            "latest_details": {
+                "status": "",
+                "skip_smoke": False,
+                "error": str(exc),
+                "finished_at": "",
+            },
+        }
     latest_details = reports_payload.get("latest_details") or {}
 
     health_ok = str(health_payload.get("status", "")).strip().lower() == "ok"
@@ -99,7 +117,7 @@ def build_uat_preflight_payload(*, base_url: str, report_dir: Path) -> dict[str,
         ),
         _evaluate_check(
             "latest_report_smoke_mode",
-            not latest_smoke_skip,
+            bool(latest_report) and not latest_smoke_skip,
             f"skip_smoke={'yes' if latest_smoke_skip else 'no'}",
         ),
     ]
@@ -205,8 +223,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
-    env_values = _load_env_file(Path(args.env_file))
-    base_url = _resolve_base_url(str(args.base_url or ""), env_values)
+    base_url = resolve_uat_base_url(
+        base_url=str(args.base_url or ""),
+        env_file=Path(args.env_file),
+    )
     return show_uat_preflight(
         base_url=base_url,
         report_dir=Path(args.report_dir),

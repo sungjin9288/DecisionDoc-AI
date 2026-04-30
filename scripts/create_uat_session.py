@@ -27,8 +27,7 @@ def _load_uat_preflight_module():
 _uat_preflight = _load_uat_preflight_module()
 
 build_uat_preflight_payload = _uat_preflight.build_uat_preflight_payload
-_load_env_file = _uat_preflight._load_env_file
-_resolve_base_url = _uat_preflight._resolve_base_url
+resolve_uat_base_url = _uat_preflight.resolve_uat_base_url
 DEFAULT_ENV_FILE = _uat_preflight.DEFAULT_ENV_FILE
 DEFAULT_REPORT_DIR = _uat_preflight.DEFAULT_REPORT_DIR
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "reports" / "uat"
@@ -180,8 +179,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
-    env_values = _load_env_file(Path(args.env_file))
-    base_url = _resolve_base_url(str(args.base_url or ""), env_values)
+    base_url = resolve_uat_base_url(
+        base_url=str(args.base_url or ""),
+        env_file=Path(args.env_file),
+    )
     payload, output_path = create_uat_session(
         base_url=base_url,
         report_dir=Path(args.report_dir),
