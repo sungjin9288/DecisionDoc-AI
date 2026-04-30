@@ -23,9 +23,10 @@
 cd /opt/decisiondoc
 python3 scripts/prepare_company_handoff.py
 python3 scripts/create_company_handoff_bundle.py --skip-build
+python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>
 ```
 
-첫 번째 명령은 sales PDF pack을 재생성한 뒤 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인하고 `reports/company-handoff/latest.json` 증적을 남깁니다. 두 번째 명령은 실제 전달 파일을 `output/company-handoff/company-handoff-<timestamp>/` 아래로 복사하고 `manifest.json`에 size와 SHA-256 checksum을 고정합니다. 이미 PDF가 있고 검증만 다시 할 때는 `python3 scripts/prepare_company_handoff.py --skip-build`를 사용합니다.
+첫 번째 명령은 sales PDF pack을 재생성한 뒤 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인하고 `reports/company-handoff/latest.json` 증적을 남깁니다. 두 번째 명령은 실제 전달 파일을 `output/company-handoff/company-handoff-<timestamp>/` 아래로 복사하고 `manifest.json`에 size와 SHA-256 checksum을 고정합니다. 세 번째 명령은 전달 전/후 bundle의 파일 누락, size/hash mismatch, path traversal, secret-like text를 검증합니다. 이미 PDF가 있고 검증만 다시 할 때는 `python3 scripts/prepare_company_handoff.py --skip-build`를 사용합니다.
 
 ## 2. 회사에 넘기는 패키지 구성
 
@@ -159,3 +160,4 @@ DecisionDoc AI v1 운영 기준선 전달드립니다.
 - `reports/company-handoff/latest.json` 를 전달 전 내부 증적으로 보관했다.
 - `python3 scripts/create_company_handoff_bundle.py --skip-build` 가 `PASS`를 반환했다.
 - `output/company-handoff/company-handoff-<timestamp>/manifest.json` 를 전달 파일 목록 증적으로 보관했다.
+- `python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>` 가 `PASS`를 반환했다.

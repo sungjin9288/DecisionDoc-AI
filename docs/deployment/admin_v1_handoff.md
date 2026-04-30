@@ -90,6 +90,12 @@ python3 scripts/check_company_handoff_ready.py --skip-pdf-check --report-dir ./r
 python3 scripts/create_company_handoff_bundle.py --skip-build
 ```
 
+전달 전/후 bundle 무결성을 다시 검증하려면 아래처럼 실행합니다.
+
+```bash
+python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>
+```
+
 기본 bundle 경로:
 
 - `output/company-handoff/company-handoff-<timestamp>/manifest.json`
