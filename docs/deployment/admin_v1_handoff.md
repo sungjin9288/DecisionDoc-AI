@@ -96,6 +96,12 @@ python3 scripts/create_company_handoff_bundle.py --skip-build
 python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>
 ```
 
+외부 전달용 단일 파일과 checksum을 만들려면 검증된 bundle을 archive로 묶습니다.
+
+```bash
+python3 scripts/archive_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>
+```
+
 기본 bundle 경로:
 
 - `output/company-handoff/company-handoff-<timestamp>/README.md`
@@ -110,6 +116,11 @@ bundle을 받은 쪽은 bundle root에서 아래 명령만 실행해 manifest와
 ```bash
 python3 scripts/verify_company_handoff_bundle.py .
 ```
+
+전달자는 아래 두 파일을 함께 보관/전달합니다.
+
+- `output/company-handoff/company-handoff-<timestamp>.zip`
+- `output/company-handoff/company-handoff-<timestamp>.zip.sha256`
 
 기본 산출 경로:
 
