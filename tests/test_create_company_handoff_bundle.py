@@ -29,6 +29,8 @@ def _write_fixture_repo(repo: Path, bundler) -> None:
         _write_file(repo / "output" / "pdf" / pdf.path, b"%PDF-" + pdf.path.encode("utf-8"))
     for doc in bundler.HANDOFF_DOCUMENTS:
         _write_file(repo / doc, f"# {doc}\n".encode("utf-8"))
+    for script in bundler.HANDOFF_SCRIPTS:
+        _write_file(repo / script, f"#!/usr/bin/env python3\n# {script}\n".encode("utf-8"))
     readiness = {
         "ok": True,
         "release_tag": bundler.check_company_handoff_ready.LATEST_RELEASE_TAG,
@@ -54,11 +56,17 @@ def test_create_company_handoff_bundle_copies_artifacts_and_writes_manifest(tmp_
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["schema"] == "decisiondoc_company_handoff_bundle.v1"
     assert manifest["release_tag"] == "v1.1.58"
-    assert manifest["artifact_count"] == 13
+    assert manifest["artifact_count"] == 15
     assert (bundle_dir / "output" / "pdf" / "decisiondoc_ai_meeting_onepager_ko.pdf").exists()
     assert (bundle_dir / "docs" / "deployment" / "admin_v1_handoff.md").exists()
+    assert (bundle_dir / "scripts" / "verify_company_handoff_bundle.py").exists()
     assert (bundle_dir / "reports" / "company-handoff" / "latest.json").exists()
+    assert (bundle_dir / "README.md").exists()
     assert all(item["sha256"] for item in manifest["artifacts"])
+    assert {item["bundle_path"] for item in manifest["artifacts"]} >= {
+        "README.md",
+        "scripts/verify_company_handoff_bundle.py",
+    }
 
 
 def test_create_company_handoff_bundle_runs_prepare_first(monkeypatch, tmp_path: Path) -> None:

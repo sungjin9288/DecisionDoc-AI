@@ -26,11 +26,13 @@ python3 scripts/create_company_handoff_bundle.py --skip-build
 python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-handoff-<timestamp>
 ```
 
-첫 번째 명령은 sales PDF pack을 재생성한 뒤 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인하고 `reports/company-handoff/latest.json` 증적을 남깁니다. 두 번째 명령은 실제 전달 파일을 `output/company-handoff/company-handoff-<timestamp>/` 아래로 복사하고 `manifest.json`에 size와 SHA-256 checksum을 고정합니다. 세 번째 명령은 전달 전/후 bundle의 파일 누락, size/hash mismatch, path traversal, secret-like text를 검증합니다. 이미 PDF가 있고 검증만 다시 할 때는 `python3 scripts/prepare_company_handoff.py --skip-build`를 사용합니다.
+첫 번째 명령은 sales PDF pack을 재생성한 뒤 최신 acceptance record, 핵심 handoff 문서, sales PDF 5종, secret 전달 금지 문구를 한 번에 확인하고 `reports/company-handoff/latest.json` 증적을 남깁니다. 두 번째 명령은 실제 전달 파일을 `output/company-handoff/company-handoff-<timestamp>/` 아래로 복사하고 `README.md`, verifier script, `manifest.json` size/SHA-256 checksum을 함께 고정합니다. 세 번째 명령은 전달 전/후 bundle의 파일 누락, size/hash mismatch, path traversal, secret-like text를 검증합니다. 이미 PDF가 있고 검증만 다시 할 때는 `python3 scripts/prepare_company_handoff.py --skip-build`를 사용합니다.
 
 ## 2. 회사에 넘기는 패키지 구성
 
-기본 전달 패키지는 아래 3덩어리로 나눕니다.
+기본 전달 패키지는 아래 4덩어리로 나눕니다.
+
+bundle root에는 `README.md`가 포함되어 있으며, 받는 쪽은 먼저 이 파일을 열어 확인 순서와 검증 명령을 볼 수 있습니다.
 
 ### A. 소개 자료
 
@@ -60,6 +62,18 @@ python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-
 
 - `DECISIONDOC_API_KEYS`, `DECISIONDOC_OPS_KEY`, `OPENAI_API_KEY` 원문은 문서 본문이나 일반 이메일에 직접 넣지 않습니다.
 - 키 전달은 별도 안전 채널로 분리합니다.
+
+### D. 검증 파일
+
+- `README.md`
+- `manifest.json`
+- `scripts/verify_company_handoff_bundle.py`
+
+bundle을 받은 쪽은 bundle root에서 아래 명령을 실행해 전달 중 파일 누락이나 hash mismatch를 확인할 수 있습니다.
+
+```bash
+python3 scripts/verify_company_handoff_bundle.py .
+```
 
 ## 3. 권장 전달 순서
 

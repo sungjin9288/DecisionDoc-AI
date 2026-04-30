@@ -29,6 +29,9 @@ HANDOFF_DOCUMENTS: tuple[str, ...] = (
     "docs/v1_completion_snapshot.md",
     "docs/sales/company_delivery_guide.md",
 )
+HANDOFF_SCRIPTS: tuple[str, ...] = (
+    "scripts/verify_company_handoff_bundle.py",
+)
 
 
 def _utc_timestamp() -> str:
@@ -68,10 +71,75 @@ def _document_paths(repo_root: Path) -> list[Path]:
     return [repo_root / path for path in HANDOFF_DOCUMENTS]
 
 
+def _script_paths(repo_root: Path) -> list[Path]:
+    return [repo_root / path for path in HANDOFF_SCRIPTS]
+
+
 def _write_manifest(bundle_dir: Path, payload: dict[str, object]) -> Path:
     manifest_path = bundle_dir / "manifest.json"
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest_path
+
+
+def _write_bundle_readme(
+    *,
+    bundle_dir: Path,
+    created_at: str,
+    release_tag: str,
+    acceptance_file: str,
+    readiness_report: Path,
+    artifact_count: int,
+) -> dict[str, object]:
+    readme_path = bundle_dir / "README.md"
+    body = f"""# DecisionDoc AI Company Handoff Bundle
+
+This bundle is the delivery package for DecisionDoc AI `{release_tag}`.
+
+## Open First
+
+1. `output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf`
+2. `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
+3. `docs/sales/company_delivery_guide.md`
+4. `docs/deployment/admin_v1_handoff.md`
+
+## Verification
+
+Run this from the bundle root after transfer:
+
+```bash
+python3 scripts/verify_company_handoff_bundle.py .
+```
+
+Expected result:
+
+```text
+PASS company handoff bundle verification passed
+checked_artifacts={artifact_count}
+release_tag={release_tag}
+```
+
+The verifier checks `manifest.json`, file presence, file size, SHA-256 integrity, unsafe paths, and high-confidence secret-like text.
+
+## Package Metadata
+
+- Created at: `{created_at}`
+- Release tag: `{release_tag}`
+- Acceptance file: `{acceptance_file}`
+- Readiness report source: `{readiness_report}`
+- Manifest: `manifest.json`
+- Artifact count: `{artifact_count}`
+
+## Security Boundary
+
+Runtime API keys, provider keys, ops keys, server credentials, and SSH private keys are intentionally not included. Share credentials through a separate approved secure channel only.
+"""
+    readme_path.write_text(body, encoding="utf-8")
+    return {
+        "path": "README.md",
+        "bundle_path": "README.md",
+        "size_bytes": readme_path.stat().st_size,
+        "sha256": _sha256(readme_path),
+    }
 
 
 def create_company_handoff_bundle(
@@ -121,12 +189,32 @@ def create_company_handoff_bundle(
     bundle_dir.mkdir(parents=True)
 
     artifacts: list[dict[str, object]] = []
-    for path in [*_pdf_paths(resolved_repo, output_dir), *_document_paths(resolved_repo), latest_report]:
+    for path in [
+        *_pdf_paths(resolved_repo, output_dir),
+        *_document_paths(resolved_repo),
+        *_script_paths(resolved_repo),
+        latest_report,
+    ]:
         artifacts.append(_copy_artifact(repo_root=resolved_repo, source=path, bundle_dir=bundle_dir))
+
+    created_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    artifact_count = len(artifacts) + 1
+    artifacts.append(
+        _write_bundle_readme(
+            bundle_dir=bundle_dir,
+            created_at=created_at,
+            release_tag=check_company_handoff_ready.LATEST_RELEASE_TAG,
+            acceptance_file=check_company_handoff_ready.LATEST_ACCEPTANCE_FILE,
+            readiness_report=latest_report.relative_to(resolved_repo)
+            if latest_report.is_relative_to(resolved_repo)
+            else latest_report,
+            artifact_count=artifact_count,
+        )
+    )
 
     manifest = {
         "schema": "decisiondoc_company_handoff_bundle.v1",
-        "created_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "created_at": created_at,
         "release_tag": check_company_handoff_ready.LATEST_RELEASE_TAG,
         "acceptance_file": check_company_handoff_ready.LATEST_ACCEPTANCE_FILE,
         "readiness_report": str(latest_report.relative_to(resolved_repo)) if latest_report.is_relative_to(resolved_repo) else str(latest_report),

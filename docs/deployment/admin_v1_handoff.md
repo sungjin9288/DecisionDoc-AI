@@ -98,10 +98,18 @@ python3 scripts/verify_company_handoff_bundle.py output/company-handoff/company-
 
 기본 bundle 경로:
 
+- `output/company-handoff/company-handoff-<timestamp>/README.md`
 - `output/company-handoff/company-handoff-<timestamp>/manifest.json`
 - `output/company-handoff/company-handoff-<timestamp>/output/pdf/*.pdf`
 - `output/company-handoff/company-handoff-<timestamp>/docs/**`
+- `output/company-handoff/company-handoff-<timestamp>/scripts/verify_company_handoff_bundle.py`
 - `output/company-handoff/company-handoff-<timestamp>/reports/company-handoff/latest.json`
+
+bundle을 받은 쪽은 bundle root에서 아래 명령만 실행해 manifest와 파일 checksum을 다시 검증할 수 있습니다.
+
+```bash
+python3 scripts/verify_company_handoff_bundle.py .
+```
 
 기본 산출 경로:
 

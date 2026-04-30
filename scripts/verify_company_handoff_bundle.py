@@ -10,9 +10,9 @@ from typing import Sequence
 
 EXPECTED_SCHEMA = "decisiondoc_company_handoff_bundle.v1"
 HIGH_CONFIDENCE_FORBIDDEN_TEXT: tuple[str, ...] = (
-    "OPENAI_API_KEY=sk-",
-    "-----BEGIN OPENSSH PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
+    "OPENAI_API_KEY=" "sk-",
+    "-----BEGIN " "OPENSSH PRIVATE KEY-----",
+    "-----BEGIN " "RSA PRIVATE KEY-----",
 )
 
 
