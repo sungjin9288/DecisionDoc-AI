@@ -5535,6 +5535,18 @@
           <input id="rw-slide-count" class="gov-input" type="number" min="1" max="40" value="6" style="width:100%; margin-top:.25rem;">
         </label>
       </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.5rem;">
+        <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">Owner
+          <input id="rw-owner" class="gov-input" placeholder="작성 책임자" style="width:100%; margin-top:.25rem;">
+        </label>
+        <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">PM Reviewer
+          <input id="rw-pm-reviewer" class="gov-input" placeholder="PM 검토자" style="width:100%; margin-top:.25rem;">
+        </label>
+        <label style="display:block; font-size:.8rem; font-weight:700; margin:.55rem 0 .25rem;">Executive Approver
+          <input id="rw-executive-approver" class="gov-input" placeholder="대표/최종 승인자" style="width:100%; margin-top:.25rem;">
+        </label>
+      </div>
+      <div style="font-size:.72rem; color:var(--muted); line-height:1.45; margin-top:.15rem;">결재 chain은 Owner submit → PM Reviewer approval → Executive Approver approval 순서로 고정됩니다.</div>
       <label style="display:flex; align-items:center; gap:.45rem; font-size:.82rem; color:var(--muted); margin:.8rem 0;">
         <input id="rw-learning-opt-in" type="checkbox">
         승인된 기획안/장표 원문을 학습 후보로 저장
@@ -6461,6 +6473,9 @@
       goal: ($id('rw-goal')?.value || '').trim(),
       client: ($id('rw-client')?.value || '').trim(),
       audience: ($id('rw-audience')?.value || '').trim(),
+      owner: ($id('rw-owner')?.value || '').trim(),
+      pm_reviewer: ($id('rw-pm-reviewer')?.value || '').trim(),
+      executive_approver: ($id('rw-executive-approver')?.value || '').trim(),
       slide_count: Number($id('rw-slide-count')?.value || 6),
       learning_opt_in: !!$id('rw-learning-opt-in')?.checked,
       report_type: 'proposal_presentation',
@@ -6518,6 +6533,7 @@
         <div>
           <h3 style="margin:0;font-size:1.15rem;font-weight:900;">${escapeHtml(item.title || '보고서')}</h3>
           <div style="color:var(--muted);font-size:.82rem;margin-top:.25rem;">${escapeHtml(item.goal || '목표 미입력')}</div>
+          ${renderReportWorkflowRoleLine(item)}
         </div>
         ${reportWorkflowBadge(item.status)}
       </div>
@@ -6539,6 +6555,7 @@
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
         <button class="action-btn" onclick="downloadReportWorkflowSnapshot('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>🧾 Snapshot Export</button>
       </div>
+      ${renderReportWorkflowApprovalWarnings(item)}
       ${renderReportWorkflowFinalApproval(item)}
       ${renderReportWorkflowPromotion(item)}
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:1rem;align-items:start;">
@@ -6556,16 +6573,46 @@
     return steps.find(step => step.stage === stage) || null;
   }
 
+  function renderReportWorkflowRoleLine(item) {
+    const roles = [
+      ['Owner', item?.owner],
+      ['PM Reviewer', item?.pm_reviewer],
+      ['Executive Approver', item?.executive_approver],
+    ]
+      .filter(([, value]) => String(value || '').trim())
+      .map(([label, value]) => `${label}: ${value}`);
+    if (!roles.length) return '';
+    return `<div style="color:#1f2a44;font-size:.74rem;font-weight:800;margin-top:.35rem;">결재 역할 · ${escapeHtml(roles.join(' · '))}</div>`;
+  }
+
+  function renderReportWorkflowApprovalWarnings(item) {
+    const warnings = Array.isArray(item?.quality_warnings) ? item.quality_warnings : [];
+    const approvalWarnings = warnings.filter(warning => {
+      const text = String(warning || '');
+      return text.startsWith('self_final_approval_warning:') || text.startsWith('approval_assignee_mismatch:');
+    });
+    if (!approvalWarnings.length) return '';
+    return `<div style="border:1px solid rgba(180,83,9,.28);border-radius:14px;padding:.8rem;background:rgba(245,158,11,.08);margin-bottom:1rem;">
+      <div style="font-size:.82rem;font-weight:900;color:#92400e;">셀프 최종 승인 경고 / 결재자 불일치</div>
+      <div style="font-size:.74rem;color:#92400e;line-height:1.45;margin-top:.25rem;">MVP 정책은 결재를 차단하지 않고 metadata warning으로 남깁니다. 운영 정책 확정 후 tenant별 hard block으로 전환할 수 있습니다.</div>
+      <ul style="margin:.45rem 0 0;padding-left:1rem;font-size:.72rem;color:#92400e;line-height:1.45;">
+        ${approvalWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+
   function renderReportWorkflowApprovalStep(step, fallbackLabel) {
     const status = step?.status || 'pending';
     const label = step?.label || fallbackLabel;
-    const actor = step?.actor ? ` · ${step.actor}` : '';
+    const assignee = step?.assignee ? `<div style="font-size:.72rem;color:#1f2a44;margin-top:.2rem;font-weight:750;">담당: ${escapeHtml(step.assignee)}</div>` : '';
+    const actor = step?.actor ? ` · 결정: ${step.actor}` : '';
     const comment = step?.comment ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(step.comment)}</div>` : '';
     return `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.45);">
       <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;">
         <strong style="font-size:.78rem;">${escapeHtml(label)}</strong>
         ${reportWorkflowBadge(status)}
       </div>
+      ${assignee}
       <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(step?.decided_at ? `${step.decided_at}${actor}` : `대기${actor}`)}</div>
       ${comment}
     </div>`;

@@ -7,6 +7,19 @@ def test_report_workflow_tab_and_stepper_present():
     assert 'data-page="report-workflow-page"' in html
     assert "보고서 워크플로우" in html
     assert "1. 기획" in html
+    assert "Owner" in html
+    assert "PM Reviewer" in html
+    assert "Executive Approver" in html
+    assert "Owner submit → PM Reviewer approval → Executive Approver approval" in html
+    assert "rw-owner" in html
+    assert "rw-pm-reviewer" in html
+    assert "rw-executive-approver" in html
+    assert "pm_reviewer" in html
+    assert "executive_approver" in html
+    assert "renderReportWorkflowRoleLine" in html
+    assert "renderReportWorkflowApprovalWarnings" in html
+    assert "셀프 최종 승인 경고" in html
+    assert "approval_assignee_mismatch" in html
     assert "1. 기획 설계서" in html
     assert "기획 브리프" in html
     assert "독자 의사결정 기준" in html
@@ -20,6 +33,7 @@ def test_report_workflow_tab_and_stepper_present():
     assert "3. 최종 결재" in html
     assert "PM 승인" in html
     assert "대표 승인" in html
+    assert "담당:" in html
     assert "최종 수정 요청" in html
     assert "4. 프로젝트 산출물로 저장" in html
     assert "Project document" in html

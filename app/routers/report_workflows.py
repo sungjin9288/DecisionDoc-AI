@@ -83,6 +83,8 @@ def create_report_workflow(payload: CreateReportWorkflowRequest, request: Reques
         report_type=payload.report_type,
         audience=payload.audience,
         owner=payload.owner or get_username(request),
+        pm_reviewer=payload.pm_reviewer,
+        executive_approver=payload.executive_approver,
         source_bundle_id=payload.source_bundle_id,
         source_request_id=payload.source_request_id,
         slide_count=payload.slide_count,

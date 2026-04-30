@@ -217,6 +217,7 @@ UI guard:
 - `app/storage/report_workflow_store.py`
   - `ApprovalStep` dataclass 추가
   - `approval_steps: list[ApprovalStep]` 필드 추가
+  - `owner`, `pm_reviewer`, `executive_approver` workflow metadata를 approval step assignee로 연결
 - `app/storage/report_workflow_store.py`
   - final submit 시 PM/대표 approval chain 생성
   - PM 승인 전 executive 승인 차단
@@ -237,6 +238,7 @@ class ApprovalStep:
     step_id: str
     stage: str  # pm_review | executive_review
     label: str
+    assignee: str = ""
     status: str = "pending"
     actor: str | None = None
     decided_at: str | None = None
@@ -250,6 +252,7 @@ class ApprovalStep:
 - PM step이 `approved`가 아니면 executive step을 승인할 수 없다.
 - PM 또는 executive가 changes requested를 남기면 workflow status는 `final_changes_requested`가 되고, slide 수정 이후 `slides_draft`로 돌아간다.
 - 다시 장표가 모두 승인되면 `submit_final`을 다시 호출해 approval step을 새 snapshot으로 재생성한다.
+- MVP에서는 self-final-approval과 assignee mismatch를 차단하지 않고 `quality_warnings`에 warning metadata로 기록한다.
 - `final_approved` 이후에는 planning/slides/final request changes를 모두 차단한다.
 
 ### 5.3 UI separation

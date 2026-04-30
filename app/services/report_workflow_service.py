@@ -392,12 +392,12 @@ class ReportWorkflowService:
         )
         approval = self._approval_store.submit_for_review(
             approval.approval_id,
-            reviewer="pm_review",
+            reviewer=rec.pm_reviewer or "pm_review",
             tenant_id=tenant_id,
         )
         approval = self._approval_store.submit_for_approval(
             approval.approval_id,
-            approver="executive_review",
+            approver=rec.executive_approver or "executive_review",
             tenant_id=tenant_id,
         )
         return self.store.link_final_approval(
@@ -683,6 +683,9 @@ class ReportWorkflowService:
             "current_plan_version": rec.current_plan_version,
             "current_slide_version": rec.current_slide_version,
             "learning_opt_in": rec.learning_opt_in,
+            "owner": rec.owner,
+            "pm_reviewer": rec.pm_reviewer,
+            "executive_approver": rec.executive_approver,
         }
 
     @staticmethod

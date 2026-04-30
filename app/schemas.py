@@ -342,6 +342,8 @@ class CreateReportWorkflowRequest(BaseModel):
     report_type: str = "proposal_presentation"
     audience: str = ""
     owner: str = ""
+    pm_reviewer: str = ""
+    executive_approver: str = ""
     source_bundle_id: str = "presentation_kr"
     source_request_id: str = ""
     slide_count: int = Field(default=6, ge=1, le=40)

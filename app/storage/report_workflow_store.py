@@ -126,6 +126,7 @@ class ApprovalStep:
     step_id: str
     stage: str
     label: str
+    assignee: str = ""
     status: str = "pending"
     actor: str | None = None
     decided_at: str | None = None
@@ -142,6 +143,8 @@ class ReportWorkflowRecord:
     report_type: str
     audience: str
     owner: str
+    pm_reviewer: str
+    executive_approver: str
     status: str
     source_bundle_id: str
     source_request_id: str
@@ -298,6 +301,7 @@ class ReportWorkflowStore(BaseJsonStore):
             step_id=data.get("step_id") or str(uuid.uuid4()),
             stage=data.get("stage", ""),
             label=data.get("label", ""),
+            assignee=data.get("assignee", ""),
             status=data.get("status", "pending"),
             actor=data.get("actor"),
             decided_at=data.get("decided_at"),
@@ -315,6 +319,8 @@ class ReportWorkflowStore(BaseJsonStore):
             report_type=data.get("report_type", ""),
             audience=data.get("audience", ""),
             owner=data.get("owner", ""),
+            pm_reviewer=data.get("pm_reviewer", ""),
+            executive_approver=data.get("executive_approver", ""),
             status=data.get("status", ReportWorkflowStatus.PLANNING_REQUIRED.value),
             source_bundle_id=data.get("source_bundle_id", "presentation_kr"),
             source_request_id=data.get("source_request_id", ""),
@@ -396,6 +402,39 @@ class ReportWorkflowStore(BaseJsonStore):
             raise ValueError("최종 승인된 보고서 워크플로우는 수정할 수 없습니다.")
 
     @staticmethod
+    def _normalize_actor(value: str | None) -> str:
+        return str(value or "").strip().casefold()
+
+    @staticmethod
+    def _append_quality_warning(rec: ReportWorkflowRecord, warning: str) -> None:
+        normalized = str(warning or "").strip()
+        if normalized and normalized not in rec.quality_warnings:
+            rec.quality_warnings.append(normalized)
+
+    def _record_approval_actor_warnings(
+        self,
+        rec: ReportWorkflowRecord,
+        *,
+        stage: str,
+        author: str,
+        step: ApprovalStep,
+    ) -> None:
+        actor = str(author or "").strip()
+        if not actor:
+            return
+        assignee = str(step.assignee or "").strip()
+        if assignee and self._normalize_actor(actor) != self._normalize_actor(assignee):
+            self._append_quality_warning(
+                rec,
+                f"approval_assignee_mismatch:{stage}:expected={assignee}:actual={actor}",
+            )
+        if stage == "executive_review" and rec.owner and self._normalize_actor(actor) == self._normalize_actor(rec.owner):
+            self._append_quality_warning(
+                rec,
+                f"self_final_approval_warning:executive_actor_matches_owner:{actor}",
+            )
+
+    @staticmethod
     def _learning_artifact(kind: str, payload: dict[str, Any], *, actor: str = "") -> dict[str, Any]:
         return {
             "artifact_id": str(uuid.uuid4()),
@@ -440,10 +479,23 @@ class ReportWorkflowStore(BaseJsonStore):
         return [merged[asset_id] for asset_id in order][-max_count:]
 
     @staticmethod
-    def _default_approval_steps() -> list[ApprovalStep]:
+    def _default_approval_steps(
+        pm_reviewer: str = "",
+        executive_approver: str = "",
+    ) -> list[ApprovalStep]:
         return [
-            ApprovalStep(step_id=str(uuid.uuid4()), stage="pm_review", label="PM 검토"),
-            ApprovalStep(step_id=str(uuid.uuid4()), stage="executive_review", label="대표 최종 승인"),
+            ApprovalStep(
+                step_id=str(uuid.uuid4()),
+                stage="pm_review",
+                label="PM 검토",
+                assignee=pm_reviewer,
+            ),
+            ApprovalStep(
+                step_id=str(uuid.uuid4()),
+                stage="executive_review",
+                label="대표 최종 승인",
+                assignee=executive_approver,
+            ),
         ]
 
     @staticmethod
@@ -463,6 +515,8 @@ class ReportWorkflowStore(BaseJsonStore):
         report_type: str = "proposal_presentation",
         audience: str = "",
         owner: str = "",
+        pm_reviewer: str = "",
+        executive_approver: str = "",
         source_bundle_id: str = "presentation_kr",
         source_request_id: str = "",
         slide_count: int = 6,
@@ -482,6 +536,8 @@ class ReportWorkflowStore(BaseJsonStore):
                 report_type=report_type,
                 audience=audience,
                 owner=owner,
+                pm_reviewer=pm_reviewer,
+                executive_approver=executive_approver,
                 status=ReportWorkflowStatus.PLANNING_REQUIRED.value,
                 source_bundle_id=source_bundle_id or "presentation_kr",
                 source_request_id=source_request_id,
@@ -846,7 +902,7 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.final_approval_id = None
             rec.final_approval_status = None
             rec.final_approval_synced_at = None
-            rec.approval_steps = self._default_approval_steps()
+            rec.approval_steps = self._default_approval_steps(rec.pm_reviewer, rec.executive_approver)
             rec.comments.append(WorkflowComment(
                 comment_id=str(uuid.uuid4()),
                 target_type="final",
@@ -959,7 +1015,7 @@ class ReportWorkflowStore(BaseJsonStore):
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 결재할 수 있습니다.")
             if not rec.approval_steps:
-                rec.approval_steps = self._default_approval_steps()
+                rec.approval_steps = self._default_approval_steps(rec.pm_reviewer, rec.executive_approver)
             if stage == "executive_review":
                 pm_step = self._approval_step(rec, "pm_review")
                 if pm_step.status != "approved":
@@ -967,6 +1023,7 @@ class ReportWorkflowStore(BaseJsonStore):
             step = self._approval_step(rec, stage)
             if step.status == "approved":
                 raise ValueError("이미 승인된 결재 단계입니다.")
+            self._record_approval_actor_warnings(rec, stage=stage, author=author, step=step)
             step.status = "approved"
             step.actor = author
             step.decided_at = _now_iso()
@@ -1014,7 +1071,7 @@ class ReportWorkflowStore(BaseJsonStore):
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 수정 요청할 수 있습니다.")
             if not rec.approval_steps:
-                rec.approval_steps = self._default_approval_steps()
+                rec.approval_steps = self._default_approval_steps(rec.pm_reviewer, rec.executive_approver)
             pending_step = next((item for item in rec.approval_steps if item.status != "approved"), rec.approval_steps[-1])
             pending_step.status = "changes_requested"
             pending_step.actor = author
@@ -1055,10 +1112,11 @@ class ReportWorkflowStore(BaseJsonStore):
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 최종 승인할 수 있습니다.")
             if not rec.approval_steps:
-                rec.approval_steps = self._default_approval_steps()
+                rec.approval_steps = self._default_approval_steps(rec.pm_reviewer, rec.executive_approver)
             now = _now_iso()
             for step in rec.approval_steps:
                 if step.status != "approved":
+                    self._record_approval_actor_warnings(rec, stage=step.stage, author=author, step=step)
                     step.status = "approved"
                     step.actor = author
                     step.decided_at = now

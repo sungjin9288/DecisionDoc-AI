@@ -66,6 +66,45 @@ def test_report_workflow_crud_and_tenant_boundary(tmp_path, monkeypatch):
     assert other_tenant.status_code == 403
 
 
+def test_report_workflow_create_persists_approval_assignees(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(
+        client,
+        owner="owner",
+        pm_reviewer="pm-user",
+        executive_approver="ceo-user",
+        slide_count=2,
+    )
+    workflow_id = created["report_workflow_id"]
+
+    assert created["owner"] == "owner"
+    assert created["pm_reviewer"] == "pm-user"
+    assert created["executive_approver"] == "ceo-user"
+
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm-user", "comment": ""})
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    for slide in slides_payload["slides"]:
+        client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm-user", "comment": ""},
+        )
+    submitted = client.post(
+        f"/report-workflows/{workflow_id}/final/submit",
+        json={"username": "owner", "comment": ""},
+    )
+
+    assert submitted.status_code == 200
+    body = submitted.json()
+    assert body["approval_steps"][0]["assignee"] == "pm-user"
+    assert body["approval_steps"][1]["assignee"] == "ceo-user"
+    linked_approval = client.get(f"/approvals/{body['final_approval_id']}").json()
+    assert linked_approval["reviewer"] == "pm-user"
+    assert linked_approval["approver"] == "ceo-user"
+    assert linked_approval["gov_options"]["pm_reviewer"] == "pm-user"
+    assert linked_approval["gov_options"]["executive_approver"] == "ceo-user"
+
+
 def test_planning_and_slides_generation_with_mock_provider(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client, slide_count=4)

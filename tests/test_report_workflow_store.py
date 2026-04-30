@@ -146,7 +146,13 @@ def test_full_approval_flow_and_immutability(tmp_path):
 
 def test_final_approval_chain_requires_pm_before_executive(tmp_path):
     store = _store(tmp_path)
-    rec = store.create(tenant_id="t1", title="보고서")
+    rec = store.create(
+        tenant_id="t1",
+        title="보고서",
+        owner="owner",
+        pm_reviewer="pm",
+        executive_approver="owner",
+    )
     store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
     store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
     store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
@@ -178,11 +184,49 @@ def test_final_approval_chain_requires_pm_before_executive(tmp_path):
     )
 
     assert submitted.status == ReportWorkflowStatus.FINAL_REVIEW.value
+    assert submitted.approval_steps[0].assignee == "pm"
+    assert submitted.approval_steps[1].assignee == "owner"
     assert pm_approved.status == ReportWorkflowStatus.FINAL_REVIEW.value
     assert pm_approved.approval_steps[0].status == "approved"
     assert final.status == ReportWorkflowStatus.FINAL_APPROVED.value
     assert final.final_approved_by == "ceo"
     assert final.approval_steps[1].status == "approved"
+    assert any(
+        warning == "approval_assignee_mismatch:executive_review:expected=owner:actual=ceo"
+        for warning in final.quality_warnings
+    )
+
+
+def test_self_final_approval_records_warning_metadata(tmp_path):
+    store = _store(tmp_path)
+    rec = store.create(
+        tenant_id="t1",
+        title="셀프 승인 보고서",
+        owner="owner",
+        pm_reviewer="pm",
+        executive_approver="owner",
+    )
+    store.save_planning(rec.report_workflow_id, _planning(), tenant_id="t1")
+    store.approve_planning(rec.report_workflow_id, author="pm", tenant_id="t1")
+    store.save_slides(rec.report_workflow_id, _slides(), tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-001", author="pm", tenant_id="t1")
+    store.approve_slide(rec.report_workflow_id, "slide-002", author="pm", tenant_id="t1")
+    store.submit_final(rec.report_workflow_id, author="owner", tenant_id="t1")
+    store.approve_final_step(
+        rec.report_workflow_id,
+        stage="pm_review",
+        author="pm",
+        tenant_id="t1",
+    )
+    final = store.approve_final_step(
+        rec.report_workflow_id,
+        stage="executive_review",
+        author="owner",
+        tenant_id="t1",
+    )
+
+    assert final.status == ReportWorkflowStatus.FINAL_APPROVED.value
+    assert "self_final_approval_warning:executive_actor_matches_owner:owner" in final.quality_warnings
 
 
 def test_final_change_request_blocks_until_resubmitted(tmp_path):

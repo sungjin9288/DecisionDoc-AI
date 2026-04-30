@@ -536,9 +536,11 @@ UI 분리:
 - AI learning opt-in은 workflow 단위로 시작한다.
 - 기존 `approvals`와 `report-workflows`는 합치지 않는다. 최종 조직 결재 시점에만 연결한다.
 - Report Workflow 화면은 제작 상태를, 결재함은 조직 결재 상태를 보여준다.
+- Report Workflow 생성 시 `Owner`, `PM Reviewer`, `Executive Approver` 후보를 workflow metadata로 저장하고, 최종 제출 시 approval step assignee와 linked `ApprovalStore` reviewer/approver에 반영한다.
+- self-final-approval은 MVP에서 hard block하지 않고 `self_final_approval_warning:*` quality warning metadata로 남긴다. tenant별 hard block 정책은 enterprise phase에서 별도 설정으로 결정한다.
 
 ## 17. 남은 질문 / Open Questions
 
-- tenant별로 PM/대표 기본 assignee를 어디서 관리할지 결정해야 한다.
-- self-final-approval을 모든 tenant에서 차단할지, warning으로 시작할지 운영 정책을 정해야 한다.
+- tenant별로 PM/대표 기본 assignee를 어디서 관리할지 결정해야 한다. 현재는 workflow 생성 시 수동 입력 metadata로 시작한다.
+- self-final-approval hard block을 모든 tenant에서 강제할지, warning-only tenant policy를 허용할지 운영 정책을 정해야 한다.
 - 승인 완료된 smoke/test workflow를 정리할 archive/delete API를 언제 추가할지 결정해야 한다.
