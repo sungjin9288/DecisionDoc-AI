@@ -86,6 +86,16 @@ python3 scripts/check_company_handoff_ready.py --skip-pdf-check --report-dir ./r
 
 8. 실제 전달 파일을 고정하려면 bundle manifest를 생성합니다.
 
+최종 전달 archive까지 한 번에 만들려면 아래 one-shot command를 사용합니다.
+
+```bash
+python3 scripts/package_company_handoff.py --skip-build
+```
+
+이 명령은 `prepare -> bundle 생성 -> bundle 검증 -> zip archive 생성 -> package-latest.json 증적 저장`을 순서대로 실행합니다.
+
+수동으로 단계별 확인이 필요할 때는 아래 명령을 사용합니다.
+
 ```bash
 python3 scripts/create_company_handoff_bundle.py --skip-build
 ```
@@ -121,6 +131,7 @@ python3 scripts/verify_company_handoff_bundle.py .
 
 - `output/company-handoff/company-handoff-<timestamp>.zip`
 - `output/company-handoff/company-handoff-<timestamp>.zip.sha256`
+- `reports/company-handoff/package-latest.json`
 
 기본 산출 경로:
 
