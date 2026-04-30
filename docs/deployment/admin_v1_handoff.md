@@ -84,6 +84,19 @@ python3 scripts/check_company_handoff_ready.py --skip-pdf-check --report-dir ./r
 - `reports/company-handoff/latest.json`
 - `reports/company-handoff/company-handoff-readiness-<timestamp>.json`
 
+8. 실제 전달 파일을 고정하려면 bundle manifest를 생성합니다.
+
+```bash
+python3 scripts/create_company_handoff_bundle.py --skip-build
+```
+
+기본 bundle 경로:
+
+- `output/company-handoff/company-handoff-<timestamp>/manifest.json`
+- `output/company-handoff/company-handoff-<timestamp>/output/pdf/*.pdf`
+- `output/company-handoff/company-handoff-<timestamp>/docs/**`
+- `output/company-handoff/company-handoff-<timestamp>/reports/company-handoff/latest.json`
+
 기본 산출 경로:
 
 - `output/pdf/decisiondoc_ai_executive_intro_ko.pdf`
