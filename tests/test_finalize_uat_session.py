@@ -9,7 +9,7 @@ from scripts.finalize_uat_session import (
 )
 
 
-def test_summarize_uat_payload_marks_ready_when_all_entries_closed() -> None:
+def test_summarize_uat_payload_requires_all_required_scenarios() -> None:
     payload = {
         "session_title": "business-uat",
         "session_file": "/tmp/session.md",
@@ -41,11 +41,12 @@ def test_summarize_uat_payload_marks_ready_when_all_entries_closed() -> None:
 
     summary = summarize_uat_payload(payload)
 
-    assert summary["status"] == "READY_FOR_PILOT"
+    assert summary["status"] == "FOLLOW_UP_REQUIRED"
     assert summary["entry_count"] == 2
     assert summary["scenario_count"] == 2
     assert summary["blockers"] == []
     assert summary["follow_ups"] == []
+    assert summary["missing_required_scenarios"] == ["시나리오 2", "시나리오 3", "시나리오 4"]
 
 
 def test_summarize_uat_payload_uses_latest_retry_entry_for_scenario_status() -> None:
@@ -80,8 +81,83 @@ def test_summarize_uat_payload_uses_latest_retry_entry_for_scenario_status() -> 
 
     summary = summarize_uat_payload(payload)
 
-    assert summary["status"] == "READY_FOR_PILOT"
+    assert summary["status"] == "FOLLOW_UP_REQUIRED"
     assert summary["scenario_count"] == 1
+    assert summary["blockers"] == []
+    assert summary["follow_ups"] == []
+    assert summary["missing_required_scenarios"] == ["시나리오 1", "시나리오 3", "시나리오 4", "시나리오 5"]
+
+
+def test_summarize_uat_payload_marks_ready_when_all_required_scenarios_closed() -> None:
+    payload = {
+        "session_title": "business-uat",
+        "session_file": "/tmp/session.md",
+        "entries": [
+            {
+                "scenario": "시나리오 1. 기본 사업 제안서 생성",
+                "recorded_at": "2026-04-21T10:00:00+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "성공 (HTTP 200)",
+                "visual_asset_status": "미검증",
+                "history_restore_status": "미검증",
+                "issues": "없음",
+                "follow_up": "아니오",
+            },
+            {
+                "scenario": "시나리오 2. 첨부 기반 제안서 생성",
+                "recorded_at": "2026-04-21T10:10:00+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "성공 (HTTP 200)",
+                "visual_asset_status": "미검증",
+                "history_restore_status": "미검증",
+                "issues": "없음",
+                "follow_up": "아니오",
+            },
+            {
+                "scenario": "시나리오 3. visual asset 및 export 일관성",
+                "recorded_at": "2026-04-21T10:20:00+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "성공 (DOCX/PDF/PPTX/HWPX)",
+                "visual_asset_status": "성공",
+                "history_restore_status": "미검증",
+                "issues": "없음",
+                "follow_up": "아니오",
+            },
+            {
+                "scenario": "시나리오 4. legacy .hwp 차단",
+                "recorded_at": "2026-04-21T10:30:00+00:00",
+                "bundle": "proposal_kr",
+                "generation_status": "성공 - 차단 메시지 확인",
+                "export_status": "성공 - 변환 안내 확인",
+                "visual_asset_status": "미검증",
+                "history_restore_status": "미검증",
+                "issues": "없음",
+                "follow_up": "아니오",
+            },
+            {
+                "scenario": "시나리오 5. history 복원 + 재export",
+                "recorded_at": "2026-04-21T10:40:00+00:00",
+                "bundle": "presentation_kr",
+                "generation_status": "성공 (HTTP 200)",
+                "export_status": "PPTX 재수출 성공",
+                "visual_asset_status": "성공",
+                "history_restore_status": "성공",
+                "issues": "없음",
+                "follow_up": "아니오",
+            },
+        ],
+    }
+
+    summary = summarize_uat_payload(payload)
+
+    assert summary["status"] == "READY_FOR_PILOT"
+    assert summary["entry_count"] == 5
+    assert summary["scenario_count"] == 5
+    assert summary["required_scenario_count"] == 5
+    assert summary["missing_required_scenarios"] == []
     assert summary["blockers"] == []
     assert summary["follow_ups"] == []
 
@@ -132,10 +208,14 @@ def test_finalize_uat_session_writes_summary_markdown(tmp_path: Path) -> None:
 
     summary, output_path = finalize_uat_session(session_file=session_file, output_dir=tmp_path)
 
-    assert summary["status"] == "READY_FOR_PILOT"
+    assert summary["status"] == "FOLLOW_UP_REQUIRED"
     assert output_path.exists()
     content = output_path.read_text(encoding="utf-8")
     assert "# UAT Final Summary — business-uat" in content
-    assert "overall_status: **READY_FOR_PILOT**" in content
+    assert "overall_status: **FOLLOW_UP_REQUIRED**" in content
+    assert "missing_required_count: `3`" in content
+    assert "`시나리오 1`" in content
+    assert "`시나리오 2`" in content
+    assert "`시나리오 4`" in content
     assert "시나리오 5. history 복원 + 재export" in content
     assert "ppt/media/image1.png" in content

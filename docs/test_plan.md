@@ -125,6 +125,15 @@ python3 scripts/record_uat_result.py \
   --follow-up "아니오"
 ```
 
+### UAT 최종 요약 생성
+```bash
+python3 scripts/finalize_uat_session.py \
+  --session-file ./reports/uat/uat-session-<timestamp>-business-uat.md \
+  --output-dir ./reports/uat
+```
+
+`READY_FOR_PILOT` 판정은 기본 5개 필수 시나리오(`시나리오 1`~`시나리오 5`)가 모두 기록되고, blocker 및 follow-up이 없을 때만 가능하다. 일부 시나리오만 성공한 경우에는 `missing_required_scenarios`가 표시되고 `FOLLOW_UP_REQUIRED`로 유지한다.
+
 ### UAT 세션 요약 확인
 ```bash
 python3 scripts/show_uat_session.py \

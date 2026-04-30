@@ -28,6 +28,13 @@ _show_uat = _load_show_uat_module()
 parse_uat_session = _show_uat.parse_uat_session
 
 _SCENARIO_FAMILY_RE = re.compile(r"^(시나리오\s+\d+)")
+REQUIRED_SCENARIO_FAMILIES = (
+    "시나리오 1",
+    "시나리오 2",
+    "시나리오 3",
+    "시나리오 4",
+    "시나리오 5",
+)
 
 
 def _is_success_text(value: str) -> bool:
@@ -92,13 +99,23 @@ def summarize_uat_payload(payload: dict) -> dict:
                 }
             )
 
-    status = "READY_FOR_PILOT" if scenario_entries and not blockers and not follow_ups else "FOLLOW_UP_REQUIRED"
+    covered_families = set(latest_by_family)
+    missing_required_scenarios = [
+        family for family in REQUIRED_SCENARIO_FAMILIES if family not in covered_families
+    ]
+    status = (
+        "READY_FOR_PILOT"
+        if scenario_entries and not missing_required_scenarios and not blockers and not follow_ups
+        else "FOLLOW_UP_REQUIRED"
+    )
     return {
         "session_title": payload.get("session_title", "-"),
         "session_file": payload.get("session_file", "-"),
         "entry_count": len(entries),
         "scenario_count": len(scenario_entries),
         "pass_count": passes,
+        "required_scenario_count": len(REQUIRED_SCENARIO_FAMILIES),
+        "missing_required_scenarios": missing_required_scenarios,
         "blockers": blockers,
         "follow_ups": follow_ups,
         "status": status,
@@ -111,6 +128,7 @@ def build_uat_summary_markdown(*, summary: dict, generated_at: datetime) -> str:
     blockers = summary.get("blockers") or []
     follow_ups = summary.get("follow_ups") or []
     entries = summary.get("entries") or []
+    missing_required_scenarios = summary.get("missing_required_scenarios") or []
 
     blocker_lines = "\n".join(
         f"- `{item.get('scenario', '-')}`: {item.get('issues', '-')}" for item in blockers
@@ -118,6 +136,7 @@ def build_uat_summary_markdown(*, summary: dict, generated_at: datetime) -> str:
     follow_up_lines = "\n".join(
         f"- `{item.get('scenario', '-')}`: {item.get('follow_up', '-')}" for item in follow_ups
     ) or "- 없음"
+    missing_required_lines = "\n".join(f"- `{item}`" for item in missing_required_scenarios) or "- 없음"
     entry_lines = "\n".join(
         "- "
         f"{entry.get('recorded_at', '-')} | "
@@ -140,9 +159,15 @@ def build_uat_summary_markdown(*, summary: dict, generated_at: datetime) -> str:
 
 - recorded_entries: `{summary.get('entry_count', 0)}`
 - scenario_count: `{summary.get('scenario_count', 0)}`
+- required_scenario_count: `{summary.get('required_scenario_count', 0)}`
+- missing_required_count: `{len(missing_required_scenarios)}`
 - pass_count: `{summary.get('pass_count', 0)}`
 - blocker_count: `{len(blockers)}`
 - follow_up_count: `{len(follow_ups)}`
+
+## Missing Required Scenarios
+
+{missing_required_lines}
 
 ## Blockers
 
