@@ -35,7 +35,7 @@ def _write_valid_bundle(tmp_path: Path) -> Path:
     verifier.write_text("# verifier\n", encoding="utf-8")
     manifest = {
         "schema": "decisiondoc_company_handoff_bundle.v1",
-        "release_tag": "v1.1.58",
+        "release_tag": "v1.1.59",
         "artifact_count": 2,
         "artifacts": [
             {

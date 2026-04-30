@@ -11,8 +11,8 @@ from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LATEST_ACCEPTANCE_FILE = "docs/deployment/admin_v1_1_58_acceptance_20260430.md"
-LATEST_RELEASE_TAG = "v1.1.58"
+LATEST_ACCEPTANCE_FILE = "docs/deployment/admin_v1_1_59_acceptance_20260430.md"
+LATEST_RELEASE_TAG = "v1.1.59"
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,7 @@ REQUIRED_MARKDOWN: tuple[RequiredMarkdown, ...] = (
         "docs/deployment/admin_v1_handoff.md",
         required_text=(
             "Admin v1.1.58 Acceptance Record 2026-04-30",
+            "Admin v1.1.59 Acceptance Record 2026-04-30",
             LATEST_ACCEPTANCE_FILE.rsplit("/", 1)[-1],
             "Sales Pack 인덱스",
         ),

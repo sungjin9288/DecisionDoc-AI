@@ -34,9 +34,9 @@ def test_package_company_handoff_runs_bundle_verify_archive_and_writes_reports(m
             "prepare_result": {"ok": True},
             "source": {
                 "source_commit": "fixturecommit",
-                "source_describe": "v1.1.58-fixture",
+                "source_describe": "v1.1.59-fixture",
                 "source_exact_tag": "",
-                "expected_release_tag": "v1.1.58",
+                "expected_release_tag": "v1.1.59",
                 "exact_release_tag": False,
                 "dirty": False,
                 "warnings": ["fixture warning"],
@@ -51,7 +51,7 @@ def test_package_company_handoff_runs_bundle_verify_archive_and_writes_reports(m
             "ok": True,
             "errors": [],
             "checked_artifacts": 15,
-            "release_tag": "v1.1.58",
+            "release_tag": "v1.1.59",
         }
 
     def fake_archive(**kwargs):
@@ -80,7 +80,7 @@ def test_package_company_handoff_runs_bundle_verify_archive_and_writes_reports(m
 
     assert result["ok"] is True
     assert result["summary"]["checked_artifacts"] == 15
-    assert result["summary"]["source_describe"] == "v1.1.58-fixture"
+    assert result["summary"]["source_describe"] == "v1.1.59-fixture"
     assert result["summary"]["exact_release_tag"] is False
     assert result["warnings"] == ["fixture warning"]
     assert calls["create"] == {

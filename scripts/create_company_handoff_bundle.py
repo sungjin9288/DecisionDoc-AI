@@ -24,7 +24,7 @@ HANDOFF_DOCUMENTS: tuple[str, ...] = (
     "docs/deployment/admin_v1_handoff.md",
     "docs/deployment/admin_aws_ec2_setup.md",
     "docs/deployment/prod_checklist.md",
-    "docs/deployment/admin_v1_1_58_acceptance_20260430.md",
+    "docs/deployment/admin_v1_1_59_acceptance_20260430.md",
     "docs/security_policy.md",
     "docs/v1_completion_snapshot.md",
     "docs/sales/company_delivery_guide.md",
