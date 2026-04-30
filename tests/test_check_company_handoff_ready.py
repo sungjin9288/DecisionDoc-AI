@@ -82,6 +82,8 @@ def test_company_handoff_ready_passes_with_required_docs_and_pdfs(tmp_path: Path
     assert result["ok"] is True
     assert result["errors"] == []
     assert result["release_tag"] == "v1.1.58"
+    assert result["source"]["expected_release_tag"] == "v1.1.58"
+    assert "source_describe" in result["source"]
     assert result["manifest"]["markdown"][0]["exists"] is True
     assert result["manifest"]["pdfs"][0]["path"] == "output/pdf/decisiondoc_ai_meeting_onepager_ko.pdf"
 
@@ -150,6 +152,7 @@ def test_company_handoff_ready_writes_report_file(tmp_path: Path) -> None:
     payload = json.loads(report_file.read_text(encoding="utf-8"))
     assert payload["ok"] is True
     assert payload["release_tag"] == "v1.1.58"
+    assert payload["source"]["expected_release_tag"] == "v1.1.58"
     assert payload["manifest"]["pdfs"][0]["exists"] is True
 
 

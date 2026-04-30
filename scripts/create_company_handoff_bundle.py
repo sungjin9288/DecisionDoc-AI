@@ -86,11 +86,16 @@ def _write_bundle_readme(
     bundle_dir: Path,
     created_at: str,
     release_tag: str,
+    source: dict[str, object],
     acceptance_file: str,
     readiness_report: Path,
     artifact_count: int,
 ) -> dict[str, object]:
     readme_path = bundle_dir / "README.md"
+    source_describe = str(source.get("source_describe") or "-")
+    source_commit = str(source.get("source_commit") or "-")
+    source_exact_tag = str(source.get("source_exact_tag") or "-")
+    exact_release_tag = str(bool(source.get("exact_release_tag"))).lower()
     body = f"""# DecisionDoc AI Company Handoff Bundle
 
 This bundle is the delivery package for DecisionDoc AI `{release_tag}`.
@@ -124,6 +129,10 @@ The verifier checks `manifest.json`, file presence, file size, SHA-256 integrity
 
 - Created at: `{created_at}`
 - Release tag: `{release_tag}`
+- Source describe: `{source_describe}`
+- Source commit: `{source_commit}`
+- Source exact tag: `{source_exact_tag}`
+- Exact release tag match: `{exact_release_tag}`
 - Acceptance file: `{acceptance_file}`
 - Readiness report source: `{readiness_report}`
 - Manifest: `manifest.json`
@@ -181,6 +190,10 @@ def create_company_handoff_bundle(
             "prepare_result": prepare_result,
             "errors": [f"company handoff readiness report is missing: {latest_report}"],
         }
+    latest_payload = json.loads(latest_report.read_text(encoding="utf-8"))
+    source = latest_payload.get("source")
+    if not isinstance(source, dict):
+        source = check_company_handoff_ready.build_source_metadata(resolved_repo)
 
     name = bundle_name or f"company-handoff-{_utc_timestamp()}"
     bundle_dir = resolved_bundle_root / name
@@ -204,6 +217,7 @@ def create_company_handoff_bundle(
             bundle_dir=bundle_dir,
             created_at=created_at,
             release_tag=check_company_handoff_ready.LATEST_RELEASE_TAG,
+            source=source,
             acceptance_file=check_company_handoff_ready.LATEST_ACCEPTANCE_FILE,
             readiness_report=latest_report.relative_to(resolved_repo)
             if latest_report.is_relative_to(resolved_repo)
@@ -216,6 +230,8 @@ def create_company_handoff_bundle(
         "schema": "decisiondoc_company_handoff_bundle.v1",
         "created_at": created_at,
         "release_tag": check_company_handoff_ready.LATEST_RELEASE_TAG,
+        "source": source,
+        "warnings": list(source.get("warnings", [])),
         "acceptance_file": check_company_handoff_ready.LATEST_ACCEPTANCE_FILE,
         "readiness_report": str(latest_report.relative_to(resolved_repo)) if latest_report.is_relative_to(resolved_repo) else str(latest_report),
         "artifact_count": len(artifacts),
@@ -227,6 +243,8 @@ def create_company_handoff_bundle(
         "bundle_dir": str(bundle_dir),
         "manifest_path": str(manifest_path),
         "prepare_result": prepare_result,
+        "source": source,
+        "warnings": list(source.get("warnings", [])),
         "errors": [],
     }
 

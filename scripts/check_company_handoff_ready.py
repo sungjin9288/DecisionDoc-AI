@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import json
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Sequence
 
 
@@ -76,6 +77,46 @@ FORBIDDEN_DELIVERY_TEXT: tuple[str, ...] = (
     "-----BEGIN OPENSSH PRIVATE KEY-----",
     "-----BEGIN RSA PRIVATE KEY-----",
 )
+
+
+def _git_stdout(repo_root: Path, args: Sequence[str]) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def build_source_metadata(repo_root: Path) -> dict[str, object]:
+    source_commit = _git_stdout(repo_root, ["rev-parse", "HEAD"])
+    source_describe = _git_stdout(repo_root, ["describe", "--tags", "--always", "--dirty", "--abbrev=12"])
+    source_exact_tag = _git_stdout(repo_root, ["describe", "--tags", "--exact-match", "HEAD"])
+    exact_release_tag = bool(source_exact_tag and source_exact_tag == LATEST_RELEASE_TAG)
+    dirty = source_describe.endswith("-dirty")
+    warnings: list[str] = []
+    if not source_commit:
+        warnings.append("git source metadata is unavailable")
+    elif not exact_release_tag:
+        warnings.append(
+            "source commit is not exactly tagged with "
+            f"{LATEST_RELEASE_TAG}; source_describe={source_describe or source_commit[:12]}"
+        )
+    if dirty:
+        warnings.append("source working tree is dirty")
+    return {
+        "source_commit": source_commit,
+        "source_describe": source_describe,
+        "source_exact_tag": source_exact_tag,
+        "expected_release_tag": LATEST_RELEASE_TAG,
+        "exact_release_tag": exact_release_tag,
+        "dirty": dirty,
+        "warnings": warnings,
+    }
 
 
 def _read_text(path: Path) -> str:
@@ -178,6 +219,7 @@ def check_company_handoff_ready(
         "output_dir": str(output_dir),
         "release_tag": LATEST_RELEASE_TAG,
         "acceptance_file": LATEST_ACCEPTANCE_FILE,
+        "source": build_source_metadata(resolved_repo),
         "pdf_check": not skip_pdf_check,
         "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "manifest": _build_manifest(resolved_repo, output_dir=output_dir, skip_pdf_check=skip_pdf_check),
@@ -232,6 +274,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("PASS company handoff readiness check passed")
         print(f"release_tag={result['release_tag']}")
         print(f"acceptance_file={result['acceptance_file']}")
+        source = result["source"]
+        if isinstance(source, dict):
+            print(f"source_describe={source.get('source_describe') or '-'}")
+            print(f"exact_release_tag={str(source.get('exact_release_tag')).lower()}")
         print(f"pdf_check={'enabled' if result['pdf_check'] else 'skipped'}")
         for report in written_reports:
             print(f"report_written={report}")

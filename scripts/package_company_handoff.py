@@ -42,10 +42,15 @@ def _write_package_reports(*, result: dict[str, object], report_dir: Path) -> li
 
 
 def _base_result() -> dict[str, object]:
+    source = create_company_handoff_bundle.check_company_handoff_ready.build_source_metadata(
+        create_company_handoff_bundle.REPO_ROOT
+    )
     return {
         "ok": False,
         "generated_at": _generated_at(),
         "release_tag": create_company_handoff_bundle.check_company_handoff_ready.LATEST_RELEASE_TAG,
+        "source": source,
+        "warnings": list(source.get("warnings", [])),
         "errors": [],
         "reports": [],
     }
@@ -86,6 +91,10 @@ def package_company_handoff(
         return result
 
     result["bundle"] = bundle
+    source = bundle.get("source")
+    if isinstance(source, dict):
+        result["source"] = source
+        result["warnings"] = list(source.get("warnings", []))
     if not bundle["ok"]:
         result.update(
             {
@@ -142,6 +151,8 @@ def package_company_handoff(
                 "sha256_path": archive["sha256_path"],
                 "archive_sha256": archive["archive_sha256"],
                 "archive_size_bytes": archive["archive_size_bytes"],
+                "source_describe": result["source"].get("source_describe") if isinstance(result.get("source"), dict) else "",
+                "exact_release_tag": result["source"].get("exact_release_tag") if isinstance(result.get("source"), dict) else False,
             },
         }
     )
@@ -193,6 +204,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"sha256_path={summary['sha256_path']}")
         print(f"archive_sha256={summary['archive_sha256']}")
         print(f"checked_artifacts={summary['checked_artifacts']}")
+        print(f"source_describe={summary.get('source_describe') or '-'}")
+        print(f"exact_release_tag={str(summary.get('exact_release_tag')).lower()}")
         for report in result["reports"]:
             print(f"report_written={report}")
         return 0

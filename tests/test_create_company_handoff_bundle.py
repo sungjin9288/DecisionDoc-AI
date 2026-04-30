@@ -34,6 +34,15 @@ def _write_fixture_repo(repo: Path, bundler) -> None:
     readiness = {
         "ok": True,
         "release_tag": bundler.check_company_handoff_ready.LATEST_RELEASE_TAG,
+        "source": {
+            "source_commit": "fixturecommit",
+            "source_describe": "v1.1.58-fixture",
+            "source_exact_tag": "",
+            "expected_release_tag": "v1.1.58",
+            "exact_release_tag": False,
+            "dirty": False,
+            "warnings": ["fixture warning"],
+        },
     }
     _write_file(
         repo / "reports" / "company-handoff" / "latest.json",
@@ -56,12 +65,16 @@ def test_create_company_handoff_bundle_copies_artifacts_and_writes_manifest(tmp_
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["schema"] == "decisiondoc_company_handoff_bundle.v1"
     assert manifest["release_tag"] == "v1.1.58"
+    assert manifest["source"]["source_describe"] == "v1.1.58-fixture"
+    assert manifest["warnings"] == ["fixture warning"]
     assert manifest["artifact_count"] == 15
+    assert result["source"]["source_commit"] == "fixturecommit"
     assert (bundle_dir / "output" / "pdf" / "decisiondoc_ai_meeting_onepager_ko.pdf").exists()
     assert (bundle_dir / "docs" / "deployment" / "admin_v1_handoff.md").exists()
     assert (bundle_dir / "scripts" / "verify_company_handoff_bundle.py").exists()
     assert (bundle_dir / "reports" / "company-handoff" / "latest.json").exists()
     assert (bundle_dir / "README.md").exists()
+    assert "Source describe: `v1.1.58-fixture`" in (bundle_dir / "README.md").read_text(encoding="utf-8")
     assert all(item["sha256"] for item in manifest["artifacts"])
     assert {item["bundle_path"] for item in manifest["artifacts"]} >= {
         "README.md",

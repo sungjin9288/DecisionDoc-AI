@@ -93,6 +93,8 @@ python3 scripts/package_company_handoff.py --skip-build
 ```
 
 이 명령은 `prepare -> bundle 생성 -> bundle 검증 -> zip archive 생성 -> package-latest.json 증적 저장`을 순서대로 실행합니다.
+`package-latest.json`, bundle `manifest.json`, bundle `README.md`에는 `release_tag`와 별도로 `source_commit`, `source_describe`, `source_exact_tag`, `exact_release_tag`가 기록됩니다.
+따라서 tag 이후 handoff 자동화 보강 commit에서 package를 만들더라도, 전달 package가 어떤 실제 source commit에서 만들어졌는지 확인할 수 있습니다.
 
 수동으로 단계별 확인이 필요할 때는 아래 명령을 사용합니다.
 
@@ -132,6 +134,7 @@ python3 scripts/verify_company_handoff_bundle.py .
 - `output/company-handoff/company-handoff-<timestamp>.zip`
 - `output/company-handoff/company-handoff-<timestamp>.zip.sha256`
 - `reports/company-handoff/package-latest.json`
+- bundle `manifest.json`의 `source.exact_release_tag`
 
 기본 산출 경로:
 

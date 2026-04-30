@@ -120,6 +120,8 @@ def verify_company_handoff_bundle(*, bundle_or_manifest: Path) -> dict[str, obje
         "bundle_dir": str(bundle_dir),
         "checked_artifacts": checked_artifacts,
         "release_tag": manifest.get("release_tag"),
+        "source": manifest.get("source") if isinstance(manifest.get("source"), dict) else {},
+        "warnings": manifest.get("warnings") if isinstance(manifest.get("warnings"), list) else [],
     }
 
 
@@ -139,6 +141,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"manifest_path={result['manifest_path']}")
         print(f"checked_artifacts={result['checked_artifacts']}")
         print(f"release_tag={result.get('release_tag') or '-'}")
+        source = result.get("source")
+        if isinstance(source, dict):
+            print(f"source_describe={source.get('source_describe') or '-'}")
+            print(f"exact_release_tag={str(source.get('exact_release_tag')).lower()}")
         return 0
 
     print("FAIL company handoff bundle verification failed")

@@ -25,6 +25,8 @@ python3 scripts/package_company_handoff.py
 ```
 
 이 명령은 sales PDF pack 재생성, readiness report 저장, bundle manifest 생성, bundle 무결성 검증, 전달용 `.zip`/`.zip.sha256` 생성, `reports/company-handoff/package-latest.json` 최종 증적 저장을 한 번에 실행합니다. 이미 PDF가 있고 최종 package만 다시 만들 때는 `python3 scripts/package_company_handoff.py --skip-build`를 사용합니다.
+최종 증적에는 `release_tag`뿐 아니라 실제 package 생성 source인 `source_commit`, `source_describe`, `source_exact_tag`, `exact_release_tag`가 포함됩니다.
+`exact_release_tag=false`이면 최신 commit이 release tag 이후 보강 commit이라는 뜻이므로, 외부 전달 전에 새 release tag를 만들지 여부를 별도로 결정합니다.
 
 문제가 생긴 단계를 따로 재현해야 할 때만 아래 단계별 명령을 사용합니다.
 
@@ -183,6 +185,8 @@ DecisionDoc AI v1 운영 기준선 전달드립니다.
 - post-deploy latest report 경로를 확인했다.
 - 키 전달 경로를 별도로 정했다.
 - `python3 scripts/package_company_handoff.py` 또는 `python3 scripts/package_company_handoff.py --skip-build` 가 `PASS`를 반환했다.
+- `reports/company-handoff/package-latest.json`의 `source_describe` 또는 `source.source_describe`가 전달하려는 source와 일치한다.
+- `exact_release_tag=false`인 경우, 새 release tag 생성 여부를 내부적으로 결정했다.
 - `reports/company-handoff/latest.json` 를 전달 전 내부 증적으로 보관했다.
 - `reports/company-handoff/package-latest.json` 를 최종 전달 package 증적으로 보관했다.
 - `python3 scripts/create_company_handoff_bundle.py --skip-build` 가 `PASS`를 반환했다.

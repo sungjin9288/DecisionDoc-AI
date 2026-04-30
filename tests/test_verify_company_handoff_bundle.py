@@ -33,6 +33,16 @@ def _write_bundle(tmp_path: Path, *, body: bytes = b"%PDF-fixture") -> Path:
         "schema": "decisiondoc_company_handoff_bundle.v1",
         "artifact_count": 1,
         "release_tag": "v1.1.58",
+        "source": {
+            "source_commit": "fixturecommit",
+            "source_describe": "v1.1.58-fixture",
+            "source_exact_tag": "",
+            "expected_release_tag": "v1.1.58",
+            "exact_release_tag": False,
+            "dirty": False,
+            "warnings": ["fixture warning"],
+        },
+        "warnings": ["fixture warning"],
         "artifacts": [
             {
                 "path": "output/pdf/fixture.pdf",
@@ -55,6 +65,8 @@ def test_verify_company_handoff_bundle_passes_for_valid_bundle(tmp_path: Path) -
     assert result["ok"] is True
     assert result["checked_artifacts"] == 1
     assert result["release_tag"] == "v1.1.58"
+    assert result["source"]["source_commit"] == "fixturecommit"
+    assert result["warnings"] == ["fixture warning"]
 
 
 def test_verify_company_handoff_bundle_accepts_manifest_path(tmp_path: Path) -> None:

@@ -32,6 +32,16 @@ def test_package_company_handoff_runs_bundle_verify_archive_and_writes_reports(m
             "bundle_dir": str(bundle_dir),
             "manifest_path": str(bundle_dir / "manifest.json"),
             "prepare_result": {"ok": True},
+            "source": {
+                "source_commit": "fixturecommit",
+                "source_describe": "v1.1.58-fixture",
+                "source_exact_tag": "",
+                "expected_release_tag": "v1.1.58",
+                "exact_release_tag": False,
+                "dirty": False,
+                "warnings": ["fixture warning"],
+            },
+            "warnings": ["fixture warning"],
             "errors": [],
         }
 
@@ -70,6 +80,9 @@ def test_package_company_handoff_runs_bundle_verify_archive_and_writes_reports(m
 
     assert result["ok"] is True
     assert result["summary"]["checked_artifacts"] == 15
+    assert result["summary"]["source_describe"] == "v1.1.58-fixture"
+    assert result["summary"]["exact_release_tag"] is False
+    assert result["warnings"] == ["fixture warning"]
     assert calls["create"] == {
         "output_dir": Path("output/pdf"),
         "report_dir": tmp_path / "reports",
