@@ -350,6 +350,25 @@ def test_index_html_blocks_legacy_hwp_uploads_in_generation_flows():
     assert ".hwp," not in from_documents_accept and not from_documents_accept.endswith(".hwp")
 
 
+def test_index_html_exports_current_generated_docs_before_regenerating():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    export_blob_fn = re.search(
+        r"async function _buildExportedBlob\(format\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    export_document_fn = re.search(
+        r"async function exportDocument\(format, btnId, icon, ext, label\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    assert export_blob_fn is not None
+    assert export_document_fn is not None
+    assert "generatedDocs.length === 0" in export_blob_fn.group("body")
+    assert "preferEdited: hasEdits" in export_blob_fn.group("body")
+    assert "fetch('/generate/export-edited'" in export_blob_fn.group("body")
+    assert "No rendered docs yet" in export_document_fn.group("body")
+    assert "const endpoint = { docx: '/generate/docx'" in export_document_fn.group("body")
+
+
 def test_index_html_rfp_parse_uses_auth_headers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(

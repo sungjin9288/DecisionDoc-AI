@@ -12773,11 +12773,11 @@
 
   /* ── exportDocument (PU-2/M-6) — unified export function ────────── */
   async function _buildExportedBlob(format) {
-    /* If user has edited docs, send them to /generate/export-edited.
-       Returns a Blob, or null if no edits are present. */
+    /* Export the currently rendered result, including document-upload flows.
+       Only fall back to provider re-generation when there is no current result. */
+    if (!Array.isArray(generatedDocs) || generatedDocs.length === 0) return null;
     const hasEdits = generatedDocs.some(d => d._editedMarkdown);
-    if (!hasEdits) return null;
-    const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: true });
+    const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: hasEdits });
     const govOpts = getGovOptions();
     const body = JSON.stringify({
       bundle_id: lastMeta?.bundle_id || '',
@@ -12808,39 +12808,16 @@
     try {
       let blob = await _buildExportedBlob(format);
       if (!blob) {
-        // No edits — force export-edited path with gov_options so format is applied
-        const govOpts = getGovOptions();
-        if (govOpts) {
-          // Use export-edited endpoint to carry gov_options
-          const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: false });
-          const body = JSON.stringify({
-            bundle_id: lastMeta?.bundle_id || '',
-            bundle_type: lastRequestPayload?.bundle_type || window._selectedBundleId || 'tech_decision',
-            title: lastRequestPayload?.title || '문서',
-            format,
-            docs,
-            visual_assets: Array.isArray(lastVisualAssets) ? lastVisualAssets : [],
-            gov_options: govOpts,
-          });
-          const res = await fetch('/generate/export-edited', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-            body,
-          });
-          if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
-          blob = await res.blob();
-        } else {
-          // No gov_options — use regular re-generation endpoint
-          const endpoint = { docx: '/generate/docx', pdf: '/generate/pdf', excel: '/generate/excel', hwp: '/generate/hwp', pptx: '/generate/pptx' }[format];
-          if (!endpoint) throw new Error('알 수 없는 형식');
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-            body: JSON.stringify(lastRequestPayload),
-          });
-          if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
-          blob = await res.blob();
-        }
+        // No rendered docs yet: keep the legacy re-generation endpoint as a fallback.
+        const endpoint = { docx: '/generate/docx', pdf: '/generate/pdf', excel: '/generate/excel', hwp: '/generate/hwp', pptx: '/generate/pptx' }[format];
+        if (!endpoint) throw new Error('알 수 없는 형식');
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
+          body: JSON.stringify(lastRequestPayload),
+        });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
+        blob = await res.blob();
       }
       const url = URL.createObjectURL(blob);
       const a   = document.createElement('a');
