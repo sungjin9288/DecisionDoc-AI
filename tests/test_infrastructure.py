@@ -369,6 +369,25 @@ def test_index_html_exports_current_generated_docs_before_regenerating():
     assert "const endpoint = { docx: '/generate/docx'" in export_document_fn.group("body")
 
 
+def test_index_html_keeps_blob_url_and_shows_download_fallback():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    trigger_fn = re.search(
+        r"function _triggerBrowserDownload\(blob, filename, label\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    export_document_fn = re.search(
+        r"async function exportDocument\(format, btnId, icon, ext, label\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    assert trigger_fn is not None
+    assert export_document_fn is not None
+    assert "EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000" in content
+    assert "export-download-fallback" in content
+    assert "_showExportDownloadFallback(url, filename, label)" in trigger_fn.group("body")
+    assert "URL.revokeObjectURL(url)" not in export_document_fn.group("body")
+    assert "_triggerBrowserDownload(blob, filename, label)" in export_document_fn.group("body")
+
+
 def test_index_html_rfp_parse_uses_auth_headers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(

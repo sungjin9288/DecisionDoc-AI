@@ -2415,6 +2415,12 @@
       display: flex; flex-direction: column; gap: 6px;
     }
     .download-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .download-fallback {
+      margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+      background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.18);
+      color: var(--text); font-size: .84rem;
+    }
+    .download-fallback a { color: var(--color-primary); font-weight: 800; }
     .dl-btn {
       padding: 8px 14px; border-radius: 8px;
       border: 1px solid var(--color-border);
@@ -8222,6 +8228,58 @@
     return fallback;
   }
 
+  const EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000;
+  let _exportDownloadUrls = [];
+
+  function _cleanupExpiredExportDownloadUrls(now = Date.now()) {
+    const keep = [];
+    for (const entry of _exportDownloadUrls) {
+      if (!entry?.url) continue;
+      if (entry.expiresAt <= now) {
+        try { URL.revokeObjectURL(entry.url); } catch (_) {}
+      } else {
+        keep.push(entry);
+      }
+    }
+    _exportDownloadUrls = keep.slice(-6);
+  }
+
+  function _showExportDownloadFallback(url, filename, label) {
+    const container = $id('export-download-fallback');
+    if (!container || !url) return;
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="download-fallback">
+        <div><strong>${escapeHtml(label || '파일')} 다운로드를 요청했습니다.</strong></div>
+        <div style="margin-top:4px;color:var(--muted);">
+          파일이 보이지 않으면 아래 링크를 눌러 새 탭에서 열거나 저장하세요.
+        </div>
+        <div style="margin-top:6px;">
+          <a href="${escapeHtml(url)}" download="${escapeHtml(filename)}" target="_blank" rel="noopener">
+            ${escapeHtml(filename)} 열기/저장
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  function _triggerBrowserDownload(blob, filename, label) {
+    _cleanupExpiredExportDownloadUrls();
+    const url = URL.createObjectURL(blob);
+    _exportDownloadUrls.push({ url, expiresAt: Date.now() + EXPORT_DOWNLOAD_URL_TTL_MS });
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => _cleanupExpiredExportDownloadUrls(), EXPORT_DOWNLOAD_URL_TTL_MS + 1000);
+    _showExportDownloadFallback(url, filename, label);
+    return url;
+  }
+
   async function downloadKnowledgeTemporalGraphJson() {
     if (!_knowledgeCurrentProject) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
@@ -12819,13 +12877,9 @@
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
         blob = await res.blob();
       }
-      const url = URL.createObjectURL(blob);
-      const a   = document.createElement('a');
-      a.href    = url;
-      a.download = `${lastRequestPayload.title || 'document'}.${ext}`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      btn.textContent = '✅ 다운로드 완료';
+      const filename = `${lastRequestPayload.title || 'document'}.${ext}`;
+      _triggerBrowserDownload(blob, filename, label);
+      btn.textContent = '✅ 다운로드 요청됨';
       showPostDownloadPrompt(label);
       showFeedbackCard();
       setTimeout(() => { btn.textContent = `${icon} ${label}`; btn.disabled = false; }, 3000);
@@ -13679,6 +13733,7 @@
             <button onclick="shareDocument('${safeId}', '${safeTitle}')" class="dl-btn">🔗 공유</button>
           </div>
         </div>
+        <div id="export-download-fallback" style="display:none;flex-basis:100%;"></div>
       </div>
     `;
   }
@@ -13692,13 +13747,8 @@
       );
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = '문서_전체.zip';
-      a.click();
-      URL.revokeObjectURL(url);
-      showNotification('ZIP 다운로드 완료!', 'success');
+      _triggerBrowserDownload(blob, '문서_전체.zip', 'ZIP');
+      showNotification('ZIP 다운로드를 요청했습니다.', 'success');
     } catch (e) {
       showNotification('ZIP 생성 실패: ' + e.message, 'error');
     }
