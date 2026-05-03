@@ -388,6 +388,34 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
     assert "_triggerBrowserDownload(blob, filename, label)" in export_document_fn.group("body")
 
 
+def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    retry_fetch_fn = re.search(
+        r"async function _fetchJsonWithProviderRetry\(fetcher,[\s\S]*?\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    hydrate_fn = re.search(
+        r"async function hydrateCurrentUserProfile\(\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    parse_error_fn = re.search(
+        r"async function parseApiErrorResponse\(res\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
+    assert retry_fetch_fn is not None
+    assert hydrate_fn is not None
+    assert parse_error_fn is not None
+    assert "function handleInvalidAuthSession" in content
+    assert "async function recoverAuthSessionOnce" in content
+    assert "localStorage.removeItem('dd_access_token')" in content
+    assert "localStorage.removeItem('dd_refresh_token')" in content
+    assert "res.status === 401" in retry_fetch_fn.group("body")
+    assert "await recoverAuthSessionOnce()" in retry_fetch_fn.group("body")
+    assert "handleInvalidAuthSession()" in retry_fetch_fn.group("body")
+    assert "retry = await fetch('/auth/me'" in hydrate_fn.group("body")
+    assert "handleInvalidAuthSession()" in parse_error_fn.group("body")
+
+
 def test_index_html_rfp_parse_uses_auth_headers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(
