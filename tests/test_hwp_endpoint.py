@@ -1,6 +1,7 @@
 """Tests for POST /generate/hwp endpoint and hwp_service."""
 import zipfile
 from io import BytesIO
+from xml.etree import ElementTree as ET
 
 
 def _create_client(tmp_path, monkeypatch):
@@ -38,11 +39,77 @@ def test_build_hwp_contains_required_files():
     result = build_hwp(docs, title="테스트")
     with zipfile.ZipFile(BytesIO(result)) as zf:
         names = set(zf.namelist())
+        assert "version.xml" in names
         assert "META-INF/container.xml" in names
         assert "META-INF/manifest.xml" in names
         assert "Contents/content.hpf" in names
         assert "Contents/header.xml" in names
         assert "Contents/section0.xml" in names
+        assert "Contents/settings.xml" in names
+
+
+def test_build_hwp_xml_parts_are_parseable():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다."}]
+    result = build_hwp(docs, title="테스트")
+    xml_names = {
+        "version.xml",
+        "META-INF/container.xml",
+        "META-INF/manifest.xml",
+        "Contents/content.hpf",
+        "Contents/header.xml",
+        "Contents/section0.xml",
+        "Contents/settings.xml",
+    }
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        for name in xml_names:
+            ET.fromstring(zf.read(name))
+
+
+def test_build_hwp_content_package_has_spine_and_version_item():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다."}]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        content_hpf = zf.read("Contents/content.hpf").decode("utf-8")
+
+    assert 'xmlns:opf="http://www.idpf.org/2007/opf/"' in content_hpf
+    assert '<opf:item id="version" href="version.xml"' in content_hpf
+    assert '<opf:spine>' in content_hpf
+    assert '<opf:itemref idref="section0"/>' in content_hpf
+
+
+def test_build_hwp_section_uses_hwpml_section_and_page_pr():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다."}]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+
+    assert "<hs:sec " in section_xml
+    assert "<hp:secPr " in section_xml
+    assert "<hp:pagePr " in section_xml
+    assert "<hp:margin " in section_xml
+    assert 'paraPrIDRef="1"' in section_xml
+    assert 'styleIDRef="1"' in section_xml
+
+
+def test_build_hwp_header_declares_referenced_style_tables():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다."}]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        header_xml = zf.read("Contents/header.xml").decode("utf-8")
+
+    assert '<hh:fontfaces itemCnt="7">' in header_xml
+    assert '<hh:charProperties itemCnt="4">' in header_xml
+    assert '<hh:paraProperties itemCnt="4">' in header_xml
+    assert '<hh:styles ' in header_xml
+    assert 'id="1" type="PARA" name="제목1"' in header_xml
 
 
 def test_build_hwp_renders_markdown_table_as_readable_rows():

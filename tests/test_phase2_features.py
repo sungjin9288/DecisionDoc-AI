@@ -1,4 +1,7 @@
 """Tests for Phase 2 features: onboarding, deadline alerts, ZIP export, empty state."""
+import io
+import zipfile
+
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -74,6 +77,28 @@ def test_export_zip_content_disposition():
     assert res.status_code == 200
     cd = res.headers.get("content-disposition", "")
     assert ".zip" in cd or "zip" in cd
+
+
+def test_export_zip_hwp_uses_hwpx_extension():
+    """HWP export is HWPX bytes and must be named .hwpx inside batch ZIP."""
+    from app.routers.generate import _store_zip_docs
+
+    _store_zip_docs(
+        "zip-hwp-extension-test",
+        [{"doc_type": "onepager", "markdown": "# 내용"}],
+        "한글 문서",
+    )
+    token = _token()
+    res = client.get(
+        "/generate/export-zip?request_id=zip-hwp-extension-test&formats=hwp",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
+        names = zf.namelist()
+        assert "한글 문서.hwpx" in names
+        assert not any(name.endswith(".hwp") for name in names)
+        assert zipfile.is_zipfile(io.BytesIO(zf.read("한글 문서.hwpx")))
 
 
 def test_zip_cache_store_and_retrieve():

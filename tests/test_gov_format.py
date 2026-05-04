@@ -216,13 +216,21 @@ class TestHwpStyles:
         assert "<hh:style " in xml
 
     def test_styles_xml_font_name(self):
-        xml = _styles_xml(font_name="나눔고딕")
-        assert "나눔고딕" in xml
+        raw = build_hwp(
+            [{"doc_type": "t", "markdown": "# 제목"}],
+            title="X",
+            gov_options=GovDocOptions(font_name="나눔고딕"),
+        )
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            header = zf.read("Contents/header.xml").decode()
+        assert "나눔고딕" in header
 
     def test_styles_xml_font_size_1050(self):
-        """10.5pt should produce hangul=1050."""
-        xml = _styles_xml(font_size_pt=10.5)
-        assert 'hh:hangul="1050"' in xml
+        """10.5pt should produce height=1050 in header char properties."""
+        raw = build_hwp([{"doc_type": "t", "markdown": "# 제목"}], title="X")
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            header = zf.read("Contents/header.xml").decode()
+        assert 'height="1050"' in header
 
     def test_header_xml_styles_not_empty_tag(self):
         """header.xml must NOT contain empty <hh:styles/> self-closing tag."""
@@ -245,21 +253,21 @@ class TestHwpPageLayout:
 
     def test_secpr_present(self):
         xml = _section_xml(self._DOCS, "제목", None, 30, 15, 20, 20)
-        assert "<hh:secPr>" in xml
+        assert "<hp:secPr " in xml
 
     def test_a4_width_in_secpr(self):
         xml = _section_xml(self._DOCS, "제목", None, 30, 15, 20, 20)
-        assert f'hh:width="{_A4_W}"' in xml
+        assert f'width="{_A4_W}"' in xml
 
     def test_a4_height_in_secpr(self):
         xml = _section_xml(self._DOCS, "제목", None, 30, 15, 20, 20)
-        assert f'hh:height="{_A4_H}"' in xml
+        assert f'height="{_A4_H}"' in xml
 
     def test_custom_margin_in_secpr(self):
         from app.services.hwp_service import _mm
         xml = _section_xml(self._DOCS, "제목", None, 40, 25, 25, 25)
         top_val = _mm(40)
-        assert f'hh:top="{top_val}"' in xml
+        assert f'top="{top_val}"' in xml
 
     def test_hwp_zip_valid(self):
         raw = build_hwp(self._DOCS, title="테스트")

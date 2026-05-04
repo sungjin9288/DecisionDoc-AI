@@ -1937,7 +1937,7 @@ def export_zip(request: Request, request_id: str, formats: str = "docx"):
                     zf.writestr(f"{title or 'document'}.xlsx", content)
                 elif fmt == "hwp":
                     content = build_hwp(docs, title=title)
-                    zf.writestr(f"{title or 'document'}.hwp", content)
+                    zf.writestr(f"{title or 'document'}.hwpx", content)
                 elif fmt == "pptx":
                     content = build_pptx_from_docs(docs, title=title)
                     zf.writestr(f"{title or 'document'}.pptx", content)

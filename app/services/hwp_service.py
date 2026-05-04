@@ -6,7 +6,7 @@ No external dependencies — uses Python's standard library zipfile module.
 
 Government format improvements:
 - Proper ``<hh:styles>`` definitions (본문 / 제목1 / 제목2 / 제목3)
-- ``<hh:secPr>`` with A4 page size and configurable margins (hwpunit = 1/3600 inch)
+- ``<hp:secPr>`` with A4 page size and configurable margins (hwpunit = 1/7200 inch)
 - Optional 공문서 헤더 블록 paragraphs when is_government_format=True
 """
 from __future__ import annotations
@@ -28,15 +28,25 @@ _NS_HH = "http://www.hancom.co.kr/hwpml/2011/head"
 _NS_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _NS_HC = "http://www.hancom.co.kr/hwpml/2011/core"
 _NS_HS = "http://www.hancom.co.kr/hwpml/2011/section"
-_NS_OPF = "http://www.idpf.org/2007/opf"
+_NS_HV = "http://www.hancom.co.kr/hwpml/2011/version"
+_NS_HA = "http://www.hancom.co.kr/hwpml/2011/app"
+_NS_OPF = "http://www.idpf.org/2007/opf/"
 _NS_OCF = "urn:oasis:names:tc:opendocument:xmlns:container"
 _NS_ODF = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
+_NS_DC = "http://purl.org/dc/elements/1.1/"
 
-# HWP unit: 1/3600 inch.  1 mm ≈ 141.732 hwpunits
+# HWP unit: 1/7200 inch.  1 mm ≈ 283.465 hwpunits
 # A4: 210mm × 297mm
-_MM_TO_HWPU = 141.732  # hwpunits per mm
-_A4_W = round(210 * _MM_TO_HWPU)   # 29764
-_A4_H = round(297 * _MM_TO_HWPU)   # 42094
+_MM_TO_HWPU = 7200 / 25.4  # hwpunits per mm
+_A4_W = round(210 * _MM_TO_HWPU)   # 59528
+_A4_H = round(297 * _MM_TO_HWPU)   # 84189
+_PARA_ID_PLACEHOLDER = "__DECISIONDOC_HWPX_PARA_ID__"
+_STYLE_IDS = {
+    "본문": "0",
+    "제목1": "1",
+    "제목2": "2",
+    "제목3": "3",
+}
 
 
 def _mm(mm: int | float) -> int:
@@ -66,11 +76,18 @@ def _container_xml() -> str:
 def _content_hpf_xml(binary_items: list[dict[str, Any]]) -> str:
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<opf:package xmlns:opf="{_NS_OPF}" version="1.0">',
+        f'<opf:package xmlns:opf="{_NS_OPF}" xmlns:dc="{_NS_DC}" version="1.0" unique-identifier="uid">',
+        '  <opf:metadata>',
+        '    <dc:identifier id="uid">DecisionDoc-AI</dc:identifier>',
+        '    <dc:title>DecisionDoc HWPX Export</dc:title>',
+        '    <dc:language>ko-KR</dc:language>',
+        '    <opf:meta name="generator" content="DecisionDoc-AI"/>',
+        '  </opf:metadata>',
         '  <opf:manifest>',
-        '    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>',
-        '    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>',
-        '    <opf:item id="settings" href="Contents/settings.xml" media-type="application/xml"/>',
+        '    <opf:item id="version" href="version.xml" media-type="application/xml"/>',
+        '    <opf:item id="header" href="Contents/header.xml" media-type="application/hwpml-head+xml"/>',
+        '    <opf:item id="section0" href="Contents/section0.xml" media-type="application/hwpml-section+xml"/>',
+        '    <opf:item id="settings" href="Contents/settings.xml" media-type="application/hwpml-settings+xml"/>',
     ]
     for item in binary_items:
         lines.append(
@@ -82,6 +99,9 @@ def _content_hpf_xml(binary_items: list[dict[str, Any]]) -> str:
         )
     lines.extend([
         '  </opf:manifest>',
+        '  <opf:spine>',
+        '    <opf:itemref idref="section0"/>',
+        '  </opf:spine>',
         '</opf:package>',
     ])
     return "\n".join(lines)
@@ -92,10 +112,11 @@ def _manifest_xml(binary_items: list[dict[str, Any]]) -> str:
         '<?xml version="1.0" encoding="UTF-8"?>',
         f'<manifest:manifest xmlns:manifest="{_NS_ODF}">',
         '  <manifest:file-entry manifest:full-path="/" manifest:media-type="application/hwp+zip"/>',
+        '  <manifest:file-entry manifest:full-path="version.xml" manifest:media-type="application/xml"/>',
         '  <manifest:file-entry manifest:full-path="Contents/content.hpf" manifest:media-type="application/hwpml-package+xml"/>',
-        '  <manifest:file-entry manifest:full-path="Contents/header.xml" manifest:media-type="application/xml"/>',
-        '  <manifest:file-entry manifest:full-path="Contents/section0.xml" manifest:media-type="application/xml"/>',
-        '  <manifest:file-entry manifest:full-path="Contents/settings.xml" manifest:media-type="application/xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/header.xml" manifest:media-type="application/hwpml-head+xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/section0.xml" manifest:media-type="application/hwpml-section+xml"/>',
+        '  <manifest:file-entry manifest:full-path="Contents/settings.xml" manifest:media-type="application/hwpml-settings+xml"/>',
     ]
     for item in binary_items:
         lines.append(
@@ -107,42 +128,136 @@ def _manifest_xml(binary_items: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _version_xml() -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<hv:version xmlns:hv="{_NS_HV}" app="DecisionDoc-AI" version="1.5"/>'
+    )
+
+
 def _styles_xml(font_name: str = "맑은 고딕",
                 font_size_pt: float = 10.5,
                 line_spacing_pct: int = 160) -> str:
     """Generate <hh:styles> with 본문/제목1/제목2/제목3 style definitions.
 
-    HWPX font sizes are in 1/100 pt units (hangul height attribute).
-    Line spacing values: lineSpacingType="Percent", value = pct × 100.
+    Font and paragraph details are declared in header.xml char/para property
+    tables; styles reference those IDs by number.
     """
-    body_sz  = round(font_size_pt * 100)           # 10.5pt → 1050
-    h1_sz    = round((font_size_pt + 3) * 100)     # ~13.5pt → 1350
-    h2_sz    = round((font_size_pt + 1.5) * 100)   # ~12pt   → 1200
-    h3_sz    = round(font_size_pt * 100)            # body size, bold
-    lsp      = line_spacing_pct * 100               # 160% → 16000
+    _ = (font_name, font_size_pt, line_spacing_pct)
 
-    def _style(style_id: str, name: str, hz_size: int, bold: str = "0") -> str:
+    def _style(style_id: str, name: str, eng_name: str) -> str:
         return (
-            f'  <hh:style hh:styleId="{style_id}" hh:name="{name}" hh:type="para">\n'
-            f'    <hh:paraShape hh:lineSpacingType="Percent" hh:lineSpacing="{lsp}">\n'
-            f'      <hh:margin hh:left="0" hh:right="0" hh:prev="0" hh:next="0"/>\n'
-            f'    </hh:paraShape>\n'
-            f'    <hh:charShape>\n'
-            f'      <hh:height hh:hangul="{hz_size}" hh:latin="{round(hz_size * 0.9)}"/>\n'
-            f'      <hh:fontRef hh:hangul="{font_name}" hh:latin="Arial" hh:english="Arial"/>\n'
-            f'      <hh:bold hh:value="{bold}"/>\n'
-            f'      <hh:color hh:foreground="0"/>\n'
-            f'    </hh:charShape>\n'
-            f'  </hh:style>\n'
+            f'      <hh:style id="{style_id}" type="PARA" name="{name}" engName="{eng_name}" '
+            f'paraPrIDRef="{style_id}" charPrIDRef="{style_id}" nextStyleIDRef="{style_id}" '
+            'langID="1042" lockForm="0"/>'
         )
 
     return (
-        f'<hh:styles xmlns:hh="{_NS_HH}">\n'
-        + _style("0", "본문",  body_sz, "0")
-        + _style("1", "제목1", h1_sz,   "1")
-        + _style("2", "제목2", h2_sz,   "1")
-        + _style("3", "제목3", h3_sz,   "1")
+        f'<hh:styles xmlns:hh="{_NS_HH}" itemCnt="4">\n'
+        + _style("0", "본문", "Body") + "\n"
+        + _style("1", "제목1", "Heading 1") + "\n"
+        + _style("2", "제목2", "Heading 2") + "\n"
+        + _style("3", "제목3", "Heading 3") + "\n"
         + "</hh:styles>"
+    )
+
+
+def _font_faces_xml(font_name: str) -> str:
+    lang_faces = {
+        "HANGUL": font_name,
+        "LATIN": "Arial",
+        "HANJA": font_name,
+        "JAPANESE": font_name,
+        "OTHER": font_name,
+        "SYMBOL": font_name,
+        "USER": font_name,
+    }
+    lines = ['    <hh:fontfaces itemCnt="7">']
+    for lang, face in lang_faces.items():
+        lines.extend(
+            [
+                f'      <hh:fontface lang="{lang}" fontCnt="1">',
+                f'        <hh:font id="0" face="{_escape(face)}" type="TTF" isEmbedded="0"/>',
+                '      </hh:fontface>',
+            ]
+        )
+    lines.append('    </hh:fontfaces>')
+    return "\n".join(lines)
+
+
+def _border_fills_xml() -> str:
+    return (
+        '    <hh:borderFills itemCnt="1">\n'
+        '      <hh:borderFill id="0" threeD="0" shadow="0" breakCellSeparateLine="0" slash="NONE" backSlash="NONE">\n'
+        '        <hh:leftBorder type="NONE" width="0" color="000000"/>\n'
+        '        <hh:rightBorder type="NONE" width="0" color="000000"/>\n'
+        '        <hh:topBorder type="NONE" width="0" color="000000"/>\n'
+        '        <hh:bottomBorder type="NONE" width="0" color="000000"/>\n'
+        '        <hh:diagonal type="NONE" width="0" color="000000"/>\n'
+        '        <hh:fillBrush/>\n'
+        '      </hh:borderFill>\n'
+        '    </hh:borderFills>'
+    )
+
+
+def _char_properties_xml(font_size_pt: float) -> str:
+    sizes = {
+        "0": round(font_size_pt * 100),
+        "1": round((font_size_pt + 3) * 100),
+        "2": round((font_size_pt + 1.5) * 100),
+        "3": round(font_size_pt * 100),
+    }
+
+    def _char_pr(char_id: str, bold: bool = False) -> str:
+        bold_xml = "\n        <hh:bold/>" if bold else ""
+        return (
+            f'      <hh:charPr id="{char_id}" height="{sizes[char_id]}" textColor="000000" shadeColor="NONE" '
+            'useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0">\n'
+            '        <hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>\n'
+            '        <hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>\n'
+            '        <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>\n'
+            '        <hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>\n'
+            '        <hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>'
+            f'{bold_xml}\n'
+            '      </hh:charPr>'
+        )
+
+    return (
+        '    <hh:charProperties itemCnt="4">\n'
+        f'{_char_pr("0")}\n'
+        f'{_char_pr("1", True)}\n'
+        f'{_char_pr("2", True)}\n'
+        f'{_char_pr("3", True)}\n'
+        '    </hh:charProperties>'
+    )
+
+
+def _para_properties_xml(line_spacing_pct: int) -> str:
+    lsp = line_spacing_pct * 100
+
+    def _para_pr(para_id: str) -> str:
+        return (
+            f'      <hh:paraPr id="{para_id}" tabPrIDRef="0" condense="0" fontLineHeight="0" '
+            'snapToGrid="1" suppressLineNumbers="0" checked="0">\n'
+            '        <hh:align horizontal="LEFT" vertical="BASELINE"/>\n'
+            '        <hh:heading type="NONE" idRef="0" level="0"/>\n'
+            '        <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" '
+            'widowOrphan="1" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>\n'
+            '        <hh:margin left="0" right="0" intent="0" prev="0" next="0"/>\n'
+            f'        <hh:lineSpacing type="PERCENT" value="{lsp}"/>\n'
+            '        <hh:border borderFillIDRef="0" offsetLeft="0" offsetRight="0" offsetTop="0" '
+            'offsetBottom="0" connect="0" ignoreMargin="0"/>\n'
+            '        <hh:autoSpacing eAsianEng="0" eAsianNum="0"/>\n'
+            '      </hh:paraPr>'
+        )
+
+    return (
+        '    <hh:paraProperties itemCnt="4">\n'
+        f'{_para_pr("0")}\n'
+        f'{_para_pr("1")}\n'
+        f'{_para_pr("2")}\n'
+        f'{_para_pr("3")}\n'
+        '    </hh:paraProperties>'
     )
 
 
@@ -156,26 +271,21 @@ def _header_xml(
     styles = _styles_xml(font_name, font_size_pt, line_spacing_pct)
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<hh:head xmlns:hh="{_NS_HH}">\n'
-        f'  <hh:beginNum hh:page="1" hh:footnote="1"/>\n'
+        f'<hh:head xmlns:hh="{_NS_HH}" version="1.5" secCnt="1">\n'
+        f'  <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>\n'
         f'  <hh:refList>\n'
-        f'    <hh:fontfaces>\n'
-        f'      <hh:fontface hh:lang="Hangul">\n'
-        f'        <hh:font hh:name="{_escape(font_name)}" hh:type="TTF" hh:isEmbedded="0"/>\n'
-        f'      </hh:fontface>\n'
-        f'      <hh:fontface hh:lang="Latin">\n'
-        f'        <hh:font hh:name="Arial" hh:type="TTF" hh:isEmbedded="0"/>\n'
-        f'      </hh:fontface>\n'
-        f'    </hh:fontfaces>\n'
-        f'    <hh:borderFills/>\n'
-        f'    <hh:charProperties/>\n'
-        f'    <hh:tabProperties/>\n'
-        f'    <hh:numberings/>\n'
-        f'    <hh:bullets/>\n'
-        f'    <hh:paraProperties/>\n'
+        f'{_font_faces_xml(font_name)}\n'
+        f'{_border_fills_xml()}\n'
+        f'{_char_properties_xml(font_size_pt)}\n'
+        f'    <hh:tabProperties itemCnt="1">\n'
+        f'      <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>\n'
+        f'    </hh:tabProperties>\n'
+        f'    <hh:numberings itemCnt="0"/>\n'
+        f'    <hh:bullets itemCnt="0"/>\n'
+        f'{_para_properties_xml(line_spacing_pct)}\n'
         f'    {styles}\n'
         f'  </hh:refList>\n'
-        f'  <hh:compatible/>\n'
+        f'  <hh:compatible targetProgram="HWP201X"/>\n'
         f'  <hh:docOption/>\n'
         f'  <hh:trackChanges/>\n'
         f'</hh:head>'
@@ -185,13 +295,11 @@ def _header_xml(
 def _para_xml(text: str, style: str = "본문") -> str:
     """Wrap text in an HWPX paragraph element."""
     escaped = _escape(text)
+    style_id = _STYLE_IDS.get(style, "0")
     return (
-        f'  <hp:p>\n'
-        f'    <hp:pPr>\n'
-        f'      <hp:paraStyle hp:styleIDRef="{style}"/>\n'
-        f'    </hp:pPr>\n'
-        f'    <hp:run>\n'
-        f'      <hp:rPr/>\n'
+        f'  <hp:p id="{_PARA_ID_PLACEHOLDER}" paraPrIDRef="{style_id}" styleIDRef="{style_id}" '
+        'pageBreak="0" columnBreak="0" merged="0">\n'
+        f'    <hp:run charPrIDRef="{style_id}">\n'
         f'      <hp:t>{escaped}</hp:t>\n'
         f'    </hp:run>\n'
         f'  </hp:p>'
@@ -327,8 +435,9 @@ def _image_hwpu_size(raw: bytes, media_type: str) -> tuple[int, int]:
 
 def _picture_xml(ref_id: str, width: int, height: int, inst_id: int) -> str:
     return (
-        '  <hp:p>\n'
-        '    <hp:run>\n'
+        f'  <hp:p id="{_PARA_ID_PLACEHOLDER}" paraPrIDRef="0" styleIDRef="0" '
+        'pageBreak="0" columnBreak="0" merged="0">\n'
+        '    <hp:run charPrIDRef="0">\n'
         f'      <hp:pic id="{inst_id}" zOrder="0" numberingType="NONE" textWrap="TOP_AND_BOTTOM" '
         f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="NONE" groupLevel="0" instid="{inst_id}" reverse="0">\n'
         f'        <hp:sz width="{width}" widthRelTo="ABSOLUTE" height="{height}" heightRelTo="ABSOLUTE" protect="0"/>\n'
@@ -354,6 +463,54 @@ def _picture_xml(ref_id: str, width: int, height: int, inst_id: int) -> str:
         '    </hp:run>\n'
         '  </hp:p>'
     )
+
+
+def _section_properties_para_xml(
+    *,
+    width: int,
+    height: int,
+    margin_left: int,
+    margin_right: int,
+    margin_top: int,
+    margin_bottom: int,
+    header: int,
+    footer: int,
+) -> str:
+    return (
+        f'  <hp:p id="{_PARA_ID_PLACEHOLDER}" paraPrIDRef="0" styleIDRef="0" '
+        'pageBreak="0" columnBreak="0" merged="0">\n'
+        '    <hp:run charPrIDRef="0">\n'
+        '      <hp:secPr id="0" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" '
+        'tabStopVal="0" tabStopUnit="HWPUNIT" outlineShapeIDRef="0" memoShapeIDRef="0" '
+        'textVerticalWidthHead="0">\n'
+        '        <hp:startNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>\n'
+        '        <hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" '
+        'border="SHOW" fill="SHOW" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>\n'
+        '        <hp:lineNumberShape restartType="PAGE" countBy="1" distance="0" startNumber="1"/>\n'
+        f'        <hp:pagePr landscape="0" width="{width}" height="{height}" gutterType="LEFT_ONLY">\n'
+        f'          <hp:margin left="{margin_left}" right="{margin_right}" top="{margin_top}" '
+        f'bottom="{margin_bottom}" header="{header}" footer="{footer}" gutter="0"/>\n'
+        '        </hp:pagePr>\n'
+        '        <hp:pageBorderFill type="BOTH" borderFillIDRef="0" textBorder="PAPER" '
+        'headerInside="0" footerInside="0" fillArea="PAPER">\n'
+        '          <hp:offset left="0" right="0" top="0" bottom="0"/>\n'
+        '        </hp:pageBorderFill>\n'
+        '      </hp:secPr>\n'
+        '    </hp:run>\n'
+        '  </hp:p>'
+    )
+
+
+def _assign_paragraph_ids(body: str) -> str:
+    next_id = 0
+
+    def _replace(_: re.Match[str]) -> str:
+        nonlocal next_id
+        value = str(next_id)
+        next_id += 1
+        return value
+
+    return re.sub(_PARA_ID_PLACEHOLDER, _replace, body)
 
 
 def _prepare_hwp_visual_assets(visual_assets: list[dict[str, Any]] | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -431,7 +588,28 @@ def _section_xml(
     visual_assets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the body section XML with page layout and paragraph content."""
-    paras: list[str] = []
+    # Page layout in hwpunits
+    w = _A4_W
+    h = _A4_H
+    ml = _mm(left_mm)
+    mr = _mm(right_mm)
+    mt = _mm(top_mm)
+    mb = _mm(bot_mm)
+    hd = _mm(10)   # header distance 10mm
+    ft = _mm(10)   # footer distance 10mm
+
+    paras: list[str] = [
+        _section_properties_para_xml(
+            width=w,
+            height=h,
+            margin_left=ml,
+            margin_right=mr,
+            margin_top=mt,
+            margin_bottom=mb,
+            header=hd,
+            footer=ft,
+        )
+    ]
     assets_by_doc_type = group_visual_assets_by_doc_type(visual_assets or [])
 
     # 공문서 헤더 블록
@@ -505,44 +683,22 @@ def _section_xml(
             roles = "   ".join(f"{role}: {name}" for role, name in approvers)
             paras.append(_para_xml(f"[결재란] {roles}", "본문"))
 
-    body = "\n".join(paras)
-
-    # Page layout in hwpunits
-    w  = _A4_W
-    h  = _A4_H
-    ml = _mm(left_mm)
-    mr = _mm(right_mm)
-    mt = _mm(top_mm)
-    mb = _mm(bot_mm)
-    hd = _mm(10)   # header distance 10mm
-    ft = _mm(10)   # footer distance 10mm
-
-    sec_pr = (
-        f'  <hh:secPr>\n'
-        f'    <hh:pageSize hh:width="{w}" hh:height="{h}" hh:orientation="Portrait"/>\n'
-        f'    <hh:pageMargin hh:left="{ml}" hh:right="{mr}" '
-        f'hh:top="{mt}" hh:bottom="{mb}" '
-        f'hh:header="{hd}" hh:footer="{ft}" hh:gutter="0"/>\n'
-        f'  </hh:secPr>\n'
-    )
+    body = _assign_paragraph_ids("\n".join(paras))
 
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<hh:sec xmlns:hh="{_NS_HH}" xmlns:hs="{_NS_HS}" xmlns:hp="{_NS_HP}" xmlns:hc="{_NS_HC}">\n'
-        f'{sec_pr}'
+        f'<hs:sec xmlns:hs="{_NS_HS}" xmlns:hp="{_NS_HP}" xmlns:hc="{_NS_HC}">\n'
         f'{body}\n'
-        f'</hh:sec>'
+        f'</hs:sec>'
     )
 
 
 def _settings_xml() -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<hh:settings xmlns:hh="{_NS_HH}">\n'
-        '  <hh:startNum>\n'
-        '    <hh:page hh:startNum="1"/>\n'
-        '  </hh:startNum>\n'
-        '</hh:settings>'
+        f'<ha:appSetting xmlns:ha="{_NS_HA}">\n'
+        '  <ha:caretPosition listIDRef="0" paraIDRef="0" pos="0"/>\n'
+        '</ha:appSetting>'
     )
 
 
@@ -583,6 +739,7 @@ def build_hwp(
         zi = zipfile.ZipInfo("mimetype")
         zi.compress_type = zipfile.ZIP_STORED
         zf.writestr(zi, "application/hwp+zip")
+        zf.writestr("version.xml", _version_xml())
         zf.writestr("META-INF/container.xml", _container_xml())
         zf.writestr("META-INF/manifest.xml", _manifest_xml(binary_items))
         zf.writestr("Contents/content.hpf", _content_hpf_xml(binary_items))
