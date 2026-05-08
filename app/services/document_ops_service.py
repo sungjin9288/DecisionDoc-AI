@@ -313,6 +313,7 @@ class DocumentOpsService:
             "generated_at": datetime.now(UTC).isoformat(),
             "read_only": True,
             "export_format": "json",
+            "server_file_written": False,
             "summary": summary,
             "guard_flags": {
                 "training_execution_allowed": False,

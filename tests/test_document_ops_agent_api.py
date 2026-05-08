@@ -772,6 +772,7 @@ def test_document_ops_reviewer_signoff_summary_is_ops_key_read_only(tmp_path, mo
     assert downloaded_body["tenant_id"] == "system"
     assert downloaded_body["read_only"] is True
     assert downloaded_body["export_format"] == "json"
+    assert downloaded_body["server_file_written"] is False
     assert downloaded_body["summary"]["record_count"] == 2
     assert downloaded_body["summary"]["overall_status"] == "pending_manual_signoff_no_training_authorization"
     assert all(value is False for value in downloaded_body["guard_flags"].values())
