@@ -11,8 +11,10 @@ Coverage (12 tests):
 """
 from __future__ import annotations
 
-import re
+import json
 import os
+import re
+import subprocess
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -350,6 +352,1633 @@ def test_index_html_blocks_legacy_hwp_uploads_in_generation_flows():
     assert ".hwp," not in from_documents_accept and not from_documents_accept.endswith(".hwp")
 
 
+def test_index_html_document_ops_downloads_reviewed_sft_jsonl_exports():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Reviewed SFT JSONL" in content
+    assert "/api/agent/document-ops/trajectories/reviewed-sft-exports?" in content
+    assert "/api/agent/document-ops/trajectories/reviewed-sft-exports/${encodeURIComponent(filename)}/download" in content
+    assert "getOpsAccessHeaders()" in content
+    assert "accepted-only" in content
+
+
+def test_index_html_document_ops_shows_read_only_training_readiness():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Readiness Summary" in content
+    assert "loadDocumentOpsTrainingReadiness()" in content
+    assert "/api/agent/document-ops/trajectories/training-readiness?limit=20" in content
+    assert "read-only · no training · no upload" in content
+    assert "provider_job_started_count" in content
+
+
+def test_index_html_document_ops_shows_dry_run_training_plan_preview():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Execution Plan Preview" in content
+    assert "previewDocumentOpsTrainingPlan()" in content
+    assert "/api/agent/document-ops/trajectories/training-plan/preview?" in content
+    assert "provider-agnostic · dry-run · no provider API calls · no upload" in content
+    assert "Execution steps" in content
+
+
+def test_index_html_document_ops_shows_training_execution_request_records():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Execution Request Records" in content
+    assert "requestDocumentOpsTrainingExecution()" in content
+    assert "/api/agent/document-ops/trajectories/training-execution-requests" in content
+    assert "record-only · two-person guard · no training · no upload · no provider calls" in content
+    assert "two_person_guard_satisfied" in content
+
+
+def test_index_html_document_ops_shows_pre_execution_audit_checklist_export():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Pre-Execution Audit Checklist" in content
+    assert "loadDocumentOpsTrainingAuditChecklist()" in content
+    assert "exportDocumentOpsTrainingAudit()" in content
+    assert "/api/agent/document-ops/trajectories/training-audit/checklist?" in content
+    assert "/api/agent/document-ops/trajectories/training-audit/export" in content
+    assert "human-review packet · no training · no upload · no provider calls" in content
+
+
+def test_index_html_document_ops_shows_training_governance_dashboard_summary():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Governance Dashboard Summary" in content
+    assert "loadDocumentOpsTrainingGovernanceSummary()" in content
+    assert "/api/agent/document-ops/trajectories/training-governance/summary?" in content
+    assert "read-only aggregate · no training · no upload · no provider calls" in content
+    assert "No-side-effect guard" in content
+
+
+def test_index_html_document_ops_shows_reviewer_signoff_summary():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Reviewer Sign-Off Summary" in content
+    assert "loadDocumentOpsReviewerSignoffSummary()" in content
+    assert "downloadDocumentOpsReviewerSignoffSummary()" in content
+    assert 'id="document-ops-download-fallback"' in content
+    assert "/api/agent/document-ops/trajectories/reviewer-signoff/summary?" in content
+    assert "/api/agent/document-ops/trajectories/reviewer-signoff/summary/download?" in content
+    assert "read-only sign-off evidence · no training · no upload · no provider calls" in content
+    assert "Reviewer sign-off summary JSON" in content
+    assert "fallbackContainerId: 'document-ops-download-fallback'" in content
+    assert "actual_reviewer_approval_recorded_by_summary" in content
+
+
+def test_index_html_document_ops_shows_training_adapter_contract_stub():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Provider Adapter Contract" in content
+    assert "loadDocumentOpsTrainingAdapterContract()" in content
+    assert "/api/agent/document-ops/trajectories/training-provider-adapter/contract?" in content
+    assert "stub-only · disabled by default · no training · no upload · no provider calls" in content
+    assert "Forbidden in stub" in content
+
+
+def test_index_html_document_ops_shows_training_execution_rehearsal():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    assert "Training Execution Rehearsal" in content
+    assert "loadDocumentOpsTrainingRehearsal()" in content
+    assert "/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?" in content
+    assert "dry-run rehearsal · validates governance artifacts · no training · no upload · no provider calls" in content
+    assert "side_effect" in content
+
+
+def test_phase18_browser_qa_evidence_artifact_documents_no_training_flow():
+    content = open(
+        "docs/specs/hermes_decisiondoc_agent/PHASE18_BROWSER_QA_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    assert "Phase 18 Local Browser QA Checklist and Evidence" in content
+    assert "http://127.0.0.1:8767/?ops=1" in content
+    assert "Reviewed JSONL" in content
+    assert "Readiness" in content
+    assert "Plan preview" in content
+    assert "Request record" in content
+    assert "Audit checklist" in content
+    assert "Governance" in content
+    assert "Adapter" in content
+    assert "Rehearsal" in content
+    assert "training_execution_allowed=false" in content
+    assert "provider_api_calls_allowed=false" in content
+    assert "external_upload_allowed=false" in content
+    assert "provider_job_started=false" in content
+    assert "model_promotion_allowed=false" in content
+    assert "all rehearsal side_effect=false" in content
+    assert "provider fine-tune API calls" in content
+
+
+def test_phase19_browser_qa_result_records_observed_no_training_pass():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/BROWSER_QA_REPORT.md",
+        encoding="utf-8",
+    ).read()
+    result = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/browser_qa_result.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 18 Browser Governance QA Report" in report
+    assert "Result: PASS" in report
+    assert "no provider fine-tune API call" in report
+    assert result["result"] == "pass"
+    assert result["seed"]["governance_status"] == "governance_ready_for_human_review"
+    assert result["seed"]["rehearsal_status"] == "rehearsal_ready"
+    assert result["ui_checks"]["reviewed_jsonl_artifact_visible"] is True
+    assert result["ui_checks"]["governance_ready"] is True
+    assert result["ui_checks"]["rehearsal_ready"] is True
+    assert all(value is False for value in result["guard_flags"].values())
+    assert all(value is False for value in result["side_effect_boundary"].values())
+
+
+def test_phase29_release_handoff_refresh_packages_reviewer_signoff_artifacts():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/RELEASE_HANDOFF_INDEX.md",
+        encoding="utf-8",
+    ).read()
+    manifest = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
+            encoding="utf-8",
+        )
+    )
+    artifact_ids = {item["id"] for item in manifest["artifacts"]}
+    coverage = manifest["phase_coverage"]
+
+    assert "Phase 29 DocumentOps Reviewer Sign-Off Release Handoff Refresh" in report
+    assert "READY_FOR_HUMAN_REVIEWER_USE_NO_TRAINING_AUTHORIZATION" in report
+    assert "Phase 21-28 Coverage" in report
+    assert "Sign-off summary" in report
+    assert "Sign-off JSON" in report
+    assert "server-side reviewer sign-off JSON export artifact writes" in report
+    assert "This handoff does not approve" in report
+    assert "Sign-Off Checklist" in report
+    assert "provider fine-tune API calls" in report
+    assert manifest["report_type"] == "document_ops_phase29_reviewer_signoff_handoff_refresh"
+    assert manifest["status"] == "human_reviewer_use_ready_no_training_authorization"
+    assert manifest["release_boundary"]["reviewer_signoff_ready"] is True
+    assert manifest["release_boundary"]["human_reviewer_use_ready"] is True
+    assert manifest["release_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert manifest["release_boundary"]["training_execution_authorized"] is False
+    assert manifest["release_boundary"]["server_side_export_artifact_write_authorized"] is False
+    assert manifest["release_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert manifest["observed_browser_qa_summary"]["phase26_result"] == "pass"
+    assert manifest["observed_browser_qa_summary"]["phase28_result"] == "pass"
+    assert manifest["observed_browser_qa_summary"]["phase28_browser_json_blob_received"] is True
+    assert manifest["observed_browser_qa_summary"]["phase28_download_fallback_visible"] is True
+    assert manifest["observed_browser_qa_summary"]["phase28_native_download_event_supported"] is False
+    assert {"product_pm_reviewer", "ml_ai_owner", "compliance_security_reviewer", "release_owner"} <= set(
+        manifest["required_reviewers"]
+    )
+    assert {
+        "analysis",
+        "architecture",
+        "training_dataset_plan",
+        "implementation_plan",
+        "status",
+        "phase18_browser_checklist_template",
+        "phase19_browser_qa_report",
+        "phase19_browser_qa_result",
+        "phase21_signoff_markdown_template",
+        "phase21_signoff_json_template",
+        "phase22_signoff_validator",
+        "phase23_pending_signoff_generator",
+        "phase24_signoff_summary_reporter",
+        "phase25_signoff_summary_endpoint_ui",
+        "phase25_signoff_summary_service",
+        "phase25_signoff_summary_store",
+        "phase25_phase27_documentops_ui",
+        "phase26_signoff_summary_browser_qa_report",
+        "phase26_signoff_summary_browser_qa_result",
+        "phase28_signoff_json_download_browser_qa_report",
+        "phase28_signoff_json_download_browser_qa_result",
+        "phase29_release_handoff_index",
+        "phase29_handoff_manifest",
+        "phase30_operator_packet_guide",
+        "phase30_operator_packet_checklist",
+        "phase31_signoff_import_helper_guide",
+        "phase31_signoff_import_helper",
+        "phase32_imported_signoff_browser_qa_report",
+        "phase32_imported_signoff_browser_qa_result",
+        "phase33_operator_release_packet_summary",
+        "phase33_operator_release_packet_summary_json",
+        "phase34_staging_readiness_dry_run_guide",
+        "phase34_staging_readiness_dry_run_contract",
+        "phase34_staging_readiness_probe",
+        "phase35_observed_staging_probe_evidence_guide",
+        "phase35_observed_staging_probe_evidence_contract",
+        "phase35_observed_staging_probe_archive_helper",
+        "phase36_observed_probe_execution_workflow_guide",
+        "phase36_observed_probe_execution_workflow_contract",
+        "phase36_observed_probe_execution_workflow_runner",
+        "phase37_deployed_probe_failure_evidence_report",
+        "phase37_deployed_probe_failure_evidence_json",
+        "phase38_observed_probe_retry_evidence_report",
+        "phase38_observed_probe_retry_evidence_json",
+        "phase39_remote_runtime_gap_evidence_report",
+        "phase39_remote_runtime_gap_evidence_json",
+    } <= artifact_ids
+    assert {f"phase{phase}" for phase in range(21, 29)} <= set(coverage)
+    assert coverage["phase21"]["training_authorized"] is False
+    assert coverage["phase26"]["result"] == "pass"
+    assert coverage["phase27"]["server_side_export_artifact_written"] is False
+    assert coverage["phase28"]["result"] == "pass"
+    assert coverage["phase28"]["native_os_download_verified"] is False
+    assert coverage["phase30"]["training_authorized"] is False
+    assert coverage["phase30"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase31"]["training_authorized"] is False
+    assert coverage["phase31"]["external_dataset_upload_authorized"] is False
+    assert coverage["phase31"]["server_side_generated_approval_record"] is False
+    assert coverage["phase32"]["result"] == "pass"
+    assert coverage["phase32"]["training_authorized"] is False
+    assert coverage["phase32"]["server_side_generated_approval_record"] is False
+    assert coverage["phase33"]["training_authorized"] is False
+    assert coverage["phase33"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase33"]["staging_run_completed"] is False
+    assert coverage["phase33"]["production_smoke_completed"] is False
+    assert coverage["phase34"]["training_authorized"] is False
+    assert coverage["phase34"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase34"]["server_side_export_artifact_written"] is False
+    assert coverage["phase34"]["probe_script_ready"] is True
+    assert coverage["phase34"]["fixture_probe_verified"] is True
+    assert coverage["phase34"]["real_staging_probe_completed"] is False
+    assert coverage["phase35"]["training_authorized"] is False
+    assert coverage["phase35"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase35"]["server_side_export_artifact_written"] is False
+    assert coverage["phase35"]["archive_helper_verified"] is True
+    assert coverage["phase35"]["observed_staging_probe_completed"] is False
+    assert coverage["phase36"]["training_authorized"] is False
+    assert coverage["phase36"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase36"]["server_side_export_artifact_written"] is False
+    assert coverage["phase36"]["workflow_ready"] is True
+    assert coverage["phase36"]["real_staging_probe_completed"] is False
+    assert coverage["phase36"]["observed_staging_evidence_archived"] is False
+    assert coverage["phase37"]["training_authorized"] is False
+    assert coverage["phase37"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase37"]["server_side_export_artifact_written"] is False
+    assert coverage["phase37"]["deployed_health_reachable"] is True
+    assert coverage["phase37"]["ops_key_required"] is True
+    assert coverage["phase37"]["ops_key_authenticated"] is False
+    assert coverage["phase37"]["expected_record_ids_available"] is False
+    assert coverage["phase38"]["training_authorized"] is False
+    assert coverage["phase38"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase38"]["server_side_export_artifact_written"] is False
+    assert coverage["phase38"]["wrapper_output_dir_hardened"] is True
+    assert coverage["phase38"]["deployed_health_reachable"] is True
+    assert coverage["phase38"]["ops_key_required"] is True
+    assert coverage["phase38"]["ops_key_authenticated"] is False
+    assert coverage["phase38"]["expected_record_ids_available"] is False
+    assert coverage["phase39"]["training_authorized"] is False
+    assert coverage["phase39"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase39"]["server_side_export_artifact_written"] is False
+    assert coverage["phase39"]["deployed_ops_key_runtime_valid"] is True
+    assert coverage["phase39"]["document_ops_reviewer_signoff_route_deployed"] is False
+    assert coverage["phase39"]["signoff_storage_present"] is False
+    assert coverage["phase39"]["expected_record_ids_available"] is False
+    assert manifest["observed_browser_qa_summary"]["phase32_imported_records_visible"] is True
+    assert manifest["observed_browser_qa_summary"]["phase32_downloaded_json_contains_imported_records"] is True
+    assert manifest["staging_readiness_summary"]["phase33_status"] == (
+        "operator_release_packet_ready_no_training_authorization"
+    )
+    assert manifest["staging_readiness_summary"]["phase31_import_helper_verified"] is True
+    assert manifest["staging_readiness_summary"]["phase32_observed_browser_qa_passed"] is True
+    assert manifest["staging_readiness_summary"]["ops_key_required"] is True
+    assert manifest["staging_readiness_summary"]["phase34_probe_script_ready"] is True
+    assert manifest["staging_readiness_summary"]["phase34_fixture_probe_verified"] is True
+    assert manifest["staging_readiness_summary"]["phase34_real_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase35_archive_helper_verified"] is True
+    assert manifest["staging_readiness_summary"]["phase35_observed_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase36_workflow_ready"] is True
+    assert manifest["staging_readiness_summary"]["phase36_real_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase36_observed_staging_evidence_archived"] is False
+    assert manifest["staging_readiness_summary"]["phase37_deployed_health_reachable"] is True
+    assert manifest["staging_readiness_summary"]["phase37_ops_key_authenticated"] is False
+    assert manifest["staging_readiness_summary"]["phase37_expected_record_ids_available"] is False
+    assert manifest["staging_readiness_summary"]["phase37_observed_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase38_wrapper_output_dir_hardened"] is True
+    assert manifest["staging_readiness_summary"]["phase38_deployed_health_reachable"] is True
+    assert manifest["staging_readiness_summary"]["phase38_ops_key_authenticated"] is False
+    assert manifest["staging_readiness_summary"]["phase38_expected_record_ids_available"] is False
+    assert manifest["staging_readiness_summary"]["phase38_observed_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase39_deployed_ops_key_runtime_valid"] is True
+    assert manifest["staging_readiness_summary"]["phase39_document_ops_reviewer_signoff_route_deployed"] is False
+    assert manifest["staging_readiness_summary"]["phase39_signoff_storage_present"] is False
+    assert manifest["staging_readiness_summary"]["phase39_expected_record_ids_available"] is False
+    assert manifest["staging_readiness_summary"]["phase39_observed_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["staging_run_completed"] is False
+    assert manifest["staging_readiness_summary"]["production_smoke_completed"] is False
+    assert manifest["staging_readiness_summary"]["training_authorized"] is False
+    assert all(os.path.exists(item["path"]) for item in manifest["artifacts"])
+    assert all(step["side_effect"] is False for step in manifest["reviewer_use_steps"])
+    assert all(value is False for value in manifest["guard_flags"].values())
+    assert all(value is False for value in manifest["side_effect_boundary"].values())
+
+
+def test_phase30_operator_reviewer_signoff_packet_guide_documents_operational_flow():
+    guide = open(
+        "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/OPERATOR_PACKET_GUIDE.md",
+        encoding="utf-8",
+    ).read()
+    checklist = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/operator_packet_checklist.json",
+            encoding="utf-8",
+        )
+    )
+    step_ids = {item["id"] for item in checklist["steps"]}
+
+    assert "Phase 30 Operator Reviewer Sign-Off Packet Guide" in guide
+    assert "OPERATOR_PACKET_READY_NO_TRAINING_AUTHORIZATION" in guide
+    assert "generate_pending_signoff_record.py" in guide
+    assert "validate_signoff_record.py" in guide
+    assert "summarize_signoff_records.py" in guide
+    assert "import_signoff_record.py" in guide
+    assert 'DATA_DIR/tenants/{tenant_id}/trajectory_reviewer_signoffs/*.json' in guide
+    assert "Sign-off summary" in guide
+    assert "Sign-off JSON" in guide
+    assert "does not authorize model training" in guide
+    assert "does not authorize dataset upload" in guide
+    assert "does not authorize provider fine-tune API calls" in guide
+    assert "server-side reviewer JSON artifact write" in guide
+    assert "ready_for_training_execution" in guide
+
+    assert checklist["report_type"] == "document_ops_phase30_operator_reviewer_signoff_packet_checklist"
+    assert checklist["phase"] == 30
+    assert checklist["status"] == "operator_packet_ready_no_training_authorization"
+    assert {"product_pm_reviewer", "ml_ai_owner", "compliance_security_reviewer", "release_owner"} <= set(
+        checklist["required_reviewers"]
+    )
+    assert {
+        "create_packet_directory",
+        "generate_pending_signoff_record",
+        "collect_human_reviewer_entries",
+        "validate_completed_record",
+        "summarize_packet_records",
+        "copy_records_for_documentops_inspection",
+        "inspect_documentops_signoff_summary",
+        "inspect_documentops_signoff_json",
+    } <= step_ids
+    assert all(os.path.exists(path) for path in checklist["packet_artifacts"])
+    assert "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py" in checklist[
+        "packet_artifacts"
+    ]
+    assert all(item["side_effect"] is False for item in checklist["steps"])
+    assert checklist["pass_criteria"]["validator_valid_true"] is True
+    assert checklist["pass_criteria"]["summary_has_no_boundary_violations"] is True
+    assert all(value is False for value in checklist["authorization_boundary"].values())
+    assert all(value is False for value in checklist["side_effect_boundary"].values())
+
+
+def test_phase31_signoff_import_helper_copies_pending_and_completed_records_safely(tmp_path):
+    generator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py"
+    import_path = "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py"
+    summary_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py"
+    template_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+    data_dir = tmp_path / "data"
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+
+    generated = subprocess.run(
+        [
+            "python",
+            generator_path,
+            "--output-dir",
+            str(source_dir),
+            "--record-id",
+            "dsr_phase31pending",
+            "--created-at",
+            "2026-05-08T19:40:00+09:00",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert generated.returncode == 0
+    pending_path = source_dir / "dsr_phase31pending_pending_signoff.json"
+
+    dry_run = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(pending_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+            "--dry-run",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    dry_run_body = json.loads(dry_run.stdout)
+    assert dry_run.returncode == 0
+    assert dry_run_body["dry_run"] is True
+    assert dry_run_body["side_effect_boundary"]["tenant_local_record_copied"] is False
+    assert not (data_dir / "tenants" / "system" / "trajectory_reviewer_signoffs").exists()
+
+    pending_import = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(pending_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    pending_body = json.loads(pending_import.stdout)
+    pending_dest = type(tmp_path)(pending_body["destination_path"])
+    assert pending_import.returncode == 0
+    assert pending_body["report_type"] == "document_ops_phase31_reviewer_signoff_import_result"
+    assert pending_body["record_state"] == "pending_manual_signoff_no_training_authorization"
+    assert pending_body["validation_valid"] is False
+    assert pending_body["import_boundary"]["server_side_generated_approval_record"] is False
+    assert pending_body["import_boundary"]["training_execution_authorized"] is False
+    assert pending_body["side_effect_boundary"]["tenant_local_record_copied"] is True
+    assert pending_body["side_effect_boundary"]["provider_fine_tune_api_called"] is False
+    assert pending_dest.exists()
+    assert json.load(open(pending_dest, encoding="utf-8"))["signoff_record_id"] == "dsr_phase31pending"
+
+    completed = json.load(open(template_path, encoding="utf-8"))
+    completed["status"] = "manual_signoff_complete"
+    completed["signoff_record_id"] = "dsr_phase31done"
+    completed["created_at"] = "2026-05-08T19:45:00+09:00"
+    completed["signoff_boundary"]["actual_reviewer_approval_recorded"] = True
+    for key in completed["completion_rule"]:
+        completed["completion_rule"][key] = True
+    for reviewer in completed["required_reviewers"]:
+        reviewer["reviewer_name"] = f"{reviewer['reviewer_role']} name"
+        reviewer["reviewer_title_or_team"] = "DocumentOps governance review"
+        reviewer["reviewed_at"] = "2026-05-08T19:50:00+09:00"
+        reviewer["decision"] = "sign_off_ready_for_human_review"
+        reviewer["notes"] = "Completed human review while preserving no-training boundary."
+        for ack in reviewer["required_acknowledgements"]:
+            reviewer["required_acknowledgements"][ack] = True
+    completed_path = source_dir / "completed.json"
+    completed_path.write_text(json.dumps(completed), encoding="utf-8")
+
+    completed_import = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(completed_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+            "--output-filename",
+            "dsr_phase31done_completed_signoff.json",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    completed_body = json.loads(completed_import.stdout)
+    completed_dest = type(tmp_path)(completed_body["destination_path"])
+    assert completed_import.returncode == 0
+    assert completed_body["record_state"] == "manual_signoff_complete_no_training_authorization"
+    assert completed_body["validation_valid"] is True
+    assert completed_body["source_sha256"] == completed_body["copied_sha256"]
+    assert completed_body["import_boundary"]["actual_reviewer_approval_recorded_by_import"] is False
+    assert completed_body["import_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert completed_dest.exists()
+
+    signoff_dir = data_dir / "tenants" / "system" / "trajectory_reviewer_signoffs"
+    summarized = subprocess.run(
+        [
+            "python",
+            summary_path,
+            str(signoff_dir),
+            "--generated-at",
+            "2026-05-08T19:55:00+09:00",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    summary = json.loads(summarized.stdout)
+    records = {item["signoff_record_id"]: item for item in summary["records"]}
+    assert summarized.returncode == 0
+    assert summary["record_count"] == 2
+    assert summary["overall_status"] == "pending_manual_signoff_no_training_authorization"
+    assert summary["aggregate"]["completed_record_count"] == 1
+    assert summary["aggregate"]["pending_record_count"] == 1
+    assert records["dsr_phase31done"]["completed_validation"]["valid"] is True
+    assert records["dsr_phase31pending"]["completed_validation"]["valid"] is False
+    assert all(value is False for value in summary["side_effect_boundary"].values())
+
+
+def test_phase31_signoff_import_helper_rejects_path_traversal_and_generated_approval(tmp_path):
+    generator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py"
+    import_path = "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py"
+    template_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+    data_dir = tmp_path / "data"
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+
+    generated = subprocess.run(
+        [
+            "python",
+            generator_path,
+            "--output-dir",
+            str(source_dir),
+            "--record-id",
+            "dsr_phase31guard",
+            "--created-at",
+            "2026-05-08T20:00:00+09:00",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert generated.returncode == 0
+    pending_path = source_dir / "dsr_phase31guard_pending_signoff.json"
+
+    bad_filename = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(pending_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+            "--output-filename",
+            "../escape.json",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    bad_filename_body = json.loads(bad_filename.stderr)
+    assert bad_filename.returncode == 1
+    assert bad_filename_body["ok"] is False
+    assert "path separators" in bad_filename_body["error"]
+
+    bad_tenant = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(pending_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "../evil",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    bad_tenant_body = json.loads(bad_tenant.stderr)
+    assert bad_tenant.returncode == 1
+    assert bad_tenant_body["ok"] is False
+    assert "tenant id must match" in bad_tenant_body["error"]
+
+    template = json.load(open(template_path, encoding="utf-8"))
+    generated_approval = json.loads(json.dumps(template))
+    generated_approval["status"] = "manual_signoff_complete"
+    generated_approval["signoff_record_id"] = "dsr_phase31fake"
+    generated_approval["created_at"] = "2026-05-08T20:05:00+09:00"
+    generated_approval["signoff_boundary"]["actual_reviewer_approval_recorded"] = True
+    fake_approval_path = source_dir / "fake_completed_approval.json"
+    fake_approval_path.write_text(json.dumps(generated_approval), encoding="utf-8")
+    rejected_approval = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(fake_approval_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    rejected_approval_body = json.loads(rejected_approval.stderr)
+    assert rejected_approval.returncode == 1
+    assert rejected_approval_body["ok"] is False
+    assert "record is not importable" in rejected_approval_body["error"]
+    assert "decision must not be pending" in rejected_approval_body["error"]
+
+    boundary_break = json.load(open(pending_path, encoding="utf-8"))
+    boundary_break["signoff_boundary"]["provider_fine_tune_api_call_authorized"] = True
+    boundary_break_path = source_dir / "boundary_break.json"
+    boundary_break_path.write_text(json.dumps(boundary_break), encoding="utf-8")
+    rejected_boundary = subprocess.run(
+        [
+            "python",
+            import_path,
+            str(boundary_break_path),
+            "--data-dir",
+            str(data_dir),
+            "--tenant-id",
+            "system",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    rejected_boundary_body = json.loads(rejected_boundary.stderr)
+    assert rejected_boundary.returncode == 1
+    assert rejected_boundary_body["ok"] is False
+    assert "protected signoff_boundary" in rejected_boundary_body["error"]
+    assert not (data_dir / "tenants" / "evil").exists()
+    assert not (data_dir / "escape.json").exists()
+
+
+def test_phase32_imported_signoff_browser_qa_result_records_observed_pass():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/BROWSER_QA_REPORT.md",
+        encoding="utf-8",
+    ).read()
+    result = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/browser_qa_result.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 32 Imported Reviewer Sign-Off Browser QA Report" in report
+    assert "Result: PASS" in report
+    assert "import_signoff_record.py" in report
+    assert "tenant_local_record_copied=true" in report
+    assert "server_side_generated_approval_record=false" in report
+    assert "provider_fine_tune_api_call_authorized=false" in report
+    assert "Sign-off summary" in report
+    assert "Sign-off JSON" in report
+    assert result["report_type"] == "document_ops_phase32_imported_signoff_browser_qa_result"
+    assert result["phase"] == 32
+    assert result["result"] == "pass"
+    assert result["import_helper"]["pending_signoff_record_id"] == "dsr_phase32pending"
+    assert result["import_helper"]["completed_signoff_record_id"] == "dsr_phase32done"
+    assert result["import_helper"]["tenant_local_record_copied"] is True
+    assert result["import_helper"]["actual_reviewer_approval_recorded_by_import"] is False
+    assert result["import_helper"]["server_side_generated_approval_record"] is False
+    assert result["api_checkpoints"]["summary"]["status_code"] == 200
+    assert result["api_checkpoints"]["summary"]["record_count"] == 2
+    assert result["api_checkpoints"]["summary"]["pending_record_visible_in_payload"] is True
+    assert result["api_checkpoints"]["summary"]["completed_record_visible_in_payload"] is True
+    assert result["api_checkpoints"]["download"]["status_code"] == 200
+    assert result["api_checkpoints"]["download"]["server_file_written"] is False
+    assert result["ui_checks"]["reviewer_signoff_summary_visible"] is True
+    assert result["ui_checks"]["completed_record_visible"] is True
+    assert result["ui_checks"]["pending_record_visible"] is True
+    assert result["ui_checks"]["signoff_blocker_visible"] is True
+    assert result["ui_checks"]["downloaded_json_contains_imported_records"] is True
+    assert result["ui_checks"]["download_fallback_visible"] is True
+    assert result["ui_checks"]["success_notification_visible"] is True
+    assert result["ui_checks"]["no_training_notification_visible"] is True
+    assert result["ui_checks"]["browser_action_errors"] == []
+    assert all(value is False for value in result["guard_flags"].values())
+    assert result["side_effect_boundary"]["tenant_local_record_copied_by_import_helper"] is True
+    for key, value in result["side_effect_boundary"].items():
+        if key != "tenant_local_record_copied_by_import_helper":
+            assert value is False
+
+
+def test_phase33_operator_release_packet_summary_packages_staging_readiness():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/RELEASE_PACKET_SUMMARY.md",
+        encoding="utf-8",
+    ).read()
+    summary = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/release_packet_summary.json",
+            encoding="utf-8",
+        )
+    )
+    artifact_paths = {item["path"] for item in summary["release_packet_artifacts"]}
+    flow_actions = {item["action"] for item in summary["operator_flow"]}
+    criteria = summary["staging_readiness_criteria"]
+
+    assert "Phase 33 Operator Release Packet Summary" in report
+    assert "OPERATOR_RELEASE_PACKET_READY_NO_TRAINING_AUTHORIZATION" in report
+    assert "Phase 30" in report
+    assert "Phase 31" in report
+    assert "Phase 32" in report
+    assert "Staging-Readiness Criteria" in report
+    assert "does not approve model training" in report
+    assert "provider fine-tune API calls" in report
+    assert "Phase 34" in report
+    assert summary["report_type"] == "document_ops_phase33_operator_release_packet_summary"
+    assert summary["phase"] == 33
+    assert summary["status"] == "operator_release_packet_ready_no_training_authorization"
+    assert {"product_pm_reviewer", "ml_ai_owner", "compliance_security_reviewer", "release_owner"} <= set(
+        summary["required_reviewers"]
+    )
+    assert {
+        "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/OPERATOR_PACKET_GUIDE.md",
+        "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/operator_packet_checklist.json",
+        "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/IMPORT_HELPER.md",
+        "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py",
+        "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/BROWSER_QA_REPORT.md",
+        "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/browser_qa_result.json",
+    } <= artifact_paths
+    assert all(os.path.exists(path) for path in artifact_paths)
+    assert {
+        "read_release_boundary",
+        "create_or_collect_reviewer_signoff_records",
+        "validate_completed_records_locally",
+        "import_records_with_phase31_helper_for_environment_inspection",
+        "inspect_documentops_signoff_summary_and_json",
+    } <= flow_actions
+    assert all(step["current_packet_side_effect"] is False for step in summary["operator_flow"])
+    assert criteria["local_import_helper_verified"] is True
+    assert criteria["observed_browser_qa_passed"] is True
+    assert criteria["ops_key_required"] is True
+    assert criteria["tenant_local_record_scope"] is True
+    assert criteria["server_generated_approval_blocked"] is True
+    assert criteria["staging_run_completed"] is False
+    assert criteria["production_smoke_completed"] is False
+    assert criteria["training_authorized"] is False
+    assert criteria["external_dataset_upload_authorized"] is False
+    assert criteria["provider_fine_tune_api_call_authorized"] is False
+    assert summary["approval_boundary"]["human_reviewer_signoff_still_required"] is True
+    assert summary["approval_boundary"]["generated_reviewer_approval_allowed"] is False
+    assert all(value is False for value in summary["guard_flags"].values())
+    assert all(value is False for value in summary["side_effect_boundary"].values())
+
+
+def test_phase34_staging_readiness_dry_run_probe_contract_and_fixture_pass(tmp_path):
+    guide = open(
+        "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/STAGING_READINESS_DRY_RUN.md",
+        encoding="utf-8",
+    ).read()
+    contract = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/staging_readiness_dry_run.json",
+            encoding="utf-8",
+        )
+    )
+    script_path = "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py"
+    summary = {
+        "report_type": "document_ops_phase25_signoff_summary_endpoint",
+        "read_only": True,
+        "record_count": 2,
+        "records": [
+            {"signoff_record_id": "dsr_phase34done"},
+            {"signoff_record_id": "dsr_phase34pending"},
+        ],
+        "training_execution_allowed": False,
+        "provider_api_calls_allowed": False,
+        "external_upload_allowed": False,
+        "provider_job_started": False,
+        "model_promotion_allowed": False,
+        "aggregate": {
+            "training_execution_authorized": False,
+            "external_dataset_upload_authorized": False,
+            "provider_fine_tune_api_call_authorized": False,
+            "provider_job_creation_authorized": False,
+            "model_promotion_authorized": False,
+        },
+        "side_effect_boundary": {
+            "actual_reviewer_approval_recorded_by_summary": False,
+            "training_execution_started": False,
+            "external_dataset_uploaded": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "model_promoted": False,
+        },
+    }
+    download = {
+        "report_type": "document_ops_phase27_reviewer_signoff_summary_export",
+        "read_only": True,
+        "export_format": "json",
+        "server_file_written": False,
+        "summary": summary,
+        "guard_flags": {
+            "training_execution_allowed": False,
+            "provider_api_calls_allowed": False,
+            "external_upload_allowed": False,
+            "provider_job_started": False,
+            "model_promotion_allowed": False,
+        },
+        "side_effect_boundary": {
+            "actual_reviewer_approval_recorded_by_export": False,
+            "training_execution_started": False,
+            "external_dataset_uploaded": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "server_file_written": False,
+            "model_promoted": False,
+        },
+    }
+    summary_path = tmp_path / "summary.json"
+    download_path = tmp_path / "download.json"
+    output_path = tmp_path / "phase34_probe_result.json"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    download_path.write_text(json.dumps(download), encoding="utf-8")
+
+    probe = subprocess.run(
+        [
+            "python",
+            script_path,
+            "--summary-fixture",
+            str(summary_path),
+            "--download-fixture",
+            str(download_path),
+            "--expect-record-id",
+            "dsr_phase34done",
+            "--expect-record-id",
+            "dsr_phase34pending",
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    result = json.loads(probe.stdout)
+    written_result = json.load(open(output_path, encoding="utf-8"))
+
+    assert "Phase 34 Staging-Readiness Dry-Run" in guide
+    assert "STAGING_READINESS_PROBE_READY_NO_TRAINING_AUTHORIZATION" in guide
+    assert "GET /health" in guide
+    assert "X-DecisionDoc-Ops-Key" in guide
+    assert "server_file_written=false" in guide
+    assert "does not start model training" in guide
+    assert contract["report_type"] == "document_ops_phase34_staging_readiness_dry_run"
+    assert contract["phase"] == 34
+    assert contract["status"] == "staging_readiness_probe_ready_no_training_authorization"
+    assert contract["environment_probe_status"]["real_staging_probe_completed"] is False
+    assert contract["environment_probe_status"]["production_smoke_completed"] is False
+    assert contract["probe_script"].endswith("run_staging_readiness_probe.py")
+    assert all(item["side_effect"] is False for item in contract["read_only_probe_requests"])
+    assert contract["pass_criteria"]["ops_key_required"] is True
+    assert contract["pass_criteria"]["download_server_file_written_false"] is True
+    assert contract["probe_result_requirements"]["training_authorized"] is False
+    assert contract["probe_result_requirements"]["provider_fine_tune_api_call_authorized"] is False
+    assert all(value is False for value in contract["guard_flags"].values())
+    assert all(value is False for value in contract["side_effect_boundary"].values())
+    assert probe.returncode == 0
+    assert result == written_result
+    assert result["report_type"] == "document_ops_phase34_staging_readiness_probe_result"
+    assert result["phase"] == 34
+    assert result["status"] == "pass"
+    assert result["checkpoints"]["summary_auth_required"]["passed"] is True
+    assert result["checkpoints"]["summary"]["record_count"] == 2
+    assert result["checkpoints"]["download"]["server_file_written"] is False
+    assert result["readiness"]["ops_key_required"] is True
+    assert result["readiness"]["imported_signoff_visible"] is True
+    assert result["readiness"]["json_download_contains_records"] is True
+    assert result["readiness"]["download_json_in_memory_or_browser_blob_only"] is True
+    assert result["readiness"]["guard_flags_clear"] is True
+    assert result["readiness"]["staging_probe_completed"] is True
+    assert result["readiness"]["production_smoke_completed"] is False
+    assert result["readiness"]["training_authorized"] is False
+    assert result["readiness"]["external_dataset_upload_authorized"] is False
+    assert result["readiness"]["provider_fine_tune_api_call_authorized"] is False
+    assert result["failures"] == []
+    assert all(value is False for value in result["guard_flags"].values())
+    assert all(value is False for value in result["side_effect_boundary"].values())
+
+
+def test_phase35_observed_staging_probe_evidence_archive_helper_validates_results(tmp_path):
+    guide = open(
+        "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/OBSERVED_STAGING_PROBE_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    contract = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/observed_staging_probe_evidence.json",
+            encoding="utf-8",
+        )
+    )
+    archive_helper = (
+        "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/"
+        "archive_staging_probe_result.py"
+    )
+    probe_result = {
+        "report_type": "document_ops_phase34_staging_readiness_probe_result",
+        "phase": 34,
+        "status": "pass",
+        "observed_at": "2026-05-09T00:55:00+09:00",
+        "target": {
+            "base_url": "https://admin.decisiondoc.kr",
+            "tenant_id": "system",
+            "expected_record_ids": ["dsr_phase35done", "dsr_phase35pending"],
+        },
+        "checkpoints": {
+            "health": {"status_code": 200},
+            "summary_auth_required": {"status_code": 401, "passed": True},
+            "summary": {
+                "status_code": 200,
+                "report_type": "document_ops_phase25_signoff_summary_endpoint",
+                "record_count": 2,
+                "observed_record_ids": ["dsr_phase35done", "dsr_phase35pending"],
+                "passed": True,
+            },
+            "download": {
+                "status_code": 200,
+                "content_type": "application/json",
+                "content_disposition": "attachment; filename=\"reviewer_signoff_summary_system.json\"",
+                "report_type": "document_ops_phase27_reviewer_signoff_summary_export",
+                "record_count": 2,
+                "observed_record_ids": ["dsr_phase35done", "dsr_phase35pending"],
+                "server_file_written": False,
+                "passed": True,
+            },
+        },
+        "readiness": {
+            "ops_key_required": True,
+            "imported_signoff_visible": True,
+            "json_download_contains_records": True,
+            "download_json_in_memory_or_browser_blob_only": True,
+            "guard_flags_clear": True,
+            "staging_probe_completed": True,
+            "production_smoke_completed": False,
+            "training_authorized": False,
+            "external_dataset_upload_authorized": False,
+            "provider_fine_tune_api_call_authorized": False,
+            "provider_job_creation_authorized": False,
+            "model_promotion_authorized": False,
+        },
+        "guard_flags": {
+            "training_execution_allowed": False,
+            "provider_api_calls_allowed": False,
+            "external_upload_allowed": False,
+            "provider_job_started": False,
+            "model_promotion_allowed": False,
+            "server_side_generated_approval_record": False,
+        },
+        "side_effect_boundary": {
+            "actual_reviewer_approval_recorded_by_probe": False,
+            "training_execution_started": False,
+            "external_dataset_uploaded": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "provider_job_polled": False,
+            "model_candidate_emitted": False,
+            "model_promoted": False,
+            "server_side_generated_approval_record": False,
+            "server_side_export_artifact_written": False,
+        },
+        "failures": [],
+    }
+    probe_path = tmp_path / "phase34_probe_result.json"
+    probe_path.write_text(json.dumps(probe_result), encoding="utf-8")
+    output_dir = tmp_path / "archive"
+
+    archived = subprocess.run(
+        [
+            "python",
+            archive_helper,
+            str(probe_path),
+            "--output-dir",
+            str(output_dir),
+            "--output-filename",
+            "phase35-observed-staging-probe-evidence.json",
+            "--evidence-owner",
+            "release_owner",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    archived_body = json.loads(archived.stdout)
+    archive_path = output_dir / "phase35-observed-staging-probe-evidence.json"
+    archive = json.load(open(archive_path, encoding="utf-8"))
+
+    fixture_result = json.loads(json.dumps(probe_result))
+    fixture_result["target"]["base_url"] = "fixture://phase34"
+    fixture_path = tmp_path / "fixture_probe_result.json"
+    fixture_path.write_text(json.dumps(fixture_result), encoding="utf-8")
+    rejected = subprocess.run(
+        [
+            "python",
+            archive_helper,
+            str(fixture_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    rejected_body = json.loads(rejected.stderr)
+
+    assert "Phase 35 Observed Staging Probe Evidence" in guide
+    assert "OBSERVED_STAGING_PROBE_ARCHIVE_READY_NO_TRAINING_AUTHORIZATION" in guide
+    assert "DECISIONDOC_OPS_KEY" in guide
+    assert "does not start model training" in guide
+    assert contract["report_type"] == "document_ops_phase35_observed_staging_probe_evidence"
+    assert contract["phase"] == 35
+    assert contract["status"] == "observed_staging_probe_pending_missing_runtime_credentials"
+    assert contract["environment_probe_status"]["real_staging_probe_completed"] is False
+    assert contract["environment_probe_status"]["archive_helper_verified_with_fixture"] is True
+    assert contract["archive_acceptance_criteria"]["fixture_probe_rejected"] is True
+    assert contract["readiness"]["observed_staging_probe_completed"] is False
+    assert contract["readiness"]["observed_staging_evidence_archive_ready"] is True
+    assert contract["readiness"]["training_authorized"] is False
+    assert all(value is False for value in contract["guard_flags"].values())
+    assert all(value is False for value in contract["side_effect_boundary"].values())
+    assert archived.returncode == 0
+    assert archived_body["ok"] is True
+    assert archived_body["status"] == "observed_staging_probe_archived_no_training_authorization"
+    assert archive["report_type"] == "document_ops_phase35_observed_staging_probe_evidence_archive"
+    assert archive["phase"] == 35
+    assert archive["source_probe"]["report_type"] == "document_ops_phase34_staging_readiness_probe_result"
+    assert archive["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert archive["checkpoint_summary"]["ops_key_required"] is True
+    assert archive["checkpoint_summary"]["summary_record_count"] == 2
+    assert archive["checkpoint_summary"]["download_server_file_written"] is False
+    assert archive["readiness"]["observed_staging_probe_completed"] is True
+    assert archive["readiness"]["production_smoke_completed"] is False
+    assert archive["readiness"]["training_authorized"] is False
+    assert all(value is False for value in archive["archive_boundary"].values())
+    assert rejected.returncode == 1
+    assert rejected_body["ok"] is False
+    assert any("fixture probe results cannot be archived" in error for error in rejected_body["errors"])
+
+
+def test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs(tmp_path):
+    guide = open(
+        "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/OBSERVED_PROBE_EXECUTION_WORKFLOW.md",
+        encoding="utf-8",
+    ).read()
+    contract = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/observed_probe_execution_workflow.json",
+            encoding="utf-8",
+        )
+    )
+    runner = (
+        "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/"
+        "run_observed_probe_workflow.py"
+    )
+    env_file = tmp_path / "phase36.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DECISIONDOC_OPS_KEY=phase36-secret-value",
+                "PHASE36_BASE_URL=https://admin.decisiondoc.kr",
+                "PHASE36_EXPECT_RECORD_IDS=dsr_phase36done,dsr_phase36pending",
+                "PHASE36_TENANT_ID=system",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    clean_env = os.environ.copy()
+    for key in (
+        "DECISIONDOC_OPS_KEY",
+        "PHASE36_BASE_URL",
+        "PHASE35_BASE_URL",
+        "SMOKE_BASE_URL",
+        "PHASE36_EXPECT_RECORD_IDS",
+        "PHASE34_EXPECT_RECORD_IDS",
+        "PHASE36_TENANT_ID",
+    ):
+        clean_env.pop(key, None)
+    ready = subprocess.run(
+        [
+            "python",
+            runner,
+            "--env-file",
+            str(env_file),
+            "--dry-run",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=clean_env,
+    )
+    ready_body = json.loads(ready.stdout)
+    missing = subprocess.run(
+        [
+            "python",
+            runner,
+            "--dry-run",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=clean_env,
+    )
+    missing_body = json.loads(missing.stdout)
+
+    assert "Phase 36 Observed Probe Execution Workflow" in guide
+    assert "OBSERVED_PROBE_EXECUTION_WORKFLOW_READY_NO_TRAINING_AUTHORIZATION" in guide
+    assert "never prints the ops key" in guide
+    assert "does not import sign-off records" in guide
+    assert contract["report_type"] == "document_ops_phase36_observed_probe_execution_workflow"
+    assert contract["phase"] == 36
+    assert contract["status"] == "observed_probe_execution_workflow_ready_no_training_authorization"
+    assert contract["environment_probe_status"]["env_file_ops_key_available"] is True
+    assert contract["environment_probe_status"]["base_url_available"] is False
+    assert contract["environment_probe_status"]["expected_record_ids_available"] is False
+    assert contract["required_runtime_inputs"]["base_url"] is True
+    assert contract["required_runtime_inputs"]["ops_key"] is True
+    assert contract["required_runtime_inputs"]["expected_record_ids"] is True
+    assert contract["readiness"]["workflow_ready"] is True
+    assert contract["readiness"]["observed_staging_probe_completed"] is False
+    assert contract["readiness"]["training_authorized"] is False
+    assert all(value is False for value in contract["guard_flags"].values())
+    assert all(value is False for value in contract["side_effect_boundary"].values())
+    assert ready.returncode == 0
+    assert ready_body["report_type"] == "document_ops_phase36_observed_probe_execution_preflight_result"
+    assert ready_body["status"] == "ready_for_observed_probe_execution"
+    assert ready_body["runtime"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert ready_body["runtime"]["ops_key_available"] is True
+    assert ready_body["runtime"]["expected_record_ids"] == ["dsr_phase36done", "dsr_phase36pending"]
+    assert ready_body["missing_inputs"] == []
+    assert ready_body["readiness"]["observed_probe_can_run"] is True
+    assert ready_body["readiness"]["training_authorized"] is False
+    assert "phase36-secret-value" not in ready.stdout
+    assert missing.returncode == 1
+    assert missing_body["status"] == "blocked_missing_runtime_inputs"
+    assert {"base_url", "DECISIONDOC_OPS_KEY", "expected_signoff_record_ids"} <= set(
+        missing_body["missing_inputs"]
+    )
+    assert missing_body["readiness"]["observed_probe_can_run"] is False
+
+
+def test_phase36_observed_probe_workflow_creates_output_dir_before_probe(tmp_path):
+    runner = (
+        "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/"
+        "run_observed_probe_workflow.py"
+    )
+    env_file = tmp_path / "phase36.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "DECISIONDOC_OPS_KEY=phase36-secret-value",
+                "PHASE36_TENANT_ID=system",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "missing" / "phase36-output"
+
+    result = subprocess.run(
+        [
+            "python",
+            runner,
+            "--env-file",
+            str(env_file),
+            "--base-url",
+            "http://127.0.0.1:9",
+            "--expect-record-id",
+            "dsr_phase36done",
+            "--output-dir",
+            str(output_dir),
+            "--timeout",
+            "0.1",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    body = json.loads(result.stdout)
+
+    assert result.returncode == 1
+    assert output_dir.is_dir()
+    assert (output_dir / "phase34-staging-readiness.json").exists()
+    assert (output_dir / "phase36-observed-probe-workflow-result.json").exists()
+    assert body["status"] == "phase34_probe_failed"
+    assert body["probe_result"]["report_type"] == "document_ops_phase34_staging_readiness_probe_result"
+    assert body["readiness"]["observed_staging_probe_completed"] is False
+    assert "FileNotFoundError" not in result.stdout
+    assert "FileNotFoundError" not in result.stderr
+    assert "phase36-secret-value" not in result.stdout
+
+
+def test_phase37_deployed_probe_failure_evidence_records_ops_key_auth_blocker():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase37_deployed_probe_failure_evidence/DEPLOYED_PROBE_FAILURE_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase37_deployed_probe_failure_evidence/deployed_probe_failure_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 37 Deployed Probe Failure Evidence" in report
+    assert "DEPLOYED_PROBE_BLOCKED_OPS_KEY_AUTH_FAILED_NO_TRAINING_AUTHORIZATION" in report
+    assert "GET /health" in report
+    assert "401" in report
+    assert "did not start model training" in report
+    assert "deployed `DECISIONDOC_OPS_KEY`" in report
+    assert evidence["report_type"] == "document_ops_phase37_deployed_probe_failure_evidence"
+    assert evidence["phase"] == 37
+    assert evidence["status"] == "deployed_probe_blocked_ops_key_auth_failed_no_training_authorization"
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["target"]["ops_key_source"] == ".github-actions.env"
+    assert evidence["target"]["ops_key_value_recorded"] is False
+    assert evidence["checkpoint_summary"]["health_status_code"] == 200
+    assert evidence["checkpoint_summary"]["summary_without_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["summary_with_env_file_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["download_with_env_file_ops_key_status_code"] == 401
+    assert evidence["readiness"]["deployed_health_reachable"] is True
+    assert evidence["readiness"]["ops_key_required"] is True
+    assert evidence["readiness"]["ops_key_authenticated"] is False
+    assert evidence["readiness"]["expected_record_ids_available"] is False
+    assert evidence["readiness"]["observed_staging_probe_completed"] is False
+    assert evidence["readiness"]["observed_staging_evidence_archived"] is False
+    assert evidence["readiness"]["training_authorized"] is False
+    assert evidence["inferred_blocker"]["type"] == "deployed_ops_key_mismatch_or_missing_runtime_secret"
+    assert "Provide the current deployed ops key" in evidence["next_step"]
+    assert all(value is False for value in evidence["guard_flags"].values())
+    assert all(value is False for value in evidence["side_effect_boundary"].values())
+
+
+def test_phase38_observed_probe_retry_records_wrapper_fix_and_remaining_ops_key_blocker():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/DEPLOYED_PROBE_RETRY_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/deployed_probe_retry_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 38 Observed Probe Retry Evidence" in report
+    assert "DEPLOYED_PROBE_RETRIED_OPS_KEY_AUTH_FAILED_NO_TRAINING_AUTHORIZATION" in report
+    assert "output directory before invoking the Phase 34 probe" in report
+    assert "did not start model training" in report
+    assert evidence["report_type"] == "document_ops_phase38_observed_probe_retry_evidence"
+    assert evidence["phase"] == 38
+    assert evidence["status"] == "deployed_probe_retried_ops_key_auth_failed_no_training_authorization"
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["target"]["expected_record_ids"] == ["dsr_phase32done", "dsr_phase32pending"]
+    assert evidence["target"]["ops_key_value_recorded"] is False
+    assert evidence["wrapper_result"]["output_dir_created_before_probe"] is True
+    assert evidence["wrapper_result"]["preflight_status"] == "ready_for_observed_probe_execution"
+    assert evidence["wrapper_result"]["probe_output_written"] is True
+    assert evidence["wrapper_result"]["workflow_output_written"] is True
+    assert evidence["checkpoint_summary"]["health_status_code"] == 200
+    assert evidence["checkpoint_summary"]["summary_without_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["summary_with_env_file_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["download_with_env_file_ops_key_status_code"] == 401
+    assert evidence["readiness"]["deployed_health_reachable"] is True
+    assert evidence["readiness"]["ops_key_required"] is True
+    assert evidence["readiness"]["ops_key_authenticated"] is False
+    assert evidence["readiness"]["observed_staging_probe_completed"] is False
+    assert evidence["inferred_blocker"]["type"] == "deployed_ops_key_mismatch_or_missing_runtime_secret"
+    assert all(value is False for value in evidence["guard_flags"].values())
+    assert all(value is False for value in evidence["side_effect_boundary"].values())
+
+
+def test_phase39_remote_runtime_gap_records_route_and_signoff_storage_blockers():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/REMOTE_RUNTIME_GAP_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 39 Remote Runtime Gap Evidence" in report
+    assert "REMOTE_RUNTIME_GAP_IDENTIFIED_NO_TRAINING_AUTHORIZATION" in report
+    assert "Using the deployed ops key in memory changed" in report
+    assert "did not deploy code" in report
+    assert evidence["report_type"] == "document_ops_phase39_remote_runtime_gap_evidence"
+    assert evidence["phase"] == 39
+    assert evidence["status"] == "remote_runtime_gap_identified_no_training_authorization"
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["credential_findings"]["deployed_ops_key_present"] is True
+    assert evidence["credential_findings"]["deployed_ops_key_value_recorded"] is False
+    assert evidence["credential_findings"]["deployed_ops_key_used_in_memory_only"] is True
+    assert evidence["credential_findings"]["local_probe_key_matches_deployed"] is False
+    assert evidence["checkpoint_summary"]["health_status_code"] == 200
+    assert evidence["checkpoint_summary"]["summary_without_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["summary_with_deployed_ops_key_status_code"] == 404
+    assert evidence["checkpoint_summary"]["download_with_deployed_ops_key_status_code"] == 404
+    assert evidence["checkpoint_summary"]["summary_safe_body"] == {"detail": "Not Found"}
+    assert evidence["remote_runtime"]["remote_commit"] == "011aec5"
+    assert evidence["remote_runtime"]["document_ops_route_ref_files"] == 0
+    assert evidence["remote_runtime"]["signoff_dir_present"] is False
+    assert evidence["readiness"]["deployed_ops_key_runtime_valid"] is True
+    assert evidence["readiness"]["document_ops_reviewer_signoff_route_deployed"] is False
+    assert evidence["readiness"]["signoff_storage_present"] is False
+    assert evidence["inferred_blocker"]["type"] == (
+        "deployed_code_missing_document_ops_reviewer_signoff_routes_and_records"
+    )
+    assert all(value is False for value in evidence["guard_flags"].values())
+    assert all(value is False for value in evidence["side_effect_boundary"].values())
+
+
+def test_phase21_manual_reviewer_signoff_template_preserves_no_training_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/SIGNOFF_RECORD_TEMPLATE.md",
+        encoding="utf-8",
+    ).read()
+    template = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json",
+            encoding="utf-8",
+        )
+    )
+    reviewers = {item["reviewer_role"]: item for item in template["required_reviewers"]}
+
+    assert "Phase 21 Manual Reviewer Sign-Off Record Template" in report
+    assert "TEMPLATE_ONLY_NO_ACTUAL_SIGNOFF" in report
+    assert "does not authorize model training" in report
+    assert "does not authorize dataset upload" in report
+    assert "does not authorize provider fine-tune API calls" in report
+    assert template["status"] == "template_only_no_actual_signoff"
+    assert template["signoff_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert template["signoff_boundary"]["training_execution_authorized"] is False
+    assert template["signoff_boundary"]["external_dataset_upload_authorized"] is False
+    assert template["signoff_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert template["signoff_boundary"]["provider_job_creation_authorized"] is False
+    assert template["signoff_boundary"]["model_promotion_authorized"] is False
+    assert {"product_pm_reviewer", "ml_ai_owner", "compliance_security_reviewer", "release_owner"} <= set(reviewers)
+    assert all(item["decision"] == "pending" for item in template["required_reviewers"])
+    assert all(item["reviewer_name"] == "" for item in template["required_reviewers"])
+    assert all(item["reviewed_at"] == "" for item in template["required_reviewers"])
+    assert all(
+        ack is False
+        for item in template["required_reviewers"]
+        for ack in item["required_acknowledgements"].values()
+    )
+    assert template["completion_rule"]["manual_signoff_complete"] is False
+
+
+def test_phase22_signoff_validator_accepts_completed_records_and_rejects_boundary_breaks(tmp_path):
+    template_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+    validator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py"
+    record = json.load(open(template_path, encoding="utf-8"))
+
+    record["status"] = "manual_signoff_complete"
+    record["signoff_boundary"]["actual_reviewer_approval_recorded"] = True
+    for key in record["completion_rule"]:
+        record["completion_rule"][key] = True
+    for reviewer in record["required_reviewers"]:
+        reviewer["reviewer_name"] = f"{reviewer['reviewer_role']} name"
+        reviewer["reviewer_title_or_team"] = "DocumentOps governance review"
+        reviewer["reviewed_at"] = "2026-05-08T10:00:00+09:00"
+        reviewer["decision"] = "sign_off_ready_for_human_review"
+        reviewer["notes"] = "Reviewed required evidence and no-training boundary."
+        for ack in reviewer["required_acknowledgements"]:
+            reviewer["required_acknowledgements"][ack] = True
+
+    complete_path = tmp_path / "completed_signoff.json"
+    complete_path.write_text(json.dumps(record), encoding="utf-8")
+    completed = subprocess.run(
+        ["python", validator_path, str(complete_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    completed_body = json.loads(completed.stdout)
+    assert completed.returncode == 0
+    assert completed_body["valid"] is True
+    assert completed_body["error_count"] == 0
+    assert {"product_pm_reviewer", "ml_ai_owner", "compliance_security_reviewer", "release_owner"} <= set(
+        completed_body["reviewer_roles"]
+    )
+
+    broken = json.loads(json.dumps(record))
+    broken["signoff_boundary"]["provider_fine_tune_api_call_authorized"] = True
+    broken_path = tmp_path / "broken_signoff.json"
+    broken_path.write_text(json.dumps(broken), encoding="utf-8")
+    rejected = subprocess.run(
+        ["python", validator_path, str(broken_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    rejected_body = json.loads(rejected.stdout)
+    assert rejected.returncode == 1
+    assert rejected_body["valid"] is False
+    assert "signoff_boundary.provider_fine_tune_api_call_authorized must remain false" in rejected_body["errors"]
+
+
+def test_phase23_pending_signoff_generator_creates_fillable_no_training_record(tmp_path):
+    generator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py"
+    validator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py"
+    record_id = "dsr_phase23test"
+    created_at = "2026-05-08T10:30:00+09:00"
+
+    generated = subprocess.run(
+        [
+            "python",
+            generator_path,
+            "--output-dir",
+            str(tmp_path),
+            "--record-id",
+            record_id,
+            "--created-at",
+            created_at,
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    generated_body = json.loads(generated.stdout)
+    output_path = tmp_path / f"{record_id}_pending_signoff.json"
+    record = json.load(open(output_path, encoding="utf-8"))
+
+    assert generated.returncode == 0
+    assert generated_body["ok"] is True
+    assert generated_body["record_id"] == record_id
+    assert generated_body["status"] == "pending_manual_signoff"
+    assert generated_body["training_execution_authorized"] is False
+    assert generated_body["provider_fine_tune_api_call_authorized"] is False
+    assert record["report_type"] == "document_ops_phase23_pending_manual_reviewer_signoff_record"
+    assert record["signoff_record_id"] == record_id
+    assert record["created_at"] == created_at
+    assert record["status"] == "pending_manual_signoff"
+    assert record["generation_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert record["generation_boundary"]["training_execution_started"] is False
+    assert record["generation_boundary"]["provider_fine_tune_api_called"] is False
+    assert record["signoff_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert record["signoff_boundary"]["training_execution_authorized"] is False
+    assert record["signoff_boundary"]["external_dataset_upload_authorized"] is False
+    assert record["signoff_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert record["signoff_boundary"]["provider_job_creation_authorized"] is False
+    assert record["signoff_boundary"]["model_promotion_authorized"] is False
+    assert all(item["decision"] == "pending" for item in record["required_reviewers"])
+    assert all(item["reviewer_name"] == "" for item in record["required_reviewers"])
+    assert all(item["reviewed_at"] == "" for item in record["required_reviewers"])
+    assert all(
+        ack is False
+        for item in record["required_reviewers"]
+        for ack in item["required_acknowledgements"].values()
+    )
+    assert record["completion_rule"]["manual_signoff_complete"] is False
+
+    validation = subprocess.run(
+        ["python", validator_path, str(output_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    validation_body = json.loads(validation.stdout)
+    assert validation.returncode == 1
+    assert validation_body["valid"] is False
+    assert any("decision must not be pending" in error for error in validation_body["errors"])
+
+
+def test_phase24_signoff_summary_reports_reviewer_completion_without_training_authorization(tmp_path):
+    generator_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py"
+    summary_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py"
+    template_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+    pending_id = "dsr_phase24pending"
+    completed_id = "dsr_phase24done"
+
+    generated = subprocess.run(
+        [
+            "python",
+            generator_path,
+            "--output-dir",
+            str(tmp_path),
+            "--record-id",
+            pending_id,
+            "--created-at",
+            "2026-05-08T11:00:00+09:00",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert generated.returncode == 0
+
+    completed = json.load(open(template_path, encoding="utf-8"))
+    completed["report_type"] = "document_ops_phase24_completed_manual_reviewer_signoff_record_fixture"
+    completed["status"] = "manual_signoff_complete"
+    completed["signoff_record_id"] = completed_id
+    completed["created_at"] = "2026-05-08T11:10:00+09:00"
+    completed["signoff_boundary"]["actual_reviewer_approval_recorded"] = True
+    for key in completed["completion_rule"]:
+        completed["completion_rule"][key] = True
+    for reviewer in completed["required_reviewers"]:
+        reviewer["reviewer_name"] = f"{reviewer['reviewer_role']} name"
+        reviewer["reviewer_title_or_team"] = "DocumentOps governance review"
+        reviewer["reviewed_at"] = "2026-05-08T11:15:00+09:00"
+        reviewer["decision"] = "sign_off_ready_for_human_review"
+        reviewer["notes"] = "Completed human review while preserving no-training boundary."
+        for ack in reviewer["required_acknowledgements"]:
+            reviewer["required_acknowledgements"][ack] = True
+    completed_path = tmp_path / f"{completed_id}_completed_signoff.json"
+    completed_path.write_text(json.dumps(completed), encoding="utf-8")
+
+    report_path = tmp_path / "phase24_signoff_summary.json"
+    summarized = subprocess.run(
+        [
+            "python",
+            summary_path,
+            str(tmp_path),
+            "--generated-at",
+            "2026-05-08T11:20:00+09:00",
+            "--output",
+            str(report_path),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    summary = json.loads(summarized.stdout)
+    written_summary = json.load(open(report_path, encoding="utf-8"))
+    records = {item["signoff_record_id"]: item for item in summary["records"]}
+
+    assert summarized.returncode == 0
+    assert summary == written_summary
+    assert summary["report_type"] == "document_ops_phase24_signoff_record_summary"
+    assert summary["generated_at"] == "2026-05-08T11:20:00+09:00"
+    assert summary["record_count"] == 2
+    assert summary["overall_status"] == "pending_manual_signoff_no_training_authorization"
+    assert summary["aggregate"]["completed_record_count"] == 1
+    assert summary["aggregate"]["pending_record_count"] == 1
+    assert summary["aggregate"]["all_protected_training_flags_false"] is True
+    assert summary["aggregate"]["training_execution_authorized"] is False
+    assert summary["aggregate"]["external_dataset_upload_authorized"] is False
+    assert summary["aggregate"]["provider_fine_tune_api_call_authorized"] is False
+    assert summary["aggregate"]["provider_job_creation_authorized"] is False
+    assert summary["aggregate"]["model_promotion_authorized"] is False
+    assert all(value is False for value in summary["side_effect_boundary"].values())
+
+    assert records[pending_id]["record_status"] == "pending_manual_signoff_no_training_authorization"
+    assert records[pending_id]["reviewers_complete_count"] == 0
+    assert records[pending_id]["pending_reviewer_count"] == 4
+    assert records[pending_id]["completed_validation"]["valid"] is False
+    assert records[pending_id]["boundary"]["training_execution_authorized"] is False
+    assert records[pending_id]["boundary"]["provider_fine_tune_api_call_authorized"] is False
+
+    assert records[completed_id]["record_status"] == "manual_signoff_complete_no_training_authorization"
+    assert records[completed_id]["reviewers_complete_count"] == 4
+    assert records[completed_id]["pending_reviewer_count"] == 0
+    assert records[completed_id]["completed_validation"]["valid"] is True
+    assert records[completed_id]["boundary"]["actual_reviewer_approval_recorded"] is True
+    assert records[completed_id]["boundary"]["training_execution_authorized"] is False
+    assert records[completed_id]["boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert all(item["complete"] is True for item in records[completed_id]["reviewers"])
+
+
+def test_phase26_reviewer_signoff_browser_qa_result_records_observed_no_training_pass():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/BROWSER_QA_REPORT.md",
+        encoding="utf-8",
+    ).read()
+    result = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/browser_qa_result.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 26 Reviewer Sign-Off Browser QA Report" in report
+    assert "Result: PASS" in report
+    assert "Reviewer Sign-Off Summary" in report
+    assert "provider fine-tune APIs" in report
+    assert result["result"] == "pass"
+    assert result["seed"]["pending_signoff_record_id"] == "dsr_phase26pending"
+    assert result["seed"]["completed_signoff_record_id"] == "dsr_phase26done"
+    assert result["api_checkpoint"]["read_only"] is True
+    assert result["api_checkpoint"]["overall_status"] == "pending_manual_signoff_no_training_authorization"
+    assert result["ui_checks"]["reviewer_signoff_summary_visible"] is True
+    assert result["ui_checks"]["completed_record_visible"] is True
+    assert result["ui_checks"]["pending_record_visible"] is True
+    assert result["ui_checks"]["signoff_blocker_visible"] is True
+    assert result["ui_checks"]["browser_console_errors"] == []
+    assert all(value is False for value in result["guard_flags"].values())
+    assert all(value is False for value in result["side_effect_boundary"].values())
+
+
+def test_phase28_reviewer_signoff_json_download_browser_qa_result_records_blob_received():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/BROWSER_QA_REPORT.md",
+        encoding="utf-8",
+    ).read()
+    result = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 28 Reviewer Sign-Off JSON Download Browser QA Report" in report
+    assert "Result: PASS" in report
+    assert "Downloads are not supported by Codex In-app Browser" in report
+    assert "server_file_written=false" in report
+    assert result["result"] == "pass"
+    assert result["seed"]["pending_signoff_record_id"] == "dsr_phase28pending"
+    assert result["seed"]["completed_signoff_record_id"] == "dsr_phase28done"
+    assert result["api_checkpoint"]["status_code"] == 200
+    assert result["api_checkpoint"]["report_type"] == "document_ops_phase27_reviewer_signoff_summary_export"
+    assert result["api_checkpoint"]["pending_record_visible_in_payload"] is True
+    assert result["api_checkpoint"]["completed_record_visible_in_payload"] is True
+    assert result["ui_checks"]["signoff_json_button_visible"] is True
+    assert result["ui_checks"]["json_blob_received_by_browser"] is True
+    assert result["ui_checks"]["download_fallback_visible"] is True
+    assert result["ui_checks"]["success_notification_visible"] is True
+    assert result["ui_checks"]["native_download_event_supported"] is False
+    assert result["ui_checks"]["current_port_console_errors"] == []
+    assert all(value is False for value in result["guard_flags"].values())
+    assert all(value is False for value in result["side_effect_boundary"].values())
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(
@@ -372,7 +2001,7 @@ def test_index_html_exports_current_generated_docs_before_regenerating():
 def test_index_html_keeps_blob_url_and_shows_download_fallback():
     content = open("app/static/index.html", encoding="utf-8").read()
     trigger_fn = re.search(
-        r"function _triggerBrowserDownload\(blob, filename, label\) \{(?P<body>[\s\S]*?)\n  \}",
+        r"function _triggerBrowserDownload\(blob, filename, label, options = \{\}\) \{(?P<body>[\s\S]*?)\n  \}",
         content,
     )
     export_document_fn = re.search(
@@ -383,7 +2012,7 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
     assert export_document_fn is not None
     assert "EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000" in content
     assert "export-download-fallback" in content
-    assert "_showExportDownloadFallback(url, filename, label)" in trigger_fn.group("body")
+    assert "_showExportDownloadFallback(url, filename, label, options?.fallbackContainerId)" in trigger_fn.group("body")
     assert "URL.revokeObjectURL(url)" not in export_document_fn.group("body")
     assert "_triggerBrowserDownload(blob, filename, label)" in export_document_fn.group("body")
 

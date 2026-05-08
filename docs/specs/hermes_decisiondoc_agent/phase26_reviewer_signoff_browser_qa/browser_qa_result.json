@@ -1,0 +1,97 @@
+{
+  "report_type": "document_ops_phase26_reviewer_signoff_browser_qa_result",
+  "phase": 26,
+  "result": "pass",
+  "observed_at": "2026-05-08T13:20:00+09:00",
+  "environment": {
+    "browser": "codex_in_app_browser",
+    "base_url": "http://127.0.0.1:8768",
+    "page_url": "http://127.0.0.1:8768/?ops=1&phase26=1778150148160",
+    "provider": "mock",
+    "data_dir": "/tmp/decisiondoc-phase26-browser-qa",
+    "tenant_id": "system"
+  },
+  "seed": {
+    "pending_signoff_record_id": "dsr_phase26pending",
+    "pending_signoff_filename": "dsr_phase26pending_pending_signoff.json",
+    "completed_signoff_record_id": "dsr_phase26done",
+    "completed_signoff_filename": "phase26_completed_signoff.json",
+    "record_count": 2,
+    "completed_record_count": 1,
+    "pending_record_count": 1
+  },
+  "api_checkpoint": {
+    "endpoint": "GET /api/agent/document-ops/trajectories/reviewer-signoff/summary?limit=50",
+    "status_code": 200,
+    "report_type": "document_ops_phase25_signoff_summary_endpoint",
+    "read_only": true,
+    "record_directory_exists": true,
+    "load_error_count": 0,
+    "overall_status": "pending_manual_signoff_no_training_authorization"
+  },
+  "browser_steps": {
+    "local_admin_registered": true,
+    "local_admin_logged_in": true,
+    "welcome_overlay_dismissed": true,
+    "document_ops_tab_opened": true,
+    "ops_key_entered": true,
+    "signoff_summary_button_clicked": true
+  },
+  "ui_checks": {
+    "reviewer_signoff_summary_visible": true,
+    "read_only_no_training_copy_visible": true,
+    "signoff_pending_badge_visible": true,
+    "record_count_visible": true,
+    "completed_count_visible": true,
+    "pending_count_visible": true,
+    "completed_record_visible": true,
+    "pending_record_visible": true,
+    "completed_record_validation_visible": true,
+    "pending_record_validation_visible": true,
+    "training_false_visible": true,
+    "provider_api_false_visible": true,
+    "signoff_blocker_visible": true,
+    "browser_console_errors": []
+  },
+  "observed_text_markers": [
+    "Reviewer Sign-Off Summary",
+    "read-only sign-off evidence",
+    "no training",
+    "no upload",
+    "no provider calls",
+    "SIGN-OFF PENDING",
+    "records 2",
+    "completed 1",
+    "pending 1",
+    "dsr_phase26done",
+    "manual_signoff_complete_no_training_authorization",
+    "dsr_phase26pending",
+    "pending_manual_signoff_no_training_authorization",
+    "training_execution_authorized=false",
+    "provider_fine_tune_api_call_authorized=false",
+    "provider_api=false",
+    "pending_manual_signoff"
+  ],
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "provider_job_started": false,
+    "model_promotion_allowed": false
+  },
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "training_execution_started": false,
+    "external_dataset_uploaded": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "model_promoted": false
+  },
+  "not_verified": [
+    "production deployment smoke",
+    "real reviewer approval",
+    "provider fine-tune execution",
+    "external dataset upload",
+    "model promotion"
+  ]
+}

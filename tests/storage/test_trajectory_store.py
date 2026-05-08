@@ -1,0 +1,677 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from app.storage.trajectory_store import TrajectoryStore
+
+
+def _sample_trajectory(trajectory_id: str = "trj_001") -> dict:
+    return {
+        "trajectory_id": trajectory_id,
+        "task_type": "policy_planning_brief",
+        "skill": {"name": "policy-planning", "version": "0.1.0"},
+        "provider": "mock",
+        "input": {
+            "requirements": {
+                "title": "보행자 보호 통합 안전서비스",
+                "raw_attachment": "binary-like-data",
+                "notes": "검토 메모",
+            },
+            "source_references": [{"id": "source-1"}],
+        },
+        "plan": ["승인 질문 분리", "근거 상태 정리"],
+        "draft_output": "정책 기획 초안",
+        "evidence_status": {"confirmed": ["source-1"], "assumptions": [], "gaps": [], "source_references": ["source-1"]},
+        "qa": {"hard_gate_pass": True, "warnings": []},
+    }
+
+
+def test_save_stores_tenant_scoped_redacted_jsonl(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+
+    trajectory_id = store.save(_sample_trajectory(), tenant_id="alpha")
+
+    assert trajectory_id == "trj_001"
+    records = store.get_records(tenant_id="alpha")
+    assert len(records) == 1
+    assert records[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
+    assert store.get_records(tenant_id="beta") == []
+
+
+def test_save_deduplicates_by_trajectory_id(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+
+    store.save(_sample_trajectory("trj_dup"), tenant_id="system")
+    store.save(_sample_trajectory("trj_dup"), tenant_id="system")
+
+    assert len(store.get_records(tenant_id="system")) == 1
+
+
+def test_mark_reviewed_updates_human_feedback_and_stats(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_review"), tenant_id="system")
+
+    updated = store.mark_reviewed(
+        "trj_review",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        notes="승인본으로 학습 가능",
+        quality_score=0.92,
+    )
+
+    assert updated is not None
+    assert updated["human_review_status"] == "accepted"
+    assert updated["human_feedback"]["quality_score"] == 0.92
+    stats = store.get_stats(tenant_id="system")
+    assert stats["accepted_records"] == 1
+    assert stats["pending_records"] == 0
+    assert stats["per_task_count"]["policy_planning_brief"] == 1
+
+
+def test_export_sft_messages_writes_only_accepted_records(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.save(_sample_trajectory("trj_pending"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+
+    assert export_path is not None
+    path = Path(export_path)
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert [message["role"] for message in record["messages"]] == ["system", "user", "assistant"]
+    assert record["metadata"]["trajectory_id"] == "trj_accept"
+    assert "정책 기획 초안" in record["messages"][2]["content"]
+    assert "raw_attachment" in record["messages"][1]["content"]
+    assert "binary-like-data" not in record["messages"][1]["content"]
+    assert store.get_stats(tenant_id="system")["export_count"] == 1
+
+    exports = store.list_sft_exports(tenant_id="system")
+    assert len(exports) == 1
+    assert exports[0]["filename"] == path.name
+    assert exports[0]["exists"] is True
+    assert exports[0]["record_count"] == 1
+    assert exports[0]["size_bytes"] > 0
+    assert store.get_sft_export_path(path.name, tenant_id="system") == path.resolve()
+    reviewed_exports = store.list_reviewed_sft_exports(tenant_id="system")
+    assert len(reviewed_exports) == 1
+    assert reviewed_exports[0]["filename"] == path.name
+    assert reviewed_exports[0]["accepted_only"] is True
+    assert store.get_reviewed_sft_export_path(path.name, tenant_id="system") == path.resolve()
+
+
+def test_reviewed_sft_exports_exclude_unreviewed_export_metadata(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_pending"), tenant_id="system")
+
+    export_path = store.export_sft_messages(
+        tenant_id="system",
+        min_records=1,
+        accepted_only=False,
+    )
+
+    assert export_path is not None
+    filename = Path(export_path).name
+    assert store.list_sft_exports(tenant_id="system")[0]["filename"] == filename
+    assert store.list_sft_exports(tenant_id="system")[0]["accepted_only"] is False
+    assert store.list_reviewed_sft_exports(tenant_id="system") == []
+    assert store.get_sft_export_path(filename, tenant_id="system") == Path(export_path).resolve()
+    assert store.get_reviewed_sft_export_path(filename, tenant_id="system") is None
+
+
+def test_preview_sft_export_reports_candidates_without_writing_file(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    blocked = _sample_trajectory("trj_blocked")
+    blocked["qa"]["hard_gate_pass"] = False
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.save(blocked, tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    store.mark_reviewed("trj_blocked", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.7)
+
+    preview = store.preview_sft_export(tenant_id="system", min_records=1, sample_limit=2)
+
+    assert preview["dry_run"] is True
+    assert preview["would_export"] is True
+    assert preview["candidate_count"] == 2
+    assert preview["eligible_count"] == 1
+    assert preview["blocked_count"] == 1
+    assert preview["blocker_summary"]["qa_hard_gate_failed"] == 1
+    assert preview["quality_score_summary"]["avg"] == 0.95
+    assert store.get_stats(tenant_id="system")["export_count"] == 0
+
+
+def test_sft_quality_report_summarizes_schema_roles_evidence_and_blockers(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    blocked = _sample_trajectory("trj_blocked")
+    blocked["qa"]["hard_gate_pass"] = False
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.save(blocked, tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    store.mark_reviewed("trj_blocked", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.7)
+
+    report = store.report_sft_export_quality(tenant_id="system", min_records=1, sample_limit=2)
+
+    assert report["report_type"] == "sft_export_candidate_quality"
+    assert report["candidate_count"] == 2
+    assert report["eligible_count"] == 1
+    assert report["blocked_count"] == 1
+    assert report["rejection_reason_summary"]["qa_hard_gate_failed"] == 1
+    assert report["schema_valid_count"] == 1
+    assert report["schema_invalid_count"] == 0
+    assert report["role_sequence_summary"]["system,user,assistant"] == 1
+    assert report["qa_summary"]["hard_gate_pass_count"] == 1
+    assert report["qa_summary"]["quality_score_summary"]["avg"] == 0.95
+    assert report["evidence_coverage"]["records_with_source_references"] == 1
+    assert report["evidence_coverage"]["source_reference_coverage"] == 1.0
+    assert report["ready_for_export"] is True
+    assert report["ready_for_training"] is False
+    assert "review_or_reject_blocked_trajectories_before_dataset_freeze" in report["recommendations"]
+
+
+def test_sft_export_file_quality_report_validates_jsonl(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+
+    report = store.inspect_sft_export_quality(Path(export_path).name, tenant_id="system")
+
+    assert report is not None
+    assert report["report_type"] == "sft_export_file_quality"
+    assert report["filename"] == Path(export_path).name
+    assert report["jsonl_record_count"] == 1
+    assert report["jsonl_line_count"] == 1
+    assert report["schema_valid_count"] == 1
+    assert report["schema_invalid_count"] == 0
+    assert report["role_sequence_summary"]["system,user,assistant"] == 1
+    assert report["evidence_coverage"]["records_with_source_references"] == 1
+    assert report["ready_for_training"] is True
+
+
+def test_freeze_sft_export_writes_manifest_and_metadata_without_training(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+
+    manifest = store.freeze_sft_export(
+        Path(export_path).name,
+        tenant_id="system",
+        reviewer="dataset-owner",
+        notes="Phase 9 freeze 검증",
+    )
+
+    assert manifest is not None
+    assert manifest["schema_version"] == "document_ops_dataset_freeze_v1"
+    assert manifest["manifest_id"].startswith("dsf_")
+    assert manifest["export"]["filename"] == Path(export_path).name
+    assert manifest["export"]["record_count"] == 1
+    assert len(manifest["export"]["sha256"]) == 64
+    assert len(manifest["quality_report"]["sha256"]) == 64
+    assert manifest["quality_report"]["schema_invalid_count"] == 0
+    assert manifest["review_gate"]["status"] == "approved_for_dataset_freeze"
+    assert manifest["review_gate"]["reviewer"] == "dataset-owner"
+    assert manifest["training_guard"]["training_allowed"] is False
+    assert manifest["training_guard"]["training_started"] is False
+
+    freezes = store.list_dataset_freezes(tenant_id="system")
+    assert len(freezes) == 1
+    assert freezes[0]["manifest_id"] == manifest["manifest_id"]
+    assert freezes[0]["export_filename"] == Path(export_path).name
+    assert freezes[0]["training_allowed"] is False
+    assert freezes[0]["exists"] is True
+    assert freezes[0]["size_bytes"] > 0
+
+
+def test_freeze_sft_export_rejects_training_allowed_flag(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+
+    with pytest.raises(ValueError, match="no-training-by-default"):
+        store.freeze_sft_export(
+            Path(export_path).name,
+            tenant_id="system",
+            reviewer="dataset-owner",
+            training_allowed=True,
+        )
+
+
+def test_approve_training_from_freeze_records_dry_run_gate_without_provider_job(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        notes="Phase 10 approval dry-run",
+        eval_plan={
+            "suite": "document_ops_offline_eval",
+            "required_metrics": {"schema_valid_rate": 1.0, "source_reference_coverage": 1.0},
+            "source_document": "sensitive-eval-note",
+        },
+    )
+
+    assert approval is not None
+    assert approval["schema_version"] == "document_ops_training_approval_v1"
+    assert approval["approval_id"].startswith("tap_")
+    assert approval["manifest"]["manifest_id"] == manifest["manifest_id"]
+    assert approval["manifest"]["export_filename"] == Path(export_path).name
+    assert approval["approval_gate"]["status"] == "approved_for_training_dry_run"
+    assert approval["approval_gate"]["approver"] == "ml-owner"
+    assert approval["approval_gate"]["freeze_reviewer"] == "dataset-owner"
+    assert approval["eval_plan"]["source_document"] == "[redacted]"
+    assert approval["execution_guard"]["dry_run"] is True
+    assert approval["execution_guard"]["start_training_requested"] is False
+    assert approval["execution_guard"]["provider_job_started"] is False
+    assert approval["execution_guard"]["model_promotion_allowed"] is False
+
+    approvals = store.list_training_approvals(tenant_id="system")
+    assert len(approvals) == 1
+    assert approvals[0]["approval_id"] == approval["approval_id"]
+    assert approvals[0]["manifest_id"] == manifest["manifest_id"]
+    assert approvals[0]["dry_run"] is True
+    assert approvals[0]["provider_job_started"] is False
+    assert approvals[0]["exists"] is True
+    assert approvals[0]["size_bytes"] > 0
+
+
+def test_training_readiness_summary_combines_freezes_approvals_and_eval_plan_without_training(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={
+            "suite": "document_ops_offline_eval",
+            "required_metrics": {"schema_valid_rate": 1.0, "source_reference_coverage": 1.0},
+        },
+    )
+    assert approval is not None
+
+    summary = store.training_readiness_summary(tenant_id="system")
+
+    assert summary["report_type"] == "document_ops_training_readiness"
+    assert summary["read_only"] is True
+    assert summary["training_execution_allowed"] is False
+    assert summary["ready_for_training_execution"] is True
+    assert summary["status"] == "ready_for_training_decision"
+    assert summary["counts"]["reviewed_sft_exports"] == 1
+    assert summary["counts"]["dataset_freezes"] == 1
+    assert summary["counts"]["dry_run_training_approvals"] == 1
+    assert summary["reviewed_export_count"] == 1
+    assert summary["freeze_count"] == 1
+    assert summary["dry_run_training_approval_count"] == 1
+    assert summary["latest_reviewed_export"]["filename"] == Path(export_path).name
+    assert summary["latest_dataset_freeze"]["manifest_id"] == manifest["manifest_id"]
+    assert summary["latest_training_approval"]["approval_id"] == approval["approval_id"]
+    assert summary["latest_export_quality"]["ready_for_training"] is True
+    assert summary["eval_plan_coverage"]["approvals_with_eval_plan"] == 1
+    assert summary["eval_plan_coverage"]["approvals_with_required_metrics"] == 1
+    assert summary["eval_plan_coverage"]["latest"]["required_metric_count"] == 2
+    assert summary["training_guard"]["no_training_started"] is True
+    assert summary["training_guard"]["provider_job_started_count"] == 0
+    assert summary["training_guard"]["model_promotion_allowed_count"] == 0
+    assert summary["training_guard"]["external_upload_started"] is False
+    assert summary["blockers"] == []
+    assert summary["recommendations"] == ["review_latest_freeze_and_approval_before_explicit_training_execution"]
+
+
+def test_training_execution_plan_preview_builds_provider_agnostic_dry_run_spec(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={
+            "suite": "document_ops_offline_eval",
+            "required_metrics": {"schema_valid_rate": 1.0},
+        },
+    )
+
+    preview = store.training_execution_plan_preview(
+        tenant_id="system",
+        provider="OpenAI Fine Tune!",
+        base_model="gpt-test-base",
+    )
+
+    assert preview["report_type"] == "document_ops_training_execution_plan_preview"
+    assert preview["dry_run"] is True
+    assert preview["preview_only"] is True
+    assert preview["read_only"] is True
+    assert preview["training_execution_allowed"] is False
+    assert preview["provider_api_calls_allowed"] is False
+    assert preview["external_upload_allowed"] is False
+    assert preview["provider_job_started"] is False
+    assert preview["model_promotion_allowed"] is False
+    assert preview["status"] == "ready_for_manual_execution_planning"
+    assert preview["blockers"] == []
+    assert preview["job_spec"]["provider"] == "OpenAI_Fine_Tune"
+    assert preview["job_spec"]["base_model"] == "gpt-test-base"
+    assert preview["job_spec"]["dataset"]["freeze_manifest_id"] == manifest["manifest_id"]
+    assert preview["job_spec"]["dataset"]["export_filename"] == Path(export_path).name
+    assert preview["job_spec"]["dataset"]["record_count"] == 1
+    assert len(preview["job_spec"]["dataset"]["export_sha256"]) == 64
+    assert preview["job_spec"]["evaluation"]["suite"] == "document_ops_offline_eval"
+    assert preview["job_spec"]["evaluation"]["required_metrics"]["schema_valid_rate"] == 1.0
+    assert {item["step"] for item in preview["job_spec"]["execution_steps"]} == {
+        "validate_readiness",
+        "upload_dataset",
+        "create_provider_fine_tune_job",
+        "monitor_training",
+        "run_required_evals",
+        "promote_model_candidate",
+    }
+    assert all(item["status"] != "started" for item in preview["job_spec"]["execution_steps"])
+
+
+def test_training_execution_request_records_two_person_guard_without_side_effects(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={"suite": "document_ops_offline_eval", "required_metrics": {"schema_valid_rate": 1.0}},
+    )
+    assert approval is not None
+
+    request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+        notes="record only",
+    )
+
+    assert request["schema_version"] == "document_ops_training_execution_request_v1"
+    assert request["request_id"].startswith("ter_")
+    assert request["plan_preview"]["dataset"]["freeze_manifest_id"] == manifest["manifest_id"]
+    assert request["plan_preview"]["dataset"]["export_filename"] == Path(export_path).name
+    assert request["plan_preview"]["evaluation"]["suite"] == "document_ops_offline_eval"
+    assert request["request_gate"]["requester"] == "ops-owner"
+    assert request["request_gate"]["prior_training_approver"] == "ml-owner"
+    assert request["request_gate"]["prior_training_approval_id"] == approval["approval_id"]
+    assert request["two_person_guard"]["required"] is True
+    assert request["two_person_guard"]["satisfied"] is True
+    assert request["execution_guard"]["training_execution_allowed"] is False
+    assert request["execution_guard"]["external_upload_started"] is False
+    assert request["execution_guard"]["provider_api_calls_allowed"] is False
+    assert request["execution_guard"]["provider_job_started"] is False
+    assert request["execution_guard"]["model_promotion_allowed"] is False
+
+    requests = store.list_training_execution_requests(tenant_id="system")
+    assert len(requests) == 1
+    assert requests[0]["request_id"] == request["request_id"]
+    assert requests[0]["manifest_id"] == manifest["manifest_id"]
+    assert requests[0]["approval_id"] == approval["approval_id"]
+    assert requests[0]["two_person_guard_satisfied"] is True
+    assert requests[0]["training_execution_allowed"] is False
+    assert requests[0]["provider_job_started"] is False
+    assert requests[0]["external_upload_started"] is False
+    assert requests[0]["exists"] is True
+
+    with pytest.raises(ValueError, match="different from dry-run training approver"):
+        store.request_training_execution_from_plan(tenant_id="system", requester="ml-owner")
+    with pytest.raises(ValueError, match="start_training"):
+        store.request_training_execution_from_plan(tenant_id="system", requester="ops-owner", start_training=True)
+    with pytest.raises(ValueError, match="no-upload"):
+        store.request_training_execution_from_plan(tenant_id="system", requester="ops-owner", upload_dataset=True)
+    with pytest.raises(ValueError, match="provider APIs"):
+        store.request_training_execution_from_plan(tenant_id="system", requester="ops-owner", call_provider_api=True)
+
+
+def test_training_pre_execution_audit_exports_human_review_packet_without_side_effects(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={"suite": "document_ops_offline_eval", "required_metrics": {"schema_valid_rate": 1.0}},
+    )
+    request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    checklist = store.training_pre_execution_audit_checklist(
+        tenant_id="system",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    assert checklist["report_type"] == "document_ops_training_pre_execution_audit_checklist"
+    assert checklist["status"] == "ready_for_human_pre_execution_review"
+    assert checklist["training_execution_allowed"] is False
+    assert checklist["provider_api_calls_allowed"] is False
+    assert checklist["external_upload_allowed"] is False
+    assert checklist["provider_job_started"] is False
+    assert checklist["model_promotion_allowed"] is False
+    assert checklist["latest_training_execution_request"]["request_id"] == request["request_id"]
+    assert all(item["passed"] is True for item in checklist["checklist"] if item["severity"] == "required")
+    assert checklist["human_review_packet"]["dataset"]["freeze_manifest_id"] == manifest["manifest_id"]
+
+    audit = store.export_training_pre_execution_audit(
+        tenant_id="system",
+        auditor="compliance-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+        notes="final packet only",
+    )
+
+    assert audit["schema_version"] == "document_ops_training_pre_execution_audit_v1"
+    assert audit["audit_id"].startswith("tea_")
+    assert audit["audit_gate"]["auditor"] == "compliance-owner"
+    assert audit["audit_gate"]["requester"] == "ops-owner"
+    assert audit["audit_gate"]["prior_training_approver"] == "ml-owner"
+    assert audit["audit_gate"]["separation_of_duties_satisfied"] is True
+    assert audit["checklist_snapshot"]["status"] == "ready_for_human_pre_execution_review"
+    assert audit["execution_guard"]["training_execution_allowed"] is False
+    assert audit["execution_guard"]["external_upload_started"] is False
+    assert audit["execution_guard"]["provider_api_calls_allowed"] is False
+    assert audit["execution_guard"]["provider_job_started"] is False
+    assert audit["execution_guard"]["model_promotion_allowed"] is False
+
+    audits = store.list_training_pre_execution_audits(tenant_id="system")
+    assert len(audits) == 1
+    assert audits[0]["audit_id"] == audit["audit_id"]
+    assert audits[0]["request_id"] == request["request_id"]
+    assert audits[0]["manifest_id"] == manifest["manifest_id"]
+    assert audits[0]["training_execution_allowed"] is False
+    assert audits[0]["provider_job_started"] is False
+    assert audits[0]["external_upload_started"] is False
+    assert audits[0]["exists"] is True
+    assert store.get_training_pre_execution_audit_path(audits[0]["audit_file"], tenant_id="system") is not None
+
+    with pytest.raises(ValueError, match="different from training execution requester"):
+        store.export_training_pre_execution_audit(tenant_id="system", auditor="ops-owner")
+    with pytest.raises(ValueError, match="different from dry-run training approver"):
+        store.export_training_pre_execution_audit(tenant_id="system", auditor="ml-owner")
+    with pytest.raises(ValueError, match="start_training"):
+        store.export_training_pre_execution_audit(tenant_id="system", auditor="compliance-owner", start_training=True)
+    with pytest.raises(ValueError, match="no-upload"):
+        store.export_training_pre_execution_audit(tenant_id="system", auditor="compliance-owner", upload_dataset=True)
+    with pytest.raises(ValueError, match="provider APIs"):
+        store.export_training_pre_execution_audit(tenant_id="system", auditor="compliance-owner", call_provider_api=True)
+
+
+def test_training_governance_dashboard_summary_aggregates_all_gates_without_side_effects(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={"suite": "document_ops_offline_eval", "required_metrics": {"schema_valid_rate": 1.0}},
+    )
+    request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+    audit = store.export_training_pre_execution_audit(
+        tenant_id="system",
+        auditor="compliance-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    summary = store.training_governance_dashboard_summary(
+        tenant_id="system",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    assert approval is not None
+    assert summary["report_type"] == "document_ops_training_governance_dashboard_summary"
+    assert summary["status"] == "governance_ready_for_human_review"
+    assert summary["read_only"] is True
+    assert summary["training_execution_allowed"] is False
+    assert summary["provider_api_calls_allowed"] is False
+    assert summary["external_upload_allowed"] is False
+    assert summary["provider_job_started"] is False
+    assert summary["model_promotion_allowed"] is False
+    assert summary["counts"] == {
+        "reviewed_sft_exports": 1,
+        "dataset_freezes": 1,
+        "dry_run_training_approvals": 1,
+        "training_execution_requests": 1,
+        "pre_execution_audit_exports": 1,
+    }
+    assert summary["latest"]["reviewed_sft_export"]["filename"] == Path(export_path).name
+    assert summary["latest"]["dataset_freeze"]["manifest_id"] == manifest["manifest_id"]
+    assert summary["latest"]["dry_run_training_approval"]["approval_id"] == approval["approval_id"]
+    assert summary["latest"]["training_execution_request"]["request_id"] == request["request_id"]
+    assert summary["latest"]["pre_execution_audit"]["audit_id"] == audit["audit_id"]
+    assert summary["no_side_effects"] is True
+    assert all(value == 0 for value in summary["guard_counts"].values())
+    assert summary["blockers"] == []
+    assert summary["readiness_status"] == "ready_for_training_decision"
+    assert summary["plan_preview_status"] == "ready_for_manual_execution_planning"
+    assert summary["audit_checklist_status"] == "ready_for_human_pre_execution_review"
+
+
+def test_approve_training_from_freeze_enforces_separate_approver_and_no_job(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(Path(export_path).name, tenant_id="system", reviewer="dataset-owner")
+    assert manifest is not None
+    eval_plan = {"suite": "document_ops_offline_eval"}
+
+    with pytest.raises(ValueError, match="different from dataset freeze reviewer"):
+        store.approve_training_from_freeze(
+            manifest["manifest_id"],
+            tenant_id="system",
+            approver="dataset-owner",
+            eval_plan=eval_plan,
+        )
+
+    with pytest.raises(ValueError, match="no-provider-job"):
+        store.approve_training_from_freeze(
+            manifest["manifest_id"],
+            tenant_id="system",
+            approver="ml-owner",
+            eval_plan=eval_plan,
+            start_training=True,
+        )
+
+    with pytest.raises(ValueError, match="dry_run=true"):
+        store.approve_training_from_freeze(
+            manifest["manifest_id"],
+            tenant_id="system",
+            approver="ml-owner",
+            eval_plan=eval_plan,
+            dry_run=False,
+        )
+
+    with pytest.raises(ValueError, match="Invalid manifest_id"):
+        store.approve_training_from_freeze(
+            "../bad",
+            tenant_id="system",
+            approver="ml-owner",
+            eval_plan=eval_plan,
+        )
+
+
+def test_export_sft_messages_skips_blocked_records(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    blocked = _sample_trajectory("trj_blocked")
+    blocked["plan"] = []
+    store.save(_sample_trajectory("trj_accept"), tenant_id="system")
+    store.save(blocked, tenant_id="system")
+    store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    store.mark_reviewed("trj_blocked", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.7)
+
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+
+    assert export_path is not None
+    lines = [line for line in Path(export_path).read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["metadata"]["trajectory_id"] == "trj_accept"
+
+
+def test_export_returns_none_when_min_records_not_met(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_pending"), tenant_id="system")
+
+    assert store.export_sft_messages(tenant_id="system", min_records=1) is None
+
+
+def test_export_download_path_requires_safe_metadata_filename(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+
+    with pytest.raises(ValueError):
+        store.get_sft_export_path("../secret.jsonl", tenant_id="system")
+    with pytest.raises(ValueError):
+        store.get_reviewed_sft_export_path("../secret.jsonl", tenant_id="system")
+
+    assert store.get_sft_export_path("sft_policy_planning_brief_20260507T000000.jsonl", tenant_id="system") is None
+    assert store.get_reviewed_sft_export_path("sft_policy_planning_brief_20260507T000000.jsonl", tenant_id="system") is None

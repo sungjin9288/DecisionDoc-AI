@@ -1,0 +1,147 @@
+{
+  "report_type": "document_ops_phase21_manual_reviewer_signoff_record_template",
+  "status": "template_only_no_actual_signoff",
+  "created_at": "2026-05-07T23:59:59+09:00",
+  "scope": "Manual reviewer sign-off record format for the Phase 20 DocumentOps governance handoff",
+  "source_handoff": {
+    "index_path": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/RELEASE_HANDOFF_INDEX.md",
+    "manifest_path": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json"
+  },
+  "signoff_boundary": {
+    "actual_reviewer_approval_recorded": false,
+    "training_execution_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "model_candidate_emission_authorized": false,
+    "model_promotion_authorized": false
+  },
+  "required_reviewers": [
+    {
+      "order": 1,
+      "reviewer_role": "product_pm_reviewer",
+      "reviewer_name": "",
+      "reviewer_title_or_team": "",
+      "reviewed_at": "",
+      "decision": "pending",
+      "evidence_reviewed": [
+        "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/BROWSER_QA_REPORT.md",
+        "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/browser_qa_result.json"
+      ],
+      "notes": "",
+      "required_acknowledgements": {
+        "reviewed_phase20_handoff_for_role": false,
+        "does_not_authorize_model_training": false,
+        "does_not_authorize_dataset_upload": false,
+        "does_not_authorize_provider_fine_tune_api_calls": false,
+        "does_not_authorize_provider_job_creation_or_polling": false,
+        "does_not_authorize_model_promotion": false,
+        "blocking_issues_recorded_in_notes": false
+      }
+    },
+    {
+      "order": 2,
+      "reviewer_role": "ml_ai_owner",
+      "reviewer_name": "",
+      "reviewer_title_or_team": "",
+      "reviewed_at": "",
+      "decision": "pending",
+      "evidence_reviewed": [
+        "docs/specs/hermes_decisiondoc_agent/TRAINING_AND_DATASET_PLAN.md",
+        "docs/specs/hermes_decisiondoc_agent/IMPLEMENTATION_PLAN.md",
+        "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/browser_qa_result.json"
+      ],
+      "notes": "",
+      "required_acknowledgements": {
+        "reviewed_phase20_handoff_for_role": false,
+        "does_not_authorize_model_training": false,
+        "does_not_authorize_dataset_upload": false,
+        "does_not_authorize_provider_fine_tune_api_calls": false,
+        "does_not_authorize_provider_job_creation_or_polling": false,
+        "does_not_authorize_model_promotion": false,
+        "blocking_issues_recorded_in_notes": false
+      }
+    },
+    {
+      "order": 3,
+      "reviewer_role": "compliance_security_reviewer",
+      "reviewer_name": "",
+      "reviewer_title_or_team": "",
+      "reviewed_at": "",
+      "decision": "pending",
+      "evidence_reviewed": [
+        "docs/specs/hermes_decisiondoc_agent/ARCHITECTURE.md",
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
+        "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/browser_qa_result.json"
+      ],
+      "notes": "",
+      "required_acknowledgements": {
+        "reviewed_phase20_handoff_for_role": false,
+        "does_not_authorize_model_training": false,
+        "does_not_authorize_dataset_upload": false,
+        "does_not_authorize_provider_fine_tune_api_calls": false,
+        "does_not_authorize_provider_job_creation_or_polling": false,
+        "does_not_authorize_model_promotion": false,
+        "blocking_issues_recorded_in_notes": false
+      }
+    },
+    {
+      "order": 4,
+      "reviewer_role": "release_owner",
+      "reviewer_name": "",
+      "reviewer_title_or_team": "",
+      "reviewed_at": "",
+      "decision": "pending",
+      "evidence_reviewed": [
+        "docs/specs/hermes_decisiondoc_agent/STATUS.md",
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/RELEASE_HANDOFF_INDEX.md",
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json"
+      ],
+      "notes": "",
+      "required_acknowledgements": {
+        "reviewed_phase20_handoff_for_role": false,
+        "does_not_authorize_model_training": false,
+        "does_not_authorize_dataset_upload": false,
+        "does_not_authorize_provider_fine_tune_api_calls": false,
+        "does_not_authorize_provider_job_creation_or_polling": false,
+        "does_not_authorize_model_promotion": false,
+        "blocking_issues_recorded_in_notes": false
+      }
+    }
+  ],
+  "completion_rule": {
+    "all_required_reviewers_have_non_empty_name": false,
+    "all_required_reviewers_have_timestamp": false,
+    "all_required_reviewers_decided": false,
+    "all_required_acknowledgements_checked": false,
+    "changes_requested_or_blocked_records_have_notes": false,
+    "manual_signoff_complete": false
+  },
+  "local_validation": {
+    "validator_path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py",
+    "example_command": "python docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py path/to/completed_signoff_record.json",
+    "pending_template_expected_to_pass": false
+  },
+  "pending_record_generation": {
+    "generator_path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py",
+    "example_command": "python docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py --output-dir path/to/signoff_records",
+    "generated_record_expected_to_pass_completed_validation": false
+  },
+  "signoff_summary_reporting": {
+    "summary_path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py",
+    "example_command": "python docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py path/to/signoff_records --output path/to/signoff_summary.json",
+    "ops_read_only_endpoint": "GET /api/agent/document-ops/trajectories/reviewer-signoff/summary?limit=50",
+    "tenant_local_record_directory": "data/tenants/{tenant_id}/trajectory_reviewer_signoffs/",
+    "summary_authorizes_training": false,
+    "summary_uploads_datasets": false,
+    "summary_calls_provider_fine_tune_apis": false
+  },
+  "allowed_decisions": [
+    "pending",
+    "sign_off_ready_for_human_review",
+    "changes_requested",
+    "blocked"
+  ],
+  "next_step_after_completed_manual_signoff": "Create a separate execution approval workflow only if reviewers sign off and the provider adapter/security/deployment gates are separately approved."
+}

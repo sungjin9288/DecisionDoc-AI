@@ -1,0 +1,82 @@
+{
+  "checkpoint_summary": {
+    "download_safe_body": {
+      "detail": "Not Found"
+    },
+    "download_with_deployed_ops_key_status_code": 404,
+    "health_status_code": 200,
+    "summary_safe_body": {
+      "detail": "Not Found"
+    },
+    "summary_with_deployed_ops_key_status_code": 404,
+    "summary_without_ops_key_status_code": 401
+  },
+  "credential_findings": {
+    "deployed_ops_key_present": true,
+    "deployed_ops_key_value_recorded": false,
+    "deployed_ops_key_used_in_memory_only": true,
+    "local_probe_key_matches_deployed": false
+  },
+  "guard_flags": {
+    "external_upload_allowed": false,
+    "model_promotion_allowed": false,
+    "provider_api_calls_allowed": false,
+    "provider_job_started": false,
+    "server_side_generated_approval_record": false,
+    "training_execution_allowed": false
+  },
+  "inferred_blocker": {
+    "basis": "Using the deployed ops key changed the reviewer sign-off endpoints from 401 to 404, while remote code search found zero reviewer-signoff/summary route references and the tenant sign-off directory is missing.",
+    "type": "deployed_code_missing_document_ops_reviewer_signoff_routes_and_records"
+  },
+  "next_step": "Create a deployable commit/release for the current DocumentOps route/service/store/UI/evidence changes, deploy it to admin.decisiondoc.kr, import the intended reviewer sign-off records into the production tenant-local directory, then rerun the Phase 36 wrapper with deployed ops key and actual record ids.",
+  "phase": 39,
+  "readiness": {
+    "deployed_health_reachable": true,
+    "deployed_ops_key_runtime_valid": true,
+    "document_ops_reviewer_signoff_route_deployed": false,
+    "expected_record_ids_available": false,
+    "external_dataset_upload_authorized": false,
+    "model_promotion_authorized": false,
+    "observed_staging_evidence_archived": false,
+    "observed_staging_probe_completed": false,
+    "production_smoke_completed": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "signoff_storage_present": false,
+    "training_authorized": false
+  },
+  "remote_runtime": {
+    "document_ops_route_ref_files": 0,
+    "host": "ip-10-20-3-177",
+    "public_ip": "13.209.238.126",
+    "remote_branch": "HEAD",
+    "remote_commit": "011aec5",
+    "remote_status_count": 5,
+    "signoff_dir_present": false
+  },
+  "report_type": "document_ops_phase39_remote_runtime_gap_evidence",
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_workflow": false,
+    "code_deployed": false,
+    "external_dataset_uploaded": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "server_side_export_artifact_written": false,
+    "server_side_generated_approval_record": false,
+    "signoff_record_imported": false,
+    "training_execution_started": false
+  },
+  "status": "remote_runtime_gap_identified_no_training_authorization",
+  "target": {
+    "base_url": "https://admin.decisiondoc.kr",
+    "expected_record_ids": [
+      "dsr_phase32done",
+      "dsr_phase32pending"
+    ],
+    "tenant_id": "system"
+  }
+}

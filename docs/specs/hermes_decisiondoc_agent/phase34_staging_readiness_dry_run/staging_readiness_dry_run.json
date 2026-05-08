@@ -1,0 +1,111 @@
+{
+  "report_type": "document_ops_phase34_staging_readiness_dry_run",
+  "phase": 34,
+  "status": "staging_readiness_probe_ready_no_training_authorization",
+  "created_at": "2026-05-08T20:14:50+09:00",
+  "purpose": "Provide a read-only staging/deployed environment probe for DocumentOps reviewer sign-off readiness without training, upload, generated approval, provider job, or model promotion side effects.",
+  "probe_script": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py",
+  "source_packet": "docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/release_packet_summary.json",
+  "environment_probe_status": {
+    "real_staging_probe_completed": false,
+    "production_smoke_completed": false,
+    "reason": "No staging/deployed ops key and expected imported sign-off record ids were provided in this implementation turn."
+  },
+  "read_only_probe_requests": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "auth": "none",
+      "expected_status": 200,
+      "side_effect": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/document-ops/trajectories/reviewer-signoff/summary?limit=50",
+      "auth": "none",
+      "expected_status": [
+        401,
+        403
+      ],
+      "side_effect": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/document-ops/trajectories/reviewer-signoff/summary?limit=50",
+      "auth": "X-DecisionDoc-Ops-Key",
+      "expected_status": 200,
+      "expected_report_type": "document_ops_phase25_signoff_summary_endpoint",
+      "side_effect": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/document-ops/trajectories/reviewer-signoff/summary/download?limit=50",
+      "auth": "X-DecisionDoc-Ops-Key",
+      "expected_status": 200,
+      "expected_report_type": "document_ops_phase27_reviewer_signoff_summary_export",
+      "expected_server_file_written": false,
+      "side_effect": false
+    }
+  ],
+  "pass_criteria": {
+    "health_200": true,
+    "ops_key_required": true,
+    "summary_report_type_matches": true,
+    "download_report_type_matches": true,
+    "expected_imported_record_ids_visible_in_summary": true,
+    "expected_imported_record_ids_visible_in_download": true,
+    "download_server_file_written_false": true,
+    "summary_guard_flags_false": true,
+    "download_guard_flags_false": true,
+    "summary_side_effect_boundary_false": true,
+    "download_side_effect_boundary_false": true
+  },
+  "probe_result_requirements": {
+    "report_type": "document_ops_phase34_staging_readiness_probe_result",
+    "pass_status_required_for_phase35": "pass",
+    "training_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "model_promotion_authorized": false,
+    "production_smoke_completed": false
+  },
+  "operator_command_template": [
+    "python docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py \\",
+    "  --base-url https://admin.decisiondoc.kr \\",
+    "  --ops-key \"$DECISIONDOC_OPS_KEY\" \\",
+    "  --tenant-id system \\",
+    "  --expect-record-id <completed_signoff_record_id> \\",
+    "  --expect-record-id <pending_signoff_record_id> \\",
+    "  --output reports/phase34-staging-readiness.json"
+  ],
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "server_generated_approval_allowed": false,
+    "server_side_export_artifact_write_allowed": false,
+    "provider_job_started": false,
+    "model_candidate_emitted": false,
+    "model_promotion_allowed": false
+  },
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_phase34": false,
+    "model_training_started": false,
+    "external_dataset_uploaded": false,
+    "server_side_generated_approval_record": false,
+    "server_side_export_artifact_written": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false
+  },
+  "verification_references": [
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/staging_readiness_dry_run.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase34_staging_readiness_dry_run_probe_contract_and_fixture_pass --tb=short"
+  ],
+  "recommended_decision": "ready_for_operator_staging_probe_execution_no_training_authorization",
+  "next_step": "Run the Phase 34 probe against the intended staging or deployed environment with real ops key and expected imported sign-off record ids, then archive the resulting JSON as Phase 35 observed staging evidence."
+}

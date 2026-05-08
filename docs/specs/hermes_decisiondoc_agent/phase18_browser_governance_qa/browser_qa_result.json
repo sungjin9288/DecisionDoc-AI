@@ -1,0 +1,69 @@
+{
+  "report_type": "document_ops_phase18_browser_governance_qa",
+  "result": "pass",
+  "checked_at": "2026-05-07T23:45:58+09:00",
+  "browser_url": "http://127.0.0.1:8767/?ops=1&phase18=1778150148160",
+  "environment": {
+    "server": "local_uvicorn",
+    "provider": "mock",
+    "storage": "local_temp_data_dir",
+    "browser_surface": "codex_in_app_browser_iab"
+  },
+  "seed": {
+    "trajectory_id": "trj_7bf3cf6707944c84b73ae57776218a70",
+    "export_filename": "sft_decision_brief_20260507T144245.jsonl",
+    "freeze_manifest_id": "dsf_2d63dbe7b3ce4e77997bde2e03e93922",
+    "approval_id": "tap_be35e98c7b28452b8e42e375920d020a",
+    "request_id": "ter_5f4b873ef1944727adf85fb534297de6",
+    "audit_id": "tea_8bb3e5e7ceab42758c06942c4ad57294",
+    "review_status": "accepted",
+    "preview_would_export": true,
+    "quality_ready_for_training": true,
+    "ready_for_training_execution": true,
+    "governance_status": "governance_ready_for_human_review",
+    "rehearsal_status": "rehearsal_ready"
+  },
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "provider_job_started": false,
+    "model_promotion_allowed": false
+  },
+  "counts": {
+    "reviewed_sft_exports": 1,
+    "dataset_freezes": 1,
+    "dry_run_training_approvals": 1,
+    "training_execution_requests": 1,
+    "pre_execution_audit_exports": 1
+  },
+  "ui_checks": {
+    "document_ops_tab_selected": true,
+    "reviewed_jsonl_artifact_visible": true,
+    "readiness_ready": true,
+    "plan_preview_ready": true,
+    "audit_checklist_ready": true,
+    "audit_artifact_visible": true,
+    "governance_ready": true,
+    "no_side_effect_guard_visible": true,
+    "adapter_stub_safe": true,
+    "rehearsal_ready": true,
+    "no_training_copy_visible": true
+  },
+  "panel_actions": [
+    {"button": "Reviewed JSONL", "rendered": true},
+    {"button": "Readiness", "rendered": true},
+    {"button": "Plan preview", "rendered": true},
+    {"button": "Audit checklist", "rendered": true},
+    {"button": "Governance", "rendered": true},
+    {"button": "Adapter", "rendered": true},
+    {"button": "Rehearsal", "rendered": true}
+  ],
+  "side_effect_boundary": {
+    "model_training_started": false,
+    "external_dataset_uploaded": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "model_promoted": false
+  }
+}
