@@ -1422,6 +1422,17 @@ def test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs(tmp
         ),
         encoding="utf-8",
     )
+    clean_env = os.environ.copy()
+    for key in (
+        "DECISIONDOC_OPS_KEY",
+        "PHASE36_BASE_URL",
+        "PHASE35_BASE_URL",
+        "SMOKE_BASE_URL",
+        "PHASE36_EXPECT_RECORD_IDS",
+        "PHASE34_EXPECT_RECORD_IDS",
+        "PHASE36_TENANT_ID",
+    ):
+        clean_env.pop(key, None)
     ready = subprocess.run(
         [
             "python",
@@ -1433,6 +1444,7 @@ def test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs(tmp
         check=False,
         text=True,
         capture_output=True,
+        env=clean_env,
     )
     ready_body = json.loads(ready.stdout)
     missing = subprocess.run(
@@ -1444,6 +1456,7 @@ def test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs(tmp
         check=False,
         text=True,
         capture_output=True,
+        env=clean_env,
     )
     missing_body = json.loads(missing.stdout)
 
