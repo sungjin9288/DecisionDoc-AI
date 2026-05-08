@@ -185,6 +185,69 @@ class MockProvider(Provider):
                 "confidence": 0.85,
             }, ensure_ascii=False)
 
+        if "DecisionDoc DocumentOps Agent" in prompt:
+            payload = _extract_document_ops_payload(prompt)
+            task_type = str(payload.get("task_type") or "")
+            requirements = payload.get("requirements") if isinstance(payload.get("requirements"), dict) else {}
+            source_references = payload.get("source_references") if isinstance(payload.get("source_references"), list) else []
+            title = str(requirements.get("title") or "DecisionDoc 문서")
+            goal = str(
+                requirements.get("goal")
+                or requirements.get("decision_needed")
+                or requirements.get("objective")
+                or "검토 가능한 실행 방향 수립"
+            )
+            source_labels = [
+                str(item.get("id") or item.get("title") or item.get("path"))
+                for item in source_references
+                if isinstance(item, dict) and (item.get("id") or item.get("title") or item.get("path"))
+            ]
+            gaps = [] if source_labels else ["공식 근거 또는 기준 문서 확인 필요"]
+            if task_type == "evidence_gap_review":
+                draft = (
+                    f"# {title}\n\n"
+                    "## 근거 점검 결과\n"
+                    "- confirmed: 현재 입력에서 공식 근거로 확정 가능한 항목은 제한적입니다.\n"
+                    "- assumed: 사용자 초안의 방향성은 검토 대상으로 유지합니다.\n"
+                    "- TODO: 수치, KPI, 일정, 기관명은 제출 전 출처 확인이 필요합니다.\n"
+                    "\n## 공유 판단\n근거가 확인되지 않은 항목은 단정 표현을 피하고 TODO로 분리합니다."
+                )
+            elif task_type == "decision_brief":
+                draft = (
+                    f"# {title}\n\n"
+                    f"## 결정 필요\n{goal}\n\n"
+                    "## 권고\n확인된 근거와 남은 TODO를 분리한 뒤 승인자가 선택할 수 있는 실행안을 제시합니다.\n\n"
+                    "## 리스크\n공식 근거가 없는 수치나 성과 주장은 제출 문서에서 단정하지 않습니다."
+                )
+            else:
+                draft = (
+                    f"# {title}\n\n"
+                    f"## 핵심 판단\n{goal}을 달성하기 위해 문제, 근거, 실행 경로, 운영 책임을 분리합니다.\n\n"
+                    "## 정책 기획 방향\n"
+                    "- 문제와 반복 원인을 먼저 정의합니다.\n"
+                    "- 기존 인프라와 운영 절차를 활용하는 실행 경로를 제시합니다.\n"
+                    "- 개인정보, 보안, 로그관리, 운영책임, 변경관리를 검토합니다."
+                )
+            return _json.dumps({
+                "plan": [
+                    "요구사항과 승인 질문을 분리합니다.",
+                    "확인된 근거, 가정, TODO를 구분합니다.",
+                    "정책 논리와 운영 절차를 연결해 공유 가능한 초안을 작성합니다.",
+                ],
+                "draft": draft,
+                "evidence_status": {
+                    "confirmed": source_labels,
+                    "assumptions": ["입력된 요구사항은 검토 초안 기준으로 유효하다고 가정"],
+                    "gaps": gaps,
+                    "source_references": source_labels,
+                },
+                "qa": {
+                    "hard_gate_pass": not gaps,
+                    "warnings": gaps,
+                    "mock_provider": True,
+                },
+            }, ensure_ascii=False)
+
         if "report workflow planner" in prompt.lower():
             return _json.dumps({
                 "objective": "보고서 목적과 승인 흐름을 한눈에 이해할 수 있게 구성합니다.",
@@ -297,6 +360,20 @@ class MockProvider(Provider):
             "revised_prompt": prompt,
             "model": "mock-image",
         }
+
+
+def _extract_document_ops_payload(prompt: str) -> dict[str, Any]:
+    marker = "Task payload JSON:"
+    if marker not in prompt:
+        return {}
+    raw = prompt.split(marker, 1)[1].strip()
+    try:
+        import json as _json
+
+        data = _json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 # ===========================================================================

@@ -37,6 +37,7 @@ from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.report_workflow_store import ReportWorkflowStore
+from app.storage.trajectory_store import TrajectoryStore
 from app.storage.feedback_store import FeedbackStore
 from app.storage.prompt_override_store import PromptOverrideStore
 from app.storage.state_backend import get_state_backend
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
     project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
     report_workflow_store = ReportWorkflowStore(base_dir=str(data_dir), backend=state_backend)
+    trajectory_store = TrajectoryStore(data_dir)
     meeting_recording_store = MeetingRecordingStore(base_dir=str(data_dir), backend=state_backend)
     voice_brief_base_url = get_voice_brief_api_base_url()
     voice_brief_import_service = (
@@ -164,6 +166,12 @@ def create_app() -> FastAPI:
         approval_store=approval_store,
         project_store=project_store,
         data_dir=str(data_dir),
+    )
+    from app.agents.document_ops_agent import DocumentOpsAgent
+    from app.services.document_ops_service import DocumentOpsService
+    document_ops_service = DocumentOpsService(
+        agent=DocumentOpsAgent(),
+        trajectory_store=trajectory_store,
     )
 
     @asynccontextmanager
@@ -219,6 +227,8 @@ def create_app() -> FastAPI:
     app.state.approval_store = approval_store
     app.state.report_workflow_store = report_workflow_store
     app.state.report_workflow_service = report_workflow_service
+    app.state.trajectory_store = trajectory_store
+    app.state.document_ops_service = document_ops_service
     app.state.procurement_store = procurement_store
     app.state.decision_council_store = decision_council_store
     app.state.decision_council_service = decision_council_service
@@ -259,6 +269,7 @@ def create_app() -> FastAPI:
     from app.routers.local_llm import router as local_llm_router
     from app.routers.g2b import router as g2b_router
     from app.routers.report_workflows import router as report_workflows_router
+    from app.routers.document_ops_agent import router as document_ops_agent_router
 
     app.include_router(auth_router)
     app.include_router(approvals_router)
@@ -277,6 +288,7 @@ def create_app() -> FastAPI:
     app.include_router(local_llm_router)
     app.include_router(g2b_router)
     app.include_router(report_workflows_router)
+    app.include_router(document_ops_agent_router)
     from app.routers.generate import router as generate_router
     from app.routers.health import router as health_router
     from app.routers.templates import router as templates_router

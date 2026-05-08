@@ -1,0 +1,110 @@
+{
+  "report_type": "document_ops_phase36_observed_probe_execution_workflow",
+  "phase": 36,
+  "status": "observed_probe_execution_workflow_ready_no_training_authorization",
+  "created_at": "2026-05-09T01:14:23+09:00",
+  "purpose": "Provide a one-shot operator workflow that validates runtime inputs, runs the Phase 34 read-only probe, and archives a passing result with the Phase 35 helper.",
+  "workflow_script": "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py",
+  "source_probe_script": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py",
+  "source_archive_helper": "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py",
+  "environment_probe_status": {
+    "process_ops_key_available": false,
+    "env_file_ops_key_available": true,
+    "base_url_available": false,
+    "expected_record_ids_available": false,
+    "real_staging_probe_completed": false,
+    "observed_staging_evidence_archived": false,
+    "production_smoke_completed": false,
+    "blocker": "Base URL and expected imported sign-off record ids are still required before a real observed probe can be run."
+  },
+  "runtime_input_sources": [
+    "--base-url",
+    "PHASE36_BASE_URL",
+    "PHASE35_BASE_URL",
+    "SMOKE_BASE_URL",
+    "--ops-key",
+    "DECISIONDOC_OPS_KEY",
+    "--tenant-id",
+    "PHASE36_TENANT_ID",
+    "--expect-record-id",
+    "PHASE36_EXPECT_RECORD_IDS",
+    "PHASE34_EXPECT_RECORD_IDS",
+    "--env-file"
+  ],
+  "required_runtime_inputs": {
+    "base_url": true,
+    "ops_key": true,
+    "tenant_id": true,
+    "expected_record_ids": true
+  },
+  "output_artifacts": [
+    "reports/phase36-observed-probe/phase34-staging-readiness.json",
+    "reports/phase36-observed-probe/phase35-observed-staging-probe-evidence.json",
+    "reports/phase36-observed-probe/phase36-observed-probe-workflow-result.json"
+  ],
+  "operator_command_template": [
+    "python docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py \\",
+    "  --env-file .github-actions.env \\",
+    "  --base-url https://admin.decisiondoc.kr \\",
+    "  --expect-record-id <completed_signoff_record_id> \\",
+    "  --expect-record-id <pending_signoff_record_id> \\",
+    "  --output-dir reports/phase36-observed-probe"
+  ],
+  "dry_run_command_template": [
+    "python docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py \\",
+    "  --env-file .github-actions.env \\",
+    "  --base-url https://admin.decisiondoc.kr \\",
+    "  --expect-record-id <completed_signoff_record_id> \\",
+    "  --expect-record-id <pending_signoff_record_id> \\",
+    "  --dry-run"
+  ],
+  "pass_criteria": {
+    "preflight_status_ready": true,
+    "phase34_probe_status_pass": true,
+    "phase35_archive_status_observed_staging_probe_archived": true,
+    "ops_key_not_printed": true,
+    "expected_record_ids_required": true,
+    "local_probe_result_written": true,
+    "local_archive_written": true
+  },
+  "readiness": {
+    "workflow_ready": true,
+    "observed_staging_probe_completed": false,
+    "observed_staging_evidence_archived": false,
+    "production_smoke_completed": false,
+    "training_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "model_promotion_authorized": false
+  },
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "server_generated_approval_allowed": false,
+    "server_side_export_artifact_write_allowed": false,
+    "provider_job_started": false,
+    "model_candidate_emitted": false,
+    "model_promotion_allowed": false
+  },
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_phase36": false,
+    "model_training_started": false,
+    "external_dataset_uploaded": false,
+    "server_side_generated_approval_record": false,
+    "server_side_export_artifact_written": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false
+  },
+  "verification_references": [
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/observed_probe_execution_workflow.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs --tb=short"
+  ],
+  "recommended_decision": "ready_for_operator_observed_probe_execution_when_runtime_inputs_available_no_training_authorization",
+  "next_step": "Run the Phase 36 wrapper with real base URL, ops key, tenant id, and expected imported sign-off record ids, then review the archived evidence before any separate production smoke."
+}

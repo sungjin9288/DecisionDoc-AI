@@ -4601,6 +4601,7 @@
   <button class="page-tab" data-page="approval" role="tab" aria-selected="false" onclick="switchPage('approval')">📋 결재함</button>
   <button class="page-tab" data-page="project-page" role="tab" aria-selected="false" onclick="switchPage('project-page')">📁 프로젝트</button>
   <button class="page-tab" data-page="report-workflow-page" role="tab" aria-selected="false" onclick="switchPage('report-workflow-page')">🧭 보고서 워크플로우</button>
+  <button class="page-tab" data-page="document-ops-page" role="tab" aria-selected="false" onclick="switchPage('document-ops-page')">🧠 DocumentOps</button>
   <button class="page-tab" data-page="knowledge-page" role="tab" aria-selected="false" onclick="switchPage('knowledge-page')">📚 지식 관리</button>
   <button class="page-tab" id="locations-tab" data-page="locations-page" role="tab" aria-selected="false" onclick="switchPage('locations-page')" style="display:none">🏢 거점 관리</button>
 </nav>
@@ -5569,6 +5570,84 @@
   </div>
 </section>
 
+<!-- ── DocumentOps Agent ─────────────────────────────────────────────── -->
+<section id="document-ops-page" style="display:none; max-width:1120px; margin:0 auto; padding:1.5rem 1rem;" aria-label="DocumentOps Agent">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+    <div>
+      <div style="font-size:.78rem;font-weight:800;color:var(--p1);letter-spacing:.08em;text-transform:uppercase;">Hermes-inspired DocumentOps</div>
+      <h2 style="font-size:1.45rem;font-weight:900;margin:.2rem 0;">🧠 AI 기획·근거 검수 Agent</h2>
+      <p style="margin:0;color:var(--muted);font-size:.9rem;">기획안, 근거 gap, 최종 승인 브리프를 생성하고 QA gate와 trajectory 리뷰를 관리합니다.</p>
+    </div>
+    <div style="display:flex;gap:.45rem;flex-wrap:wrap;">
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrajectories()">🔄 리뷰 목록</button>
+      <button type="button" class="action-btn" onclick="previewDocumentOpsExport()">🔎 Export preview</button>
+      <button type="button" class="action-btn" onclick="exportDocumentOpsTrajectories()">📦 SFT export</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsExports()">📥 Reviewed JSONL</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrainingReadiness()">🧭 Readiness</button>
+      <button type="button" class="action-btn" onclick="previewDocumentOpsTrainingPlan()">🧩 Plan preview</button>
+      <button type="button" class="action-btn" onclick="requestDocumentOpsTrainingExecution()">📝 Request record</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrainingAuditChecklist()">🧾 Audit checklist</button>
+      <button type="button" class="action-btn" onclick="exportDocumentOpsTrainingAudit()">📤 Audit export</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrainingGovernanceSummary()">📊 Governance</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsReviewerSignoffSummary()">✅ Sign-off summary</button>
+      <button type="button" class="action-btn" onclick="downloadDocumentOpsReviewerSignoffSummary()">⬇️ Sign-off JSON</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrainingAdapterContract()">🔌 Adapter</button>
+      <button type="button" class="action-btn" onclick="loadDocumentOpsTrainingRehearsal()">🧪 Rehearsal</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.25fr);gap:1rem;align-items:start;">
+    <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;">
+      <h3 style="margin:0 0 .75rem;font-size:1rem;font-weight:850;">Agent 실행</h3>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">작업 유형</label>
+      <select id="docops-task-type" class="gov-input" style="width:100%;">
+        <option value="policy_planning_brief">기획안 생성 · policy_planning_brief</option>
+        <option value="evidence_gap_review">근거 gap 검수 · evidence_gap_review</option>
+        <option value="decision_brief">최종 승인 브리프 · decision_brief</option>
+      </select>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">스킬 override</label>
+      <select id="docops-skill-name" class="gov-input" style="width:100%;">
+        <option value="">작업 유형에 맞춰 자동 선택</option>
+        <option value="policy-planning">policy-planning</option>
+        <option value="evidence-gap-checker">evidence-gap-checker</option>
+        <option value="decision-brief-builder">decision-brief-builder</option>
+      </select>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">제목</label>
+      <input id="docops-title" class="gov-input" placeholder="예: AI 교차로 안전 시스템 기획" style="width:100%;">
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">목표 / 승인 질문</label>
+      <textarea id="docops-goal" class="gov-input" rows="3" placeholder="PM/대표가 승인해야 하는 결정 질문과 목표를 입력" style="width:100%;resize:vertical;"></textarea>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source summary</label>
+      <textarea id="docops-source-summaries" class="gov-input" rows="4" placeholder="한 줄에 하나씩 입력. 확인된 자료 요약만 넣으세요." style="width:100%;resize:vertical;"></textarea>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source references</label>
+      <textarea id="docops-source-refs" class="gov-input" rows="3" placeholder="예: accident-report&#10;rfp-v2&#10;meeting-note-0418" style="width:100%;resize:vertical;"></textarea>
+      <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--muted);margin:.8rem 0;">
+        <input id="docops-capture-trajectory" type="checkbox" checked>
+        trajectory 저장 후 리뷰/학습 후보로 관리
+      </label>
+      <button type="button" class="action-btn" onclick="runDocumentOpsAgent()" style="width:100%;background:var(--p1);color:#fff;border-color:transparent;">🧠 Agent 실행</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div id="document-ops-stats" style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.86rem;">trajectory stats를 불러오세요.</div>
+      <div id="document-ops-export-preview" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-export-list" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-readiness" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-plan-preview" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-execution-requests" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-audit-checklist" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-governance-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-reviewer-signoff-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-download-fallback" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-adapter-contract" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-training-rehearsal" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-result" style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;min-height:220px;">
+        <div style="text-align:center;color:var(--muted);padding:3rem 1rem;">Agent를 실행하면 plan, draft, QA gate 결과가 표시됩니다.</div>
+      </div>
+      <div id="document-ops-trajectories" style="display:flex;flex-direction:column;gap:.7rem;"></div>
+    </div>
+  </div>
+</section>
+
 <!-- ── 결재함 ────────────────────────────────────────────────────── -->
 <section id="approval-page" style="display:none; max-width:900px; margin:0 auto; padding:1.5rem 1rem;" aria-label="결재함">
   <h2 style="font-size:1.25rem; font-weight:800; margin-bottom:1rem;">📋 결재함</h2>
@@ -6290,6 +6369,7 @@
     const approvalPage = $id('approval-page');
     const projectPage = $id('project-page');
     const reportWorkflowPage = $id('report-workflow-page');
+    const documentOpsPage = $id('document-ops-page');
     const stylePage = $id('style-page');
     const knowledgePage = $id('knowledge-page');
     const locationsPage = $id('locations-page');
@@ -6299,6 +6379,7 @@
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6310,6 +6391,7 @@
       if (approvalPage) approvalPage.style.display = 'block';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6320,6 +6402,7 @@
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'block';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6331,16 +6414,29 @@
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'block';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
       loadReportWorkflows();
+    } else if (page === 'document-ops-page') {
+      if (main) main.style.display = 'none';
+      if (perfDash) perfDash.style.display = 'none';
+      if (approvalPage) approvalPage.style.display = 'none';
+      if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'block';
+      if (stylePage) stylePage.style.display = 'none';
+      if (knowledgePage) knowledgePage.style.display = 'none';
+      if (locationsPage) locationsPage.style.display = 'none';
+      loadDocumentOpsTrajectories();
     } else if (page === 'knowledge-page') {
       if (main) main.style.display = 'none';
       if (perfDash) perfDash.style.display = 'none';
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'block';
       if (locationsPage) locationsPage.style.display = 'none';
@@ -6351,6 +6447,7 @@
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'block';
@@ -6362,11 +6459,1047 @@
       if (approvalPage) approvalPage.style.display = 'none';
       if (projectPage) projectPage.style.display = 'none';
       if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
     }
   };
+
+  /* ── DocumentOps Agent UI ─────────────────────────────────────── */
+  let _documentOpsLastResult = null;
+
+  function documentOpsLines(value) {
+    return String(value || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+  }
+
+  function documentOpsSourceRefs(value) {
+    return documentOpsLines(value).map(ref => ({ id: ref, title: ref }));
+  }
+
+  function documentOpsTaskSkill(taskType) {
+    if (taskType === 'evidence_gap_review') return 'evidence-gap-checker';
+    if (taskType === 'decision_brief') return 'decision-brief-builder';
+    return 'policy-planning';
+  }
+
+  async function runDocumentOpsAgent() {
+    const taskType = ($id('docops-task-type')?.value || 'policy_planning_brief').trim();
+    const title = ($id('docops-title')?.value || '').trim();
+    const goal = ($id('docops-goal')?.value || '').trim();
+    if (!title) {
+      showNotification('DocumentOps 제목을 입력해주세요.', 'warn');
+      return;
+    }
+    const skillName = ($id('docops-skill-name')?.value || '').trim();
+    const resultEl = $id('document-ops-result');
+    if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);font-size:.86rem;">Agent 실행 중...</div>';
+    const payload = {
+      task_type: taskType,
+      requirements: {
+        title,
+        goal,
+        decision_needed: taskType === 'decision_brief' ? goal : '',
+      },
+      source_summaries: documentOpsLines($id('docops-source-summaries')?.value || ''),
+      source_references: documentOpsSourceRefs($id('docops-source-refs')?.value || ''),
+      skill_name: skillName || null,
+      capture_trajectory: !!$id('docops-capture-trajectory')?.checked,
+    };
+    try {
+      const res = await fetch('/api/agent/document-ops/run', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      _documentOpsLastResult = data;
+      renderDocumentOpsResult(data);
+      await loadDocumentOpsTrajectories();
+      showNotification(data.trajectory_saved ? 'DocumentOps 결과와 trajectory를 저장했습니다.' : 'DocumentOps 결과를 생성했습니다.', 'success');
+    } catch (err) {
+      if (resultEl) resultEl.innerHTML = `<div style="color:#ef4444;">Agent 실행 실패: ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('DocumentOps 실행 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsResult(data) {
+    const el = $id('document-ops-result');
+    if (!el) return;
+    const qa = data?.qa || {};
+    const issues = Array.isArray(qa.gate_issues) ? qa.gate_issues : [];
+    const warnings = Array.isArray(data?.quality_warnings) ? data.quality_warnings : [];
+    const scores = qa.scores || {};
+    const hardPass = !!qa.hard_gate_pass;
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.8rem;">
+        <div>
+          <h3 style="margin:0;font-size:1.05rem;font-weight:900;">${escapeHtml(data?.skill_name || 'DocumentOps')}</h3>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem;">task=${escapeHtml(data?.task_type || '')} · provider=${escapeHtml(data?.provider_name || '')}</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${hardPass ? '#dcfce7' : '#fee2e2'};color:${hardPass ? '#15803d' : '#b91c1c'};">${hardPass ? 'QA PASS' : 'QA BLOCKED'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${Object.entries(scores).map(([key, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(key)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${Number(value || 0).toFixed(2)}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.75rem;background:rgba(255,255,255,.5);margin-bottom:.7rem;">
+        <div style="font-size:.78rem;font-weight:850;margin-bottom:.35rem;">실행 계획</div>
+        ${Array.isArray(data?.plan) && data.plan.length ? `<ol style="margin:0;padding-left:1.25rem;color:var(--muted);font-size:.78rem;line-height:1.55;">${data.plan.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : '<div style="color:var(--muted);font-size:.78rem;">plan 없음</div>'}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.75rem;background:#fff;margin-bottom:.7rem;">
+        <div style="font-size:.78rem;font-weight:850;margin-bottom:.35rem;">Draft</div>
+        <pre style="white-space:pre-wrap;font-family:inherit;font-size:.8rem;line-height:1.55;color:#1f2a44;margin:0;">${escapeHtml(data?.draft || '')}</pre>
+      </div>
+      ${renderDocumentOpsEvidence(data?.evidence_status || {})}
+      ${issues.length ? `<div style="border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:.65rem;background:rgba(239,68,68,.06);margin-top:.7rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#b91c1c;">Gate issues</div>
+        <ul style="margin:.35rem 0 0;padding-left:1rem;color:#b91c1c;font-size:.74rem;line-height:1.5;">${issues.map(issue => `<li>${escapeHtml(issue.code || 'issue')} · ${escapeHtml(issue.message || '')}</li>`).join('')}</ul>
+      </div>` : ''}
+      ${warnings.length ? `<div style="font-size:.72rem;color:#92400e;margin-top:.6rem;">Warnings: ${escapeHtml(warnings.join(', '))}</div>` : ''}
+      ${data?.trajectory_id ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.45rem;">trajectory_id=${escapeHtml(data.trajectory_id)} · saved=${data.trajectory_saved ? 'yes' : 'no'}</div>` : ''}
+    `;
+  }
+
+  function renderDocumentOpsEvidence(evidence) {
+    const groups = [
+      ['confirmed', evidence.confirmed || []],
+      ['assumptions', evidence.assumptions || []],
+      ['gaps', evidence.gaps || []],
+      ['sources', evidence.source_references || []],
+    ];
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;">
+      ${groups.map(([label, values]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.55rem;background:rgba(255,255,255,.48);">
+        <div style="font-size:.72rem;font-weight:850;color:#1f2a44;margin-bottom:.3rem;">${escapeHtml(label)}</div>
+        ${Array.isArray(values) && values.length ? `<ul style="margin:0;padding-left:1rem;color:var(--muted);font-size:.72rem;line-height:1.45;">${values.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>` : '<div style="font-size:.72rem;color:var(--muted);">없음</div>'}
+      </div>`).join('')}
+    </div>`;
+  }
+
+  async function loadDocumentOpsTrajectories() {
+    await Promise.all([loadDocumentOpsStats(), loadDocumentOpsTrajectoryList()]);
+  }
+
+  async function loadDocumentOpsStats() {
+    const el = $id('document-ops-stats');
+    if (!el) return;
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/stats', { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const stats = await res.json();
+      el.innerHTML = `<div style="display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;">
+        <strong style="font-size:.85rem;">Trajectory Stats</strong>
+        <span>total ${Number(stats.total_records || 0)}</span>
+        <span>accepted ${Number(stats.accepted_records || 0)}</span>
+        <span>pending ${Number(stats.pending_records || 0)}</span>
+        <span>exports ${Number(stats.export_count || 0)}</span>
+      </div>`;
+    } catch (err) {
+      el.innerHTML = `<span style="color:#ef4444;">stats 로드 실패: ${escapeHtml(err.message || String(err))}</span>`;
+    }
+  }
+
+  async function loadDocumentOpsTrajectoryList() {
+    const el = $id('document-ops-trajectories');
+    if (!el) return;
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">trajectory 목록 로드 중...</div>';
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories?limit=20', { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const items = Array.isArray(data.trajectories) ? data.trajectories : [];
+      if (!items.length) {
+        el.innerHTML = '<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">저장된 trajectory가 없습니다.</div>';
+        return;
+      }
+      el.innerHTML = items.slice().reverse().map(renderDocumentOpsTrajectoryCard).join('');
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;font-size:.84rem;">trajectory 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  function renderDocumentOpsTrajectoryCard(item) {
+    const feedback = item.human_feedback || {};
+    const status = item.human_review_status || 'pending';
+    const accepted = status === 'accepted' || feedback.accepted === true;
+    const rejected = status === 'rejected';
+    const qa = item.qa || {};
+    const title = item.input?.requirements?.title || item.task_type || 'trajectory';
+    return `<div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:16px;padding:.85rem;">
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:.9rem;">${escapeHtml(title)}</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">${escapeHtml(item.trajectory_id || '')} · ${escapeHtml(item.task_type || '')} · ${escapeHtml(item.skill?.name || '')}</div>
+        </div>
+        <span style="border-radius:999px;padding:.14rem .5rem;font-size:.68rem;font-weight:850;background:${accepted ? '#dcfce7' : rejected ? '#fee2e2' : '#fef3c7'};color:${accepted ? '#15803d' : rejected ? '#b91c1c' : '#92400e'};">${escapeHtml(status)}</span>
+      </div>
+      <div style="font-size:.75rem;color:var(--muted);line-height:1.45;margin-top:.5rem;">${escapeHtml(String(item.draft_output || '').slice(0, 220))}</div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:.35rem;">QA ${qa.hard_gate_pass ? 'PASS' : 'BLOCK'} · score ${Number(qa.overall_score || 0).toFixed(2)}</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.65rem;">
+        <button class="action-btn" style="font-size:.72rem;padding:.24rem .55rem;" onclick="reviewDocumentOpsTrajectory('${escapeHtml(item.trajectory_id)}', true)" ${accepted ? 'disabled' : ''}>승인</button>
+        <button class="action-btn" style="font-size:.72rem;padding:.24rem .55rem;" onclick="reviewDocumentOpsTrajectory('${escapeHtml(item.trajectory_id)}', false)" ${rejected ? 'disabled' : ''}>반려</button>
+      </div>
+    </div>`;
+  }
+
+  async function reviewDocumentOpsTrajectory(trajectoryId, accepted) {
+    if (!trajectoryId) return;
+    const notes = window.prompt(accepted ? '승인 메모를 입력하세요.' : '반려 사유를 입력하세요.', accepted ? '학습 후보 승인' : '학습 후보 제외');
+    if (notes === null) return;
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/${encodeURIComponent(trajectoryId)}/review`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accepted: !!accepted,
+          reviewer: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          notes,
+          quality_score: accepted ? 0.9 : null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showNotification(accepted ? 'trajectory를 승인했습니다.' : 'trajectory를 반려했습니다.', 'success');
+      await loadDocumentOpsTrajectories();
+    } catch (err) {
+      showNotification('trajectory 리뷰 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function exportDocumentOpsTrajectories() {
+    try {
+      const taskType = ($id('docops-task-type')?.value || '').trim() || null;
+      const res = await fetch('/api/agent/document-ops/trajectories/export', {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_type: taskType, min_records: 1, accepted_only: true, include_metadata: true }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      showNotification(data.exported ? `SFT export 생성: ${data.filename}` : '승인된 trajectory가 부족해 export를 만들지 않았습니다.', data.exported ? 'success' : 'warn');
+      await loadDocumentOpsTrajectories();
+      if (data.exported) await loadDocumentOpsExports();
+    } catch (err) {
+      showNotification('SFT export 실패: ops key 권한이 필요할 수 있습니다. ' + (err.message || err), 'error');
+    }
+  }
+
+  async function loadDocumentOpsExports() {
+    const el = $id('document-ops-export-list');
+    if (!el) return;
+    el.style.display = 'block';
+      el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">reviewed SFT JSONL 목록 로드 중...</div>';
+    try {
+      const taskType = ($id('docops-task-type')?.value || '').trim();
+      const params = new URLSearchParams({ limit: '20' });
+      if (taskType) params.set('task_type', taskType);
+      const res = await fetch(`/api/agent/document-ops/trajectories/reviewed-sft-exports?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      renderDocumentOpsExports(data);
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Export 목록 로드 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Export 목록 로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsExports(data) {
+    const el = $id('document-ops-export-list');
+    if (!el) return;
+    el.style.display = 'block';
+    const exports = Array.isArray(data?.exports) ? data.exports : [];
+    const rows = exports.map(item => {
+      const filename = String(item?.filename || '');
+      const exists = item?.exists !== false;
+      return `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.55);display:flex;justify-content:space-between;gap:.7rem;align-items:center;flex-wrap:wrap;">
+        <div>
+          <strong style="font-size:.8rem;color:#1f2a44;">${escapeHtml(filename)}</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">
+            records=${Number(item?.record_count || 0)} · size=${formatBytes(Number(item?.size_bytes || 0))} · ${escapeHtml(item?.exported_at || '')}
+          </div>
+        </div>
+        <button class="action-btn" style="font-size:.72rem;padding:.3rem .65rem;" onclick="downloadDocumentOpsExport('${escapeHtml(documentOpsJsString(filename))}')" ${exists ? '' : 'disabled'}>다운로드</button>
+      </div>`;
+    }).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.7rem;">
+        <div>
+          <strong style="font-size:.92rem;">Reviewed SFT JSONL Artifacts</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">ops key 필요 · reviewed accepted-only · 최근 20개 · task filter=${escapeHtml(($id('docops-task-type')?.value || 'all'))}</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:#eef2ff;color:#3730a3;">${Number(data?.total || exports.length)} files</span>
+      </div>
+      ${exports.length ? `<div style="display:flex;flex-direction:column;gap:.45rem;">${rows}</div>` : '<div style="font-size:.76rem;color:var(--muted);">아직 생성된 reviewed SFT JSONL artifact가 없습니다.</div>'}
+    `;
+  }
+
+  async function downloadDocumentOpsExport(filename) {
+    if (!filename) return;
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/reviewed-sft-exports/${encodeURIComponent(filename)}/download`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification(`SFT export 다운로드 시작: ${filename}`, 'success');
+    } catch (err) {
+      showNotification('SFT export 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function loadDocumentOpsTrainingReadiness() {
+    const el = $id('document-ops-training-readiness');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training readiness 요약 로드 중...</div>';
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/training-readiness?limit=20', {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingReadiness(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training readiness 로드 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Training readiness 로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingReadiness(data) {
+    const el = $id('document-ops-training-readiness');
+    if (!el) return;
+    el.style.display = 'block';
+    const ready = data?.status === 'ready_for_training_decision';
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const guard = data?.training_guard || {};
+    const quality = data?.latest_export_quality || {};
+    const evalCoverage = data?.eval_plan_coverage || {};
+    const latestEval = evalCoverage?.latest || {};
+    const latestExport = data?.latest_reviewed_export || {};
+    const latestFreeze = data?.latest_dataset_freeze || {};
+    const latestApproval = data?.latest_training_approval || {};
+    const metricCards = [
+      ['reviewed JSONL', data?.reviewed_export_count ?? 0],
+      ['freezes', data?.freeze_count ?? 0],
+      ['dry-run approvals', data?.dry_run_training_approval_count ?? 0],
+      ['schema invalid', quality?.schema_invalid_count ?? 0],
+      ['eval metrics', latestEval?.required_metric_count ?? 0],
+    ];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Readiness Summary</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">read-only · no training · no upload · ops key 필요</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${ready ? '#dcfce7' : '#fee2e2'};color:${ready ? '#15803d' : '#b91c1c'};">${ready ? 'READY FOR DECISION' : 'NEEDS ATTENTION'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${metricCards.map(([label, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${escapeHtml(String(value ?? 0))}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Latest gates</div>
+        <div style="font-size:.73rem;color:var(--muted);margin-top:.25rem;line-height:1.55;">
+          export=${escapeHtml(latestExport?.filename || '-')} · freeze=${escapeHtml(latestFreeze?.manifest_id || '-')} · approval=${escapeHtml(latestApproval?.approval_id || '-')}<br>
+          eval suite=${escapeHtml(latestEval?.suite || '-')} · required metrics=${escapeHtml((latestEval?.required_metric_names || []).join(', ') || '-')}
+        </div>
+      </div>
+      <div style="border:1px solid ${guard?.no_training_started ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${guard?.no_training_started ? 'rgba(34,197,94,.06)' : 'rgba(239,68,68,.06)'};margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:${guard?.no_training_started ? '#15803d' : '#b91c1c'};">Training guard</div>
+        <div style="font-size:.73rem;color:${guard?.no_training_started ? '#15803d' : '#b91c1c'};margin-top:.25rem;">
+          training_started=${Number(guard?.training_started_count || 0)} · provider_jobs=${Number(guard?.provider_job_started_count || 0)} · promotion_allowed=${Number(guard?.model_promotion_allowed_count || 0)} · uploads=${guard?.external_upload_started ? 'detected' : '0'}
+        </div>
+      </div>
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Remaining blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">모든 read-only readiness gate가 충족되었습니다. 학습 실행은 별도 승인 단계입니다.</div>'}
+    `;
+  }
+
+  async function previewDocumentOpsTrainingPlan() {
+    const el = $id('document-ops-training-plan-preview');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training plan preview 생성 중...</div>';
+    try {
+      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-plan/preview?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingPlanPreview(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training plan preview 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Training plan preview 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingPlanPreview(data) {
+    const el = $id('document-ops-training-plan-preview');
+    if (!el) return;
+    el.style.display = 'block';
+    const spec = data?.job_spec || {};
+    const dataset = spec?.dataset || {};
+    const evaluation = spec?.evaluation || {};
+    const params = spec?.training_parameters || {};
+    const steps = Array.isArray(spec?.execution_steps) ? spec.execution_steps : [];
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const blocked = data?.status === 'blocked';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Execution Plan Preview</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">provider-agnostic · dry-run · no provider API calls · no upload</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${blocked ? '#fee2e2' : '#dcfce7'};color:${blocked ? '#b91c1c' : '#15803d'};">${blocked ? 'BLOCKED' : 'PREVIEW READY'}</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Job spec</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.55;margin-top:.25rem;">
+          provider=${escapeHtml(spec?.provider || '-')} · objective=${escapeHtml(spec?.objective || '-')} · base_model=${escapeHtml(spec?.base_model || '-')}<br>
+          export=${escapeHtml(dataset?.export_filename || '-')} · records=${Number(dataset?.record_count || 0)} · freeze=${escapeHtml(dataset?.freeze_manifest_id || '-')}<br>
+          eval suite=${escapeHtml(evaluation?.suite || '-')} · metrics=${escapeHtml(Object.keys(evaluation?.required_metrics || {}).join(', ') || '-')}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.45rem;margin-bottom:.65rem;">
+        ${Object.entries(params).map(([key, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(key)}</div>
+          <div style="font-size:.84rem;font-weight:900;">${escapeHtml(String(value ?? '-'))}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid rgba(99,102,241,.22);border-radius:12px;padding:.65rem;background:rgba(99,102,241,.06);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#3730a3;">Execution steps</div>
+        <div style="font-size:.73rem;color:#3730a3;margin-top:.25rem;">${steps.map(item => `${escapeHtml(item?.step || '')}=${escapeHtml(item?.status || '')}`).join(' · ')}</div>
+      </div>
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Plan blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">dry-run job spec만 생성되었습니다. 학습 실행과 업로드는 별도 승인 전까지 비활성입니다.</div>'}
+    `;
+  }
+
+  async function requestDocumentOpsTrainingExecution() {
+    const requester = window.prompt('Training execution request 기록자 이름을 입력하세요. 학습/업로드는 시작되지 않습니다.');
+    if (!requester || !requester.trim()) return;
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/training-execution-requests', {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requester: requester.trim(),
+          provider: 'provider_agnostic',
+          notes: 'UI record-only request',
+          start_training: false,
+          upload_dataset: false,
+          call_provider_api: false,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      renderDocumentOpsTrainingExecutionRequests({ training_execution_requests: [trainingExecutionRequestSummary(data)], total: 1 });
+      showNotification('Training execution request record를 저장했습니다. 학습/업로드는 시작되지 않았습니다.', 'success');
+    } catch (err) {
+      showNotification('Training execution request 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function loadDocumentOpsTrainingExecutionRequests() {
+    const el = $id('document-ops-training-execution-requests');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training execution request records 로드 중...</div>';
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/training-execution-requests?limit=20', {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingExecutionRequests(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training execution request 목록 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  function trainingExecutionRequestSummary(data) {
+    const plan = data?.plan_preview || {};
+    const dataset = plan?.dataset || {};
+    const gate = data?.request_gate || {};
+    const twoPerson = data?.two_person_guard || {};
+    const guard = data?.execution_guard || {};
+    return {
+      request_id: data?.request_id,
+      manifest_id: dataset?.freeze_manifest_id,
+      provider: plan?.provider,
+      base_model: plan?.base_model,
+      requester: gate?.requester,
+      prior_training_approver: gate?.prior_training_approver,
+      two_person_guard_satisfied: twoPerson?.satisfied,
+      training_execution_allowed: guard?.training_execution_allowed,
+      provider_job_started: guard?.provider_job_started,
+      external_upload_started: guard?.external_upload_started,
+      created_at: data?.created_at,
+      exists: true,
+    };
+  }
+
+  function renderDocumentOpsTrainingExecutionRequests(data) {
+    const el = $id('document-ops-training-execution-requests');
+    if (!el) return;
+    el.style.display = 'block';
+    const items = Array.isArray(data?.training_execution_requests) ? data.training_execution_requests : [];
+    const rows = items.map(item => `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.45rem;">
+      <div style="display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;">
+        <strong style="font-size:.8rem;color:#1f2a44;">${escapeHtml(item?.request_id || '')}</strong>
+        <span style="font-size:.72rem;font-weight:850;color:${item?.two_person_guard_satisfied ? '#15803d' : '#b91c1c'};">two-person=${item?.two_person_guard_satisfied ? 'satisfied' : 'blocked'}</span>
+      </div>
+      <div style="font-size:.73rem;color:var(--muted);line-height:1.5;margin-top:.25rem;">
+        requester=${escapeHtml(item?.requester || '-')} · prior approver=${escapeHtml(item?.prior_training_approver || '-')} · provider=${escapeHtml(item?.provider || '-')} · base=${escapeHtml(item?.base_model || '-')}<br>
+        freeze=${escapeHtml(item?.manifest_id || '-')} · training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'}
+      </div>
+    </div>`).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Execution Request Records</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">record-only · two-person guard · no training · no upload · no provider calls</div>
+        </div>
+        <button class="action-btn" style="font-size:.72rem;padding:.3rem .65rem;" onclick="loadDocumentOpsTrainingExecutionRequests()">새로고침</button>
+      </div>
+      ${items.length ? rows : '<div style="font-size:.76rem;color:var(--muted);">아직 training execution request record가 없습니다.</div>'}
+    `;
+  }
+
+  async function loadDocumentOpsTrainingAuditChecklist() {
+    const el = $id('document-ops-training-audit-checklist');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">pre-execution audit checklist 로드 중...</div>';
+    try {
+      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const [checklistRes, auditsRes] = await Promise.all([
+        fetch(`/api/agent/document-ops/trajectories/training-audit/checklist?${params}`, {
+          headers: getOpsAccessHeaders(),
+        }),
+        fetch('/api/agent/document-ops/trajectories/training-audits?limit=20', {
+          headers: getOpsAccessHeaders(),
+        }),
+      ]);
+      if (!checklistRes.ok) throw new Error(await checklistRes.text());
+      if (!auditsRes.ok) throw new Error(await auditsRes.text());
+      renderDocumentOpsTrainingAuditChecklist(await checklistRes.json(), await auditsRes.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Pre-execution audit checklist 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Pre-execution audit checklist 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function exportDocumentOpsTrainingAudit() {
+    const auditor = window.prompt('Pre-execution audit export 감사자 이름을 입력하세요. 학습/업로드/provider 호출은 시작되지 않습니다.');
+    if (!auditor || !auditor.trim()) return;
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/training-audit/export', {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auditor: auditor.trim(),
+          provider: 'provider_agnostic',
+          notes: 'UI pre-execution audit export',
+          start_training: false,
+          upload_dataset: false,
+          call_provider_api: false,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingAuditExport(await res.json());
+      showNotification('Pre-execution audit export를 저장했습니다. 학습/업로드/provider 호출은 시작되지 않았습니다.', 'success');
+    } catch (err) {
+      showNotification('Pre-execution audit export 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingAuditChecklist(data, auditList) {
+    const el = $id('document-ops-training-audit-checklist');
+    if (!el) return;
+    el.style.display = 'block';
+    const ready = data?.status === 'ready_for_human_pre_execution_review';
+    const checklist = Array.isArray(data?.checklist) ? data.checklist : [];
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const packet = data?.human_review_packet || {};
+    const dataset = packet?.dataset || {};
+    const evaluation = packet?.evaluation || {};
+    const audits = Array.isArray(auditList?.training_pre_execution_audits) ? auditList.training_pre_execution_audits : [];
+    const rows = checklist.map(item => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.52);display:flex;justify-content:space-between;gap:.6rem;align-items:center;margin-bottom:.35rem;">
+      <span style="font-size:.74rem;font-weight:850;color:#1f2a44;">${escapeHtml(item?.id || '')}</span>
+      <span style="font-size:.72rem;font-weight:900;color:${item?.passed ? '#15803d' : '#b91c1c'};">${item?.passed ? 'PASS' : 'BLOCK'}</span>
+    </div>`).join('');
+    const auditRows = audits.map(item => `<div style="border:1px solid var(--border);border-radius:10px;padding:.55rem;background:rgba(255,255,255,.52);margin-top:.45rem;">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;">
+        <strong style="font-size:.76rem;color:#1f2a44;">${escapeHtml(item?.audit_id || '')}</strong>
+        <button class="action-btn" style="font-size:.7rem;padding:.25rem .55rem;" onclick="downloadDocumentOpsTrainingAudit('${escapeHtml(documentOpsJsString(item?.audit_file || ''))}')" ${item?.exists ? '' : 'disabled'}>다운로드</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);line-height:1.45;margin-top:.2rem;">
+        auditor=${escapeHtml(item?.auditor || '-')} · request=${escapeHtml(item?.request_id || '-')} · freeze=${escapeHtml(item?.manifest_id || '-')}<br>
+        training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'}
+      </div>
+    </div>`).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Pre-Execution Audit Checklist</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">human-review packet · no training · no upload · no provider calls</div>
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${ready ? '#dcfce7' : '#fee2e2'};color:${ready ? '#15803d' : '#b91c1c'};">${ready ? 'READY FOR REVIEW' : 'BLOCKED'}</span>
+          <button class="action-btn" style="font-size:.72rem;padding:.3rem .65rem;" onclick="exportDocumentOpsTrainingAudit()">Export audit</button>
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Human review packet</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.55;margin-top:.25rem;">
+          request=${escapeHtml(packet?.latest_request_id || '-')} · freeze=${escapeHtml(dataset?.freeze_manifest_id || '-')} · export=${escapeHtml(dataset?.export_filename || '-')}<br>
+          eval suite=${escapeHtml(evaluation?.suite || '-')} · metrics=${escapeHtml(Object.keys(evaluation?.required_metrics || {}).join(', ') || '-')}
+        </div>
+      </div>
+      ${rows || '<div style="font-size:.76rem;color:var(--muted);">checklist 항목이 없습니다.</div>'}
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);margin-top:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Audit blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;margin-top:.65rem;">최종 human pre-execution review packet이 준비되었습니다. 실행은 별도 workflow입니다.</div>'}
+      <div style="border-top:1px solid var(--border);padding-top:.65rem;margin-top:.75rem;">
+        <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:center;flex-wrap:wrap;">
+          <strong style="font-size:.82rem;color:#1f2a44;">Exported audit artifacts</strong>
+          <button class="action-btn" style="font-size:.72rem;padding:.3rem .65rem;" onclick="loadDocumentOpsTrainingAuditChecklist()">새로고침</button>
+        </div>
+        ${audits.length ? auditRows : '<div style="font-size:.76rem;color:var(--muted);margin-top:.45rem;">아직 pre-execution audit export가 없습니다.</div>'}
+      </div>
+    `;
+  }
+
+  function renderDocumentOpsTrainingAuditExport(data) {
+    const el = $id('document-ops-training-audit-checklist');
+    if (!el) return;
+    const gate = data?.audit_gate || {};
+    const guard = data?.execution_guard || {};
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Pre-Execution Audit Export</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">exported JSON record · final human review packet · no execution side effects</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:#dcfce7;color:#15803d;">EXPORTED</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);font-size:.73rem;line-height:1.55;">
+        audit=${escapeHtml(data?.audit_id || '-')} · file=${escapeHtml(data?.audit_file || '-')} · auditor=${escapeHtml(gate?.auditor || '-')} · requester=${escapeHtml(gate?.requester || '-')} · prior approver=${escapeHtml(gate?.prior_training_approver || '-')}<br>
+        training_allowed=${guard?.training_execution_allowed ? 'true' : 'false'} · upload=${guard?.external_upload_started ? 'started' : '0'} · provider_job=${guard?.provider_job_started ? 'started' : '0'} · promotion=${guard?.model_promotion_allowed ? 'allowed' : 'false'}
+      </div>
+      ${data?.audit_file ? `<button class="action-btn" style="margin-top:.65rem;font-size:.72rem;padding:.3rem .65rem;" onclick="downloadDocumentOpsTrainingAudit('${escapeHtml(documentOpsJsString(data.audit_file))}')">Audit JSON 다운로드</button>` : ''}
+    `;
+  }
+
+  async function downloadDocumentOpsTrainingAudit(filename) {
+    if (!filename) return;
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-audits/${encodeURIComponent(filename)}/download`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification(`Pre-execution audit 다운로드 시작: ${filename}`, 'success');
+    } catch (err) {
+      showNotification('Pre-execution audit 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function loadDocumentOpsTrainingGovernanceSummary() {
+    const el = $id('document-ops-training-governance-summary');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training governance summary 로드 중...</div>';
+    try {
+      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-governance/summary?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingGovernanceSummary(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training governance summary 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Training governance summary 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingGovernanceSummary(data) {
+    const el = $id('document-ops-training-governance-summary');
+    if (!el) return;
+    el.style.display = 'block';
+    const ready = data?.status === 'governance_ready_for_human_review';
+    const counts = data?.counts || {};
+    const latest = data?.latest || {};
+    const guards = data?.guard_counts || {};
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const countCards = [
+      ['reviewed JSONL', counts?.reviewed_sft_exports ?? 0],
+      ['freezes', counts?.dataset_freezes ?? 0],
+      ['approvals', counts?.dry_run_training_approvals ?? 0],
+      ['requests', counts?.training_execution_requests ?? 0],
+      ['audits', counts?.pre_execution_audit_exports ?? 0],
+    ];
+    const guardText = Object.entries(guards).map(([key, value]) => `${escapeHtml(key)}=${Number(value || 0)}`).join(' · ');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Governance Dashboard Summary</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">read-only aggregate · no training · no upload · no provider calls</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${ready ? '#dcfce7' : '#fee2e2'};color:${ready ? '#15803d' : '#b91c1c'};">${ready ? 'GOVERNANCE READY' : 'NEEDS ATTENTION'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${countCards.map(([label, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${escapeHtml(String(value ?? 0))}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Latest governance gates</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.55;margin-top:.25rem;">
+          export=${escapeHtml(latest?.reviewed_sft_export?.filename || '-')} · freeze=${escapeHtml(latest?.dataset_freeze?.manifest_id || '-')} · approval=${escapeHtml(latest?.dry_run_training_approval?.approval_id || '-')}<br>
+          request=${escapeHtml(latest?.training_execution_request?.request_id || '-')} · audit=${escapeHtml(latest?.pre_execution_audit?.audit_id || '-')}
+        </div>
+      </div>
+      <div style="border:1px solid ${data?.no_side_effects ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${data?.no_side_effects ? 'rgba(34,197,94,.06)' : 'rgba(239,68,68,.06)'};margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:${data?.no_side_effects ? '#15803d' : '#b91c1c'};">No-side-effect guard</div>
+        <div style="font-size:.72rem;color:${data?.no_side_effects ? '#15803d' : '#b91c1c'};margin-top:.25rem;line-height:1.45;">${guardText || 'no guard counters'}</div>
+      </div>
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Governance blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">Governance summary is ready for human review. 실행은 별도 workflow입니다.</div>'}
+    `;
+  }
+
+  async function loadDocumentOpsReviewerSignoffSummary() {
+    const el = $id('document-ops-reviewer-signoff-summary');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">reviewer sign-off summary 로드 중...</div>';
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/reviewer-signoff/summary?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsReviewerSignoffSummary(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Reviewer sign-off summary 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Reviewer sign-off summary 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function downloadDocumentOpsReviewerSignoffSummary() {
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/reviewer-signoff/summary/download?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const fallback = `reviewer_signoff_summary_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      const filename = _filenameFromContentDisposition(res.headers.get('Content-Disposition'), fallback);
+      _triggerBrowserDownload(blob, filename, 'Reviewer sign-off summary JSON', {
+        fallbackContainerId: 'document-ops-download-fallback',
+      });
+      showNotification(`Reviewer sign-off summary JSON 다운로드 시작: ${filename}. 학습/업로드/provider 호출은 시작되지 않았습니다.`, 'success');
+    } catch (err) {
+      showNotification('Reviewer sign-off summary JSON 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsReviewerSignoffSummary(data) {
+    const el = $id('document-ops-reviewer-signoff-summary');
+    if (!el) return;
+    el.style.display = 'block';
+    const complete = data?.overall_status === 'manual_signoff_complete_no_training_authorization';
+    const records = Array.isArray(data?.records) ? data.records : [];
+    const aggregate = data?.aggregate || {};
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const sideEffects = data?.side_effect_boundary || {};
+    const countCards = [
+      ['records', data?.record_count ?? 0],
+      ['completed', aggregate?.completed_record_count ?? 0],
+      ['pending', aggregate?.pending_record_count ?? 0],
+      ['follow-up', aggregate?.manual_follow_up_record_count ?? 0],
+      ['boundary alerts', aggregate?.boundary_violation_count ?? 0],
+    ];
+    const sideEffectText = Object.entries(sideEffects).map(([key, value]) => `${escapeHtml(key)}=${value ? 'true' : 'false'}`).join(' · ');
+    const rows = records.map(item => {
+      const status = String(item?.record_status || '');
+      const ok = status === 'manual_signoff_complete_no_training_authorization';
+      const warn = status === 'pending_manual_signoff_no_training_authorization' || status === 'manual_follow_up_required_no_training_authorization';
+      return `<div style="border:1px solid ${ok ? 'rgba(34,197,94,.24)' : warn ? 'rgba(245,158,11,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${ok ? 'rgba(34,197,94,.05)' : warn ? 'rgba(245,158,11,.06)' : 'rgba(239,68,68,.06)'};">
+        <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start;flex-wrap:wrap;">
+          <div>
+            <strong style="font-size:.8rem;color:#1f2a44;">${escapeHtml(item?.signoff_record_id || item?.filename || '-')}</strong>
+            <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem;">${escapeHtml(item?.filename || '-')} · ${escapeHtml(item?.created_at || '-')}</div>
+          </div>
+          <span style="font-size:.68rem;font-weight:850;color:${ok ? '#15803d' : warn ? '#92400e' : '#b91c1c'};">${escapeHtml(status || 'unknown')}</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);line-height:1.5;margin-top:.4rem;">
+          reviewers=${Number(item?.reviewers_complete_count || 0)}/${Number((item?.reviewers || []).length || 0)} · pending=${Number(item?.pending_reviewer_count || 0)} · changes=${Number(item?.changes_requested_count || 0)} · blocked=${Number(item?.blocked_count || 0)}<br>
+          validation=${item?.completed_validation?.valid ? 'valid' : 'pending'} · training=${item?.boundary?.training_execution_authorized ? 'authorized' : 'false'} · provider_api=${item?.boundary?.provider_fine_tune_api_call_authorized ? 'authorized' : 'false'}
+        </div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Reviewer Sign-Off Summary</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">read-only sign-off evidence · no training · no upload · no provider calls</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${complete ? '#dcfce7' : '#fef3c7'};color:${complete ? '#15803d' : '#92400e'};">${complete ? 'SIGN-OFF COMPLETE' : 'SIGN-OFF PENDING'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${countCards.map(([label, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${escapeHtml(String(value ?? 0))}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid ${aggregate?.all_protected_training_flags_false ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${aggregate?.all_protected_training_flags_false ? 'rgba(34,197,94,.06)' : 'rgba(239,68,68,.06)'};margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:${aggregate?.all_protected_training_flags_false ? '#15803d' : '#b91c1c'};">Sign-off side-effect boundary</div>
+        <div style="font-size:.72rem;color:${aggregate?.all_protected_training_flags_false ? '#15803d' : '#b91c1c'};line-height:1.45;margin-top:.25rem;">
+          training_execution_authorized=${aggregate?.training_execution_authorized ? 'true' : 'false'} · external_dataset_upload_authorized=${aggregate?.external_dataset_upload_authorized ? 'true' : 'false'} · provider_fine_tune_api_call_authorized=${aggregate?.provider_fine_tune_api_call_authorized ? 'true' : 'false'}<br>
+          ${sideEffectText || 'actual_reviewer_approval_recorded_by_summary=false'}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.45rem;">${rows || '<div style="font-size:.76rem;color:var(--muted);">tenant-local reviewer sign-off record가 없습니다.</div>'}</div>
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);margin-top:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Sign-off blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;margin-top:.65rem;">Reviewer sign-off evidence is complete. 실행은 별도 workflow입니다.</div>'}
+    `;
+  }
+
+  async function loadDocumentOpsTrainingAdapterContract() {
+    const el = $id('document-ops-training-adapter-contract');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training adapter contract 로드 중...</div>';
+    try {
+      const params = new URLSearchParams({ provider: 'provider_agnostic' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/contract?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingAdapterContract(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training adapter contract 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Training adapter contract 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingAdapterContract(data) {
+    const el = $id('document-ops-training-adapter-contract');
+    if (!el) return;
+    el.style.display = 'block';
+    const contract = data?.adapter_contract || {};
+    const methods = Array.isArray(contract?.required_methods) ? contract.required_methods : [];
+    const forbidden = Array.isArray(contract?.forbidden_in_stub) ? contract.forbidden_in_stub : [];
+    const errors = Array.isArray(data?.config_errors) ? data.config_errors : [];
+    const warnings = Array.isArray(data?.config_warnings) ? data.config_warnings : [];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Provider Adapter Contract</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">stub-only · disabled by default · no training · no upload · no provider calls</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${data?.config_valid ? '#dcfce7' : '#fee2e2'};color:${data?.config_valid ? '#15803d' : '#b91c1c'};">${data?.config_valid ? 'CONFIG SAFE' : 'CONFIG BLOCKED'}</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Adapter status</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.55;margin-top:.25rem;">
+          provider=${escapeHtml(data?.provider || '-')} · base_model=${escapeHtml(data?.base_model || '-')} · adapter=${escapeHtml(data?.adapter_status || '-')} · execution_enabled=${data?.execution_enabled ? 'true' : 'false'}
+        </div>
+      </div>
+      <div style="border:1px solid rgba(99,102,241,.22);border-radius:12px;padding:.65rem;background:rgba(99,102,241,.06);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#3730a3;">Required adapter methods</div>
+        <div style="font-size:.73rem;color:#3730a3;margin-top:.25rem;">${methods.map(item => escapeHtml(item)).join(' · ') || '-'}</div>
+      </div>
+      <div style="border:1px solid rgba(239,68,68,.22);border-radius:12px;padding:.65rem;background:rgba(239,68,68,.06);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#b91c1c;">Forbidden in stub</div>
+        <div style="font-size:.73rem;color:#b91c1c;margin-top:.25rem;">${forbidden.map(item => escapeHtml(item)).join(' · ') || '-'}</div>
+      </div>
+      ${errors.length ? `<div style="font-size:.73rem;color:#b91c1c;">errors=${errors.map(item => escapeHtml(item)).join(' · ')}</div>` : ''}
+      ${warnings.length ? `<div style="font-size:.73rem;color:#92400e;">warnings=${warnings.map(item => escapeHtml(item)).join(' · ')}</div>` : ''}
+    `;
+  }
+
+  async function loadDocumentOpsTrainingRehearsal() {
+    const el = $id('document-ops-training-rehearsal');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training execution rehearsal 로드 중...</div>';
+    try {
+      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?${params}`, {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderDocumentOpsTrainingRehearsal(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;">Training execution rehearsal 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Training execution rehearsal 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsTrainingRehearsal(data) {
+    const el = $id('document-ops-training-rehearsal');
+    if (!el) return;
+    el.style.display = 'block';
+    const ready = data?.status === 'rehearsal_ready';
+    const steps = Array.isArray(data?.rehearsal_steps) ? data.rehearsal_steps : [];
+    const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
+    const refs = data?.artifact_references || {};
+    const freeze = refs?.dataset_freeze || {};
+    const audit = refs?.pre_execution_audit || {};
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Training Execution Rehearsal</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">dry-run rehearsal · validates governance artifacts · no training · no upload · no provider calls</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${ready ? '#dcfce7' : '#fee2e2'};color:${ready ? '#15803d' : '#b91c1c'};">${ready ? 'REHEARSAL READY' : 'BLOCKED'}</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#1f2a44;">Artifact references</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.55;margin-top:.25rem;">
+          provider=${escapeHtml(data?.provider || '-')} · base_model=${escapeHtml(data?.base_model || '-')} · freeze=${escapeHtml(freeze?.manifest_id || '-')} · audit=${escapeHtml(audit?.audit_id || '-')}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.65rem;">
+        ${steps.map(item => `<div style="border:1px solid ${item?.status === 'dry_run_pass' ? 'rgba(34,197,94,.24)' : 'rgba(239,68,68,.24)'};border-radius:10px;padding:.5rem;background:${item?.status === 'dry_run_pass' ? 'rgba(34,197,94,.05)' : 'rgba(239,68,68,.05)'};">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;">
+            <strong style="font-size:.76rem;color:#1f2a44;">${escapeHtml(item?.step || '')}</strong>
+            <span style="font-size:.68rem;font-weight:850;color:${item?.status === 'dry_run_pass' ? '#15803d' : '#b91c1c'};">${escapeHtml(item?.status || '')} · side_effect=${item?.side_effect ? 'true' : 'false'}</span>
+          </div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.18rem;">mode=${escapeHtml(item?.mode || '-')}</div>
+        </div>`).join('') || '<div style="font-size:.76rem;color:var(--muted);">rehearsal step이 없습니다.</div>'}
+      </div>
+      ${blockers.length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Rehearsal blockers</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
+      </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">Provider execution rehearsal은 dry-run 검증만 완료했습니다. 실제 실행은 별도 workflow입니다.</div>'}
+    `;
+  }
+
+  function documentOpsJsString(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
+
+  function formatBytes(value) {
+    const size = Number(value || 0);
+    if (!Number.isFinite(size) || size <= 0) return '0 B';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function previewDocumentOpsExport() {
+    const el = $id('document-ops-export-preview');
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">SFT export 후보 검수 중...</div>';
+    }
+    try {
+      const taskType = ($id('docops-task-type')?.value || '').trim() || null;
+      const res = await fetch('/api/agent/document-ops/trajectories/export/preview', {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_type: taskType, min_records: 1, accepted_only: true, include_metadata: true, sample_limit: 5 }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      renderDocumentOpsExportPreview(data);
+      showNotification(data.would_export ? 'SFT export 후보가 준비되었습니다.' : 'SFT export 후보가 부족합니다.', data.would_export ? 'success' : 'warn');
+    } catch (err) {
+      if (el) {
+        el.style.display = 'block';
+        el.innerHTML = `<div style="color:#ef4444;">Export preview 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      }
+      showNotification('Export preview 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderDocumentOpsExportPreview(data) {
+    const el = $id('document-ops-export-preview');
+    if (!el) return;
+    el.style.display = 'block';
+    const blockers = data?.blocker_summary || {};
+    const scores = data?.quality_score_summary || {};
+    const samples = Array.isArray(data?.sample_records) ? data.sample_records : [];
+    const blocked = Array.isArray(data?.blocked_samples) ? data.blocked_samples : [];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">SFT Export Preview</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">dry-run · 파일 생성 없음 · task=${escapeHtml(data?.task_type || 'all')}</div>
+        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${data?.would_export ? '#dcfce7' : '#fee2e2'};color:${data?.would_export ? '#15803d' : '#b91c1c'};">${data?.would_export ? 'READY' : 'NOT READY'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${[
+          ['candidate', data?.candidate_count],
+          ['eligible', data?.eligible_count],
+          ['blocked', data?.blocked_count],
+          ['jsonl lines', data?.estimated_jsonl_lines],
+          ['quality avg', scores.avg ?? '-'],
+        ].map(([label, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${escapeHtml(String(value ?? 0))}</div>
+        </div>`).join('')}
+      </div>
+      ${Object.keys(blockers).length ? `<div style="border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:.65rem;background:rgba(245,158,11,.06);margin-bottom:.7rem;">
+        <div style="font-size:.76rem;font-weight:900;color:#92400e;">Blocked reasons</div>
+        <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${Object.entries(blockers).map(([key, count]) => `${escapeHtml(key)}=${Number(count || 0)}`).join(' · ')}</div>
+      </div>` : ''}
+      ${samples.length ? `<div style="font-size:.76rem;font-weight:900;margin:.5rem 0 .35rem;">Eligible samples</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem;">${samples.map(item => renderDocumentOpsPreviewRow(item)).join('')}</div>` : '<div style="font-size:.76rem;color:var(--muted);">eligible sample 없음</div>'}
+      ${blocked.length ? `<div style="font-size:.76rem;font-weight:900;margin:.7rem 0 .35rem;color:#92400e;">Blocked samples</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem;">${blocked.map(item => renderDocumentOpsPreviewRow(item)).join('')}</div>` : ''}
+    `;
+  }
+
+  function renderDocumentOpsPreviewRow(item) {
+    const blockers = Array.isArray(item?.blockers) ? item.blockers : [];
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.55);font-size:.72rem;">
+      <strong>${escapeHtml(item?.trajectory_id || '')}</strong>
+      <span style="color:var(--muted);"> · ${escapeHtml(item?.task_type || '')} · ${escapeHtml(item?.skill || '')} · score=${escapeHtml(String(item?.quality_score ?? '-'))}</span>
+      ${blockers.length ? `<div style="color:#92400e;margin-top:.2rem;">${escapeHtml(blockers.join(', '))}</div>` : ''}
+    </div>`;
+  }
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */
   let _reportWorkflowCurrentId = '';
@@ -8244,8 +9377,8 @@
     _exportDownloadUrls = keep.slice(-6);
   }
 
-  function _showExportDownloadFallback(url, filename, label) {
-    const container = $id('export-download-fallback');
+  function _showExportDownloadFallback(url, filename, label, fallbackContainerId) {
+    const container = fallbackContainerId ? ($id(fallbackContainerId) || $id('export-download-fallback')) : $id('export-download-fallback');
     if (!container || !url) return;
     container.style.display = 'block';
     container.innerHTML = `
@@ -8263,7 +9396,7 @@
     `;
   }
 
-  function _triggerBrowserDownload(blob, filename, label) {
+  function _triggerBrowserDownload(blob, filename, label, options = {}) {
     _cleanupExpiredExportDownloadUrls();
     const url = URL.createObjectURL(blob);
     _exportDownloadUrls.push({ url, expiresAt: Date.now() + EXPORT_DOWNLOAD_URL_TTL_MS });
@@ -8276,7 +9409,7 @@
     a.click();
     document.body.removeChild(a);
     window.setTimeout(() => _cleanupExpiredExportDownloadUrls(), EXPORT_DOWNLOAD_URL_TTL_MS + 1000);
-    _showExportDownloadFallback(url, filename, label);
+    _showExportDownloadFallback(url, filename, label, options?.fallbackContainerId);
     return url;
   }
 
@@ -13895,12 +15028,14 @@
       const approvalPage = $id('approval-page');
       const projectPage = $id('project-page');
       const reportWorkflowPage = $id('report-workflow-page');
+      const documentOpsPage = $id('document-ops-page');
       if (page === 'dashboard') {
         if (main) main.style.display = 'none';
         if (perfDash) perfDash.style.display = 'block';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         loadDashboard();
         loadUserDashboard();
@@ -13910,6 +15045,7 @@
         if (approvalPage) approvalPage.style.display = 'block';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         loadApprovals();
       } else if (page === 'project-page') {
@@ -13918,6 +15054,7 @@
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'block';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         loadProjects();
@@ -13928,6 +15065,7 @@
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'block');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         loadStyleProfiles();
@@ -13937,16 +15075,29 @@
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'block';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         $id('locations-page') && ($id('locations-page').style.display = 'none');
         loadReportWorkflows();
+      } else if (page === 'document-ops-page') {
+        if (main) main.style.display = 'none';
+        if (perfDash) perfDash.style.display = 'none';
+        if (approvalPage) approvalPage.style.display = 'none';
+        if (projectPage) projectPage.style.display = 'none';
+        if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'block';
+        $id('style-page') && ($id('style-page').style.display = 'none');
+        $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
+        $id('locations-page') && ($id('locations-page').style.display = 'none');
+        loadDocumentOpsTrajectories();
       } else if (page === 'knowledge-page') {
         if (main) main.style.display = 'none';
         if (perfDash) perfDash.style.display = 'none';
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'block');
         $id('locations-page') && ($id('locations-page').style.display = 'none');
@@ -13957,6 +15108,7 @@
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         $id('locations-page') && ($id('locations-page').style.display = 'block');
@@ -13967,6 +15119,7 @@
         if (approvalPage) approvalPage.style.display = 'none';
         if (projectPage) projectPage.style.display = 'none';
         if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+        if (documentOpsPage) documentOpsPage.style.display = 'none';
         $id('style-page') && ($id('style-page').style.display = 'none');
         $id('knowledge-page') && ($id('knowledge-page').style.display = 'none');
         $id('locations-page') && ($id('locations-page').style.display = 'none');

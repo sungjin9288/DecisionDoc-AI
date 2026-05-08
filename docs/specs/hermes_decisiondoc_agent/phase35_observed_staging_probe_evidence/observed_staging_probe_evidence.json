@@ -1,0 +1,89 @@
+{
+  "report_type": "document_ops_phase35_observed_staging_probe_evidence",
+  "phase": 35,
+  "status": "observed_staging_probe_pending_missing_runtime_credentials",
+  "created_at": "2026-05-09T00:53:03+09:00",
+  "purpose": "Define and validate the local evidence archive path for a real Phase 34 staging/deployed probe result without starting training, uploading datasets, generating approvals, or promoting models.",
+  "archive_helper": "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py",
+  "source_probe_script": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py",
+  "environment_probe_status": {
+    "real_staging_probe_completed": false,
+    "archive_helper_verified_with_fixture": true,
+    "production_smoke_completed": false,
+    "blocker": "DECISIONDOC_OPS_KEY, PHASE35_BASE_URL, and expected imported sign-off record ids were not available in the local execution environment."
+  },
+  "required_runtime_inputs": [
+    "PHASE35_BASE_URL or --base-url",
+    "DECISIONDOC_OPS_KEY or --ops-key",
+    "tenant id",
+    "expected completed sign-off record id",
+    "expected pending sign-off record id"
+  ],
+  "archive_acceptance_criteria": {
+    "phase34_report_type": "document_ops_phase34_staging_readiness_probe_result",
+    "phase34_status": "pass",
+    "fixture_probe_rejected": true,
+    "health_status_200_required": true,
+    "ops_key_required": true,
+    "summary_record_count_gt_zero": true,
+    "download_record_count_gt_zero": true,
+    "download_server_file_written_false": true,
+    "expected_record_ids_visible": true,
+    "failures_empty": true,
+    "guard_flags_false": true,
+    "side_effect_boundary_false": true
+  },
+  "operator_command_template": [
+    "python docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py \\",
+    "  --base-url https://admin.decisiondoc.kr \\",
+    "  --ops-key \"$DECISIONDOC_OPS_KEY\" \\",
+    "  --tenant-id system \\",
+    "  --expect-record-id <completed_signoff_record_id> \\",
+    "  --expect-record-id <pending_signoff_record_id> \\",
+    "  --output reports/phase34-staging-readiness.json",
+    "python docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py \\",
+    "  reports/phase34-staging-readiness.json \\",
+    "  --output-dir reports \\",
+    "  --output-filename phase35-observed-staging-probe-evidence.json \\",
+    "  --evidence-owner release_owner"
+  ],
+  "readiness": {
+    "observed_staging_probe_completed": false,
+    "observed_staging_evidence_archive_ready": true,
+    "production_smoke_completed": false,
+    "training_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "model_promotion_authorized": false
+  },
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "server_generated_approval_allowed": false,
+    "server_side_export_artifact_write_allowed": false,
+    "provider_job_started": false,
+    "model_candidate_emitted": false,
+    "model_promotion_allowed": false
+  },
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_phase35": false,
+    "model_training_started": false,
+    "external_dataset_uploaded": false,
+    "server_side_generated_approval_record": false,
+    "server_side_export_artifact_written": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false
+  },
+  "verification_references": [
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/observed_staging_probe_evidence.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase35_observed_staging_probe_evidence_archive_helper_validates_results --tb=short"
+  ],
+  "recommended_decision": "ready_for_operator_observed_staging_probe_archive_no_training_authorization",
+  "next_step": "Run Phase 34 against the deployed environment with real ops key and expected imported sign-off record ids, archive the passing result with the Phase 35 helper, then review whether to run a separate production smoke."
+}

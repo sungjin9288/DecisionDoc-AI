@@ -1,0 +1,662 @@
+{
+  "report_type": "document_ops_phase29_reviewer_signoff_handoff_refresh",
+  "status": "human_reviewer_use_ready_no_training_authorization",
+  "created_at": "2026-05-08T15:21:12+09:00",
+  "scope": "DocumentOps reviewer sign-off package through Phase 39 remote runtime gap evidence",
+  "refreshes": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff",
+  "release_boundary": {
+    "reviewer_signoff_ready": true,
+    "human_reviewer_use_ready": true,
+    "actual_reviewer_approval_recorded": false,
+    "training_execution_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "server_side_export_artifact_write_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "model_candidate_emission_authorized": false,
+    "model_promotion_authorized": false,
+    "production_smoke_completed": false
+  },
+  "required_reviewers": [
+    "product_pm_reviewer",
+    "ml_ai_owner",
+    "compliance_security_reviewer",
+    "release_owner"
+  ],
+  "reviewer_use_steps": [
+    {
+      "order": 1,
+      "owner": "release_owner",
+      "action": "read_handoff_and_status",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/RELEASE_HANDOFF_INDEX.md",
+        "docs/specs/hermes_decisiondoc_agent/STATUS.md",
+        "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 2,
+      "owner": "release_owner",
+      "action": "create_pending_signoff_record",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py",
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 3,
+      "owner": "product_pm_reviewer",
+      "action": "review_operational_clarity",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/BROWSER_QA_REPORT.md",
+        "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/BROWSER_QA_REPORT.md"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 4,
+      "owner": "ml_ai_owner",
+      "action": "review_training_governance_boundary",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/TRAINING_AND_DATASET_PLAN.md",
+        "docs/specs/hermes_decisiondoc_agent/IMPLEMENTATION_PLAN.md",
+        "docs/specs/hermes_decisiondoc_agent/STATUS.md"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 5,
+      "owner": "compliance_security_reviewer",
+      "action": "review_sensitive_data_and_provider_boundary",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/ARCHITECTURE.md",
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py",
+        "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 6,
+      "owner": "release_owner",
+      "action": "validate_completed_signoff_record_locally",
+      "evidence": [
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py",
+        "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py"
+      ],
+      "side_effect": false
+    },
+    {
+      "order": 7,
+      "owner": "operator",
+      "action": "inspect_signoff_summary_and_json_download_in_documentops",
+      "evidence": [
+        "app/static/index.html",
+        "app/routers/document_ops_agent.py",
+        "app/services/document_ops_service.py",
+        "app/storage/trajectory_store.py"
+      ],
+      "side_effect": false
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "analysis",
+      "path": "docs/specs/hermes_decisiondoc_agent/ANALYSIS.md",
+      "purpose": "Hermes repository analysis and direct-import recommendation boundary",
+      "required_for_signoff": true
+    },
+    {
+      "id": "architecture",
+      "path": "docs/specs/hermes_decisiondoc_agent/ARCHITECTURE.md",
+      "purpose": "DecisionDoc-native agent architecture",
+      "required_for_signoff": true
+    },
+    {
+      "id": "training_dataset_plan",
+      "path": "docs/specs/hermes_decisiondoc_agent/TRAINING_AND_DATASET_PLAN.md",
+      "purpose": "Trajectory review, SFT export, QA, freeze, approval, audit, rehearsal, and no-training plan",
+      "required_for_signoff": true
+    },
+    {
+      "id": "implementation_plan",
+      "path": "docs/specs/hermes_decisiondoc_agent/IMPLEMENTATION_PLAN.md",
+      "purpose": "Phase implementation sequence through reviewer sign-off package",
+      "required_for_signoff": true
+    },
+    {
+      "id": "status",
+      "path": "docs/specs/hermes_decisiondoc_agent/STATUS.md",
+      "purpose": "Current phase status, verification ledger, and next approval boundary",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase18_browser_checklist_template",
+      "path": "docs/specs/hermes_decisiondoc_agent/PHASE18_BROWSER_QA_EVIDENCE.md",
+      "purpose": "Reusable local browser QA checklist and no-training invariant",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase19_browser_qa_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/BROWSER_QA_REPORT.md",
+      "purpose": "Observed governance browser QA narrative and seeded artifact evidence",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase19_browser_qa_result",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase18_browser_governance_qa/browser_qa_result.json",
+      "purpose": "Observed governance browser QA machine-readable pass and guard flags",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase21_signoff_markdown_template",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/SIGNOFF_RECORD_TEMPLATE.md",
+      "purpose": "Human-readable manual reviewer sign-off template",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase21_signoff_json_template",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json",
+      "purpose": "Machine-readable reviewer sign-off template",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase22_signoff_validator",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py",
+      "purpose": "Local validation for completed sign-off records and no-training boundary flags",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase23_pending_signoff_generator",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py",
+      "purpose": "No-side-effect generator for fillable pending sign-off records",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase24_signoff_summary_reporter",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py",
+      "purpose": "Local summary reporter for pending/completed sign-off records",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase25_signoff_summary_endpoint_ui",
+      "path": "app/routers/document_ops_agent.py",
+      "purpose": "Ops-key reviewer sign-off summary endpoint registration",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase25_signoff_summary_service",
+      "path": "app/services/document_ops_service.py",
+      "purpose": "Reviewer sign-off summary orchestration and export payload construction",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase25_signoff_summary_store",
+      "path": "app/storage/trajectory_store.py",
+      "purpose": "Tenant-local sign-off record scanning and summary support",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase25_phase27_documentops_ui",
+      "path": "app/static/index.html",
+      "purpose": "DocumentOps sign-off summary, JSON download, and download fallback UI",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase26_signoff_summary_browser_qa_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/BROWSER_QA_REPORT.md",
+      "purpose": "Observed browser QA narrative for sign-off summary panel",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase26_signoff_summary_browser_qa_result",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/browser_qa_result.json",
+      "purpose": "Observed sign-off summary browser QA machine-readable pass and guard flags",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase28_signoff_json_download_browser_qa_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/BROWSER_QA_REPORT.md",
+      "purpose": "Observed browser QA narrative for reviewer sign-off JSON download",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase28_signoff_json_download_browser_qa_result",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json",
+      "purpose": "Observed JSON download browser QA machine-readable pass, fallback, and guard flags",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase29_release_handoff_index",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/RELEASE_HANDOFF_INDEX.md",
+      "purpose": "Reviewer-facing refreshed handoff index and sign-off use checklist",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase29_handoff_manifest",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
+      "purpose": "Machine-readable artifact index and sign-off boundary through Phase 28",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase30_operator_packet_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/OPERATOR_PACKET_GUIDE.md",
+      "purpose": "Operator-ready guide for creating, validating, summarizing, and UI-inspecting reviewer sign-off records",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase30_operator_packet_checklist",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/operator_packet_checklist.json",
+      "purpose": "Machine-readable operator checklist for the reviewer sign-off packet procedure",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase31_signoff_import_helper_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/IMPORT_HELPER.md",
+      "purpose": "Operator guide for safely importing pending or validated sign-off records into tenant-local DocumentOps storage",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase31_signoff_import_helper",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py",
+      "purpose": "Controlled local import helper with tenant id, filename, boundary, and validation guards",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase32_imported_signoff_browser_qa_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/BROWSER_QA_REPORT.md",
+      "purpose": "Observed browser QA narrative for records imported by the Phase 31 helper",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase32_imported_signoff_browser_qa_result",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/browser_qa_result.json",
+      "purpose": "Machine-readable browser QA pass result for imported records in DocumentOps summary and JSON download",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase33_operator_release_packet_summary",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/RELEASE_PACKET_SUMMARY.md",
+      "purpose": "Operator and reviewer-facing summary that packages Phase 30 guide, Phase 31 import helper, Phase 32 QA evidence, and staging-readiness criteria",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase33_operator_release_packet_summary_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/release_packet_summary.json",
+      "purpose": "Machine-readable operator release packet summary, staging-readiness criteria, and no-training boundary flags",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase34_staging_readiness_dry_run_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/STAGING_READINESS_DRY_RUN.md",
+      "purpose": "Operator guide for running the read-only staging/deployed reviewer sign-off readiness probe",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase34_staging_readiness_dry_run_contract",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/staging_readiness_dry_run.json",
+      "purpose": "Machine-readable Phase 34 probe contract, pass criteria, command template, and no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase34_staging_readiness_probe",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py",
+      "purpose": "Read-only HTTP probe for health, ops-key enforcement, sign-off summary, JSON download, guard flags, and imported record visibility",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase35_observed_staging_probe_evidence_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/OBSERVED_STAGING_PROBE_EVIDENCE.md",
+      "purpose": "Operator guide for archiving an observed Phase 34 staging probe result",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase35_observed_staging_probe_evidence_contract",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/observed_staging_probe_evidence.json",
+      "purpose": "Machine-readable Phase 35 evidence archive contract, pending runtime inputs, and no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase35_observed_staging_probe_archive_helper",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py",
+      "purpose": "Local validator and archive helper for passing Phase 34 staging probe results",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase36_observed_probe_execution_workflow_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/OBSERVED_PROBE_EXECUTION_WORKFLOW.md",
+      "purpose": "Operator guide for one-shot Phase 34 probe execution and Phase 35 archive creation",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase36_observed_probe_execution_workflow_contract",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/observed_probe_execution_workflow.json",
+      "purpose": "Machine-readable Phase 36 workflow contract, required runtime inputs, output artifacts, and no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase36_observed_probe_execution_workflow_runner",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py",
+      "purpose": "One-shot runtime preflight and execution wrapper for Phase 34 probe plus Phase 35 archive helper",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase37_deployed_probe_failure_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase37_deployed_probe_failure_evidence/DEPLOYED_PROBE_FAILURE_EVIDENCE.md",
+      "purpose": "Observed deployed probe failure report showing health reachable but ops-key authentication failed",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase37_deployed_probe_failure_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase37_deployed_probe_failure_evidence/deployed_probe_failure_evidence.json",
+      "purpose": "Machine-readable Phase 37 deployed probe failure evidence and remediation requirements",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase38_observed_probe_retry_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/DEPLOYED_PROBE_RETRY_EVIDENCE.md",
+      "purpose": "Observed deployed probe retry report after Phase 36 wrapper output-dir hardening",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase38_observed_probe_retry_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/deployed_probe_retry_evidence.json",
+      "purpose": "Machine-readable Phase 38 retry evidence and remaining ops-key blocker",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase39_remote_runtime_gap_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/REMOTE_RUNTIME_GAP_EVIDENCE.md",
+      "purpose": "Observed remote runtime gap report showing deployed ops key is valid but DocumentOps routes and sign-off storage are not deployed",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase39_remote_runtime_gap_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json",
+      "purpose": "Machine-readable Phase 39 remote runtime gap evidence and deploy/import remediation requirements",
+      "required_for_signoff": true
+    }
+  ],
+  "phase_coverage": {
+    "phase21": {
+      "name": "manual_reviewer_signoff_template",
+      "human_reviewer_value": "consistent reviewer record format",
+      "training_authorized": false
+    },
+    "phase22": {
+      "name": "local_signoff_validator",
+      "human_reviewer_value": "reject incomplete records and boundary breaks",
+      "training_authorized": false
+    },
+    "phase23": {
+      "name": "pending_signoff_record_generator",
+      "human_reviewer_value": "create fillable pending records",
+      "training_authorized": false
+    },
+    "phase24": {
+      "name": "local_signoff_summary_reporter",
+      "human_reviewer_value": "aggregate sign-off state",
+      "training_authorized": false
+    },
+    "phase25": {
+      "name": "ops_key_summary_endpoint_ui",
+      "human_reviewer_value": "inspect tenant-local sign-off status in DocumentOps",
+      "training_authorized": false
+    },
+    "phase26": {
+      "name": "observed_summary_browser_qa",
+      "human_reviewer_value": "observed browser proof for summary panel",
+      "training_authorized": false,
+      "result": "pass"
+    },
+    "phase27": {
+      "name": "ops_key_json_download_endpoint_ui",
+      "human_reviewer_value": "download in-memory sign-off summary JSON",
+      "training_authorized": false,
+      "server_side_export_artifact_written": false
+    },
+    "phase28": {
+      "name": "observed_json_download_browser_qa",
+      "human_reviewer_value": "observed browser proof for JSON blob receipt and fallback link",
+      "training_authorized": false,
+      "result": "pass",
+      "native_os_download_verified": false,
+      "native_os_download_limitation": "Downloads are not supported by Codex In-app Browser."
+    },
+    "phase30": {
+      "name": "operator_reviewer_signoff_packet_guide",
+      "human_reviewer_value": "operator procedure for creating, collecting, validating, summarizing, and UI-inspecting reviewer sign-off records",
+      "training_authorized": false,
+      "server_side_export_artifact_written": false,
+      "provider_fine_tune_api_called": false
+    },
+    "phase31": {
+      "name": "tenant_local_reviewer_signoff_import_helper",
+      "human_reviewer_value": "safe local placement of pending or locally validated sign-off records into DATA_DIR for DocumentOps inspection",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false
+    },
+    "phase32": {
+      "name": "observed_imported_signoff_browser_qa",
+      "human_reviewer_value": "observed browser proof that DocumentOps summary and JSON download read Phase 31 imported records",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "result": "pass"
+    },
+    "phase33": {
+      "name": "operator_release_packet_summary",
+      "human_reviewer_value": "one-page packet summary linking the Phase 30 guide, Phase 31 helper, Phase 32 observed QA evidence, and staging-readiness criteria",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "staging_run_completed": false,
+      "production_smoke_completed": false
+    },
+    "phase34": {
+      "name": "staging_readiness_dry_run_probe",
+      "human_reviewer_value": "read-only probe contract and CLI for staging/deployed sign-off readiness checks",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "probe_script_ready": true,
+      "fixture_probe_verified": true,
+      "real_staging_probe_completed": false,
+      "production_smoke_completed": false
+    },
+    "phase35": {
+      "name": "observed_staging_probe_evidence_archive",
+      "human_reviewer_value": "local archive helper for preserving a passing real Phase 34 staging/deployed probe result",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "archive_helper_verified": true,
+      "observed_staging_probe_completed": false,
+      "production_smoke_completed": false
+    },
+    "phase36": {
+      "name": "observed_probe_execution_workflow",
+      "human_reviewer_value": "one-shot runtime preflight and execution wrapper for Phase 34 probe plus Phase 35 archive",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "workflow_ready": true,
+      "real_staging_probe_completed": false,
+      "observed_staging_evidence_archived": false,
+      "production_smoke_completed": false
+    },
+    "phase37": {
+      "name": "deployed_probe_failure_evidence",
+      "human_reviewer_value": "observed deployed probe result proving health is reachable but ops-key authentication failed with local env-file key",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "deployed_health_reachable": true,
+      "ops_key_required": true,
+      "ops_key_authenticated": false,
+      "expected_record_ids_available": false,
+      "observed_staging_probe_completed": false,
+      "observed_staging_evidence_archived": false,
+      "production_smoke_completed": false
+    },
+    "phase38": {
+      "name": "observed_probe_retry_evidence",
+      "human_reviewer_value": "observed deployed probe retry after output-dir hardening, proving the blocker remains ops-key authentication rather than local file setup",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "wrapper_output_dir_hardened": true,
+      "deployed_health_reachable": true,
+      "ops_key_required": true,
+      "ops_key_authenticated": false,
+      "expected_record_ids_available": false,
+      "observed_staging_probe_completed": false,
+      "observed_staging_evidence_archived": false,
+      "production_smoke_completed": false
+    },
+    "phase39": {
+      "name": "remote_runtime_gap_evidence",
+      "human_reviewer_value": "observed remote runtime inspection proving deployed ops key is valid but current DocumentOps reviewer sign-off routes and sign-off storage are absent",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "deployed_health_reachable": true,
+      "deployed_ops_key_runtime_valid": true,
+      "document_ops_reviewer_signoff_route_deployed": false,
+      "signoff_storage_present": false,
+      "expected_record_ids_available": false,
+      "observed_staging_probe_completed": false,
+      "observed_staging_evidence_archived": false,
+      "production_smoke_completed": false
+    }
+  },
+  "observed_browser_qa_summary": {
+    "phase19_result": "pass",
+    "phase26_result": "pass",
+    "phase28_result": "pass",
+    "phase32_result": "pass",
+    "phase26_summary_status": "pending_manual_signoff_no_training_authorization",
+    "phase28_download_report_type": "document_ops_phase27_reviewer_signoff_summary_export",
+    "phase32_imported_records_visible": true,
+    "phase32_downloaded_json_contains_imported_records": true,
+    "phase28_browser_json_blob_received": true,
+    "phase28_download_fallback_visible": true,
+    "phase28_native_download_event_supported": false
+  },
+  "staging_readiness_summary": {
+    "phase33_status": "operator_release_packet_ready_no_training_authorization",
+    "phase30_operator_packet_guide_present": true,
+    "phase31_import_helper_verified": true,
+    "phase32_observed_browser_qa_passed": true,
+    "ops_key_required": true,
+    "tenant_local_record_scope": true,
+    "server_generated_approval_blocked": true,
+    "phase34_probe_script_ready": true,
+    "phase34_fixture_probe_verified": true,
+    "phase34_real_staging_probe_completed": false,
+    "phase35_archive_helper_verified": true,
+    "phase35_observed_staging_probe_completed": false,
+    "phase36_workflow_ready": true,
+    "phase36_real_staging_probe_completed": false,
+    "phase36_observed_staging_evidence_archived": false,
+    "phase37_deployed_health_reachable": true,
+    "phase37_ops_key_authenticated": false,
+    "phase37_expected_record_ids_available": false,
+    "phase37_observed_staging_probe_completed": false,
+    "phase38_wrapper_output_dir_hardened": true,
+    "phase38_deployed_health_reachable": true,
+    "phase38_ops_key_authenticated": false,
+    "phase38_expected_record_ids_available": false,
+    "phase38_observed_staging_probe_completed": false,
+    "phase39_deployed_ops_key_runtime_valid": true,
+    "phase39_document_ops_reviewer_signoff_route_deployed": false,
+    "phase39_signoff_storage_present": false,
+    "phase39_expected_record_ids_available": false,
+    "phase39_observed_staging_probe_completed": false,
+    "staging_run_completed": false,
+    "production_smoke_completed": false,
+    "training_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false
+  },
+  "guard_flags": {
+    "training_execution_allowed": false,
+    "provider_api_calls_allowed": false,
+    "external_upload_allowed": false,
+    "server_file_written": false,
+    "provider_job_started": false,
+    "model_candidate_emitted": false,
+    "model_promotion_allowed": false
+  },
+  "side_effect_boundary": {
+    "actual_reviewer_approval_recorded_by_manifest": false,
+    "model_training_started": false,
+    "external_dataset_uploaded": false,
+    "server_side_export_artifact_written": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false
+  },
+  "verification_references": [
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/generate_pending_signoff_record.py docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/summarize_signoff_records.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase21_manual_reviewer_signoff_template_preserves_no_training_boundary tests/test_infrastructure.py::test_phase22_signoff_validator_accepts_completed_records_and_rejects_boundary_breaks tests/test_infrastructure.py::test_phase23_pending_signoff_generator_creates_fillable_no_training_record tests/test_infrastructure.py::test_phase24_signoff_summary_reports_reviewer_completion_without_training_authorization --tb=short",
+    "pytest -q tests/test_document_ops_agent_api.py::test_document_ops_reviewer_signoff_summary_is_ops_key_read_only tests/test_infrastructure.py::test_index_html_document_ops_shows_reviewer_signoff_summary --tb=short",
+    "pytest -q tests/test_infrastructure.py::test_phase26_reviewer_signoff_browser_qa_result_records_observed_no_training_pass tests/test_infrastructure.py::test_phase28_reviewer_signoff_json_download_browser_qa_result_records_blob_received --tb=short",
+    "pytest -q tests/test_infrastructure.py --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/operator_packet_checklist.json",
+    "pytest -q tests/test_infrastructure.py::test_phase30_operator_reviewer_signoff_packet_guide_documents_operational_flow --tb=short",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase31_reviewer_signoff_import/import_signoff_record.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase31_signoff_import_helper_copies_pending_and_completed_records_safely tests/test_infrastructure.py::test_phase31_signoff_import_helper_rejects_path_traversal_and_generated_approval --tb=short",
+    "local browser QA at http://127.0.0.1:8770/?ops=1&phase32=1778150148160 with Phase 31 imported pending/completed reviewer sign-off records, DocumentOps Sign-off summary, Sign-off JSON, fallback link, and downloaded JSON inspection",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase32_imported_signoff_browser_qa/browser_qa_result.json >/tmp/phase32_browser_qa_result.pretty.json",
+    "pytest -q tests/test_infrastructure.py::test_phase32_imported_signoff_browser_qa_result_records_observed_pass --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase33_operator_release_packet_summary/release_packet_summary.json",
+    "pytest -q tests/test_infrastructure.py::test_phase33_operator_release_packet_summary_packages_staging_readiness --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/staging_readiness_dry_run.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase34_staging_readiness_dry_run/run_staging_readiness_probe.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase34_staging_readiness_dry_run_probe_contract_and_fixture_pass --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/observed_staging_probe_evidence.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase35_observed_staging_probe_evidence_archive_helper_validates_results --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/observed_probe_execution_workflow.json",
+    "PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py tests/test_infrastructure.py",
+    "pytest -q tests/test_infrastructure.py::test_phase36_observed_probe_execution_workflow_preflights_runtime_inputs --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase37_deployed_probe_failure_evidence/deployed_probe_failure_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase37_deployed_probe_failure_evidence_records_ops_key_auth_blocker --tb=short",
+    "pytest -q tests/test_infrastructure.py::test_phase36_observed_probe_workflow_creates_output_dir_before_probe --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/deployed_probe_retry_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase38_observed_probe_retry_records_wrapper_fix_and_remaining_ops_key_blocker --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase39_remote_runtime_gap_records_route_and_signoff_storage_blockers --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/browser_qa_result.json",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json",
+    "perl -0ne 'while (m{<script>(.*?)</script>}sg) { print $1 }' app/static/index.html > /tmp/decisiondoc-index-scripts.js && node --check /tmp/decisiondoc-index-scripts.js && git diff --check"
+  ],
+  "recommended_decision": "human_reviewer_use_ready_no_training_authorization",
+  "next_step": "Phase 40: prepare a deployable commit/release with the current DocumentOps routes, services, store, UI, and evidence changes; deploy it to admin.decisiondoc.kr; import intended sign-off records; then rerun Phase 36 and archive a passing observed probe result before any separate production smoke."
+}
