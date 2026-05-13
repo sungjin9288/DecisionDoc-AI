@@ -1,13 +1,13 @@
 {
   "report_type": "document_ops_phase29_reviewer_signoff_handoff_refresh",
-  "status": "human_reviewer_use_ready_no_training_authorization",
+  "status": "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization",
   "created_at": "2026-05-08T15:21:12+09:00",
-  "scope": "DocumentOps reviewer sign-off package through Phase 39 remote runtime gap evidence",
+  "scope": "DocumentOps reviewer sign-off package through Phase 42 production browser UAT evidence",
   "refreshes": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff",
   "release_boundary": {
     "reviewer_signoff_ready": true,
     "human_reviewer_use_ready": true,
-    "actual_reviewer_approval_recorded": false,
+    "actual_reviewer_approval_recorded": true,
     "training_execution_authorized": false,
     "external_dataset_upload_authorized": false,
     "server_side_export_artifact_write_authorized": false,
@@ -16,7 +16,8 @@
     "provider_job_polling_authorized": false,
     "model_candidate_emission_authorized": false,
     "model_promotion_authorized": false,
-    "production_smoke_completed": false
+    "production_smoke_completed": true,
+    "production_browser_uat_completed": true
   },
   "required_reviewers": [
     "product_pm_reviewer",
@@ -381,6 +382,45 @@
       "path": "docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json",
       "purpose": "Machine-readable Phase 39 remote runtime gap evidence and deploy/import remediation requirements",
       "required_for_signoff": true
+    },
+    {
+      "id": "phase40_production_signoff_completion_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/PRODUCTION_SIGNOFF_COMPLETION_EVIDENCE.md",
+      "purpose": "Observed production evidence showing the reviewer sign-off route is deployed, sign-off records are imported, and the deployed read-only probe passes",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase40_production_signoff_completion_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/production_signoff_completion_evidence.json",
+      "purpose": "Machine-readable Phase 40 production sign-off completion evidence, imported record ids, probe results, and no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase41_production_post_deploy_smoke_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/PRODUCTION_POST_DEPLOY_SMOKE_EVIDENCE.md",
+      "purpose": "Observed production post-deploy smoke report covering health, provider routing, document generation, report workflow, PPTX export, and no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase41_production_post_deploy_smoke_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/production_post_deploy_smoke_evidence.json",
+      "purpose": "Machine-readable Phase 41 post-deploy smoke evidence, generated artifact side effects, report workflow smoke results, and restricted no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase42_production_browser_uat_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/PRODUCTION_BROWSER_UAT_EVIDENCE.md",
+      "purpose": "Observed production browser UAT report covering admin UI document generation, download control clicks, report workflow UX, export integrity complement, and no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase42_production_browser_uat_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json",
+      "purpose": "Machine-readable Phase 42 production browser UAT evidence, download runtime limitation, export integrity results, workflow UI checks, and restricted no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass_with_download_runtime_limitation"
     }
   ],
   "phase_coverage": {
@@ -550,6 +590,68 @@
       "observed_staging_probe_completed": false,
       "observed_staging_evidence_archived": false,
       "production_smoke_completed": false
+    },
+    "phase40": {
+      "name": "production_signoff_completion_evidence",
+      "human_reviewer_value": "observed production proof that DocumentOps reviewer sign-off routes are deployed, pending/completed sign-off records are visible, and JSON download remains in-memory",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "server_side_generated_approval_record": false,
+      "server_side_export_artifact_written": false,
+      "actual_reviewer_approval_recorded": true,
+      "actual_reviewer_approval_generated_by_workflow": false,
+      "deployed_health_reachable": true,
+      "ops_key_required": true,
+      "ops_key_authenticated": true,
+      "document_ops_reviewer_signoff_route_deployed": true,
+      "signoff_storage_present": true,
+      "expected_record_ids_available": true,
+      "observed_staging_probe_completed": true,
+      "observed_staging_evidence_archived": true,
+      "production_smoke_completed": false,
+      "result": "pass"
+    },
+    "phase41": {
+      "name": "production_post_deploy_smoke_evidence",
+      "human_reviewer_value": "observed production smoke proof for health, provider routing, document generation, attachment/document upload generation, report workflow approval gates, project promotion, PPTX export, and snapshot export",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "server_side_generated_approval_record": false,
+      "model_promotion_authorized": false,
+      "normal_generation_provider_calls_made": true,
+      "runtime_bundles_created": true,
+      "report_workflow_records_created": true,
+      "project_document_promoted": true,
+      "pptx_export_response_generated": true,
+      "post_deploy_report_written": true,
+      "deployed_smoke_passed": true,
+      "report_workflow_smoke_passed": true,
+      "production_smoke_completed": true,
+      "result": "pass"
+    },
+    "phase42": {
+      "name": "production_browser_uat_evidence",
+      "human_reviewer_value": "observed production browser proof for admin UI document generation, sketch acceptance, result controls, PDF/PPTX/HWP download control clicks, report workflow UX, and backend export integrity complement",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "server_side_generated_approval_record": false,
+      "model_promotion_authorized": false,
+      "normal_generation_provider_calls_made": true,
+      "ui_document_generation_completed": true,
+      "download_clicks_without_console_errors": true,
+      "native_download_event_supported": false,
+      "native_os_download_verified": false,
+      "backend_export_integrity_passed": true,
+      "report_workflow_ui_passed": true,
+      "global_generation_status_stale_after_result_visible": true,
+      "production_browser_uat_completed": true,
+      "result": "pass_with_download_runtime_limitation"
     }
   },
   "observed_browser_qa_summary": {
@@ -557,13 +659,20 @@
     "phase26_result": "pass",
     "phase28_result": "pass",
     "phase32_result": "pass",
+    "phase42_result": "pass_with_download_runtime_limitation",
     "phase26_summary_status": "pending_manual_signoff_no_training_authorization",
     "phase28_download_report_type": "document_ops_phase27_reviewer_signoff_summary_export",
     "phase32_imported_records_visible": true,
     "phase32_downloaded_json_contains_imported_records": true,
     "phase28_browser_json_blob_received": true,
     "phase28_download_fallback_visible": true,
-    "phase28_native_download_event_supported": false
+    "phase28_native_download_event_supported": false,
+    "phase42_document_generation_ui_passed": true,
+    "phase42_report_workflow_ui_passed": true,
+    "phase42_download_clicks_without_console_errors": true,
+    "phase42_backend_export_integrity_passed": true,
+    "phase42_native_download_event_supported": false,
+    "phase42_native_os_download_verified": false
   },
   "staging_readiness_summary": {
     "phase33_status": "operator_release_packet_ready_no_training_authorization",
@@ -595,8 +704,31 @@
     "phase39_signoff_storage_present": false,
     "phase39_expected_record_ids_available": false,
     "phase39_observed_staging_probe_completed": false,
+    "phase40_deployed_health_reachable": true,
+    "phase40_ops_key_authenticated": true,
+    "phase40_document_ops_reviewer_signoff_route_deployed": true,
+    "phase40_signoff_storage_present": true,
+    "phase40_expected_record_ids_available": true,
+    "phase40_observed_staging_probe_completed": true,
+    "phase40_observed_staging_evidence_archived": true,
+    "phase40_json_download_server_file_written": false,
+    "phase40_production_signoff_probe_completed": true,
+    "phase41_deployed_smoke_passed": true,
+    "phase41_report_workflow_smoke_passed": true,
+    "phase41_normal_generation_provider_calls_made": true,
+    "phase41_runtime_bundles_created": true,
+    "phase41_post_deploy_report_written": true,
+    "phase41_restricted_training_side_effects_clear": true,
+    "phase42_document_generation_ui_passed": true,
+    "phase42_report_workflow_ui_passed": true,
+    "phase42_download_clicks_without_console_errors": true,
+    "phase42_backend_export_integrity_passed": true,
+    "phase42_native_download_event_supported": false,
+    "phase42_native_os_download_verified": false,
+    "phase42_global_generation_status_stale_after_result_visible": true,
+    "phase42_production_browser_uat_completed": true,
     "staging_run_completed": false,
-    "production_smoke_completed": false,
+    "production_smoke_completed": true,
     "training_authorized": false,
     "external_dataset_upload_authorized": false,
     "provider_fine_tune_api_call_authorized": false
@@ -653,10 +785,19 @@
     "pytest -q tests/test_infrastructure.py::test_phase38_observed_probe_retry_records_wrapper_fix_and_remaining_ops_key_blocker --tb=short",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json",
     "pytest -q tests/test_infrastructure.py::test_phase39_remote_runtime_gap_records_route_and_signoff_storage_blockers --tb=short",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/production_signoff_completion_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase40_production_signoff_completion_evidence_records_deployed_probe_pass --tb=short",
+    "SMOKE_TIMEOUT_SEC=180 python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy on production host",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/production_post_deploy_smoke_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase41_production_post_deploy_smoke_evidence_records_generation_and_workflow_pass --tb=short",
+    "Codex in-app browser UAT at https://admin.decisiondoc.kr for document generation, sketch acceptance, result controls, download control clicks, and report workflow UI",
+    "production export endpoint integrity checks for PDF, PPTX, and HWP/HWPX with non-sensitive synthetic documents",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase42_production_browser_uat_evidence_records_ui_export_and_workflow_checks --tb=short",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/browser_qa_result.json",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json",
     "perl -0ne 'while (m{<script>(.*?)</script>}sg) { print $1 }' app/static/index.html > /tmp/decisiondoc-index-scripts.js && node --check /tmp/decisiondoc-index-scripts.js && git diff --check"
   ],
-  "recommended_decision": "human_reviewer_use_ready_no_training_authorization",
-  "next_step": "Phase 40: prepare a deployable commit/release with the current DocumentOps routes, services, store, UI, and evidence changes; deploy it to admin.decisiondoc.kr; import intended sign-off records; then rerun Phase 36 and archive a passing observed probe result before any separate production smoke."
+  "recommended_decision": "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization",
+  "next_step": "If release sign-off requires OS-level files, run manual Chrome/Safari download-open verification for PDF, PPTX, and HWP/HWPX because Codex in-app browser cannot emit native download events."
 }

@@ -2,7 +2,7 @@
 
 ## Current State
 
-Research and architecture planning are complete. Phase 1 DocumentOps agent skeleton, Phase 2 trajectory persistence/export foundation, Phase 3 QA gates/evaluation rubric, Phase 4 internal API/service integration, the first DocumentOps UI surface, Phase 5 browser QA for SFT export inspection/export, Phase 6 secure export artifact list/download, Phase 7 live-provider pilot capture/export, Phase 8 offline dataset quality reporting, Phase 9 dataset freeze manifesting, Phase 10 dry-run model-training approval gates, Phase 11 read-only training readiness summary, Phase 12 training execution plan preview, Phase 13 two-person training execution request records, Phase 14 final pre-execution audit checklist/export, Phase 15 read-only training governance dashboard summary, Phase 16 provider adapter contract stub, Phase 17 dry-run provider execution rehearsal, Phase 18 local browser QA checklist/evidence artifact, Phase 19 observed local browser governance QA pass, Phase 20 release handoff index/manifest packaging, Phase 21 manual reviewer sign-off record template, Phase 22 local sign-off record validator, Phase 23 pending sign-off record generator, Phase 24 local sign-off summary reporting, Phase 25 ops-key sign-off summary endpoint/UI, Phase 26 observed local browser sign-off summary QA, Phase 27 ops-key reviewer sign-off JSON download, Phase 28 observed local browser sign-off JSON download QA, Phase 29 reviewer sign-off release handoff refresh, Phase 30 operator reviewer sign-off packet guide, Phase 31 tenant-local reviewer sign-off import helper, Phase 32 observed browser QA for imported sign-off records, Phase 33 operator release packet summary, Phase 34 staging-readiness dry-run probe, Phase 35 observed staging probe evidence archive, Phase 36 observed probe execution workflow, Phase 37 deployed probe failure evidence, Phase 38 observed probe retry evidence, and Phase 39 remote runtime gap evidence have been implemented as DecisionDoc-native work. Hermes is still not installed as a dependency.
+Research and architecture planning are complete. Phase 1 DocumentOps agent skeleton, Phase 2 trajectory persistence/export foundation, Phase 3 QA gates/evaluation rubric, Phase 4 internal API/service integration, the first DocumentOps UI surface, Phase 5 browser QA for SFT export inspection/export, Phase 6 secure export artifact list/download, Phase 7 live-provider pilot capture/export, Phase 8 offline dataset quality reporting, Phase 9 dataset freeze manifesting, Phase 10 dry-run model-training approval gates, Phase 11 read-only training readiness summary, Phase 12 training execution plan preview, Phase 13 two-person training execution request records, Phase 14 final pre-execution audit checklist/export, Phase 15 read-only training governance dashboard summary, Phase 16 provider adapter contract stub, Phase 17 dry-run provider execution rehearsal, Phase 18 local browser QA checklist/evidence artifact, Phase 19 observed local browser governance QA pass, Phase 20 release handoff index/manifest packaging, Phase 21 manual reviewer sign-off record template, Phase 22 local sign-off record validator, Phase 23 pending sign-off record generator, Phase 24 local sign-off summary reporting, Phase 25 ops-key sign-off summary endpoint/UI, Phase 26 observed local browser sign-off summary QA, Phase 27 ops-key reviewer sign-off JSON download, Phase 28 observed local browser sign-off JSON download QA, Phase 29 reviewer sign-off release handoff refresh, Phase 30 operator reviewer sign-off packet guide, Phase 31 tenant-local reviewer sign-off import helper, Phase 32 observed browser QA for imported sign-off records, Phase 33 operator release packet summary, Phase 34 staging-readiness dry-run probe, Phase 35 observed staging probe evidence archive, Phase 36 observed probe execution workflow, Phase 37 deployed probe failure evidence, Phase 38 observed probe retry evidence, Phase 39 remote runtime gap evidence, Phase 40 production sign-off completion evidence, Phase 41 production post-deploy smoke evidence, and Phase 42 production browser UAT evidence have been implemented as DecisionDoc-native work. Hermes is still not installed as a dependency.
 
 ## Completed
 
@@ -113,6 +113,20 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - Reran Phase 36 with the deployed ops key in memory only; reviewer sign-off summary/download changed from `401` to `404`, confirming the deployed ops key is valid but the route is absent.
 - Recorded Phase 39 remote runtime gap evidence: production host is reachable, remote checkout is at `011aec5`, remote code search found zero `reviewer-signoff/summary` route references, and the `system` tenant sign-off directory is missing.
 - Identified the next blocker as undeployed local DocumentOps route/service/store/UI changes plus missing production sign-off record import, not a provider/model issue.
+- Recorded Phase 40 production sign-off completion evidence after deploying the DocumentOps reviewer sign-off routes and importing production tenant records.
+- Validated completed record `dsr_phase41prod_done` locally and in the production checkout with `error_count=0`, then imported it into `/app/data/tenants/system/trajectory_reviewer_signoffs/`.
+- Reran the Phase 36 wrapper against `https://admin.decisiondoc.kr` with the deployed ops key held in memory only; `/health`, ops-key enforcement, summary, JSON download, expected record visibility, and `server_file_written=false` checks passed.
+- Confirmed production summary/download both observe `dsr_phase41prod_pending` and `dsr_phase41prod_done` while preserving no-training/no-upload/no-provider-fine-tune/no-provider-job/no-model-promotion boundaries.
+- Ran the separate production post-deploy smoke with `SMOKE_TIMEOUT_SEC=180` on the production host.
+- Recorded Phase 41 production post-deploy smoke evidence: health, provider routing, docker compose, nginx config, deployed document-generation smoke, and report workflow smoke all passed.
+- Confirmed general generation endpoints returned expected auth behavior and success responses: `/generate`, `/generate/export`, `/generate/with-attachments`, and `/generate/from-documents`.
+- Confirmed Report Workflow production smoke covered planning approval gates, slide approval gates, final PM/executive approval order, project creation, workflow promotion, PPTX export, and snapshot export.
+- Recorded that Phase 41 intentionally made normal generation provider calls and created runtime artifacts, while still not authorizing training, external dataset upload, fine-tune provider APIs, provider jobs, or model promotion.
+- Ran production browser UAT in the Codex in-app browser against `https://admin.decisiondoc.kr`.
+- Recorded Phase 42 production browser UAT evidence: admin page load, PM session visibility, synthetic document-generation input, sketch rendering/acceptance, generated result rendering, result action buttons, individual download controls, and Report Workflow tab/detail UX all passed.
+- Confirmed PDF/PPTX/HWP download controls are reachable and produced no browser console errors, while recording that Codex in-app browser cannot emit native download events.
+- Complemented the browser limitation with production backend export integrity checks for PDF, PPTX, and HWP/HWPX response structures and required magic bytes/ZIP entries.
+- Recorded a non-blocking UI polish follow-up: the result screen rendered but global generation status text stayed stale as `AI가 문서를 생성하는 중...`.
 - Hardened `DocumentOpsAgent` live-provider parsing for fenced JSON, common nested payload wrappers, `draft_output`/`content` aliases, dict-based evidence/source references, and scalar warning/plan values.
 - Updated the DocumentOps prompt to request Korean planning/draft/evidence output and explicit 개인정보, 보안, 운영책임, 리스크, 로그/감사 coverage for policy/public-sector tasks.
 - Completed a non-sensitive live OpenAI pilot through the DocumentOps API path: generated one policy planning trajectory, passed QA hard gate, marked it reviewed/accepted, previewed SFT export eligibility, exported JSONL, downloaded the artifact, and manually inspected the JSONL message structure.
@@ -221,6 +235,12 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - `docs/specs/hermes_decisiondoc_agent/phase38_observed_probe_retry/deployed_probe_retry_evidence.json`
 - `docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/REMOTE_RUNTIME_GAP_EVIDENCE.md`
 - `docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json`
+- `docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/PRODUCTION_SIGNOFF_COMPLETION_EVIDENCE.md`
+- `docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/production_signoff_completion_evidence.json`
+- `docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/PRODUCTION_POST_DEPLOY_SMOKE_EVIDENCE.md`
+- `docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/production_post_deploy_smoke_evidence.json`
+- `docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/PRODUCTION_BROWSER_UAT_EVIDENCE.md`
+- `docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json`
 
 ## Not Done Yet
 
@@ -231,7 +251,7 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - No background automatic capture added; trajectory capture is explicit via `capture_trajectory=true`.
 - No automatic model promotion or fine-tune run introduced.
 - Browser QA covered local mock provider flows only; Phase 7 live-provider validation was executed through FastAPI `TestClient` with a non-sensitive scenario and temp `DATA_DIR`, and Phase 19 observed governance QA used local mock metadata only.
-- Passing real staging/deployed probe execution and production deployment smoke remain separate validation steps; the latest deployed retry reached `/health`, validated the deployed ops key in memory, and is now blocked by missing deployed DocumentOps reviewer sign-off routes plus missing production sign-off storage.
+- The production reviewer sign-off deployed probe, general post-deploy backend smoke, and browser-level production UAT now pass; OS-level download-open verification in Chrome/Safari remains separate if release sign-off requires actual local files.
 - Dataset quality reports are read-only; they do not freeze a dataset, upload data, or start training.
 - Dataset freeze manifests are still no-training-by-default; a separate approval workflow is required before any model training or promotion.
 - Training approval records are dry-run/no-provider-job only; they do not upload data, start fine-tuning, or promote a model.
@@ -251,6 +271,8 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - Phase 30 operator packet guide is procedural documentation only; it does not collect actual reviewer approvals, authorize training execution, upload datasets, write server artifacts, call provider APIs, create provider jobs, or promote a model.
 - Phase 31 import helper copies only operator-provided pending or locally validated sign-off records into tenant-local storage; it does not create reviewer approvals, authorize training execution, upload datasets, call provider APIs, create provider jobs, or promote a model.
 - Phase 32 observed browser QA used local mock-provider seed data and Phase 31 imported records only; it does not record real reviewer approval, authorize training execution, upload datasets, call provider APIs, create provider jobs, or promote a model.
+- Phase 42 production browser UAT used normal production generation/export paths and UI inspection, but it does not authorize training execution, upload datasets, call provider fine-tune APIs, create provider jobs, or promote a model.
+- Phase 42 did not prove host OS file-save/open behavior because Codex in-app browser reports native downloads are unsupported; backend export integrity was checked separately.
 
 ## Current Verification
 
@@ -323,6 +345,18 @@ ssh read-only remote runtime inspection for /opt/decisiondoc commit, route refer
 python docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py with deployed ops key passed through process env only and output-dir /tmp/decisiondoc-phase39-observed-probe
 python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase39_remote_runtime_gap/remote_runtime_gap_evidence.json >/tmp/phase39_remote_runtime_gap_evidence.pretty.json
 pytest -q tests/test_infrastructure.py::test_phase39_remote_runtime_gap_records_route_and_signoff_storage_blockers --tb=short
+python3 docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/validate_signoff_record.py ~/Downloads/dsr_phase41prod_done_completed_signoff.json
+remote production validation and import into /app/data/tenants/system/trajectory_reviewer_signoffs/dsr_phase41prod_done_completed_signoff.json without printing secrets
+python docs/specs/hermes_decisiondoc_agent/phase36_observed_probe_execution_workflow/run_observed_probe_workflow.py with deployed ops key passed through process env only and output-dir /tmp/decisiondoc-phase41-prod-completed-probe
+python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/production_signoff_completion_evidence.json >/tmp/phase40_production_signoff_completion_evidence.pretty.json
+pytest -q tests/test_infrastructure.py::test_phase40_production_signoff_completion_evidence_records_deployed_probe_pass --tb=short
+SMOKE_TIMEOUT_SEC=180 python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy on production host
+python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/production_post_deploy_smoke_evidence.json >/tmp/phase41_production_post_deploy_smoke_evidence.pretty.json
+pytest -q tests/test_infrastructure.py::test_phase41_production_post_deploy_smoke_evidence_records_generation_and_workflow_pass --tb=short
+Codex in-app browser UAT at https://admin.decisiondoc.kr for document generation, sketch acceptance, result controls, download control clicks, and report workflow UI
+production export endpoint integrity checks for PDF, PPTX, and HWP/HWPX with non-sensitive synthetic documents
+python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json >/tmp/phase42_production_browser_uat_evidence.pretty.json
+pytest -q tests/test_infrastructure.py::test_phase42_production_browser_uat_evidence_records_ui_export_and_workflow_checks --tb=short
 python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/observed_staging_probe_evidence.json >/tmp/phase35_observed_staging_probe_evidence.pretty.json
 PYTHONPYCACHEPREFIX=/tmp/decisiondoc-pycache python3 -m py_compile docs/specs/hermes_decisiondoc_agent/phase35_observed_staging_probe_evidence/archive_staging_probe_result.py tests/test_infrastructure.py
 pytest -q tests/test_infrastructure.py::test_phase35_observed_staging_probe_evidence_archive_helper_validates_results --tb=short
@@ -399,13 +433,15 @@ Result:
 - Phase 37 deployed probe failure evidence test: deployed health is recorded as reachable, ops-key summary/download are recorded as `401`, ops key value is not stored, expected record ids remain missing, and no training/upload/provider/generated-approval side effects are authorized.
 - Phase 38 observed probe retry evidence test: wrapper output creation is recorded, deployed health remains `200`, ops-key summary/download remain `401`, expected ids are still not visible, and no training/upload/provider/generated-approval side effects are authorized.
 - Phase 39 remote runtime gap evidence test: deployed ops key is recorded as present and used only in memory, local probe key mismatch is recorded, summary/download return `404` with deployed key, remote route references are absent, sign-off storage is missing, and no training/upload/provider/generated-approval side effects are authorized.
+- Phase 40 production sign-off completion evidence test: deployed health and ops-key routes are recorded as passing, expected pending/completed record ids are visible in summary and JSON download, completed sign-off validation is recorded as valid, JSON download remains server-file-free, and no training/upload/provider/generated-approval/model-promotion side effects are authorized.
+- Phase 41 production post-deploy smoke evidence test: health/provider routing/docker/nginx checks pass, document generation smoke and report workflow smoke pass, normal generation provider/runtime artifact side effects are explicitly recorded, and training/upload/fine-tune/provider-job/model-promotion side effects remain false.
 
 ## Next Approval Needed
 
 Approve the next implementation slice:
 
 ```text
-Proceed with Phase 40: prepare a deployable commit/release containing the current DocumentOps route, service, store, UI, and evidence changes; deploy it to `admin.decisiondoc.kr`; import the intended reviewer sign-off records into production tenant-local storage; then rerun the Phase 36 wrapper and archive a passing observed probe result before any separate production smoke without starting training, uploading datasets, generating approvals, or promoting models.
+Proceed with browser-level production UAT for the admin UI: generate a document from the production UI, verify PDF/PPTX/HWP download/open behavior where applicable, and review the step-based report workflow UX without starting training, uploading datasets, creating provider fine-tune jobs, or promoting models.
 ```
 
 ## Open Risks

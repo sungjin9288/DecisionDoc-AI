@@ -1,0 +1,169 @@
+{
+  "allowed_runtime_side_effects": {
+    "normal_generation_provider_calls_made": true,
+    "production_export_endpoint_called": true,
+    "report_workflow_ui_inspected": true,
+    "ui_document_generation_completed": true
+  },
+  "backend_export_integrity": {
+    "hwp": {
+      "bytes": 4818,
+      "content_type": "application/hwp+zip",
+      "entry_count": 8,
+      "magic": "504b030414000000",
+      "required_entries": [
+        "mimetype",
+        "Contents/header.xml",
+        "Contents/section0.xml"
+      ],
+      "required_entries_present": true,
+      "status": 200,
+      "valid_zip": true
+    },
+    "pdf": {
+      "bytes": 217680,
+      "content_type": "application/pdf",
+      "magic": "255044462d312e34",
+      "status": 200,
+      "valid_magic": true
+    },
+    "pptx": {
+      "bytes": 41501,
+      "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "magic": "504b030414000000",
+      "required_entries": [
+        "[Content_Types].xml",
+        "ppt/presentation.xml",
+        "ppt/slides/slide1.xml"
+      ],
+      "required_entries_present": true,
+      "slide_entries": [
+        "ppt/slides/slide1.xml",
+        "ppt/slides/slide2.xml",
+        "ppt/slides/slide3.xml",
+        "ppt/slides/slide4.xml",
+        "ppt/slides/slide5.xml"
+      ],
+      "status": 200,
+      "valid_zip": true
+    }
+  },
+  "browser_runtime": {
+    "download_event_supported": false,
+    "download_error": "Downloads are not supported by Codex In-app Browser.",
+    "runtime": "Codex in-app browser",
+    "session_user": "안성진 · PM",
+    "target_url": "https://admin.decisiondoc.kr/",
+    "title": "DecisionDoc AI — AI 문서 생성기"
+  },
+  "checkpoint_summary": {
+    "backend_export_integrity_passed": true,
+    "document_generation_ui_passed": true,
+    "download_clicks_without_console_errors": true,
+    "native_os_download_verified": false,
+    "report_workflow_ui_passed": true,
+    "status": "passed_with_download_runtime_limitation"
+  },
+  "created_at": "2026-05-13T09:34:16+09:00",
+  "document_generation_ui": {
+    "bundle": "AI 사업 제안서",
+    "clicked_generate": true,
+    "clicked_sketch_accept": true,
+    "fallback_generation_label_visible": true,
+    "generated_heading_visible": true,
+    "individual_download_controls_visible": true,
+    "input": {
+      "background": "JSON, YAML, HTML 형식의 공개 가능한 synthetic 참고 자료를 첨부해 문서 생성 흐름을 검증한다",
+      "constraints": "실제 고객 데이터 없이 synthetic 자료만 사용하고 timeout, 504, 첨부 반영 품질을 확인한다",
+      "goal": "비민감 synthetic 입력으로 HWPX 다운로드 파일 구조를 검증한다",
+      "title": "HWPX 운영 검증 20260504"
+    },
+    "result_action_buttons_visible": [
+      "복사",
+      "요약",
+      "AI 검토",
+      "번역",
+      "관련 추천",
+      "페이지 스케치",
+      "PPT 문서로 재구성",
+      "내보내기",
+      "PPT 다운로드",
+      "Word",
+      "Excel",
+      "HWP",
+      "PDF",
+      "공유",
+      "비교하기",
+      "결재 요청"
+    ],
+    "sketch_rendered": true,
+    "status": "passed"
+  },
+  "download_click_checks": {
+    "hwp": {
+      "clicked": true,
+      "console_errors": [],
+      "download_event": false,
+      "download_error": "Downloads are not supported by Codex In-app Browser."
+    },
+    "pdf": {
+      "clicked": true,
+      "console_errors": [],
+      "download_event": false,
+      "download_error": "Downloads are not supported by Codex In-app Browser."
+    },
+    "pptx": {
+      "clicked": true,
+      "console_errors": [],
+      "download_event": false,
+      "download_error": "Downloads are not supported by Codex In-app Browser."
+    }
+  },
+  "follow_ups": {
+    "global_generation_status_stale_after_result_visible": true,
+    "manual_os_download_open_check_required_if_release_requires_local_files": true,
+    "native_download_event_supported": false
+  },
+  "phase": 42,
+  "report_type": "document_ops_phase42_production_browser_uat_evidence",
+  "report_workflow_ui": {
+    "approval_chain_visible": true,
+    "executive_approval_visible": true,
+    "final_section_visible": true,
+    "final_status": "final_approved",
+    "learning_opt_in_disabled": true,
+    "planning_section_visible": true,
+    "pm_approval_visible": true,
+    "project_creation_form_visible": true,
+    "project_document_saved": true,
+    "project_document_summary": "document=daff8d43-e1b3-4f24-91c4-04564d65ac61",
+    "report_workflow_tab_visible": true,
+    "selected_workflow_title": "[SMOKE] Report Workflow Blueprint a8a40549",
+    "slide_approval_count": 2,
+    "slide_count": 2,
+    "slides_section_visible": true,
+    "snapshot_export_button_visible": true,
+    "status": "passed",
+    "stepper_visible": true,
+    "workflow_pptx_export_button_visible": true
+  },
+  "restricted_side_effect_boundary": {
+    "external_dataset_uploaded": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "server_side_generated_reviewer_approval": false,
+    "training_execution_started": false
+  },
+  "status": "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization",
+  "target": {
+    "base_url": "https://admin.decisiondoc.kr",
+    "tenant_id": "system"
+  },
+  "verification_methods": [
+    "Codex in-app browser production UI inspection",
+    "Production export endpoint integrity calls with non-sensitive synthetic documents"
+  ]
+}

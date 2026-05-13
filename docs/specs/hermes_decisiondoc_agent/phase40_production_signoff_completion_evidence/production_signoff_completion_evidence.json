@@ -1,0 +1,111 @@
+{
+  "checkpoint_summary": {
+    "download_observed_record_ids": [
+      "dsr_phase41prod_done",
+      "dsr_phase41prod_pending"
+    ],
+    "download_record_count": 2,
+    "download_server_file_written": false,
+    "download_status_code": 200,
+    "health_status_code": 200,
+    "summary_observed_record_ids": [
+      "dsr_phase41prod_done",
+      "dsr_phase41prod_pending"
+    ],
+    "summary_record_count": 2,
+    "summary_status_code": 200,
+    "summary_without_ops_key_status_code": 401
+  },
+  "credential_findings": {
+    "deployed_ops_key_present": true,
+    "deployed_ops_key_used_in_memory_only": true,
+    "ops_key_value_recorded": false
+  },
+  "guard_flags": {
+    "external_upload_allowed": false,
+    "model_promotion_allowed": false,
+    "provider_api_calls_allowed": false,
+    "provider_job_started": false,
+    "server_side_generated_approval_record": false,
+    "training_execution_allowed": false
+  },
+  "imported_records": {
+    "completed_record": {
+      "actual_reviewer_approval_recorded": true,
+      "filename": "dsr_phase41prod_done_completed_signoff.json",
+      "local_sha256": "eb6a12a7dc6f38471830ac2dd0d5ce8f8b6ffaeeee636395f6afc36090d4ee25",
+      "production_path": "/app/data/tenants/system/trajectory_reviewer_signoffs/dsr_phase41prod_done_completed_signoff.json",
+      "record_status": "manual_signoff_complete",
+      "signoff_record_id": "dsr_phase41prod_done",
+      "validation_error_count": 0,
+      "validation_valid": true,
+      "validation_warning_count": 0
+    },
+    "pending_record": {
+      "production_path": "/app/data/tenants/system/trajectory_reviewer_signoffs/dsr_phase41prod_pending_pending_signoff.json",
+      "record_status": "pending_manual_signoff",
+      "signoff_record_id": "dsr_phase41prod_pending"
+    }
+  },
+  "next_step": "Decide whether to run a separate production smoke for the general document-generation path. Keep that smoke separate from reviewer sign-off governance because it may call normal generation providers.",
+  "phase": 40,
+  "probe_artifacts": {
+    "phase34_probe_result_path": "/tmp/decisiondoc-phase41-prod-completed-probe/phase34-staging-readiness.json",
+    "phase34_probe_result_sha256": "5d665d0d4c7f8174be888c1dc5f1eeaecc313050c7708ff505bc4108b4353272",
+    "phase35_archive_path": "/tmp/decisiondoc-phase41-prod-completed-probe/phase35-observed-staging-probe-evidence.json",
+    "phase35_archive_sha256": "e648ab1783be095c157afb5beb36f40d101ba27785df7942b2b8878036f2e08b",
+    "phase36_workflow_path": "/tmp/decisiondoc-phase41-prod-completed-probe/phase36-observed-probe-workflow-result.json",
+    "phase36_workflow_sha256": "36f648dfa3b8e8d6ba36315335c7ab29073abe826992fe90978e4e6e3ef0299c",
+    "phase36_workflow_status": "observed_probe_archived_no_training_authorization"
+  },
+  "readiness": {
+    "deployed_health_reachable": true,
+    "document_ops_reviewer_signoff_route_deployed": true,
+    "external_dataset_upload_authorized": false,
+    "expected_record_ids_available": true,
+    "json_download_contains_records": true,
+    "model_promotion_authorized": false,
+    "observed_staging_evidence_archived": true,
+    "observed_staging_probe_completed": true,
+    "ops_key_authenticated": true,
+    "ops_key_required": true,
+    "production_smoke_completed": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "signoff_storage_present": true,
+    "training_authorized": false
+  },
+  "remote_runtime": {
+    "app_container_health": "healthy",
+    "app_image": "ghcr.io/sungjin9288/decisiondoc-ai:1.1.71",
+    "host": "ip-10-20-3-177",
+    "public_ip": "13.209.238.126",
+    "remote_commit": "daad0bc8c601",
+    "signoff_dir_present": true
+  },
+  "report_type": "document_ops_phase40_production_signoff_completion_evidence",
+  "side_effect_boundary": {
+    "actual_reviewer_approval_generated_by_workflow": false,
+    "external_dataset_uploaded": false,
+    "local_archive_written": true,
+    "local_probe_result_written": true,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "server_side_export_artifact_written": false,
+    "server_side_generated_approval_record": false,
+    "signoff_record_imported": true,
+    "training_execution_started": false
+  },
+  "status": "production_signoff_completion_observed_no_training_authorization",
+  "target": {
+    "base_url": "https://admin.decisiondoc.kr",
+    "expected_record_ids": [
+      "dsr_phase41prod_pending",
+      "dsr_phase41prod_done"
+    ],
+    "tenant_id": "system"
+  }
+}

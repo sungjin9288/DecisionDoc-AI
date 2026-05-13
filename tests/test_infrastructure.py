@@ -512,11 +512,15 @@ def test_phase29_release_handoff_refresh_packages_reviewer_signoff_artifacts():
     assert "Sign-Off Checklist" in report
     assert "provider fine-tune API calls" in report
     assert manifest["report_type"] == "document_ops_phase29_reviewer_signoff_handoff_refresh"
-    assert manifest["status"] == "human_reviewer_use_ready_no_training_authorization"
+    assert manifest["status"] == (
+        "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization"
+    )
     assert manifest["release_boundary"]["reviewer_signoff_ready"] is True
     assert manifest["release_boundary"]["human_reviewer_use_ready"] is True
-    assert manifest["release_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert manifest["release_boundary"]["actual_reviewer_approval_recorded"] is True
     assert manifest["release_boundary"]["training_execution_authorized"] is False
+    assert manifest["release_boundary"]["production_smoke_completed"] is True
+    assert manifest["release_boundary"]["production_browser_uat_completed"] is True
     assert manifest["release_boundary"]["server_side_export_artifact_write_authorized"] is False
     assert manifest["release_boundary"]["provider_fine_tune_api_call_authorized"] is False
     assert manifest["observed_browser_qa_summary"]["phase26_result"] == "pass"
@@ -574,6 +578,12 @@ def test_phase29_release_handoff_refresh_packages_reviewer_signoff_artifacts():
         "phase38_observed_probe_retry_evidence_json",
         "phase39_remote_runtime_gap_evidence_report",
         "phase39_remote_runtime_gap_evidence_json",
+        "phase40_production_signoff_completion_evidence_report",
+        "phase40_production_signoff_completion_evidence_json",
+        "phase41_production_post_deploy_smoke_evidence_report",
+        "phase41_production_post_deploy_smoke_evidence_json",
+        "phase42_production_browser_uat_evidence_report",
+        "phase42_production_browser_uat_evidence_json",
     } <= artifact_ids
     assert {f"phase{phase}" for phase in range(21, 29)} <= set(coverage)
     assert coverage["phase21"]["training_authorized"] is False
@@ -632,8 +642,55 @@ def test_phase29_release_handoff_refresh_packages_reviewer_signoff_artifacts():
     assert coverage["phase39"]["document_ops_reviewer_signoff_route_deployed"] is False
     assert coverage["phase39"]["signoff_storage_present"] is False
     assert coverage["phase39"]["expected_record_ids_available"] is False
+    assert coverage["phase40"]["training_authorized"] is False
+    assert coverage["phase40"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase40"]["server_side_export_artifact_written"] is False
+    assert coverage["phase40"]["actual_reviewer_approval_recorded"] is True
+    assert coverage["phase40"]["actual_reviewer_approval_generated_by_workflow"] is False
+    assert coverage["phase40"]["ops_key_authenticated"] is True
+    assert coverage["phase40"]["document_ops_reviewer_signoff_route_deployed"] is True
+    assert coverage["phase40"]["signoff_storage_present"] is True
+    assert coverage["phase40"]["expected_record_ids_available"] is True
+    assert coverage["phase40"]["observed_staging_probe_completed"] is True
+    assert coverage["phase40"]["observed_staging_evidence_archived"] is True
+    assert coverage["phase40"]["result"] == "pass"
+    assert coverage["phase41"]["training_authorized"] is False
+    assert coverage["phase41"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase41"]["provider_job_creation_authorized"] is False
+    assert coverage["phase41"]["model_promotion_authorized"] is False
+    assert coverage["phase41"]["normal_generation_provider_calls_made"] is True
+    assert coverage["phase41"]["runtime_bundles_created"] is True
+    assert coverage["phase41"]["report_workflow_records_created"] is True
+    assert coverage["phase41"]["project_document_promoted"] is True
+    assert coverage["phase41"]["pptx_export_response_generated"] is True
+    assert coverage["phase41"]["post_deploy_report_written"] is True
+    assert coverage["phase41"]["deployed_smoke_passed"] is True
+    assert coverage["phase41"]["report_workflow_smoke_passed"] is True
+    assert coverage["phase41"]["production_smoke_completed"] is True
+    assert coverage["phase41"]["result"] == "pass"
+    assert coverage["phase42"]["training_authorized"] is False
+    assert coverage["phase42"]["provider_fine_tune_api_called"] is False
+    assert coverage["phase42"]["provider_job_creation_authorized"] is False
+    assert coverage["phase42"]["model_promotion_authorized"] is False
+    assert coverage["phase42"]["normal_generation_provider_calls_made"] is True
+    assert coverage["phase42"]["ui_document_generation_completed"] is True
+    assert coverage["phase42"]["download_clicks_without_console_errors"] is True
+    assert coverage["phase42"]["native_download_event_supported"] is False
+    assert coverage["phase42"]["native_os_download_verified"] is False
+    assert coverage["phase42"]["backend_export_integrity_passed"] is True
+    assert coverage["phase42"]["report_workflow_ui_passed"] is True
+    assert coverage["phase42"]["global_generation_status_stale_after_result_visible"] is True
+    assert coverage["phase42"]["production_browser_uat_completed"] is True
+    assert coverage["phase42"]["result"] == "pass_with_download_runtime_limitation"
     assert manifest["observed_browser_qa_summary"]["phase32_imported_records_visible"] is True
     assert manifest["observed_browser_qa_summary"]["phase32_downloaded_json_contains_imported_records"] is True
+    assert manifest["observed_browser_qa_summary"]["phase42_result"] == "pass_with_download_runtime_limitation"
+    assert manifest["observed_browser_qa_summary"]["phase42_document_generation_ui_passed"] is True
+    assert manifest["observed_browser_qa_summary"]["phase42_report_workflow_ui_passed"] is True
+    assert manifest["observed_browser_qa_summary"]["phase42_download_clicks_without_console_errors"] is True
+    assert manifest["observed_browser_qa_summary"]["phase42_backend_export_integrity_passed"] is True
+    assert manifest["observed_browser_qa_summary"]["phase42_native_download_event_supported"] is False
+    assert manifest["observed_browser_qa_summary"]["phase42_native_os_download_verified"] is False
     assert manifest["staging_readiness_summary"]["phase33_status"] == (
         "operator_release_packet_ready_no_training_authorization"
     )
@@ -662,8 +719,34 @@ def test_phase29_release_handoff_refresh_packages_reviewer_signoff_artifacts():
     assert manifest["staging_readiness_summary"]["phase39_signoff_storage_present"] is False
     assert manifest["staging_readiness_summary"]["phase39_expected_record_ids_available"] is False
     assert manifest["staging_readiness_summary"]["phase39_observed_staging_probe_completed"] is False
+    assert manifest["staging_readiness_summary"]["phase40_deployed_health_reachable"] is True
+    assert manifest["staging_readiness_summary"]["phase40_ops_key_authenticated"] is True
+    assert (
+        manifest["staging_readiness_summary"]["phase40_document_ops_reviewer_signoff_route_deployed"]
+        is True
+    )
+    assert manifest["staging_readiness_summary"]["phase40_signoff_storage_present"] is True
+    assert manifest["staging_readiness_summary"]["phase40_expected_record_ids_available"] is True
+    assert manifest["staging_readiness_summary"]["phase40_observed_staging_probe_completed"] is True
+    assert manifest["staging_readiness_summary"]["phase40_observed_staging_evidence_archived"] is True
+    assert manifest["staging_readiness_summary"]["phase40_json_download_server_file_written"] is False
+    assert manifest["staging_readiness_summary"]["phase40_production_signoff_probe_completed"] is True
+    assert manifest["staging_readiness_summary"]["phase41_deployed_smoke_passed"] is True
+    assert manifest["staging_readiness_summary"]["phase41_report_workflow_smoke_passed"] is True
+    assert manifest["staging_readiness_summary"]["phase41_normal_generation_provider_calls_made"] is True
+    assert manifest["staging_readiness_summary"]["phase41_runtime_bundles_created"] is True
+    assert manifest["staging_readiness_summary"]["phase41_post_deploy_report_written"] is True
+    assert manifest["staging_readiness_summary"]["phase41_restricted_training_side_effects_clear"] is True
+    assert manifest["staging_readiness_summary"]["phase42_document_generation_ui_passed"] is True
+    assert manifest["staging_readiness_summary"]["phase42_report_workflow_ui_passed"] is True
+    assert manifest["staging_readiness_summary"]["phase42_download_clicks_without_console_errors"] is True
+    assert manifest["staging_readiness_summary"]["phase42_backend_export_integrity_passed"] is True
+    assert manifest["staging_readiness_summary"]["phase42_native_download_event_supported"] is False
+    assert manifest["staging_readiness_summary"]["phase42_native_os_download_verified"] is False
+    assert manifest["staging_readiness_summary"]["phase42_global_generation_status_stale_after_result_visible"] is True
+    assert manifest["staging_readiness_summary"]["phase42_production_browser_uat_completed"] is True
     assert manifest["staging_readiness_summary"]["staging_run_completed"] is False
-    assert manifest["staging_readiness_summary"]["production_smoke_completed"] is False
+    assert manifest["staging_readiness_summary"]["production_smoke_completed"] is True
     assert manifest["staging_readiness_summary"]["training_authorized"] is False
     assert all(os.path.exists(item["path"]) for item in manifest["artifacts"])
     assert all(step["side_effect"] is False for step in manifest["reviewer_use_steps"])
@@ -1666,6 +1749,234 @@ def test_phase39_remote_runtime_gap_records_route_and_signoff_storage_blockers()
     )
     assert all(value is False for value in evidence["guard_flags"].values())
     assert all(value is False for value in evidence["side_effect_boundary"].values())
+
+
+def test_phase40_production_signoff_completion_evidence_records_deployed_probe_pass():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/PRODUCTION_SIGNOFF_COMPLETION_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase40_production_signoff_completion_evidence/production_signoff_completion_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 40 Production Sign-Off Completion Evidence" in report
+    assert "PRODUCTION_SIGNOFF_COMPLETION_OBSERVED_NO_TRAINING_AUTHORIZATION" in report
+    assert "reviewer sign-off summary with deployed ops key" in report
+    assert "did not upload datasets" in report
+    assert evidence["report_type"] == "document_ops_phase40_production_signoff_completion_evidence"
+    assert evidence["phase"] == 40
+    assert evidence["status"] == "production_signoff_completion_observed_no_training_authorization"
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["target"]["expected_record_ids"] == [
+        "dsr_phase41prod_pending",
+        "dsr_phase41prod_done",
+    ]
+    assert evidence["credential_findings"]["deployed_ops_key_present"] is True
+    assert evidence["credential_findings"]["deployed_ops_key_used_in_memory_only"] is True
+    assert evidence["credential_findings"]["ops_key_value_recorded"] is False
+    assert evidence["checkpoint_summary"]["health_status_code"] == 200
+    assert evidence["checkpoint_summary"]["summary_without_ops_key_status_code"] == 401
+    assert evidence["checkpoint_summary"]["summary_status_code"] == 200
+    assert evidence["checkpoint_summary"]["download_status_code"] == 200
+    assert evidence["checkpoint_summary"]["summary_record_count"] == 2
+    assert evidence["checkpoint_summary"]["download_record_count"] == 2
+    assert evidence["checkpoint_summary"]["download_server_file_written"] is False
+    assert set(evidence["checkpoint_summary"]["summary_observed_record_ids"]) == {
+        "dsr_phase41prod_pending",
+        "dsr_phase41prod_done",
+    }
+    assert set(evidence["checkpoint_summary"]["download_observed_record_ids"]) == {
+        "dsr_phase41prod_pending",
+        "dsr_phase41prod_done",
+    }
+    assert evidence["imported_records"]["completed_record"]["signoff_record_id"] == "dsr_phase41prod_done"
+    assert evidence["imported_records"]["completed_record"]["validation_valid"] is True
+    assert evidence["imported_records"]["completed_record"]["validation_error_count"] == 0
+    assert evidence["imported_records"]["completed_record"]["actual_reviewer_approval_recorded"] is True
+    assert evidence["imported_records"]["pending_record"]["signoff_record_id"] == "dsr_phase41prod_pending"
+    assert evidence["probe_artifacts"]["phase36_workflow_status"] == (
+        "observed_probe_archived_no_training_authorization"
+    )
+    assert evidence["remote_runtime"]["remote_commit"] == "daad0bc8c601"
+    assert evidence["remote_runtime"]["signoff_dir_present"] is True
+    assert evidence["readiness"]["ops_key_authenticated"] is True
+    assert evidence["readiness"]["document_ops_reviewer_signoff_route_deployed"] is True
+    assert evidence["readiness"]["signoff_storage_present"] is True
+    assert evidence["readiness"]["expected_record_ids_available"] is True
+    assert evidence["readiness"]["observed_staging_probe_completed"] is True
+    assert evidence["readiness"]["observed_staging_evidence_archived"] is True
+    assert evidence["readiness"]["production_smoke_completed"] is False
+    assert evidence["readiness"]["training_authorized"] is False
+    assert evidence["readiness"]["provider_fine_tune_api_call_authorized"] is False
+    assert all(value is False for value in evidence["guard_flags"].values())
+    assert evidence["side_effect_boundary"]["signoff_record_imported"] is True
+    assert evidence["side_effect_boundary"]["local_archive_written"] is True
+    assert evidence["side_effect_boundary"]["local_probe_result_written"] is True
+    assert evidence["side_effect_boundary"]["training_execution_started"] is False
+    assert evidence["side_effect_boundary"]["external_dataset_uploaded"] is False
+    assert evidence["side_effect_boundary"]["provider_fine_tune_api_called"] is False
+    assert evidence["side_effect_boundary"]["provider_job_created"] is False
+    assert evidence["side_effect_boundary"]["model_promoted"] is False
+    assert evidence["side_effect_boundary"]["server_side_export_artifact_written"] is False
+    assert evidence["side_effect_boundary"]["server_side_generated_approval_record"] is False
+
+
+def test_phase41_production_post_deploy_smoke_evidence_records_generation_and_workflow_pass():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/PRODUCTION_POST_DEPLOY_SMOKE_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase41_production_post_deploy_smoke_evidence/production_post_deploy_smoke_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 41 Production Post-Deploy Smoke Evidence" in report
+    assert "PRODUCTION_POST_DEPLOY_SMOKE_PASSED_NO_TRAINING_AUTHORIZATION" in report
+    assert "intentionally exercised normal production document-generation paths" in report
+    assert "Still not allowed and not observed" in report
+    assert evidence["report_type"] == "document_ops_phase41_production_post_deploy_smoke_evidence"
+    assert evidence["phase"] == 41
+    assert evidence["status"] == "production_post_deploy_smoke_passed_no_training_authorization"
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["target"]["smoke_timeout_sec"] == 180
+    assert evidence["post_deploy_report"]["sha256"] == (
+        "604adb69d21e9b5bb62dbccc2a41fec6256817cc38474a4bb7e6e785ab29abb0"
+    )
+    assert evidence["checkpoint_summary"]["status"] == "passed"
+    assert evidence["checkpoint_summary"]["health_status_code"] == 200
+    assert evidence["checkpoint_summary"]["docker_compose_ps_passed"] is True
+    assert evidence["checkpoint_summary"]["nginx_config_test_passed"] is True
+    assert evidence["checkpoint_summary"]["deployed_smoke_passed"] is True
+    assert evidence["checkpoint_summary"]["report_workflow_smoke_passed"] is True
+    assert evidence["checkpoint_summary"]["provider_policy_quality_first"] == "ok"
+    assert all(value == "ok" for value in evidence["checkpoint_summary"]["provider_route_checks"].values())
+    assert evidence["provider_routes"]["generation"] == "claude,openai,gemini"
+    assert evidence["document_generation_smoke"]["generate_no_key_status"] == 401
+    assert evidence["document_generation_smoke"]["generate_auth_status"] == 200
+    assert evidence["document_generation_smoke"]["generate_export_auth_status"] == 200
+    assert evidence["document_generation_smoke"]["generate_export_files"] == 4
+    assert evidence["document_generation_smoke"]["with_attachments_no_key_status"] == 401
+    assert evidence["document_generation_smoke"]["with_attachments_auth_status"] == 200
+    assert evidence["document_generation_smoke"]["with_attachments_files"] == 1
+    assert evidence["document_generation_smoke"]["with_attachments_docs"] == 4
+    assert evidence["document_generation_smoke"]["from_documents_no_key_status"] == 401
+    assert evidence["document_generation_smoke"]["from_documents_auth_status"] == 200
+    assert evidence["document_generation_smoke"]["from_documents_files"] == 1
+    assert evidence["document_generation_smoke"]["from_documents_docs"] == 2
+    assert evidence["report_workflow_smoke"]["report_workflow_no_key_status"] == 401
+    assert evidence["report_workflow_smoke"]["report_workflow_auth_status"] == 200
+    assert evidence["report_workflow_smoke"]["slides_generate_before_planning_status"] == 400
+    assert evidence["report_workflow_smoke"]["planning_generate_status"] == 200
+    assert evidence["report_workflow_smoke"]["planning_generate_slide_plans"] == 2
+    assert evidence["report_workflow_smoke"]["slides_generate_count"] == 2
+    assert evidence["report_workflow_smoke"]["final_submit_before_slide_approvals_status"] == 400
+    assert evidence["report_workflow_smoke"]["slide_approvals"] == 2
+    assert evidence["report_workflow_smoke"]["final_submit_after_slide_approvals_status"] == 200
+    assert evidence["report_workflow_smoke"]["executive_approve_before_pm_status"] == 400
+    assert evidence["report_workflow_smoke"]["pm_approve_status"] == 200
+    assert evidence["report_workflow_smoke"]["executive_approve_after_pm_status"] == 200
+    assert evidence["report_workflow_smoke"]["project_create_status"] == 200
+    assert evidence["report_workflow_smoke"]["promote_status"] == 200
+    assert evidence["report_workflow_smoke"]["pptx_export_status"] == 200
+    assert evidence["report_workflow_smoke"]["pptx_export_bytes"] > 0
+    assert evidence["report_workflow_smoke"]["snapshot_export_status"] == 200
+    assert evidence["report_workflow_smoke"]["snapshot_export_version"] == (
+        "decisiondoc_report_workflow_snapshot.v1"
+    )
+    assert evidence["allowed_runtime_side_effects"]["normal_generation_provider_calls_made"] is True
+    assert evidence["allowed_runtime_side_effects"]["runtime_bundles_created"] is True
+    assert evidence["allowed_runtime_side_effects"]["report_workflow_records_created"] is True
+    assert evidence["allowed_runtime_side_effects"]["project_document_promoted"] is True
+    assert evidence["allowed_runtime_side_effects"]["pptx_export_response_generated"] is True
+    assert evidence["allowed_runtime_side_effects"]["post_deploy_report_written"] is True
+    assert all(value is False for value in evidence["restricted_side_effect_boundary"].values())
+
+
+def test_phase42_production_browser_uat_evidence_records_ui_export_and_workflow_checks():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/PRODUCTION_BROWSER_UAT_EVIDENCE.md",
+        encoding="utf-8",
+    ).read()
+    evidence = json.load(
+        open(
+            "docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json",
+            encoding="utf-8",
+        )
+    )
+
+    assert "Phase 42 Production Browser UAT Evidence" in report
+    assert "PRODUCTION_BROWSER_UAT_PASSED_WITH_DOWNLOAD_RUNTIME_LIMITATION_NO_TRAINING_AUTHORIZATION" in report
+    assert "Codex in-app browser does not support native download events" in report
+    assert "Report Workflow UI UAT" in report
+    assert evidence["report_type"] == "document_ops_phase42_production_browser_uat_evidence"
+    assert evidence["phase"] == 42
+    assert evidence["status"] == (
+        "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization"
+    )
+    assert evidence["target"]["base_url"] == "https://admin.decisiondoc.kr"
+    assert evidence["browser_runtime"]["runtime"] == "Codex in-app browser"
+    assert evidence["browser_runtime"]["session_user"] == "안성진 · PM"
+    assert evidence["browser_runtime"]["download_event_supported"] is False
+    assert "Downloads are not supported" in evidence["browser_runtime"]["download_error"]
+    assert evidence["checkpoint_summary"]["status"] == "passed_with_download_runtime_limitation"
+    assert evidence["checkpoint_summary"]["document_generation_ui_passed"] is True
+    assert evidence["checkpoint_summary"]["download_clicks_without_console_errors"] is True
+    assert evidence["checkpoint_summary"]["backend_export_integrity_passed"] is True
+    assert evidence["checkpoint_summary"]["report_workflow_ui_passed"] is True
+    assert evidence["checkpoint_summary"]["native_os_download_verified"] is False
+    assert evidence["document_generation_ui"]["status"] == "passed"
+    assert evidence["document_generation_ui"]["clicked_generate"] is True
+    assert evidence["document_generation_ui"]["clicked_sketch_accept"] is True
+    assert evidence["document_generation_ui"]["sketch_rendered"] is True
+    assert evidence["document_generation_ui"]["generated_heading_visible"] is True
+    assert evidence["document_generation_ui"]["fallback_generation_label_visible"] is True
+    assert evidence["document_generation_ui"]["individual_download_controls_visible"] is True
+    assert evidence["document_generation_ui"]["input"]["title"] == "HWPX 운영 검증 20260504"
+    assert {"PPT 다운로드", "HWP", "PDF", "결재 요청"} <= set(
+        evidence["document_generation_ui"]["result_action_buttons_visible"]
+    )
+    assert all(item["clicked"] is True for item in evidence["download_click_checks"].values())
+    assert all(item["console_errors"] == [] for item in evidence["download_click_checks"].values())
+    assert all(item["download_event"] is False for item in evidence["download_click_checks"].values())
+    assert evidence["backend_export_integrity"]["pdf"]["status"] == 200
+    assert evidence["backend_export_integrity"]["pdf"]["valid_magic"] is True
+    assert evidence["backend_export_integrity"]["pdf"]["content_type"] == "application/pdf"
+    assert evidence["backend_export_integrity"]["pptx"]["status"] == 200
+    assert evidence["backend_export_integrity"]["pptx"]["valid_zip"] is True
+    assert evidence["backend_export_integrity"]["pptx"]["required_entries_present"] is True
+    assert "ppt/slides/slide1.xml" in evidence["backend_export_integrity"]["pptx"]["slide_entries"]
+    assert evidence["backend_export_integrity"]["hwp"]["status"] == 200
+    assert evidence["backend_export_integrity"]["hwp"]["valid_zip"] is True
+    assert evidence["backend_export_integrity"]["hwp"]["required_entries_present"] is True
+    assert "Contents/section0.xml" in evidence["backend_export_integrity"]["hwp"]["required_entries"]
+    assert evidence["report_workflow_ui"]["status"] == "passed"
+    assert evidence["report_workflow_ui"]["report_workflow_tab_visible"] is True
+    assert evidence["report_workflow_ui"]["stepper_visible"] is True
+    assert evidence["report_workflow_ui"]["project_creation_form_visible"] is True
+    assert evidence["report_workflow_ui"]["planning_section_visible"] is True
+    assert evidence["report_workflow_ui"]["slides_section_visible"] is True
+    assert evidence["report_workflow_ui"]["final_section_visible"] is True
+    assert evidence["report_workflow_ui"]["final_status"] == "final_approved"
+    assert evidence["report_workflow_ui"]["slide_approval_count"] == evidence["report_workflow_ui"]["slide_count"]
+    assert evidence["report_workflow_ui"]["workflow_pptx_export_button_visible"] is True
+    assert evidence["report_workflow_ui"]["snapshot_export_button_visible"] is True
+    assert evidence["report_workflow_ui"]["project_document_saved"] is True
+    assert evidence["report_workflow_ui"]["learning_opt_in_disabled"] is True
+    assert evidence["follow_ups"]["global_generation_status_stale_after_result_visible"] is True
+    assert evidence["follow_ups"]["native_download_event_supported"] is False
+    assert evidence["follow_ups"]["manual_os_download_open_check_required_if_release_requires_local_files"] is True
+    assert evidence["allowed_runtime_side_effects"]["ui_document_generation_completed"] is True
+    assert evidence["allowed_runtime_side_effects"]["normal_generation_provider_calls_made"] is True
+    assert evidence["allowed_runtime_side_effects"]["production_export_endpoint_called"] is True
+    assert evidence["allowed_runtime_side_effects"]["report_workflow_ui_inspected"] is True
+    assert all(value is False for value in evidence["restricted_side_effect_boundary"].values())
 
 
 def test_phase21_manual_reviewer_signoff_template_preserves_no_training_boundary():
