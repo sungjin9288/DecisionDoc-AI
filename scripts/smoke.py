@@ -14,6 +14,7 @@ _DOCUMENT_UPLOAD_SAMPLE = (
     b"Constraints: Keep auditability first.\n"
 )
 DEFAULT_SMOKE_TIMEOUT_SEC = "60"
+_PDF_MAGIC = b"%PDF"
 
 
 def _required_env(name: str) -> str:
@@ -72,6 +73,42 @@ def _print_result(endpoint: str, status_code: int, request_id: str = "", bundle_
 
 def _print_skip(reason: str) -> None:
     print(f"SKIP {reason}")
+
+
+def _assert_binary_response(endpoint: str, response: httpx.Response, expected: int, expected_magic: bytes) -> None:
+    if response.status_code != expected:
+        body = _json_body(response)
+        code = body.get("code", "unknown")
+        message = str(body.get("message", "")).strip()
+        detail_suffix = f"; message={message}" if message else ""
+        raise SystemExit(f"{endpoint} expected {expected}, got {response.status_code} (code={code}{detail_suffix})")
+    if not response.content.startswith(expected_magic):
+        raise SystemExit(f"{endpoint} returned invalid binary magic bytes: {response.content[:8].hex()}")
+
+
+def _run_export_edited_pdf_smoke(client: httpx.Client, *, base_url: str, api_key: str) -> None:
+    endpoint = "POST /generate/export-edited PDF (auth)"
+    headers = {"X-DecisionDoc-Api-Key": api_key, **_tenant_headers()}
+    payload = {
+        "format": "pdf",
+        "title": "Smoke Export Edited PDF",
+        "docs": [
+            {
+                "doc_type": "business_understanding",
+                "markdown": "# Smoke Export Edited PDF\n\n- Validate deployed Playwright PDF rendering.\n- Confirm export-edited does not return a proxy/runtime error.",
+            },
+            {
+                "doc_type": "tech_proposal",
+                "markdown": "# Runtime Check\n\n| Check | Expected |\n| --- | --- |\n| Magic bytes | %PDF |\n| Content-Type | application/pdf |",
+            },
+        ],
+    }
+    response = client.post(f"{base_url}/generate/export-edited", headers=headers, json=payload)
+    _assert_binary_response(endpoint, response, 200, _PDF_MAGIC)
+    content_type = response.headers.get("content-type", "")
+    if "application/pdf" not in content_type.lower():
+        raise SystemExit(f"{endpoint} returned unexpected content-type: {content_type}")
+    _print_result(endpoint, response.status_code, extra=f"bytes={len(response.content)}")
 
 
 def _is_enabled(value: str) -> bool:
@@ -997,6 +1034,12 @@ def main() -> int:
             request_id=export_request_id,
             bundle_id=export_bundle_id,
             extra=f"files={len(files)}",
+        )
+
+        _run_export_edited_pdf_smoke(
+            client,
+            base_url=base_url,
+            api_key=api_key,
         )
 
         _run_attachment_generation_smoke(
