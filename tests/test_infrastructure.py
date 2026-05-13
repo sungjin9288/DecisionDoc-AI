@@ -2394,6 +2394,15 @@ def test_dockerfile_sets_shared_playwright_browser_path_for_non_root_runtime():
     assert "chown -R decisiondoc:decisiondoc /app /ms-playwright" in dockerfile
 
 
+def test_dockerfile_uses_pinned_playwright_for_browser_install():
+    dockerfile = open("Dockerfile", encoding="utf-8").read()
+    copy_packages_index = dockerfile.index("COPY --from=builder /install /usr/local")
+    install_browser_index = dockerfile.index("python -m playwright install chromium --with-deps")
+
+    assert copy_packages_index < install_browser_index
+    assert "pip install --no-cache-dir playwright" not in dockerfile
+
+
 def test_favicon_stays_public_even_after_user_registration(client):
     register = client.post(
         "/auth/register",

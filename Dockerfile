@@ -23,13 +23,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-nanum \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright with chromium for PDF/G2B scraping
-RUN pip install --no-cache-dir playwright \
-    && playwright install chromium --with-deps \
-    && rm -rf /tmp/*
-
 # Copy Python packages from builder
 COPY --from=builder /install /usr/local
+
+# Install Chromium using the Playwright version pinned in requirements.txt.
+# Installing Playwright separately here can leave mismatched driver/browser assets.
+RUN python -m playwright install chromium --with-deps \
+    && rm -rf /tmp/*
 
 # Copy application code
 COPY app/ ./app/
