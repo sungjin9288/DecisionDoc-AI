@@ -775,6 +775,8 @@ class TestDownloadEndpoint:
         aid = self._approved_id(client)
         res = client.get(f"/approvals/{aid}/download/hwpx", headers=HEADERS)
         assert res.status_code == 200
+        assert res.headers["content-type"] == "application/hwp+zip"
+        assert "approved.hwpx" in res.headers.get("content-disposition", "")
 
     def test_download_draft_returns_400(self, client):
         """Download should fail if document is not approved."""

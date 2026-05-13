@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import io
 import json
 import os
 import sys
+import zipfile
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -15,6 +17,7 @@ _DOCUMENT_UPLOAD_SAMPLE = (
 )
 DEFAULT_SMOKE_TIMEOUT_SEC = "60"
 _PDF_MAGIC = b"%PDF"
+_ZIP_MAGIC = b"PK\x03\x04"
 
 
 def _required_env(name: str) -> str:
@@ -86,6 +89,23 @@ def _assert_binary_response(endpoint: str, response: httpx.Response, expected: i
         raise SystemExit(f"{endpoint} returned invalid binary magic bytes: {response.content[:8].hex()}")
 
 
+def _assert_zip_entries(endpoint: str, content: bytes, required_entries: set[str]) -> None:
+    if not zipfile.is_zipfile(io.BytesIO(content)):
+        raise SystemExit(f"{endpoint} returned invalid ZIP/HWPX bytes")
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        names = set(zf.namelist())
+    missing = sorted(required_entries - names)
+    if missing:
+        raise SystemExit(f"{endpoint} missing required ZIP/HWPX entries: {', '.join(missing)}")
+
+
+def _assert_content_disposition_extension(endpoint: str, response: httpx.Response, expected_ext: str) -> None:
+    disposition = response.headers.get("content-disposition", "")
+    needle = f".{expected_ext.lower()}"
+    if needle not in disposition.lower():
+        raise SystemExit(f"{endpoint} returned unexpected content-disposition: {disposition}")
+
+
 def _run_export_edited_pdf_smoke(client: httpx.Client, *, base_url: str, api_key: str) -> None:
     endpoint = "POST /generate/export-edited PDF (auth)"
     headers = {"X-DecisionDoc-Api-Key": api_key, **_tenant_headers()}
@@ -109,6 +129,37 @@ def _run_export_edited_pdf_smoke(client: httpx.Client, *, base_url: str, api_key
     if "application/pdf" not in content_type.lower():
         raise SystemExit(f"{endpoint} returned unexpected content-type: {content_type}")
     _print_result(endpoint, response.status_code, extra=f"bytes={len(response.content)}")
+
+
+def _run_export_edited_hwpx_smoke(client: httpx.Client, *, base_url: str, api_key: str) -> None:
+    endpoint = "POST /generate/export-edited HWPX (auth)"
+    headers = {"X-DecisionDoc-Api-Key": api_key, **_tenant_headers()}
+    payload = {
+        "format": "hwp",
+        "title": "Smoke Export Edited HWPX",
+        "docs": [
+            {
+                "doc_type": "business_understanding",
+                "markdown": "# Smoke Export Edited HWPX\n\n- Validate deployed HWPX ZIP rendering.\n- Confirm HWP button downloads `.hwpx` bytes, not legacy binary `.hwp`.",
+            },
+            {
+                "doc_type": "tech_proposal",
+                "markdown": "# Runtime Check\n\n| Check | Expected |\n| --- | --- |\n| Magic bytes | PK |\n| Content-Type | application/hwp+zip |\n| Extension | .hwpx |",
+            },
+        ],
+    }
+    response = client.post(f"{base_url}/generate/export-edited", headers=headers, json=payload)
+    _assert_binary_response(endpoint, response, 200, _ZIP_MAGIC)
+    content_type = response.headers.get("content-type", "")
+    if "application/hwp+zip" not in content_type.lower():
+        raise SystemExit(f"{endpoint} returned unexpected content-type: {content_type}")
+    _assert_content_disposition_extension(endpoint, response, "hwpx")
+    _assert_zip_entries(
+        endpoint,
+        response.content,
+        {"mimetype", "Contents/header.xml", "Contents/section0.xml"},
+    )
+    _print_result(endpoint, response.status_code, extra=f"bytes={len(response.content)} ext=hwpx")
 
 
 def _is_enabled(value: str) -> bool:
@@ -1037,6 +1088,11 @@ def main() -> int:
         )
 
         _run_export_edited_pdf_smoke(
+            client,
+            base_url=base_url,
+            api_key=api_key,
+        )
+        _run_export_edited_hwpx_smoke(
             client,
             base_url=base_url,
             api_key=api_key,

@@ -1166,6 +1166,8 @@ class TestProjectDocumentApi:
         }, headers=HEADERS).json()["doc_id"]
         res = client.get(f"/projects/{pid}/documents/{doc_id}/download/hwpx", headers=HEADERS)
         assert res.status_code == 200
+        assert res.headers["content-type"] == "application/hwp+zip"
+        assert "document.hwpx" in res.headers.get("content-disposition", "")
 
     def test_download_unknown_format_returns_400(self, client):
         pid = self._pid(client)

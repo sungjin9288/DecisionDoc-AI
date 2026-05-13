@@ -219,7 +219,13 @@ def test_export_edited_hwp_valid_bytes(tmp_path, monkeypatch):
         "title": "한글 편집 문서",
         "docs": _SAMPLE_DOCS,
     })
+    assert res.status_code == 200
     assert res.content[:4] == _ZIP_MAGIC  # hwpx is ZIP-based
+    assert res.headers["content-type"] == "application/hwp+zip"
+    disposition = res.headers.get("content-disposition", "")
+    assert "document.hwpx" in disposition
+    assert "filename*=UTF-8''" in disposition
+    assert ".hwpx" in disposition
 
 
 # ── /generate/export-edited — pdf ──────────────────────────────────────────
