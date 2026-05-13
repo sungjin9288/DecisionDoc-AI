@@ -53,6 +53,28 @@ def _mm(mm: int | float) -> int:
     return round(mm * _MM_TO_HWPU)
 
 
+_DEFAULT_LINE_WIDTH = _A4_W - (_mm(20) * 2)
+
+
+def _line_seg_array_xml(*, width: int = _DEFAULT_LINE_WIDTH, height: int = _mm(6)) -> str:
+    """Return a minimal HWPX line segment array.
+
+    Hancom Viewer opens HWPX files without this element, but text paragraphs can
+    render as blank because the viewer has no precomputed line layout.
+    """
+    safe_width = max(1, int(width))
+    safe_height = max(1, int(height))
+    baseline = max(1, round(safe_height * 0.85))
+    spacing = max(0, round(safe_height * 0.3))
+    return (
+        '    <hp:linesegarray>\n'
+        f'      <hp:lineseg textpos="0" vertpos="0" vertsize="{safe_height}" '
+        f'textheight="{safe_height}" baseline="{baseline}" spacing="{spacing}" '
+        f'horzpos="0" horzsize="{safe_width}" flags="393216"/>\n'
+        '    </hp:linesegarray>\n'
+    )
+
+
 def _escape(text: str) -> str:
     return _html.escape(text, quote=True)
 
@@ -233,7 +255,7 @@ def _char_properties_xml(font_size_pt: float) -> str:
 
 
 def _para_properties_xml(line_spacing_pct: int) -> str:
-    lsp = line_spacing_pct * 100
+    lsp = max(1, int(line_spacing_pct))
 
     def _para_pr(para_id: str) -> str:
         return (
@@ -296,12 +318,14 @@ def _para_xml(text: str, style: str = "본문") -> str:
     """Wrap text in an HWPX paragraph element."""
     escaped = _escape(text)
     style_id = _STYLE_IDS.get(style, "0")
+    line_height = _mm(8 if style == "제목1" else 7 if style == "제목2" else 6)
     return (
         f'  <hp:p id="{_PARA_ID_PLACEHOLDER}" paraPrIDRef="{style_id}" styleIDRef="{style_id}" '
         'pageBreak="0" columnBreak="0" merged="0">\n'
         f'    <hp:run charPrIDRef="{style_id}">\n'
         f'      <hp:t>{escaped}</hp:t>\n'
         f'    </hp:run>\n'
+        f'{_line_seg_array_xml(height=line_height)}'
         f'  </hp:p>'
     )
 
@@ -461,6 +485,7 @@ def _picture_xml(ref_id: str, width: int, height: int, inst_id: int) -> str:
         f'        <hc:img binaryItemIDRef="{_escape(ref_id)}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>\n'
         '      </hp:pic>\n'
         '    </hp:run>\n'
+        f'{_line_seg_array_xml(height=height)}'
         '  </hp:p>'
     )
 
@@ -497,6 +522,7 @@ def _section_properties_para_xml(
         '        </hp:pageBorderFill>\n'
         '      </hp:secPr>\n'
         '    </hp:run>\n'
+        f'{_line_seg_array_xml(width=width - margin_left - margin_right)}'
         '  </hp:p>'
     )
 

@@ -97,6 +97,20 @@ def test_build_hwp_section_uses_hwpml_section_and_page_pr():
     assert 'styleIDRef="1"' in section_xml
 
 
+def test_build_hwp_paragraphs_include_line_segments_for_viewer_rendering():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다.\n\n- 항목"}]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        section_xml = zf.read("Contents/section0.xml").decode("utf-8")
+
+    assert "<hp:linesegarray>" in section_xml
+    assert section_xml.count("<hp:p ") == section_xml.count("<hp:linesegarray>")
+    assert 'textheight="' in section_xml
+    assert 'horzsize="' in section_xml
+
+
 def test_build_hwp_header_declares_referenced_style_tables():
     from app.services.hwp_service import build_hwp
 
@@ -110,6 +124,18 @@ def test_build_hwp_header_declares_referenced_style_tables():
     assert '<hh:paraProperties itemCnt="4">' in header_xml
     assert '<hh:styles ' in header_xml
     assert 'id="1" type="PARA" name="제목1"' in header_xml
+
+
+def test_build_hwp_header_uses_hwp_percent_line_spacing_value():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n내용입니다."}]
+    result = build_hwp(docs, title="테스트")
+    with zipfile.ZipFile(BytesIO(result)) as zf:
+        header_xml = zf.read("Contents/header.xml").decode("utf-8")
+
+    assert '<hh:lineSpacing type="PERCENT" value="160"/>' in header_xml
+    assert 'value="16000"' not in header_xml
 
 
 def test_build_hwp_renders_markdown_table_as_readable_rows():
