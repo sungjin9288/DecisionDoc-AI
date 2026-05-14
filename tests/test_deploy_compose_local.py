@@ -21,6 +21,7 @@ def test_prod_compose_mounts_post_deploy_reports_into_app() -> None:
     compose_text = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
 
     assert "DECISIONDOC_POST_DEPLOY_REPORT_DIR=/app/reports/post-deploy" in compose_text
+    assert "DECISIONDOC_APP_VERSION=${DECISIONDOC_APP_VERSION:-}" in compose_text
     assert "./reports:/app/reports:ro" in compose_text
 
 

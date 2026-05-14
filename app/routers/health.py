@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from app.config import (
-    APP_VERSION,
+    get_app_version,
     get_knowledge_search_backend_name,
     get_local_llm_api_key,
     get_local_llm_base_url,
@@ -200,14 +200,9 @@ def metrics():
 @router.get("/version")
 def version_endpoint(request: Request) -> dict:
     """앱 버전 및 환경 정보를 반환합니다."""
-    import importlib.metadata
-    try:
-        ver = importlib.metadata.version("decisiondoc-ai")
-    except importlib.metadata.PackageNotFoundError:
-        ver = APP_VERSION
     environment = request.app.state.environment
     return {
-        "version": ver,
+        "version": get_app_version(),
         "api_version": "v1",
         "environment": environment,
         "provider": os.getenv("DECISIONDOC_PROVIDER", "mock"),

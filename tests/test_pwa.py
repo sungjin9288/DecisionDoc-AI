@@ -57,6 +57,14 @@ def test_root_disables_html_shell_cache(tmp_path, monkeypatch):
     assert res.headers.get("cache-control") == "no-store"
 
 
+def test_root_footer_uses_dynamic_version_placeholder(tmp_path, monkeypatch):
+    """Footer should not ship a stale release number before /version resolves."""
+    client = _make_client(tmp_path, monkeypatch)
+    res = client.get("/")
+    assert 'id="footer-version">DecisionDoc AI<' in res.text
+    assert "DecisionDoc AI v1.1.57" not in res.text
+
+
 def test_root_head_returns_html_headers(tmp_path, monkeypatch):
     """HEAD / should return 200 with HTML headers."""
     client = _make_client(tmp_path, monkeypatch)
@@ -245,7 +253,8 @@ def test_sw_js_has_notificationclick_handler():
 
 def test_sw_js_uses_versioned_cache_name():
     content = open("app/static/sw.js").read()
-    assert "decisiondoc-v1.1.57" in content
+    assert "decisiondoc-static-shell-v2" in content
+    assert "decisiondoc-v1.1.57" not in content
 
 
 def test_sw_js_does_not_precache_html_shell():

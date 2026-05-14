@@ -32,12 +32,14 @@ fi
 
 if [[ "$IMAGE_INPUT" == *"/"* || "$IMAGE_INPUT" == *":"* ]]; then
     IMAGE_REF="$IMAGE_INPUT"
+    APP_VERSION_FROM_IMAGE="${IMAGE_INPUT##*:}"
 else
     IMAGE_TAG="$IMAGE_INPUT"
     if [[ "$ENVIRONMENT" == "production" && "$IS_RELEASE_TAG_INPUT" == "true" ]]; then
         IMAGE_TAG="${IMAGE_INPUT#v}"
     fi
     IMAGE_REF="ghcr.io/sungjin9288/decisiondoc-ai:$IMAGE_TAG"
+    APP_VERSION_FROM_IMAGE="$IMAGE_TAG"
 fi
 
 echo "Deploying DecisionDoc AI"
@@ -73,7 +75,7 @@ else
 fi
 
 echo "Rolling out image..."
-DOCKER_IMAGE="$IMAGE_REF" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate
+DOCKER_IMAGE="$IMAGE_REF" DECISIONDOC_APP_VERSION="$APP_VERSION_FROM_IMAGE" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate
 
 if [[ "$ENVIRONMENT" == "production" ]]; then
     echo "Running post-deploy verification..."

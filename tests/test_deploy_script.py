@@ -38,7 +38,7 @@ exit 0
     _write_executable(
         bin_dir / "docker",
         """#!/bin/sh
-printf 'DOCKER_IMAGE=%s docker %s\\n' "$DOCKER_IMAGE" "$*" >> "$DOCKER_CALL_LOG"
+printf 'DOCKER_IMAGE=%s DECISIONDOC_APP_VERSION=%s docker %s\\n' "$DOCKER_IMAGE" "$DECISIONDOC_APP_VERSION" "$*" >> "$DOCKER_CALL_LOG"
 exit 0
 """,
     )
@@ -53,6 +53,7 @@ def _run_production_deploy_fixture(tmp_path: Path, image_input: str) -> tuple[su
     env["PATH"] = f"{fixture_root / 'bin'}{os.pathsep}{env['PATH']}"
     env["PYTHON_CALL_LOG"] = str(python_log)
     env["DOCKER_CALL_LOG"] = str(docker_log)
+    env.pop("DECISIONDOC_DEPLOY_PROVIDER_PROFILE", None)
 
     completed = subprocess.run(
         ["bash", "scripts/deploy.sh", "production", image_input],
@@ -108,7 +109,7 @@ def test_deploy_script_executes_release_tag_preflight_before_prod_env_check(tmp_
     assert "python3 scripts/check_prod_env.py --env-file .env.prod --provider-profile standard" in python_log
     assert python_log.index("scripts/check_release_tag_source.py") < python_log.index("scripts/check_prod_env.py")
     assert "python3 scripts/post_deploy_check.py --env-file .env.prod --report-dir ./reports/post-deploy" in python_log
-    assert "DOCKER_IMAGE=ghcr.io/sungjin9288/decisiondoc-ai:9.8.7 docker compose" in docker_log
+    assert "DOCKER_IMAGE=ghcr.io/sungjin9288/decisiondoc-ai:9.8.7 DECISIONDOC_APP_VERSION=9.8.7 docker compose" in docker_log
 
 
 def test_deploy_script_executes_full_image_ref_without_release_tag_preflight(tmp_path: Path) -> None:
@@ -118,7 +119,7 @@ def test_deploy_script_executes_full_image_ref_without_release_tag_preflight(tmp
     assert completed.returncode == 0, completed.stderr
     assert "scripts/check_release_tag_source.py" not in python_log
     assert "python3 scripts/check_prod_env.py --env-file .env.prod --provider-profile standard" in python_log
-    assert f"DOCKER_IMAGE={image_ref} docker compose" in docker_log
+    assert f"DOCKER_IMAGE={image_ref} DECISIONDOC_APP_VERSION=rollback-20260429 docker compose" in docker_log
 
 
 def test_deploy_script_rejects_non_numeric_semver_release_tag_candidate(tmp_path: Path) -> None:

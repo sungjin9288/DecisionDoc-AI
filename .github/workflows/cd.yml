@@ -162,6 +162,7 @@ jobs:
             git -c advice.detachedHead=false checkout --force ${{ github.sha }}
             IMAGE_REPO="$(printf '%s' 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
             export DOCKER_IMAGE="${IMAGE_REPO}:main"
+            export DECISIONDOC_APP_VERSION="main-${{ github.sha }}"
             docker compose --env-file .env.prod -f docker-compose.prod.yml pull
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
             echo "Deployed: $DOCKER_IMAGE"
@@ -287,6 +288,7 @@ jobs:
             IMAGE_TAG="${{ github.ref_name }}"
             IMAGE_TAG="${IMAGE_TAG#v}"
             export DOCKER_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+            export DECISIONDOC_APP_VERSION="$IMAGE_TAG"
             # Backup data
             BACKUP_DIR="${DECISIONDOC_BACKUP_DIR:-./backups}"
             if mkdir -p "$BACKUP_DIR"; then

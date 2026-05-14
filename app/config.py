@@ -2,7 +2,30 @@ import logging
 import os
 
 _cfg_log = logging.getLogger("decisiondoc.config")
-APP_VERSION = "1.1.57"
+DEFAULT_APP_VERSION = "1.1.76"
+
+
+def _normalize_app_version(value: str) -> str:
+    normalized = value.strip()
+    if normalized.lower().startswith("v") and len(normalized) > 1:
+        normalized = normalized[1:]
+    return normalized
+
+
+def get_app_version() -> str:
+    """Return the runtime app version shown by /version and the admin UI.
+
+    Production deploys inject DECISIONDOC_APP_VERSION from the release tag so
+    the UI does not drift behind the deployed Docker image.
+    """
+    for name in ("DECISIONDOC_APP_VERSION", "DECISIONDOC_RELEASE_VERSION"):
+        raw = os.getenv(name, "").strip()
+        if raw:
+            return _normalize_app_version(raw)
+    return DEFAULT_APP_VERSION
+
+
+APP_VERSION = get_app_version()
 
 
 def is_enabled(value: str) -> bool:

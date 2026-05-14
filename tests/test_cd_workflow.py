@@ -357,6 +357,7 @@ def test_cd_staging_uses_branch_image_tag_that_metadata_action_publishes():
 
     assert "tr '[:upper:]' '[:lower:]'" in staging_script
     assert 'export DOCKER_IMAGE="${IMAGE_REPO}:main"' in staging_script
+    assert 'export DECISIONDOC_APP_VERSION="main-${{ github.sha }}"' in staging_script
     assert "sha-${{ github.sha }}" not in staging_script
 
 
@@ -393,6 +394,7 @@ def test_cd_production_uses_release_tag_from_lowercase_image_repository():
     assert 'IMAGE_TAG="${{ github.ref_name }}"' in production_script
     assert 'IMAGE_TAG="${IMAGE_TAG#v}"' in production_script
     assert 'export DOCKER_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"' in production_script
+    assert 'export DECISIONDOC_APP_VERSION="$IMAGE_TAG"' in production_script
     assert "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" not in production_script
 
 

@@ -46,10 +46,17 @@ def test_version_api_version_is_v1(tmp_path, monkeypatch):
     assert data["api_version"] == "v1"
 
 
-def test_version_default_app_version_is_1_1_56(tmp_path, monkeypatch):
+def test_version_default_app_version_is_current_static_default(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     data = client.get("/version").json()
-    assert data["version"] == "1.1.57"
+    assert data["version"] == "1.1.76"
+
+
+def test_version_app_version_reflects_runtime_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_APP_VERSION", "v9.8.7")
+    client = _create_client(tmp_path, monkeypatch)
+    data = client.get("/version").json()
+    assert data["version"] == "9.8.7"
 
 
 def test_version_features_is_dict(tmp_path, monkeypatch):
