@@ -11,8 +11,8 @@ from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LATEST_ACCEPTANCE_FILE = "docs/deployment/admin_v1_1_65_acceptance_20260430.md"
-LATEST_RELEASE_TAG = "v1.1.65"
+LATEST_ACCEPTANCE_FILE = "docs/deployment/admin_v1_1_77_acceptance_20260514.md"
+LATEST_RELEASE_TAG = "v1.1.77"
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,7 @@ REQUIRED_MARKDOWN: tuple[RequiredMarkdown, ...] = (
             "Admin v1.1.62 Acceptance Record 2026-04-30",
             "Admin v1.1.64 Acceptance Record 2026-04-30",
             "Admin v1.1.65 Acceptance Record 2026-04-30",
+            "Admin v1.1.77 Acceptance Record 2026-05-14",
             LATEST_ACCEPTANCE_FILE.rsplit("/", 1)[-1],
             "Sales Pack 인덱스",
         ),
@@ -48,6 +49,7 @@ REQUIRED_MARKDOWN: tuple[RequiredMarkdown, ...] = (
         required_text=(
             LATEST_RELEASE_TAG,
             "CD result | `success`",
+            "runtime version display | `ACCEPTED`",
             "Report Workflow ERP smoke",
             "ready for continued production use | `YES`",
         ),
