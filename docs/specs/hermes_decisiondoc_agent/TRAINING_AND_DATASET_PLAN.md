@@ -147,6 +147,13 @@ Positive scoring:
 
 ## Model Development Phases
 
+### Phase 0.5: Report Quality Correction Gate
+
+- Before any fine-tuning run, create reviewed before/after correction artifacts for real report and proposal outputs.
+- Use `docs/specs/report_quality_learning/QUALITY_RUBRIC.md` to score logic, evidence discipline, slide structure, visual design, public-sector tone, export readiness, and learning value.
+- Use `docs/specs/report_quality_learning/correction_artifact_template.json` and `validate_correction_artifact.py` to reject weak, unsafe, unreviewed, or non-opt-in samples.
+- Keep provider fine-tune API calls, external dataset upload, provider job creation, training execution, and model promotion unauthorized until the correction dataset passes the stop gate.
+
 ### Phase 1: Dataset Capture Without Training
 
 - Add trajectory capture for reviewed document work.

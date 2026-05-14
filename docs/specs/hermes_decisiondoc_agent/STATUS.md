@@ -2,7 +2,7 @@
 
 ## Current State
 
-Research and architecture planning are complete. Phase 1 DocumentOps agent skeleton, Phase 2 trajectory persistence/export foundation, Phase 3 QA gates/evaluation rubric, Phase 4 internal API/service integration, the first DocumentOps UI surface, Phase 5 browser QA for SFT export inspection/export, Phase 6 secure export artifact list/download, Phase 7 live-provider pilot capture/export, Phase 8 offline dataset quality reporting, Phase 9 dataset freeze manifesting, Phase 10 dry-run model-training approval gates, Phase 11 read-only training readiness summary, Phase 12 training execution plan preview, Phase 13 two-person training execution request records, Phase 14 final pre-execution audit checklist/export, Phase 15 read-only training governance dashboard summary, Phase 16 provider adapter contract stub, Phase 17 dry-run provider execution rehearsal, Phase 18 local browser QA checklist/evidence artifact, Phase 19 observed local browser governance QA pass, Phase 20 release handoff index/manifest packaging, Phase 21 manual reviewer sign-off record template, Phase 22 local sign-off record validator, Phase 23 pending sign-off record generator, Phase 24 local sign-off summary reporting, Phase 25 ops-key sign-off summary endpoint/UI, Phase 26 observed local browser sign-off summary QA, Phase 27 ops-key reviewer sign-off JSON download, Phase 28 observed local browser sign-off JSON download QA, Phase 29 reviewer sign-off release handoff refresh, Phase 30 operator reviewer sign-off packet guide, Phase 31 tenant-local reviewer sign-off import helper, Phase 32 observed browser QA for imported sign-off records, Phase 33 operator release packet summary, Phase 34 staging-readiness dry-run probe, Phase 35 observed staging probe evidence archive, Phase 36 observed probe execution workflow, Phase 37 deployed probe failure evidence, Phase 38 observed probe retry evidence, Phase 39 remote runtime gap evidence, Phase 40 production sign-off completion evidence, Phase 41 production post-deploy smoke evidence, and Phase 42 production browser UAT evidence have been implemented as DecisionDoc-native work. Hermes is still not installed as a dependency.
+Research and architecture planning are complete. Phase 1 DocumentOps agent skeleton, Phase 2 trajectory persistence/export foundation, Phase 3 QA gates/evaluation rubric, Phase 4 internal API/service integration, the first DocumentOps UI surface, Phase 5 browser QA for SFT export inspection/export, Phase 6 secure export artifact list/download, Phase 7 live-provider pilot capture/export, Phase 8 offline dataset quality reporting, Phase 9 dataset freeze manifesting, Phase 10 dry-run model-training approval gates, Phase 11 read-only training readiness summary, Phase 12 training execution plan preview, Phase 13 two-person training execution request records, Phase 14 final pre-execution audit checklist/export, Phase 15 read-only training governance dashboard summary, Phase 16 provider adapter contract stub, Phase 17 dry-run provider execution rehearsal, Phase 18 local browser QA checklist/evidence artifact, Phase 19 observed local browser governance QA pass, Phase 20 release handoff index/manifest packaging, Phase 21 manual reviewer sign-off record template, Phase 22 local sign-off record validator, Phase 23 pending sign-off record generator, Phase 24 local sign-off summary reporting, Phase 25 ops-key sign-off summary endpoint/UI, Phase 26 observed local browser sign-off summary QA, Phase 27 ops-key reviewer sign-off JSON download, Phase 28 observed local browser sign-off JSON download QA, Phase 29 reviewer sign-off release handoff refresh, Phase 30 operator reviewer sign-off packet guide, Phase 31 tenant-local reviewer sign-off import helper, Phase 32 observed browser QA for imported sign-off records, Phase 33 operator release packet summary, Phase 34 staging-readiness dry-run probe, Phase 35 observed staging probe evidence archive, Phase 36 observed probe execution workflow, Phase 37 deployed probe failure evidence, Phase 38 observed probe retry evidence, Phase 39 remote runtime gap evidence, Phase 40 production sign-off completion evidence, Phase 41 production post-deploy smoke evidence, Phase 42 production browser UAT evidence, and the report quality correction learning gate have been implemented as DecisionDoc-native work. Hermes is still not installed as a dependency.
 
 ## Completed
 
@@ -169,6 +169,10 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - Added a dry-run provider execution rehearsal that validates governance artifacts against the adapter contract and returns a step-by-step no-side-effect rehearsal log.
 - Exposed the rehearsal through the ops-key protected `GET /api/agent/document-ops/trajectories/training-provider-adapter/rehearsal` endpoint.
 - Added a DocumentOps UI `Rehearsal` action while explicitly keeping training execution, upload, provider API calls, provider jobs, and model promotion disabled.
+- Added `docs/specs/report_quality_learning/` as the pre-fine-tuning report quality correction gate for weak document logic and slide design issues.
+- Defined a reusable quality rubric for logic, evidence discipline, audience fit, slide structure, visual design, public-sector tone, export readiness, and learning value.
+- Added a before/after correction artifact JSON template and validator that require `learning_opt_in=true`, human review, scan pass results, quality thresholds, metadata-only source handling, and no-training/no-upload/no-provider-job/no-model-promotion boundary flags before a sample can become learning-ready.
+- Added a pilot review runbook that requires 3-5 initial reviewed samples and a 30-50 accepted correction artifact stop gate before any small SFT experiment.
 
 ## Files Added
 
@@ -177,6 +181,11 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - `docs/specs/hermes_decisiondoc_agent/TRAINING_AND_DATASET_PLAN.md`
 - `docs/specs/hermes_decisiondoc_agent/IMPLEMENTATION_PLAN.md`
 - `docs/specs/hermes_decisiondoc_agent/STATUS.md`
+- `docs/specs/report_quality_learning/README.md`
+- `docs/specs/report_quality_learning/QUALITY_RUBRIC.md`
+- `docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md`
+- `docs/specs/report_quality_learning/correction_artifact_template.json`
+- `docs/specs/report_quality_learning/validate_correction_artifact.py`
 - `app/agents/__init__.py`
 - `app/agents/schemas.py`
 - `app/agents/skill_registry.py`
@@ -193,6 +202,7 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - `app/evals/document_ops/rubric.py`
 - `app/evals/document_ops/gates.py`
 - `tests/evals/test_document_ops_gates.py`
+- `tests/test_report_quality_learning.py`
 - `app/services/document_ops_service.py`
 - `app/routers/document_ops_agent.py`
 - `tests/test_document_ops_agent_api.py`

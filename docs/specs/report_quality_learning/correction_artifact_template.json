@@ -1,0 +1,112 @@
+{
+  "schema_version": "decisiondoc_report_quality_correction_artifact.v1",
+  "artifact_id": "rqa_sample_001",
+  "created_at": "2026-05-14T12:00:00+09:00",
+  "workflow_reference": {
+    "tenant_id": "system",
+    "report_workflow_id": "rw_example",
+    "project_id": "proj_example",
+    "learning_opt_in": true,
+    "source_material_policy": "metadata_only"
+  },
+  "document_profile": {
+    "document_type": "proposal_deck",
+    "audience": "executive_pm_public_sector",
+    "domain": "public_sector_ai",
+    "language": "ko",
+    "slide_count": 10
+  },
+  "quality_baseline": {
+    "overall_score": 0.0,
+    "hard_failures": [],
+    "dimension_scores": {
+      "logic": 0.0,
+      "evidence": 0.0,
+      "audience_fit": 0.0,
+      "slide_structure": 0.0,
+      "visual_design": 0.0,
+      "public_sector_tone": 0.0,
+      "export_readiness": 0.0,
+      "learning_value": 0.0
+    }
+  },
+  "before": {
+    "planning_summary": "AI 초안의 핵심 구조와 약점을 요약한다.",
+    "slide_outline_summary": [
+      {
+        "slide_no": 1,
+        "title": "초안 장표 제목",
+        "message": "초안 핵심 메시지",
+        "issue": "논리, 근거, 디자인상 약점"
+      }
+    ],
+    "visible_claims": [
+      {
+        "claim": "확인해야 할 주장",
+        "status": "assumed",
+        "evidence_reference": "source metadata only"
+      }
+    ]
+  },
+  "correction": {
+    "reviewer": "",
+    "reviewed_at": "",
+    "change_requests": [
+      {
+        "target": "slide:1",
+        "issue": "문제 정의가 넓고 실행계획과 연결되지 않음",
+        "correction": "문제, 원인, 개입, 운영, 기대효과를 한 문장 chain으로 재구성",
+        "rationale": "공공 제안서 의사결정자가 사업 필요성과 실행 가능성을 빠르게 판단해야 하기 때문"
+      }
+    ],
+    "rationale_by_dimension": {
+      "logic": "",
+      "evidence": "",
+      "audience_fit": "",
+      "slide_structure": "",
+      "visual_design": "",
+      "public_sector_tone": "",
+      "export_readiness": "",
+      "learning_value": ""
+    }
+  },
+  "after": {
+    "planning_summary": "사람이 교정한 최종 기획 구조를 요약한다.",
+    "slide_outline_summary": [
+      {
+        "slide_no": 1,
+        "title": "교정 후 장표 제목",
+        "message": "교정 후 핵심 메시지",
+        "layout": "권장 레이아웃",
+        "visual_asset": "권장 표/그래프/다이어그램"
+      }
+    ],
+    "final_output_reference": "workflow snapshot or exported file reference"
+  },
+  "learning_labels": {
+    "accepted_for_learning": false,
+    "task_types": [
+      "proposal_planning",
+      "slide_message_design"
+    ],
+    "skills": [
+      "policy-planning",
+      "evidence-gap-review"
+    ],
+    "confirmed_claims": [],
+    "assumed_claims": [],
+    "todo_claims": [],
+    "forbidden_terms_scan": "not_run",
+    "privacy_security_scan": "not_run",
+    "human_review_status": "pending"
+  },
+  "training_boundary": {
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "training_execution_authorized": false,
+    "model_candidate_emission_authorized": false,
+    "model_promotion_authorized": false
+  }
+}
