@@ -45,6 +45,23 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `accepted_for_learning=true`로 바꾼 artifact 안에 `TODO_*` placeholder가 남아 있으면 validator가 차단한다.
 - 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
+사람이 `drafts/*.json`을 수정한 뒤에는 JSONL을 다시 동기화한다.
+
+```bash
+python3 scripts/sync_report_quality_pilot_pack.py \
+  reports/report-quality/pilot-rqc-001 \
+  --min-records 3
+```
+
+승인 완료 후에는 ready gate까지 함께 확인한다.
+
+```bash
+python3 scripts/sync_report_quality_pilot_pack.py \
+  reports/report-quality/pilot-rqc-001 \
+  --min-records 3 \
+  --require-ready
+```
+
 ## 3. 생성과 교정
 
 각 샘플마다 아래를 기록한다.

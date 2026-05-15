@@ -223,6 +223,11 @@ python3 docs/specs/report_quality_learning/validate_correction_artifact.py \\
 승인 완료 후 batch 검증:
 
 ```bash
+python3 scripts/sync_report_quality_pilot_pack.py \\
+  {output_dir} \\
+  --min-records {len(artifacts)} \\
+  --require-ready
+
 python3 docs/specs/report_quality_learning/validate_correction_artifact.py \\
   {jsonl_path} \\
   --require-ready \\

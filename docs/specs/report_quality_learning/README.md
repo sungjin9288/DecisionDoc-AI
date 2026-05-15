@@ -31,6 +31,9 @@
 - `scripts/create_report_quality_pilot_pack.py`
   - 파일럿 리뷰용 non-ready draft artifact 3~5개와 `REVIEW_INDEX.md`를 생성한다.
   - 기본 출력은 `accepted_for_learning=false`, `human_review_status=pending` 이므로 학습 후보가 아니다.
+- `scripts/sync_report_quality_pilot_pack.py`
+  - 사람이 수정한 `drafts/*.json`을 batch JSONL로 다시 동기화한다.
+  - `--require-ready`를 붙이면 모든 artifact가 학습 후보 gate를 통과하는지 확인한다.
 
 ## Backend Integration
 
@@ -116,6 +119,13 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
 7. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
-8. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-9. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
-10. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+8. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
+   ```bash
+   python3 scripts/sync_report_quality_pilot_pack.py \
+     reports/report-quality/pilot-rqc-001 \
+     --min-records 3 \
+     --require-ready
+   ```
+9. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
+10. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+11. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
