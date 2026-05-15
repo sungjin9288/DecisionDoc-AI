@@ -34,6 +34,9 @@
 - `scripts/sync_report_quality_pilot_pack.py`
   - 사람이 수정한 `drafts/*.json`을 batch JSONL로 다시 동기화한다.
   - `--require-ready`를 붙이면 모든 artifact가 학습 후보 gate를 통과하는지 확인한다.
+- `scripts/create_report_quality_review_sheet.py`
+  - `drafts/*.json` 기준으로 사람이 채워야 할 reviewer, score, scan, approval 필드를 markdown worksheet로 만든다.
+  - worksheet와 manifest만 생성하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
 
 ## Backend Integration
 
@@ -115,17 +118,22 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
 3. AI가 기획안과 장표 초안을 생성한다.
 4. 사람이 결과를 고쳐서 “좋은 버전”을 만든다.
 5. 수정 요청, 수정 이유, 최종본, 점수를 리뷰팩의 draft artifact에 기록한다.
-6. 승인 전에는 `accepted_for_learning=false`를 유지하고, 사람이 검수 완료한 뒤에만 `accepted_for_learning=true`, `human_review_status=accepted`, scan 결과 `pass`로 바꾼다.
-7. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
+6. 사람이 채울 항목을 worksheet로 확인한다.
+   ```bash
+   python3 scripts/create_report_quality_review_sheet.py \
+     reports/report-quality/pilot-rqc-001
+   ```
+7. 승인 전에는 `accepted_for_learning=false`를 유지하고, 사람이 검수 완료한 뒤에만 `accepted_for_learning=true`, `human_review_status=accepted`, scan 결과 `pass`로 바꾼다.
+8. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
-8. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
+9. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
    ```bash
    python3 scripts/sync_report_quality_pilot_pack.py \
      reports/report-quality/pilot-rqc-001 \
      --min-records 3 \
      --require-ready
    ```
-9. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-10. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
-11. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+10. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
+11. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+12. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

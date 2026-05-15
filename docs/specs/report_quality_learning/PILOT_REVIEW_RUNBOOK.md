@@ -47,6 +47,20 @@ python3 scripts/create_report_quality_pilot_pack.py \
 
 사람이 `drafts/*.json`을 수정한 뒤에는 JSONL을 다시 동기화한다.
 
+검수자가 채워야 할 항목을 한눈에 확인하려면 worksheet를 만든다.
+
+```bash
+python3 scripts/create_report_quality_review_sheet.py \
+  reports/report-quality/pilot-rqc-001
+```
+
+생성물:
+
+- `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
+- `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
+
+worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 로컬 검수 문서다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+
 ```bash
 python3 scripts/sync_report_quality_pilot_pack.py \
   reports/report-quality/pilot-rqc-001 \
