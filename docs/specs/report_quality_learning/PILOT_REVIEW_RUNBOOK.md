@@ -81,6 +81,25 @@ ready_artifacts=3
 not_ready_artifacts=0
 ```
 
+운영 API에서 바로 내려받아 검증할 때:
+
+```bash
+SMOKE_BASE_URL=https://admin.decisiondoc.kr \
+SMOKE_API_KEY=<runtime-api-key> \
+python3 scripts/check_report_quality_artifacts.py \
+  --min-records 3 \
+  --output tmp/report_quality_correction_artifacts.jsonl
+```
+
+expected output:
+
+```text
+PASS report quality correction artifact export check
+ready_artifacts=3
+artifact_count=3
+training_boundary=not_authorized
+```
+
 API 경로로 저장할 때는 먼저 preview를 호출해 blocker를 확인한다.
 
 ```bash

@@ -56,6 +56,18 @@ python3 docs/specs/report_quality_learning/validate_correction_artifact.py \
   --min-records 3
 ```
 
+운영 API에서 summary 조회, ready JSONL 다운로드, local validation까지 한 번에 확인할 때는:
+
+```bash
+SMOKE_BASE_URL=https://admin.decisiondoc.kr \
+SMOKE_API_KEY=<runtime-api-key> \
+python3 scripts/check_report_quality_artifacts.py \
+  --min-records 3 \
+  --output tmp/report_quality_correction_artifacts.jsonl
+```
+
+이 helper도 local review artifact를 다운로드하고 검증할 뿐이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+
 ## Operating Rule
 
 학습 후보는 아래 조건을 모두 만족해야 한다.
@@ -80,4 +92,5 @@ python3 docs/specs/report_quality_learning/validate_correction_artifact.py \
 5. `validate_correction_artifact.py`로 shape, 품질 gate, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
-6. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+6. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
+7. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
