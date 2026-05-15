@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -315,6 +316,54 @@ def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypat
     assert stored_artifact["kind"] == "report_quality_correction_accepted"
     assert stored_artifact["payload"]["validation"]["artifact_id"] == saved_body["artifact"]["artifact_id"]
     assert _contains_key(stored_artifact, "content_base64") is False
+
+
+def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    workflow_id = created["report_workflow_id"]
+    _final_approve_workflow(client, workflow_id)
+
+    saved = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=_accepted_quality_correction_payload(),
+    )
+    assert saved.status_code == 200
+
+    summary = client.get("/report-workflows/learning/correction-artifacts")
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["report_type"] == "report_quality_correction_artifact_summary"
+    assert body["total_artifacts"] == 1
+    assert body["ready_artifacts"] == 1
+    assert body["not_ready_artifacts"] == 0
+    assert body["returned"] == 1
+    assert body["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    item = body["artifacts"][0]
+    assert item["report_workflow_id"] == workflow_id
+    assert item["workflow_title"] == "단계형 제안서"
+    assert item["client"] == "다울"
+    assert item["ready_for_learning"] is True
+    assert item["validation_ok"] is True
+    assert item["overall_score"] == 0.88
+    assert item["task_types"] == ["proposal_planning", "slide_message_design"]
+    assert "artifact" not in item
+
+    other_tenant = client.get(
+        "/report-workflows/learning/correction-artifacts",
+        headers={"X-Tenant-ID": "other"},
+    )
+    assert other_tenant.status_code == 403
+
+    exported = client.get("/report-workflows/learning/correction-artifacts/export")
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/x-ndjson")
+    lines = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0]["schema_version"] == "decisiondoc_report_quality_correction_artifact.v1"
+    assert lines[0]["workflow_reference"]["report_workflow_id"] == workflow_id
+    assert lines[0]["workflow_reference"]["source_material_policy"] == "metadata_only"
+    assert lines[0]["training_boundary"]["training_execution_authorized"] is False
 
 
 def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_path, monkeypatch):

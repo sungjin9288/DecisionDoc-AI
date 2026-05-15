@@ -5525,6 +5525,10 @@
     <button type="button" class="action-btn" onclick="loadReportWorkflows()">🔄 새로고침</button>
   </div>
 
+  <div id="rw-quality-artifact-summary" style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;margin-bottom:1rem;color:var(--muted);font-size:.84rem;">
+    학습 후보 correction artifact summary를 불러오세요.
+  </div>
+
   <div style="display:grid; grid-template-columns:minmax(260px, .8fr) minmax(0, 1.4fr); gap:1rem; align-items:start;">
     <div style="background:var(--surface-solid); border:1px solid var(--border); border-radius:18px; padding:1rem;">
       <h3 style="margin:0 0 .75rem; font-size:1rem; font-weight:850;">프로젝트 생성</h3>
@@ -7581,6 +7585,76 @@
     return `<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem;">${signals.map(([label, color, bg]) => `<span style="font-size:.68rem;font-weight:850;color:${color};background:${bg};border-radius:999px;padding:.15rem .45rem;">${escapeHtml(label)}</span>`).join('')}</div>`;
   }
 
+  function renderReportWorkflowQualityArtifactSummary(data) {
+    const el = $id('rw-quality-artifact-summary');
+    if (!el) return;
+    const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
+    const latestRows = artifacts.slice(0, 4).map(item => `
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.55rem;background:rgba(255,255,255,.5);">
+        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start;">
+          <strong style="font-size:.78rem;color:#1f2a44;">${escapeHtml(item.workflow_title || item.report_workflow_id || 'artifact')}</strong>
+          <span style="font-size:.68rem;font-weight:850;color:${item.ready_for_learning ? '#166534' : '#92400e'};background:${item.ready_for_learning ? '#dcfce7' : '#fef3c7'};border-radius:999px;padding:.12rem .45rem;">${item.ready_for_learning ? 'ready' : 'blocked'}</span>
+        </div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(item.artifact_id || item.store_artifact_id || '')}</div>
+        <div style="font-size:.72rem;color:#334155;margin-top:.25rem;">score=${escapeHtml(String(item.overall_score ?? 'n/a'))} · reviewer=${escapeHtml(item.reviewer || item.actor || 'n/a')} · ${escapeHtml(item.domain || item.client || '')}</div>
+      </div>
+    `).join('');
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.92rem;font-weight:900;color:#1f2a44;">🧪 학습 후보 correction artifacts</div>
+          <div style="font-size:.74rem;color:var(--muted);margin-top:.18rem;">저장된 metadata-only 품질 교정 artifact를 pilot sample로 검토하고 JSONL로 내려받습니다. 이 export는 provider fine-tune이나 dataset upload를 실행하지 않습니다.</div>
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;">
+          <button type="button" class="action-btn" onclick="loadReportWorkflowQualityArtifacts()">🔄 Artifact 새로고침</button>
+          <button type="button" class="action-btn" onclick="downloadReportWorkflowQualityArtifacts()" ${Number(data?.ready_artifacts || 0) ? '' : 'disabled'}>⬇️ Ready JSONL</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.55rem;margin-top:.75rem;">
+        <div style="border-radius:12px;background:#eef2ff;color:#3730a3;padding:.6rem;"><strong>${Number(data?.total_artifacts || 0)}</strong><br><span style="font-size:.7rem;">total artifacts</span></div>
+        <div style="border-radius:12px;background:#dcfce7;color:#166534;padding:.6rem;"><strong>${Number(data?.ready_artifacts || 0)}</strong><br><span style="font-size:.7rem;">ready</span></div>
+        <div style="border-radius:12px;background:#fef3c7;color:#92400e;padding:.6rem;"><strong>${Number(data?.not_ready_artifacts || 0)}</strong><br><span style="font-size:.7rem;">blocked</span></div>
+        <div style="border-radius:12px;background:#f1f5f9;color:#334155;padding:.6rem;"><strong>${Number(data?.returned || 0)}</strong><br><span style="font-size:.7rem;">shown</span></div>
+      </div>
+      ${latestRows ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.5rem;margin-top:.7rem;">${latestRows}</div>` : '<div style="font-size:.76rem;color:var(--muted);margin-top:.7rem;">아직 저장된 품질 교정 artifact가 없습니다. 최종 승인 workflow에서 “품질 교정 artifact 저장”을 먼저 수행하세요.</div>'}
+    `;
+  }
+
+  async function loadReportWorkflowQualityArtifacts() {
+    const el = $id('rw-quality-artifact-summary');
+    if (!el) return;
+    try {
+      const res = await fetch('/report-workflows/learning/correction-artifacts?ready_only=false&limit=20', {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      renderReportWorkflowQualityArtifactSummary(await res.json());
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;font-size:.82rem;">품질 교정 artifact summary 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  async function downloadReportWorkflowQualityArtifacts() {
+    try {
+      const res = await fetch('/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=200', {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'report_quality_correction_artifacts.jsonl';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification('Ready correction artifact JSONL 다운로드를 시작했습니다.', 'success');
+    } catch (err) {
+      showNotification('Correction artifact JSONL 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
   async function loadReportWorkflows() {
     const list = $id('report-workflow-list');
     if (!list) return;
@@ -7606,6 +7680,7 @@
           </button>
         `).join('');
       }
+      await loadReportWorkflowQualityArtifacts();
       if (_reportWorkflowCurrentId) await loadReportWorkflowDetail(_reportWorkflowCurrentId);
     } catch (err) {
       list.innerHTML = `<div style="color:#ef4444;font-size:.85rem;">워크플로우 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;

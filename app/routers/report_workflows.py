@@ -103,6 +103,44 @@ def list_report_workflows(request: Request, status: str | None = None) -> dict:
     return {"report_workflows": [_workflow_list_item(rec) for rec in records], "total": len(records)}
 
 
+@router.get("/report-workflows/learning/correction-artifacts", dependencies=[Depends(require_api_key)])
+def list_report_quality_correction_artifacts(
+    request: Request,
+    ready_only: bool = False,
+    limit: int = 50,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    return _get_service(request).list_quality_correction_artifacts(
+        tenant_id=tenant_id,
+        ready_only=ready_only,
+        limit=limit,
+    )
+
+
+@router.get("/report-workflows/learning/correction-artifacts/export", dependencies=[Depends(require_api_key)])
+def export_report_quality_correction_artifacts(
+    request: Request,
+    ready_only: bool = True,
+    limit: int = 200,
+) -> Response:
+    tenant_id = get_tenant_id(request)
+    body = _get_service(request).export_quality_correction_artifacts_jsonl(
+        tenant_id=tenant_id,
+        ready_only=ready_only,
+        limit=limit,
+    )
+    return Response(
+        content=body,
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="report_quality_correction_artifacts.jsonl"; '
+                "filename*=UTF-8''report_quality_correction_artifacts.jsonl"
+            )
+        },
+    )
+
+
 @router.get("/report-workflows/{report_workflow_id}", dependencies=[Depends(require_api_key)])
 def get_report_workflow(report_workflow_id: str, request: Request) -> dict:
     tenant_id = get_tenant_id(request)

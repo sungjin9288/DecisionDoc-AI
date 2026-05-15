@@ -279,6 +279,116 @@ class ReportWorkflowService:
             "persisted": True,
         }
 
+    @staticmethod
+    def _quality_correction_artifact_row(
+        rec: ReportWorkflowRecord,
+        wrapper: dict[str, Any],
+        *,
+        include_artifact: bool = False,
+    ) -> dict[str, Any]:
+        payload = wrapper.get("payload") if isinstance(wrapper.get("payload"), dict) else {}
+        artifact = payload.get("artifact") if isinstance(payload.get("artifact"), dict) else {}
+        validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+        if artifact and not validation:
+            validation = validate_correction_artifact(artifact)
+        workflow_reference = artifact.get("workflow_reference") if isinstance(artifact.get("workflow_reference"), dict) else {}
+        document_profile = artifact.get("document_profile") if isinstance(artifact.get("document_profile"), dict) else {}
+        quality_baseline = artifact.get("quality_baseline") if isinstance(artifact.get("quality_baseline"), dict) else {}
+        correction = artifact.get("correction") if isinstance(artifact.get("correction"), dict) else {}
+        learning_labels = artifact.get("learning_labels") if isinstance(artifact.get("learning_labels"), dict) else {}
+        row = {
+            "store_artifact_id": wrapper.get("artifact_id", ""),
+            "artifact_id": validation.get("artifact_id") or artifact.get("artifact_id") or "",
+            "kind": wrapper.get("kind", ""),
+            "created_at": wrapper.get("created_at", ""),
+            "actor": wrapper.get("actor", ""),
+            "tenant_id": rec.tenant_id,
+            "report_workflow_id": rec.report_workflow_id,
+            "workflow_title": rec.title,
+            "client": rec.client,
+            "workflow_status": workflow_reference.get("workflow_status") or rec.status,
+            "learning_opt_in": bool(workflow_reference.get("learning_opt_in", rec.learning_opt_in)),
+            "document_type": document_profile.get("document_type", ""),
+            "domain": document_profile.get("domain", ""),
+            "language": document_profile.get("language", ""),
+            "slide_count": document_profile.get("slide_count", rec.slide_count),
+            "reviewer": correction.get("reviewer", ""),
+            "reviewed_at": correction.get("reviewed_at", ""),
+            "overall_score": quality_baseline.get("overall_score"),
+            "task_types": list(learning_labels.get("task_types") or []),
+            "skills": list(learning_labels.get("skills") or []),
+            "confirmed_claim_count": len(learning_labels.get("confirmed_claims") or []),
+            "validation_ok": bool(validation.get("ok", False)),
+            "ready_for_learning": bool(validation.get("ready_for_learning", False)),
+            "validation_errors": list(validation.get("errors") or []),
+            "validation_warnings": list(validation.get("warnings") or []),
+            "schema_version": artifact.get("schema_version", ""),
+        }
+        if include_artifact:
+            row["artifact"] = artifact
+        return row
+
+    def list_quality_correction_artifacts(
+        self,
+        *,
+        tenant_id: str,
+        ready_only: bool = False,
+        limit: int = 50,
+        include_artifact: bool = False,
+    ) -> dict[str, Any]:
+        """List saved metadata-only quality correction artifacts for review/export."""
+        clamped_limit = max(1, min(int(limit or 50), 200))
+        rows: list[dict[str, Any]] = []
+        for rec in self.store.list_by_tenant(tenant_id):
+            for wrapper in rec.learning_artifacts:
+                if not isinstance(wrapper, dict) or wrapper.get("kind") != "report_quality_correction_accepted":
+                    continue
+                row = self._quality_correction_artifact_row(rec, wrapper, include_artifact=include_artifact)
+                rows.append(row)
+        rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        ready_count = sum(1 for item in rows if item.get("ready_for_learning") is True)
+        filtered = [item for item in rows if item.get("ready_for_learning") is True] if ready_only else rows
+        limited = filtered[:clamped_limit]
+        return {
+            "report_type": "report_quality_correction_artifact_summary",
+            "tenant_id": tenant_id,
+            "ready_only": bool(ready_only),
+            "limit": clamped_limit,
+            "total_artifacts": len(rows),
+            "ready_artifacts": ready_count,
+            "not_ready_artifacts": len(rows) - ready_count,
+            "returned": len(limited),
+            "artifacts": limited,
+            "training_boundary": {
+                "external_dataset_upload_authorized": False,
+                "provider_fine_tune_api_call_authorized": False,
+                "provider_job_creation_authorized": False,
+                "provider_job_polling_authorized": False,
+                "training_execution_authorized": False,
+                "model_promotion_authorized": False,
+            },
+        }
+
+    def export_quality_correction_artifacts_jsonl(
+        self,
+        *,
+        tenant_id: str,
+        ready_only: bool = True,
+        limit: int = 200,
+    ) -> str:
+        summary = self.list_quality_correction_artifacts(
+            tenant_id=tenant_id,
+            ready_only=ready_only,
+            limit=limit,
+            include_artifact=True,
+        )
+        lines = [
+            json.dumps(item["artifact"], ensure_ascii=False, sort_keys=True)
+            for item in summary["artifacts"]
+            if isinstance(item.get("artifact"), dict) and item["artifact"]
+        ]
+        return "\n".join(lines) + ("\n" if lines else "")
+
     def _pptx_export_payload(self, rec: ReportWorkflowRecord) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         slide_outline: list[dict[str, Any]] = []
         visual_assets: list[dict[str, Any]] = []

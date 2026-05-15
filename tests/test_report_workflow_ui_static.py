@@ -75,6 +75,12 @@ def test_report_workflow_tab_and_stepper_present():
     assert "getPostDeployReportWorkflowSmokeResults" in html
     assert "buildPostDeployReportWorkflowSmokeResultsSummary" in html
     assert "buildOpsPostDeployReportWorkflowSmokeResultDiffRows" in html
+    assert "rw-quality-artifact-summary" in html
+    assert "학습 후보 correction artifacts" in html
+    assert "Ready JSONL" in html
+    assert "renderReportWorkflowQualityArtifactSummary" in html
+    assert "loadReportWorkflowQualityArtifacts" in html
+    assert "downloadReportWorkflowQualityArtifacts" in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():
@@ -94,6 +100,8 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "switchPage('knowledge-page')" in html
     assert "/export/pptx" in html
     assert "/export/snapshot" in html
+    assert "/report-workflows/learning/correction-artifacts?ready_only=false&limit=20" in html
+    assert "/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=200" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html
     assert "visual-assets/generate" in html

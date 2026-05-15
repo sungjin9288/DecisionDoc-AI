@@ -309,12 +309,17 @@ def test_root_html_exposes_report_workflow_quality_artifact_ui(client):
     assert 'id="rw-quality-privacy-scan"' in res.text
     assert 'id="rw-quality-human-status"' in res.text
     assert 'id="rw-quality-result"' in res.text
+    assert 'id="rw-quality-artifact-summary"' in res.text
     assert "REPORT_WORKFLOW_QUALITY_DIMENSIONS" in res.text
     assert "buildReportWorkflowQualityCorrectionPayload" in res.text
     assert "previewReportWorkflowQualityArtifact" in res.text
     assert "saveReportWorkflowQualityArtifact" in res.text
+    assert "loadReportWorkflowQualityArtifacts" in res.text
+    assert "downloadReportWorkflowQualityArtifacts" in res.text
     assert "learning/correction-artifact/preview" in res.text
     assert "learning/correction-artifact" in res.text
+    assert "learning/correction-artifacts/export" in res.text
+    assert "Ready JSONL" in res.text
     assert "metadata-only before/after 교정 데이터" in res.text
     assert "Provider fine-tune이나 dataset upload는 실행하지 않습니다." in res.text
     assert "승인된 기획안/장표 원문을 학습 후보로 저장" not in res.text
