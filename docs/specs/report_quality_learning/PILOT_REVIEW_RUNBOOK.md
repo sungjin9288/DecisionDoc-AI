@@ -61,6 +61,26 @@ PASS report quality correction artifact validated
 ready_for_learning=true
 ```
 
+API 경로로 저장할 때는 먼저 preview를 호출해 blocker를 확인한다.
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/report-workflows/$REPORT_WORKFLOW_ID/learning/correction-artifact/preview" \
+  -H "X-DecisionDoc-Api-Key: $DECISIONDOC_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @path/to/correction_payload.json
+```
+
+`validation.ready_for_learning=true`가 확인된 뒤에만 저장 endpoint를 호출한다.
+
+```bash
+curl -sS -X POST \
+  "$BASE_URL/report-workflows/$REPORT_WORKFLOW_ID/learning/correction-artifact" \
+  -H "X-DecisionDoc-Api-Key: $DECISIONDOC_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @path/to/correction_payload.json
+```
+
 ## 6. Fine-Tuning 전 Stop Gate
 
 아래 조건을 만족하기 전에는 provider fine-tune API를 호출하지 않는다.

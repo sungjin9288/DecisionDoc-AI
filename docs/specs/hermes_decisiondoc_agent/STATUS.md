@@ -173,6 +173,9 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - Defined a reusable quality rubric for logic, evidence discipline, audience fit, slide structure, visual design, public-sector tone, export readiness, and learning value.
 - Added a before/after correction artifact JSON template and validator that require `learning_opt_in=true`, human review, scan pass results, quality thresholds, metadata-only source handling, and no-training/no-upload/no-provider-job/no-model-promotion boundary flags before a sample can become learning-ready.
 - Added a pilot review runbook that requires 3-5 initial reviewed samples and a 30-50 accepted correction artifact stop gate before any small SFT experiment.
+- Added a DecisionDoc-native report quality correction service and Report Workflow API integration for previewing and storing accepted metadata-only correction artifacts.
+- Exposed `POST /report-workflows/{id}/learning/correction-artifact/preview` and `POST /report-workflows/{id}/learning/correction-artifact` so final-approved, opt-in workflows can persist human-reviewed quality corrections without storing raw attachments or starting provider training.
+- Added API regression coverage for correction artifact preview/save, final-approved gating, `learning_opt_in` gating, and raw payload redaction.
 
 ## Files Added
 
@@ -205,6 +208,7 @@ Research and architecture planning are complete. Phase 1 DocumentOps agent skele
 - `tests/test_report_quality_learning.py`
 - `app/services/document_ops_service.py`
 - `app/routers/document_ops_agent.py`
+- `app/services/report_quality_learning.py`
 - `tests/test_document_ops_agent_api.py`
 - `app/static/index.html`
 - `docs/specs/hermes_decisiondoc_agent/phase7_live_provider_pilot/PILOT_REPORT.md`

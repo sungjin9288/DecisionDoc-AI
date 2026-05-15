@@ -47,6 +47,91 @@ def _create_workflow(client: TestClient, **overrides):
     return res.json()
 
 
+def _quality_dimension_scores(value: float = 0.86) -> dict[str, float]:
+    return {
+        "logic": value,
+        "evidence": value,
+        "audience_fit": value,
+        "slide_structure": value,
+        "visual_design": value,
+        "public_sector_tone": value,
+        "export_readiness": value,
+        "learning_value": value,
+    }
+
+
+def _accepted_quality_correction_payload(**overrides):
+    payload = {
+        "username": "pm-reviewer",
+        "reviewer": "pm-reviewer",
+        "reviewed_at": "2026-05-15T10:00:00+09:00",
+        "domain": "public_sector_ai",
+        "language": "ko",
+        "overall_score": 0.88,
+        "dimension_scores": _quality_dimension_scores(),
+        "hard_failures": [],
+        "change_requests": [
+            {
+                "target": "slide:1",
+                "issue": "문제 정의와 기대효과 연결이 약함",
+                "correction": "문제-원인-해결-운영-효과 chain으로 재구성",
+                "rationale": "대표/PM이 승인 근거를 빠르게 확인해야 하기 때문",
+            }
+        ],
+        "rationale_by_dimension": {
+            dimension: f"{dimension} 보강 완료"
+            for dimension in _quality_dimension_scores()
+        },
+        "after_planning_summary": "교정 후 기획은 정책 문제, 실행 구조, 기대효과를 한 흐름으로 연결합니다.",
+        "accepted_for_learning": True,
+        "task_types": ["proposal_planning", "slide_message_design"],
+        "skills": ["policy-planning", "evidence-gap-review"],
+        "confirmed_claims": ["PM 검토 완료 구조"],
+        "assumed_claims": [],
+        "todo_claims": [],
+        "forbidden_terms_scan": "pass",
+        "privacy_security_scan": "pass",
+        "human_review_status": "accepted",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _final_approve_workflow(client: TestClient, workflow_id: str) -> dict:
+    planning = client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    assert planning.status_code == 200
+    approved = client.post(
+        f"/report-workflows/{workflow_id}/planning/approve",
+        json={"username": "pm", "comment": ""},
+    )
+    assert approved.status_code == 200
+    slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={})
+    assert slides_payload.status_code == 200
+    for slide in slides_payload.json()["slides"]:
+        slide_approved = client.post(
+            f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
+            json={"username": "pm", "comment": ""},
+        )
+        assert slide_approved.status_code == 200
+    submitted = client.post(
+        f"/report-workflows/{workflow_id}/final/submit",
+        json={"username": "owner", "comment": ""},
+    )
+    assert submitted.status_code == 200
+    pm = client.post(
+        f"/report-workflows/{workflow_id}/final/pm-approve",
+        json={"username": "pm", "comment": ""},
+    )
+    assert pm.status_code == 200
+    executive = client.post(
+        f"/report-workflows/{workflow_id}/final/executive-approve",
+        json={"username": "ceo", "comment": ""},
+    )
+    assert executive.status_code == 200
+    assert executive.json()["status"] == "final_approved"
+    return executive.json()
+
+
 def test_report_workflow_crud_and_tenant_boundary(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client)
@@ -190,6 +275,74 @@ def test_slide_approval_final_approval_and_pptx_export(tmp_path, monkeypatch):
     assert snapshot_payload["slide_outline"][0]["decision_question"]
     assert snapshot_payload["slide_outline"][0]["acceptance_criteria"]
     assert snapshot_payload["promotion"]["project_document_id"] is None
+
+
+def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    workflow_id = created["report_workflow_id"]
+    _final_approve_workflow(client, workflow_id)
+
+    payload = _accepted_quality_correction_payload()
+    preview = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact/preview",
+        json=payload,
+    )
+
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    assert preview_body["persisted"] is False
+    assert preview_body["validation"]["ok"] is True
+    assert preview_body["validation"]["ready_for_learning"] is True
+    artifact = preview_body["artifact"]
+    assert artifact["workflow_reference"]["workflow_status"] == "final_approved"
+    assert artifact["workflow_reference"]["learning_opt_in"] is True
+    assert artifact["workflow_reference"]["source_material_policy"] == "metadata_only"
+    assert artifact["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert _contains_key(artifact, "content_base64") is False
+    assert _contains_key(artifact, "api_key") is False
+
+    saved = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=payload,
+    )
+
+    assert saved.status_code == 200
+    saved_body = saved.json()
+    assert saved_body["persisted"] is True
+    assert saved_body["validation"]["ready_for_learning"] is True
+    stored_artifact = saved_body["report_workflow"]["learning_artifacts"][-1]
+    assert stored_artifact["kind"] == "report_quality_correction_accepted"
+    assert stored_artifact["payload"]["validation"]["artifact_id"] == saved_body["artifact"]["artifact_id"]
+    assert _contains_key(stored_artifact, "content_base64") is False
+
+
+def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    not_final = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    not_final_id = not_final["report_workflow_id"]
+    client.post(f"/report-workflows/{not_final_id}/planning/generate")
+    client.post(f"/report-workflows/{not_final_id}/planning/approve", json={"username": "pm", "comment": ""})
+    client.post(f"/report-workflows/{not_final_id}/slides/generate", json={})
+
+    blocked_by_status = client.post(
+        f"/report-workflows/{not_final_id}/learning/correction-artifact",
+        json=_accepted_quality_correction_payload(),
+    )
+
+    assert blocked_by_status.status_code == 400
+    assert "workflow_status=final_approved" in blocked_by_status.json()["detail"]
+
+    no_opt_in = _create_workflow(client, slide_count=2, learning_opt_in=False)
+    no_opt_in_id = no_opt_in["report_workflow_id"]
+    _final_approve_workflow(client, no_opt_in_id)
+    blocked_by_opt_in = client.post(
+        f"/report-workflows/{no_opt_in_id}/learning/correction-artifact",
+        json=_accepted_quality_correction_payload(),
+    )
+
+    assert blocked_by_opt_in.status_code == 400
+    assert "learning_opt_in=true" in blocked_by_opt_in.json()["detail"]
 
 
 def test_slide_visual_asset_metadata_api_and_pptx_export_adapter(tmp_path, monkeypatch):

@@ -29,6 +29,18 @@
 - [correction_artifact_template.json](./correction_artifact_template.json)
 - [validate_correction_artifact.py](./validate_correction_artifact.py)
 
+## Backend Integration
+
+Report Workflow 최종 승인본은 아래 API로 교정 artifact를 생성하고 저장한다.
+
+- `POST /report-workflows/{report_workflow_id}/learning/correction-artifact/preview`
+  - 승인본 snapshot과 사람 검수 payload를 합쳐 metadata-only correction artifact를 미리 만든다.
+  - 저장하지 않고 `validation.ok`, `validation.ready_for_learning`, blocker를 반환한다.
+- `POST /report-workflows/{report_workflow_id}/learning/correction-artifact`
+  - `final_approved` 상태이고 `learning_opt_in=true`인 workflow만 저장한다.
+  - 저장 대상은 원본 첨부파일이 아닌 planning/slide/final metadata와 사람 교정 사유다.
+  - validator가 `ready_for_learning=true`를 반환하지 않으면 `400`으로 차단한다.
+
 ## Operating Rule
 
 학습 후보는 아래 조건을 모두 만족해야 한다.

@@ -17,6 +17,7 @@ from app.schemas import (
     GenerateReportWorkflowVisualAssetsRequest,
     GenerateReportSlidesRequest,
     PromoteReportWorkflowRequest,
+    ReportQualityCorrectionArtifactRequest,
     ReportWorkflowActionRequest,
     SelectReportSlideVisualAssetRequest,
     UpdateReportSlideVisualAssetsRequest,
@@ -485,6 +486,63 @@ def export_report_workflow_snapshot(report_workflow_id: str, request: Request) -
             )
         },
     )
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/learning/correction-artifact/preview",
+    dependencies=[Depends(require_api_key)],
+)
+def preview_report_quality_correction_artifact(
+    report_workflow_id: str,
+    payload: ReportQualityCorrectionArtifactRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    correction = payload.model_dump()
+    correction["username"] = _actor(request, payload.username)
+    if not correction.get("reviewer"):
+        correction["reviewer"] = correction["username"]
+    try:
+        return _get_service(request).preview_quality_correction_artifact(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            correction=correction,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    raise HTTPException(status_code=500, detail="correction artifact preview failed")
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/learning/correction-artifact",
+    dependencies=[Depends(require_api_key)],
+)
+def save_report_quality_correction_artifact(
+    report_workflow_id: str,
+    payload: ReportQualityCorrectionArtifactRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    actor = _actor(request, payload.username)
+    correction = payload.model_dump()
+    correction["username"] = actor
+    if not correction.get("reviewer"):
+        correction["reviewer"] = actor
+    try:
+        result = _get_service(request).save_quality_correction_artifact(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            correction=correction,
+            actor=actor,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return {
+        "report_workflow": asdict(result["report_workflow"]),
+        "artifact": result["artifact"],
+        "validation": result["validation"],
+        "persisted": result["persisted"],
+    }
 
 
 @router.post(

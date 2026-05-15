@@ -435,6 +435,49 @@ class PromoteReportWorkflowRequest(BaseModel):
     notes: str = ""
 
 
+class ReportQualityCorrectionChangeRequest(BaseModel):
+    """One human correction note for report quality learning."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    target: str = Field(..., min_length=1, max_length=200)
+    issue: str = Field(..., min_length=1, max_length=4000)
+    correction: str = Field(..., min_length=1, max_length=4000)
+    rationale: str = Field(..., min_length=1, max_length=4000)
+
+
+class ReportQualityCorrectionArtifactRequest(BaseModel):
+    """Payload for previewing or saving a report quality correction artifact."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    reviewer: str = ""
+    reviewed_at: str = ""
+    domain: str = ""
+    language: str = "ko"
+    overall_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    dimension_scores: dict[str, float] = Field(default_factory=dict)
+    hard_failures: list[str] = Field(default_factory=list)
+    before_planning_summary: str = ""
+    before_slide_outline_summary: list[dict[str, Any]] = Field(default_factory=list)
+    visible_claims: list[dict[str, Any]] = Field(default_factory=list)
+    change_requests: list[ReportQualityCorrectionChangeRequest] = Field(default_factory=list)
+    rationale_by_dimension: dict[str, str] = Field(default_factory=dict)
+    after_planning_summary: str = ""
+    after_slide_outline_summary: list[dict[str, Any]] = Field(default_factory=list)
+    final_output_reference: str = ""
+    accepted_for_learning: bool = False
+    task_types: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    confirmed_claims: list[str] = Field(default_factory=list)
+    assumed_claims: list[str] = Field(default_factory=list)
+    todo_claims: list[str] = Field(default_factory=list)
+    forbidden_terms_scan: str = "not_run"
+    privacy_security_scan: str = "not_run"
+    human_review_status: str = "pending"
+
+
 class ImportVoiceBriefDocumentRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 

@@ -998,6 +998,27 @@ class ReportWorkflowStore(BaseJsonStore):
             rec.knowledge_promoted_at = rec.knowledge_promoted_at or _now_iso()
             return self._flush(tid, records, idx, rec)
 
+    def append_learning_artifact(
+        self,
+        report_workflow_id: str,
+        *,
+        kind: str,
+        payload: dict[str, Any],
+        actor: str = "",
+        tenant_id: str | None = None,
+    ) -> ReportWorkflowRecord:
+        with self._lock:
+            result = self._find(report_workflow_id, tenant_id=tenant_id)
+            if result is None:
+                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
+            tid, records, idx, rec = result
+            if rec.status != ReportWorkflowStatus.FINAL_APPROVED.value:
+                raise ValueError("최종 승인된 보고서 워크플로우만 학습 artifact를 저장할 수 있습니다.")
+            if not rec.learning_opt_in:
+                raise ValueError("learning_opt_in=true인 워크플로우만 학습 artifact를 저장할 수 있습니다.")
+            rec.learning_artifacts.append(self._learning_artifact(kind, payload, actor=actor))
+            return self._flush(tid, records, idx, rec)
+
     def approve_final_step(
         self,
         report_workflow_id: str,

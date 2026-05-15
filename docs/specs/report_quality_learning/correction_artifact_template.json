@@ -6,6 +6,7 @@
     "tenant_id": "system",
     "report_workflow_id": "rw_example",
     "project_id": "proj_example",
+    "workflow_status": "final_approved",
     "learning_opt_in": true,
     "source_material_policy": "metadata_only"
   },

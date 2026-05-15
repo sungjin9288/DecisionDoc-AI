@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.services.pptx_service import build_pptx
+from app.services.report_quality_learning import (
+    build_correction_artifact_from_snapshot,
+    validate_correction_artifact,
+)
 from app.services.visual_asset_service import generate_visual_assets_from_docs, index_visual_assets_by_slide_title
 from app.storage.approval_store import ApprovalStatus, ApprovalStore
 from app.storage.knowledge_store import KnowledgeEntry, KnowledgeStore
@@ -223,6 +227,56 @@ class ReportWorkflowService:
             "slides": [self._slide_snapshot_payload(slide) for slide in rec.slides],
             "visual_assets": [self._redact_asset_payload(asset) for asset in visual_assets],
             "quality_warnings": rec.quality_warnings,
+        }
+
+    def preview_quality_correction_artifact(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        correction: dict[str, Any],
+    ) -> dict[str, Any]:
+        snapshot = self.build_export_snapshot(report_workflow_id, tenant_id=tenant_id)
+        artifact = build_correction_artifact_from_snapshot(snapshot, correction)
+        validation = validate_correction_artifact(artifact)
+        return {
+            "artifact": artifact,
+            "validation": validation,
+            "persisted": False,
+        }
+
+    def save_quality_correction_artifact(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        correction: dict[str, Any],
+        actor: str = "",
+    ) -> dict[str, Any]:
+        result = self.preview_quality_correction_artifact(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            correction=correction,
+        )
+        validation = result["validation"]
+        if not validation["ok"] or not validation["ready_for_learning"]:
+            errors = validation.get("errors") or ["correction artifact is not ready for learning"]
+            raise ValueError("; ".join(str(item) for item in errors))
+        rec = self.store.append_learning_artifact(
+            report_workflow_id,
+            kind="report_quality_correction_accepted",
+            payload={
+                "artifact": result["artifact"],
+                "validation": validation,
+            },
+            actor=actor,
+            tenant_id=tenant_id,
+        )
+        return {
+            "report_workflow": rec,
+            "artifact": result["artifact"],
+            "validation": validation,
+            "persisted": True,
         }
 
     def _pptx_export_payload(self, rec: ReportWorkflowRecord) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
