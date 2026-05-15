@@ -100,6 +100,25 @@ artifact_count=3
 training_boundary=not_authorized
 ```
 
+다운로드된 JSONL을 batch evidence로 남길 때:
+
+```bash
+python3 scripts/summarize_report_quality_artifacts.py \
+  tmp/report_quality_correction_artifacts.jsonl \
+  --batch-id pilot-rqc-001 \
+  --min-records 3 \
+  --output reports/report-quality/pilot-rqc-001-manifest.json \
+  --markdown reports/report-quality/pilot-rqc-001-summary.md
+```
+
+expected output:
+
+```text
+Report quality batch readiness: PASS
+Artifact count: 3
+Ready artifacts: 3
+```
+
 API 경로로 저장할 때는 먼저 preview를 호출해 blocker를 확인한다.
 
 ```bash
@@ -143,3 +162,5 @@ curl -sS -X POST \
 - 가장 자주 나온 수정 사유
 - prompt/template 개선 항목
 - fine-tuning 진행 여부
+- `reports/report-quality/*-manifest.json`
+- `reports/report-quality/*-summary.md`

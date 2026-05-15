@@ -68,6 +68,19 @@ python3 scripts/check_report_quality_artifacts.py \
 
 이 helper도 local review artifact를 다운로드하고 검증할 뿐이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
 
+다운로드한 JSONL을 파일럿 batch evidence로 남길 때는:
+
+```bash
+python3 scripts/summarize_report_quality_artifacts.py \
+  tmp/report_quality_correction_artifacts.jsonl \
+  --batch-id pilot-rqc-001 \
+  --min-records 3 \
+  --output reports/report-quality/pilot-rqc-001-manifest.json \
+  --markdown reports/report-quality/pilot-rqc-001-summary.md
+```
+
+manifest는 reviewer, document type, score distribution, blocker, no-training boundary를 요약한다.
+
 ## Operating Rule
 
 학습 후보는 아래 조건을 모두 만족해야 한다.
@@ -93,4 +106,5 @@ python3 scripts/check_report_quality_artifacts.py \
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
 6. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-7. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+7. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+8. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
