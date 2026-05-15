@@ -28,6 +28,9 @@
 - [PILOT_REVIEW_RUNBOOK.md](./PILOT_REVIEW_RUNBOOK.md)
 - [correction_artifact_template.json](./correction_artifact_template.json)
 - [validate_correction_artifact.py](./validate_correction_artifact.py)
+- `scripts/create_report_quality_pilot_pack.py`
+  - 파일럿 리뷰용 non-ready draft artifact 3~5개와 `REVIEW_INDEX.md`를 생성한다.
+  - 기본 출력은 `accepted_for_learning=false`, `human_review_status=pending` 이므로 학습 후보가 아니다.
 
 ## Backend Integration
 
@@ -98,13 +101,21 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
 
 각 샘플은 다음 흐름을 따른다.
 
-1. Report Workflow에서 `learning_opt_in=true`로 내부 테스트 프로젝트를 생성한다.
-2. AI가 기획안과 장표 초안을 생성한다.
-3. 사람이 결과를 고쳐서 “좋은 버전”을 만든다.
-4. 수정 요청, 수정 이유, 최종본, 점수를 `correction_artifact_template.json` 형식으로 기록한다.
-5. `validate_correction_artifact.py`로 shape, 품질 gate, no-training boundary를 검증한다.
+1. 파일럿 리뷰팩을 생성한다.
+   ```bash
+   python3 scripts/create_report_quality_pilot_pack.py \
+     --batch-id pilot-rqc-001 \
+     --sample-count 3 \
+     --output-root reports/report-quality
+   ```
+2. Report Workflow에서 `learning_opt_in=true`로 내부 테스트 프로젝트를 생성한다.
+3. AI가 기획안과 장표 초안을 생성한다.
+4. 사람이 결과를 고쳐서 “좋은 버전”을 만든다.
+5. 수정 요청, 수정 이유, 최종본, 점수를 리뷰팩의 draft artifact에 기록한다.
+6. 승인 전에는 `accepted_for_learning=false`를 유지하고, 사람이 검수 완료한 뒤에만 `accepted_for_learning=true`, `human_review_status=accepted`, scan 결과 `pass`로 바꾼다.
+7. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
-6. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-7. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
-8. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+8. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
+9. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+10. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

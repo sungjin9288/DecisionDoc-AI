@@ -40,6 +40,7 @@ FORBIDDEN_CONTENT_KEYS = {
     "api_key",
     "private_key",
 }
+PLACEHOLDER_MARKERS = ("TODO_", "TODO:", "TODO ")
 
 
 def _now_iso() -> str:
@@ -85,6 +86,21 @@ def _scan_forbidden_content_keys(value: Any, *, path: str = "$") -> list[str]:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             findings.extend(_scan_forbidden_content_keys(child, path=f"{path}[{index}]"))
+    return findings
+
+
+def _scan_placeholder_values(value: Any, *, path: str = "$") -> list[str]:
+    findings: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            findings.extend(_scan_placeholder_values(child, path=f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            findings.extend(_scan_placeholder_values(child, path=f"{path}[{index}]"))
+    elif isinstance(value, str):
+        upper_value = value.upper()
+        if any(marker in upper_value for marker in PLACEHOLDER_MARKERS):
+            findings.append(path)
     return findings
 
 
@@ -203,6 +219,8 @@ def validate_correction_artifact(payload: dict[str, Any]) -> dict[str, Any]:
             errors.append("accepted artifacts require after.planning_summary")
         if not _non_empty_string(after.get("final_output_reference")):
             warnings.append("accepted artifact has no after.final_output_reference")
+        for path in _scan_placeholder_values(payload):
+            errors.append(f"accepted artifacts must not contain placeholder value at {path}")
         ready_for_learning = not errors
 
     return {

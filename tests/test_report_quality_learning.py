@@ -175,3 +175,15 @@ def test_completed_artifact_requires_quality_thresholds():
 
     assert result["ok"] is False
     assert "logic >= 0.75" in "\n".join(result["errors"])
+
+
+def test_completed_artifact_rejects_todo_placeholders():
+    validator = _load_validator()
+    payload = _accepted_payload()
+    payload["after"]["planning_summary"] = "TODO_사람이 승인 가능한 최종 기획 구조 요약"
+
+    result = validator.validate_correction_artifact(payload)
+
+    assert result["ok"] is False
+    assert result["ready_for_learning"] is False
+    assert "placeholder value" in "\n".join(result["errors"])

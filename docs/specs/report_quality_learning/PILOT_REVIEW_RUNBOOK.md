@@ -23,6 +23,28 @@ Report Workflow 생성 시:
 - 민감 원문은 요약/metadata/reference만 사용
 - 최종 승인 전까지 학습 후보로 보지 않음
 
+리뷰를 시작하기 전 draft artifact와 체크리스트를 생성한다.
+
+```bash
+python3 scripts/create_report_quality_pilot_pack.py \
+  --batch-id pilot-rqc-001 \
+  --sample-count 3 \
+  --output-root reports/report-quality
+```
+
+생성물:
+
+- `reports/report-quality/pilot-rqc-001/REVIEW_INDEX.md`
+- `reports/report-quality/pilot-rqc-001/drafts/*.json`
+- `reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl`
+
+주의:
+
+- 생성 직후 draft는 `accepted_for_learning=false`이고 `human_review_status=pending`이다.
+- 사람이 교정 근거, 점수, scan 결과, 최종본 reference를 채우기 전에는 `--require-ready` batch validation이 실패하는 것이 정상이다.
+- `accepted_for_learning=true`로 바꾼 artifact 안에 `TODO_*` placeholder가 남아 있으면 validator가 차단한다.
+- 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+
 ## 3. 생성과 교정
 
 각 샘플마다 아래를 기록한다.
