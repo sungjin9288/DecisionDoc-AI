@@ -61,6 +61,27 @@ python3 scripts/create_report_quality_review_sheet.py \
 
 worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 로컬 검수 문서다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
+JSON을 직접 수정하는 대신 decision template을 만들어 검수 결정을 반영할 수 있다.
+
+```bash
+python3 scripts/apply_report_quality_review_decisions.py \
+  reports/report-quality/pilot-rqc-001 \
+  --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
+```
+
+검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. 승인할 artifact만 `decision=accepted`로 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다.
+
+결정 파일을 draft artifact에 반영할 때:
+
+```bash
+python3 scripts/apply_report_quality_review_decisions.py \
+  reports/report-quality/pilot-rqc-001 \
+  --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
+  --require-ready
+```
+
+`--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 draft 저장을 차단한다. 이 helper도 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+
 ```bash
 python3 scripts/sync_report_quality_pilot_pack.py \
   reports/report-quality/pilot-rqc-001 \

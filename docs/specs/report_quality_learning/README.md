@@ -37,6 +37,9 @@
 - `scripts/create_report_quality_review_sheet.py`
   - `drafts/*.json` 기준으로 사람이 채워야 할 reviewer, score, scan, approval 필드를 markdown worksheet로 만든다.
   - worksheet와 manifest만 생성하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/apply_report_quality_review_decisions.py`
+  - 사람이 작성한 decision JSON을 draft artifact에 반영한다.
+  - `accepted` decision은 reviewer, reviewed_at, score, scan pass, validator ready gate를 충족해야 저장된다.
 
 ## Backend Integration
 
@@ -123,17 +126,30 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
    ```
-7. 승인 전에는 `accepted_for_learning=false`를 유지하고, 사람이 검수 완료한 뒤에만 `accepted_for_learning=true`, `human_review_status=accepted`, scan 결과 `pass`로 바꾼다.
-8. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
+7. 사람이 채울 decision template을 만든다.
+   ```bash
+   python3 scripts/apply_report_quality_review_decisions.py \
+     reports/report-quality/pilot-rqc-001 \
+     --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
+   ```
+8. 승인 전에는 `accepted_for_learning=false`를 유지하고, 사람이 검수 완료한 뒤에만 decision을 `accepted`, scan 결과를 `pass`로 바꾼다.
+9. decision JSON을 draft artifact에 반영한다.
+   ```bash
+   python3 scripts/apply_report_quality_review_decisions.py \
+     reports/report-quality/pilot-rqc-001 \
+     --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
+     --require-ready
+   ```
+10. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
-9. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
+11. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
    ```bash
    python3 scripts/sync_report_quality_pilot_pack.py \
      reports/report-quality/pilot-rqc-001 \
      --min-records 3 \
      --require-ready
    ```
-10. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-11. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
-12. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+12. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
+13. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+14. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
