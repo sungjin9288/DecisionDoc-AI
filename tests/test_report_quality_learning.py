@@ -75,6 +75,71 @@ def test_completed_correction_artifact_is_learning_ready():
     assert result["errors"] == []
 
 
+def test_validator_accepts_exported_jsonl_with_require_ready(tmp_path, capsys):
+    validator = _load_validator()
+    first = _accepted_payload()
+    second = _accepted_payload()
+    second["artifact_id"] = "rqc_second"
+    export_path = tmp_path / "report_quality_correction_artifacts.jsonl"
+    export_path.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in (first, second)) + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = validator.main([str(export_path), "--require-ready"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "PASS report quality correction artifact JSONL validated" in out
+    assert "ready_for_learning=true" in out
+    assert "artifact_count=2" in out
+    assert "min_records=1" in out
+    assert "ready_artifacts=2" in out
+    assert "not_ready_artifacts=0" in out
+
+
+def test_validator_enforces_jsonl_min_records(tmp_path, capsys):
+    validator = _load_validator()
+    export_path = tmp_path / "small_batch.jsonl"
+    export_path.write_text(json.dumps(_accepted_payload(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    exit_code = validator.main([str(export_path), "--require-ready", "--min-records", "2", "--json"])
+
+    assert exit_code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is False
+    assert result["ready_for_learning"] is False
+    assert result["artifact_count"] == 1
+    assert result["min_records"] == 2
+    assert "artifact_count 1 is below min_records 2" in "\n".join(result["errors"])
+
+
+def test_validator_rejects_jsonl_parse_errors(tmp_path, capsys):
+    validator = _load_validator()
+    export_path = tmp_path / "broken_export.jsonl"
+    export_path.write_text(json.dumps(_accepted_payload(), ensure_ascii=False) + "\nnot-json\n", encoding="utf-8")
+
+    exit_code = validator.main([str(export_path), "--require-ready", "--json"])
+
+    assert exit_code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is False
+    assert result["ready_for_learning"] is False
+    assert result["artifact_count"] == 1
+    assert result["ready_artifacts"] == 1
+    assert "line 2: invalid JSON" in "\n".join(result["errors"])
+
+
+def test_validator_require_ready_fails_for_valid_but_pending_json(tmp_path):
+    validator = _load_validator()
+    artifact_path = tmp_path / "pending_correction_artifact.json"
+    artifact_path.write_text(TEMPLATE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+
+    exit_code = validator.main([str(artifact_path), "--require-ready"])
+
+    assert exit_code == 1
+
+
 def test_learning_ready_artifact_requires_opt_in():
     validator = _load_validator()
     payload = _accepted_payload()

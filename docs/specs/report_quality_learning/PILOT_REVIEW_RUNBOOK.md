@@ -61,6 +61,26 @@ PASS report quality correction artifact validated
 ready_for_learning=true
 ```
 
+UI/API에서 내려받은 batch JSONL은 아래처럼 검사한다.
+
+```bash
+python3 docs/specs/report_quality_learning/validate_correction_artifact.py \
+  path/to/report_quality_correction_artifacts.jsonl \
+  --require-ready \
+  --min-records 3
+```
+
+expected output:
+
+```text
+PASS report quality correction artifact JSONL validated
+ready_for_learning=true
+artifact_count=3
+min_records=3
+ready_artifacts=3
+not_ready_artifacts=0
+```
+
 API 경로로 저장할 때는 먼저 preview를 호출해 blocker를 확인한다.
 
 ```bash
