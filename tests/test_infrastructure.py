@@ -299,6 +299,27 @@ def test_root_html_includes_ai_rank_roster(client):
     assert "수주" in res.text
 
 
+def test_root_html_exposes_report_workflow_quality_artifact_ui(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'id="rw-quality-artifact-panel"' in res.text
+    assert 'id="rw-quality-reviewer"' in res.text
+    assert 'id="rw-quality-after-summary"' in res.text
+    assert 'id="rw-quality-forbidden-scan"' in res.text
+    assert 'id="rw-quality-privacy-scan"' in res.text
+    assert 'id="rw-quality-human-status"' in res.text
+    assert 'id="rw-quality-result"' in res.text
+    assert "REPORT_WORKFLOW_QUALITY_DIMENSIONS" in res.text
+    assert "buildReportWorkflowQualityCorrectionPayload" in res.text
+    assert "previewReportWorkflowQualityArtifact" in res.text
+    assert "saveReportWorkflowQualityArtifact" in res.text
+    assert "learning/correction-artifact/preview" in res.text
+    assert "learning/correction-artifact" in res.text
+    assert "metadata-only before/after 교정 데이터" in res.text
+    assert "Provider fine-tune이나 dataset upload는 실행하지 않습니다." in res.text
+    assert "승인된 기획안/장표 원문을 학습 후보로 저장" not in res.text
+
+
 def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     res = client.get("/")
     assert res.status_code == 200
