@@ -77,6 +77,8 @@ class DocumentOpsAgent:
             skill_version=skill.version,
             provider_name=self.provider.name,
             plan=draft.plan,
+            critique=draft.critique,
+            revision_tasks=draft.revision_tasks,
             draft=draft.draft,
             evidence_status=draft.evidence_status,
             qa=qa,
@@ -97,6 +99,8 @@ class DocumentOpsAgent:
             "Return only valid JSON matching this schema:\n"
             "{"
             '"plan": ["..."], '
+            '"critique": ["..."], '
+            '"revision_tasks": ["..."], '
             '"draft": "...", '
             '"evidence_status": {'
             '"confirmed": ["..."], "assumptions": ["..."], "gaps": ["..."], "source_references": ["..."]'
@@ -105,6 +109,7 @@ class DocumentOpsAgent:
             "}\n\n"
             "Write Korean content for plan, draft, and evidence_status values unless a source ID or product name must stay unchanged.\n"
             "For policy, public-sector, and operational planning tasks, explicitly cover 개인정보, 보안, 운영책임, 리스크, 로그/감사 where relevant.\n"
+            "For develop_quality_improvement tasks, critique the current draft first, list concrete revision tasks, then return the improved draft without inventing missing evidence.\n"
             "Do not include keys outside the schema unless unavoidable.\n\n"
             f"Skill name: {skill.name}\n"
             f"Skill version: {skill.version}\n"
@@ -157,6 +162,14 @@ class DocumentOpsAgent:
                 "요구사항과 의사결정 목적을 분리합니다.",
                 "확인된 근거, 가정, TODO를 구분합니다.",
                 "정책 논리와 실행 경로를 검토 가능한 문서 구조로 정리합니다.",
+            ],
+            critique=[
+                "Provider 응답을 구조화할 수 없어 로컬 fallback 초안을 사용했습니다.",
+                "근거와 승인 질문은 사람 검토로 다시 확인해야 합니다.",
+            ],
+            revision_tasks=[
+                "공식 source reference를 보강한 뒤 confirmed/assumption/TODO를 재분류합니다.",
+                "승인자가 결정해야 할 질문과 운영 책임자를 명시합니다.",
             ],
             draft=draft,
             evidence_status=EvidenceStatus(
@@ -235,6 +248,8 @@ class DocumentOpsAgent:
             "source_summary_count": len(request.source_summaries),
             "source_reference_count": len(request.source_references),
             "plan": draft.plan,
+            "critique": draft.critique,
+            "revision_tasks": draft.revision_tasks,
             "evidence_status": draft.evidence_status.model_dump(),
             "draft_output": draft.draft,
             "qa": qa,
@@ -267,6 +282,14 @@ def _redact_for_trajectory(value: Any) -> Any:
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 _DRAFT_PAYLOAD_KEYS = ("output", "result", "document_ops", "response", "data")
 _DRAFT_FIELD_ALIASES = ("draft", "draft_output", "final_output", "content", "body")
+_CRITIQUE_FIELD_ALIASES = ("critique", "quality_critique", "review_findings", "issues")
+_REVISION_TASK_FIELD_ALIASES = (
+    "revision_tasks",
+    "improvement_tasks",
+    "rewrite_tasks",
+    "next_revisions",
+    "action_items",
+)
 
 
 def _parse_draft_output(raw: str) -> DocumentOpsDraftOutput:
@@ -340,7 +363,17 @@ def _unwrap_draft_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _looks_like_draft_payload(value: dict[str, Any]) -> bool:
-    return any(key in value for key in ("plan", "evidence_status", "qa", *_DRAFT_FIELD_ALIASES))
+    return any(
+        key in value
+        for key in (
+            "plan",
+            "evidence_status",
+            "qa",
+            *_DRAFT_FIELD_ALIASES,
+            *_CRITIQUE_FIELD_ALIASES,
+            *_REVISION_TASK_FIELD_ALIASES,
+        )
+    )
 
 
 def _normalize_draft_payload(data: dict[str, Any]) -> dict[str, Any]:
@@ -350,6 +383,8 @@ def _normalize_draft_payload(data: dict[str, Any]) -> dict[str, Any]:
     qa = qa_raw if isinstance(qa_raw, dict) else {}
     return {
         "plan": _coerce_string_list(data.get("plan")),
+        "critique": _coerce_string_list(_first_present(data, _CRITIQUE_FIELD_ALIASES)),
+        "revision_tasks": _coerce_string_list(_first_present(data, _REVISION_TASK_FIELD_ALIASES)),
         "draft": _first_present_string(data, _DRAFT_FIELD_ALIASES),
         "evidence_status": {
             "confirmed": _coerce_string_list(

@@ -52,6 +52,8 @@ class DocumentOpsDraftOutput(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     plan: list[str] = Field(default_factory=list)
+    critique: list[str] = Field(default_factory=list)
+    revision_tasks: list[str] = Field(default_factory=list)
     draft: str = ""
     evidence_status: EvidenceStatus = Field(default_factory=EvidenceStatus)
     qa: dict[str, Any] = Field(default_factory=dict)
@@ -67,6 +69,8 @@ class DocumentOpsResult(BaseModel):
     skill_version: str = Field(..., min_length=1)
     provider_name: str = Field(..., min_length=1)
     plan: list[str] = Field(default_factory=list)
+    critique: list[str] = Field(default_factory=list)
+    revision_tasks: list[str] = Field(default_factory=list)
     draft: str = ""
     evidence_status: EvidenceStatus = Field(default_factory=EvidenceStatus)
     qa: dict[str, Any] = Field(default_factory=dict)

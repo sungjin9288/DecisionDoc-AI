@@ -21,6 +21,8 @@ def _sample_trajectory(trajectory_id: str = "trj_001") -> dict:
             "source_references": [{"id": "source-1"}],
         },
         "plan": ["승인 질문 분리", "근거 상태 정리"],
+        "critique": ["승인 질문이 앞부분에 더 명확해야 함"],
+        "revision_tasks": ["근거 상태와 운영 리스크를 분리"],
         "draft_output": "정책 기획 초안",
         "evidence_status": {"confirmed": ["source-1"], "assumptions": [], "gaps": [], "source_references": ["source-1"]},
         "qa": {"hard_gate_pass": True, "warnings": []},
@@ -85,7 +87,10 @@ def test_export_sft_messages_writes_only_accepted_records(tmp_path: Path) -> Non
     record = json.loads(lines[0])
     assert [message["role"] for message in record["messages"]] == ["system", "user", "assistant"]
     assert record["metadata"]["trajectory_id"] == "trj_accept"
-    assert "정책 기획 초안" in record["messages"][2]["content"]
+    assistant_payload = json.loads(record["messages"][2]["content"])
+    assert assistant_payload["draft"] == "정책 기획 초안"
+    assert assistant_payload["critique"] == ["승인 질문이 앞부분에 더 명확해야 함"]
+    assert assistant_payload["revision_tasks"] == ["근거 상태와 운영 리스크를 분리"]
     assert "raw_attachment" in record["messages"][1]["content"]
     assert "binary-like-data" not in record["messages"][1]["content"]
     assert store.get_stats(tenant_id="system")["export_count"] == 1

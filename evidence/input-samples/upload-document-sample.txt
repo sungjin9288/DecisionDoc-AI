@@ -1,0 +1,3 @@
+Project title: Portfolio Evidence Upload
+Goal: Validate uploaded document generation evidence.
+Constraints: Keep auditability first. Do not include private or customer data.

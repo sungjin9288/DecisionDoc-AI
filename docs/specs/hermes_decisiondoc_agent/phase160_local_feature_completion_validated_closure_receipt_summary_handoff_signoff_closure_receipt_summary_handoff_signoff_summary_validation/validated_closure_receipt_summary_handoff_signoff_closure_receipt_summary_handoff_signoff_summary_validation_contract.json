@@ -1,0 +1,62 @@
+{
+  "report_type": "document_ops_phase160_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract",
+  "phase": 160,
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary_validator_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-05T00:00:00+09:00",
+  "validation_scope": "local_read_only_phase159_validated_closure_receipt_summary_handoff_signoff_summary_validation",
+  "source_summary_contract": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase159_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary_contract.json",
+    "sha256": "7365fe3c0810f78e95179b7491c1dd7d4e9fbd0246f4cabc4ac480fcd2b4f007",
+    "summary_reporter": "scripts/summarize_documentops_phase157_validated_closure_receipt_summary_handoff_signoffs.py",
+    "summary_reporter_sha256": "0b6deb677bc20e23b18369330e57eeeec8e3e73159969179bb4f3b05e839798f",
+    "source_signoff_validator": "scripts/validate_documentops_phase156_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff.py",
+    "source_signoff_validator_sha256": "e5ef0f23d1d6ed8a4101efe9316bf4d990d1390142862ef09047aca9580b139b",
+    "service_operation_state": "freeze_preserved"
+  },
+  "summary_validator": {
+    "path": "scripts/validate_documentops_phase159_validated_closure_receipt_summary_handoff_signoff_summary.py",
+    "sha256": "cb10ba626b38d5b7922cee4a070faff50ca7ad1da8d7c472a5cb5315a27ff94a",
+    "reads_phase159_summary": true,
+    "revalidates_linked_phase157_signoffs": true,
+    "checks_linked_signoff_hashes": true,
+    "checks_embedded_validation": true,
+    "supports_require_complete": true,
+    "supports_json_output": true
+  },
+  "validation_policy": {
+    "pending_summary_is_valid_but_not_completion_ready": true,
+    "require_complete_requires_accepted_signoffs": true,
+    "accepted_summary_is_evidence_only": true,
+    "boundary_breaks_fail_validation": true,
+    "load_errors_fail_validation": true
+  },
+  "validation_boundary": {
+    "read_only_summary_validation": true,
+    "writes_repo_files": false,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_validator": false,
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Keep the service frozen unless a separate approved service-resume flow explicitly authorizes operation restart."
+}

@@ -1,0 +1,25 @@
+### Page
+- Page URL: http://127.0.0.1:8787/
+- Page Title: DecisionDoc AI — AI 문서 생성기
+### Snapshot
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: 📄 DecisionDoc AI
+    - heading "로그인" [level=2] [ref=e5]
+    - generic [ref=e6]:
+      - generic [ref=e7]: 아이디
+      - textbox "아이디" [ref=e8]
+      - generic [ref=e9]: 비밀번호
+      - textbox "비밀번호" [ref=e10]
+      - button "로그인" [ref=e11] [cursor=pointer]
+    - paragraph [ref=e12]:
+      - text: 처음 사용하시나요?
+      - link "관리자 계정 만들기" [ref=e13] [cursor=pointer]:
+        - /url: "#"
+  - link "본문으로 건너뛰기" [ref=e14] [cursor=pointer]:
+    - /url: "#main-content"
+  - status [ref=e15]
+  - text: • • • • • • • • • ▶
+  - button "📂 이력" [ref=e16] [cursor=pointer]
+```

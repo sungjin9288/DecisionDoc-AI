@@ -1,0 +1,56 @@
+{
+  "schema_version": "decisiondoc_report_quality_training_final_approval_packet_review.v1",
+  "review_id": "",
+  "created_at": "",
+  "packet_manifest_path": "",
+  "packet_manifest_sha256": "",
+  "decision": "pending",
+  "requested_next_step": "none",
+  "reviewers": [
+    {
+      "name": "",
+      "role_or_team": "",
+      "reviewed_at": ""
+    }
+  ],
+  "review_summary": "",
+  "decision_rationale": "",
+  "conditions": [],
+  "evidence_reviewed": [],
+  "acknowledgements": {
+    "final_approval_packet_validated": false,
+    "required_approver_roles_reviewed": false,
+    "job_spec_not_started_reviewed": false,
+    "final_training_approval_not_recorded": false,
+    "no_dataset_upload_authorized": false,
+    "no_provider_fine_tune_authorized": false,
+    "no_provider_job_authorized": false,
+    "no_training_execution_authorized": false,
+    "no_model_promotion_authorized": false
+  },
+  "review_boundary": {
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "training_execution_authorized": false,
+    "model_promotion_authorized": false
+  },
+  "generation_context": {},
+  "generation_boundary": {
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  }
+}

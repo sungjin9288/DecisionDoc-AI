@@ -478,6 +478,17 @@ class ReportQualityCorrectionArtifactRequest(BaseModel):
     human_review_status: str = "pending"
 
 
+class ReportWorkflowDevelopQualityPreviewRequest(BaseModel):
+    """Payload for running a Develop quality preview against a report workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    username: str = ""
+    focus: str = "보고서 품질 개선"
+    additional_notes: str = ""
+    capture_trajectory: bool = False
+
+
 class ImportVoiceBriefDocumentRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 

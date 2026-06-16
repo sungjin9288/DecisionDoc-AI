@@ -1,0 +1,7 @@
+{
+  "title": "Portfolio Evidence Export Demo",
+  "goal": "Validate markdown export using mock provider.",
+  "context": "Evidence collection run for portfolio review. No private data is included.",
+  "doc_types": ["adr", "onepager"],
+  "bundle_type": "tech_decision"
+}

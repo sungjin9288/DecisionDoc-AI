@@ -1,8 +1,8 @@
 {
   "report_type": "document_ops_phase29_reviewer_signoff_handoff_refresh",
-  "status": "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization",
+  "status": "no_cost_freeze_closeout_summary_validated_no_aws_no_training_authorization",
   "created_at": "2026-05-08T15:21:12+09:00",
-  "scope": "DocumentOps reviewer sign-off package through Phase 42 production browser UAT evidence",
+  "scope": "DocumentOps reviewer sign-off package through Phase 46 no-cost freeze closeout summary with Phase 43 local export openability evidence and validator",
   "refreshes": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff",
   "release_boundary": {
     "reviewer_signoff_ready": true,
@@ -17,7 +17,13 @@
     "model_candidate_emission_authorized": false,
     "model_promotion_authorized": false,
     "production_smoke_completed": true,
-    "production_browser_uat_completed": true
+    "production_browser_uat_completed": true,
+    "local_export_openability_completed": true,
+    "phase43_validator_completed": true,
+    "phase20_handoff_manifest_validator_completed": true,
+    "phase44_no_cost_freeze_gate_completed": true,
+    "phase45_no_cost_freeze_closeout_receipt_completed": true,
+    "phase46_no_cost_freeze_closeout_summary_completed": true
   },
   "required_reviewers": [
     "product_pm_reviewer",
@@ -241,8 +247,68 @@
     {
       "id": "phase29_handoff_manifest",
       "path": "docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
-      "purpose": "Machine-readable artifact index and sign-off boundary through Phase 28",
+      "purpose": "Machine-readable artifact index and sign-off boundary through Phase 46",
       "required_for_signoff": true
+    },
+    {
+      "id": "phase20_release_handoff_manifest_validator",
+      "path": "scripts/validate_phase20_release_handoff_manifest.py",
+      "purpose": "Local read-only validator that rejects the refreshed Phase 20/46 handoff manifest if Phase 43 evidence, Phase 44 freeze gate, Phase 45 receipt, Phase 46 summary, artifact paths, or no-cost/no-training boundaries break",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase44_no_cost_freeze_gate_guide",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase44_no_cost_freeze_gate/NO_COST_FREEZE_GATE.md",
+      "purpose": "Operator-facing guide for the local no-cost freeze gate and explicit non-approvals",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase44_no_cost_freeze_gate_checker",
+      "path": "scripts/check_hermes_no_cost_freeze_gate.py",
+      "purpose": "Local composed gate that validates the handoff manifest and Phase 43 export openability evidence before keeping the service frozen",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase45_no_cost_freeze_closeout_receipt_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase45_no_cost_freeze_closeout_receipt/NO_COST_FREEZE_CLOSEOUT_RECEIPT.md",
+      "purpose": "Human-readable closeout receipt recording that the no-cost freeze gate passed and service freeze remains preserved",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase45_no_cost_freeze_closeout_receipt_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase45_no_cost_freeze_closeout_receipt/no_cost_freeze_closeout_receipt.json",
+      "purpose": "Machine-readable closeout receipt with source hashes, gate result, and no-cost/no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass_no_cost_freeze_closeout_receipt"
+    },
+    {
+      "id": "phase45_no_cost_freeze_closeout_receipt_validator",
+      "path": "scripts/validate_hermes_no_cost_freeze_closeout_receipt.py",
+      "purpose": "Local validator that rechecks the closeout receipt source hashes, freeze gate result, and no-cost/no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass"
+    },
+    {
+      "id": "phase46_no_cost_freeze_closeout_summary_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase46_no_cost_freeze_closeout_summary/NO_COST_FREEZE_CLOSEOUT_SUMMARY.md",
+      "purpose": "Human-readable summary proving all recorded freeze closeout receipts preserve service freeze and no-cost/no-training boundaries",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase46_no_cost_freeze_closeout_summary_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase46_no_cost_freeze_closeout_summary/no_cost_freeze_closeout_summary.json",
+      "purpose": "Machine-readable summary over closeout receipts, receipt hashes, validator results, and no-cost/no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass_no_cost_freeze_closeout_summary"
+    },
+    {
+      "id": "phase46_no_cost_freeze_closeout_summary_validator",
+      "path": "scripts/validate_hermes_no_cost_freeze_closeout_summary.py",
+      "purpose": "Local validator that rechecks closeout receipt summaries and rejects service resume, AWS runtime, provider, upload, training, or model-promotion boundary breaks",
+      "required_for_signoff": true,
+      "result": "pass"
     },
     {
       "id": "phase30_operator_packet_guide",
@@ -421,6 +487,32 @@
       "purpose": "Machine-readable Phase 42 production browser UAT evidence, download runtime limitation, export integrity results, workflow UI checks, and restricted no-training boundaries",
       "required_for_signoff": true,
       "result": "pass_with_download_runtime_limitation"
+    },
+    {
+      "id": "phase43_local_export_openability_evidence_report",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase43_local_export_openability_evidence/LOCAL_EXPORT_OPENABILITY_EVIDENCE.md",
+      "purpose": "Local no-cost Phase 43 evidence proving PDF/PPTX/HWPX and Report Workflow export openability without production UI, AWS runtime, provider fine-tune, dataset upload, training execution, or model promotion",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase43_local_export_openability_evidence_json",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase43_local_export_openability_evidence/local_export_openability_evidence.json",
+      "purpose": "Machine-readable Phase 43 local export openability results, local TestClient scope, file structure checks, report workflow export checks, and no-cost/no-training boundaries",
+      "required_for_signoff": true,
+      "result": "pass_no_cost_openability"
+    },
+    {
+      "id": "phase43_local_export_openability_generator",
+      "path": "scripts/create_phase43_local_export_openability_evidence.py",
+      "purpose": "Local no-cost generator for Phase 43 export openability evidence using mock provider and temporary local storage",
+      "required_for_signoff": true
+    },
+    {
+      "id": "phase43_local_export_openability_validator",
+      "path": "scripts/validate_phase43_local_export_openability_evidence.py",
+      "purpose": "Local validator that rejects Phase 43 evidence if export openability or no-cost/no-training boundary checks fail",
+      "required_for_signoff": true,
+      "result": "pass"
     }
   ],
   "phase_coverage": {
@@ -652,6 +744,87 @@
       "global_generation_status_stale_after_result_visible": true,
       "production_browser_uat_completed": true,
       "result": "pass_with_download_runtime_limitation"
+    },
+    "phase43": {
+      "name": "local_export_openability_evidence_and_validator",
+      "human_reviewer_value": "local no-cost proof that PDF, PPTX, HWPX, and Report Workflow PPTX/snapshot exports are structurally openable while production UI and AWS runtime remain frozen",
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "server_side_generated_approval_record": false,
+      "model_promotion_authorized": false,
+      "production_ui_called": false,
+      "aws_runtime_called": false,
+      "local_fastapi_testclient_called": true,
+      "mock_provider_generation_used": true,
+      "pdf_opened": true,
+      "pptx_opened": true,
+      "hwp_opened": true,
+      "report_workflow_pptx_opened": true,
+      "report_workflow_snapshot_exported": true,
+      "native_os_download_verified": false,
+      "production_uat_reexecuted": false,
+      "validator_passed": true,
+      "result": "pass_no_cost_openability_validated"
+    },
+    "phase44": {
+      "name": "no_cost_freeze_gate",
+      "human_reviewer_value": "single local CLI gate for confirming the release handoff and Phase 43 export openability evidence still support keeping the service frozen",
+      "release_handoff_validator_passed": true,
+      "local_export_openability_validator_passed": true,
+      "service_freeze_recommended": true,
+      "resume_requires_separate_approval": true,
+      "production_download_open_verification_required_if_releasing_files": true,
+      "production_ui_called": false,
+      "aws_runtime_called": false,
+      "aws_cost_increase_allowed": false,
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "model_promotion_authorized": false,
+      "result": "pass_no_cost_freeze_gate"
+    },
+    "phase45": {
+      "name": "no_cost_freeze_closeout_receipt",
+      "human_reviewer_value": "operator-shareable local receipt that records the Phase 44 freeze gate pass state, input hashes, and explicit no-resume/no-cost/no-training boundary",
+      "closeout_receipt_recorded": true,
+      "closeout_receipt_validator_passed": true,
+      "no_cost_freeze_gate_validated": true,
+      "service_freeze_preserved": true,
+      "resume_requires_separate_approval": true,
+      "service_resume_authorized": false,
+      "production_ui_called": false,
+      "aws_runtime_called": false,
+      "aws_cost_increase_allowed": false,
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "model_promotion_authorized": false,
+      "result": "pass_no_cost_freeze_closeout_receipt"
+    },
+    "phase46": {
+      "name": "no_cost_freeze_closeout_summary",
+      "human_reviewer_value": "operator-shareable local summary that confirms all freeze closeout receipts validate and preserve service freeze",
+      "closeout_summary_recorded": true,
+      "closeout_summary_validator_passed": true,
+      "all_closeout_receipts_valid": true,
+      "all_closeout_receipts_confirm_freeze": true,
+      "receipt_count": 1,
+      "service_freeze_preserved": true,
+      "resume_requires_separate_approval": true,
+      "service_resume_authorized": false,
+      "production_ui_called": false,
+      "aws_runtime_called": false,
+      "aws_cost_increase_allowed": false,
+      "training_authorized": false,
+      "external_dataset_upload_authorized": false,
+      "provider_fine_tune_api_called": false,
+      "provider_job_creation_authorized": false,
+      "model_promotion_authorized": false,
+      "result": "pass_no_cost_freeze_closeout_summary"
     }
   },
   "observed_browser_qa_summary": {
@@ -660,6 +833,10 @@
     "phase28_result": "pass",
     "phase32_result": "pass",
     "phase42_result": "pass_with_download_runtime_limitation",
+    "phase43_result": "pass_no_cost_openability_validated",
+    "phase44_result": "pass_no_cost_freeze_gate",
+    "phase45_result": "pass_no_cost_freeze_closeout_receipt",
+    "phase46_result": "pass_no_cost_freeze_closeout_summary",
     "phase26_summary_status": "pending_manual_signoff_no_training_authorization",
     "phase28_download_report_type": "document_ops_phase27_reviewer_signoff_summary_export",
     "phase32_imported_records_visible": true,
@@ -672,7 +849,27 @@
     "phase42_download_clicks_without_console_errors": true,
     "phase42_backend_export_integrity_passed": true,
     "phase42_native_download_event_supported": false,
-    "phase42_native_os_download_verified": false
+    "phase42_native_os_download_verified": false,
+    "phase43_pdf_opened": true,
+    "phase43_pptx_opened": true,
+    "phase43_hwp_opened": true,
+    "phase43_report_workflow_pptx_opened": true,
+    "phase43_report_workflow_snapshot_exported": true,
+    "phase43_validator_passed": true,
+    "phase43_production_uat_reexecuted": false,
+    "phase43_aws_runtime_called": false,
+    "phase44_no_cost_freeze_gate_passed": true,
+    "phase44_service_freeze_recommended": true,
+    "phase44_production_ui_called": false,
+    "phase44_aws_runtime_called": false,
+    "phase45_closeout_receipt_recorded": true,
+    "phase45_closeout_receipt_validator_passed": true,
+    "phase45_service_resume_authorized": false,
+    "phase45_aws_runtime_called": false,
+    "phase46_closeout_summary_recorded": true,
+    "phase46_closeout_summary_validator_passed": true,
+    "phase46_service_resume_authorized": false,
+    "phase46_aws_runtime_called": false
   },
   "staging_readiness_summary": {
     "phase33_status": "operator_release_packet_ready_no_training_authorization",
@@ -727,6 +924,27 @@
     "phase42_native_os_download_verified": false,
     "phase42_global_generation_status_stale_after_result_visible": true,
     "phase42_production_browser_uat_completed": true,
+    "phase43_local_export_openability_passed": true,
+    "phase43_validator_passed": true,
+    "phase43_pdf_opened": true,
+    "phase43_pptx_opened": true,
+    "phase43_hwp_opened": true,
+    "phase43_report_workflow_pptx_opened": true,
+    "phase43_report_workflow_snapshot_exported": true,
+    "phase43_production_uat_reexecuted": false,
+    "phase43_aws_runtime_called": false,
+    "phase44_no_cost_freeze_gate_passed": true,
+    "phase44_service_freeze_recommended": true,
+    "phase44_production_ui_called": false,
+    "phase44_aws_runtime_called": false,
+    "phase45_closeout_receipt_recorded": true,
+    "phase45_closeout_receipt_validator_passed": true,
+    "phase45_service_resume_authorized": false,
+    "phase45_aws_runtime_called": false,
+    "phase46_closeout_summary_recorded": true,
+    "phase46_closeout_summary_validator_passed": true,
+    "phase46_service_resume_authorized": false,
+    "phase46_aws_runtime_called": false,
     "staging_run_completed": false,
     "production_smoke_completed": true,
     "training_authorized": false,
@@ -794,10 +1012,22 @@
     "production export endpoint integrity checks for PDF, PPTX, and HWP/HWPX with non-sensitive synthetic documents",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase42_production_browser_uat_evidence/production_browser_uat_evidence.json",
     "pytest -q tests/test_infrastructure.py::test_phase42_production_browser_uat_evidence_records_ui_export_and_workflow_checks --tb=short",
+    "python3 scripts/create_phase43_local_export_openability_evidence.py --generated-at 2026-05-25T00:00:00Z",
+    "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase43_local_export_openability_evidence/local_export_openability_evidence.json",
+    "python3 scripts/validate_phase43_local_export_openability_evidence.py docs/specs/hermes_decisiondoc_agent/phase43_local_export_openability_evidence/local_export_openability_evidence.json",
+    "pytest -q tests/test_infrastructure.py::test_phase43_local_export_openability_evidence_records_no_cost_export_checks tests/test_infrastructure.py::test_phase43_local_export_openability_validator_accepts_ready_evidence_and_rejects_cost_boundary_break --tb=short",
+    "python3 scripts/validate_phase20_release_handoff_manifest.py docs/specs/hermes_decisiondoc_agent/phase20_release_handoff/handoff_manifest.json",
+    "pytest -q tests/test_infrastructure.py::test_phase20_release_handoff_manifest_validator_accepts_phase43_handoff_and_rejects_boundary_break --tb=short",
+    "python3 scripts/check_hermes_no_cost_freeze_gate.py",
+    "pytest -q tests/test_infrastructure.py::test_phase44_no_cost_freeze_gate_composes_handoff_and_export_validators_without_side_effects --tb=short",
+    "python3 scripts/validate_hermes_no_cost_freeze_closeout_receipt.py",
+    "pytest -q tests/test_infrastructure.py::test_phase45_no_cost_freeze_closeout_receipt_records_current_freeze_state tests/test_infrastructure.py::test_phase45_no_cost_freeze_closeout_receipt_validator_accepts_receipt_and_rejects_boundary_break --tb=short",
+    "python3 scripts/validate_hermes_no_cost_freeze_closeout_summary.py",
+    "pytest -q tests/test_infrastructure.py::test_phase46_no_cost_freeze_closeout_summary_records_receipt_chain tests/test_infrastructure.py::test_phase46_no_cost_freeze_closeout_summary_validator_accepts_summary_and_rejects_boundary_break --tb=short",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase26_reviewer_signoff_browser_qa/browser_qa_result.json",
     "python3 -m json.tool docs/specs/hermes_decisiondoc_agent/phase28_reviewer_signoff_json_download_qa/browser_qa_result.json",
     "perl -0ne 'while (m{<script>(.*?)</script>}sg) { print $1 }' app/static/index.html > /tmp/decisiondoc-index-scripts.js && node --check /tmp/decisiondoc-index-scripts.js && git diff --check"
   ],
-  "recommended_decision": "production_browser_uat_passed_with_download_runtime_limitation_no_training_authorization",
-  "next_step": "If release sign-off requires OS-level files, run manual Chrome/Safari download-open verification for PDF, PPTX, and HWP/HWPX because Codex in-app browser cannot emit native download events."
+  "recommended_decision": "no_cost_freeze_closeout_summary_validated_no_aws_no_training_authorization",
+  "next_step": "If release sign-off requires actual production-downloaded files, run manual Chrome/Safari download-open verification for PDF, PPTX, and HWP/HWPX after approving normal production UI/export costs. Otherwise keep the service frozen; Phase 42, Phase 43, Phase 44, Phase 45, and Phase 46 are sufficient for the current no-cost gate."
 }

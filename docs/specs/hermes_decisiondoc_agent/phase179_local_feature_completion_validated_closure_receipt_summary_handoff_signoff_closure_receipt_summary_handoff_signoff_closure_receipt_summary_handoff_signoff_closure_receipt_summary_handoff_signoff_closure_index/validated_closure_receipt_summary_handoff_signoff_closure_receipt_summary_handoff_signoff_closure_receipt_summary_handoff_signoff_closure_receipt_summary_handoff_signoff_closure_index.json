@@ -1,0 +1,91 @@
+{
+  "report_type": "document_ops_phase179_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_index",
+  "phase": 179,
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_index_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-05T00:00:00+09:00",
+  "closure_scope": "local_read_only_phase174_to_phase178_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_validation",
+  "recommended_decision": "keep_service_frozen",
+  "source_artifacts": [
+    {
+      "id": "phase174_validated_closure_receipt_summary_handoff",
+      "phase": 174,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase174_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff.json",
+      "sha256": "25b99c860094e26c2ee1901899cbdf8a0f78ac42c4b841a70c85b68819a787db",
+      "validator": "scripts/validate_documentops_phase173_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff.py"
+    },
+    {
+      "id": "phase175_validated_closure_receipt_summary_handoff_signoff_template",
+      "phase": 175,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase175_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_template.json",
+      "sha256": "359a57d603a60a7e80e3377b2a8ce198fe87fab81cf6c65461fd113068f96bb6",
+      "validator": "scripts/validate_documentops_phase174_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff.py"
+    },
+    {
+      "id": "phase176_pending_validated_closure_receipt_summary_handoff_signoff_generation_contract",
+      "phase": 176,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase176_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_generation_contract.json",
+      "sha256": "e8844904fa083fc869f2da6668eaa8c699dced859baf3124f361c5f088e92b08",
+      "validator": "scripts/create_documentops_phase175_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    },
+    {
+      "id": "phase177_validated_closure_receipt_summary_handoff_signoff_summary_contract",
+      "phase": 177,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase177_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary_contract.json",
+      "sha256": "4c5e2e7018ec34674d6b88dabc6e31302a48fcb06ebd1e266f3b6d50a79f3362",
+      "validator": "scripts/summarize_documentops_phase175_validated_closure_receipt_summary_handoff_signoffs.py"
+    },
+    {
+      "id": "phase178_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract",
+      "phase": 178,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase178_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary_validation/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_summary_validation_contract.json",
+      "sha256": "6be02e3cae147676a3bb7915fee13a2a5a63c5e0a71707d859a1b51ea944dafa",
+      "validator": "scripts/validate_documentops_phase177_validated_closure_receipt_summary_handoff_signoff_summary.py"
+    }
+  ],
+  "closure_validator": {
+    "path": "scripts/validate_documentops_phase174_to_phase178_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_index.py",
+    "sha256": "941395c33f4fdea6b548ee3204e5cfdab6e2c5989683c845fbc01a740ee2edf8",
+    "checks_source_artifact_hashes": true,
+    "runs_phase174_validator": true,
+    "validates_phase175_template": true,
+    "generates_temporary_phase176_pending_signoff": true,
+    "builds_temporary_phase177_summary": true,
+    "runs_phase178_summary_validator": true,
+    "writes_repo_files": false
+  },
+  "closure_policy": {
+    "pending_summary_can_validate_as_non_approval_evidence": true,
+    "actual_reviewer_approval_still_required_for_completion": true,
+    "phase179_is_not_service_resume_approval": true,
+    "boundary_breaks_fail_validation": true,
+    "artifact_hash_mismatch_fails_validation": true
+  },
+  "closure_boundary": {
+    "local_read_only_closure_validation": true,
+    "temporary_local_probe_files_allowed": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_validator": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Record a closure receipt only if the Phase 179 validator passes; otherwise keep the service frozen."
+}

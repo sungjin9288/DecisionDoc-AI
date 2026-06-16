@@ -1,0 +1,31 @@
+{
+  "2026-06": {
+    "tenant_id": "system",
+    "year_month": "2026-06",
+    "total_generations": 2,
+    "total_tokens": 0,
+    "total_cost_usd": 0.0,
+    "by_bundle": {
+      "tech_decision": {
+        "count": 2,
+        "tokens": 0,
+        "cost": 0.0
+      }
+    },
+    "by_user": {
+      "": {
+        "count": 2,
+        "tokens": 0,
+        "cost": 0.0
+      }
+    },
+    "by_model": {
+      "mock": {
+        "count": 2,
+        "tokens": 0,
+        "cost": 0.0
+      }
+    },
+    "last_updated": "2026-06-09T06:00:49.256058+00:00"
+  }
+}

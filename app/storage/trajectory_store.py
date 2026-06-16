@@ -1544,6 +1544,8 @@ class TrajectoryStore:
         skill_version = str(skill.get("version") or "unknown")
         assistant_payload = {
             "plan": record.get("plan") or [],
+            "critique": record.get("critique") or [],
+            "revision_tasks": record.get("revision_tasks") or [],
             "draft": record.get("final_output") or record.get("draft_output") or record.get("draft") or "",
             "evidence_status": record.get("evidence_status") or record.get("context_summary") or {},
             "qa": record.get("qa") or {},

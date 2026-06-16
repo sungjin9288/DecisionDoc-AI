@@ -19,6 +19,7 @@ from app.schemas import (
     PromoteReportWorkflowRequest,
     ReportQualityCorrectionArtifactRequest,
     ReportWorkflowActionRequest,
+    ReportWorkflowDevelopQualityPreviewRequest,
     SelectReportSlideVisualAssetRequest,
     UpdateReportSlideVisualAssetsRequest,
 )
@@ -36,6 +37,10 @@ def _get_store(request: Request):
 
 def _get_service(request: Request):
     return request.app.state.report_workflow_service
+
+
+def _get_document_ops_service(request: Request):
+    return request.app.state.document_ops_service
 
 
 def _handle_store_error(exc: Exception) -> None:
@@ -148,6 +153,31 @@ def get_report_workflow(report_workflow_id: str, request: Request) -> dict:
     if rec is None:
         raise HTTPException(status_code=404, detail="보고서 워크플로우를 찾을 수 없습니다.")
     return asdict(rec)
+
+
+@router.post(
+    "/report-workflows/{report_workflow_id}/develop-quality/preview",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+)
+def preview_report_workflow_develop_quality(
+    report_workflow_id: str,
+    payload: ReportWorkflowDevelopQualityPreviewRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        return _get_service(request).preview_develop_quality_improvement(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            request_id=request.state.request_id,
+            document_ops_service=_get_document_ops_service(request),
+            focus=payload.focus,
+            additional_notes=payload.additional_notes,
+            capture_trajectory=payload.capture_trajectory,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    raise HTTPException(status_code=500, detail="develop quality preview failed")
 
 
 @router.post(

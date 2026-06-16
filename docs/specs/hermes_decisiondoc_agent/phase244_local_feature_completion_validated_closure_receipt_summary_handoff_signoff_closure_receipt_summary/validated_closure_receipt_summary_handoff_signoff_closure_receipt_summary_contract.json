@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-06-08T00:00:00+09:00",
+  "phase": 244,
+  "report_type": "document_ops_phase244_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract",
+  "source_receipt": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase243_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/validated_closure_receipt_summary_handoff_signoff_closure_receipt.json",
+    "phase": 243,
+    "service_operation_state": "freeze_preserved",
+    "sha256": "cc3cd0bdcc3d08e83ef72b51028eb082adf33c04af8c3b886dcc5301b5d2e6a9",
+    "validator": "scripts/validate_documentops_phase242_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py",
+    "validator_sha256": "0995859f703eea887e6828c47941c532bb1ee47829bd6be37db41895c45a93fe"
+  },
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_ready_no_aws_no_training_authorization",
+  "summary_boundary": {
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_authorized": false,
+    "aws_resource_created": false,
+    "aws_runtime_called": false,
+    "external_dataset_uploaded": false,
+    "model_promoted": false,
+    "production_uat_reexecuted": false,
+    "production_ui_called": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "read_only_receipt_summary": true,
+    "resume_requires_separate_approval": true,
+    "service_freeze_preserved": true,
+    "service_resume_authorized": false,
+    "summary_file_write_allowed": true,
+    "training_boundary": "not_authorized",
+    "training_execution_authorized": false,
+    "training_execution_started": false
+  },
+  "summary_reporter": {
+    "checks_source_gate": true,
+    "path": "scripts/summarize_documentops_phase243_validated_closure_receipts.py",
+    "reads_phase243_validated_closure_receipts": true,
+    "revalidates_each_receipt": true,
+    "sha256": "03b502acb4b61e65a90ae29a25bc3918974e3d79bb16c92c5e28277c2e181f80",
+    "supports_directory_input": true,
+    "supports_markdown_output": true,
+    "writes_summary_only": true
+  },
+  "summary_scope": "local_read_only_phase243_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary"
+}

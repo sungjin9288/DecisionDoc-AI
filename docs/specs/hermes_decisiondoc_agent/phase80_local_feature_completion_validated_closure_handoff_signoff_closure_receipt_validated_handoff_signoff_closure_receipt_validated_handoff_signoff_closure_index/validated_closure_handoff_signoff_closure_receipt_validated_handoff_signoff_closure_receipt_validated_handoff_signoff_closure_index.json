@@ -1,0 +1,90 @@
+{
+  "report_type": "document_ops_phase80_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_index",
+  "phase": 80,
+  "status": "validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_index_ready_no_aws_no_training_authorization",
+  "created_at": "2026-05-28T00:00:00+09:00",
+  "closure_scope": "local_read_only_phase75_to_phase79_validated_handoff_signoff_closure_validation",
+  "recommended_decision": "keep_service_frozen",
+  "source_artifacts": [
+    {
+      "id": "phase75_validated_closure_receipt_validated_handoff_summary_handoff",
+      "phase": 75,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase75_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff.json",
+      "sha256": "209c59627bb761190ce751623badb199cf2928a6a78dffc288c59dba0aeffe9c",
+      "validator": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff.py"
+    },
+    {
+      "id": "phase76_validated_closure_receipt_validated_handoff_summary_handoff_signoff_template",
+      "phase": 76,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase76_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_template.json",
+      "sha256": "93880e5fac2727d15b0e826ad793f7bbfabcf0ded6a95d21c569011896b94de4",
+      "validator": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff.py"
+    },
+    {
+      "id": "phase77_pending_validated_closure_receipt_validated_handoff_summary_handoff_signoff_generation_contract",
+      "phase": 77,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase77_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_pending_signoff/pending_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_generation_contract.json",
+      "sha256": "78a91c3832a4552c5aaa177d4da2b6193e719a94ad8ba117f01d45d201b8b38d",
+      "validator": "scripts/create_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_pending_signoff.py"
+    },
+    {
+      "id": "phase78_validated_closure_receipt_validated_handoff_summary_handoff_signoff_summary_contract",
+      "phase": 78,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase78_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_summary/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_summary_contract.json",
+      "sha256": "141568131d960713bcc30e5825e72e270c0d3fdab39524cdb38d703c288f1833",
+      "validator": "scripts/summarize_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoffs.py"
+    },
+    {
+      "id": "phase79_validated_closure_receipt_validated_handoff_summary_handoff_signoff_summary_validation_contract",
+      "phase": 79,
+      "path": "docs/specs/hermes_decisiondoc_agent/phase79_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_summary_validation/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_summary_validation_contract.json",
+      "sha256": "fafc512395b647e2877b35116f19f41f4e3d65cc6f35f7d6a5abd74db5f1c233",
+      "validator": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_summary.py"
+    }
+  ],
+  "closure_validator": {
+    "path": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_index.py",
+    "checks_source_artifact_hashes": true,
+    "runs_phase75_validator": true,
+    "validates_phase76_template": true,
+    "generates_temporary_phase77_pending_signoff": true,
+    "builds_temporary_phase78_summary": true,
+    "runs_phase79_summary_validator": true,
+    "writes_repo_files": false
+  },
+  "closure_policy": {
+    "pending_summary_can_validate_as_non_approval_evidence": true,
+    "actual_reviewer_approval_still_required_for_completion": true,
+    "phase80_is_not_service_resume_approval": true,
+    "boundary_breaks_fail_validation": true,
+    "artifact_hash_mismatch_fails_validation": true
+  },
+  "closure_boundary": {
+    "local_read_only_closure_validation": true,
+    "temporary_local_probe_files_allowed": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_validator": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Use the Phase 80 validator as the single local closure gate for Phase 75-79; keep service frozen unless a separate production download-open or service resume approval is granted."
+}

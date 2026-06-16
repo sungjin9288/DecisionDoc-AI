@@ -1,0 +1,68 @@
+{
+  "schema_version": "decisiondoc_documentops_phase148_validated_closure_receipt_summary_handoff_signoff.v1",
+  "phase": 148,
+  "signoff_id": "documentops_local_feature_completion_phase147_validated_closure_receipt_summary_handoff_signoff_TEMPLATE",
+  "created_at": "",
+  "signoff_scope": "evidence_only_review_of_phase147_validated_closure_receipt_summary_handoff",
+  "source_handoff": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase147_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff.json",
+    "sha256": "f1de18f5b37d7be3a30893c41420ff0e58b747c359e53a70df0a645c189a5d28",
+    "validator": "scripts/validate_documentops_phase146_validated_closure_receipt_summary_handoff.py",
+    "validator_sha256": "39250a9ab72dd50e9d1faaaf07a5815f6f14b87cb728bffb32a6eaeb346d1ca8",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "reviewer": {
+    "name": "",
+    "title_or_team": "",
+    "reviewed_at": ""
+  },
+  "decision": "pending",
+  "evidence_reviewed": [],
+  "findings": {
+    "summary": "",
+    "changes_requested": [],
+    "residual_risks": []
+  },
+  "acknowledgements": {
+    "phase147_validated_closure_receipt_summary_handoff_reviewed": false,
+    "phase145_summary_chain_reviewed": false,
+    "phase146_summary_validation_reviewed": false,
+    "operator_actions_understood": false,
+    "service_freeze_acknowledged": false,
+    "resume_block_acknowledged": false,
+    "aws_no_cost_boundary_acknowledged": false,
+    "no_production_ui_reexecution_acknowledged": false,
+    "no_provider_calls_acknowledged": false,
+    "no_dataset_upload_acknowledged": false,
+    "no_training_execution_acknowledged": false,
+    "no_model_promotion_acknowledged": false,
+    "separate_approval_required_acknowledged": false
+  },
+  "signoff_boundary": {
+    "evidence_only_signoff": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_template": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_authorized": false,
+    "aws_resource_creation_authorized": false,
+    "scheduled_job_authorized": false,
+    "cloudwatch_polling_authorized": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "training_execution_authorized": false,
+    "model_candidate_emission_authorized": false,
+    "model_promotion_authorized": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  }
+}

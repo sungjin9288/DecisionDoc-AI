@@ -1,0 +1,42 @@
+{
+    "status": "ok",
+    "provider": "mock",
+    "maintenance": false,
+    "checks": {
+        "provider": "ok",
+        "provider_generation": "ok",
+        "provider_attachment": "ok",
+        "provider_visual": "ok",
+        "storage": "ok",
+        "eval_store": "ok"
+    },
+    "provider_routes": {
+        "default": "mock",
+        "generation": "mock",
+        "attachment": "mock",
+        "visual": "mock"
+    },
+    "provider_route_checks": {
+        "default": "ok",
+        "generation": "ok",
+        "attachment": "ok",
+        "visual": "ok"
+    },
+    "provider_policy_checks": {
+        "quality_first": "degraded"
+    },
+    "provider_policy_issues": {
+        "quality_first": [
+            "default route must include claude, gemini, openai for quality-first readiness",
+            "default route must prioritize claude or gemini ahead of openai for quality-first readiness",
+            "default route cannot include mock/local for quality-first readiness",
+            "generation route must include both claude and gemini for quality-first readiness",
+            "generation route must prioritize claude or gemini first for quality-first readiness",
+            "generation route cannot include mock/local for quality-first readiness",
+            "attachment route must include both claude and gemini for quality-first readiness",
+            "attachment route must prioritize gemini or claude first for quality-first readiness",
+            "attachment route cannot include mock/local for quality-first readiness",
+            "visual route must be exactly openai because direct visual asset generation is only implemented for OpenAI in this deployment"
+        ]
+    }
+}

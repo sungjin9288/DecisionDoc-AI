@@ -1,0 +1,17 @@
+### Browser `default` opened with pid 95150.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:8788/docs');
+```
+### Page
+- Page URL: http://127.0.0.1:8788/docs
+- Page Title: DecisionDoc AI - Swagger UI
+- Console: 5 errors, 0 warnings
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-06-09T06-01-12-773Z.yml)
+### Events
+- New console entries: .playwright-cli/console-2026-06-09T06-01-12-702Z.log#L1-L6
+### Ran Playwright code
+```js
+await page.setViewportSize({ width: 1440, height: 1000 });
+```

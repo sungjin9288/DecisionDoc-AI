@@ -1,0 +1,68 @@
+{
+  "report_type": "document_ops_phase185_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generation_contract",
+  "phase": 185,
+  "status": "validated_closure_receipt_summary_handoff_signoff_pending_signoff_generator_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-06T00:00:00+09:00",
+  "generation_scope": "local_fillable_pending_phase184_validated_closure_receipt_summary_handoff_signoff_record_generation",
+  "source_template": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase184_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_template.json",
+    "sha256": "113399480075f2a1c5aa0bd7c495f966497c0d87aad9e1c4037832d6c0c697dc",
+    "validator": "scripts/validate_documentops_phase183_validated_closure_receipt_summary_handoff_signoff.py",
+    "validator_sha256": "da129e32cf52f94f599ba5e8b994f76c76bde01de1360587525e9081184ec970",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "source_handoff": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase183_local_feature_completion_validated_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff.json",
+    "sha256": "bbbecbf998005c393b65b6f9c78dada6b24875ab94c58059a83f31d40a8a26c3",
+    "validator": "scripts/validate_documentops_phase182_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff.py",
+    "validator_sha256": "16223082b6b6bb354ed7dad4f0201f9946caf08afe866533b0b5c952c95861b6",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "generator": {
+    "path": "scripts/create_documentops_phase184_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py",
+    "sha256": "bb213c345b43ab69e4125895e5b125c3590495af6be7e9a212317f3200dd9b50",
+    "default_output": "local_json_file",
+    "atomic_write": true,
+    "validates_source_template": true,
+    "validates_generated_record": true,
+    "refuses_overwrite_by_default": true
+  },
+  "generated_record_policy": {
+    "decision": "pending",
+    "reviewer_fields_blank": true,
+    "acknowledgements_false": true,
+    "evidence_reviewed_empty": true,
+    "requires_human_completion": true,
+    "completed_signoff_requires_phase184_validator": true
+  },
+  "generation_boundary": {
+    "local_pending_record_generation": true,
+    "evidence_only_signoff": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "A human reviewer fills the generated pending record and runs the Phase 184 validator with --require-complete before treating it as completed evidence."
+}

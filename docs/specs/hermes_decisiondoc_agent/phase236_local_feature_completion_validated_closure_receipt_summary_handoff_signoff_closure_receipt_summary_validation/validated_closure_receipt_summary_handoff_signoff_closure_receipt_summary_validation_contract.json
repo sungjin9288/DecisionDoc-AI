@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-06-08T00:00:00+09:00",
+  "phase": 236,
+  "report_type": "document_ops_phase236_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract",
+  "source_summary_contract": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase235_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json",
+    "service_operation_state": "freeze_preserved",
+    "sha256": "5ad79c22967db94f8c02e10614fe77872aceed6a70f956fd5515dc019daa130f",
+    "source_receipt_validator": "scripts/validate_documentops_phase233_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py",
+    "source_receipt_validator_sha256": "bbc99be4365ec0ec6727b0288432a9a156f6980d0e7e3d28186071b5332f8b8c",
+    "summary_reporter": "scripts/summarize_documentops_phase234_validated_closure_receipts.py",
+    "summary_reporter_sha256": "e25964b3704464acc86ab7162f6cd232d930ea43a0db3af8bf000486db293799"
+  },
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validator_ready_no_aws_no_training_authorization",
+  "summary_validator": {
+    "path": "scripts/validate_documentops_phase235_validated_closure_receipt_summary.py",
+    "sha256": "c07a6180e4e4c5b81575df8cbcc8d38601a5f3bfc4c24c56785448c63c78860f",
+    "reads_phase235_summary": true,
+    "revalidates_linked_phase234_receipts": true,
+    "checks_embedded_validation": true,
+    "checks_linked_receipt_hashes": true,
+    "checks_summary_counts": true,
+    "supports_json_output": true,
+    "writes_repo_files": false
+  },
+  "validation_boundary": {
+    "read_only_summary_validation": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "actual_reviewer_approval_recorded_by_validator": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_authorized": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "external_dataset_uploaded": false,
+    "training_execution_authorized": false,
+    "training_execution_started": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "validation_scope": "local_read_only_phase235_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation"
+}

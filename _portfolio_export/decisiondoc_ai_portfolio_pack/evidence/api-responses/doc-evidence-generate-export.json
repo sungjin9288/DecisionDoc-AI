@@ -1,0 +1,19 @@
+{
+    "request_id": "7273cf5c-7f1e-4733-8d2c-8c615e988bf2",
+    "bundle_id": "2a297151-28e2-4b80-8e0d-77e2bd65a14d",
+    "title": "Portfolio Evidence Export Demo",
+    "provider": "mock",
+    "schema_version": "v1",
+    "cache_hit": false,
+    "export_dir": "<repo_root>/evidence/runtime-data/server-data-doc-evidence/2a297151-28e2-4b80-8e0d-77e2bd65a14d",
+    "files": [
+        {
+            "doc_type": "adr",
+            "path": "<repo_root>/evidence/runtime-data/server-data-doc-evidence/2a297151-28e2-4b80-8e0d-77e2bd65a14d/adr.md"
+        },
+        {
+            "doc_type": "onepager",
+            "path": "<repo_root>/evidence/runtime-data/server-data-doc-evidence/2a297151-28e2-4b80-8e0d-77e2bd65a14d/onepager.md"
+        }
+    ]
+}

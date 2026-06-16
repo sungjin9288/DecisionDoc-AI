@@ -1,0 +1,58 @@
+{
+  "report_type": "document_ops_phase109_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract",
+  "phase": 109,
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-02T00:00:00+09:00",
+  "summary_scope": "local_read_only_phase108_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary",
+  "source_receipt": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase108_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/validated_closure_receipt_summary_handoff_signoff_closure_receipt.json",
+    "sha256": "abe5a7cc45724c39ba4e74150c9e595e7418cdf43c89187d90cb438030b0c7ab",
+    "validator": "scripts/validate_documentops_phase107_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py",
+    "validator_sha256": "7b1c40fc3a256675e2ff6305e2e38c382a5ce27687d63362dedb6641dedfe8e7",
+    "service_operation_state": "freeze_preserved"
+  },
+  "summary_reporter": {
+    "path": "scripts/summarize_documentops_phase108_validated_closure_receipts.py",
+    "sha256": "9ded3afe60b29904e241fc6a9be37d60ec8cb8d055441aa6afcd6ccb5ca40541",
+    "reads_phase108_validated_closure_receipts": true,
+    "revalidates_each_receipt": true,
+    "writes_summary_only": true,
+    "supports_markdown_output": true,
+    "supports_directory_input": true
+  },
+  "summary_policy": {
+    "valid_receipts_confirm_local_closure_only": true,
+    "summary_is_not_service_resume_approval": true,
+    "boundary_breaks_fail_summary": true,
+    "load_errors_fail_summary": true,
+    "source_hash_mismatch_fails_receipt_validation": true
+  },
+  "summary_boundary": {
+    "read_only_receipt_summary": true,
+    "summary_file_write_allowed": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Summarize local Phase 108 receipts for operator handoff while keeping service operation frozen."
+}

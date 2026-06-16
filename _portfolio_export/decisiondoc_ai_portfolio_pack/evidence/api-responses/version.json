@@ -1,0 +1,20 @@
+{
+    "version": "1.1.76",
+    "api_version": "v1",
+    "environment": "dev",
+    "provider": "mock",
+    "storage": "local",
+    "maintenance": false,
+    "features": {
+        "search": false,
+        "cache": true,
+        "cors": false,
+        "procurement_copilot": false,
+        "realtime_events": true,
+        "markitdown_upload_fallback": false,
+        "markitdown_plugins": false,
+        "knowledge_search_backend": "local_keyword",
+        "report_workflow_visual_asset_max_base64_chars": 2000000,
+        "report_workflow_visual_asset_max_count": 48
+    }
+}

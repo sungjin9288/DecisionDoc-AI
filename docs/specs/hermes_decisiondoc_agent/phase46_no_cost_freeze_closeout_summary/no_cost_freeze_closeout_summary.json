@@ -1,0 +1,38 @@
+{
+  "report_type": "document_ops_phase46_no_cost_freeze_closeout_summary",
+  "phase": 46,
+  "status": "no_cost_freeze_closeout_summary_validated_no_aws_no_training_authorization",
+  "created_at": "2026-05-26T00:00:00+09:00",
+  "recommended_decision": "keep_service_frozen",
+  "receipt_count": 1,
+  "receipts": [
+    {
+      "id": "phase45_no_cost_freeze_closeout_receipt",
+      "path": "docs/specs/hermes_decisiondoc_agent/phase45_no_cost_freeze_closeout_receipt/no_cost_freeze_closeout_receipt.json",
+      "sha256": "bfc6f4a2f8ce4629ab311058e5eb99d9d1e976dce89cee72862523e6d5aa54ac",
+      "validator": "scripts/validate_hermes_no_cost_freeze_closeout_receipt.py",
+      "validator_result": "pass",
+      "service_operation_state": "freeze_preserved"
+    }
+  ],
+  "summary_boundary": {
+    "all_closeout_receipts_valid": true,
+    "all_closeout_receipts_confirm_freeze": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "training_execution_authorized": false,
+    "model_candidate_emission_authorized": false,
+    "model_promotion_authorized": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Keep the service frozen unless a separate approval authorizes manual Chrome/Safari production download-open verification or service resume."
+}

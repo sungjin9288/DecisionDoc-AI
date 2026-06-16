@@ -1,0 +1,14 @@
+# Document Evidence API Capture
+timestamp_utc=2026-06-09T06:00:49Z
+base_url=http://127.0.0.1:8788
+provider=mock
+## GET /openapi.json
+openapi_exit=0
+## GET /docs
+swagger_html_exit=0
+## GET /health
+health_exit=0
+## POST /generate
+generate_exit=0
+## POST /generate/export
+export_exit=0

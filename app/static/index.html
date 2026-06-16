@@ -5579,8 +5579,8 @@
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
     <div>
       <div style="font-size:.78rem;font-weight:800;color:var(--p1);letter-spacing:.08em;text-transform:uppercase;">Hermes-inspired DocumentOps</div>
-      <h2 style="font-size:1.45rem;font-weight:900;margin:.2rem 0;">🧠 AI 기획·근거 검수 Agent</h2>
-      <p style="margin:0;color:var(--muted);font-size:.9rem;">기획안, 근거 gap, 최종 승인 브리프를 생성하고 QA gate와 trajectory 리뷰를 관리합니다.</p>
+      <h2 style="font-size:1.45rem;font-weight:900;margin:.2rem 0;">🧠 AI 기획·근거·품질 개선 Agent</h2>
+      <p style="margin:0;color:var(--muted);font-size:.9rem;">기획안, 근거 gap, 최종 승인 브리프, Develop 품질 개선을 생성하고 QA gate와 trajectory 리뷰를 관리합니다.</p>
     </div>
     <div style="display:flex;gap:.45rem;flex-wrap:wrap;">
       <button type="button" class="action-btn" onclick="loadDocumentOpsTrajectories()">🔄 리뷰 목록</button>
@@ -5608,6 +5608,7 @@
         <option value="policy_planning_brief">기획안 생성 · policy_planning_brief</option>
         <option value="evidence_gap_review">근거 gap 검수 · evidence_gap_review</option>
         <option value="decision_brief">최종 승인 브리프 · decision_brief</option>
+        <option value="develop_quality_improvement">Develop 품질 개선 · develop_quality_improvement</option>
       </select>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">스킬 override</label>
       <select id="docops-skill-name" class="gov-input" style="width:100%;">
@@ -5615,11 +5616,12 @@
         <option value="policy-planning">policy-planning</option>
         <option value="evidence-gap-checker">evidence-gap-checker</option>
         <option value="decision-brief-builder">decision-brief-builder</option>
+        <option value="develop-document-improver">develop-document-improver</option>
       </select>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">제목</label>
       <input id="docops-title" class="gov-input" placeholder="예: AI 교차로 안전 시스템 기획" style="width:100%;">
-      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">목표 / 승인 질문</label>
-      <textarea id="docops-goal" class="gov-input" rows="3" placeholder="PM/대표가 승인해야 하는 결정 질문과 목표를 입력" style="width:100%;resize:vertical;"></textarea>
+      <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">목표 / 승인 질문 / 개선할 초안</label>
+      <textarea id="docops-goal" class="gov-input" rows="3" placeholder="PM/대표가 승인해야 하는 결정 질문, 목표, 또는 Develop 개선 대상 초안을 입력" style="width:100%;resize:vertical;"></textarea>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source summary</label>
       <textarea id="docops-source-summaries" class="gov-input" rows="4" placeholder="한 줄에 하나씩 입력. 확인된 자료 요약만 넣으세요." style="width:100%;resize:vertical;"></textarea>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source references</label>
@@ -6487,6 +6489,7 @@
   function documentOpsTaskSkill(taskType) {
     if (taskType === 'evidence_gap_review') return 'evidence-gap-checker';
     if (taskType === 'decision_brief') return 'decision-brief-builder';
+    if (taskType === 'develop_quality_improvement') return 'develop-document-improver';
     return 'policy-planning';
   }
 
@@ -6507,6 +6510,9 @@
         title,
         goal,
         decision_needed: taskType === 'decision_brief' ? goal : '',
+        current_draft: taskType === 'develop_quality_improvement' ? goal : '',
+        draft: taskType === 'develop_quality_improvement' ? goal : '',
+        improvement_goal: taskType === 'develop_quality_improvement' ? '문서 품질 개선' : '',
       },
       source_summaries: documentOpsLines($id('docops-source-summaries')?.value || ''),
       source_references: documentOpsSourceRefs($id('docops-source-refs')?.value || ''),
@@ -6557,6 +6563,7 @@
         <div style="font-size:.78rem;font-weight:850;margin-bottom:.35rem;">실행 계획</div>
         ${Array.isArray(data?.plan) && data.plan.length ? `<ol style="margin:0;padding-left:1.25rem;color:var(--muted);font-size:.78rem;line-height:1.55;">${data.plan.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : '<div style="color:var(--muted);font-size:.78rem;">plan 없음</div>'}
       </div>
+      ${renderDocumentOpsImprovementSummary(data)}
       <div style="border:1px solid var(--border);border-radius:12px;padding:.75rem;background:#fff;margin-bottom:.7rem;">
         <div style="font-size:.78rem;font-weight:850;margin-bottom:.35rem;">Draft</div>
         <pre style="white-space:pre-wrap;font-family:inherit;font-size:.8rem;line-height:1.55;color:#1f2a44;margin:0;">${escapeHtml(data?.draft || '')}</pre>
@@ -6569,6 +6576,25 @@
       ${warnings.length ? `<div style="font-size:.72rem;color:#92400e;margin-top:.6rem;">Warnings: ${escapeHtml(warnings.join(', '))}</div>` : ''}
       ${data?.trajectory_id ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.45rem;">trajectory_id=${escapeHtml(data.trajectory_id)} · saved=${data.trajectory_saved ? 'yes' : 'no'}</div>` : ''}
     `;
+  }
+
+  function renderDocumentOpsImprovementSummary(data) {
+    const critique = Array.isArray(data?.critique) ? data.critique : [];
+    const revisionTasks = Array.isArray(data?.revision_tasks) ? data.revision_tasks : [];
+    if (!critique.length && !revisionTasks.length) return '';
+    const renderItems = values => values.length
+      ? `<ul style="margin:0;padding-left:1rem;color:var(--muted);font-size:.74rem;line-height:1.5;">${values.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>`
+      : '<div style="font-size:.72rem;color:var(--muted);">없음</div>';
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.45rem;margin-bottom:.7rem;">
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(59,130,246,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#1d4ed8;margin-bottom:.35rem;">Quality critique</div>
+        ${renderItems(critique)}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(22,163,74,.06);">
+        <div style="font-size:.76rem;font-weight:900;color:#15803d;margin-bottom:.35rem;">Revision tasks</div>
+        ${renderItems(revisionTasks)}
+      </div>
+    </div>`;
   }
 
   function renderDocumentOpsEvidence(evidence) {
@@ -7508,6 +7534,8 @@
   /* ── Report Workflow ERP ─────────────────────────────────────── */
   let _reportWorkflowCurrentId = '';
   let _reportWorkflowCurrent = null;
+  let _reportWorkflowLastDevelopPreview = null;
+  let _reportWorkflowLastQualityPreview = null;
 
   const REPORT_WORKFLOW_QUALITY_DIMENSIONS = [
     ['logic', '논리'],
@@ -7519,6 +7547,13 @@
     ['export_readiness', 'Export 준비도'],
     ['learning_value', '학습 가치'],
   ];
+  const REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS = {
+    overall: 0.80,
+    defaultDimension: 0.75,
+    visual_design: 0.70,
+    export_readiness: 0.80,
+  };
+  const REPORT_WORKFLOW_QUALITY_PLACEHOLDER_MARKERS = ['TODO_', 'TODO:', 'TODO '];
 
   const REPORT_WORKFLOW_STATUS_LABELS = {
     planning_required: '기획 필요',
@@ -7743,7 +7778,12 @@
   function renderReportWorkflowDetail(item) {
     const el = $id('report-workflow-detail');
     if (!el) return;
+    const previousWorkflowId = _reportWorkflowCurrent?.report_workflow_id || '';
     _reportWorkflowCurrent = item || null;
+    if (previousWorkflowId && previousWorkflowId !== item?.report_workflow_id) {
+      _reportWorkflowLastDevelopPreview = null;
+      _reportWorkflowLastQualityPreview = null;
+    }
     const planning = item.planning || null;
     const slides = Array.isArray(item.slides) ? item.slides : [];
     const planningApproved = planning?.status === 'approved';
@@ -7779,7 +7819,9 @@
         <button class="action-btn" onclick="generateReportWorkflowVisualAssets('${escapeHtml(item.report_workflow_id)}')" ${(!slides.length || finalLocked) ? 'disabled' : ''}>🖼️ 시각자료 후보 생성</button>
         <button class="action-btn" onclick="downloadReportWorkflowPptx('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>📥 PPTX Export</button>
         <button class="action-btn" onclick="downloadReportWorkflowSnapshot('${escapeHtml(item.report_workflow_id)}')" ${slides.length ? '' : 'disabled'}>🧾 Snapshot Export</button>
+        <button class="action-btn" onclick="runReportWorkflowDevelopPreview('${escapeHtml(item.report_workflow_id)}')" ${(planning || slides.length) ? '' : 'disabled'}>🧠 Develop 품질 개선</button>
       </div>
+      <div id="rw-develop-result" style="display:none;border:1px solid var(--border);border-radius:14px;padding:.85rem;background:rgba(255,255,255,.62);margin-bottom:1rem;"></div>
       ${renderReportWorkflowApprovalWarnings(item)}
       ${renderReportWorkflowFinalApproval(item)}
       ${renderReportWorkflowPromotion(item)}
@@ -7791,7 +7833,10 @@
       ${item.learning_opt_in ? '<div style="margin-top:1rem;color:#16a34a;font-size:.78rem;font-weight:700;">학습 opt-in 활성화 · metadata-only correction artifact 저장 가능</div>' : '<div style="margin-top:1rem;color:var(--muted);font-size:.78rem;">학습 opt-in 비활성화 · correction artifact 저장 안 함</div>'}
       ${Array.isArray(item.quality_warnings) && item.quality_warnings.length ? `<div style="margin-top:.5rem;color:#f59e0b;font-size:.78rem;">품질 경고: ${escapeHtml(item.quality_warnings.join(', '))}</div>` : ''}
     `;
-    setTimeout(() => loadReportWorkflowProjectOptions(item.project_id || ''), 0);
+    setTimeout(() => {
+      loadReportWorkflowProjectOptions(item.project_id || '');
+      initReportWorkflowQualityChecklist();
+    }, 0);
   }
 
   function getReportWorkflowApprovalStep(item, stage) {
@@ -7825,6 +7870,172 @@
         ${approvalWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}
       </ul>
     </div>`;
+  }
+
+  function renderReportWorkflowDevelopPreview(data) {
+    const el = $id('rw-develop-result');
+    if (!el) return;
+    _reportWorkflowLastDevelopPreview = data || null;
+    el.style.display = 'block';
+    const result = data?.develop_result || {};
+    const qa = result.qa || {};
+    const hardPass = qa.hard_gate_pass === true;
+    const critique = Array.isArray(result.critique) ? result.critique : [];
+    const revisionTasks = Array.isArray(result.revision_tasks) ? result.revision_tasks : [];
+    const warnings = Array.isArray(result.quality_warnings) ? result.quality_warnings : [];
+    const hasQualityArtifactForm = !!$id('rw-quality-change-issue');
+    const workflowId = data?.report_workflow?.report_workflow_id || _reportWorkflowCurrent?.report_workflow_id || _reportWorkflowCurrentId || '';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.7rem;">
+        <div>
+          <div style="font-size:.86rem;font-weight:900;">Develop 품질 개선 preview</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">${escapeHtml(result.skill_name || 'develop-document-improver')} · task=${escapeHtml(result.task_type || '')}</div>
+        </div>
+        <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <button type="button" class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="applyReportWorkflowDevelopPreviewToQualityArtifact()" ${hasQualityArtifactForm ? '' : 'disabled'}>품질 artifact에 반영</button>
+          <button type="button" class="action-btn" style="font-size:.72rem;padding:.25rem .55rem;" onclick="applyReportWorkflowDevelopPreviewAndPreviewArtifact('${escapeHtml(workflowId)}')" ${hasQualityArtifactForm ? '' : 'disabled'}>반영 후 Artifact preview</button>
+          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${hardPass ? '#dcfce7' : '#fee2e2'};color:${hardPass ? '#15803d' : '#b91c1c'};">${hardPass ? 'QA PASS' : 'QA BLOCKED'}</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.55rem;margin-bottom:.65rem;">
+        <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(59,130,246,.06);">
+          <div style="font-size:.76rem;font-weight:900;color:#1d4ed8;margin-bottom:.35rem;">Quality critique</div>
+          ${critique.length ? `<ul style="margin:0;padding-left:1rem;font-size:.73rem;color:var(--muted);line-height:1.5;">${critique.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<div style="font-size:.72rem;color:var(--muted);">없음</div>'}
+        </div>
+        <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(22,163,74,.06);">
+          <div style="font-size:.76rem;font-weight:900;color:#15803d;margin-bottom:.35rem;">Revision tasks</div>
+          ${revisionTasks.length ? `<ul style="margin:0;padding-left:1rem;font-size:.73rem;color:var(--muted);line-height:1.5;">${revisionTasks.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<div style="font-size:.72rem;color:var(--muted);">없음</div>'}
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:#fff;">
+        <div style="font-size:.76rem;font-weight:900;margin-bottom:.35rem;">개선 초안</div>
+        <pre style="white-space:pre-wrap;font-family:inherit;font-size:.78rem;line-height:1.5;color:#1f2a44;margin:0;max-height:280px;overflow:auto;">${escapeHtml(result.draft || '')}</pre>
+      </div>
+      ${warnings.length ? `<div style="font-size:.72rem;color:#92400e;margin-top:.55rem;">Warnings: ${escapeHtml(warnings.join(', '))}</div>` : ''}
+    `;
+  }
+
+  async function runReportWorkflowDevelopPreview(id) {
+    const el = $id('rw-develop-result');
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = '<div style="font-size:.76rem;color:var(--muted);">Develop 품질 개선 preview 실행 중...</div>';
+    }
+    try {
+      const focus = (_reportWorkflowCurrent?.goal || '보고서 품질 개선').trim();
+      const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/develop-quality/preview`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          focus,
+          additional_notes: 'Report Workflow 화면에서 실행한 metadata-only Develop 품질 개선 preview',
+          capture_trajectory: false,
+        }),
+      });
+      const data = await res.json().catch(async () => ({ detail: await res.text() }));
+      if (!res.ok) throw new Error(data?.detail || JSON.stringify(data));
+      renderReportWorkflowDevelopPreview(data);
+      showNotification('Develop 품질 개선 preview를 생성했습니다.', data?.develop_result?.qa?.hard_gate_pass ? 'success' : 'warn');
+    } catch (err) {
+      if (el) el.innerHTML = `<div style="font-size:.76rem;color:#991b1b;">Develop 품질 개선 preview 실패: ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Develop 품질 개선 preview 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function reportWorkflowLimitText(value, maxLength = 3900) {
+    const text = String(value || '').trim();
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength - 40).trim()}\n\n[truncated for review form]`;
+  }
+
+  function reportWorkflowMergeCsvText(current, additions) {
+    const seen = new Set();
+    return [
+      ...reportWorkflowSplitCsv(current),
+      ...additions.map(item => String(item || '').trim()).filter(Boolean),
+    ].filter(item => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    }).join(', ');
+  }
+
+  function reportWorkflowSetFormValue(id, value) {
+    const input = $id(id);
+    if (!input) return false;
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function applyReportWorkflowDevelopPreviewToQualityArtifact() {
+    const preview = _reportWorkflowLastDevelopPreview || {};
+    const result = preview.develop_result || {};
+    if (!result.draft) {
+      showNotification('반영할 Develop preview 결과가 없습니다.', 'warn');
+      return false;
+    }
+    const targetInput = $id('rw-quality-change-issue');
+    if (!targetInput) {
+      showNotification('품질 교정 artifact 입력 패널을 먼저 표시해야 합니다.', 'warn');
+      return false;
+    }
+    const critique = Array.isArray(result.critique) ? result.critique.filter(Boolean) : [];
+    const revisionTasks = Array.isArray(result.revision_tasks) ? result.revision_tasks.filter(Boolean) : [];
+    const evidence = result.evidence_status || {};
+    const confirmedClaims = [
+      ...(Array.isArray(evidence.confirmed) ? evidence.confirmed : []),
+      ...(Array.isArray(evidence.source_references) ? evidence.source_references : []),
+    ].map(item => String(item || '').trim()).filter(Boolean);
+    const uniqueConfirmed = [...new Set(confirmedClaims)];
+    const issueText = critique.length
+      ? critique.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      : 'Develop preview에서 명시적 critique가 반환되지 않았습니다. 개선 초안을 기준으로 사람이 품질 이슈를 확인해야 합니다.';
+    const correctionText = revisionTasks.length
+      ? revisionTasks.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      : 'Develop preview 개선 초안을 기준으로 수정 방향을 검토합니다.';
+    reportWorkflowSetFormValue('rw-quality-change-target', 'develop_quality_improvement');
+    reportWorkflowSetFormValue('rw-quality-change-issue', reportWorkflowLimitText(issueText));
+    reportWorkflowSetFormValue('rw-quality-change-correction', reportWorkflowLimitText(correctionText));
+    reportWorkflowSetFormValue(
+      'rw-quality-change-rationale',
+      'Develop 품질 개선 preview가 도출한 critique와 revision task를 사람이 검토하고, 승인 질문·근거 구분·운영 리스크를 보강하기 위한 교정 근거로 사용합니다.',
+    );
+    reportWorkflowSetFormValue('rw-quality-after-summary', reportWorkflowLimitText(result.draft));
+    reportWorkflowSetFormValue(
+      'rw-quality-rationale',
+      'Develop preview 기준으로 논리, 근거, 장표 구조, 운영 리스크를 검토했습니다. 최종 저장 전 사람 reviewer가 accepted 여부와 scan 결과를 확정해야 합니다.',
+    );
+    if (uniqueConfirmed.length) {
+      reportWorkflowSetFormValue('rw-quality-confirmed-claims', uniqueConfirmed.join('\n'));
+    }
+    reportWorkflowSetFormValue(
+      'rw-quality-task-types',
+      reportWorkflowMergeCsvText($id('rw-quality-task-types')?.value || '', ['develop_quality_improvement']),
+    );
+    reportWorkflowSetFormValue(
+      'rw-quality-skills',
+      reportWorkflowMergeCsvText($id('rw-quality-skills')?.value || '', ['develop-document-improver']),
+    );
+    const resultEl = $id('rw-quality-result');
+    if (resultEl) {
+      resultEl.innerHTML = '<div style="border:1px solid rgba(37,99,235,.22);border-radius:12px;padding:.65rem;background:rgba(59,130,246,.07);font-size:.74rem;color:#1d4ed8;">Develop preview를 입력란에 반영했습니다. 저장 전 reviewer, scan 결과, accepted 체크는 사람이 확정해야 합니다.</div>';
+    }
+    $id('rw-quality-artifact-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showNotification('Develop preview를 품질 교정 artifact 입력란에 반영했습니다.', 'success');
+    return true;
+  }
+
+  async function applyReportWorkflowDevelopPreviewAndPreviewArtifact(id) {
+    const workflowId = String(id || _reportWorkflowCurrent?.report_workflow_id || _reportWorkflowCurrentId || '').trim();
+    if (!workflowId) {
+      showNotification('Artifact preview를 실행할 workflow가 없습니다.', 'warn');
+      return;
+    }
+    if (!applyReportWorkflowDevelopPreviewToQualityArtifact()) return;
+    await previewReportWorkflowQualityArtifact(workflowId);
   }
 
   function renderReportWorkflowApprovalStep(step, fallbackLabel) {
@@ -8022,10 +8233,12 @@
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.76rem;color:#1f2a44;font-weight:800;margin-top:.7rem;">
         <input id="rw-quality-accepted" type="checkbox" ${disabledAttr}> 학습 후보로 accepted 처리
       </label>
+      <div id="rw-quality-review-checklist" style="margin-top:.7rem;"></div>
       <div style="display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:.75rem;">
         <div style="font-size:.72rem;color:var(--muted);">Save는 preview validator가 ready_for_learning=true일 때만 성공합니다. Provider fine-tune이나 dataset upload는 실행하지 않습니다.</div>
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
           <button class="action-btn" onclick="previewReportWorkflowQualityArtifact('${escapeHtml(item.report_workflow_id)}')" ${disabledAttr}>🔎 Artifact preview</button>
+          <button class="action-btn" onclick="downloadReportWorkflowQualityReviewPacket('${escapeHtml(item.report_workflow_id)}')" ${disabledAttr}>🧾 Review packet JSON</button>
           <button class="action-btn" onclick="saveReportWorkflowQualityArtifact('${escapeHtml(item.report_workflow_id)}')" ${disabledAttr}>💾 학습 후보 저장</button>
         </div>
       </div>
@@ -8092,6 +8305,275 @@
     };
   }
 
+  function reportWorkflowQualityDimensionMinimum(key) {
+    return REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS[key] || REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS.defaultDimension;
+  }
+
+  function reportWorkflowQualityScoreGateStatus(payload) {
+    const scores = payload.dimension_scores || {};
+    let focusTargetId = '';
+    const lowScores = REPORT_WORKFLOW_QUALITY_DIMENSIONS
+      .map(([key, label]) => {
+        const score = Number(scores[key] ?? 0);
+        const minimum = reportWorkflowQualityDimensionMinimum(key);
+        if (Number.isFinite(score) && score >= minimum) return null;
+        if (!focusTargetId) focusTargetId = `rw-quality-score-${key}`;
+        return `${label} ${Number.isFinite(score) ? score.toFixed(2) : 'n/a'} < ${minimum.toFixed(2)}`;
+      })
+      .filter(Boolean);
+    const overall = Number(payload.overall_score ?? 0);
+    if (!Number.isFinite(overall) || overall < REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS.overall) {
+      focusTargetId = 'rw-quality-overall';
+      lowScores.unshift(`overall ${Number.isFinite(overall) ? overall.toFixed(2) : 'n/a'} < ${REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS.overall.toFixed(2)}`);
+    }
+    if (lowScores.length === 0 && payload.hard_failures.length > 0) {
+      focusTargetId = 'rw-quality-hard-failures';
+    }
+    return {
+      pass: lowScores.length === 0 && payload.hard_failures.length === 0,
+      detail: lowScores.length
+        ? lowScores.slice(0, 3).join(' · ')
+        : payload.hard_failures.length
+          ? `hard failures ${payload.hard_failures.length}건`
+          : 'overall/dimension score gate 통과',
+      focusTargetId,
+    };
+  }
+
+  function reportWorkflowQualityPlaceholderFindings(value, path = '$') {
+    const findings = [];
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        findings.push(...reportWorkflowQualityPlaceholderFindings(item, `${path}[${index}]`));
+      });
+    } else if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([key, item]) => {
+        findings.push(...reportWorkflowQualityPlaceholderFindings(item, `${path}.${key}`));
+      });
+    } else if (typeof value === 'string') {
+      const upperValue = value.toUpperCase();
+      if (REPORT_WORKFLOW_QUALITY_PLACEHOLDER_MARKERS.some(marker => upperValue.includes(marker))) {
+        findings.push(path);
+      }
+    }
+    return findings;
+  }
+
+  function reportWorkflowQualityFieldIdFromPath(path) {
+    const value = String(path || '');
+    if (!value) return '';
+    if (value.includes('change_requests') && value.includes('.target')) return 'rw-quality-change-target';
+    if (value.includes('change_requests') && value.includes('.issue')) return 'rw-quality-change-issue';
+    if (value.includes('change_requests') && value.includes('.correction')) return 'rw-quality-change-correction';
+    if (value.includes('change_requests') && value.includes('.rationale')) return 'rw-quality-change-rationale';
+    if (value.includes('after_planning_summary') || value.includes('after.planning_summary')) return 'rw-quality-after-summary';
+    if (value.includes('rationale_by_dimension')) return 'rw-quality-rationale';
+    if (value.includes('confirmed_claims')) return 'rw-quality-confirmed-claims';
+    if (value.includes('hard_failures')) return 'rw-quality-hard-failures';
+    if (value.includes('task_types')) return 'rw-quality-task-types';
+    if (value.includes('skills')) return 'rw-quality-skills';
+    return '';
+  }
+
+  function reportWorkflowQualityFieldIdFromValidationError(error) {
+    const text = String(error || '');
+    const pathMatch = text.match(/(?:at|found at) ([.$\w[\]-]+)/);
+    const pathTarget = pathMatch ? reportWorkflowQualityFieldIdFromPath(pathMatch[1]) : '';
+    if (pathTarget) return pathTarget;
+    if (text.includes('correction.change_requests')) return reportWorkflowQualityFieldIdFromPath(text);
+    if (text.includes('after.planning_summary')) return 'rw-quality-after-summary';
+    if (text.includes('correction.reviewer')) return 'rw-quality-reviewer';
+    if (text.includes('correction.reviewed_at')) return 'rw-quality-reviewed-at';
+    if (text.includes('learning_labels.human_review_status')) return 'rw-quality-human-status';
+    if (text.includes('learning_labels.forbidden_terms_scan')) return 'rw-quality-forbidden-scan';
+    if (text.includes('learning_labels.privacy_security_scan')) return 'rw-quality-privacy-scan';
+    if (text.includes('accepted_for_learning')) return 'rw-quality-accepted';
+    if (text.includes('quality_baseline.hard_failures')) return 'rw-quality-hard-failures';
+    if (text.includes('overall_score')) return 'rw-quality-overall';
+    for (const [key] of REPORT_WORKFLOW_QUALITY_DIMENSIONS) {
+      if (text.includes(`dimension_scores.${key}`) || text.includes(` ${key} >= `)) {
+        return `rw-quality-score-${key}`;
+      }
+    }
+    return '';
+  }
+
+  function focusReportWorkflowQualityField(id) {
+    const input = $id(id);
+    if (!input) {
+      showNotification('연결된 입력 필드를 찾을 수 없습니다.', 'warn');
+      return;
+    }
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (document.body?.dataset) {
+      document.body.dataset.reportWorkflowQualityFocusedField = id;
+    }
+    try {
+      input.focus({ preventScroll: true });
+    } catch (_) {
+      input.focus();
+    }
+    setTimeout(() => {
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    }, 120);
+    if (typeof input.select === 'function' && ['INPUT', 'TEXTAREA'].includes(input.tagName)) {
+      input.select();
+    }
+    const previousOutline = input.style.outline;
+    const previousBoxShadow = input.style.boxShadow;
+    input.style.outline = '2px solid rgba(245,158,11,.95)';
+    input.style.boxShadow = '0 0 0 4px rgba(245,158,11,.16)';
+    setTimeout(() => {
+      input.style.outline = previousOutline;
+      input.style.boxShadow = previousBoxShadow;
+    }, 1800);
+  }
+
+  function reportWorkflowQualityChecklistItems(previewResult = null) {
+    const payload = buildReportWorkflowQualityCorrectionPayload();
+    const workflow = _reportWorkflowCurrent || {};
+    const validation = previewResult?.validation || null;
+    const validationErrors = Array.isArray(validation?.errors) ? validation.errors : [];
+    const scoreGate = reportWorkflowQualityScoreGateStatus(payload);
+    const placeholderFindings = reportWorkflowQualityPlaceholderFindings(payload);
+    const hasCorrection = payload.change_requests.length > 0
+      && payload.change_requests.every(item => item.target && item.issue && item.correction && item.rationale)
+      && Boolean(payload.after_planning_summary);
+    const scansPass = payload.forbidden_terms_scan === 'pass' && payload.privacy_security_scan === 'pass';
+    const serverPreviewRan = validation && typeof validation.ready_for_learning === 'boolean';
+    return [
+      {
+        label: 'Workflow gate',
+        pass: workflow.status === 'final_approved' && workflow.learning_opt_in === true,
+        detail: `final=${workflow.status === 'final_approved' ? 'approved' : 'not ready'} · opt-in=${workflow.learning_opt_in === true ? 'true' : 'false'}`,
+      },
+      {
+        label: 'Correction content',
+        pass: hasCorrection,
+        detail: hasCorrection ? 'issue/correction/rationale/after summary 입력됨' : 'Develop 반영 후 사람이 issue/correction/rationale/after summary를 확인해야 함',
+        focusTargetId: hasCorrection ? '' : 'rw-quality-change-issue',
+      },
+      {
+        label: 'Reviewer metadata',
+        pass: Boolean(payload.reviewer && payload.reviewed_at),
+        detail: payload.reviewer && payload.reviewed_at ? `${payload.reviewer} · reviewed_at 입력됨` : 'reviewer와 reviewed_at 필요',
+        focusTargetId: payload.reviewer ? 'rw-quality-reviewed-at' : 'rw-quality-reviewer',
+      },
+      {
+        label: 'Human acceptance',
+        pass: payload.accepted_for_learning === true && payload.human_review_status === 'accepted',
+        detail: `accepted=${String(payload.accepted_for_learning)} · human_review=${payload.human_review_status || 'pending'}`,
+        focusTargetId: payload.accepted_for_learning ? 'rw-quality-human-status' : 'rw-quality-accepted',
+      },
+      {
+        label: 'Scan gates',
+        pass: scansPass,
+        detail: `forbidden=${payload.forbidden_terms_scan} · privacy=${payload.privacy_security_scan}`,
+        focusTargetId: payload.forbidden_terms_scan === 'pass' ? 'rw-quality-privacy-scan' : 'rw-quality-forbidden-scan',
+      },
+      {
+        label: 'Score gates',
+        pass: scoreGate.pass,
+        detail: scoreGate.detail,
+        focusTargetId: scoreGate.focusTargetId,
+      },
+      {
+        label: 'Placeholder scan',
+        pass: placeholderFindings.length === 0,
+        detail: placeholderFindings.length
+          ? `TODO marker 확인 필요: ${placeholderFindings.slice(0, 2).join(', ')}`
+          : 'TODO/placeholder marker 없음',
+        focusTargetId: placeholderFindings.length ? reportWorkflowQualityFieldIdFromPath(placeholderFindings[0]) : '',
+      },
+      {
+        label: 'Server preview',
+        pass: validation?.ready_for_learning === true,
+        pending: !serverPreviewRan,
+        detail: serverPreviewRan
+          ? `validation.ok=${String(validation.ok)} · ready_for_learning=${String(validation.ready_for_learning)}`
+          : 'Artifact preview를 실행해 서버 validator 결과를 확인해야 함',
+        focusTargetId: validationErrors.length ? reportWorkflowQualityFieldIdFromValidationError(validationErrors[0]) : '',
+      },
+    ];
+  }
+
+  function renderReportWorkflowQualityReviewChecklist(previewResult = null) {
+    const items = reportWorkflowQualityChecklistItems(previewResult);
+    const passed = items.filter(item => item.pass).length;
+    const statusColor = passed === items.length ? '#166534' : '#92400e';
+    const statusBg = passed === items.length ? 'rgba(22,101,52,.08)' : 'rgba(245,158,11,.08)';
+    const rows = items.map(item => {
+      const color = item.pending ? '#64748b' : item.pass ? '#166534' : '#92400e';
+      const bg = item.pending ? '#f1f5f9' : item.pass ? '#dcfce7' : '#fef3c7';
+      const mark = item.pending ? '대기' : item.pass ? '완료' : '확인';
+      const focusButton = (!item.pass && item.focusTargetId)
+        ? `<button type="button" class="action-btn" style="font-size:.64rem;padding:.12rem .38rem;" onclick="focusReportWorkflowQualityField('${escapeHtml(item.focusTargetId)}')">수정 위치</button>`
+        : '';
+      return `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
+        <div style="display:flex;justify-content:space-between;gap:.45rem;align-items:center;">
+          <strong style="font-size:.72rem;color:#1f2a44;">${escapeHtml(item.label)}</strong>
+          <span style="font-size:.66rem;font-weight:850;color:${color};background:${bg};border-radius:999px;padding:.1rem .42rem;">${mark}</span>
+        </div>
+        <div style="font-size:.68rem;color:var(--muted);line-height:1.4;margin-top:.22rem;">${escapeHtml(item.detail)}</div>
+        ${focusButton ? `<div style="margin-top:.35rem;">${focusButton}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div style="border:1px solid rgba(15,118,110,.18);border-radius:12px;padding:.65rem;background:${statusBg};">
+      <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.78rem;font-weight:900;color:${statusColor};">저장 전 reviewer checklist</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.18rem;">자동 승인이나 저장 없이, 학습 후보 저장 전에 사람이 확정해야 할 gate를 현재 입력값 기준으로 보여줍니다.</div>
+        </div>
+        <span style="font-size:.7rem;font-weight:850;color:${statusColor};background:rgba(255,255,255,.72);border-radius:999px;padding:.16rem .5rem;">${passed}/${items.length}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;margin-top:.55rem;">${rows}</div>
+    </div>`;
+  }
+
+  function refreshReportWorkflowQualityReviewChecklist(previewResult = null) {
+    const el = $id('rw-quality-review-checklist');
+    if (!el) return;
+    el.innerHTML = renderReportWorkflowQualityReviewChecklist(previewResult);
+  }
+
+  function initReportWorkflowQualityChecklist() {
+    const panel = $id('rw-quality-artifact-panel');
+    if (!panel) return;
+    if (panel.dataset.qualityChecklistReady !== '1') {
+      [
+        'rw-quality-reviewer',
+        'rw-quality-reviewed-at',
+        'rw-quality-overall',
+        'rw-quality-forbidden-scan',
+        'rw-quality-privacy-scan',
+        'rw-quality-human-status',
+        'rw-quality-change-target',
+        'rw-quality-change-issue',
+        'rw-quality-change-correction',
+        'rw-quality-change-rationale',
+        'rw-quality-after-summary',
+        'rw-quality-rationale',
+        'rw-quality-confirmed-claims',
+        'rw-quality-hard-failures',
+        'rw-quality-task-types',
+        'rw-quality-skills',
+        'rw-quality-accepted',
+        ...REPORT_WORKFLOW_QUALITY_DIMENSIONS.map(([key]) => `rw-quality-score-${key}`),
+      ].forEach(id => {
+        const input = $id(id);
+        if (!input) return;
+        input.addEventListener('input', () => refreshReportWorkflowQualityReviewChecklist());
+        input.addEventListener('change', () => refreshReportWorkflowQualityReviewChecklist());
+      });
+      panel.dataset.qualityChecklistReady = '1';
+    }
+    refreshReportWorkflowQualityReviewChecklist();
+  }
+
   function renderReportWorkflowQualityValidation(result) {
     const validation = result?.validation || {};
     const ready = validation.ready_for_learning === true;
@@ -8101,9 +8583,87 @@
     return `<div style="border:1px solid ${ready ? 'rgba(22,101,52,.28)' : ok ? 'rgba(180,83,9,.28)' : 'rgba(185,28,28,.28)'};border-radius:12px;padding:.7rem;background:${ready ? 'rgba(22,101,52,.06)' : ok ? 'rgba(245,158,11,.08)' : 'rgba(239,68,68,.07)'};">
       <div style="font-size:.78rem;font-weight:900;color:${ready ? '#166534' : ok ? '#92400e' : '#991b1b'};">validation.ok=${String(ok)} · ready_for_learning=${String(ready)} · persisted=${String(!!result?.persisted)}</div>
       <div style="font-size:.72rem;color:var(--muted);margin-top:.25rem;">artifact_id=${escapeHtml(validation.artifact_id || result?.artifact?.artifact_id || 'n/a')}</div>
-      ${errors.length ? `<ul style="margin:.45rem 0 0;padding-left:1rem;font-size:.72rem;color:#991b1b;line-height:1.45;">${errors.map(error => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : ''}
+      ${errors.length ? `<ul style="margin:.45rem 0 0;padding-left:1rem;font-size:.72rem;color:#991b1b;line-height:1.45;">${errors.map(error => {
+        const focusTargetId = reportWorkflowQualityFieldIdFromValidationError(error);
+        return `<li>${escapeHtml(error)}${focusTargetId ? ` <button type="button" class="action-btn" style="font-size:.64rem;padding:.1rem .34rem;margin-left:.25rem;" onclick="focusReportWorkflowQualityField('${escapeHtml(focusTargetId)}')">수정 위치</button>` : ''}</li>`;
+      }).join('')}</ul>` : ''}
       ${warnings.length ? `<ul style="margin:.45rem 0 0;padding-left:1rem;font-size:.72rem;color:#92400e;line-height:1.45;">${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>` : ''}
     </div>`;
+  }
+
+  function reportWorkflowQualityReviewPacketBoundary() {
+    return {
+      server_file_written: false,
+      persisted_learning_artifact: false,
+      external_dataset_upload_authorized: false,
+      provider_fine_tune_api_call_authorized: false,
+      provider_job_creation_authorized: false,
+      provider_job_polling_authorized: false,
+      training_execution_authorized: false,
+      model_candidate_emission_authorized: false,
+      model_promotion_authorized: false,
+    };
+  }
+
+  function buildReportWorkflowQualityReviewPacket(id) {
+    const workflow = _reportWorkflowCurrent || {};
+    const preview = _reportWorkflowLastQualityPreview || null;
+    const developResult = _reportWorkflowLastDevelopPreview?.develop_result || null;
+    const checklist = reportWorkflowQualityChecklistItems(preview).map(item => ({
+      label: item.label,
+      pass: item.pass === true,
+      pending: item.pending === true,
+      detail: item.detail || '',
+      focus_target_id: item.focusTargetId || '',
+    }));
+    return {
+      packet_version: 'decisiondoc_report_quality_review_packet.v1',
+      exported_at: new Date().toISOString(),
+      source: 'client_side_review_packet',
+      server_file_written: false,
+      report_workflow: {
+        report_workflow_id: String(id || workflow.report_workflow_id || _reportWorkflowCurrentId || ''),
+        title: workflow.title || '',
+        status: workflow.status || '',
+        learning_opt_in: workflow.learning_opt_in === true,
+        client: workflow.client || '',
+        audience: workflow.audience || '',
+      },
+      quality_payload: buildReportWorkflowQualityCorrectionPayload(),
+      checklist,
+      preview_validation: preview?.validation || null,
+      preview_artifact: preview?.artifact || null,
+      preview_persisted: preview?.persisted === true,
+      preview_artifact_id: preview?.validation?.artifact_id || preview?.artifact?.artifact_id || '',
+      develop_preview: developResult ? {
+        task_type: developResult.task_type || '',
+        skill_name: developResult.skill_name || '',
+        qa: developResult.qa || {},
+        critique: Array.isArray(developResult.critique) ? developResult.critique : [],
+        revision_tasks: Array.isArray(developResult.revision_tasks) ? developResult.revision_tasks : [],
+        evidence_status: developResult.evidence_status || {},
+      } : null,
+      training_boundary: reportWorkflowQualityReviewPacketBoundary(),
+    };
+  }
+
+  function downloadReportWorkflowQualityReviewPacket(id) {
+    try {
+      const packet = buildReportWorkflowQualityReviewPacket(id);
+      const workflowId = String(packet.report_workflow.report_workflow_id || 'report-workflow').replace(/[^a-zA-Z0-9_-]+/g, '-');
+      const blob = new Blob([JSON.stringify(packet, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-quality-review-packet-${workflowId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification('Review packet JSON을 브라우저에서 생성했습니다. 서버 저장이나 학습 실행은 없습니다.', 'success');
+    } catch (err) {
+      showNotification('Review packet JSON 생성 실패: ' + (err.message || err), 'error');
+    }
   }
 
   async function submitReportWorkflowQualityArtifact(id, persist = false) {
@@ -8124,7 +8684,9 @@
         await loadReportWorkflows();
         showNotification('품질 교정 artifact를 학습 후보로 저장했습니다.', 'success');
       } else if (resultEl) {
+        _reportWorkflowLastQualityPreview = data || null;
         resultEl.innerHTML = renderReportWorkflowQualityValidation(data);
+        refreshReportWorkflowQualityReviewChecklist(data);
         showNotification(data?.validation?.ready_for_learning ? 'Artifact가 학습 후보 기준을 통과했습니다.' : 'Artifact preview가 완료되었습니다. blocker를 확인하세요.', data?.validation?.ready_for_learning ? 'success' : 'warn');
       }
     } catch (err) {

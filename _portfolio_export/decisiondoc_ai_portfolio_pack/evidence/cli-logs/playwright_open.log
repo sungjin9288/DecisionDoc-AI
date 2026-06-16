@@ -1,0 +1,16 @@
+### Browser `default` opened with pid 52127.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:8787');
+```
+### Page
+- Page URL: http://127.0.0.1:8787/
+- Page Title: DecisionDoc AI — AI 문서 생성기
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-06-09T05-12-21-926Z.yml)
+### Events
+- New console entries: .playwright-cli/console-2026-06-09T05-12-21-802Z.log#L1-L2
+### Ran Playwright code
+```js
+await page.setViewportSize({ width: 1440, height: 1000 });
+```

@@ -1,0 +1,114 @@
+{
+  "schema_version": "decisiondoc_report_quality_training_final_approval_record_template.v1",
+  "report_type": "report_quality_training_final_approval_record_template",
+  "template_id": "",
+  "generated_at": "",
+  "record_template_path": "",
+  "record_markdown_path": "",
+  "packet_review_path": "",
+  "packet_review_sha256": "",
+  "packet_manifest_path": "",
+  "packet_manifest_sha256": "",
+  "packet_review_validation": {},
+  "approval_state": {
+    "template_only": true,
+    "status": "pending_manual_final_approval",
+    "approval_record_completed": false,
+    "final_training_approval_granted": false,
+    "approval_effective": false,
+    "training_execution_allowed": false,
+    "external_upload_allowed": false,
+    "provider_api_calls_allowed": false,
+    "provider_job_started": false,
+    "model_promotion_allowed": false
+  },
+  "required_approvals": [
+    {
+      "role": "ML/AI Owner",
+      "approver_name": "",
+      "title_or_team": "",
+      "decision": "pending",
+      "approved_at": "",
+      "conditions": []
+    },
+    {
+      "role": "Product/PM",
+      "approver_name": "",
+      "title_or_team": "",
+      "decision": "pending",
+      "approved_at": "",
+      "conditions": []
+    },
+    {
+      "role": "Compliance/Security",
+      "approver_name": "",
+      "title_or_team": "",
+      "decision": "pending",
+      "approved_at": "",
+      "conditions": []
+    },
+    {
+      "role": "Release Owner",
+      "approver_name": "",
+      "title_or_team": "",
+      "decision": "pending",
+      "approved_at": "",
+      "conditions": []
+    }
+  ],
+  "source_files": {},
+  "job_spec_snapshot": {},
+  "counts": {
+    "ready_artifacts": 0,
+    "completed_signoff_count": 0,
+    "source_file_count": 0,
+    "missing_file_count": 0,
+    "required_approval_count": 4
+  },
+  "operator_actions": [
+    "Humans may fill this template later only after all final approver roles review the packet.",
+    "Do not mark any approval, final approval grant, execution authorization, or provider job state in the generated template.",
+    "Do not upload datasets, call provider fine-tune APIs, create or poll provider jobs, start training, or promote models from this template."
+  ],
+  "approval_boundary": {
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "training_execution_authorized": false,
+    "model_promotion_authorized": false
+  },
+  "side_effect_boundary": {
+    "reads_local_packet_review_record": false,
+    "writes_local_final_approval_record_template_files": false,
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  },
+  "generation_context": {
+    "review_scope": "Template-only final approval record preparation; this artifact cannot grant final approval or authorize execution."
+  },
+  "generation_boundary": {
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  }
+}

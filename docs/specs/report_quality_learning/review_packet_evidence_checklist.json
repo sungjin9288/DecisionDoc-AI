@@ -1,0 +1,1010 @@
+{
+  "checklist_version": "decisiondoc_report_quality_review_packet_evidence_checklist.v1",
+  "purpose": "Operator checklist for validating local Report Workflow review packet evidence before any training discussion.",
+  "required_inputs": [
+    "report-quality-review-packet-*.json files downloaded from the Report Workflow UI",
+    "final_approved Report Workflow state",
+    "learning_opt_in=true workflow metadata",
+    "server preview artifact embedded as preview_artifact"
+  ],
+  "required_commands": [
+    {
+      "name": "validate_single_packet",
+      "command": "python3 docs/specs/report_quality_learning/validate_review_packet.py <packet.json> --require-ready",
+      "pass_criteria": [
+        "PASS report quality review packet validated",
+        "ready_for_learning=true",
+        "preview_artifact_ready_for_learning=true"
+      ]
+    },
+    {
+      "name": "build_evidence_pipeline",
+      "command": "python3 scripts/build_report_quality_review_packet_evidence.py <packet-glob> --batch-id <batch-id> --min-packets <n> --output-root reports/report-quality",
+      "pass_criteria": [
+        "Report quality review packet evidence pipeline: PASS",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_evidence_pipeline",
+      "command": "python3 scripts/validate_report_quality_review_packet_evidence.py reports/report-quality/<batch-id>-evidence-pipeline-manifest.json",
+      "pass_criteria": [
+        "PASS report quality review packet evidence validated",
+        "output_count=7",
+        "require_ready=true"
+      ]
+    },
+    {
+      "name": "validate_extracted_artifact_jsonl",
+      "command": "python3 docs/specs/report_quality_learning/validate_correction_artifact.py reports/report-quality/<batch-id>-from-review-packets.jsonl --require-ready --min-records <n>",
+      "pass_criteria": [
+        "PASS report quality correction artifact JSONL validated",
+        "ready_for_learning=true",
+        "not_ready_artifacts=0"
+      ]
+    },
+    {
+      "name": "create_handoff_index",
+      "command": "python3 scripts/create_report_quality_review_packet_handoff.py reports/report-quality/<batch-id>-evidence-pipeline-manifest.json",
+      "pass_criteria": [
+        "Report quality review packet handoff: PASS",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_handoff_manifest",
+      "command": "python3 scripts/validate_report_quality_review_packet_handoff.py reports/report-quality/<batch-id>-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality review packet handoff validated",
+        "require_ready=true"
+      ]
+    },
+    {
+      "name": "create_pending_signoff",
+      "command": "python3 scripts/create_report_quality_review_packet_signoff.py reports/report-quality/<batch-id>-handoff-manifest.json",
+      "pass_criteria": [
+        "Report quality review packet pending signoff: PASS",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_reviewer_signoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_signoff.py reports/report-quality/<batch-id>-signoff.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality review packet signoff validated",
+        "completed=true"
+      ]
+    },
+    {
+      "name": "summarize_signoffs",
+      "command": "python3 scripts/summarize_report_quality_review_packet_signoffs.py reports/report-quality/<batch-id>-signoff.json --require-complete --output reports/report-quality/<batch-id>-signoff-summary.json --markdown reports/report-quality/<batch-id>-signoff-summary.md",
+      "pass_criteria": [
+        "Report quality review packet signoff summary: PASS",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_readiness",
+      "command": "python3 scripts/create_report_quality_review_packet_training_readiness.py reports/report-quality/<batch-id>-evidence-pipeline-manifest.json reports/report-quality/<batch-id>-signoff-summary.json --min-ready-artifacts <n> --output reports/report-quality/<batch-id>-training-readiness-manifest.json --markdown reports/report-quality/<batch-id>-training-readiness.md",
+      "pass_criteria": [
+        "Report quality review packet training readiness: PASS",
+        "ready_for_training_discussion=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_readiness",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_readiness.py reports/report-quality/<batch-id>-training-readiness-manifest.json",
+      "pass_criteria": [
+        "PASS report quality review packet training readiness validated",
+        "ready_for_training_discussion=true"
+      ]
+    },
+    {
+      "name": "create_training_discussion_handoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_discussion_handoff.py reports/report-quality/<batch-id>-training-readiness-manifest.json --output-manifest reports/report-quality/<batch-id>-training-discussion-handoff-manifest.json --output-markdown reports/report-quality/<batch-id>-training-discussion-handoff.md",
+      "pass_criteria": [
+        "Report quality training discussion handoff: PASS",
+        "ready_for_training_discussion=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_discussion_handoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_discussion_handoff.py reports/report-quality/<batch-id>-training-discussion-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training discussion handoff validated",
+        "ready_for_training_discussion=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_discussion_decision",
+      "command": "python3 scripts/create_report_quality_review_packet_training_discussion_decision.py reports/report-quality/<batch-id>-training-discussion-handoff-manifest.json --output reports/report-quality/<batch-id>-training-discussion-decision.json",
+      "pass_criteria": [
+        "Report quality training discussion pending decision: PASS",
+        "pending_validation_ok=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_discussion_decision",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_discussion_decision.py reports/report-quality/<batch-id>-training-discussion-decision.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training discussion decision validated",
+        "completed=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_experiment_plan_draft",
+      "command": "python3 scripts/create_report_quality_review_packet_training_experiment_plan_draft.py reports/report-quality/<batch-id>-training-discussion-decision.json --output-manifest reports/report-quality/<batch-id>-training-experiment-plan-draft-manifest.json --output-markdown reports/report-quality/<batch-id>-training-experiment-plan-draft.md",
+      "pass_criteria": [
+        "Report quality training experiment plan draft: PASS",
+        "planning_only=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_experiment_plan_draft",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_experiment_plan_draft.py reports/report-quality/<batch-id>-training-experiment-plan-draft-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training experiment plan draft validated",
+        "planning_only=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_experiment_plan_review",
+      "command": "python3 scripts/create_report_quality_review_packet_training_experiment_plan_review.py reports/report-quality/<batch-id>-training-experiment-plan-draft-manifest.json --output reports/report-quality/<batch-id>-training-experiment-plan-review.json",
+      "pass_criteria": [
+        "Report quality training experiment plan pending review: PASS",
+        "pending_validation_ok=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_experiment_plan_review",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_experiment_plan_review.py reports/report-quality/<batch-id>-training-experiment-plan-review.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training experiment plan review validated",
+        "completed=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_final_approval_packet",
+      "command": "python3 scripts/create_report_quality_review_packet_training_final_approval_packet.py reports/report-quality/<batch-id>-training-experiment-plan-review.json --output-manifest reports/report-quality/<batch-id>-training-final-approval-packet-manifest.json --output-markdown reports/report-quality/<batch-id>-training-final-approval-packet.md",
+      "pass_criteria": [
+        "Report quality training final approval packet: PASS",
+        "approval_packet_only=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_final_approval_packet",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_final_approval_packet.py reports/report-quality/<batch-id>-training-final-approval-packet-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training final approval packet validated",
+        "approval_packet_only=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_final_approval_packet_review",
+      "command": "python3 scripts/create_report_quality_review_packet_training_final_approval_packet_review.py reports/report-quality/<batch-id>-training-final-approval-packet-manifest.json --output reports/report-quality/<batch-id>-training-final-approval-packet-review.json",
+      "pass_criteria": [
+        "Report quality training final approval packet pending review: PASS",
+        "pending_validation_ok=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_final_approval_packet_review",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_final_approval_packet_review.py reports/report-quality/<batch-id>-training-final-approval-packet-review.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training final approval packet review validated",
+        "completed=true",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_final_approval_record_template",
+      "command": "python3 scripts/create_report_quality_review_packet_training_final_approval_record_template.py reports/report-quality/<batch-id>-training-final-approval-packet-review.json --output reports/report-quality/<batch-id>-training-final-approval-record-template.json --markdown reports/report-quality/<batch-id>-training-final-approval-record-template.md",
+      "pass_criteria": [
+        "Report quality training final approval record template: PASS",
+        "template_only=true",
+        "approval_granted=false",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_final_approval_record_template",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_final_approval_record_template.py reports/report-quality/<batch-id>-training-final-approval-record-template.json",
+      "pass_criteria": [
+        "PASS report quality training final approval record template validated",
+        "template_only=true",
+        "approval_granted=false",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_freeze",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_freeze.py reports/report-quality/<batch-id>-training-final-approval-record-template.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-freeze-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-freeze.md",
+      "pass_criteria": [
+        "Report quality training no-cost freeze: PASS",
+        "freeze_only=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_freeze",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze.py reports/report-quality/<batch-id>-training-no-cost-freeze-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost freeze validated",
+        "freeze_only=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_freezes",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_freezes.py reports/report-quality/<batch-id>-training-no-cost-freeze-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-freeze-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-freeze-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost freeze summary: PASS",
+        "freeze_count=1",
+        "valid_freeze_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_freeze_handoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff.py reports/report-quality/<batch-id>-training-no-cost-freeze-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-freeze-handoff.md",
+      "pass_criteria": [
+        "Report quality training no-cost freeze handoff: PASS",
+        "handoff_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_freeze_handoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff.py reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost freeze handoff validated",
+        "handoff_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_no_cost_freeze_handoff_signoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-signoff.json",
+      "pass_criteria": [
+        "Report quality training no-cost freeze handoff pending signoff: PASS",
+        "pending_validation_ok=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_freeze_handoff_signoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-signoff.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training no-cost freeze handoff signoff validated",
+        "completed=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_archive_closure",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_archive_closure.py reports/report-quality/<batch-id>-training-no-cost-freeze-handoff-signoff.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-archive-closure-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-archive-closure.md",
+      "pass_criteria": [
+        "Report quality training no-cost archive closure: PASS",
+        "archive_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_archive_closure",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_archive_closure.py reports/report-quality/<batch-id>-training-no-cost-archive-closure-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost archive closure validated",
+        "archive_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_archive_closures",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_archive_closures.py reports/report-quality/<batch-id>-training-no-cost-archive-closure-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-archive-closure-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-archive-closure-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost archive closure summary: PASS",
+        "archive_closure_count=1",
+        "valid_archive_closure_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_evidence_bundle",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle.py reports/report-quality/<batch-id>-training-no-cost-archive-closure-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-evidence-bundle.md",
+      "pass_criteria": [
+        "Report quality training no-cost evidence bundle: PASS",
+        "bundle_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_evidence_bundle",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost evidence bundle validated",
+        "bundle_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_evidence_bundle_handoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-manifest.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff.md",
+      "pass_criteria": [
+        "Report quality training no-cost evidence bundle handoff: PASS",
+        "handoff_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_evidence_bundle_handoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost evidence bundle handoff validated",
+        "handoff_ready=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_no_cost_evidence_bundle_handoff_signoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff.json",
+      "pass_criteria": [
+        "Report quality training no-cost evidence bundle handoff pending signoff: PASS",
+        "pending_validation_ok=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_evidence_bundle_handoff_signoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training no-cost evidence bundle handoff signoff validated",
+        "completed=true",
+        "decision=accepted",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_evidence_bundle_handoff_signoffs",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoffs.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff.json --output reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost evidence bundle handoff signoff summary: PASS",
+        "signoff_count=1",
+        "valid_signoff_count=1",
+        "completed_signoff_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_resume_guard",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_resume_guard.py reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.json --summary-markdown reports/report-quality/<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.md --output-manifest reports/report-quality/<batch-id>-training-no-cost-resume-guard-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-resume-guard.md",
+      "pass_criteria": [
+        "Report quality training no-cost resume guard: PASS",
+        "resume_guard_active=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_resume_guard",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_resume_guard.py reports/report-quality/<batch-id>-training-no-cost-resume-guard-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost resume guard validated",
+        "resume_guard_active=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_resume_guards",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_resume_guards.py reports/report-quality/<batch-id>-training-no-cost-resume-guard-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-resume-guard-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-resume-guard-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost resume guard summary: PASS",
+        "resume_guard_count=1",
+        "valid_resume_guard_count=1",
+        "active_resume_guard_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_ops_lock",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock.py reports/report-quality/<batch-id>-training-no-cost-resume-guard-summary.json --summary-markdown reports/report-quality/<batch-id>-training-no-cost-resume-guard-summary.md --output-manifest reports/report-quality/<batch-id>-training-no-cost-ops-lock-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock.md",
+      "pass_criteria": [
+        "Report quality training no-cost ops lock: PASS",
+        "ops_lock_active=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_ops_lock",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost ops lock validated",
+        "ops_lock_active=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_ops_locks",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_ops_locks.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-ops-lock-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost ops lock summary: PASS",
+        "ops_lock_count=1",
+        "valid_ops_lock_count=1",
+        "active_ops_lock_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_ops_lock_handoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-summary.json --summary-markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock-summary.md --output-manifest reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff.md",
+      "pass_criteria": [
+        "Report quality training no-cost ops lock handoff: PASS",
+        "handoff_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_ops_lock_handoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost ops lock handoff validated",
+        "handoff_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_no_cost_ops_lock_handoff_signoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff.json",
+      "pass_criteria": [
+        "Report quality training no-cost ops lock handoff pending signoff: PASS",
+        "pending_validation_ok=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_ops_lock_handoff_signoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff.json --require-complete",
+      "pass_criteria": [
+        "PASS report quality training no-cost ops lock handoff signoff validated",
+        "completed=true",
+        "decision=accepted",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_ops_lock_handoff_signoffs",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoffs.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff.json --output reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost ops lock handoff signoff summary: PASS",
+        "signoff_count=1",
+        "valid_signoff_count=1",
+        "completed_signoff_count=1",
+        "accepted_signoff_count=1",
+        "service_lock_review_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_final_hold",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_final_hold.py reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.json --summary-markdown reports/report-quality/<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.md --output-manifest reports/report-quality/<batch-id>-training-no-cost-final-hold-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-final-hold.md",
+      "pass_criteria": [
+        "Report quality training no-cost final hold: PASS",
+        "final_hold_active=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_final_hold",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_final_hold.py reports/report-quality/<batch-id>-training-no-cost-final-hold-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost final hold validated",
+        "final_hold_active=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_final_holds",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_final_holds.py reports/report-quality/<batch-id>-training-no-cost-final-hold-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-final-hold-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-final-hold-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost final hold summary: PASS",
+        "final_hold_count=1",
+        "valid_final_hold_count=1",
+        "active_final_hold_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_closeout_receipt",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_closeout_receipt.py reports/report-quality/<batch-id>-training-no-cost-final-hold-summary.json --summary-markdown reports/report-quality/<batch-id>-training-no-cost-final-hold-summary.md --output-manifest reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-closeout-receipt.md",
+      "pass_criteria": [
+        "Report quality training no-cost closeout receipt: PASS",
+        "receipt_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_closeout_receipt",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_closeout_receipt.py reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost closeout receipt validated",
+        "receipt_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_closeout_receipts",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_closeout_receipts.py reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost closeout receipt summary: PASS",
+        "closeout_receipt_count=1",
+        "valid_closeout_receipt_count=1",
+        "ready_closeout_receipt_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "check_training_no_cost_service_lock",
+      "command": "python3 scripts/check_report_quality_review_packet_training_no_cost_service_lock.py reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-summary.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost service lock checked",
+        "status=service_locked",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "operation_resume_approved=false",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_service_lock_report",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_service_lock_report.py reports/report-quality/<batch-id>-training-no-cost-closeout-receipt-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-service-lock-report.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-service-lock-report.md",
+      "pass_criteria": [
+        "Report quality training no-cost service lock report: PASS",
+        "service_lock_report_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_service_lock_report",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report.py reports/report-quality/<batch-id>-training-no-cost-service-lock-report.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost service lock report validated",
+        "service_lock_report_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_service_lock_reports",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_service_lock_reports.py reports/report-quality/<batch-id>-training-no-cost-service-lock-report.json --output reports/report-quality/<batch-id>-training-no-cost-service-lock-report-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-service-lock-report-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost service lock report summary: PASS",
+        "service_lock_report_count=1",
+        "valid_service_lock_report_count=1",
+        "ready_service_lock_report_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_service_lock_report_summary",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report_summary.py reports/report-quality/<batch-id>-training-no-cost-service-lock-report-summary.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost service lock report summary validated",
+        "service_lock_report_summary_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_operator_handoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff.py reports/report-quality/<batch-id>-training-no-cost-service-lock-report-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-operator-handoff-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff: PASS",
+        "operator_handoff_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff validated",
+        "operator_handoff_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_pending_training_no_cost_operator_handoff_signoff",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff.json",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff pending signoff: PASS",
+        "pending_validation_ok=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_signoff",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff signoff validated",
+        "completed=false",
+        "decision=pending",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_operator_handoff_signoffs",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_signoffs.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff.json --output reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff signoff summary: PASS",
+        "signoff_count=1",
+        "valid_signoff_count=1",
+        "completed_signoff_count=1",
+        "accepted_signoff_count=1",
+        "operator_handoff_review_count=1",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_signoff_summary",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff_summary.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff-summary.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff signoff summary validated",
+        "operator_handoff_signoff_summary_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_operator_handoff_closeout_receipt",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-signoff-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff closeout receipt: PASS",
+        "receipt_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_closeout_receipt",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff closeout receipt validated",
+        "receipt_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_operator_handoff_closeout_receipts",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipts.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff closeout receipt summary: PASS",
+        "receipt_count=1",
+        "valid_receipt_count=1",
+        "ready_receipt_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_closeout_receipt_summary",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt_summary.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff closeout receipt summary validated",
+        "operator_handoff_closeout_receipt_summary_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "create_training_no_cost_operator_handoff_closeout_package",
+      "command": "python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.json --output-manifest reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-manifest.json --output-markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff closeout package: PASS",
+        "package_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_closeout_package",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-manifest.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff closeout package validated",
+        "package_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "summarize_training_no_cost_operator_handoff_closeout_packages",
+      "command": "python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_packages.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-manifest.json --output reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-summary.json --markdown reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-summary.md",
+      "pass_criteria": [
+        "Report quality training no-cost operator handoff closeout package summary: PASS",
+        "package_count=1",
+        "valid_package_count=1",
+        "ready_package_count=1",
+        "service_operation_locked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    },
+    {
+      "name": "validate_training_no_cost_operator_handoff_closeout_package_summary",
+      "command": "python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package_summary.py reports/report-quality/<batch-id>-training-no-cost-operator-handoff-closeout-package-summary.json",
+      "pass_criteria": [
+        "PASS report quality training no-cost operator handoff closeout package summary validated",
+        "operator_handoff_closeout_package_summary_ready=true",
+        "service_operation_locked=true",
+        "resume_blocked=true",
+        "aws_cost_boundary=no_cost_increase",
+        "training_boundary=not_authorized"
+      ]
+    }
+  ],
+  "handoff_files": [
+    "<batch-id>-review-packet-summary.md",
+    "<batch-id>-artifact-batch-summary.md",
+    "<batch-id>-evidence-pipeline-manifest.json",
+    "<batch-id>-handoff-index.md",
+    "<batch-id>-handoff-manifest.json",
+    "<batch-id>-signoff.json",
+    "<batch-id>-signoff-summary.json",
+    "<batch-id>-signoff-summary.md",
+    "<batch-id>-training-readiness-manifest.json",
+    "<batch-id>-training-readiness.md",
+    "<batch-id>-training-discussion-handoff-manifest.json",
+    "<batch-id>-training-discussion-handoff.md",
+    "<batch-id>-training-discussion-decision.json",
+    "<batch-id>-training-experiment-plan-draft-manifest.json",
+    "<batch-id>-training-experiment-plan-draft.md",
+    "<batch-id>-training-experiment-plan-review.json",
+    "<batch-id>-training-final-approval-packet-manifest.json",
+    "<batch-id>-training-final-approval-packet.md",
+    "<batch-id>-training-final-approval-packet-review.json",
+    "<batch-id>-training-final-approval-record-template.json",
+    "<batch-id>-training-final-approval-record-template.md",
+    "<batch-id>-training-no-cost-freeze-manifest.json",
+    "<batch-id>-training-no-cost-freeze.md",
+    "<batch-id>-training-no-cost-freeze-summary.json",
+    "<batch-id>-training-no-cost-freeze-summary.md",
+    "<batch-id>-training-no-cost-freeze-handoff-manifest.json",
+    "<batch-id>-training-no-cost-freeze-handoff.md",
+    "<batch-id>-training-no-cost-freeze-handoff-signoff.json",
+    "<batch-id>-training-no-cost-archive-closure-manifest.json",
+    "<batch-id>-training-no-cost-archive-closure.md",
+    "<batch-id>-training-no-cost-archive-closure-summary.json",
+    "<batch-id>-training-no-cost-archive-closure-summary.md",
+    "<batch-id>-training-no-cost-evidence-bundle-manifest.json",
+    "<batch-id>-training-no-cost-evidence-bundle.md",
+    "<batch-id>-training-no-cost-evidence-bundle-handoff-manifest.json",
+    "<batch-id>-training-no-cost-evidence-bundle-handoff.md",
+    "<batch-id>-training-no-cost-evidence-bundle-handoff-signoff.json",
+    "<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.json",
+    "<batch-id>-training-no-cost-evidence-bundle-handoff-signoff-summary.md",
+    "<batch-id>-training-no-cost-resume-guard-manifest.json",
+    "<batch-id>-training-no-cost-resume-guard.md",
+    "<batch-id>-training-no-cost-resume-guard-summary.json",
+    "<batch-id>-training-no-cost-resume-guard-summary.md",
+    "<batch-id>-training-no-cost-ops-lock-manifest.json",
+    "<batch-id>-training-no-cost-ops-lock.md",
+    "<batch-id>-training-no-cost-ops-lock-summary.json",
+    "<batch-id>-training-no-cost-ops-lock-summary.md",
+    "<batch-id>-training-no-cost-ops-lock-handoff-manifest.json",
+    "<batch-id>-training-no-cost-ops-lock-handoff.md",
+    "<batch-id>-training-no-cost-ops-lock-handoff-signoff.json",
+    "<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.json",
+    "<batch-id>-training-no-cost-ops-lock-handoff-signoff-summary.md",
+    "<batch-id>-training-no-cost-final-hold-manifest.json",
+    "<batch-id>-training-no-cost-final-hold.md",
+    "<batch-id>-training-no-cost-final-hold-summary.json",
+    "<batch-id>-training-no-cost-final-hold-summary.md",
+    "<batch-id>-training-no-cost-closeout-receipt-manifest.json",
+    "<batch-id>-training-no-cost-closeout-receipt.md",
+    "<batch-id>-training-no-cost-closeout-receipt-summary.json",
+    "<batch-id>-training-no-cost-closeout-receipt-summary.md",
+    "<batch-id>-training-no-cost-service-lock-report.json",
+    "<batch-id>-training-no-cost-service-lock-report.md",
+    "<batch-id>-training-no-cost-service-lock-report-summary.json",
+    "<batch-id>-training-no-cost-service-lock-report-summary.md",
+    "<batch-id>-training-no-cost-operator-handoff-manifest.json",
+    "<batch-id>-training-no-cost-operator-handoff.md",
+    "<batch-id>-training-no-cost-operator-handoff-signoff.json",
+    "<batch-id>-training-no-cost-operator-handoff-signoff-summary.json",
+    "<batch-id>-training-no-cost-operator-handoff-signoff-summary.md",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-receipt-manifest.json",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-receipt.md",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.json",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-receipt-summary.md",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-package-manifest.json",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-package.md",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-package-summary.json",
+    "<batch-id>-training-no-cost-operator-handoff-closeout-package-summary.md",
+    "<batch-id>-from-review-packets.jsonl"
+  ],
+  "stop_gate": [
+    "evidence pipeline validation failed",
+    "correction artifact JSONL validation failed",
+    "ready_artifacts is below the required minimum",
+    "reviewer or reviewed_at is missing",
+    "required scans are not pass",
+    "any no-side-effect boundary flag is true",
+    "training readiness validation failed",
+    "training discussion handoff has missing files",
+    "training discussion handoff validation failed",
+    "training discussion decision is incomplete",
+    "training discussion decision authorizes training, upload, provider job, or model promotion",
+    "training experiment plan draft validation failed",
+    "training experiment plan draft contains started execution steps",
+    "training experiment plan review is incomplete",
+    "training experiment plan review authorizes training, upload, provider job, or model promotion",
+    "training final approval packet validation failed",
+    "training final approval packet records final approval or authorizes execution",
+    "training final approval packet review is incomplete",
+    "training final approval packet review records final approval or authorizes execution",
+    "training final approval record template validation failed",
+    "training final approval record template records approval or authorizes execution",
+    "training no-cost freeze validation failed",
+    "training no-cost freeze allows AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost freeze summary has invalid freeze manifests",
+    "training no-cost freeze handoff validation failed",
+    "training no-cost freeze handoff allows AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost freeze handoff signoff is incomplete",
+    "training no-cost freeze handoff signoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost archive closure validation failed",
+    "training no-cost archive closure authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost archive closure summary has invalid closure manifests",
+    "training no-cost evidence bundle validation failed",
+    "training no-cost evidence bundle authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost evidence bundle handoff validation failed",
+    "training no-cost evidence bundle handoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost evidence bundle handoff signoff is incomplete",
+    "training no-cost evidence bundle handoff signoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost evidence bundle handoff signoff summary has invalid signoffs",
+    "training no-cost resume guard validation failed",
+    "training no-cost resume guard does not block service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost resume guard summary has invalid guard manifests",
+    "training no-cost ops lock validation failed",
+    "training no-cost ops lock allows service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost ops lock summary has invalid lock manifests",
+    "training no-cost ops lock handoff validation failed",
+    "training no-cost ops lock handoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost ops lock handoff signoff is incomplete",
+    "training no-cost ops lock handoff signoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost ops lock handoff signoff summary has invalid signoffs",
+    "training no-cost final hold validation failed",
+    "training no-cost final hold allows service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost final hold summary has invalid final hold manifests",
+    "training no-cost closeout receipt validation failed",
+    "training no-cost closeout receipt allows service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost closeout receipt summary has invalid closeout receipt manifests",
+    "training no-cost service lock check failed",
+    "training no-cost service lock report generation failed",
+    "training no-cost service lock report validation failed",
+    "training no-cost service lock report summary has invalid service lock reports",
+    "training no-cost service lock report summary validation failed",
+    "training no-cost operator handoff generation failed",
+    "training no-cost operator handoff validation failed",
+    "training no-cost operator handoff signoff is incomplete",
+    "training no-cost operator handoff signoff authorizes service resume, AWS cost increase, provider call, upload, execution, or model promotion",
+    "training no-cost operator handoff signoff summary has invalid signoffs",
+    "training no-cost operator handoff signoff summary validation failed",
+    "training no-cost operator handoff closeout receipt generation failed",
+    "training no-cost operator handoff closeout receipt validation failed",
+    "training no-cost operator handoff closeout receipt summary has invalid receipts",
+    "training no-cost operator handoff closeout receipt summary validation failed",
+    "training no-cost operator handoff closeout package generation failed",
+    "training no-cost operator handoff closeout package validation failed",
+    "training no-cost operator handoff closeout package summary has invalid packages",
+    "training no-cost operator handoff closeout package summary validation failed"
+  ],
+  "side_effect_boundary": {
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "aws_cost_increase_allowed": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  }
+}

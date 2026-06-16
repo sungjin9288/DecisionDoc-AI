@@ -1,0 +1,61 @@
+{
+  "created_at": "2026-06-15T00:00:00+09:00",
+  "next_step": "Use the generated summary as local evidence only; separate approval is still required before service resume or production verification.",
+  "phase": 366,
+  "report_type": "document_ops_phase366_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_contract",
+  "reporter": {
+    "accepts_files_or_directories": true,
+    "path": "scripts/summarize_documentops_phase364_validated_closure_receipt_summary_handoff_signoffs.py",
+    "read_only": true,
+    "sha256": "50255df6cdddb95dc7927dc95260d917f47d2b9f571cf301f27078996faf55f8",
+    "validates_each_signoff": true,
+    "writes_optional_summary_outputs": true
+  },
+  "source_generator": {
+    "atomic_write": true,
+    "path": "scripts/create_documentops_phase364_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py",
+    "refuses_overwrite_by_default": true,
+    "sha256": "ce5ec65aaa14d3b5df6d274553ce7d4d4713fe530208b5f80f299e14e8cddab6",
+    "validates_generated_record": true
+  },
+  "source_generator_contract": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase365_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json",
+    "service_operation_state": "freeze_preserved",
+    "sha256": "be354264ad7a8642b235ac8be8f3b8257ce844814e2c11175a5359f1f093afe9",
+    "validator_result": "pass"
+  },
+  "source_signoff_validator": {
+    "path": "scripts/validate_documentops_phase363_validated_closure_receipt_summary_handoff_signoff.py",
+    "sha256": "59b1db7944344c95d93d06df33f3c4e6f6462e591acbce30a751af1fe8b08ad8",
+    "validator_result": "pass"
+  },
+  "status": "validated_closure_receipt_summary_handoff_signoff_summary_reporter_ready_no_aws_no_training_authorization",
+  "summary_boundary": {
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "aws_cost_increase_allowed": false,
+    "aws_runtime_called": false,
+    "external_dataset_uploaded": false,
+    "model_promoted": false,
+    "production_download_open_verification_authorized": false,
+    "production_uat_reexecuted": false,
+    "production_ui_called": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "reads_local_signoff_records": true,
+    "service_resume_authorized": false,
+    "training_boundary": "not_authorized",
+    "training_execution_started": false,
+    "writes_summary_only": true
+  },
+  "summary_policy": {
+    "boundary_breaks_block_summary_ok": true,
+    "completed_signoffs_must_validate": true,
+    "pending_records_are_not_approval": true,
+    "readiness_accepted_status": "all_phase363_validated_closure_receipt_summary_handoff_signoffs_accepted_no_cost_boundary_preserved",
+    "readiness_pending_status": "pending_phase363_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization",
+    "require_complete_option_available": true
+  },
+  "summary_scope": "local_read_only_phase364_validated_closure_receipt_summary_handoff_signoff_summary"
+}

@@ -1,0 +1,10 @@
+{
+  "system": {
+    "tenant_id": "system",
+    "display_name": "System (Default)",
+    "allowed_bundles": [],
+    "custom_prompt_hints": {},
+    "created_at": "2026-06-09T05:11:28.220525+00:00",
+    "is_active": true
+  }
+}

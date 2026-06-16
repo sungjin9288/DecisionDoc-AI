@@ -80,6 +80,36 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
 
 
+def test_document_ops_run_supports_develop_quality_improvement(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "develop_quality_improvement",
+            "requirements": {
+                "title": "정책 보고서 품질 개선",
+                "draft": "현재 초안은 근거와 승인 질문이 섞여 있어 대표 검토 전 정리가 필요합니다.",
+                "goal": "검토 가능한 품질 개선본 작성",
+            },
+            "source_references": [{"id": "draft-review-note"}],
+            "capture_trajectory": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["skill_name"] == "develop-document-improver"
+    assert body["critique"]
+    assert body["revision_tasks"]
+    assert "개선안" in body["draft"]
+    assert body["qa"]["hard_gate_pass"] is True
+    assert body["trajectory_saved"] is True
+    assert body["trajectory"]["critique"] == body["critique"]
+    assert body["trajectory"]["revision_tasks"] == body["revision_tasks"]
+
+
 def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     created = client.post(

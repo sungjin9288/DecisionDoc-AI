@@ -1,0 +1,139 @@
+# Development Log
+
+## Portfolio Analysis - 2026-06-09
+
+- 프로젝트 현재 상태: FastAPI 기반 AI 문서 생성/협업 플랫폼 MVP 구현 후 고도화 중
+- 작업 범위: 애플리케이션 코드는 수정하지 않고 포트폴리오 분석용 Markdown 문서만 업데이트
+- repo 상태 메모: 분석 시점에 다수의 기존 수정/미추적 파일이 이미 존재했으며, 본 작업은 요청된 문서 파일 범위로만 제한
+- 구현 완료 기능:
+  - `/generate`, `/generate/stream`, `/generate/export`, `/generate/from-documents`, `/generate/from-pdf`
+  - bundle catalog와 `BundleSpec`/`DocumentSpec`
+  - Mock/OpenAI/Gemini/Claude/Local provider factory와 fallback chain
+  - local/S3 storage abstraction
+  - project, knowledge, approval, history/share, report workflow, G2B, health/metrics 관련 API
+  - Docker Compose, Dockerfile, AWS SAM 설정
+  - pytest와 smoke script 기반 검증 경로
+- 개발 중 기능:
+  - report quality learning/correction artifact workflow
+  - document ops agent와 trajectory/training artifact workflow
+  - fine-tuning/model registry 운영 흐름
+  - post-deploy evidence 자동화
+- 미구현 기능:
+  - 실제 사용자 성과 수치
+  - 공개 가능한 데모 스크린샷/영상
+  - 현재 운영 URL 접근성 검증 자료
+  - 본인 직접 구현 범위 정리 문서
+- 검증 필요 기능:
+  - live provider chain
+  - production deployment 접근 가능성
+  - tenant/SSO/billing 상용 운영성
+  - 사용자 피드백 기반 품질 개선 효과
+- 이력서 반영 가능 내용:
+  - FastAPI 기반 AI 문서 생성 API 개발 중
+  - provider/storage abstraction 설계
+  - bundle schema, Jinja2 template, validation/lint 기반 generation pipeline
+  - Docker/AWS SAM/pytest/smoke 기반 개발 및 검증 경로
+- README 보완 필요:
+  - 현재 README는 프로젝트 소개보다 운영 규칙 성격이 강함
+  - 구현 완료/개발 중/검증 필요 분리 필요
+  - 실행 예시, API 예시, screenshot, sample output 추가 필요
+- 면접 대비 필요 사항:
+  - 본인 직접 구현 범위와 대표 commit 정리
+  - `app/main.py`, `app/routers/generate.py`, `app/services/generation_service.py`, `app/providers/factory.py`, `app/storage/base.py`, `app/bundle_catalog/spec.py` 설명 준비
+  - 운영/성과/보안 관련 과장 표현 금지
+- 다음 작업:
+  - README 개선안 반영 여부 결정
+  - mock provider 기준 로컬 데모 실행 및 screenshot 확보
+  - 대표 API smoke 결과 저장
+  - 이력서 bullet에 들어갈 본인 기여 범위 확정
+- 분석 기준 파일:
+  - `README.md`
+  - `docs/README.md`
+  - `docs/architecture.md`
+  - `docs/v1_completion_snapshot.md`
+  - `requirements.txt`
+  - `Dockerfile`
+  - `docker-compose.yml`
+  - `infra/sam/template.yaml`
+  - `app/main.py`
+  - `app/routers/generate.py`
+  - `app/routers/report_workflows.py`
+  - `app/routers/g2b.py`
+  - `app/routers/health.py`
+  - `app/services/generation_service.py`
+  - `app/providers/factory.py`
+  - `app/storage/base.py`
+  - `app/storage/factory.py`
+  - `app/bundle_catalog/spec.py`
+  - `app/bundle_catalog/registry.py`
+  - `tests/`
+
+## Portfolio Package Export - 2026-06-09
+
+- 프로젝트 현재 상태: FastAPI 기반 AI 문서 생성/협업 플랫폼 MVP 구현 후 고도화 중
+- 구현 완료 기능:
+  - `/generate`, `/generate/stream`, `/generate/export`, `/generate/from-documents`, `/generate/from-pdf`
+  - bundle catalog와 `BundleSpec`/`DocumentSpec`
+  - Mock/OpenAI/Gemini/Claude/Local provider factory와 fallback chain
+  - local/S3 storage abstraction
+  - project, knowledge, approval, history/share, report workflow, G2B, health/metrics 관련 API
+  - Docker Compose, Dockerfile, AWS SAM 설정
+  - pytest와 smoke script 기반 검증 경로
+- 개발 중 기능:
+  - report quality learning/correction artifact workflow
+  - document ops agent와 trajectory/training artifact workflow
+  - fine-tuning/model registry 운영 흐름
+  - post-deploy evidence 자동화
+- 미구현 기능:
+  - 실제 사용자 성과 수치
+  - 공개 가능한 데모 스크린샷/영상
+  - 현재 운영 URL 접근성 검증 자료
+  - 본인 직접 구현 범위 정리 문서
+- 검증 필요 기능:
+  - live provider chain
+  - production deployment 접근 가능성
+  - tenant/SSO/billing 상용 운영성
+  - 사용자 피드백 기반 품질 개선 효과
+- 이력서 반영 가능 내용:
+  - FastAPI 기반 AI 문서 생성 API 개발 중
+  - provider/storage abstraction 설계
+  - bundle schema, Jinja2 template, validation/lint 기반 generation pipeline
+  - Docker/AWS SAM/pytest/smoke 기반 개발 및 검증 경로
+- README 보완 필요:
+  - 현재 README는 프로젝트 소개보다 운영 규칙 성격이 강함
+  - 구현 완료/개발 중/검증 필요 분리 필요
+  - 실행 예시, API 예시, screenshot, sample output 추가 필요
+- 면접 대비 필요 사항:
+  - 본인 직접 구현 범위와 대표 commit 정리
+  - `app/main.py`, `app/routers/generate.py`, `app/services/generation_service.py`, `app/providers/factory.py`, `app/storage/base.py`, `app/bundle_catalog/spec.py` 설명 준비
+  - 운영/성과/보안 관련 과장 표현 금지
+- 다음 작업:
+  - mock provider 기준 로컬 데모 실행 및 screenshot 확보
+  - 대표 API smoke 결과 저장
+  - 이력서 bullet에 들어갈 본인 기여 범위 확정
+- 분석 기준 파일:
+  - `README.md`
+  - `docs/project-card.md`
+  - `docs/case-study.md`
+  - `docs/resume-bullets.md`
+  - `docs/interview-story.md`
+  - `docs/roadmap.md`
+  - `docs/readme-improvement.md`
+  - `requirements.txt`
+  - `Dockerfile`
+  - `docker-compose.yml`
+  - `infra/sam/template.yaml`
+  - `app/main.py`
+  - `app/routers/generate.py`
+  - `app/services/generation_service.py`
+  - `app/providers/factory.py`
+  - `app/storage/base.py`
+  - `app/storage/factory.py`
+  - `app/bundle_catalog/spec.py`
+  - `app/bundle_catalog/registry.py`
+  - `tests/`
+- 생성한 포트폴리오 문서:
+  - `links.md`
+  - `portfolio_manifest.md`
+- 생성한 압축 파일:
+  - `_portfolio_export/decisiondoc_ai_portfolio_pack.zip`

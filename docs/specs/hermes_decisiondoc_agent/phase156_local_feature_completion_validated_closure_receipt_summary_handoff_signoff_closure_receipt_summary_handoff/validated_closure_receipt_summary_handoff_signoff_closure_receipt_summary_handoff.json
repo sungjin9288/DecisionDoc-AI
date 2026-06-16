@@ -1,0 +1,95 @@
+{
+  "report_type": "document_ops_phase156_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff",
+  "phase": 156,
+  "status": "local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-05T00:00:00+09:00",
+  "handoff_scope": "operator_handoff_for_validated_phase154_closure_receipt_summary",
+  "recommended_decision": "keep_service_frozen",
+  "source_summary_validation": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase155_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json",
+    "sha256": "20a01a8f47ab7691cade94b2677b0713f92a36b4113e24796772556f6cc5ff9c",
+    "validator": "scripts/validate_documentops_phase154_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary.py",
+    "validator_sha256": "945fca0353637ab1cb30026c942462c36e66b1e2484b0b55d3ed56bf01e6a1a9",
+    "summary_contract_path": "docs/specs/hermes_decisiondoc_agent/phase154_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json",
+    "summary_contract_sha256": "c457b643f9eaa9fc77e494df414bf13091e64adb375b2bad3e4633c4acab9b23",
+    "summary_reporter": "scripts/summarize_documentops_phase153_validated_closure_receipts.py",
+    "summary_reporter_sha256": "59e6be8fff66afd316abc416577d5ef0b1cf8e4a4e6bef7a606ec5464979da64",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "handoff_recipients": [
+    "release_owner",
+    "operator",
+    "product_pm_reviewer",
+    "ml_ai_owner",
+    "compliance_security_reviewer"
+  ],
+  "handoff_actions": [
+    {
+      "id": "generate_phase154_summary",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "run_phase155_validator",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "confirm_validated_local_phase154_summary",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "confirm_no_cost_boundary",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "preserve_service_freeze",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "require_separate_resume_approval",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    }
+  ],
+  "handoff_boundary": {
+    "local_phase154_validated_closure_receipt_summary_handoff_recorded": true,
+    "source_summary_validation_contract_valid": true,
+    "generated_summary_validation_passed": true,
+    "operator_handoff_ready": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_handoff": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Keep service frozen unless separate approval authorizes manual production download-open verification or service resume."
+}

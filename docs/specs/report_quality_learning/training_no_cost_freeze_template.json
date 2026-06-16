@@ -1,0 +1,82 @@
+{
+  "schema_version": "decisiondoc_report_quality_training_no_cost_freeze.v1",
+  "report_type": "report_quality_training_no_cost_freeze",
+  "freeze_id": "",
+  "generated_at": "",
+  "freeze_manifest_path": "",
+  "freeze_markdown_path": "",
+  "approval_record_template_path": "",
+  "approval_record_template_sha256": "",
+  "approval_record_template_validation": {},
+  "freeze_state": {
+    "freeze_only": true,
+    "status": "no_cost_hold",
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "approval_record_completed": false,
+    "service_operation_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "aws_runtime_enabled": false,
+    "aws_cost_increase_allowed": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "external_upload_allowed": false,
+    "provider_api_calls_allowed": false,
+    "provider_job_started": false,
+    "training_execution_allowed": false,
+    "model_promotion_allowed": false
+  },
+  "source_files": {},
+  "job_spec_snapshot": {},
+  "counts": {
+    "ready_artifacts": 0,
+    "completed_signoff_count": 0,
+    "source_file_count": 0,
+    "missing_file_count": 0
+  },
+  "operator_actions": [
+    "Keep this pipeline in no-cost hold until a separate human decision explicitly resumes work.",
+    "Do not deploy AWS resources, enable scheduled jobs, or start runtime services while this freeze is active.",
+    "Do not call provider APIs, upload datasets, create provider jobs, start training, or promote models while this freeze is active."
+  ],
+  "resume_requirements": [
+    "manual final approval record completed outside this template",
+    "AWS budget and runtime cost review completed",
+    "provider API key and dataset upload approval completed",
+    "offline eval and rollback plan confirmed before any training run"
+  ],
+  "cost_boundary": {
+    "reads_local_approval_record_template": false,
+    "writes_local_freeze_files": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "aws_runtime_enabled": false,
+    "aws_cost_increase_allowed": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  },
+  "generation_context": {
+    "freeze_scope": "Local no-cost freeze marker only; this artifact cannot grant approval, operate AWS resources, call providers, or start training."
+  },
+  "generation_boundary": {
+    "actual_training_approval_recorded": false,
+    "final_training_approval_granted": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_started": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "training_execution_started": false,
+    "model_promotion_started": false
+  }
+}

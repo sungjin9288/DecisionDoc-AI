@@ -26,8 +26,258 @@
 
 - [QUALITY_RUBRIC.md](./QUALITY_RUBRIC.md)
 - [PILOT_REVIEW_RUNBOOK.md](./PILOT_REVIEW_RUNBOOK.md)
+- [REVIEW_PACKET_EVIDENCE_RUNBOOK.md](./REVIEW_PACKET_EVIDENCE_RUNBOOK.md)
+- [review_packet_evidence_checklist.json](./review_packet_evidence_checklist.json)
+- [review_packet_signoff_template.json](./review_packet_signoff_template.json)
+- [training_discussion_decision_template.json](./training_discussion_decision_template.json)
+- [training_experiment_plan_review_template.json](./training_experiment_plan_review_template.json)
+- [training_final_approval_packet_review_template.json](./training_final_approval_packet_review_template.json)
+- [training_final_approval_record_template.json](./training_final_approval_record_template.json)
+- [training_no_cost_freeze_template.json](./training_no_cost_freeze_template.json)
+- [training_no_cost_freeze_handoff_signoff_template.json](./training_no_cost_freeze_handoff_signoff_template.json)
+- [training_no_cost_evidence_bundle_handoff_signoff_template.json](./training_no_cost_evidence_bundle_handoff_signoff_template.json)
 - [correction_artifact_template.json](./correction_artifact_template.json)
 - [validate_correction_artifact.py](./validate_correction_artifact.py)
+- [validate_review_packet.py](./validate_review_packet.py)
+  - Report Workflow UI의 `Review packet JSON` 다운로드 결과를 로컬에서 검증한다.
+  - Packet에 포함된 server preview artifact를 기존 correction artifact validator로 다시 검사한다.
+  - `--require-ready`를 붙이면 final-approved workflow, `learning_opt_in=true`, server preview artifact ready, checklist pass, no-training/no-upload/no-provider-call boundary까지 모두 요구한다.
+- `scripts/summarize_report_quality_review_packets.py`
+  - 다운로드한 여러 `Review packet JSON` 파일을 batch manifest와 markdown summary로 묶는다.
+  - local evidence 파일만 쓰며 server artifact 저장, dataset upload, provider fine-tune, training execution은 실행하지 않는다.
+- `scripts/export_report_quality_artifacts_from_review_packets.py`
+  - 검증된 `Review packet JSON`의 `preview_artifact`만 추출해 correction artifact JSONL을 만든다.
+  - 결과 JSONL은 기존 `validate_correction_artifact.py`와 `summarize_report_quality_artifacts.py` 흐름으로 다시 검증할 수 있다.
+  - local JSONL/manifest만 쓰며 server artifact 저장, dataset upload, provider fine-tune, training execution은 실행하지 않는다.
+- `scripts/build_report_quality_review_packet_evidence.py`
+  - Review packet batch summary, correction artifact JSONL export, artifact batch summary, aggregate pipeline manifest를 한 번에 만든다.
+  - 운영 전 로컬 evidence packet을 사람이 검토할 때 쓰며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_evidence.py`
+  - evidence pipeline manifest가 참조하는 파일 존재 여부, JSONL hash, stage readiness, no-side-effect boundary를 다시 검증한다.
+  - provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_handoff.py`
+  - 검증된 evidence pipeline manifest에서 reviewer handoff index와 handoff manifest를 생성한다.
+  - local handoff 파일만 쓰며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_handoff.py`
+  - handoff manifest가 참조하는 pipeline, index, handoff files, hash, reviewer actions, no-side-effect boundary를 다시 검증한다.
+  - provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_signoff.py`
+  - 검증된 handoff manifest에서 사람이 채울 pending sign-off record를 생성한다.
+  - handoff manifest path/hash만 자동으로 채우며 reviewer, decision, acknowledgement는 사람이 직접 완료해야 한다.
+  - local sign-off 파일만 쓰며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_signoff.py`
+  - 사람이 작성한 review packet handoff sign-off record를 검증한다.
+  - 완료된 sign-off도 evidence review 기록일 뿐이며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_signoffs.py`
+  - pending/completed review packet sign-off record들을 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 reviewer approval을 대신 기록하지 않으며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_readiness.py`
+  - evidence pipeline manifest와 sign-off summary를 함께 검증해 training discussion readiness manifest를 만든다.
+  - 이 readiness는 사람이 학습 실험 논의를 시작하기 위한 local gate이며 provider fine-tune, dataset upload, training execution은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_readiness.py`
+  - training discussion readiness manifest의 input hash, evidence 재검증, sign-off summary complete gate, no-side-effect boundary를 다시 확인한다.
+  - provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_discussion_handoff.py`
+  - 검증된 training readiness manifest에서 학습 논의용 local handoff manifest와 Markdown index를 만든다.
+  - handoff는 evidence/sign-off/readiness 파일 경로와 hash를 묶을 뿐이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_discussion_handoff.py`
+  - training discussion handoff manifest의 readiness hash, linked file hash, embedded validation, operator action, no-side-effect boundary를 다시 확인한다.
+  - provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_discussion_decision.py`
+  - 검증된 training discussion handoff manifest에서 사람이 채울 pending discussion decision record를 생성한다.
+  - decision은 future experiment plan draft 요청 여부만 기록할 수 있으며 provider fine-tune, dataset upload, training execution, model promotion은 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_discussion_decision.py`
+  - 사람이 작성한 discussion decision record의 participant, decision, requested next step, evidence review, acknowledgement, linked handoff hash, no-side-effect boundary를 검증한다.
+  - completed decision도 planning-only 기록이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_experiment_plan_draft.py`
+  - completed `plan_draft_requested` discussion decision에서 local training experiment plan draft manifest와 Markdown을 만든다.
+  - provider/base model/dataset/eval/parameter 후보를 계획 문서로만 묶으며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_experiment_plan_draft.py`
+  - plan draft의 linked decision/handoff/file hash, job spec, offline eval suite, execution step `not_started` 상태, no-side-effect boundary를 다시 검증한다.
+  - 이 validator도 local planning artifact만 확인하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_experiment_plan_review.py`
+  - 검증된 training experiment plan draft에서 사람이 채울 pending plan review record를 생성한다.
+  - review는 final approval packet을 준비할지 여부만 기록하며 provider fine-tune, dataset upload, training execution, provider job, model promotion은 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_experiment_plan_review.py`
+  - 사람이 작성한 plan review record의 reviewer, decision, requested next step, evidence review, acknowledgement, linked plan hash, no-side-effect boundary를 검증한다.
+  - completed review도 planning handoff 기록이며 provider fine-tune, dataset upload, training execution, provider job, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_final_approval_packet.py`
+  - completed `planning_complete` plan review에서 final approval packet manifest와 Markdown index를 만든다.
+  - 이 packet은 최종 승인자가 볼 evidence index일 뿐이며 final approval, provider fine-tune, dataset upload, provider job, training execution, model promotion은 기록하거나 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_final_approval_packet.py`
+  - final approval packet의 linked review/plan/file hash, required approver roles, not-started job spec snapshot, no-side-effect boundary를 다시 검증한다.
+  - `final_training_approval_granted=false`를 강제하며 provider fine-tune, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_final_approval_packet_review.py`
+  - 검증된 final approval packet에서 사람이 채울 pending packet review record를 생성한다.
+  - review는 별도 final approval record template 준비 여부만 기록하며 final approval, provider fine-tune, dataset upload, provider job, training execution, model promotion은 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_final_approval_packet_review.py`
+  - 사람이 작성한 packet review record의 reviewer, decision, requested next step, evidence review, acknowledgement, linked packet hash, no-side-effect boundary를 검증한다.
+  - completed review도 approval-record 준비 단계일 뿐이며 final approval, provider fine-tune, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_final_approval_record_template.py`
+  - completed `packet_review_complete` packet review에서 사람이 나중에 채울 pending final approval record template JSON/Markdown을 만든다.
+  - template은 최종 승인 입력 칸과 evidence hash를 준비할 뿐이며 actual final approval, provider fine-tune, dataset upload, provider job, training execution, model promotion은 기록하거나 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_final_approval_record_template.py`
+  - final approval record template의 linked packet review/packet/file hash, pending approver slots, not-started job spec snapshot, no-side-effect boundary를 검증한다.
+  - `template_only=true`와 `final_training_approval_granted=false`를 강제하며 provider fine-tune, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_freeze.py`
+  - pending final approval record template에서 현재 학습/운영 체인을 no-cost hold로 멈추는 freeze manifest와 Markdown을 만든다.
+  - freeze는 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 모두 금지하는 로컬 marker이며 비용 발생 작업을 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_freeze.py`
+  - freeze manifest의 linked approval record template hash, source file hash, not-started job spec snapshot, AWS/provider/training no-cost boundary를 검증한다.
+  - `freeze_only=true`와 `aws_cost_increase_allowed=false`를 강제하며 provider fine-tune, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_freezes.py`
+  - 하나 이상의 no-cost freeze manifest를 다시 검증하고 read-only summary JSON/Markdown으로 묶어 운영 인계와 감사용 evidence를 만든다.
+  - summary도 local 파일만 읽고 쓰며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff.py`
+  - 검증된 no-cost freeze summary에서 운영자가 보관할 handoff manifest와 Markdown을 만든다.
+  - handoff는 freeze summary와 freeze manifest hash를 묶는 인계 산출물일 뿐이며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff.py`
+  - no-cost freeze handoff의 summary hash, linked freeze manifest hash, source file hash, operator action, no-cost boundary를 다시 검증한다.
+  - handoff도 `aws_cost_increase_allowed=false`와 `training_execution_authorized=false`를 강제하며 외부 작업을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py`
+  - 검증된 no-cost freeze handoff에서 사람이 채울 pending sign-off record를 생성한다.
+  - sign-off는 handoff 검토 여부를 기록하기 위한 로컬 evidence일 뿐이며 서비스 재개, AWS runtime/cost, provider call, dataset upload, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py`
+  - 사람이 작성한 no-cost freeze handoff sign-off record의 reviewer, decision, evidence review, acknowledgement, handoff hash, no-cost boundary를 검증한다.
+  - completed sign-off도 freeze handoff review 기록일 뿐이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_archive_closure.py`
+  - completed no-cost freeze handoff sign-off에서 프로젝트 pause/archive closure manifest와 Markdown을 만든다.
+  - closure는 no-cost hold evidence를 보관하기 위한 로컬 산출물이며 서비스 재개, AWS runtime/cost, provider call, dataset upload, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_archive_closure.py`
+  - archive closure의 sign-off hash, handoff hash, source file hash, operator action, no-cost boundary를 검증한다.
+  - `archived_no_cost_hold` 상태와 `operation_resume_approved=false`를 강제하며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_archive_closures.py`
+  - 하나 이상의 no-cost archive closure manifest를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 pause/archive 상태 확인용 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle.py`
+  - 검증된 no-cost archive closure summary에서 최종 보관용 evidence bundle manifest와 Markdown을 만든다.
+  - bundle은 linked closure/source file hash를 묶는 로컬 checksum index일 뿐이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle.py`
+  - no-cost evidence bundle의 archive closure summary hash, linked closure/source file hash, operator action, no-cost boundary를 검증한다.
+  - `no_cost_evidence_bundle_ready` 상태와 `operation_resume_approved=false`를 강제하며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py`
+  - 검증된 no-cost evidence bundle에서 운영자 handoff manifest와 Markdown을 만든다.
+  - handoff는 final archive evidence를 전달하기 위한 로컬 산출물이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py`
+  - no-cost evidence bundle handoff의 bundle hash, linked source file hash, operator action, no-cost boundary를 검증한다.
+  - `no_cost_evidence_bundle_handoff_ready` 상태와 `operation_resume_approved=false`를 강제하며 AWS 비용 발생 작업, provider 호출, dataset upload, provider job, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py`
+  - 검증된 no-cost evidence bundle handoff에서 사람이 채울 pending sign-off record를 생성한다.
+  - sign-off는 final archive handoff 검토 여부를 기록하기 위한 로컬 evidence일 뿐이며 서비스 재개, AWS runtime/cost, provider call, dataset upload, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py`
+  - 사람이 작성한 no-cost evidence bundle handoff sign-off record의 reviewer, decision, evidence review, acknowledgement, handoff hash, no-cost boundary를 검증한다.
+  - completed sign-off도 final archive handoff review 기록일 뿐이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoffs.py`
+  - 하나 이상의 completed no-cost evidence bundle handoff sign-off를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 final archive handoff review 확인용 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_resume_guard.py`
+  - 검증된 no-cost evidence bundle handoff sign-off summary에서 resume guard manifest와 Markdown을 만든다.
+  - guard는 서비스 재개와 AWS 비용 증가가 별도 승인 전까지 차단되어 있음을 기록하는 로컬 산출물이며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_resume_guard.py`
+  - no-cost resume guard의 sign-off summary hash, linked source file hash, resume prerequisites, blocked actions, no-cost boundary를 검증한다.
+  - `no_cost_resume_guard_active` 상태와 `resume_blocked=true`, `operation_resume_approved=false`를 강제하며 서비스 재개, AWS 비용 증가, provider 호출, dataset upload, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_resume_guards.py`
+  - 하나 이상의 no-cost resume guard manifest를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 freeze/resume 차단 상태 확인용 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_ops_lock.py`
+  - 검증된 no-cost resume guard summary에서 ops lock manifest와 Markdown을 만든다.
+  - lock은 `service_operation_locked=true`, `resume_blocked=true`를 기록하는 로컬 운영 잠금 증거이며 AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_ops_lock.py`
+  - no-cost ops lock의 resume guard summary hash, linked guard/source file hash, lock controls, unlock prerequisites, no-cost boundary를 검증한다.
+  - `no_cost_ops_lock_active` 상태와 `service_operation_locked=true`를 강제하며 서비스 재개, AWS 비용 증가, provider 호출, dataset upload, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_ops_locks.py`
+  - 하나 이상의 no-cost ops lock manifest를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 운영 잠금 상태 확인용 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff.py`
+  - 검증된 no-cost ops lock summary에서 운영자 handoff manifest와 Markdown을 만든다.
+  - handoff는 서비스 운영 잠금 상태를 전달하기 위한 로컬 산출물이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff.py`
+  - no-cost ops lock handoff의 summary hash, linked ops lock/source file hash, operator action, no-cost boundary를 검증한다.
+  - `no_cost_ops_lock_handoff_ready`, `service_operation_locked=true`, `resume_blocked=true`를 강제하며 서비스 재개, AWS 비용 증가, provider 호출, dataset upload, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py`
+  - 검증된 no-cost ops lock handoff에서 사람이 채울 pending sign-off record를 생성한다.
+  - sign-off는 운영 잠금 handoff 검토 여부를 기록하기 위한 로컬 evidence일 뿐이며 서비스 재개, AWS runtime/cost, provider call, dataset upload, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py`
+  - 사람이 작성한 no-cost ops lock handoff sign-off record의 reviewer, decision, evidence review, acknowledgement, handoff hash, no-cost boundary를 검증한다.
+  - completed sign-off도 운영 잠금 handoff review 기록일 뿐이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoffs.py`
+  - 하나 이상의 completed no-cost ops lock handoff sign-off를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 서비스 운영 잠금 handoff review 확인용 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_final_hold.py`
+  - 검증된 no-cost ops lock handoff sign-off summary에서 최종 no-cost hold manifest와 Markdown을 만든다.
+  - final hold는 서비스 운영 잠금과 resume 차단을 보관하는 로컬 terminal evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_final_hold.py`
+  - final hold의 sign-off summary hash, linked source file hash, operator action, no-cost boundary를 검증한다.
+  - `no_cost_final_hold_active`, `service_operation_locked=true`, `resume_blocked=true`를 강제하며 서비스 재개, AWS 비용 증가, provider 호출, dataset upload, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_final_holds.py`
+  - 하나 이상의 no-cost final hold manifest를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 최종 pause/service-lock 상태 확인용 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_closeout_receipt.py`
+  - 검증된 no-cost final hold summary에서 closeout receipt manifest와 Markdown을 만든다.
+  - receipt는 현재 체인이 no-cost hold로 닫혔다는 로컬 확인서이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_closeout_receipt.py`
+  - closeout receipt의 final hold summary hash, linked source file hash, operator action, no-cost boundary를 검증한다.
+  - `no_cost_closeout_receipt_ready`, `service_operation_locked=true`, `resume_blocked=true`를 강제하며 서비스 재개, AWS 비용 증가, provider 호출, dataset upload, 학습 실행, 모델 승격을 기록하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_closeout_receipts.py`
+  - 하나 이상의 no-cost closeout receipt를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 최종 서비스 운영 잠금과 no-cost hold 상태를 재확인하는 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion은 실행하지 않는다.
+- `scripts/check_report_quality_review_packet_training_no_cost_service_lock.py`
+  - closeout receipt summary 하나를 읽어 최종 service lock, resume block, no-cost boundary가 유지되는지 빠르게 검사한다.
+  - check는 local read-only guard이며 파일 생성, 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_service_lock_report.py`
+  - 검증된 closeout receipt summary에서 operator 공유용 service lock report JSON/Markdown을 만든다.
+  - report는 최종 no-cost/service-lock 확인용 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report.py`
+  - service lock report의 closeout receipt summary hash, embedded check 결과, Markdown, operator action, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_service_lock_reports.py`
+  - 하나 이상의 검증된 service lock report를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 최종 service-lock report 상태를 모아 보는 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report_summary.py`
+  - service lock report summary의 readiness, counts, linked report states, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_operator_handoff.py`
+  - 검증된 service lock report summary에서 operator handoff manifest와 Markdown을 만든다.
+  - handoff는 최종 운영 전달용 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff.py`
+  - operator handoff의 summary hash, embedded validation, Markdown, operator action, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py`
+  - 검증된 operator handoff에서 사람이 검토할 pending sign-off JSON을 만든다.
+  - sign-off 생성은 로컬 review record만 만들며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py`
+  - operator handoff sign-off의 handoff hash, reviewer/completion fields, acknowledgement, no-cost boundary를 검증한다.
+  - validator는 completed sign-off도 review evidence로만 취급하며 서비스 재개, AWS 비용 증가, provider 호출, 학습 실행, 모델 승격을 승인하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_signoffs.py`
+  - 하나 이상의 completed operator handoff sign-off를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 operator handoff review 완료 상태를 모아 보는 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff_summary.py`
+  - operator handoff sign-off summary의 readiness, counts, linked signoff states, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py`
+  - 검증된 operator handoff sign-off summary에서 최종 operator handoff closeout receipt JSON/Markdown을 만든다.
+  - receipt는 operator review chain이 no-cost/service-lock 상태로 닫혔다는 로컬 evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py`
+  - operator handoff closeout receipt의 summary hash, Markdown, source files, operator actions, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS 비용 증가, provider 호출, 학습 실행, 모델 승격을 승인하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipts.py`
+  - 하나 이상의 operator handoff closeout receipt를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 operator handoff closeout receipt 상태를 한 번 더 모아 보는 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt_summary.py`
+  - operator handoff closeout receipt summary의 readiness, counts, linked receipt states, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py`
+  - 검증된 operator handoff closeout receipt summary에서 최종 operator handoff closeout package JSON/Markdown을 만든다.
+  - package는 운영자 전달용 로컬 evidence 묶음이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 승인하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py`
+  - operator handoff closeout package의 summary hash, Markdown, source files, operator actions, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS 비용 증가, provider 호출, 학습 실행, 모델 승격을 승인하지 않는다.
+- `scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_packages.py`
+  - 하나 이상의 operator handoff closeout package를 다시 검증하고 read-only summary JSON/Markdown으로 묶는다.
+  - summary는 최종 operator closeout package 상태를 모아 보는 로컬 audit evidence이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
+- `scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package_summary.py`
+  - operator handoff closeout package summary의 readiness, counts, linked package states, no-cost boundary를 검증한다.
+  - validator는 read-only이며 서비스 재개, AWS deploy/resource/runtime, provider API, dataset upload, provider job, training execution, model promotion을 실행하지 않는다.
 - `scripts/create_report_quality_pilot_pack.py`
   - 파일럿 리뷰용 non-ready draft artifact 3~5개와 `REVIEW_INDEX.md`를 생성한다.
   - 기본 출력은 `accepted_for_learning=false`, `human_review_status=pending` 이므로 학습 후보가 아니다.
@@ -143,6 +393,355 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
 10. `validate_correction_artifact.py`로 shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
+    - UI의 `Review packet JSON` 결과는 서버 저장 전 evidence packet이므로 아래처럼 별도 validator를 사용한다.
+      ```bash
+      python3 docs/specs/report_quality_learning/validate_review_packet.py \
+        report-quality-review-packet-<workflow_id>.json \
+        --require-ready
+      ```
+    - 여러 packet을 묶어 사람이 검토할 batch evidence로 남길 때는:
+      ```bash
+      python3 scripts/summarize_report_quality_review_packets.py \
+        downloads/report-quality-review-packet-*.json \
+        --batch-id pilot-rqp-001 \
+        --min-packets 3 \
+        --require-ready \
+        --output reports/report-quality/pilot-rqp-001-review-packet-manifest.json \
+        --markdown reports/report-quality/pilot-rqp-001-review-packet-summary.md
+      ```
+    - packet에서 correction artifact JSONL을 추출해 기존 artifact 검증 흐름으로 넘길 때는:
+      ```bash
+      python3 scripts/export_report_quality_artifacts_from_review_packets.py \
+        downloads/report-quality-review-packet-*.json \
+        --batch-id pilot-rqp-001 \
+        --min-packets 3 \
+        --output reports/report-quality/pilot-rqp-001-from-review-packets.jsonl \
+        --manifest reports/report-quality/pilot-rqp-001-from-review-packets-manifest.json
+
+      python3 docs/specs/report_quality_learning/validate_correction_artifact.py \
+        reports/report-quality/pilot-rqp-001-from-review-packets.jsonl \
+        --require-ready \
+        --min-records 3
+      ```
+    - packet evidence 전체를 한 번에 만들 때는:
+      ```bash
+      python3 scripts/build_report_quality_review_packet_evidence.py \
+        downloads/report-quality-review-packet-*.json \
+        --batch-id pilot-rqp-001 \
+        --min-packets 3 \
+        --output-root reports/report-quality
+
+      python3 scripts/validate_report_quality_review_packet_evidence.py \
+        reports/report-quality/pilot-rqp-001-evidence-pipeline-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_handoff.py \
+        reports/report-quality/pilot-rqp-001-evidence-pipeline-manifest.json
+
+      python3 scripts/validate_report_quality_review_packet_handoff.py \
+        reports/report-quality/pilot-rqp-001-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_signoff.py \
+        reports/report-quality/pilot-rqp-001-handoff-manifest.json
+
+      python3 scripts/validate_report_quality_review_packet_signoff.py \
+        reports/report-quality/pilot-rqp-001-signoff.json \
+        --require-complete
+
+      python3 scripts/summarize_report_quality_review_packet_signoffs.py \
+        reports/report-quality/pilot-rqp-001-signoff.json \
+        --require-complete \
+        --output reports/report-quality/pilot-rqp-001-signoff-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-signoff-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_readiness.py \
+        reports/report-quality/pilot-rqp-001-evidence-pipeline-manifest.json \
+        reports/report-quality/pilot-rqp-001-signoff-summary.json \
+        --min-ready-artifacts 3 \
+        --output reports/report-quality/pilot-rqp-001-training-readiness-manifest.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-readiness.md
+
+      python3 scripts/validate_report_quality_review_packet_training_readiness.py \
+        reports/report-quality/pilot-rqp-001-training-readiness-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_discussion_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-readiness-manifest.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-discussion-handoff-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-discussion-handoff.md
+
+      python3 scripts/validate_report_quality_review_packet_training_discussion_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-discussion-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_discussion_decision.py \
+        reports/report-quality/pilot-rqp-001-training-discussion-handoff-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-discussion-decision.json
+
+      python3 scripts/validate_report_quality_review_packet_training_discussion_decision.py \
+        reports/report-quality/pilot-rqp-001-training-discussion-decision.json \
+        --require-complete
+
+      python3 scripts/create_report_quality_review_packet_training_experiment_plan_draft.py \
+        reports/report-quality/pilot-rqp-001-training-discussion-decision.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-experiment-plan-draft-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-experiment-plan-draft.md
+
+      python3 scripts/validate_report_quality_review_packet_training_experiment_plan_draft.py \
+        reports/report-quality/pilot-rqp-001-training-experiment-plan-draft-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_experiment_plan_review.py \
+        reports/report-quality/pilot-rqp-001-training-experiment-plan-draft-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-experiment-plan-review.json
+
+      python3 scripts/validate_report_quality_review_packet_training_experiment_plan_review.py \
+        reports/report-quality/pilot-rqp-001-training-experiment-plan-review.json \
+        --require-complete
+
+      python3 scripts/create_report_quality_review_packet_training_final_approval_packet.py \
+        reports/report-quality/pilot-rqp-001-training-experiment-plan-review.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-final-approval-packet-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-final-approval-packet.md
+
+      python3 scripts/validate_report_quality_review_packet_training_final_approval_packet.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-packet-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_final_approval_packet_review.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-packet-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-final-approval-packet-review.json
+
+      python3 scripts/validate_report_quality_review_packet_training_final_approval_packet_review.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-packet-review.json \
+        --require-complete
+
+      python3 scripts/create_report_quality_review_packet_training_final_approval_record_template.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-packet-review.json \
+        --output reports/report-quality/pilot-rqp-001-training-final-approval-record-template.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-final-approval-record-template.md
+
+      python3 scripts/validate_report_quality_review_packet_training_final_approval_record_template.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-record-template.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_freeze.py \
+        reports/report-quality/pilot-rqp-001-training-final-approval-record-template.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-freeze-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-freeze.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_freezes.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-freeze-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-freeze-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-signoff.json
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_freeze_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-signoff.json \
+        --require-complete
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_archive_closure.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-freeze-handoff-signoff.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_archive_closure.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_archive_closures.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-archive-closure-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-manifest.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff.json
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff.json \
+        --require-complete
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_evidence_bundle_handoff_signoffs.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_resume_guard.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff-summary.json \
+        --summary-markdown reports/report-quality/pilot-rqp-001-training-no-cost-evidence-bundle-handoff-signoff-summary.md \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_resume_guard.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_resume_guards.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-summary.json \
+        --summary-markdown reports/report-quality/pilot-rqp-001-training-no-cost-resume-guard-summary.md \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_ops_locks.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-summary.json \
+        --summary-markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-summary.md \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff.json
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff.json \
+        --require-complete
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_ops_lock_handoff_signoffs.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_final_hold.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff-summary.json \
+        --summary-markdown reports/report-quality/pilot-rqp-001-training-no-cost-ops-lock-handoff-signoff-summary.md \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-final-hold.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_final_hold.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_final_holds.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-summary.md
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_closeout_receipt.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-summary.json \
+        --summary-markdown reports/report-quality/pilot-rqp-001-training-no-cost-final-hold-summary.md \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_closeout_receipt.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_closeout_receipts.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-summary.md
+
+      python3 scripts/check_report_quality_review_packet_training_no_cost_service_lock.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-summary.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_service_lock_report.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-closeout-receipt-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_service_lock_reports.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report-summary.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_service_lock_report_summary.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report-summary.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-service-lock-report-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-manifest.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff.json
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_signoffs.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff-summary.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_signoff_summary.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff-summary.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-signoff-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipts.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-summary.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_receipt_summary.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-summary.json
+
+      python3 scripts/create_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-receipt-summary.json \
+        --output-manifest reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-manifest.json \
+        --output-markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-manifest.json
+
+      python3 scripts/summarize_report_quality_review_packet_training_no_cost_operator_handoff_closeout_packages.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-manifest.json \
+        --output reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-summary.json \
+        --markdown reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-summary.md
+
+      python3 scripts/validate_report_quality_review_packet_training_no_cost_operator_handoff_closeout_package_summary.py \
+        reports/report-quality/pilot-rqp-001-training-no-cost-operator-handoff-closeout-package-summary.json
+      ```
 11. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
    ```bash
    python3 scripts/sync_report_quality_pilot_pack.py \

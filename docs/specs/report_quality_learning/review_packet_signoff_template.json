@@ -1,0 +1,38 @@
+{
+  "schema_version": "decisiondoc_report_quality_review_packet_signoff.v1",
+  "signoff_id": "rqp_signoff_TEMPLATE",
+  "created_at": "",
+  "handoff_manifest_path": "",
+  "handoff_manifest_sha256": "",
+  "reviewer": {
+    "name": "",
+    "title_or_team": "",
+    "reviewed_at": ""
+  },
+  "decision": "pending",
+  "evidence_reviewed": [],
+  "findings": {
+    "summary": "",
+    "changes_requested": [],
+    "residual_risks": []
+  },
+  "acknowledgements": {
+    "review_packet_summary_checked": false,
+    "artifact_batch_summary_checked": false,
+    "pipeline_manifest_validated": false,
+    "artifact_jsonl_validated": false,
+    "no_training_authorized": false,
+    "no_dataset_upload_authorized": false,
+    "no_provider_fine_tune_authorized": false,
+    "no_model_promotion_authorized": false
+  },
+  "signoff_boundary": {
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "training_execution_authorized": false,
+    "model_promotion_authorized": false
+  }
+}

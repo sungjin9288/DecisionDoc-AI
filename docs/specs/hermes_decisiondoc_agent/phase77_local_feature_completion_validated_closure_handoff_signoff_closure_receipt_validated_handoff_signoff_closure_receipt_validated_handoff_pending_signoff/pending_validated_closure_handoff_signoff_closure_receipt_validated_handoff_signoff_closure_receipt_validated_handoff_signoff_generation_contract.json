@@ -1,0 +1,68 @@
+{
+  "report_type": "document_ops_phase77_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_pending_signoff_generation_contract",
+  "phase": 77,
+  "status": "validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_pending_signoff_generator_ready_no_aws_no_training_authorization",
+  "created_at": "2026-05-28T00:00:00+09:00",
+  "generation_scope": "local_fillable_pending_validated_closure_receipt_validated_handoff_summary_handoff_signoff_record_generation",
+  "source_template": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase76_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff_template.json",
+    "sha256": "93880e5fac2727d15b0e826ad793f7bbfabcf0ded6a95d21c569011896b94de4",
+    "validator": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_signoff.py",
+    "validator_sha256": "a0792668ec8171aadfa10b1deb93f5c393d450e041420929a6e1dee8f5b06bbb",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "source_handoff": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase75_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff/validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff.json",
+    "sha256": "209c59627bb761190ce751623badb199cf2928a6a78dffc288c59dba0aeffe9c",
+    "validator": "scripts/validate_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff.py",
+    "validator_sha256": "a742161dc28329022faba77f6dbee82e29435a5da2a2b288c203eccbeb5cfd19",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "generator": {
+    "path": "scripts/create_documentops_local_feature_completion_validated_closure_handoff_signoff_closure_receipt_validated_handoff_signoff_closure_receipt_validated_handoff_pending_signoff.py",
+    "sha256": "c5e8398b0df52210dc7f057ec5447a06640a7ac9bcf5d4e53d6f953f7920525f",
+    "default_output": "local_json_file",
+    "atomic_write": true,
+    "validates_source_template": true,
+    "validates_generated_record": true,
+    "refuses_overwrite_by_default": true
+  },
+  "generated_record_policy": {
+    "decision": "pending",
+    "reviewer_fields_blank": true,
+    "acknowledgements_false": true,
+    "evidence_reviewed_empty": true,
+    "requires_human_completion": true,
+    "completed_signoff_requires_phase76_validator": true
+  },
+  "generation_boundary": {
+    "local_pending_record_generation": true,
+    "evidence_only_signoff": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "A human reviewer fills the generated pending record and runs the Phase 76 validator with --require-complete before treating it as completed evidence."
+}

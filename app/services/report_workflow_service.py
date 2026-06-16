@@ -279,6 +279,52 @@ class ReportWorkflowService:
             "persisted": True,
         }
 
+    def preview_develop_quality_improvement(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        request_id: str,
+        document_ops_service: Any,
+        focus: str = "보고서 품질 개선",
+        additional_notes: str = "",
+        capture_trajectory: bool = False,
+    ) -> dict[str, Any]:
+        rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        if rec.planning is None and not rec.slides:
+            raise ValueError("Develop 품질 개선 preview는 기획안 또는 장표 초안 생성 후 실행할 수 있습니다.")
+        payload = self._build_develop_quality_payload(
+            rec,
+            focus=focus,
+            additional_notes=additional_notes,
+            capture_trajectory=capture_trajectory,
+        )
+        result = document_ops_service.run(
+            payload,
+            tenant_id=tenant_id,
+            request_id=request_id,
+        )
+        return {
+            "report_type": "report_workflow_develop_quality_preview",
+            "persisted": False,
+            "report_workflow": self._develop_quality_workflow_summary(rec),
+            "document_ops_request": {
+                "task_type": payload["task_type"],
+                "skill_name": payload["skill_name"],
+                "capture_trajectory": payload["capture_trajectory"],
+                "source_reference_count": len(payload["source_references"]),
+                "source_summary_count": len(payload["source_summaries"]),
+            },
+            "develop_result": result,
+            "training_boundary": {
+                "training_execution_authorized": False,
+                "external_dataset_upload_authorized": False,
+                "provider_fine_tune_api_call_authorized": False,
+                "provider_job_started": False,
+                "model_promotion_authorized": False,
+            },
+        }
+
     @staticmethod
     def _quality_correction_artifact_row(
         rec: ReportWorkflowRecord,
@@ -327,6 +373,131 @@ class ReportWorkflowService:
         if include_artifact:
             row["artifact"] = artifact
         return row
+
+    def _build_develop_quality_payload(
+        self,
+        rec: ReportWorkflowRecord,
+        *,
+        focus: str,
+        additional_notes: str,
+        capture_trajectory: bool,
+    ) -> dict[str, Any]:
+        draft = self._report_workflow_current_draft(rec)
+        source_references = self._report_workflow_source_references(rec)
+        source_summaries = self._report_workflow_source_summaries(rec)
+        return {
+            "task_type": "develop_quality_improvement",
+            "skill_name": "develop-document-improver",
+            "requirements": {
+                "title": f"{rec.title} 품질 개선",
+                "goal": str(focus or rec.goal or "보고서 품질 개선").strip(),
+                "current_draft": draft,
+                "draft": draft,
+                "improvement_goal": str(focus or "보고서 품질 개선").strip(),
+                "additional_notes": str(additional_notes or "").strip(),
+                "workflow_status": rec.status,
+                "client": rec.client,
+                "audience": rec.audience,
+            },
+            "project_context": {
+                "report_workflow_id": rec.report_workflow_id,
+                "workflow_status": rec.status,
+                "report_type": rec.report_type,
+                "client": rec.client,
+                "audience": rec.audience,
+                "learning_opt_in": rec.learning_opt_in,
+                "current_plan_version": rec.current_plan_version,
+                "current_slide_version": rec.current_slide_version,
+            },
+            "source_summaries": source_summaries,
+            "source_references": source_references,
+            "capture_trajectory": capture_trajectory,
+        }
+
+    @staticmethod
+    def _report_workflow_current_draft(rec: ReportWorkflowRecord) -> str:
+        docs = ReportWorkflowService._approval_docs(rec)
+        parts = [
+            f"# Report Workflow 품질 개선 대상: {rec.title}",
+            "",
+            f"- 목표: {rec.goal}",
+            f"- 고객/대상: {rec.client or 'n/a'} / {rec.audience or 'n/a'}",
+            f"- 상태: {rec.status}",
+            "",
+        ]
+        for doc in docs:
+            markdown = str(doc.get("markdown") or "").strip()
+            if markdown:
+                parts.extend([f"## {doc.get('title') or doc.get('doc_type')}", markdown, ""])
+        return "\n".join(parts).strip()
+
+    @staticmethod
+    def _report_workflow_source_references(rec: ReportWorkflowRecord) -> list[dict[str, str]]:
+        refs = [
+            {"id": f"report_workflow:{rec.report_workflow_id}", "title": rec.title},
+        ]
+        if rec.planning is not None:
+            refs.append(
+                {
+                    "id": f"report_workflow:{rec.report_workflow_id}:planning:v{rec.current_plan_version}",
+                    "title": f"{rec.title} planning v{rec.current_plan_version}",
+                }
+            )
+        if rec.slides:
+            refs.append(
+                {
+                    "id": f"report_workflow:{rec.report_workflow_id}:slides:v{rec.current_slide_version}",
+                    "title": f"{rec.title} slides v{rec.current_slide_version}",
+                }
+            )
+        for ref in rec.source_refs:
+            label = str(ref or "").strip()
+            if label:
+                refs.append({"id": label, "title": label})
+        seen: set[str] = set()
+        deduped: list[dict[str, str]] = []
+        for item in refs:
+            if item["id"] in seen:
+                continue
+            seen.add(item["id"])
+            deduped.append(item)
+        return deduped
+
+    @staticmethod
+    def _report_workflow_source_summaries(rec: ReportWorkflowRecord) -> list[str]:
+        summaries = [
+            f"workflow_status={rec.status}",
+            f"goal={rec.goal}",
+        ]
+        if rec.planning is not None:
+            summaries.extend(
+                [
+                    f"planning.objective={rec.planning.objective}",
+                    f"planning.executive_message={rec.planning.executive_message}",
+                    "planning.quality_bar=" + " | ".join(rec.planning.quality_bar),
+                ]
+            )
+        if rec.slides:
+            summaries.append(
+                "slides="
+                + " | ".join(
+                    f"{slide.page}. {slide.title}: {slide.body[:120]}"
+                    for slide in sorted(rec.slides, key=lambda item: item.page)
+                )
+            )
+        return [item for item in summaries if str(item or "").strip()]
+
+    @staticmethod
+    def _develop_quality_workflow_summary(rec: ReportWorkflowRecord) -> dict[str, Any]:
+        return {
+            "report_workflow_id": rec.report_workflow_id,
+            "title": rec.title,
+            "status": rec.status,
+            "learning_opt_in": rec.learning_opt_in,
+            "current_plan_version": rec.current_plan_version,
+            "current_slide_version": rec.current_slide_version,
+            "slide_count": len(rec.slides),
+        }
 
     def list_quality_correction_artifacts(
         self,

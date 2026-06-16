@@ -1,0 +1,7 @@
+{
+  "title": "Portfolio Evidence Demo",
+  "goal": "Validate implemented document generation with mock provider.",
+  "context": "Evidence collection run for portfolio review. No private data is included.",
+  "doc_types": ["adr", "onepager", "eval_plan", "ops_checklist"],
+  "bundle_type": "tech_decision"
+}

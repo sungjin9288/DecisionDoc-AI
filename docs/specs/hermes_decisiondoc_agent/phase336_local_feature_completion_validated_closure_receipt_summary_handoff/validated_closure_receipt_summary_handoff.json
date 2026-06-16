@@ -1,0 +1,94 @@
+{
+  "created_at": "2026-06-13T00:00:00+09:00",
+  "handoff_actions": [
+    {
+      "description": "Generate the local Phase 334 closure receipt summary from Phase 333 receipt evidence.",
+      "id": "generate_phase334_summary",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "description": "Run the local Phase 335 summary validator against the generated Phase 334 summary JSON.",
+      "id": "run_phase335_validator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "description": "Confirm the generated Phase 334 summary validates as local no-cost evidence.",
+      "id": "confirm_validated_local_phase334_summary",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "description": "Confirm the no-cost/no-training boundary remains intact.",
+      "id": "confirm_no_cost_boundary",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "description": "Preserve service freeze after the local handoff.",
+      "id": "preserve_service_freeze",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "description": "Require separate explicit approval before any service resume or production verification.",
+      "id": "require_separate_resume_approval",
+      "required": true,
+      "side_effect": false
+    }
+  ],
+  "handoff_boundary": {
+    "actual_reviewer_approval_recorded_by_handoff": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "aws_runtime_called": false,
+    "cloudwatch_polling_started": false,
+    "external_dataset_uploaded": false,
+    "generated_summary_validation_passed": true,
+    "local_phase334_validated_closure_receipt_summary_handoff_recorded": true,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "operator_handoff_ready": true,
+    "production_download_open_verification_authorized": false,
+    "production_uat_reexecuted": false,
+    "production_ui_called": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "resume_requires_separate_approval": true,
+    "scheduled_job_enabled": false,
+    "service_freeze_preserved": true,
+    "service_resume_authorized": false,
+    "source_summary_validation_contract_valid": true,
+    "training_boundary": "not_authorized",
+    "training_execution_started": false
+  },
+  "handoff_recipients": [
+    "release_owner",
+    "operator",
+    "product_pm_reviewer",
+    "ml_ai_owner",
+    "compliance_security_reviewer"
+  ],
+  "handoff_scope": "operator_handoff_for_validated_phase334_closure_receipt_summary",
+  "phase": 336,
+  "recommended_decision": "keep_service_frozen",
+  "report_type": "document_ops_phase336_local_feature_completion_validated_closure_receipt_summary_handoff",
+  "source_summary_validation": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase335_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json",
+    "service_operation_state": "freeze_preserved",
+    "sha256": "068cfbe9f4146a4a514e8382fcea120d4063f7849acd155cf08fc89a7f3c47f0",
+    "summary_contract_path": "docs/specs/hermes_decisiondoc_agent/phase334_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json",
+    "summary_contract_sha256": "b0766f9a2506f3f38a17c19e176eeffba29bbe4f30b9e7b96e79a40a3cf27b44",
+    "summary_reporter": "scripts/summarize_documentops_phase333_validated_closure_receipts.py",
+    "summary_reporter_sha256": "d8623904c77073c3653fa9552b415afdde1b3d548363281e78c1ec32d921ed11",
+    "validator": "scripts/validate_documentops_phase334_validated_closure_receipt_summary.py",
+    "validator_result": "pass",
+    "validator_sha256": "5b7b2cbfe89df41ae343dd038a6b1994b8d6b35893d03e9ac8c919b7da16ea86"
+  },
+  "status": "local_feature_completion_validated_closure_receipt_summary_handoff_ready_no_aws_no_training_authorization"
+}

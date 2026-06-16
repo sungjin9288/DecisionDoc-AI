@@ -203,7 +203,46 @@ class MockProvider(Provider):
                 if isinstance(item, dict) and (item.get("id") or item.get("title") or item.get("path"))
             ]
             gaps = [] if source_labels else ["공식 근거 또는 기준 문서 확인 필요"]
-            if task_type == "evidence_gap_review":
+            if task_type == "develop_quality_improvement":
+                current_draft = str(
+                    requirements.get("draft")
+                    or requirements.get("current_draft")
+                    or requirements.get("goal")
+                    or ""
+                )
+                critique = [
+                    "승인자가 먼저 판단해야 할 질문과 권고가 초안 앞부분에 충분히 드러나야 합니다.",
+                    "확인된 근거, 가정, TODO가 섞이면 학습 후보와 제출 문서 모두에서 리스크가 커집니다.",
+                    "운영 책임, 개인정보, 보안, 로그/감사 항목은 별도 검토 지점으로 분리해야 합니다.",
+                ]
+                revision_tasks = [
+                    "핵심 판단을 첫 섹션으로 이동하고 승인 질문을 명시합니다.",
+                    "출처가 없는 수치, 일정, 성과 표현은 TODO 또는 가정으로 낮춥니다.",
+                    "남은 source gap과 owner gap을 문서 끝에 별도 정리합니다.",
+                ]
+                source_note = "확인된 source reference를 기준으로 개선합니다." if source_labels else "source reference가 없어 확인 필요 항목을 TODO로 유지합니다."
+                draft = (
+                    f"# {title} 개선안\n\n"
+                    "## 품질 개선 요약\n"
+                    f"{goal}에 맞춰 기존 초안의 판단 순서, 근거 구분, 운영 리스크를 다시 정리합니다. {source_note}\n\n"
+                    "## 개선본\n"
+                    "- 승인 질문: 현재 제안이 실행 가능한 의사결정 단위인지 검토합니다.\n"
+                    "- 근거 상태: confirmed, assumption, TODO를 분리하고 출처 없는 표현은 단정하지 않습니다.\n"
+                    "- 운영 관점: 개인정보, 보안, 운영책임, 로그/감사, 변경관리 항목을 후속 검토 대상으로 둡니다.\n\n"
+                    "## 기존 초안 반영\n"
+                    f"{_ctx_excerpt(current_draft, 360) if current_draft else '기존 초안 본문은 제공되지 않았으므로 개선 방향만 제시합니다.'}\n\n"
+                    "## 남은 리스크\n"
+                    "source gap, owner gap, 승인 전 검토 범위를 문서 리뷰 단계에서 다시 확인합니다."
+                )
+            elif task_type == "evidence_gap_review":
+                critique = [
+                    "초안의 수치, 일정, 기관명은 source-backed claim인지 재확인이 필요합니다.",
+                    "confirmed와 TODO가 섞이지 않도록 제출 전 evidence status를 분리해야 합니다.",
+                ]
+                revision_tasks = [
+                    "확인된 claim만 confirmed로 유지합니다.",
+                    "출처가 없는 항목은 TODO/source-needed로 이동합니다.",
+                ]
                 draft = (
                     f"# {title}\n\n"
                     "## 근거 점검 결과\n"
@@ -213,6 +252,14 @@ class MockProvider(Provider):
                     "\n## 공유 판단\n근거가 확인되지 않은 항목은 단정 표현을 피하고 TODO로 분리합니다."
                 )
             elif task_type == "decision_brief":
+                critique = [
+                    "결정 질문과 권고가 앞부분에서 바로 확인되어야 합니다.",
+                    "남은 TODO를 리스크와 다음 액션으로 연결해야 합니다.",
+                ]
+                revision_tasks = [
+                    "권고안을 첫 섹션에 배치합니다.",
+                    "선택지, 리스크, 다음 owner gap을 짧게 정리합니다.",
+                ]
                 draft = (
                     f"# {title}\n\n"
                     f"## 결정 필요\n{goal}\n\n"
@@ -220,6 +267,14 @@ class MockProvider(Provider):
                     "## 리스크\n공식 근거가 없는 수치나 성과 주장은 제출 문서에서 단정하지 않습니다."
                 )
             else:
+                critique = [
+                    "문제, 근거, 실행 경로, 운영 책임이 승인 흐름에 맞게 연결되어야 합니다.",
+                    "정책 문서에서 개인정보, 보안, 로그/감사 검토가 누락되지 않아야 합니다.",
+                ]
+                revision_tasks = [
+                    "승인 질문과 정책 필요성을 앞부분에 배치합니다.",
+                    "근거 상태와 운영 리스크를 별도 섹션으로 분리합니다.",
+                ]
                 draft = (
                     f"# {title}\n\n"
                     f"## 핵심 판단\n{goal}을 달성하기 위해 문제, 근거, 실행 경로, 운영 책임을 분리합니다.\n\n"
@@ -234,6 +289,8 @@ class MockProvider(Provider):
                     "확인된 근거, 가정, TODO를 구분합니다.",
                     "정책 논리와 운영 절차를 연결해 공유 가능한 초안을 작성합니다.",
                 ],
+                "critique": critique,
+                "revision_tasks": revision_tasks,
                 "draft": draft,
                 "evidence_status": {
                     "confirmed": source_labels,

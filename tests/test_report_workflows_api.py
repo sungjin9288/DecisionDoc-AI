@@ -318,6 +318,43 @@ def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypat
     assert _contains_key(stored_artifact, "content_base64") is False
 
 
+def test_report_workflow_develop_quality_preview_runs_document_ops_agent(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2, source_refs=["source-report"])
+    workflow_id = created["report_workflow_id"]
+    client.post(f"/report-workflows/{workflow_id}/planning/generate")
+    client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
+    slides = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={})
+    assert slides.status_code == 200
+
+    preview = client.post(
+        f"/report-workflows/{workflow_id}/develop-quality/preview",
+        json={
+            "username": "pm-reviewer",
+            "focus": "대표 승인 전 보고서 품질 개선",
+            "additional_notes": "논리와 근거 구분을 먼저 확인",
+            "capture_trajectory": False,
+        },
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["report_type"] == "report_workflow_develop_quality_preview"
+    assert body["persisted"] is False
+    assert body["report_workflow"]["report_workflow_id"] == workflow_id
+    assert body["document_ops_request"]["task_type"] == "develop_quality_improvement"
+    assert body["document_ops_request"]["skill_name"] == "develop-document-improver"
+    assert body["document_ops_request"]["source_reference_count"] >= 3
+    result = body["develop_result"]
+    assert result["skill_name"] == "develop-document-improver"
+    assert result["task_type"] == "develop_quality_improvement"
+    assert result["critique"]
+    assert result["revision_tasks"]
+    assert result["qa"]["hard_gate_pass"] is True
+    assert result["trajectory_saved"] is False
+    assert body["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
+
+
 def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client, slide_count=2, learning_opt_in=True)

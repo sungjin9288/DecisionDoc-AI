@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-06-15T00:00:00+09:00",
+  "phase": 389,
+  "report_type": "document_ops_phase389_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract",
+  "source_summary_contract": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase388_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json",
+    "service_operation_state": "freeze_preserved",
+    "sha256": "b18c9cf499b97108e84ace8f2312e64e859e5fe624093c272d41c97367e674b4",
+    "source_receipt_validator": "scripts/validate_documentops_phase386_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py",
+    "source_receipt_validator_sha256": "1ea8ace700eac386dbb9b22ea6912c2f4a00e17ad9c6aea88da40cd17d0c1dda",
+    "summary_reporter": "scripts/summarize_documentops_phase387_validated_closure_receipts.py",
+    "summary_reporter_sha256": "77682f90b9ab20f2ac9cb099d9849e79c7dc7e66f985dd09165ddc0c688dad23"
+  },
+  "status": "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validator_ready_no_aws_no_training_authorization",
+  "summary_validator": {
+    "checks_embedded_validation": true,
+    "checks_linked_receipt_hashes": true,
+    "checks_summary_counts": true,
+    "path": "scripts/validate_documentops_phase388_validated_closure_receipt_summary.py",
+    "reads_phase388_summary": true,
+    "revalidates_linked_phase387_receipts": true,
+    "sha256": "d5355f703f92b195c92f956731eeb337170cb901fb8ab77f9ffe72c8a57c30d8",
+    "supports_json_output": true,
+    "writes_repo_files": false
+  },
+  "validation_boundary": {
+    "actual_reviewer_approval_recorded_by_summary": false,
+    "actual_reviewer_approval_recorded_by_validator": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_authorized": false,
+    "aws_runtime_called": false,
+    "external_dataset_uploaded": false,
+    "model_promoted": false,
+    "production_uat_reexecuted": false,
+    "production_ui_called": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "read_only_summary_validation": true,
+    "resume_requires_separate_approval": true,
+    "service_freeze_preserved": true,
+    "service_resume_authorized": false,
+    "training_boundary": "not_authorized",
+    "training_execution_authorized": false,
+    "training_execution_started": false
+  },
+  "validation_scope": "local_read_only_phase388_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation"
+}

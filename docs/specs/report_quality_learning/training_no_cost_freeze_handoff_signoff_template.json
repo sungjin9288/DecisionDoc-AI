@@ -1,0 +1,48 @@
+{
+  "schema_version": "decisiondoc_report_quality_training_no_cost_freeze_handoff_signoff.v1",
+  "signoff_id": "rqp_training_no_cost_freeze_handoff_signoff_TEMPLATE",
+  "created_at": "",
+  "handoff_manifest_path": "",
+  "handoff_manifest_sha256": "",
+  "reviewer": {
+    "name": "",
+    "title_or_team": "",
+    "reviewed_at": ""
+  },
+  "decision": "pending",
+  "evidence_reviewed": [],
+  "findings": {
+    "summary": "",
+    "changes_requested": [],
+    "residual_risks": []
+  },
+  "acknowledgements": {
+    "freeze_handoff_reviewed": false,
+    "freeze_summary_validated": false,
+    "linked_freeze_manifests_checked": false,
+    "aws_no_cost_boundary_acknowledged": false,
+    "no_runtime_services_acknowledged": false,
+    "no_provider_calls_acknowledged": false,
+    "no_training_execution_acknowledged": false,
+    "no_model_promotion_acknowledged": false,
+    "resume_requires_separate_approval_acknowledged": false
+  },
+  "signoff_boundary": {
+    "actual_operation_resume_approved": false,
+    "service_operation_authorized": false,
+    "server_file_written": false,
+    "persisted_learning_artifact": false,
+    "aws_deploy_authorized": false,
+    "aws_resource_creation_authorized": false,
+    "aws_runtime_authorized": false,
+    "aws_cost_increase_authorized": false,
+    "scheduled_job_authorized": false,
+    "cloudwatch_polling_authorized": false,
+    "external_dataset_upload_authorized": false,
+    "provider_fine_tune_api_call_authorized": false,
+    "provider_job_creation_authorized": false,
+    "provider_job_polling_authorized": false,
+    "training_execution_authorized": false,
+    "model_promotion_authorized": false
+  }
+}

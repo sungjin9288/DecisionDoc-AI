@@ -8,7 +8,12 @@ from app.agents.skill_registry import SkillNotFoundError, SkillRegistry
 def test_registry_loads_first_party_skills() -> None:
     registry = SkillRegistry.from_directory()
     names = {skill.name for skill in registry.list_skills()}
-    assert {"policy-planning", "evidence-gap-checker", "decision-brief-builder"} <= names
+    assert {
+        "policy-planning",
+        "evidence-gap-checker",
+        "decision-brief-builder",
+        "develop-document-improver",
+    } <= names
 
 
 def test_registry_selects_skill_by_task_type() -> None:
@@ -16,6 +21,7 @@ def test_registry_selects_skill_by_task_type() -> None:
     assert registry.select("policy_planning_brief").name == "policy-planning"
     assert registry.select("evidence_gap_review").name == "evidence-gap-checker"
     assert registry.select("decision_brief").name == "decision-brief-builder"
+    assert registry.select("develop_quality_improvement").name == "develop-document-improver"
 
 
 def test_registry_rejects_wrong_preferred_skill_for_task() -> None:

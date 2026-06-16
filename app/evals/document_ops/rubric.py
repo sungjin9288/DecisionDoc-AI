@@ -34,6 +34,7 @@ OVERCONFIDENT_PATTERNS = (
 
 GOVERNANCE_TASK_TYPES = {
     "policy_planning_brief",
+    "develop_quality_improvement",
     "report_workflow_planning",
     "procurement_planning_brief",
 }

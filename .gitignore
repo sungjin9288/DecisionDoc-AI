@@ -2,6 +2,9 @@
 .env
 .env.local
 .github-actions.env
+.env.prod
+.env.prod.save
+.env.*.save
 
 # Python
 .venv/
@@ -21,6 +24,11 @@ output/
 .idea/
 .vscode/
 *.swp
+
+# OS / tooling junk
+.DS_Store
+tmp/
+.playwright-mcp/
 
 # Local agent / assistant overlays
 .ai/

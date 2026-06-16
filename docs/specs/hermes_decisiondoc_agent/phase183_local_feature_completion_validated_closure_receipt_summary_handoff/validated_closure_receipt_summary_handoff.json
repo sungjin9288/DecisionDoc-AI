@@ -1,0 +1,95 @@
+{
+  "report_type": "document_ops_phase183_local_feature_completion_validated_closure_receipt_summary_handoff",
+  "phase": 183,
+  "status": "local_feature_completion_validated_closure_receipt_summary_handoff_ready_no_aws_no_training_authorization",
+  "created_at": "2026-06-06T00:00:00+09:00",
+  "handoff_scope": "operator_handoff_for_validated_phase181_closure_receipt_summary",
+  "recommended_decision": "keep_service_frozen",
+  "source_summary_validation": {
+    "path": "docs/specs/hermes_decisiondoc_agent/phase182_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json",
+    "sha256": "6b56e92924fc63847a32ff28e003aa65c2c93dc086e5f2926b516e316afe4eae",
+    "validator": "scripts/validate_documentops_phase181_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary.py",
+    "validator_sha256": "315d9ec1d23233361e74702cc2e3192e82ede57ee87233e022646f52938c57cf",
+    "summary_contract_path": "docs/specs/hermes_decisiondoc_agent/phase181_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json",
+    "summary_contract_sha256": "6437d1ebeeba3969db6c3023f4443f33cb73b66560ecd9b039d5aa010b5d98c6",
+    "summary_reporter": "scripts/summarize_documentops_phase180_validated_closure_receipts.py",
+    "summary_reporter_sha256": "d2338c05fc57a0c0b4ce39242878b6ca05efb2ca2ca94a2eb75e5e3bff3fea2c",
+    "validator_result": "pass",
+    "service_operation_state": "freeze_preserved"
+  },
+  "handoff_recipients": [
+    "release_owner",
+    "operator",
+    "product_pm_reviewer",
+    "ml_ai_owner",
+    "compliance_security_reviewer"
+  ],
+  "handoff_actions": [
+    {
+      "id": "generate_phase181_summary",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "run_phase182_validator",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "confirm_validated_local_phase181_summary",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "confirm_no_cost_boundary",
+      "owner": "operator",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "preserve_service_freeze",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    },
+    {
+      "id": "require_separate_resume_approval",
+      "owner": "release_owner",
+      "required": true,
+      "side_effect": false
+    }
+  ],
+  "handoff_boundary": {
+    "local_phase181_validated_closure_receipt_summary_handoff_recorded": true,
+    "source_summary_validation_contract_valid": true,
+    "generated_summary_validation_passed": true,
+    "operator_handoff_ready": true,
+    "service_freeze_preserved": true,
+    "resume_requires_separate_approval": true,
+    "actual_reviewer_approval_recorded_by_handoff": false,
+    "service_resume_authorized": false,
+    "production_ui_called": false,
+    "production_uat_reexecuted": false,
+    "production_download_open_verification_authorized": false,
+    "aws_runtime_called": false,
+    "aws_cost_increase_allowed": false,
+    "aws_deploy_started": false,
+    "aws_resource_created": false,
+    "scheduled_job_enabled": false,
+    "cloudwatch_polling_started": false,
+    "provider_api_calls_authorized": false,
+    "provider_fine_tune_api_called": false,
+    "provider_job_created": false,
+    "provider_job_polled": false,
+    "external_dataset_uploaded": false,
+    "training_execution_started": false,
+    "model_candidate_emitted": false,
+    "model_promoted": false,
+    "aws_cost_boundary": "no_cost_increase",
+    "training_boundary": "not_authorized"
+  },
+  "next_step": "Keep service frozen unless separate approval authorizes manual production download-open verification or service resume."
+}

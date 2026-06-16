@@ -132,6 +132,32 @@ def test_document_ops_agent_runs_decision_brief_with_preferred_skill() -> None:
     assert not result.qa["forbidden_terms"]
 
 
+def test_document_ops_agent_runs_develop_quality_improvement_with_mock_provider() -> None:
+    agent = DocumentOpsAgent(provider=MockProvider())
+    result = agent.run(
+        DocumentOpsRequest(
+            task_type="develop_quality_improvement",
+            requirements={
+                "title": "대표 보고 초안 품질 개선",
+                "draft": "현재 초안은 정책 목표와 승인 질문이 뒤섞여 있고 근거 구분이 약합니다.",
+                "goal": "대표가 승인 가능한 개선본으로 정리",
+            },
+            source_references=[{"id": "reviewed-draft", "title": "검토된 초안"}],
+            capture_trajectory=True,
+        ),
+        request_id="agent-test-develop",
+    )
+
+    assert result.skill_name == "develop-document-improver"
+    assert result.critique
+    assert result.revision_tasks
+    assert "개선안" in result.draft
+    assert result.qa["hard_gate_pass"] is True
+    assert result.trajectory is not None
+    assert result.trajectory["critique"] == result.critique
+    assert result.trajectory["revision_tasks"] == result.revision_tasks
+
+
 def test_document_ops_agent_marks_local_fallback_when_provider_output_is_invalid() -> None:
     agent = DocumentOpsAgent(provider=RawTextProvider())
     result = agent.run(
@@ -168,6 +194,8 @@ def test_document_ops_agent_normalizes_live_provider_payload_variants() -> None:
                 "open_questions": [{"message": "개인정보 영향평가 범위 확인 필요"}],
                 "sources": [{"id": "traffic-source", "title": "교차로 사고 분석"}],
             },
+            "quality_critique": {"message": "승인 질문이 앞부분에 더 명확해야 합니다."},
+            "action_items": ["권한 정책을 검토 항목으로 추가합니다."],
             "qa": {"hard_gate_pass": True, "warnings": "권한 정책은 배포 전 재확인"},
             "extra_model_note": "ignored",
         },
@@ -187,6 +215,8 @@ def test_document_ops_agent_normalizes_live_provider_payload_variants() -> None:
     assert result.qa["hard_gate_pass"] is True
     assert "fallback_used" not in result.qa
     assert result.plan == ["근거 확인, 운영책임 정의, 승인 조건 정리를 순서대로 수행합니다."]
+    assert result.critique == ["승인 질문이 앞부분에 더 명확해야 합니다."]
+    assert result.revision_tasks == ["권한 정책을 검토 항목으로 추가합니다."]
     assert result.evidence_status.confirmed == ["traffic-source"]
     assert result.evidence_status.source_references == ["traffic-source"]
     assert "권한 정책은 배포 전 재확인" in result.quality_warnings
