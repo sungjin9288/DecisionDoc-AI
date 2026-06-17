@@ -171,7 +171,7 @@
       "input": {
         "project_context": {
           "data_policy": "공식 출처가 확인되지 않은 수치와 기관명은 TODO 또는 assumption으로 표시",
-          "project_name": "교차로·스쿨존 보행자 보호 통합 안전서비스",
+          "project_name": "보행자 안전 정책 기획 사업",
           "submission_context": "공공기관 제청서 기획 검토"
         },
         "requirements": {
@@ -192,7 +192,7 @@
           ],
           "goal": "보행자 위험 이벤트를 감지·판단·현장 조치·관제 기록·정책 환류로 연결하는 운영모델을 정리한다.",
           "required_output": "대표 검토용 제청 논리, 근거 gap, 운영 리스크, 다음 승인 항목을 구분한다.",
-          "title": "AI 기반 교차로·스쿨존 보행자 보호 정책 기획 브리프"
+          "title": "AI 기반 보행자 안전 정책 기획 브리프"
         },
         "source_references": [
           {
@@ -324,7 +324,7 @@
         "input": {
           "project_context": {
             "data_policy": "공식 출처가 확인되지 않은 수치와 기관명은 TODO 또는 assumption으로 표시",
-            "project_name": "교차로·스쿨존 보행자 보호 통합 안전서비스",
+            "project_name": "보행자 안전 정책 기획 사업",
             "submission_context": "공공기관 제청서 기획 검토"
           },
           "requirements": {
@@ -345,7 +345,7 @@
             ],
             "goal": "보행자 위험 이벤트를 감지·판단·현장 조치·관제 기록·정책 환류로 연결하는 운영모델을 정리한다.",
             "required_output": "대표 검토용 제청 논리, 근거 gap, 운영 리스크, 다음 승인 항목을 구분한다.",
-            "title": "AI 기반 교차로·스쿨존 보행자 보호 정책 기획 브리프"
+            "title": "AI 기반 보행자 안전 정책 기획 브리프"
           },
           "source_references": [
             {

@@ -66902,6 +66902,2820 @@ def test_phase407_local_feature_completion_validated_closure_receipt_summary_han
     assert "receipts[1].sha256 must match linked Phase 405 receipt file" in broken_hash_result.stdout
 
 
+def test_phase408_local_feature_completion_validated_closure_receipt_summary_handoff_records_operator_package():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase408_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF.md",
+        encoding="utf-8",
+    ).read()
+    handoff_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase408_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+    handoff = json.load(open(handoff_path, encoding="utf-8"))
+
+    assert "Phase 408 Local Feature Completion Validated Closure Receipt Summary Handoff" in report
+    assert "validated Phase 406/407 closure receipt summary" in report
+    assert "Recommended decision remains `keep_service_frozen`" in report
+    assert handoff["report_type"] == (
+        "document_ops_phase408_local_feature_completion_validated_closure_receipt_summary_handoff"
+    )
+    assert handoff["phase"] == 408
+    assert handoff["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert handoff["handoff_scope"] == "operator_handoff_for_validated_phase406_closure_receipt_summary"
+    assert handoff["recommended_decision"] == "keep_service_frozen"
+    assert {
+        "release_owner",
+        "operator",
+        "product_pm_reviewer",
+        "ml_ai_owner",
+        "compliance_security_reviewer",
+    } <= set(handoff["handoff_recipients"])
+
+    action_ids = {action["id"] for action in handoff["handoff_actions"]}
+    assert action_ids == {
+        "generate_phase406_summary",
+        "run_phase407_validator",
+        "confirm_validated_local_phase406_summary",
+        "confirm_no_cost_boundary",
+        "preserve_service_freeze",
+        "require_separate_resume_approval",
+    }
+    assert all(action["required"] is True for action in handoff["handoff_actions"])
+    assert all(action["side_effect"] is False for action in handoff["handoff_actions"])
+
+    source = handoff["source_summary_validation"]
+    expected_paths = {
+        "path": (
+            "docs/specs/hermes_decisiondoc_agent/"
+            "phase407_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/"
+            "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json"
+        ),
+        "summary_contract_path": (
+            "docs/specs/hermes_decisiondoc_agent/"
+            "phase406_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/"
+            "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json"
+        ),
+        "summary_reporter": "scripts/summarize_documentops_phase405_validated_closure_receipts.py",
+        "validator": "scripts/validate_documentops_phase406_validated_closure_receipt_summary.py",
+    }
+    for key, expected_path in expected_paths.items():
+        assert source[key] == expected_path
+    hash_fields = {
+        "sha256": expected_paths["path"],
+        "summary_contract_sha256": expected_paths["summary_contract_path"],
+        "summary_reporter_sha256": expected_paths["summary_reporter"],
+        "validator_sha256": expected_paths["validator"],
+    }
+    for hash_key, source_path in hash_fields.items():
+        with open(source_path, "rb") as source_file:
+            assert source[hash_key] == hashlib.sha256(source_file.read()).hexdigest()
+    assert source["validator_result"] == "pass"
+    assert source["service_operation_state"] == "freeze_preserved"
+
+    boundary = handoff["handoff_boundary"]
+    assert boundary["local_phase406_validated_closure_receipt_summary_handoff_recorded"] is True
+    assert boundary["source_summary_validation_contract_valid"] is True
+    assert boundary["generated_summary_validation_passed"] is True
+    assert boundary["operator_handoff_ready"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_handoff"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_started"] is False
+    assert boundary["aws_resource_created"] is False
+    assert boundary["scheduled_job_enabled"] is False
+    assert boundary["cloudwatch_polling_started"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["provider_job_polled"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_candidate_emitted"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase408_local_feature_completion_validated_closure_receipt_summary_handoff_validator_accepts_package_and_rejects_boundary_break(
+    tmp_path,
+):
+    validator = "scripts/validate_documentops_phase407_validated_closure_receipt_summary_handoff.py"
+    handoff_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase408_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+
+    valid_result = subprocess.run(
+        ["python3", validator, handoff_path],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert valid_result.returncode == 0
+    assert "PASS documentops phase408 validated closure receipt summary handoff validated" in (
+        valid_result.stdout
+    )
+    assert "phase406_validated_closure_receipt_summary_handoff_valid=true" in valid_result.stdout
+    assert "handoff_action_count=6" in valid_result.stdout
+    assert "generated_summary_validation_ok=true" in valid_result.stdout
+    assert (
+        "generated_summary_readiness=all_phase405_validated_closure_receipts_confirm_no_cost_freeze"
+        in valid_result.stdout
+    )
+    assert "service_operation_state=freeze_preserved" in valid_result.stdout
+    assert "recommended_decision=keep_service_frozen" in valid_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in valid_result.stdout
+    assert "training_boundary=not_authorized" in valid_result.stdout
+
+    broken = json.load(open(handoff_path, encoding="utf-8"))
+    broken["handoff_boundary"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase408_broken_resume_handoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase408 validated closure receipt summary handoff validation failed" in (
+        broken_result.stdout
+    )
+    assert "handoff_boundary.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(handoff_path, encoding="utf-8"))
+    broken_hash["source_summary_validation"]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase408_broken_source_hash_handoff.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "source_summary_validation.sha256 must match" in broken_hash_result.stdout
+
+
+def test_phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_template_preserves_no_cost_review_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF.md",
+        encoding="utf-8",
+    ).read()
+    template_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+    template = json.load(open(template_path, encoding="utf-8"))
+
+    assert (
+        "Phase 409 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off"
+        in report
+    )
+    assert (
+        "LOCAL_FEATURE_COMPLETION_VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_READY"
+        in report
+    )
+    assert "Phase 408" in report
+    assert "Phase 406/407" in report
+    assert (
+        template["schema_version"]
+        == "decisiondoc_documentops_phase409_validated_closure_receipt_summary_handoff_signoff.v1"
+    )
+    assert template["phase"] == 409
+    assert (
+        template["signoff_scope"]
+        == "evidence_only_review_of_phase408_validated_closure_receipt_summary_handoff"
+    )
+    assert (
+        template["signoff_id"]
+        == "documentops_local_feature_completion_phase408_validated_closure_receipt_summary_handoff_signoff_TEMPLATE"
+    )
+    assert template["decision"] == "pending"
+    assert template["created_at"] == ""
+
+    source = template["source_handoff"]
+    assert source["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase408_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+    assert (
+        source["validator"]
+        == "scripts/validate_documentops_phase407_validated_closure_receipt_summary_handoff.py"
+    )
+    with open(source["path"], "rb") as source_file:
+        assert source["sha256"] == hashlib.sha256(source_file.read()).hexdigest()
+    with open(source["validator"], "rb") as validator_file:
+        assert source["validator_sha256"] == hashlib.sha256(validator_file.read()).hexdigest()
+    assert source["validator_result"] == "pass"
+    assert source["service_operation_state"] == "freeze_preserved"
+
+    acknowledgement_keys = set(template["acknowledgements"])
+    assert {
+        "phase408_validated_closure_receipt_summary_handoff_reviewed",
+        "phase406_summary_chain_reviewed",
+        "phase407_summary_validation_reviewed",
+        "operator_actions_understood",
+        "service_freeze_acknowledged",
+        "resume_block_acknowledged",
+        "aws_no_cost_boundary_acknowledged",
+        "no_production_ui_reexecution_acknowledged",
+        "no_provider_calls_acknowledged",
+        "no_dataset_upload_acknowledged",
+        "no_training_execution_acknowledged",
+        "no_model_promotion_acknowledged",
+        "separate_approval_required_acknowledged",
+    } == acknowledgement_keys
+    assert all(value is False for value in template["acknowledgements"].values())
+
+    boundary = template["signoff_boundary"]
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_template"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["aws_resource_creation_authorized"] is False
+    assert boundary["scheduled_job_authorized"] is False
+    assert boundary["cloudwatch_polling_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_creation_authorized"] is False
+    assert boundary["provider_job_polling_authorized"] is False
+    assert boundary["external_dataset_upload_authorized"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["model_candidate_emission_authorized"] is False
+    assert boundary["model_promotion_authorized"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_validator_accepts_completed_review_and_rejects_boundary_break(
+    tmp_path,
+):
+    validator = (
+        "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    template_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+
+    pending_result = subprocess.run(
+        ["python3", validator, template_path],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert pending_result.returncode == 0
+    assert (
+        "PASS documentops phase409 validated closure receipt summary handoff sign-off validated"
+        in pending_result.stdout
+    )
+    assert "completed=false" in pending_result.stdout
+    assert "decision=pending" in pending_result.stdout
+    assert "source_handoff_validation_ok=true" in pending_result.stdout
+    assert "service_operation_state=freeze_preserved" in pending_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in pending_result.stdout
+    assert "training_boundary=not_authorized" in pending_result.stdout
+
+    completed = json.load(open(template_path, encoding="utf-8"))
+    completed["signoff_id"] = (
+        "documentops_local_feature_completion_phase408_"
+        "validated_closure_receipt_summary_handoff_signoff_phase409done"
+    )
+    completed["decision"] = "accepted"
+    completed["created_at"] = "2026-06-16T00:00:00+09:00"
+    completed["reviewer"] = {
+        "name": "Local Reviewer",
+        "title_or_team": "DocumentOps",
+        "reviewed_at": "2026-06-16T00:00:00+09:00",
+    }
+    completed["evidence_reviewed"] = [
+        completed["source_handoff"]["path"],
+        completed["source_handoff"]["validator"],
+    ]
+    completed["findings"]["summary"] = (
+        "Phase 408 validated handoff evidence reviewed; keep service frozen."
+    )
+    completed["findings"]["residual_risks"] = [
+        "Service resume remains blocked until separate approval."
+    ]
+    for acknowledgement in completed["acknowledgements"]:
+        completed["acknowledgements"][acknowledgement] = True
+    completed_path = tmp_path / "phase409_completed_signoff.json"
+    completed_path.write_text(json.dumps(completed, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    completed_result = subprocess.run(
+        ["python3", validator, str(completed_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed_result.returncode == 0
+    assert "completed=true" in completed_result.stdout
+    assert "decision=accepted" in completed_result.stdout
+
+    broken = json.load(open(completed_path, encoding="utf-8"))
+    broken["signoff_boundary"]["training_execution_authorized"] = True
+    broken_path = tmp_path / "phase409_broken_training_signoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert (
+        "FAIL documentops phase409 validated closure receipt summary handoff sign-off validation failed"
+        in broken_result.stdout
+    )
+    assert "signoff_boundary.training_execution_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(completed_path, encoding="utf-8"))
+    broken_hash["source_handoff"]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase409_broken_source_hash_signoff.json"
+    broken_hash_path.write_text(
+        json.dumps(broken_hash, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert (
+        "source_handoff.sha256 must match the Phase 408 validated handoff JSON"
+        in broken_hash_result.stdout
+    )
+
+
+def test_phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_contract_preserves_no_cost_generation_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/"
+        "PENDING_VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_GENERATOR.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/"
+        "pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 410 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Pending Sign-Off Generator"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_PENDING_SIGNOFF_GENERATOR_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "Does not record actual reviewer approval" in report
+    assert contract["report_type"] == (
+        "document_ops_phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generation_contract"
+    )
+    assert contract["phase"] == 410
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["generation_scope"] == (
+        "local_fillable_pending_phase409_validated_closure_receipt_summary_handoff_signoff_record_generation"
+    )
+    assert contract["source_template"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+    with open(contract["source_template"]["path"], "rb") as source_template_file:
+        assert contract["source_template"]["sha256"] == hashlib.sha256(
+            source_template_file.read()
+        ).hexdigest()
+    assert contract["source_template"]["validator"] == (
+        "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_template"]["validator"], "rb") as source_validator_file:
+        assert contract["source_template"]["validator_sha256"] == hashlib.sha256(
+            source_validator_file.read()
+        ).hexdigest()
+    assert contract["source_template"]["validator_result"] == "pass"
+    assert contract["source_handoff"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase408_local_feature_completion_validated_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff.json"
+    )
+    with open(contract["source_handoff"]["path"], "rb") as source_handoff_file:
+        assert contract["source_handoff"]["sha256"] == hashlib.sha256(
+            source_handoff_file.read()
+        ).hexdigest()
+    assert contract["source_handoff"]["validator"] == (
+        "scripts/validate_documentops_phase407_validated_closure_receipt_summary_handoff.py"
+    )
+    with open(contract["source_handoff"]["validator"], "rb") as source_handoff_validator_file:
+        assert contract["source_handoff"]["validator_sha256"] == hashlib.sha256(
+            source_handoff_validator_file.read()
+        ).hexdigest()
+    assert contract["generator"]["path"] == (
+        "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    with open(contract["generator"]["path"], "rb") as generator_file:
+        assert contract["generator"]["sha256"] == hashlib.sha256(generator_file.read()).hexdigest()
+    assert contract["generator"]["atomic_write"] is True
+    assert contract["generator"]["validates_source_template"] is True
+    assert contract["generator"]["validates_generated_record"] is True
+    assert contract["generator"]["refuses_overwrite_by_default"] is True
+    assert contract["generated_record_policy"]["decision"] == "pending"
+    assert contract["generated_record_policy"]["reviewer_fields_blank"] is True
+    assert contract["generated_record_policy"]["acknowledgements_false"] is True
+    assert contract["generated_record_policy"]["requires_human_completion"] is True
+    assert contract["generated_record_policy"]["completed_signoff_requires_phase409_validator"] is True
+
+    boundary = contract["generation_boundary"]
+    assert boundary["local_pending_record_generation"] is True
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generator_creates_fillable_record_without_authorization(
+    tmp_path,
+):
+    output_path = tmp_path / "phase410_pending_signoff.json"
+    generator = (
+        "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    validator = "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py"
+    signoff_id = (
+        "documentops_local_feature_completion_phase408_validated_closure_receipt_summary_handoff_signoff_testpending410"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert generated.returncode == 0
+    assert '"ok": true' in generated.stdout
+    assert f'"signoff_id": "{signoff_id}"' in generated.stdout
+    assert '"decision": "pending"' in generated.stdout
+    assert '"service_resume_authorized": false' in generated.stdout
+    assert '"training_execution_authorized": false' in generated.stdout
+    assert output_path.exists()
+
+    record = json.load(open(output_path, encoding="utf-8"))
+    assert record["schema_version"] == (
+        "decisiondoc_documentops_phase409_validated_closure_receipt_summary_handoff_signoff.v1"
+    )
+    assert record["phase"] == 409
+    assert record["signoff_id"] == signoff_id
+    assert record["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert record["decision"] == "pending"
+    assert record["reviewer"] == {"name": "", "title_or_team": "", "reviewed_at": ""}
+    assert record["evidence_reviewed"] == []
+    assert all(value is False for value in record["acknowledgements"].values())
+    assert record["generation_context"]["report_type"] == (
+        "document_ops_phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generation"
+    )
+    assert record["generation_context"]["phase"] == 410
+    assert record["generation_context"]["source_template_validation"]["ok"] is True
+    assert record["generation_context"]["generated_record_validation"]["ok"] is True
+    assert record["generation_context"]["generated_record_validation"]["completed"] is False
+    assert len(record["generation_context"]["evidence_to_review"]) >= 3
+    with open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json",
+        "rb",
+    ) as source_template_file:
+        assert record["generation_context"]["generated_from_template_sha256"] == hashlib.sha256(
+            source_template_file.read()
+        ).hexdigest()
+    assert record["generation_boundary"]["local_pending_record_generation"] is True
+    assert record["generation_boundary"]["evidence_only_signoff"] is True
+    assert record["generation_boundary"]["service_freeze_preserved"] is True
+    assert record["generation_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert record["generation_boundary"]["service_resume_authorized"] is False
+    assert record["generation_boundary"]["aws_runtime_called"] is False
+    assert record["generation_boundary"]["provider_api_calls_authorized"] is False
+    assert record["generation_boundary"]["training_execution_started"] is False
+    assert record["generation_boundary"]["model_promoted"] is False
+
+    boundary = record["signoff_boundary"]
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_template"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["external_dataset_upload_authorized"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["model_promotion_authorized"] is False
+
+    validated = subprocess.run(
+        ["python3", validator, str(output_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert validated.returncode == 0
+    assert "PASS documentops phase409 validated closure receipt summary handoff sign-off validated" in (
+        validated.stdout
+    )
+    assert "completed=false" in validated.stdout
+    assert "decision=pending" in validated.stdout
+
+    duplicate = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert duplicate.returncode == 1
+    assert "output already exists" in duplicate.stderr
+
+    invalid_id = subprocess.run(
+        ["python3", generator, "--json", "--signoff-id", "unsafe"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert invalid_id.returncode == 1
+    assert "signoff id must match" in invalid_id.stderr
+
+
+def test_phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_REPORTER.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/"
+        "validated_closure_receipt_summary_handoff_signoff_summary_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 411 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Summary Reporter"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_REPORTER_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "do not record actual reviewer approval" in report
+    assert contract["report_type"] == (
+        "document_ops_phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_contract"
+    )
+    assert contract["phase"] == 411
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["summary_scope"] == (
+        "local_read_only_phase409_validated_closure_receipt_summary_handoff_signoff_summary"
+    )
+    assert contract["source_generator_contract"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json"
+    )
+    with open(contract["source_generator_contract"]["path"], "rb") as source_contract_file:
+        assert contract["source_generator_contract"]["sha256"] == hashlib.sha256(
+            source_contract_file.read()
+        ).hexdigest()
+    assert contract["source_generator"]["path"] == (
+        "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    with open(contract["source_generator"]["path"], "rb") as generator_file:
+        assert contract["source_generator"]["sha256"] == hashlib.sha256(generator_file.read()).hexdigest()
+    assert contract["source_signoff_validator"]["path"] == (
+        "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_signoff_validator"]["path"], "rb") as validator_file:
+        assert contract["source_signoff_validator"]["sha256"] == hashlib.sha256(
+            validator_file.read()
+        ).hexdigest()
+    assert contract["reporter"]["path"] == (
+        "scripts/summarize_documentops_phase409_validated_closure_receipt_summary_handoff_signoffs.py"
+    )
+    with open(contract["reporter"]["path"], "rb") as reporter_file:
+        assert contract["reporter"]["sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert contract["reporter"]["read_only"] is True
+    assert contract["reporter"]["validates_each_signoff"] is True
+    assert contract["reporter"]["writes_optional_summary_outputs"] is True
+    assert contract["summary_policy"]["pending_records_are_not_approval"] is True
+    assert contract["summary_policy"]["completed_signoffs_must_validate"] is True
+    assert contract["summary_policy"]["boundary_breaks_block_summary_ok"] is True
+    assert contract["summary_policy"]["readiness_pending_status"] == (
+        "pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+    )
+    assert contract["summary_policy"]["readiness_accepted_status"] == (
+        "all_phase408_validated_closure_receipt_summary_handoff_signoffs_accepted_no_cost_boundary_preserved"
+    )
+
+    boundary = contract["summary_boundary"]
+    assert boundary["reads_local_signoff_records"] is True
+    assert boundary["writes_summary_only"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_reports_pending_and_rejects_boundary_breaks(
+    tmp_path,
+):
+    generator = (
+        "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    reporter = "scripts/summarize_documentops_phase409_validated_closure_receipt_summary_handoff_signoffs.py"
+    output_path = tmp_path / "phase410_pending_signoff.json"
+    summary_path = tmp_path / "phase411_summary.json"
+    markdown_path = tmp_path / "phase411_summary.md"
+    signoff_id = (
+        "documentops_local_feature_completion_phase408_validated_closure_receipt_summary_handoff_signoff_summary411"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert generated.returncode == 0
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            str(output_path),
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    summary = json.loads(summarized.stdout)
+    assert summarized.returncode == 0
+    assert summary["report_type"] == (
+        "document_ops_phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary"
+    )
+    assert summary["schema_version"] == (
+        "decisiondoc_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_summary.v1"
+    )
+    assert summary["ok"] is True
+    assert summary["completion_ready"] is False
+    assert summary["readiness"]["status"] == (
+        "pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+    )
+    assert summary["counts"]["signoff_count"] == 1
+    assert summary["counts"]["valid_signoff_count"] == 1
+    assert summary["counts"]["pending_signoff_count"] == 1
+    assert summary["counts"]["completed_signoff_count"] == 0
+    assert summary["counts"]["accepted_signoff_count"] == 0
+    assert summary["counts"]["boundary_break_count"] == 0
+    assert summary["signoffs"][0]["signoff_id"] == signoff_id
+    assert summary["signoffs"][0]["decision"] == "pending"
+    assert summary["signoffs"][0]["validation"]["ok"] is True
+    assert summary_path.exists()
+    assert markdown_path.exists()
+    assert "DocumentOps Phase 409 Validated Closure Receipt Summary Handoff Sign-Off Summary" in (
+        markdown_path.read_text(encoding="utf-8")
+    )
+    assert summary["side_effect_boundary"]["reads_local_signoff_records"] is True
+    assert summary["side_effect_boundary"]["actual_reviewer_approval_recorded_by_summary"] is False
+    assert summary["side_effect_boundary"]["training_execution_started"] is False
+
+    broken = json.load(open(output_path, encoding="utf-8"))
+    broken["generation_boundary"]["training_execution_started"] = True
+    broken_path = tmp_path / "phase411_broken_training_signoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", reporter, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    broken_summary = json.loads(broken_result.stdout)
+    assert broken_result.returncode == 1
+    assert "invalid_signoff_records" in broken_summary["readiness"]["blocker_reasons"]
+    assert "signoff_boundary_breaks" in broken_summary["readiness"]["blocker_reasons"]
+    assert broken_summary["counts"]["boundary_break_count"] == 1
+    assert "generation_boundary.training_execution_started" in broken_summary["signoffs"][0]["boundary_breaks"]
+
+
+def test_phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validator_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_VALIDATOR.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/"
+        "validated_closure_receipt_summary_handoff_signoff_summary_validation_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 412 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Summary Validator"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_VALIDATOR_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "linked Phase 409 sign-off hashes" in report
+    assert contract["report_type"] == (
+        "document_ops_phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract"
+    )
+    assert contract["phase"] == 412
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["validation_scope"] == (
+        "local_read_only_phase411_validated_closure_receipt_summary_handoff_signoff_summary_validation"
+    )
+    assert contract["source_summary_contract"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_summary_contract.json"
+    )
+    with open(contract["source_summary_contract"]["path"], "rb") as source_contract_file:
+        assert contract["source_summary_contract"]["sha256"] == hashlib.sha256(
+            source_contract_file.read()
+        ).hexdigest()
+    assert contract["source_reporter"]["path"] == (
+        "scripts/summarize_documentops_phase409_validated_closure_receipt_summary_handoff_signoffs.py"
+    )
+    with open(contract["source_reporter"]["path"], "rb") as reporter_file:
+        assert contract["source_reporter"]["sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert contract["source_signoff_validator"]["path"] == (
+        "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_signoff_validator"]["path"], "rb") as validator_file:
+        assert contract["source_signoff_validator"]["sha256"] == hashlib.sha256(
+            validator_file.read()
+        ).hexdigest()
+    assert contract["summary_validator"]["path"] == (
+        "scripts/validate_documentops_phase411_validated_closure_receipt_summary_handoff_signoff_summary.py"
+    )
+    with open(contract["summary_validator"]["path"], "rb") as summary_validator_file:
+        assert contract["summary_validator"]["sha256"] == hashlib.sha256(
+            summary_validator_file.read()
+        ).hexdigest()
+    assert contract["summary_validator"]["read_only"] is True
+    assert contract["summary_validator"]["revalidates_linked_signoffs"] is True
+    assert contract["summary_validator"]["checks_summary_counts"] is True
+    assert contract["summary_validator"]["supports_require_complete"] is True
+    assert contract["summary_validator"]["writes_repo_files"] is False
+
+    boundary = contract["validation_boundary"]
+    assert boundary["read_only_summary_validation"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["actual_reviewer_approval_recorded_by_validator"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validator_accepts_summary_and_rejects_boundary_breaks(
+    tmp_path,
+):
+    generator = (
+        "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    reporter = "scripts/summarize_documentops_phase409_validated_closure_receipt_summary_handoff_signoffs.py"
+    validator = "scripts/validate_documentops_phase411_validated_closure_receipt_summary_handoff_signoff_summary.py"
+    pending_path = tmp_path / "phase410_pending_signoff.json"
+    summary_path = tmp_path / "phase411_summary.json"
+    signoff_id = (
+        "documentops_local_feature_completion_phase408_validated_closure_receipt_summary_handoff_signoff_testpending412"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(pending_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert generated.returncode == 0
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            str(pending_path),
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert summarized.returncode == 0
+
+    valid_result = subprocess.run(
+        ["python3", validator, str(summary_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert valid_result.returncode == 0
+    assert "PASS documentops phase412 validated closure receipt summary handoff sign-off summary validated" in (
+        valid_result.stdout
+    )
+    assert "signoff_summary_valid=true" in valid_result.stdout
+    assert "completion_ready=false" in valid_result.stdout
+    assert (
+        "readiness_status=pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+        in valid_result.stdout
+    )
+    assert "signoff_count=1" in valid_result.stdout
+    assert "service_operation_state=freeze_preserved" in valid_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in valid_result.stdout
+    assert "training_boundary=not_authorized" in valid_result.stdout
+
+    require_complete = subprocess.run(
+        ["python3", validator, str(summary_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert require_complete.returncode == 1
+    assert "completion_ready must be true when --require-complete is used" in require_complete.stdout
+
+    broken = json.load(open(summary_path, encoding="utf-8"))
+    broken["readiness"]["training_execution_authorized"] = True
+    broken_path = tmp_path / "phase412_broken_training_summary.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase412 validated closure receipt summary handoff sign-off summary validation failed" in (
+        broken_result.stdout
+    )
+    assert "readiness.training_execution_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(summary_path, encoding="utf-8"))
+    broken_hash["signoffs"][0]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase412_broken_signoff_hash_summary.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "signoffs[1].sha256 must match linked Phase 409 sign-off file" in broken_hash_result.stdout
+
+
+def test_phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index_records_full_local_chain():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_INDEX.md",
+        encoding="utf-8",
+    ).read()
+    index_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_index.json"
+    )
+    index = json.load(open(index_path, encoding="utf-8"))
+
+    assert (
+        "Phase 413 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Closure Index"
+        in report
+    )
+    assert "Phase 408-412 local evidence chain" in report
+    assert "temporary Phase 411 summary" in report
+    assert index["report_type"] == (
+        "document_ops_phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index"
+    )
+    assert index["phase"] == 413
+    assert index["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert index["closure_scope"] == (
+        "local_read_only_phase408_to_phase412_validated_closure_receipt_summary_handoff_signoff_closure_validation"
+    )
+    assert index["recommended_decision"] == "keep_service_frozen"
+
+    expected_artifacts = {
+        "phase408_validated_closure_receipt_summary_handoff": {
+            "phase": 408,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase408_local_feature_completion_validated_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff.json",
+            "validator": "scripts/validate_documentops_phase407_validated_closure_receipt_summary_handoff.py",
+        },
+        "phase409_validated_closure_receipt_summary_handoff_signoff_template": {
+            "phase": 409,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase409_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_template.json",
+            "validator": "scripts/validate_documentops_phase408_validated_closure_receipt_summary_handoff_signoff.py",
+        },
+        "phase410_pending_validated_closure_receipt_summary_handoff_signoff_generation_contract": {
+            "phase": 410,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase410_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json",
+            "validator": "scripts/create_documentops_phase409_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py",
+        },
+        "phase411_validated_closure_receipt_summary_handoff_signoff_summary_contract": {
+            "phase": 411,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase411_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_summary_contract.json",
+            "validator": "scripts/summarize_documentops_phase409_validated_closure_receipt_summary_handoff_signoffs.py",
+        },
+        "phase412_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract": {
+            "phase": 412,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase412_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/validated_closure_receipt_summary_handoff_signoff_summary_validation_contract.json",
+            "validator": "scripts/validate_documentops_phase411_validated_closure_receipt_summary_handoff_signoff_summary.py",
+        },
+    }
+    artifacts_by_id = {artifact["id"]: artifact for artifact in index["source_artifacts"]}
+    assert set(artifacts_by_id) == set(expected_artifacts)
+    for artifact_id, expected in expected_artifacts.items():
+        artifact = artifacts_by_id[artifact_id]
+        assert artifact["phase"] == expected["phase"]
+        assert artifact["path"] == expected["path"]
+        assert artifact["validator"] == expected["validator"]
+        with open(artifact["path"], "rb") as source_artifact_file:
+            assert artifact["sha256"] == hashlib.sha256(source_artifact_file.read()).hexdigest()
+
+    closure_validator = index["closure_validator"]
+    assert closure_validator["path"] == (
+        "scripts/validate_documentops_phase408_to_phase412_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+    )
+    with open(closure_validator["path"], "rb") as validator_file:
+        assert closure_validator["sha256"] == hashlib.sha256(validator_file.read()).hexdigest()
+    assert closure_validator["checks_source_artifact_hashes"] is True
+    assert closure_validator["runs_phase408_validator"] is True
+    assert closure_validator["validates_phase409_template"] is True
+    assert closure_validator["generates_temporary_phase410_pending_signoff"] is True
+    assert closure_validator["builds_temporary_phase411_summary"] is True
+    assert closure_validator["runs_phase412_summary_validator"] is True
+    assert closure_validator["writes_repo_files"] is False
+
+    policy = index["closure_policy"]
+    assert policy["pending_summary_can_validate_as_non_approval_evidence"] is True
+    assert policy["actual_reviewer_approval_still_required_for_completion"] is True
+    assert policy["phase413_is_not_service_resume_approval"] is True
+    assert policy["boundary_breaks_fail_validation"] is True
+    assert policy["artifact_hash_mismatch_fails_validation"] is True
+
+    boundary = index["closure_boundary"]
+    assert boundary["local_read_only_closure_validation"] is True
+    assert boundary["temporary_local_probe_files_allowed"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_validator"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_started"] is False
+    assert boundary["aws_resource_created"] is False
+    assert boundary["scheduled_job_enabled"] is False
+    assert boundary["cloudwatch_polling_started"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["provider_job_polled"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_candidate_emitted"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index_validator_accepts_chain_and_rejects_boundary_break(
+    tmp_path,
+):
+    index_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_index.json"
+    )
+    validator = (
+        "scripts/validate_documentops_phase408_to_phase412_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+    )
+
+    result = subprocess.run(
+        ["python3", validator],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "PASS documentops phase413 validated closure receipt summary handoff sign-off closure index validated" in (
+        result.stdout
+    )
+    assert "closure_index_valid=true" in result.stdout
+    assert "source_artifact_count=5" in result.stdout
+    assert "probe_count=5" in result.stdout
+    assert (
+        "temporary_summary_readiness=pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+        in result.stdout
+    )
+    assert "temporary_summary_validation_ok=true" in result.stdout
+    assert "service_operation_state=freeze_preserved" in result.stdout
+    assert "recommended_decision=keep_service_frozen" in result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in result.stdout
+    assert "training_boundary=not_authorized" in result.stdout
+
+    broken = json.load(open(index_path, encoding="utf-8"))
+    broken["closure_boundary"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase413_broken_resume_index.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase413 validated closure receipt summary handoff sign-off closure index validation failed" in (
+        broken_result.stdout
+    )
+    assert "closure_boundary.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(index_path, encoding="utf-8"))
+    broken_hash["source_artifacts"][0]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase413_broken_hash_index.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "source_artifacts.phase408_validated_closure_receipt_summary_handoff.sha256 must match" in (
+        broken_hash_result.stdout
+    )
+
+
+def test_phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_records_phase413_gate():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_RECEIPT.md",
+        encoding="utf-8",
+    ).read()
+    receipt_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt.json"
+    )
+    receipt = json.load(open(receipt_path, encoding="utf-8"))
+
+    assert (
+        "Phase 414 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Closure Receipt"
+        in report
+    )
+    assert "passing Phase 413 closure index" in report
+    assert receipt["report_type"] == (
+        "document_ops_phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt"
+    )
+    assert receipt["phase"] == 414
+    assert receipt["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert receipt["operator_decision"] == "keep_service_frozen"
+
+    gate = receipt["source_closure_gate"]
+    assert gate["command"] == (
+        "python3 scripts/validate_documentops_phase408_to_phase412_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+    )
+    assert gate["result"] == "pass"
+    assert gate["closure_index_valid"] is True
+    assert gate["source_artifact_count"] == 5
+    assert gate["probe_count"] == 5
+    assert gate["temporary_summary_readiness"] == (
+        "pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+    )
+    assert gate["temporary_summary_validation_ok"] is True
+    assert gate["service_operation_state"] == "freeze_preserved"
+    assert gate["recommended_decision"] == "keep_service_frozen"
+    assert gate["aws_cost_boundary"] == "no_cost_increase"
+    assert gate["training_boundary"] == "not_authorized"
+
+    source_paths = {
+        "phase413_closure_index_sha256": (
+            "docs/specs/hermes_decisiondoc_agent/"
+            "phase413_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+            "validated_closure_receipt_summary_handoff_signoff_closure_index.json"
+        ),
+        "phase413_closure_validator_sha256": (
+            "scripts/validate_documentops_phase408_to_phase412_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+        ),
+        "phase414_closure_receipt_validator_sha256": (
+            "scripts/validate_documentops_phase413_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py"
+        ),
+    }
+    for hash_key, source_path in source_paths.items():
+        with open(source_path, "rb") as source_file:
+            assert receipt["source_hashes"][hash_key] == hashlib.sha256(source_file.read()).hexdigest()
+
+    boundary = receipt["receipt_boundary"]
+    assert boundary["local_receipt_recorded"] is True
+    assert boundary["phase413_closure_index_valid"] is True
+    assert boundary["phase408_to_phase412_chain_valid"] is True
+    assert boundary["temporary_probe_only"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_receipt"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_started"] is False
+    assert boundary["aws_resource_created"] is False
+    assert boundary["scheduled_job_enabled"] is False
+    assert boundary["cloudwatch_polling_started"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["provider_job_polled"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_candidate_emitted"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_validator_accepts_receipt_and_rejects_boundary_break(
+    tmp_path,
+):
+    receipt_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt.json"
+    )
+    validator = (
+        "scripts/validate_documentops_phase413_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py"
+    )
+
+    result = subprocess.run(
+        ["python3", validator],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "PASS documentops phase414 validated closure receipt summary handoff sign-off closure receipt validated" in (
+        result.stdout
+    )
+    assert "closure_receipt_valid=true" in result.stdout
+    assert "source_closure_gate_valid=true" in result.stdout
+    assert "source_artifact_count=5" in result.stdout
+    assert "probe_count=5" in result.stdout
+    assert (
+        "temporary_summary_readiness=pending_phase408_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+        in result.stdout
+    )
+    assert "temporary_summary_validation_ok=true" in result.stdout
+    assert "service_operation_state=freeze_preserved" in result.stdout
+    assert "operator_decision=keep_service_frozen" in result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in result.stdout
+    assert "training_boundary=not_authorized" in result.stdout
+
+    broken = json.load(open(receipt_path, encoding="utf-8"))
+    broken["receipt_boundary"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase414_broken_resume_receipt.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase414 validated closure receipt summary handoff sign-off closure receipt validation failed" in (
+        broken_result.stdout
+    )
+    assert "receipt_boundary.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(receipt_path, encoding="utf-8"))
+    broken_hash["source_hashes"]["phase413_closure_index_sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase414_broken_hash_receipt.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "source_hashes.phase413_closure_index_sha256 must match" in broken_hash_result.stdout
+
+
+def test_phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_RECEIPT_SUMMARY.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 415 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Closure Receipt Summary"
+        in report
+    )
+    assert "Phase 414 closure receipt records" in report
+    assert "Does not record actual reviewer approval" in report
+    assert contract["report_type"] == (
+        "document_ops_phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract"
+    )
+    assert contract["phase"] == 415
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["summary_scope"] == (
+        "local_read_only_phase414_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary"
+    )
+    assert contract["source_receipt"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/validated_closure_receipt_summary_handoff_signoff_closure_receipt.json"
+    )
+    assert contract["source_receipt"]["phase"] == 414
+    with open(contract["source_receipt"]["path"], "rb") as receipt_file:
+        assert contract["source_receipt"]["sha256"] == hashlib.sha256(receipt_file.read()).hexdigest()
+    assert contract["source_receipt"]["validator"] == (
+        "scripts/validate_documentops_phase413_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py"
+    )
+    with open(contract["source_receipt"]["validator"], "rb") as validator_file:
+        assert contract["source_receipt"]["validator_sha256"] == hashlib.sha256(
+            validator_file.read()
+        ).hexdigest()
+    assert contract["summary_reporter"]["path"] == "scripts/summarize_documentops_phase414_validated_closure_receipts.py"
+    with open(contract["summary_reporter"]["path"], "rb") as reporter_file:
+        assert contract["summary_reporter"]["sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert contract["summary_reporter"]["reads_phase414_validated_closure_receipts"] is True
+    assert contract["summary_reporter"]["revalidates_each_receipt"] is True
+    assert contract["summary_reporter"]["checks_source_gate"] is True
+    assert contract["summary_reporter"]["supports_directory_input"] is True
+    assert contract["summary_reporter"]["supports_markdown_output"] is True
+    assert contract["summary_reporter"]["writes_summary_only"] is True
+
+    boundary = contract["summary_boundary"]
+    assert boundary["read_only_receipt_summary"] is True
+    assert boundary["summary_file_write_allowed"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_reporter_accepts_receipt_and_rejects_boundary_break(
+    tmp_path,
+):
+    receipt_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt.json"
+    )
+    reporter = "scripts/summarize_documentops_phase414_validated_closure_receipts.py"
+    summary_path = tmp_path / "phase415_summary.json"
+    markdown_path = tmp_path / "phase415_summary.md"
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            receipt_path,
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    summary = json.loads(summarized.stdout)
+    assert summarized.returncode == 0
+    assert summary["report_type"] == (
+        "document_ops_phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary"
+    )
+    assert summary["phase"] == 415
+    assert summary["schema_version"] == "decisiondoc_documentops_phase414_validated_closure_receipt_summary.v1"
+    assert summary["ok"] is True
+    assert summary["readiness"]["status"] == "all_phase414_validated_closure_receipts_confirm_no_cost_freeze"
+    assert summary["counts"]["receipt_count"] == 1
+    assert summary["counts"]["valid_receipt_count"] == 1
+    assert summary["counts"]["invalid_receipt_count"] == 0
+    assert summary["counts"]["boundary_break_count"] == 0
+    assert summary["receipts"][0]["phase"] == 414
+    assert summary["receipts"][0]["validation"]["ok"] is True
+    assert summary["receipts"][0]["source_gate_result"] == "pass"
+    assert summary["receipts"][0]["operator_decision"] == "keep_service_frozen"
+    assert summary["receipts"][0]["source_artifact_count"] == 5
+    assert summary["receipts"][0]["probe_count"] == 5
+    assert summary["receipts"][0]["temporary_summary_validation_ok"] is True
+    assert summary_path.exists()
+    assert markdown_path.exists()
+    assert "DocumentOps Phase 414 Validated Closure Receipt Summary" in (
+        markdown_path.read_text(encoding="utf-8")
+    )
+    assert summary["side_effect_boundary"]["reads_local_phase414_validated_closure_receipts"] is True
+    assert summary["side_effect_boundary"]["actual_reviewer_approval_recorded_by_summary"] is False
+    assert summary["side_effect_boundary"]["training_execution_started"] is False
+
+    broken = json.load(open(receipt_path, encoding="utf-8"))
+    broken["receipt_boundary"]["training_execution_started"] = True
+    broken_path = tmp_path / "phase415_broken_training_receipt.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", reporter, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    broken_summary = json.loads(broken_result.stdout)
+    assert broken_result.returncode == 1
+    assert "invalid_phase414_validated_closure_receipts" in broken_summary["readiness"]["blocker_reasons"]
+    assert "phase414_validated_closure_receipt_boundary_breaks" in broken_summary["readiness"][
+        "blocker_reasons"
+    ]
+    assert broken_summary["counts"]["boundary_break_count"] == 1
+    assert "receipt_boundary.training_execution_started" in broken_summary["receipts"][0]["boundary_breaks"]
+
+
+def test_phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validator_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_RECEIPT_SUMMARY_VALIDATOR.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 416 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Closure Receipt Summary Validator"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_RECEIPT_SUMMARY_VALIDATOR_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "linked Phase 414 receipt hashes" in report
+    assert contract["report_type"] == (
+        "document_ops_phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract"
+    )
+    assert contract["phase"] == 416
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["validation_scope"] == (
+        "local_read_only_phase415_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation"
+    )
+
+    source = contract["source_summary_contract"]
+    assert source["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json"
+    )
+    with open(source["path"], "rb") as source_contract_file:
+        assert source["sha256"] == hashlib.sha256(source_contract_file.read()).hexdigest()
+    assert source["summary_reporter"] == "scripts/summarize_documentops_phase414_validated_closure_receipts.py"
+    with open(source["summary_reporter"], "rb") as reporter_file:
+        assert source["summary_reporter_sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert source["source_receipt_validator"] == (
+        "scripts/validate_documentops_phase413_validated_closure_receipt_summary_handoff_signoff_closure_receipt.py"
+    )
+    with open(source["source_receipt_validator"], "rb") as receipt_validator_file:
+        assert source["source_receipt_validator_sha256"] == hashlib.sha256(
+            receipt_validator_file.read()
+        ).hexdigest()
+
+    validator = contract["summary_validator"]
+    assert validator["path"] == "scripts/validate_documentops_phase415_validated_closure_receipt_summary.py"
+    with open(validator["path"], "rb") as validator_file:
+        assert validator["sha256"] == hashlib.sha256(validator_file.read()).hexdigest()
+    assert validator["reads_phase415_summary"] is True
+    assert validator["revalidates_linked_phase414_receipts"] is True
+    assert validator["checks_embedded_validation"] is True
+    assert validator["checks_linked_receipt_hashes"] is True
+    assert validator["checks_summary_counts"] is True
+    assert validator["supports_json_output"] is True
+    assert validator["writes_repo_files"] is False
+
+    boundary = contract["validation_boundary"]
+    assert boundary["read_only_summary_validation"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["actual_reviewer_approval_recorded_by_validator"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validator_accepts_summary_and_rejects_boundary_breaks(
+    tmp_path,
+):
+    reporter = "scripts/summarize_documentops_phase414_validated_closure_receipts.py"
+    validator = "scripts/validate_documentops_phase415_validated_closure_receipt_summary.py"
+    receipt_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase414_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_receipt.json"
+    )
+    summary_path = tmp_path / "phase416_summary.json"
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            receipt_path,
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert summarized.returncode == 0
+
+    valid_result = subprocess.run(
+        ["python3", validator, str(summary_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert valid_result.returncode == 0
+    assert "PASS documentops phase415 validated closure receipt summary validated" in valid_result.stdout
+    assert "phase415_validated_closure_receipt_summary_valid=true" in valid_result.stdout
+    assert "receipt_count=1" in valid_result.stdout
+    assert "readiness_status=all_phase414_validated_closure_receipts_confirm_no_cost_freeze" in (
+        valid_result.stdout
+    )
+    assert "service_operation_state=freeze_preserved" in valid_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in valid_result.stdout
+    assert "training_boundary=not_authorized" in valid_result.stdout
+
+    broken = json.load(open(summary_path, encoding="utf-8"))
+    broken["readiness"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase416_broken_resume_summary.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase415 validated closure receipt summary validation failed" in broken_result.stdout
+    assert "readiness.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(summary_path, encoding="utf-8"))
+    broken_hash["receipts"][0]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase416_broken_receipt_hash_summary.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "receipts[1].sha256 must match linked Phase 414 receipt file" in broken_hash_result.stdout
+
+
+def test_phase417_local_feature_completion_validated_closure_receipt_summary_handoff_records_operator_package():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase417_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF.md",
+        encoding="utf-8",
+    ).read()
+    handoff_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase417_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+    handoff = json.load(open(handoff_path, encoding="utf-8"))
+
+    assert "Phase 417 Local Feature Completion Validated Closure Receipt Summary Handoff" in report
+    assert "validated Phase 415/416 closure receipt summary" in report
+    assert "Recommended decision remains `keep_service_frozen`" in report
+    assert handoff["report_type"] == (
+        "document_ops_phase417_local_feature_completion_validated_closure_receipt_summary_handoff"
+    )
+    assert handoff["phase"] == 417
+    assert handoff["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert handoff["handoff_scope"] == "operator_handoff_for_validated_phase415_closure_receipt_summary"
+    assert handoff["recommended_decision"] == "keep_service_frozen"
+    assert {
+        "release_owner",
+        "operator",
+        "product_pm_reviewer",
+        "ml_ai_owner",
+        "compliance_security_reviewer",
+    } <= set(handoff["handoff_recipients"])
+
+    action_ids = {action["id"] for action in handoff["handoff_actions"]}
+    assert action_ids == {
+        "generate_phase415_summary",
+        "run_phase416_validator",
+        "confirm_validated_local_phase415_summary",
+        "confirm_no_cost_boundary",
+        "preserve_service_freeze",
+        "require_separate_resume_approval",
+    }
+    assert all(action["required"] is True for action in handoff["handoff_actions"])
+    assert all(action["side_effect"] is False for action in handoff["handoff_actions"])
+
+    source = handoff["source_summary_validation"]
+    expected_paths = {
+        "path": (
+            "docs/specs/hermes_decisiondoc_agent/"
+            "phase416_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation/"
+            "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_validation_contract.json"
+        ),
+        "summary_contract_path": (
+            "docs/specs/hermes_decisiondoc_agent/"
+            "phase415_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary/"
+            "validated_closure_receipt_summary_handoff_signoff_closure_receipt_summary_contract.json"
+        ),
+        "summary_reporter": "scripts/summarize_documentops_phase414_validated_closure_receipts.py",
+        "validator": "scripts/validate_documentops_phase415_validated_closure_receipt_summary.py",
+    }
+    for key, expected_path in expected_paths.items():
+        assert source[key] == expected_path
+    hash_fields = {
+        "sha256": expected_paths["path"],
+        "summary_contract_sha256": expected_paths["summary_contract_path"],
+        "summary_reporter_sha256": expected_paths["summary_reporter"],
+        "validator_sha256": expected_paths["validator"],
+    }
+    for hash_key, source_path in hash_fields.items():
+        with open(source_path, "rb") as source_file:
+            assert source[hash_key] == hashlib.sha256(source_file.read()).hexdigest()
+    assert source["validator_result"] == "pass"
+    assert source["service_operation_state"] == "freeze_preserved"
+
+    boundary = handoff["handoff_boundary"]
+    assert boundary["local_phase415_validated_closure_receipt_summary_handoff_recorded"] is True
+    assert boundary["source_summary_validation_contract_valid"] is True
+    assert boundary["generated_summary_validation_passed"] is True
+    assert boundary["operator_handoff_ready"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_handoff"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_started"] is False
+    assert boundary["aws_resource_created"] is False
+    assert boundary["scheduled_job_enabled"] is False
+    assert boundary["cloudwatch_polling_started"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["provider_job_polled"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_candidate_emitted"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase417_local_feature_completion_validated_closure_receipt_summary_handoff_validator_accepts_package_and_rejects_boundary_break(
+    tmp_path,
+):
+    validator = "scripts/validate_documentops_phase416_validated_closure_receipt_summary_handoff.py"
+    handoff_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase417_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+
+    valid_result = subprocess.run(
+        ["python3", validator, handoff_path],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert valid_result.returncode == 0
+    assert "PASS documentops phase417 validated closure receipt summary handoff validated" in (
+        valid_result.stdout
+    )
+    assert "phase415_validated_closure_receipt_summary_handoff_valid=true" in valid_result.stdout
+    assert "handoff_action_count=6" in valid_result.stdout
+    assert "generated_summary_validation_ok=true" in valid_result.stdout
+    assert (
+        "generated_summary_readiness=all_phase414_validated_closure_receipts_confirm_no_cost_freeze"
+        in valid_result.stdout
+    )
+    assert "service_operation_state=freeze_preserved" in valid_result.stdout
+    assert "recommended_decision=keep_service_frozen" in valid_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in valid_result.stdout
+    assert "training_boundary=not_authorized" in valid_result.stdout
+
+    broken = json.load(open(handoff_path, encoding="utf-8"))
+    broken["handoff_boundary"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase417_broken_resume_handoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase417 validated closure receipt summary handoff validation failed" in (
+        broken_result.stdout
+    )
+    assert "handoff_boundary.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(handoff_path, encoding="utf-8"))
+    broken_hash["source_summary_validation"]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase417_broken_source_hash_handoff.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "source_summary_validation.sha256 must match" in broken_hash_result.stdout
+
+
+def test_phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_template_preserves_no_cost_review_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF.md",
+        encoding="utf-8",
+    ).read()
+    template_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+    template = json.load(open(template_path, encoding="utf-8"))
+
+    assert (
+        "Phase 418 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off"
+        in report
+    )
+    assert (
+        "LOCAL_FEATURE_COMPLETION_VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_READY"
+        in report
+    )
+    assert "Phase 417" in report
+    assert "Phase 415/416" in report
+    assert (
+        template["schema_version"]
+        == "decisiondoc_documentops_phase418_validated_closure_receipt_summary_handoff_signoff.v1"
+    )
+    assert template["phase"] == 418
+    assert (
+        template["signoff_scope"]
+        == "evidence_only_review_of_phase417_validated_closure_receipt_summary_handoff"
+    )
+    assert (
+        template["signoff_id"]
+        == "documentops_local_feature_completion_phase417_validated_closure_receipt_summary_handoff_signoff_TEMPLATE"
+    )
+    assert template["decision"] == "pending"
+    assert template["created_at"] == ""
+
+    source = template["source_handoff"]
+    assert source["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase417_local_feature_completion_validated_closure_receipt_summary_handoff/"
+        "validated_closure_receipt_summary_handoff.json"
+    )
+    assert (
+        source["validator"]
+        == "scripts/validate_documentops_phase416_validated_closure_receipt_summary_handoff.py"
+    )
+    with open(source["path"], "rb") as source_file:
+        assert source["sha256"] == hashlib.sha256(source_file.read()).hexdigest()
+    with open(source["validator"], "rb") as validator_file:
+        assert source["validator_sha256"] == hashlib.sha256(validator_file.read()).hexdigest()
+    assert source["validator_result"] == "pass"
+    assert source["service_operation_state"] == "freeze_preserved"
+
+    acknowledgement_keys = set(template["acknowledgements"])
+    assert {
+        "phase417_validated_closure_receipt_summary_handoff_reviewed",
+        "phase415_summary_chain_reviewed",
+        "phase416_summary_validation_reviewed",
+        "operator_actions_understood",
+        "service_freeze_acknowledged",
+        "resume_block_acknowledged",
+        "aws_no_cost_boundary_acknowledged",
+        "no_production_ui_reexecution_acknowledged",
+        "no_provider_calls_acknowledged",
+        "no_dataset_upload_acknowledged",
+        "no_training_execution_acknowledged",
+        "no_model_promotion_acknowledged",
+        "separate_approval_required_acknowledged",
+    } == acknowledgement_keys
+    assert all(value is False for value in template["acknowledgements"].values())
+
+    boundary = template["signoff_boundary"]
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_template"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["aws_resource_creation_authorized"] is False
+    assert boundary["scheduled_job_authorized"] is False
+    assert boundary["cloudwatch_polling_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_creation_authorized"] is False
+    assert boundary["provider_job_polling_authorized"] is False
+    assert boundary["external_dataset_upload_authorized"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["model_candidate_emission_authorized"] is False
+    assert boundary["model_promotion_authorized"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_validator_accepts_completed_review_and_rejects_boundary_break(
+    tmp_path,
+):
+    validator = (
+        "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    template_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+
+    pending_result = subprocess.run(
+        ["python3", validator, template_path],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert pending_result.returncode == 0
+    assert (
+        "PASS documentops phase418 validated closure receipt summary handoff sign-off validated"
+        in pending_result.stdout
+    )
+    assert "completed=false" in pending_result.stdout
+    assert "decision=pending" in pending_result.stdout
+    assert "source_handoff_validation_ok=true" in pending_result.stdout
+    assert "service_operation_state=freeze_preserved" in pending_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in pending_result.stdout
+    assert "training_boundary=not_authorized" in pending_result.stdout
+
+    completed = json.load(open(template_path, encoding="utf-8"))
+    completed["signoff_id"] = (
+        "documentops_local_feature_completion_phase417_"
+        "validated_closure_receipt_summary_handoff_signoff_phase418done"
+    )
+    completed["decision"] = "accepted"
+    completed["created_at"] = "2026-06-16T00:00:00+09:00"
+    completed["reviewer"] = {
+        "name": "Local Reviewer",
+        "title_or_team": "DocumentOps",
+        "reviewed_at": "2026-06-16T00:00:00+09:00",
+    }
+    completed["evidence_reviewed"] = [
+        completed["source_handoff"]["path"],
+        completed["source_handoff"]["validator"],
+    ]
+    completed["findings"]["summary"] = (
+        "Phase 417 validated handoff evidence reviewed; keep service frozen."
+    )
+    completed["findings"]["residual_risks"] = [
+        "Service resume remains blocked until separate approval."
+    ]
+    for acknowledgement in completed["acknowledgements"]:
+        completed["acknowledgements"][acknowledgement] = True
+    completed_path = tmp_path / "phase418_completed_signoff.json"
+    completed_path.write_text(json.dumps(completed, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    completed_result = subprocess.run(
+        ["python3", validator, str(completed_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed_result.returncode == 0
+    assert "completed=true" in completed_result.stdout
+    assert "decision=accepted" in completed_result.stdout
+
+    broken = json.load(open(completed_path, encoding="utf-8"))
+    broken["signoff_boundary"]["training_execution_authorized"] = True
+    broken_path = tmp_path / "phase418_broken_training_signoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert (
+        "FAIL documentops phase418 validated closure receipt summary handoff sign-off validation failed"
+        in broken_result.stdout
+    )
+    assert "signoff_boundary.training_execution_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(completed_path, encoding="utf-8"))
+    broken_hash["source_handoff"]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase418_broken_source_hash_signoff.json"
+    broken_hash_path.write_text(
+        json.dumps(broken_hash, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert (
+        "source_handoff.sha256 must match the Phase 417 validated handoff JSON"
+        in broken_hash_result.stdout
+    )
+
+
+def test_phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_contract_preserves_no_cost_generation_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/"
+        "PENDING_VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_GENERATOR.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/"
+        "pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 419 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Pending Sign-Off Generator"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_PENDING_SIGNOFF_GENERATOR_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "Does not record actual reviewer approval" in report
+    assert contract["report_type"] == (
+        "document_ops_phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generation_contract"
+    )
+    assert contract["phase"] == 419
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["generation_scope"] == (
+        "local_fillable_pending_phase418_validated_closure_receipt_summary_handoff_signoff_record_generation"
+    )
+    assert contract["source_template"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_template.json"
+    )
+    with open(contract["source_template"]["path"], "rb") as source_template_file:
+        assert contract["source_template"]["sha256"] == hashlib.sha256(
+            source_template_file.read()
+        ).hexdigest()
+    assert contract["source_template"]["validator"] == (
+        "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_template"]["validator"], "rb") as source_validator_file:
+        assert contract["source_template"]["validator_sha256"] == hashlib.sha256(
+            source_validator_file.read()
+        ).hexdigest()
+    assert contract["source_template"]["validator_result"] == "pass"
+    assert contract["source_handoff"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase417_local_feature_completion_validated_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff.json"
+    )
+    with open(contract["source_handoff"]["path"], "rb") as source_handoff_file:
+        assert contract["source_handoff"]["sha256"] == hashlib.sha256(
+            source_handoff_file.read()
+        ).hexdigest()
+    assert contract["source_handoff"]["validator"] == (
+        "scripts/validate_documentops_phase416_validated_closure_receipt_summary_handoff.py"
+    )
+    with open(contract["source_handoff"]["validator"], "rb") as source_handoff_validator_file:
+        assert contract["source_handoff"]["validator_sha256"] == hashlib.sha256(
+            source_handoff_validator_file.read()
+        ).hexdigest()
+    assert contract["generator"]["path"] == (
+        "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    with open(contract["generator"]["path"], "rb") as generator_file:
+        assert contract["generator"]["sha256"] == hashlib.sha256(generator_file.read()).hexdigest()
+    assert contract["generator"]["atomic_write"] is True
+    assert contract["generator"]["validates_source_template"] is True
+    assert contract["generator"]["validates_generated_record"] is True
+    assert contract["generator"]["refuses_overwrite_by_default"] is True
+    assert contract["generated_record_policy"]["decision"] == "pending"
+    assert contract["generated_record_policy"]["reviewer_fields_blank"] is True
+    assert contract["generated_record_policy"]["acknowledgements_false"] is True
+    assert contract["generated_record_policy"]["requires_human_completion"] is True
+    assert contract["generated_record_policy"]["completed_signoff_requires_phase418_validator"] is True
+
+    boundary = contract["generation_boundary"]
+    assert boundary["local_pending_record_generation"] is True
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generator_creates_fillable_record_without_authorization(
+    tmp_path,
+):
+    output_path = tmp_path / "phase419_pending_signoff.json"
+    generator = (
+        "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    validator = "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py"
+    signoff_id = (
+        "documentops_local_feature_completion_phase417_validated_closure_receipt_summary_handoff_signoff_testpending419"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert generated.returncode == 0
+    assert '"ok": true' in generated.stdout
+    assert f'"signoff_id": "{signoff_id}"' in generated.stdout
+    assert '"decision": "pending"' in generated.stdout
+    assert '"service_resume_authorized": false' in generated.stdout
+    assert '"training_execution_authorized": false' in generated.stdout
+    assert output_path.exists()
+
+    record = json.load(open(output_path, encoding="utf-8"))
+    assert record["schema_version"] == (
+        "decisiondoc_documentops_phase418_validated_closure_receipt_summary_handoff_signoff.v1"
+    )
+    assert record["phase"] == 418
+    assert record["signoff_id"] == signoff_id
+    assert record["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert record["decision"] == "pending"
+    assert record["reviewer"] == {"name": "", "title_or_team": "", "reviewed_at": ""}
+    assert record["evidence_reviewed"] == []
+    assert all(value is False for value in record["acknowledgements"].values())
+    assert record["generation_context"]["report_type"] == (
+        "document_ops_phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff_generation"
+    )
+    assert record["generation_context"]["phase"] == 419
+    assert record["generation_context"]["source_template_validation"]["ok"] is True
+    assert record["generation_context"]["generated_record_validation"]["ok"] is True
+    assert record["generation_context"]["generated_record_validation"]["completed"] is False
+    assert len(record["generation_context"]["evidence_to_review"]) >= 3
+    with open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/"
+        "validated_closure_receipt_summary_handoff_signoff_template.json",
+        "rb",
+    ) as source_template_file:
+        assert record["generation_context"]["generated_from_template_sha256"] == hashlib.sha256(
+            source_template_file.read()
+        ).hexdigest()
+    assert record["generation_boundary"]["local_pending_record_generation"] is True
+    assert record["generation_boundary"]["evidence_only_signoff"] is True
+    assert record["generation_boundary"]["service_freeze_preserved"] is True
+    assert record["generation_boundary"]["actual_reviewer_approval_recorded"] is False
+    assert record["generation_boundary"]["service_resume_authorized"] is False
+    assert record["generation_boundary"]["aws_runtime_called"] is False
+    assert record["generation_boundary"]["provider_api_calls_authorized"] is False
+    assert record["generation_boundary"]["training_execution_started"] is False
+    assert record["generation_boundary"]["model_promoted"] is False
+
+    boundary = record["signoff_boundary"]
+    assert boundary["evidence_only_signoff"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_template"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["external_dataset_upload_authorized"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["model_promotion_authorized"] is False
+
+    validated = subprocess.run(
+        ["python3", validator, str(output_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert validated.returncode == 0
+    assert "PASS documentops phase418 validated closure receipt summary handoff sign-off validated" in (
+        validated.stdout
+    )
+    assert "completed=false" in validated.stdout
+    assert "decision=pending" in validated.stdout
+
+    duplicate = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert duplicate.returncode == 1
+    assert "output already exists" in duplicate.stderr
+
+    invalid_id = subprocess.run(
+        ["python3", generator, "--json", "--signoff-id", "unsafe"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert invalid_id.returncode == 1
+    assert "signoff id must match" in invalid_id.stderr
+
+
+def test_phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_REPORTER.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/"
+        "validated_closure_receipt_summary_handoff_signoff_summary_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 420 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Summary Reporter"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_REPORTER_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "Pending records are valid review placeholders" in report
+    assert contract["report_type"] == (
+        "document_ops_phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_contract"
+    )
+    assert contract["phase"] == 420
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["summary_scope"] == (
+        "local_read_only_phase418_validated_closure_receipt_summary_handoff_signoff_summary"
+    )
+    assert contract["source_generator_contract"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json"
+    )
+    with open(contract["source_generator_contract"]["path"], "rb") as source_contract_file:
+        assert contract["source_generator_contract"]["sha256"] == hashlib.sha256(
+            source_contract_file.read()
+        ).hexdigest()
+    assert contract["source_generator"]["path"] == (
+        "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    with open(contract["source_generator"]["path"], "rb") as source_generator_file:
+        assert contract["source_generator"]["sha256"] == hashlib.sha256(
+            source_generator_file.read()
+        ).hexdigest()
+    assert contract["source_signoff_validator"]["path"] == (
+        "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_signoff_validator"]["path"], "rb") as signoff_validator_file:
+        assert contract["source_signoff_validator"]["sha256"] == hashlib.sha256(
+            signoff_validator_file.read()
+        ).hexdigest()
+    assert contract["reporter"]["path"] == (
+        "scripts/summarize_documentops_phase418_validated_closure_receipt_summary_handoff_signoffs.py"
+    )
+    with open(contract["reporter"]["path"], "rb") as reporter_file:
+        assert contract["reporter"]["sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert contract["reporter"]["read_only"] is True
+    assert contract["reporter"]["validates_each_signoff"] is True
+    assert contract["reporter"]["writes_optional_summary_outputs"] is True
+    assert contract["summary_policy"]["pending_records_are_not_approval"] is True
+    assert contract["summary_policy"]["completed_signoffs_must_validate"] is True
+    assert contract["summary_policy"]["boundary_breaks_block_summary_ok"] is True
+    assert contract["summary_policy"]["readiness_pending_status"] == (
+        "pending_phase417_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+    )
+    assert contract["summary_policy"]["readiness_accepted_status"] == (
+        "all_phase417_validated_closure_receipt_summary_handoff_signoffs_accepted_no_cost_boundary_preserved"
+    )
+
+    boundary = contract["summary_boundary"]
+    assert boundary["reads_local_signoff_records"] is True
+    assert boundary["writes_summary_only"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_reports_pending_and_rejects_boundary_breaks(
+    tmp_path,
+):
+    generator = (
+        "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    reporter = "scripts/summarize_documentops_phase418_validated_closure_receipt_summary_handoff_signoffs.py"
+    output_path = tmp_path / "phase419_pending_signoff.json"
+    summary_path = tmp_path / "phase420_summary.json"
+    markdown_path = tmp_path / "phase420_summary.md"
+    signoff_id = (
+        "documentops_local_feature_completion_phase417_validated_closure_receipt_summary_handoff_signoff_summary420"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(output_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert generated.returncode == 0
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            str(output_path),
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    summary = json.loads(summarized.stdout)
+    assert summarized.returncode == 0
+    assert summary["report_type"] == (
+        "document_ops_phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary"
+    )
+    assert summary["schema_version"] == (
+        "decisiondoc_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_summary.v1"
+    )
+    assert summary["ok"] is True
+    assert summary["completion_ready"] is False
+    assert summary["readiness"]["status"] == (
+        "pending_phase417_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+    )
+    assert summary["counts"]["signoff_count"] == 1
+    assert summary["counts"]["valid_signoff_count"] == 1
+    assert summary["counts"]["pending_signoff_count"] == 1
+    assert summary["counts"]["completed_signoff_count"] == 0
+    assert summary["counts"]["accepted_signoff_count"] == 0
+    assert summary["counts"]["boundary_break_count"] == 0
+    assert summary["signoffs"][0]["signoff_id"] == signoff_id
+    assert summary["signoffs"][0]["decision"] == "pending"
+    assert summary["signoffs"][0]["validation"]["ok"] is True
+    assert summary_path.exists()
+    assert markdown_path.exists()
+    assert "DocumentOps Phase 418 Validated Closure Receipt Summary Handoff Sign-Off Summary" in (
+        markdown_path.read_text(encoding="utf-8")
+    )
+    assert summary["side_effect_boundary"]["reads_local_signoff_records"] is True
+    assert summary["side_effect_boundary"]["actual_reviewer_approval_recorded_by_summary"] is False
+    assert summary["side_effect_boundary"]["training_execution_started"] is False
+
+    broken = json.load(open(output_path, encoding="utf-8"))
+    broken["generation_boundary"]["training_execution_started"] = True
+    broken_path = tmp_path / "phase420_broken_training_signoff.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", reporter, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    broken_summary = json.loads(broken_result.stdout)
+    assert broken_result.returncode == 1
+    assert "invalid_signoff_records" in broken_summary["readiness"]["blocker_reasons"]
+    assert "signoff_boundary_breaks" in broken_summary["readiness"]["blocker_reasons"]
+    assert broken_summary["counts"]["boundary_break_count"] == 1
+    assert "generation_boundary.training_execution_started" in broken_summary["signoffs"][0]["boundary_breaks"]
+
+
+def test_phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validator_contract_preserves_read_only_boundary():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_VALIDATOR.md",
+        encoding="utf-8",
+    ).read()
+    contract_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/"
+        "validated_closure_receipt_summary_handoff_signoff_summary_validation_contract.json"
+    )
+    contract = json.load(open(contract_path, encoding="utf-8"))
+
+    assert (
+        "Phase 421 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Summary Validator"
+        in report
+    )
+    assert (
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_SUMMARY_VALIDATOR_READY_NO_AWS_NO_TRAINING_AUTHORIZATION"
+        in report
+    )
+    assert "linked Phase 418 sign-off hashes" in report
+    assert contract["report_type"] == (
+        "document_ops_phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract"
+    )
+    assert contract["phase"] == 421
+    assert contract["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert contract["validation_scope"] == (
+        "local_read_only_phase420_validated_closure_receipt_summary_handoff_signoff_summary_validation"
+    )
+    assert contract["source_summary_contract"]["path"] == (
+        "docs/specs/hermes_decisiondoc_agent/phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_summary_contract.json"
+    )
+    with open(contract["source_summary_contract"]["path"], "rb") as source_contract_file:
+        assert contract["source_summary_contract"]["sha256"] == hashlib.sha256(
+            source_contract_file.read()
+        ).hexdigest()
+    assert contract["source_reporter"]["path"] == (
+        "scripts/summarize_documentops_phase418_validated_closure_receipt_summary_handoff_signoffs.py"
+    )
+    with open(contract["source_reporter"]["path"], "rb") as reporter_file:
+        assert contract["source_reporter"]["sha256"] == hashlib.sha256(reporter_file.read()).hexdigest()
+    assert contract["source_signoff_validator"]["path"] == (
+        "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py"
+    )
+    with open(contract["source_signoff_validator"]["path"], "rb") as validator_file:
+        assert contract["source_signoff_validator"]["sha256"] == hashlib.sha256(
+            validator_file.read()
+        ).hexdigest()
+    assert contract["summary_validator"]["path"] == (
+        "scripts/validate_documentops_phase420_validated_closure_receipt_summary_handoff_signoff_summary.py"
+    )
+    with open(contract["summary_validator"]["path"], "rb") as summary_validator_file:
+        assert contract["summary_validator"]["sha256"] == hashlib.sha256(
+            summary_validator_file.read()
+        ).hexdigest()
+    assert contract["summary_validator"]["read_only"] is True
+    assert contract["summary_validator"]["revalidates_linked_signoffs"] is True
+    assert contract["summary_validator"]["checks_summary_counts"] is True
+    assert contract["summary_validator"]["supports_require_complete"] is True
+    assert contract["summary_validator"]["writes_repo_files"] is False
+
+    boundary = contract["validation_boundary"]
+    assert boundary["read_only_summary_validation"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_summary"] is False
+    assert boundary["actual_reviewer_approval_recorded_by_validator"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_authorized"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_authorized"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validator_accepts_summary_and_rejects_boundary_breaks(
+    tmp_path,
+):
+    generator = (
+        "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py"
+    )
+    reporter = "scripts/summarize_documentops_phase418_validated_closure_receipt_summary_handoff_signoffs.py"
+    validator = "scripts/validate_documentops_phase420_validated_closure_receipt_summary_handoff_signoff_summary.py"
+    pending_path = tmp_path / "phase419_pending_signoff.json"
+    summary_path = tmp_path / "phase420_summary.json"
+    signoff_id = (
+        "documentops_local_feature_completion_phase417_validated_closure_receipt_summary_handoff_signoff_testpending421"
+    )
+
+    generated = subprocess.run(
+        [
+            "python3",
+            generator,
+            "--output",
+            str(pending_path),
+            "--signoff-id",
+            signoff_id,
+            "--created-at",
+            "2026-06-16T00:00:00+09:00",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert generated.returncode == 0
+
+    summarized = subprocess.run(
+        [
+            "python3",
+            reporter,
+            str(pending_path),
+            "--generated-at",
+            "2026-06-16T00:00:00+09:00",
+            "--output",
+            str(summary_path),
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert summarized.returncode == 0
+
+    valid_result = subprocess.run(
+        ["python3", validator, str(summary_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert valid_result.returncode == 0
+    assert "PASS documentops phase421 validated closure receipt summary handoff sign-off summary validated" in (
+        valid_result.stdout
+    )
+    assert "signoff_summary_valid=true" in valid_result.stdout
+    assert "completion_ready=false" in valid_result.stdout
+    assert (
+        "readiness_status=pending_phase417_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+        in valid_result.stdout
+    )
+    assert "signoff_count=1" in valid_result.stdout
+    assert "service_operation_state=freeze_preserved" in valid_result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in valid_result.stdout
+    assert "training_boundary=not_authorized" in valid_result.stdout
+
+    require_complete = subprocess.run(
+        ["python3", validator, str(summary_path), "--require-complete"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert require_complete.returncode == 1
+    assert "completion_ready must be true when --require-complete is used" in require_complete.stdout
+
+    broken = json.load(open(summary_path, encoding="utf-8"))
+    broken["readiness"]["training_execution_authorized"] = True
+    broken_path = tmp_path / "phase421_broken_training_summary.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase421 validated closure receipt summary handoff sign-off summary validation failed" in (
+        broken_result.stdout
+    )
+    assert "readiness.training_execution_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(summary_path, encoding="utf-8"))
+    broken_hash["signoffs"][0]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase421_broken_signoff_hash_summary.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "signoffs[1].sha256 must match linked Phase 418 sign-off file" in broken_hash_result.stdout
+
+
+def test_phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index_records_full_local_chain():
+    report = open(
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "VALIDATED_CLOSURE_RECEIPT_SUMMARY_HANDOFF_SIGNOFF_CLOSURE_INDEX.md",
+        encoding="utf-8",
+    ).read()
+    index_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_index.json"
+    )
+    index = json.load(open(index_path, encoding="utf-8"))
+
+    assert (
+        "Phase 422 Local Feature Completion Validated Closure Receipt Summary Handoff Sign-Off Closure Index"
+        in report
+    )
+    assert "Phase 417-421 local evidence chain" in report
+    assert "temporary Phase 420 summary" in report
+    assert index["report_type"] == (
+        "document_ops_phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index"
+    )
+    assert index["phase"] == 422
+    assert index["created_at"] == "2026-06-16T00:00:00+09:00"
+    assert index["closure_scope"] == (
+        "local_read_only_phase417_to_phase421_validated_closure_receipt_summary_handoff_signoff_closure_validation"
+    )
+    assert index["recommended_decision"] == "keep_service_frozen"
+
+    expected_artifacts = {
+        "phase417_validated_closure_receipt_summary_handoff": {
+            "phase": 417,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase417_local_feature_completion_validated_closure_receipt_summary_handoff/validated_closure_receipt_summary_handoff.json",
+            "validator": "scripts/validate_documentops_phase416_validated_closure_receipt_summary_handoff.py",
+        },
+        "phase418_validated_closure_receipt_summary_handoff_signoff_template": {
+            "phase": 418,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase418_local_feature_completion_validated_closure_receipt_summary_handoff_signoff/validated_closure_receipt_summary_handoff_signoff_template.json",
+            "validator": "scripts/validate_documentops_phase417_validated_closure_receipt_summary_handoff_signoff.py",
+        },
+        "phase419_pending_validated_closure_receipt_summary_handoff_signoff_generation_contract": {
+            "phase": 419,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase419_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_pending_signoff/pending_validated_closure_receipt_summary_handoff_signoff_generation_contract.json",
+            "validator": "scripts/create_documentops_phase418_validated_closure_receipt_summary_handoff_signoff_pending_signoff.py",
+        },
+        "phase420_validated_closure_receipt_summary_handoff_signoff_summary_contract": {
+            "phase": 420,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase420_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary/validated_closure_receipt_summary_handoff_signoff_summary_contract.json",
+            "validator": "scripts/summarize_documentops_phase418_validated_closure_receipt_summary_handoff_signoffs.py",
+        },
+        "phase421_validated_closure_receipt_summary_handoff_signoff_summary_validation_contract": {
+            "phase": 421,
+            "path": "docs/specs/hermes_decisiondoc_agent/phase421_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_summary_validation/validated_closure_receipt_summary_handoff_signoff_summary_validation_contract.json",
+            "validator": "scripts/validate_documentops_phase420_validated_closure_receipt_summary_handoff_signoff_summary.py",
+        },
+    }
+    artifacts_by_id = {artifact["id"]: artifact for artifact in index["source_artifacts"]}
+    assert set(artifacts_by_id) == set(expected_artifacts)
+    for artifact_id, expected in expected_artifacts.items():
+        artifact = artifacts_by_id[artifact_id]
+        assert artifact["phase"] == expected["phase"]
+        assert artifact["path"] == expected["path"]
+        assert artifact["validator"] == expected["validator"]
+        with open(artifact["path"], "rb") as source_artifact_file:
+            assert artifact["sha256"] == hashlib.sha256(source_artifact_file.read()).hexdigest()
+
+    closure_validator = index["closure_validator"]
+    assert closure_validator["path"] == (
+        "scripts/validate_documentops_phase417_to_phase421_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+    )
+    with open(closure_validator["path"], "rb") as validator_file:
+        assert closure_validator["sha256"] == hashlib.sha256(validator_file.read()).hexdigest()
+    assert closure_validator["checks_source_artifact_hashes"] is True
+    assert closure_validator["runs_phase417_validator"] is True
+    assert closure_validator["validates_phase418_template"] is True
+    assert closure_validator["generates_temporary_phase419_pending_signoff"] is True
+    assert closure_validator["builds_temporary_phase420_summary"] is True
+    assert closure_validator["runs_phase421_summary_validator"] is True
+    assert closure_validator["writes_repo_files"] is False
+
+    policy = index["closure_policy"]
+    assert policy["pending_summary_can_validate_as_non_approval_evidence"] is True
+    assert policy["actual_reviewer_approval_still_required_for_completion"] is True
+    assert policy["phase422_is_not_service_resume_approval"] is True
+    assert policy["boundary_breaks_fail_validation"] is True
+    assert policy["artifact_hash_mismatch_fails_validation"] is True
+
+    boundary = index["closure_boundary"]
+    assert boundary["local_read_only_closure_validation"] is True
+    assert boundary["temporary_local_probe_files_allowed"] is True
+    assert boundary["service_freeze_preserved"] is True
+    assert boundary["resume_requires_separate_approval"] is True
+    assert boundary["actual_reviewer_approval_recorded_by_validator"] is False
+    assert boundary["service_resume_authorized"] is False
+    assert boundary["production_ui_called"] is False
+    assert boundary["production_uat_reexecuted"] is False
+    assert boundary["production_download_open_verification_authorized"] is False
+    assert boundary["aws_runtime_called"] is False
+    assert boundary["aws_cost_increase_allowed"] is False
+    assert boundary["aws_deploy_started"] is False
+    assert boundary["aws_resource_created"] is False
+    assert boundary["scheduled_job_enabled"] is False
+    assert boundary["cloudwatch_polling_started"] is False
+    assert boundary["provider_api_calls_authorized"] is False
+    assert boundary["provider_fine_tune_api_called"] is False
+    assert boundary["provider_job_created"] is False
+    assert boundary["provider_job_polled"] is False
+    assert boundary["external_dataset_uploaded"] is False
+    assert boundary["training_execution_started"] is False
+    assert boundary["model_candidate_emitted"] is False
+    assert boundary["model_promoted"] is False
+    assert boundary["aws_cost_boundary"] == "no_cost_increase"
+    assert boundary["training_boundary"] == "not_authorized"
+
+
+def test_phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index_validator_accepts_chain_and_rejects_boundary_break(
+    tmp_path,
+):
+    index_path = (
+        "docs/specs/hermes_decisiondoc_agent/"
+        "phase422_local_feature_completion_validated_closure_receipt_summary_handoff_signoff_closure_index/"
+        "validated_closure_receipt_summary_handoff_signoff_closure_index.json"
+    )
+    validator = (
+        "scripts/validate_documentops_phase417_to_phase421_validated_closure_receipt_summary_handoff_signoff_closure_index.py"
+    )
+
+    result = subprocess.run(
+        ["python3", validator],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "PASS documentops phase422 validated closure receipt summary handoff sign-off closure index validated" in (
+        result.stdout
+    )
+    assert "closure_index_valid=true" in result.stdout
+    assert "source_artifact_count=5" in result.stdout
+    assert "probe_count=5" in result.stdout
+    assert (
+        "temporary_summary_readiness=pending_phase417_validated_closure_receipt_summary_handoff_signoff_review_no_training_authorization"
+        in result.stdout
+    )
+    assert "temporary_summary_validation_ok=true" in result.stdout
+    assert "service_operation_state=freeze_preserved" in result.stdout
+    assert "recommended_decision=keep_service_frozen" in result.stdout
+    assert "aws_cost_boundary=no_cost_increase" in result.stdout
+    assert "training_boundary=not_authorized" in result.stdout
+
+    broken = json.load(open(index_path, encoding="utf-8"))
+    broken["closure_boundary"]["service_resume_authorized"] = True
+    broken_path = tmp_path / "phase422_broken_resume_index.json"
+    broken_path.write_text(json.dumps(broken, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_result = subprocess.run(
+        ["python3", validator, str(broken_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_result.returncode == 1
+    assert "FAIL documentops phase422 validated closure receipt summary handoff sign-off closure index validation failed" in (
+        broken_result.stdout
+    )
+    assert "closure_boundary.service_resume_authorized must be false" in broken_result.stdout
+
+    broken_hash = json.load(open(index_path, encoding="utf-8"))
+    broken_hash["source_artifacts"][0]["sha256"] = "0" * 64
+    broken_hash_path = tmp_path / "phase422_broken_hash_index.json"
+    broken_hash_path.write_text(json.dumps(broken_hash, ensure_ascii=False, indent=2), encoding="utf-8")
+    broken_hash_result = subprocess.run(
+        ["python3", validator, str(broken_hash_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert broken_hash_result.returncode == 1
+    assert "source_artifacts.phase417_validated_closure_receipt_summary_handoff.sha256 must match" in (
+        broken_hash_result.stdout
+    )
+
+
 def test_phase30_operator_reviewer_signoff_packet_guide_documents_operational_flow():
     guide = open(
         "docs/specs/hermes_decisiondoc_agent/phase30_reviewer_signoff_packet/OPERATOR_PACKET_GUIDE.md",

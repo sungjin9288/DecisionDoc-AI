@@ -56,7 +56,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
         json={
             "task_type": "policy_planning_brief",
             "requirements": {
-                "title": "보행자 보호 통합 안전서비스",
+                "title": "보행자 안전 정책 기획 사업",
                 "goal": "운영 가능한 정책 보고서 기획",
                 "raw_attachment": "binary-like-data",
             },

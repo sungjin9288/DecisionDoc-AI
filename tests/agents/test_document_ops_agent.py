@@ -48,7 +48,7 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
         DocumentOpsRequest(
             task_type="policy_planning_brief",
             requirements={
-                "title": "보행자 보호 통합 안전서비스",
+                "title": "보행자 안전 정책 기획 사업",
                 "goal": "반복 위험을 운영 가능한 공공 안전서비스로 전환",
             },
             source_references=[{"id": "research-report", "title": "보행자 사고 분석"}],
@@ -60,7 +60,7 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     assert result.provider_name == "mock"
     assert result.skill_name == "policy-planning"
     assert result.plan
-    assert "보행자 보호 통합 안전서비스" in result.draft
+    assert "보행자 안전 정책 기획 사업" in result.draft
     assert result.qa["hard_gate_pass"] is True
     assert result.trajectory is not None
     assert result.trajectory["skill"]["name"] == "policy-planning"

@@ -2,7 +2,7 @@ from app.evals.document_ops.gates import evaluate_document_ops_output
 
 
 def _good_policy_draft() -> str:
-    return """# 보행자 보호 통합 안전서비스
+    return """# 보행자 안전 정책 기획 사업
 
 ## 문제와 근거
 보행자 사고 위험이 반복되는 교차로에서 교통약자 안전을 높이기 위해 확인된 사고 분석 자료와 운영 로그를 근거로 문제를 정의합니다.

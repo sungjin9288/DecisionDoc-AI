@@ -37,7 +37,7 @@ def _create_workflow(client: TestClient, **overrides):
     payload = {
         "title": "단계형 제안서",
         "goal": "PM과 대표 승인 가능한 보고서 제작",
-        "client": "다울",
+        "client": "샘플기관",
         "audience": "PM, 대표",
         "slide_count": 3,
         "learning_opt_in": True,
@@ -379,7 +379,7 @@ def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, m
     item = body["artifacts"][0]
     assert item["report_workflow_id"] == workflow_id
     assert item["workflow_title"] == "단계형 제안서"
-    assert item["client"] == "다울"
+    assert item["client"] == "샘플기관"
     assert item["ready_for_learning"] is True
     assert item["validation_ok"] is True
     assert item["overall_score"] == 0.88
@@ -674,7 +674,7 @@ def test_final_approved_workflow_promotes_to_project_and_knowledge(tmp_path, mon
     client = _create_client(tmp_path, monkeypatch)
     project = client.post(
         "/projects",
-        json={"name": "워크플로우 산출물", "client": "다울", "description": "승인본 저장소"},
+        json={"name": "워크플로우 산출물", "client": "샘플기관", "description": "승인본 저장소"},
     ).json()
     created = _create_workflow(client, slide_count=2, learning_opt_in=True)
     workflow_id = created["report_workflow_id"]
