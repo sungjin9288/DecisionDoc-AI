@@ -170,7 +170,7 @@ find tests -name "test_*.py" | wc -l  # → 191
 ## Links
 
 - GitHub: [sungjin9288/DecisionDoc-AI](https://github.com/sungjin9288/DecisionDoc-AI)
-- Release evidence: [DecisionDoc AI v1.1.58 Production Release](https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.58)
+- Release evidence: [DecisionDoc AI v1.1.77 Production Release](https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77)
 - Demo: (접근 검증 후 추가)
 - 엔지니어링/기여 가이드: [`docs/`](./docs/) 및 `AGENTS.md`
 
