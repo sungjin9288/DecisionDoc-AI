@@ -10,7 +10,7 @@
 - 현재 상태: MVP 구현 후 고도화 중
 - 내 역할: 확인 필요. 저장소 기준으로는 백엔드, API, 문서 생성 파이프라인, 운영 문서화에 기여했다고 설명 가능하나 개인 직접 구현 범위는 별도 확인 필요
 - GitHub 링크: https://github.com/sungjin9288/DecisionDoc-AI
-- Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.58
+- Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77
 - Demo 링크: 문서상 `https://admin.decisiondoc.kr` 운영 기준 URL이 있으나 현재 접근 검증 필요
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, OpenAI/Gemini/Claude/Local/Mock provider abstraction, Docker Compose, AWS SAM/Lambda, local/S3 storage, pytest
 - 이력서 반영 가능 여부: 조건부 가능
