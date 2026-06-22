@@ -162,14 +162,15 @@ find tests -name "test_*.py" | wc -l  # → 191
 - 완전한 문서관리 시스템이 아니라 **AI-assisted documentation MVP/PoC**입니다.
 - 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
 - 실제 사용자 성과 수치·production 운영 안정성은 검증되지 않았습니다 — **"상용 운영 플랫폼"으로 표기하지 않습니다.**
-- 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 공개 전 별도 정리**가 필요합니다.
+- 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 
 ---
 
 ## Links
 
-- GitHub: (추가 예정)
+- GitHub: [sungjin9288/DecisionDoc-AI](https://github.com/sungjin9288/DecisionDoc-AI)
+- Release evidence: [DecisionDoc AI v1.1.58 Production Release](https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.58)
 - Demo: (접근 검증 후 추가)
 - 엔지니어링/기여 가이드: [`docs/`](./docs/) 및 `AGENTS.md`
 
