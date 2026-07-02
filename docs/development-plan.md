@@ -82,14 +82,15 @@ Providers (5)    Storage (36 스토어)    Ops
 
 ## 3. 갭 분석 — 무엇이 완성을 막고 있나
 
-| # | 갭 | 근거 (실측) | 심각도 |
-|---|-----|------------|--------|
-| G1 | **Live provider 미실증** — openai/gemini/claude 연동 코드는 완비, 실 API 호출 검증 0회 | `pytest -m live` 미실행 (키 필요) | HIGH |
-| G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH |
-| G3 | **800줄 초과 모듈 15개** | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED |
-| G4 | **excel export 비대칭** — 84줄로 타 export(777~1,410줄) 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED |
-| G5 | **CSP nonce 미적용** — `script-src 'unsafe-inline'` 의존 | `app/middleware/security_headers.py` | MED |
-| G6 | **배포 접근성 미검증** — 운영 URL 동작 보장 없음 (README §Scope 명시) | — | MED |
+| # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-02) |
+|---|-----|------------|--------|--------------------|
+| G1 | **Live provider 미실증** — openai/gemini/claude 연동 코드는 완비, 실 API 호출 검증 0회 | `pytest -m live` 미실행 (키 필요) | HIGH | 미착수 (키 필요) |
+| G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
+| G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **상위 5개 분할 완료, 10개 잔여** |
+| G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
+| G5 | **CSP nonce 미적용** — `script-src 'unsafe-inline'` 의존 | `app/middleware/security_headers.py` | MED | **부분 완료** — nonce 배관 + `DECISIONDOC_CSP_NONCE_ENFORCED` 게이팅(기본 off). CSP 스펙상 nonce 존재 시 브라우저가 `'unsafe-inline'`을 전면 무시해 inline `on*=` 핸들러 ~340개가 파손되므로, 이벤트 위임 리팩토링(후속) 후 플래그 on |
+| G6 | **배포 접근성 미검증** — 운영 URL 동작 보장 없음 (README §Scope 명시) | — | MED | 미착수 |
+| G7 | **모듈 레벨 side-effect** — `app/main.py:534`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 (uvicorn `app.main:app` 타깃용). CLAUDE.md의 "모듈 레벨 side-effect 없음" 원칙 위반 | `grep -n "app = create_app()" app/main.py` | MED | 신규 식별 — 테스트 측은 격리 수정 완료(커밋 3ba8682), 근본 해결은 uvicorn `--factory` 전환 검토 필요 |
 
 ---
 
@@ -112,31 +113,35 @@ Providers (5)    Storage (36 스토어)    Ops
   3. GO / CONDITIONAL_GO / NO_GO 판정 재현성 확인.
 - DoD: 실데이터 1건의 end-to-end 실행 증적 + 해당 케이스의 키-불필요 회귀 테스트. 입찰 제출·법적 승인은 범위 밖(기존 boundary 유지).
 
-### M3 — Export 5종 대칭성 (G4) · 외부 의존 없음
+### M3 — Export 5종 대칭성 (G4) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 커밋 e9ecabc)
 
-- 작업: excel export를 타 포맷과 동등한 수준으로 — 다중 시트(문서 유형별), 헤더 서식, 메타데이터 시트. endpoint 테스트를 docx/pptx 수준으로 보강.
-- DoD: 5종 export 모두 동등한 테스트 커버리지(생성·다운로드·경계 케이스), excel 산출물 샘플 저장.
+- 결과: 표지+요약(메트릭)+doc_type별 다중 시트, 헤더 서식/열 너비/text_wrap, 빈 입력·특수문자·32,767자 한계·시트명 정규화 방어. `build_excel` 시그니처 무변경. 테스트 6→14개(openpyxl 재오픈 검증 포함).
 
-### M4 — 보안 성숙: CSP Nonce (G5) · 외부 의존 없음
+### M4 — 보안 성숙: CSP Nonce (G5) · 외부 의존 없음 · ◐ 부분 완료 (2026-07-02, 커밋 0f9ff1e)
 
-- 작업:
-  1. `security_headers.py`에 요청별 nonce 생성 → 템플릿/정적 HTML의 inline script에 nonce 부여.
-  2. `script-src 'unsafe-inline'` 제거.
-  3. 보안 헤더 회귀 테스트 갱신 (`tests/test_infrastructure.py` CSP 테스트).
-- DoD: CSP에 unsafe-inline 부재 + nonce 검증 테스트 통과 + UI 스모크 정상.
+- 완료: 요청별 nonce 생성/HTML 스탬핑/헤더 배선 + 테스트. `DECISIONDOC_CSP_NONCE_ENFORCED` 플래그 게이팅(기본 off).
+- 차단 요인(실측): index.html에 inline `on*=` 핸들러 ~340개(일부 JS 템플릿 리터럴로 런타임 생성). CSP 스펙상 script-src에 nonce가 존재하면 CSP L2+ 브라우저는 `'unsafe-inline'`을 **inline 핸들러 포함** 전면 무시하므로, 지금 nonce를 켜면 실브라우저에서 UI 파손.
+- 후속(M4b): inline 핸들러를 `data-action` + 이벤트 위임으로 리팩토링 → 플래그 on → `'unsafe-inline'` 완전 제거.
+- 갱신된 DoD: 이벤트 위임 완료 + 플래그 기본 on + CSP에 unsafe-inline 부재 + UI 스모크 정상.
 
-### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음
+### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음 · ◐ 상위 5개 완료 (2026-07-02)
 
-2026-07-02에 `procurement_decision_package_service.py`(4,883줄)를 13-모듈 패키지로 분할한 패턴(순수 코드 이동 + facade re-export + AST 동일성 검증)을 재사용한다. 우선순위:
+`procurement_decision_package_service.py`(4,883줄) 분할 패턴(순수 코드 이동 + facade re-export + AST 동일성 검증)을 재사용한다.
 
-| 순서 | 모듈 | 줄 수 | 분할 방향 |
-|------|------|------|-----------|
-| 1 | `app/storage/trajectory_store.py` | 2,665 | 기록/조회/집계 분리 |
-| 2 | `app/services/generation_service.py` | 2,331 | 파이프라인 단계별 (cache/provider 호출/렌더/lint) |
-| 3 | `app/routers/admin.py` | 2,246 | 도메인별 sub-router (tenants/models/audit) |
-| 4 | `app/routers/generate.py` | 2,170 | 생성/부가기능(refine·translate·review) 분리 |
-| 5 | `app/providers/mock_provider.py` | 1,794 | 번들 유형별 fixture 모듈 분리 |
-| … | 나머지 10개 (805~1,468줄) | — | 위 5개 완료 후 동일 패턴 |
+**완료 (2026-07-02):**
+
+| 모듈 | 이전 | 결과 | 커밋 |
+|------|------|------|------|
+| `app/storage/trajectory_store.py` | 2,665 | 13모듈 mixin 패키지 (최대 446줄) | dd2562f |
+| `app/services/generation_service.py` | 2,331 | 13모듈 패키지 (최대 347줄) | 5596499 |
+| `app/routers/admin.py` | 2,246 | 9모듈 sub-router 패키지 (최대 747줄) | 9c56d4a |
+| `app/routers/generate.py` | 2,170 | 6모듈 sub-router 패키지 (최대 698줄) | 195dc43 |
+| `app/providers/mock_provider.py` | 1,794 | 9모듈 fixture 패키지 (최대 421줄) | 806531e |
+
+**잔여 10개** (2026-07-02 재측정: `find app -name '*.py' | xargs wc -l | awk '$1>800'`):
+projects 라우터 1,468 · pptx_service 1,410 · report_workflow_service 1,322 ·
+procurement_decision_service 1,252 · schemas 1,179 · report_workflow_store 1,159 ·
+ops/service 990 · knowledge_store 973 · attachment_service 881 · decision_council_service 805
 
 - DoD: 분할 대상 모듈 800줄 이하 + 기존 import 경로 무변경 + 전체 회귀 통과.
 

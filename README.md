@@ -198,14 +198,14 @@ find tests -name "test_*.py" | wc -l  # → 205
 
 mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -m "not live"` → 2,690 passed, 2026-07-02 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
-| 마일스톤 | 내용 | 외부 의존 |
-|----------|------|-----------|
-| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 |
-| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` |
-| **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 |
-| **M4** | CSP nonce 적용 — `script-src 'unsafe-inline'` 제거 | 없음 |
-| **M5** | 800줄 초과 모듈 15개 분할 (2026-07-02 procurement 패키지 분할 패턴 재사용) | 없음 |
-| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-02) |
+|----------|------|-----------|--------------------|
+| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 | 미착수 |
+| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
+| **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
+| **M4** | CSP nonce 적용 — `script-src 'unsafe-inline'` 제거 | 없음 | ◐ nonce 배관+플래그 완료, inline 핸들러 이벤트 위임 후속 |
+| **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ◐ 상위 5개(1,794~2,665줄) 완료, 10개 잔여 |
+| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
 
 우선순위는 **M1·M2** — 코드가 아니라 "실증 증거"가 현재 완성의 병목입니다. 각 마일스톤의 완료 정의(DoD)·리스크·실행 순서는 계획 문서 참조.
 
