@@ -13,7 +13,7 @@
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
 | **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -m "not live"` → 2,690 passed, 2026-07-02) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
-| **아키텍처 위생** | 800줄 초과 모듈 15개 잔존 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
+| **아키텍처 위생** | ✅ 달성 (2026-07-02: 800줄 초과 15개 전부 분할 → 0개) | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, 배포 접근성 미검증 | 배포 절차 재검증 + post-deploy smoke 증적, 보안 부채(CSP nonce) 해소 |
 
 ```bash
@@ -86,11 +86,11 @@ Providers (5)    Storage (36 스토어)    Ops
 |---|-----|------------|--------|--------------------|
 | G1 | **Live provider 미실증** — openai/gemini/claude 연동 코드는 완비, 실 API 호출 검증 0회 | `pytest -m live` 미실행 (키 필요) | HIGH | 미착수 (키 필요) |
 | G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
-| G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **상위 5개 분할 완료, 10개 잔여** |
+| G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **✅ 완전 해소** (2026-07-02, 15개 전부 분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 미적용** — `script-src 'unsafe-inline'` 의존 | `app/middleware/security_headers.py` | MED | **부분 완료** — nonce 배관 + `DECISIONDOC_CSP_NONCE_ENFORCED` 게이팅(기본 off). CSP 스펙상 nonce 존재 시 브라우저가 `'unsafe-inline'`을 전면 무시해 inline `on*=` 핸들러 ~340개가 파손되므로, 이벤트 위임 리팩토링(후속) 후 플래그 on |
 | G6 | **배포 접근성 미검증** — 운영 URL 동작 보장 없음 (README §Scope 명시) | — | MED | 미착수 |
-| G7 | **모듈 레벨 side-effect** — `app/main.py:534`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 (uvicorn `app.main:app` 타깃용). CLAUDE.md의 "모듈 레벨 side-effect 없음" 원칙 위반 | `grep -n "app = create_app()" app/main.py` | MED | 신규 식별 — 테스트 측은 격리 수정 완료(커밋 3ba8682), 근본 해결은 uvicorn `--factory` 전환 검토 필요 |
+| G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
 
 ---
 
@@ -124,7 +124,7 @@ Providers (5)    Storage (36 스토어)    Ops
 - 후속(M4b): inline 핸들러를 `data-action` + 이벤트 위임으로 리팩토링 → 플래그 on → `'unsafe-inline'` 완전 제거.
 - 갱신된 DoD: 이벤트 위임 완료 + 플래그 기본 on + CSP에 unsafe-inline 부재 + UI 스모크 정상.
 
-### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음 · ◐ 상위 5개 완료 (2026-07-02)
+### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 800줄 초과 0개)
 
 `procurement_decision_package_service.py`(4,883줄) 분할 패턴(순수 코드 이동 + facade re-export + AST 동일성 검증)을 재사용한다.
 
@@ -138,12 +138,22 @@ Providers (5)    Storage (36 스토어)    Ops
 | `app/routers/generate.py` | 2,170 | 6모듈 sub-router 패키지 (최대 698줄) | 195dc43 |
 | `app/providers/mock_provider.py` | 1,794 | 9모듈 fixture 패키지 (최대 421줄) | 806531e |
 
-**잔여 10개** (2026-07-02 재측정: `find app -name '*.py' | xargs wc -l | awk '$1>800'`):
-projects 라우터 1,468 · pptx_service 1,410 · report_workflow_service 1,322 ·
-procurement_decision_service 1,252 · schemas 1,179 · report_workflow_store 1,159 ·
-ops/service 990 · knowledge_store 973 · attachment_service 881 · decision_council_service 805
+**잔여 10개도 완료 (2026-07-02):**
 
-- DoD: 분할 대상 모듈 800줄 이하 + 기존 import 경로 무변경 + 전체 회귀 통과.
+| 모듈 | 이전 | 결과 | 커밋 |
+|------|------|------|------|
+| `app/routers/projects.py` | 1,468 | 4모듈 sub-router (최대 658줄) | d27d0c5 |
+| `app/services/pptx_service.py` | 1,410 | 6모듈 (최대 558줄) | a7f76e7 |
+| `app/services/report_workflow_service.py` | 1,322 | 6모듈 mixin (최대 371줄) | 9af900f |
+| `app/services/procurement_decision_service.py` | 1,252 | 7모듈 mixin (최대 402줄) | 41bd6e2 |
+| `app/schemas.py` | 1,179 | 12모듈 도메인 분할, OpenAPI byte-identical | b883254 |
+| `app/storage/report_workflow_store.py` | 1,159 | 8모듈 mixin (최대 280줄) | ba32780 |
+| `app/ops/service.py` | 990 | 7모듈 mixin (최대 314줄) | 0e4be91 |
+| `app/storage/knowledge_store.py` | 973 | 7모듈 mixin (최대 303줄) | 44c06fe |
+| `app/services/attachment_service.py` | 881 | 5모듈 (최대 312줄) | 4ecaa97 |
+| `app/services/decision_council_service.py` | 805 | 4모듈 (최대 415줄) | 683457c |
+
+- DoD 달성: `find app -name '*.py' | xargs wc -l | awk '$1>800'` → **0개**. 전 분할이 순수 코드 이동(AST 동일성 검증) + facade(import 경로 무변경).
 
 ### M6 — 운영 준비성 (G6) · 외부 의존: 배포 환경
 
