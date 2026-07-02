@@ -4,28 +4,15 @@ This store complements FineTuneStore. It keeps rich internal trajectories in a
 tenant-scoped JSONL file, then exports reviewed/accepted examples into
 SFT-compatible message records only when explicitly requested.
 
-The implementation now lives in the ``app.storage.trajectory`` package, split
-into focused mixins (core_mixin, sft_export_mixin, freeze_mixin,
-training_approval_mixin, training_execution_mixin, training_audit_mixin,
-signoff_mixin) and standalone helper modules (constants, redaction,
-sft_quality, training_readiness, signoff). This module is kept as a
-backward-compatible facade that re-exports the full public and internal API
-so existing ``from app.storage.trajectory_store import X`` imports keep
-working unchanged.
+The implementation is split into focused mixins and helper modules (core_mixin,
+sft_export_mixin, freeze_mixin, training_approval_mixin, training_execution_mixin,
+training_audit_mixin, signoff_mixin, plus the standalone helper modules
+constants, redaction, sft_quality, training_readiness, signoff). This package
+composes them into the single public ``TrajectoryStore`` class and re-exports
+every public and internal symbol so existing
+``from app.storage.trajectory_store import X`` imports keep working unchanged.
 """
 from __future__ import annotations
-
-import hashlib
-import json
-import logging
-import re
-import threading
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
-
-from app.storage.base import atomic_write_text
 
 from app.storage.trajectory.constants import (
     _EXPORT_FILENAME_RE,
@@ -89,7 +76,24 @@ from app.storage.trajectory.signoff import (
     _summarize_signoff_reviewer,
     _validate_reviewer_signoff_record,
 )
-from app.storage.trajectory.core_mixin import _log
-from app.storage.trajectory import TrajectoryStore
+from app.storage.trajectory.core_mixin import TrajectoryCoreMixin, _log
+from app.storage.trajectory.freeze_mixin import TrajectoryFreezeMixin
+from app.storage.trajectory.sft_export_mixin import TrajectorySftExportMixin
+from app.storage.trajectory.signoff_mixin import TrajectorySignoffMixin
+from app.storage.trajectory.training_approval_mixin import TrajectoryTrainingApprovalMixin
+from app.storage.trajectory.training_audit_mixin import TrajectoryTrainingAuditMixin
+from app.storage.trajectory.training_execution_mixin import TrajectoryTrainingExecutionMixin
 
 __all__ = ["TrajectoryStore"]
+
+
+class TrajectoryStore(
+    TrajectoryCoreMixin,
+    TrajectorySftExportMixin,
+    TrajectoryFreezeMixin,
+    TrajectoryTrainingApprovalMixin,
+    TrajectoryTrainingExecutionMixin,
+    TrajectoryTrainingAuditMixin,
+    TrajectorySignoffMixin,
+):
+    """Thread-safe JSONL store for DocumentOps trajectories."""
