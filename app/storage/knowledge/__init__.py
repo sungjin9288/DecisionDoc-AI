@@ -1,4 +1,4 @@
-"""app/storage/knowledge_store.py — 프로젝트별 문서 지식 저장소.
+"""app/storage/knowledge/ — 프로젝트별 문서 지식 저장소 패키지.
 
 업로드된 파일에서 추출한 텍스트·스타일 프로필을 프로젝트 단위로 저장.
 이후 문서 생성 시 컨텍스트로 자동 주입된다.
@@ -15,16 +15,16 @@
     ---
     문서2: {filename} ...
 
-구현은 ``app.storage.knowledge`` 패키지로 분리되었다 (constants,
-normalizers, scoring, entry 헬퍼 모듈 + store_core_mixin/
-store_ranking_mixin 두 mixin). 이 모듈은 기존
-``from app.storage.knowledge_store import X`` import 경로를 그대로
-유지하기 위한 backward-compatible facade로, 전체 공개·내부 API를
-재노출한다.
+이 패키지는 constants/normalizers/scoring/entry 헬퍼 모듈과
+store_core_mixin(초기화·CRUD)/store_ranking_mixin(랭킹·컨텍스트 조립)
+두 mixin으로 구현을 분리하고, 이를 합성한 단일 공개 클래스
+``KnowledgeStore``를 제공한다. ``app.storage.knowledge_store``는
+기존 import 경로(``from app.storage.knowledge_store import X``)를
+유지하기 위한 facade로 이 패키지의 심볼을 그대로 재노출한다.
 """
 from __future__ import annotations
 
-from app.storage.knowledge import (
+from app.storage.knowledge.constants import (
     MAX_CONTEXT_CHARS,
     MAX_DOCS_PER_PROJECT,
     _GRAPH_RELATION_LABELS,
@@ -41,14 +41,10 @@ from app.storage.knowledge import (
     _REFERENCE_SUCCESS_WEIGHTS,
     _REPORT_WORKFLOW_MATCH_SCORE,
     _REPORT_WORKFLOW_SOURCE_SCORE,
-    _build_graph_relationship_index,
-    _build_reference_score_breakdown,
+)
+from app.storage.knowledge.normalizers import (
     _extract_report_workflow_id,
-    _format_graph_relationship_summary,
-    _format_reference_ranking_reason,
-    _graph_relationship_score,
     _is_report_workflow_source,
-    _log,
     _matches_report_workflow_id,
     _matches_text_scope,
     _normalize_learning_mode,
@@ -57,9 +53,21 @@ from app.storage.knowledge import (
     _normalize_reference_year,
     _normalize_string,
     _normalize_success_state,
-    _reference_recency_score,
-    KnowledgeEntry,
-    KnowledgeStore,
 )
+from app.storage.knowledge.scoring import (
+    _build_graph_relationship_index,
+    _build_reference_score_breakdown,
+    _format_graph_relationship_summary,
+    _format_reference_ranking_reason,
+    _graph_relationship_score,
+    _reference_recency_score,
+)
+from app.storage.knowledge.entry import KnowledgeEntry
+from app.storage.knowledge.store_core_mixin import KnowledgeStoreCoreMixin, _log
+from app.storage.knowledge.store_ranking_mixin import KnowledgeStoreRankingMixin
 
 __all__ = ["KnowledgeEntry", "KnowledgeStore"]
+
+
+class KnowledgeStore(KnowledgeStoreCoreMixin, KnowledgeStoreRankingMixin):
+    """프로젝트별 문서 지식을 로컬 파일로 저장/조회."""
