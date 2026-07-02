@@ -25,6 +25,14 @@
 - 기존 repo 고유 규칙, 테스트 규칙, 운영 주의사항은 유지하고, 새로운 Codex 규칙은 그 위에 병합해서 적용한다.
 - `voice-brief` 문맥은 관련 작업일 때만 선택적으로 섞고, 일반 문서 생성/ops/export 작업에는 자동으로 확장하지 않는다.
 
+### 외부 에이전트 패턴 이식 기준
+
+- `karpathy-guidelines`는 작업 방식에만 적용한다. 성공 기준, 최소 변경, 검증 루프를 강화하되 기존 DecisionDoc route/service/schema/storage/provider 경계를 바꾸지 않는다.
+- LazyCodex 계열은 dependency, hook, telemetry, global Codex 설정으로 vendoring하지 않는다. 적용 가능한 부분은 계획, 실행, 리뷰, 검증, 증적을 명시하는 운영 하네스 패턴뿐이다.
+- Hermes 계열은 `docs/specs/hermes_decisiondoc_agent/`의 기존 결정처럼 DecisionDoc-native approval, session, audit, handoff UX 참고로만 사용한다. Hermes Agent runtime, Electron shell, remote execution tool, provider-side training 실행 경로는 명시 승인 전까지 추가하지 않는다.
+- approval/session/audit UI를 바꾸는 경우에는 실제 승인, 제출, provider call, dataset upload, model training, bid submission, legal/contractual commitment가 발생하지 않는지 먼저 gate 문구와 테스트를 확인한다.
+- 외부 repo 참고 결과를 제품에 반영할 때는 관련 spec/status 문서와 검증 명령을 함께 남기고, dirty tree가 크면 커밋보다 범위·증빙·미검증 리스크 보고를 우선한다.
+
 ### Skill / MCP 추가 기준
 
 - admin 화면이나 end-to-end 브라우저 동선 검증이 필요한 경우에만 `$playwright`와 Playwright MCP를 추가한다.

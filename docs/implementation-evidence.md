@@ -24,6 +24,8 @@
 | API key 보호된 문서 생성 | 검증 완료 | `evidence/api-responses/generate-tech-decision.json` | curl `POST /generate` | mock provider |
 | Markdown export 생성 | 검증 완료 | `evidence/api-responses/generate-export-tech-decision.json`, `evidence/output-artifacts/export_adr.md`, `evidence/output-artifacts/export_onepager.md` | curl `POST /generate/export` | local storage |
 | 생성/인증/스토리지 테스트 | 검증 완료 | `evidence/cli-logs/pytest_generate_auth_storage.log` | `pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_storage.py -q` | 60 passed |
+| Procurement decision package local evidence contract | 재현 가능 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `contract_version` 기준 stdout JSON contract |
+| Procurement decision package persisted receipt check | 재현 가능 | `/tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | repo 밖 receipt 검증 |
 | Static PWA 화면 제공 | 검증 완료 | `evidence/screenshots/web-ui-home.png` | Playwright screenshot | 로그인 화면 확인 |
 | Provider fallback/live provider | 검증 필요 | `app/providers/factory.py` | 코드 근거만 확인 | 실제 cloud key 사용 안 함 |
 | Production deployment | 검증 필요 | `Dockerfile`, `docker-compose.yml`, `infra/sam/template.yaml` | 설정 파일 근거만 확인 | 배포 실행 안 함 |
@@ -70,6 +72,18 @@ Captured API responses:
 - `evidence/api-responses/generate-tech-decision.json`
 - `evidence/api-responses/generate-export-tech-decision.json`
 
+### Local procurement decision package contract
+
+```bash
+CONTRACT_RESULT=/tmp/decisiondoc-cli-contract-manifest-validation-result.json
+python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py \
+  --write-result \
+  --result-path "$CONTRACT_RESULT"
+python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py "$CONTRACT_RESULT"
+```
+
+이 명령은 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`과 local evidence CLI stdout JSON success/failure contract를 확인한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
+
 ## 4. 검증 완료 기능
 
 - FastAPI 앱이 mock provider/local storage 설정으로 로컬 실행됨.
@@ -79,6 +93,7 @@ Captured API responses:
 - `POST /generate`가 API key 인증 후 문서 bundle JSON을 반환함.
 - `POST /generate/export`가 Markdown export 경로와 파일 목록을 반환하고 실제 Markdown 파일을 생성함.
 - Web UI root가 로그인 화면으로 렌더링됨.
+- Procurement decision package local evidence contract manifest와 persisted receipt checker가 repo 밖 `/tmp` receipt 경로로 재현 가능함.
 
 ## 5. 검증 실패 기능
 
@@ -89,6 +104,7 @@ Captured API responses:
 
 - live OpenAI/Gemini/Claude provider 호출: API key를 사용하지 않아 검증하지 않음.
 - 실제 production deployment: 배포하지 않음.
+- live G2B/procurement provider flow: fixture 기반 local evidence contract 검증과 별도이며, 승인된 API key/credential 환경에서만 확인 가능.
 - 사용자 성과 수치: 저장소 내 근거 없음.
 - 로그인 이후 전체 UI workflow: 계정 생성/로그인 후 화면 전환은 이번 evidence 범위에서 수행하지 않음.
 - 고객/기관 내부자료 기반 사례: 포함하지 않음.

@@ -28,6 +28,16 @@
 | `evidence/cli-logs/playwright_snapshot.log` | Playwright accessibility snapshot 로그 | 검증 완료 |
 | `evidence/cli-logs/playwright_screenshot.log` | Playwright screenshot 저장 로그 | 검증 완료 |
 
+## 3-1. Reproducible Local Evidence Commands
+
+| 항목 | 설명 | 상태 |
+|---|---|---|
+| `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | Procurement decision package local evidence CLI stdout JSON contract manifest. `contract_version` 기준으로 success/failure field를 고정 | 재현 가능 |
+| `scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | manifest validation receipt를 repo 밖 `/tmp` 경로에 기록 | 재현 가능 |
+| `scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | persisted receipt가 현재 manifest와 일치하는지 확인 | 재현 가능 |
+
+이 섹션은 파일이 `evidence/` package 안에 저장됐다고 주장하지 않는다. 필요할 때 위 명령으로 local-only receipt를 다시 생성한다.
+
 ## 4. Output Artifacts
 
 | 파일 | 설명 | 상태 |

@@ -7,6 +7,7 @@
 이 프로젝트는 반복적인 업무 문서 초안 작성과 산출물 관리 문제를 해결하기 위해 시작했습니다.
 저는 확인 가능한 저장소 기준으로 FastAPI 기반 문서 생성 API, provider/storage abstraction, bundle schema 기반 생성 파이프라인을 중심으로 설명할 수 있습니다.
 기술적으로는 Python, FastAPI, Pydantic v2, Jinja2, LLM provider abstraction, Docker, AWS SAM을 사용했고, 현재는 문서 생성 API와 project/knowledge/approval/export 흐름이 구현된 MVP 고도화 단계까지 구현했습니다.
+최근에는 공공조달 decision package local evidence path를 fixture 기반으로 정리했고, `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 stdout JSON contract를 검증하는 흐름을 추가했습니다.
 개발 과정에서 LLM 출력 품질과 운영 가능한 구조를 분리하는 어려움이 있었고, 이를 bundle schema, stabilizer, lint/validation, provider factory로 해결했거나 해결 중입니다.
 이 프로젝트를 통해 AI 기능도 일반적인 백엔드 구조와 검증 파이프라인 안에 넣어야 한다는 점을 배웠고, 향후에는 실제 사용자 피드백, 배포 evidence, 품질 개선 데이터를 확보하는 방향으로 고도화할 계획입니다.
 
@@ -15,7 +16,7 @@
 - 프로젝트 배경: 개별 LLM 채팅만으로는 문서 작성 업무의 구조, 검토, 공유, 저장, export 흐름을 안정적으로 관리하기 어렵다는 문제에서 출발했다.
 - 문제정의: 문서 초안 생성뿐 아니라 입력 자료 반영, 문서 유형별 구조화, 검증, 재사용, 승인/공유까지 연결해야 한다.
 - 기술 선택 이유: FastAPI는 API 확장과 테스트가 쉽고, Pydantic은 외부 입력 검증에 적합하며, Jinja2는 문서 템플릿 분리에 적합하다. provider/storage factory는 모델과 저장소 교체 가능성을 높인다.
-- 핵심 구현: `GenerationService.generate_documents()`, `BundleSpec`, provider factory, local/S3 storage, `/generate` 계열 endpoint, `/projects`, `/knowledge`, `/approvals`, `/report-workflows`, `/g2b`
+- 핵심 구현: `GenerationService.generate_documents()`, `BundleSpec`, provider factory, local/S3 storage, `/generate` 계열 endpoint, `/projects`, `/knowledge`, `/approvals`, `/report-workflows`, `/g2b`, local procurement decision package evidence contract
 - 현재 상태: MVP 구현 후 고도화 중. 문서상 운영/배포 경로는 있으나 현재 접근 가능성, 사용자 성과, 본인 직접 구현 범위는 확인 필요하다.
 - 앞으로의 개선 방향: README/데모 정리, 실행 검증 자동화, live provider 검증, 사용자 피드백 수집, quality learning workflow 안정화
 - 컨설팅 경험과의 자연스러운 연결: 문제정의, 요구사항 정리, 사용자 업무 흐름 분석, 문서화, 기대효과 정리 역량이 프로젝트 구조화에 연결된다.
@@ -32,7 +33,7 @@
 | 인증은 어떻게 구성되나요? | API key, JWT, ops key, tenant middleware 조합 | `app/auth/`, `app/middleware/auth.py`, `app/middleware/tenant.py` | RBAC/JWT security |
 | 파일 업로드 생성은 어떻게 처리되나요? | multipart file을 읽고 attachment parser/context로 합쳐 GenerateRequest에 반영 | `app/routers/generate.py` | file validation |
 | export는 어떤 방식인가요? | Markdown 저장과 DOCX/PDF/HWP/XLSX/PPTX service/endpoint가 존재 | `app/services/*_service.py`, `app/routers/generate.py` | document rendering |
-| 테스트 전략은 무엇인가요? | mock provider 중심 pytest, API/storage/auth/export/workflow 테스트, smoke script | `tests/`, `scripts/smoke.py` | test pyramid |
+| 테스트 전략은 무엇인가요? | mock provider 중심 pytest, API/storage/auth/export/workflow 테스트, smoke script, local evidence CLI success/failure contract test를 함께 설명 | `tests/`, `scripts/smoke.py`, `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | test pyramid |
 | 운영 상태는 어떻게 확인하나요? | `/health`, `/metrics`, provider route checks, post-deploy scripts | `app/routers/health.py`, `scripts/post_deploy_check.py` | observability |
 
 ## 4. 프로젝트 면접 예상 질문 10개
@@ -49,6 +50,7 @@
 | 품질 개선은 어떻게 하나요? | feedback/eval/report quality learning/fine-tune artifact 흐름 | `app/eval/`, `app/routers/report_workflows.py` | 운영 데이터 |
 | 보안은 어떻게 고려했나요? | API key/JWT/tenant/audit/rate limit/security headers | `app/middleware/`, `app/auth/` | threat model |
 | 다음 개발 우선순위는? | README/데모, 실행 검증, provider live 검증, 사용자 피드백 | 이 문서와 roadmap | 일정 계획 |
+| 공공조달 local evidence는 어떻게 검증하나요? | `scripts/validate_procurement_decision_package_cli_contract_manifest.py`로 manifest를 검증하고 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`로 persisted receipt를 확인한다고 설명. receipt는 `--write-result --result-path <path>`로 repo 밖에 남길 수 있음 | `cli_contract_manifest.json`, `contract_version` | live G2B와 fixture 검증 범위 구분 |
 
 ## 5. 컨설팅 경험과의 연결 질문 5개
 

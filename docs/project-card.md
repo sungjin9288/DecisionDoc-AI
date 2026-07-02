@@ -41,6 +41,7 @@
   - provider fallback chain: mock, openai, gemini, claude, local
   - local/S3 storage abstraction
   - project, knowledge, approval, history/share, report workflow, G2B search/fetch, health/metrics/version endpoints
+  - local procurement decision package evidence path with versioned CLI stdout contract and receipt checking
   - DOCX, PDF, HWP, XLSX, PPTX 관련 service와 endpoint 테스트 파일
 - 개발 중인 기능:
   - report quality learning, document ops agent, fine-tuning/training artifact workflow
@@ -130,6 +131,7 @@ User / Team
 | 구현 완료 | provider abstraction/fallback | 구현 완료 | `app/providers/factory.py`, `app/ai/pipeline.py` | 가능 |
 | 구현 완료 | bundle catalog/schema/template 구조 | 구현 완료 | `app/bundle_catalog/spec.py`, `app/bundle_catalog/registry.py`, `app/templates/` | 가능 |
 | 구현 완료 | local/S3 storage abstraction | 구현 완료 | `app/storage/base.py`, `app/storage/factory.py`, `app/storage/local.py`, `app/storage/s3.py` | 가능 |
+| 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
 | 구현 완료 | health/metrics/version | 구현 완료 | `app/routers/health.py` | 가능 |
 | 개발 중 | report workflow quality learning | 개발 중/고도화 중 | `app/routers/report_workflows.py`, `app/services/report_quality_learning.py` | 조건부 가능 |
 | 개발 중 | document ops agent/training artifacts | 개발 중/고도화 중 | `app/agents/document_ops_agent.py`, `app/routers/document_ops_agent.py` | 조건부 가능 |
@@ -145,7 +147,8 @@ User / Team
 - 설정 파일: `requirements.txt`, `Dockerfile`, `docker-compose.yml`, `infra/sam/template.yaml`, `.github/workflows/*.yml`
 - 실행 파일: `scripts/smoke.py`, `scripts/ops_smoke.py`, `scripts/report_workflow_smoke.py`, `scripts/run_deployed_smoke.py`
 - 테스트 파일: `tests/test_generate.py`, `tests/test_storage.py`, `tests/test_auth_api_key.py`, `tests/test_report_workflows_api.py`, `tests/test_g2b.py`, `tests/test_pwa.py`
-- README 또는 문서 근거: `README.md`, `docs/README.md`, `docs/architecture.md`, `docs/user_manual.md`, `docs/v1_completion_snapshot.md`
+- README 또는 문서 근거: `README.md`, `docs/README.md`, `docs/architecture.md`, `docs/user_manual.md`, `docs/v1_completion_snapshot.md`, `docs/product_local_demo_runbook.md`, `docs/product_demo_scenario.md`
+- Local evidence contract 근거: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`, `--write-result`, `--result-path`
 - 최근 git 상태: `main` 브랜치에서 다수의 기존 수정/미추적 파일이 존재한다. 최근 commit은 품질 검수, review gate, evidence summary 자동화 흐름을 다룬다.
 - 실행 방법이 명확한지: 로컬 `pip install -r requirements.txt`, `python -m uvicorn app.main:app --reload`, Docker `docker compose up -d`가 문서와 설정에 존재한다.
 - 스크린샷/데모가 필요한 부분: Web UI 첫 화면, `/generate` 결과, 문서 upload flow, report workflow, export 결과, admin/ops 화면

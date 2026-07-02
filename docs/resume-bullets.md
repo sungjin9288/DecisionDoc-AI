@@ -21,6 +21,7 @@
 - 문서 유형별 품질 편차를 줄이기 위해 `BundleSpec`/`DocumentSpec`, Jinja2 template, stabilizer, lint/validation 단계를 결합한 생성 파이프라인 설계
 - 업로드 문서와 PDF에서 추출한 맥락을 기반으로 문서를 생성할 수 있도록 `/generate/from-documents`, `/generate/from-pdf`, attachment parsing 흐름을 구현
 - 생성 결과를 단발성 응답에 그치지 않도록 project, knowledge, approval, history/share, export API와 연결해 후속 검토/공유 흐름을 지원
+- 공공조달 decision package local evidence path를 fixture 기반으로 정리하고, `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`과 stdout JSON success/failure contract를 검증하는 CLI receipt 흐름 추가
 - Docker Compose, Dockerfile, AWS SAM, smoke script, pytest suite를 통해 로컬 개발, 배포, 검증 경로를 갖춘 Python 백엔드 프로젝트로 구성
 - 문제정의, 요구사항 정리, 사용자 흐름, 문서화 역량을 활용해 문서 생성 문제를 입력 구조, 생성 파이프라인, 산출물 관리, 운영 검증 항목으로 분해
 
@@ -33,7 +34,7 @@
 ## 5. 기술스택 한 줄
 
 - 현재 사용 중: Python, FastAPI, Pydantic v2, Jinja2, OpenAI API, Google Gemini, Claude, local/mock provider, pytest, Docker, Docker Compose, AWS SAM/Lambda, boto3, Playwright, python-docx, python-pptx, xlsxwriter
-- 예정/검증 필요: 실제 production provider route 운영, tenant별 상용 운영, 사용자 성과 측정 dashboard
+- 예정/검증 필요: 실제 production provider route 운영, tenant별 운영 준비성, 사용자 성과 측정 dashboard
 
 ## 6. 지원 직무별 강조 포인트
 
@@ -66,6 +67,7 @@
 - 배포 URL과 smoke evidence 확보 후: Docker/AWS 기반 배포 및 운영 검증 경험
 - 사용자 테스트 후: 실제 사용자 피드백을 반영한 AI 문서 생성 UX 개선 경험
 - live provider 검증 후: OpenAI/Gemini/Claude fallback route를 활용한 provider resilience 설계 경험
+- local evidence 설명 시: `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`, `--write-result`, `--result-path` 기반의 fixture 검증 범위로 제한
 - 성과 측정 후: 문서 초안 작성 시간 또는 재작업률 개선 수치
 
 ## 9. 최종 판단

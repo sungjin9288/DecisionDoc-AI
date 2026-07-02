@@ -28,6 +28,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 감사·프라이버시 | `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 등 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
 | 공공조달 Go/No-Go | G2B 연동 기반 procurement copilot 흐름 (`G2B_API_KEY`, 스모크 옵션 제공) |
+| 로컬 procurement decision package evidence | mock/local fixture 기반 decision package, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 
 ---
 
@@ -94,7 +95,11 @@ curl http://localhost:8000/health
 
 ### Environment (주요 그룹)
 
-`.env.example`에 약 80개 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+`.env.example`에 **90개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+
+```bash
+grep -E '^[A-Z0-9_]+=' .env.example | wc -l   # → 90
+```
 
 | 그룹 | 대표 키 |
 |------|---------|
@@ -136,6 +141,18 @@ python scripts/smoke.py
 #       /generate/export 성공, /generate/from-documents 업로드 성공
 ```
 
+로컬 공공조달 decision package evidence 검증:
+
+```bash
+CONTRACT_RESULT=/tmp/decisiondoc-cli-contract-manifest-validation-result.json
+python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py \
+  --write-result \
+  --result-path "$CONTRACT_RESULT"
+python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py "$CONTRACT_RESULT"
+```
+
+이 경로는 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 검증하고, local evidence CLI의 stdout JSON success/failure contract를 확인합니다. fixture 기반 검증이며 provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment를 실행하지 않습니다.
+
 ---
 
 ## Testing
@@ -146,11 +163,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,897개**, **191개 파일**입니다 (소스 정의 기준 카운트).
+테스트 함수는 **3,711개**, **205개 파일**입니다 (소스 정의 기준 카운트).
 
 ```bash
-grep -rE "def test_" tests | wc -l    # → 2897
-find tests -name "test_*.py" | wc -l  # → 191
+grep -rE "def test_" tests | wc -l    # → 3711
+find tests -name "test_*.py" | wc -l  # → 205
 ```
 
 > 위 수치는 `def test_` 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -161,9 +178,10 @@ find tests -name "test_*.py" | wc -l  # → 191
 
 - 완전한 문서관리 시스템이 아니라 **AI-assisted documentation MVP/PoC**입니다.
 - 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
-- 실제 사용자 성과 수치·production 운영 안정성은 검증되지 않았습니다 — **"상용 운영 플랫폼"으로 표기하지 않습니다.**
+- 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
+- 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 
 ---
 
@@ -176,4 +194,4 @@ find tests -name "test_*.py" | wc -l  # → 191
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,897 · env 키 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 3,711 · env 키 90 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

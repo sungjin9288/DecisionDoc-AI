@@ -5,6 +5,10 @@
 - `docs/sales/` — 영업/고객 설명용 문서
 - `docs/deploy_aws.md` — AWS SAM 및 GitHub Actions 배포 runbook
 - `docs/architecture.md` — 시스템 아키텍처 개요
+- `docs/product_direction.md` — DecisionDoc AI 제품 방향성
+- `docs/product_execution_plan.md` — 제품 방향성 실행 계획
+- `docs/product_demo_scenario.md` — local procurement decision package demo scenario
+- `docs/product_local_demo_runbook.md` — local demo runbook and evidence contract checks
 - `docs/openspace_integration.md` — OpenSpace 및 `DESIGN.md` 도입 가이드
 - `docs/user_manual.md` — 사용자/운영자 관점 기능 사용법
 - `docs/security_policy.md` — 정보보호 정책
@@ -16,10 +20,33 @@
 2. [Docker 배포](deployment/docker.md)
 3. [AWS 배포 Runbook](deploy_aws.md)
 4. [아키텍처 개요](architecture.md)
-5. [OpenSpace 도입 가이드](openspace_integration.md)
-6. [사용자 매뉴얼](user_manual.md)
-7. [GS인증 준비](compliance/gs_certification_checklist.md)
-8. [CSAP 준비](compliance/csap_checklist.md)
+5. [제품 방향성](product_direction.md)
+6. [제품 실행 계획](product_execution_plan.md)
+7. [Local demo runbook](product_local_demo_runbook.md)
+8. [OpenSpace 도입 가이드](openspace_integration.md)
+9. [사용자 매뉴얼](user_manual.md)
+10. [GS인증 준비](compliance/gs_certification_checklist.md)
+11. [CSAP 준비](compliance/csap_checklist.md)
+
+## 제품 방향 / Local Evidence
+- 제품 방향성 기준: [DecisionDoc AI Product Direction](product_direction.md)
+- 실행 계획: [DecisionDoc AI Product Execution Plan](product_execution_plan.md)
+- local procurement demo scenario: [DecisionDoc AI Local Product Demo Scenario](product_demo_scenario.md)
+- local demo runbook: [DecisionDoc AI Local Demo Runbook](product_local_demo_runbook.md)
+- sample fixture and expected package: [Procurement Decision Package Local Demo Sample](samples/procurement_decision_package_local_demo/)
+- local evidence CLI contract manifest: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`
+
+Local evidence CLI contract 검증:
+
+```bash
+CONTRACT_RESULT=/tmp/decisiondoc-cli-contract-manifest-validation-result.json
+python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py \
+  --write-result \
+  --result-path "$CONTRACT_RESULT"
+python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py "$CONTRACT_RESULT"
+```
+
+이 검증은 `contract_version`이 기록된 local-only stdout JSON contract를 확인한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
 ## 내부 운영 패키지 (판매/내부 전개 기준)
 - v1 canonical handoff: [Admin v1 Handoff](deployment/admin_v1_handoff.md)

@@ -65,6 +65,7 @@
 - Mock/OpenAI/Gemini/Claude/Local provider factory와 fallback pipeline
 - Local/S3 storage abstraction
 - project, knowledge, approvals, history/share, health/metrics, G2B, report workflow API
+- procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
 - Dockerfile, Docker Compose, AWS SAM 설정
 - pytest 테스트 suite와 smoke script
 
@@ -112,7 +113,7 @@
 
 - 구현 완료 기능: 문서 생성 API, 파일/PDF 기반 생성, export, provider/storage abstraction, bundle catalog, 프로젝트/지식/승인/이력/report workflow 일부, health/ops 기능
 - 로컬 실행 가능 여부: 설정상 가능. `pip install -r requirements.txt` 후 `python -m uvicorn app.main:app --reload`, 또는 `docker compose up -d`
-- 테스트 여부: pytest 테스트 suite와 smoke script 존재. 이번 문서 작업에서는 코드 테스트가 아니라 문서 파일 존재/README 미수정 검증을 수행한다.
+- 테스트 여부: pytest 테스트 suite와 smoke script가 존재한다. 현재 local procurement decision package evidence path는 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 stdout JSON success/failure contract를 고정하고, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`와 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`로 manifest와 persisted receipt를 검증한다. 검증 receipt는 `--write-result --result-path <path>`로 repo 밖 경로에 남길 수 있다.
 - 배포 여부: 문서상 Docker Compose, AWS SAM, 운영 URL 기준이 존재한다. 현재 접근 가능성은 검증 필요.
 - 사용자 피드백: 현재 없음. 임의 생성 금지.
 - 수치 성과:
