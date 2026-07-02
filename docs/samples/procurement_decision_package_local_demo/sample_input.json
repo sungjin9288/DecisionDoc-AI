@@ -1,0 +1,84 @@
+{
+  "scenario_id": "procurement-decision-package-local-demo",
+  "schema_purpose": "local_demo_input",
+  "updated_at": "2026-06-23",
+  "opportunity": {
+    "opportunity_id": "local-procurement-demo-001",
+    "title": "Public Agency Document Workflow Modernization Pilot",
+    "buyer": "Sample Public Agency",
+    "budget_range": "KRW 80M-120M",
+    "deadline_days": 21,
+    "required_capabilities": [
+      "document workflow analysis",
+      "secure web application delivery",
+      "public-sector reporting",
+      "operator training"
+    ],
+    "mandatory_requirements": [
+      "recent public-sector project reference",
+      "security handling plan",
+      "Korean proposal package"
+    ],
+    "source_type": "local_fixture",
+    "source_reference": "docs/product_demo_scenario.md"
+  },
+  "capability_profile": {
+    "profile_id": "local-capability-profile-001",
+    "organization_name": "Sample Consulting Team",
+    "service_lines": [
+      "document workflow consulting",
+      "FastAPI-based internal tooling",
+      "proposal and operations document generation"
+    ],
+    "public_sector_references": [
+      {
+        "reference_id": "ref-001",
+        "summary": "Internal document workflow pilot for a public-sector style reporting process",
+        "evidence_status": "available"
+      }
+    ],
+    "delivery_team": {
+      "available_roles": [
+        "project manager",
+        "backend engineer",
+        "document operations analyst"
+      ],
+      "capacity_note": "Core team appears available, but operator training staffing must be confirmed."
+    },
+    "security_and_compliance": {
+      "security_plan_status": "draft_required",
+      "data_boundary_note": "Local demo assumes no production data and no external provider call."
+    },
+    "partner_assumptions": [
+      {
+        "partner_need": "Korean proposal package review",
+        "status": "recommended"
+      }
+    ],
+    "excluded_risk_conditions": [
+      "mandatory on-site support within less than 10 days",
+      "required certification unavailable to the team"
+    ],
+    "preferred_budget_range": "KRW 70M-150M",
+    "internal_go_no_go_rules": [
+      "Do not proceed if mandatory certification is missing.",
+      "Use conditional approval if security plan is not finalized.",
+      "Require executive reviewer sign-off before proposal drafting."
+    ]
+  },
+  "operator_notes": {
+    "target_outcome": "Decide whether proposal drafting should start.",
+    "known_uncertainty": [
+      "Security handling plan is not finalized.",
+      "Operator training staffing owner is not assigned.",
+      "Proposal package reviewer is not confirmed."
+    ],
+    "reviewer_owner": "executive-reviewer",
+    "deadline_sensitivity": "medium",
+    "required_follow_up": [
+      "Confirm security plan owner.",
+      "Assign training staffing owner.",
+      "Confirm Korean proposal package reviewer."
+    ]
+  }
+}

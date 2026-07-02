@@ -1,0 +1,327 @@
+{
+  "schema_purpose": "procurement_decision_package_cli_contract_manifest",
+  "contract_version": "1.0.0",
+  "workflow": "procurement_decision_package_local_demo",
+  "contract_status": "local_only",
+  "stdout_json_contract": {
+    "success": {
+      "exit_code": 0,
+      "status": "passed",
+      "forbidden_fields": [
+        "error",
+        "error_type"
+      ]
+    },
+    "handled_failure": {
+      "exit_code": 1,
+      "status": "failed",
+      "required_fields": [
+        "status",
+        "error_type",
+        "error"
+      ]
+    }
+  },
+  "external_actions_excluded": [
+    "provider_api_execution",
+    "aws_runtime_execution",
+    "dataset_upload",
+    "training_execution",
+    "model_promotion",
+    "production_service_resume",
+    "bid_submission",
+    "legal_approval",
+    "contractual_commitment"
+  ],
+  "cli_contracts": [
+    {
+      "case_name": "sample_validator",
+      "script": "scripts/validate_procurement_decision_package_sample.py",
+      "success_required_fields": [
+        "schema_purpose",
+        "status",
+        "sample_input",
+        "expected_package",
+        "scenario_id",
+        "recommendation",
+        "authorization_boundary"
+      ],
+      "failure_required_fields": [
+        "schema_purpose",
+        "status",
+        "sample_input",
+        "expected_package",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "sample_builder",
+      "script": "scripts/build_procurement_decision_package_sample.py",
+      "success_required_fields": [
+        "schema_purpose",
+        "status",
+        "output_dir",
+        "artifacts",
+        "recommendation",
+        "authorization_boundary"
+      ],
+      "failure_required_fields": [
+        "schema_purpose",
+        "status",
+        "sample_input",
+        "output_dir",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "artifact_checker",
+      "script": "scripts/check_procurement_decision_package_artifacts.py",
+      "success_required_fields": [
+        "status",
+        "output_dir",
+        "artifact_count",
+        "recommendation",
+        "authorization_boundary",
+        "operational_approval",
+        "demo_result_checked",
+        "artifact_inventory_checked",
+        "demo_receipt_checked"
+      ],
+      "failure_required_fields": [
+        "status",
+        "output_dir",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "demo_runner",
+      "script": "scripts/run_procurement_decision_package_demo.py",
+      "success_required_fields": [
+        "status",
+        "schema_purpose",
+        "output_dir",
+        "demo_tenant_id",
+        "demo_project_id",
+        "seeded_decision_id",
+        "demo_result_path",
+        "demo_receipt_path",
+        "artifact_check",
+        "artifact_inventory",
+        "artifacts",
+        "tenant_id",
+        "project_id",
+        "decision_id",
+        "recommendation",
+        "authorization_boundary",
+        "clean_output"
+      ],
+      "failure_required_fields": [
+        "schema_purpose",
+        "status",
+        "data_dir",
+        "output_dir",
+        "clean_output",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "project_export",
+      "script": "scripts/export_procurement_decision_package.py",
+      "success_required_fields": [
+        "status",
+        "schema_purpose",
+        "tenant_id",
+        "project_id",
+        "decision_id",
+        "output_dir",
+        "artifacts",
+        "recommendation",
+        "authorization_boundary"
+      ],
+      "failure_required_fields": [
+        "status",
+        "schema_purpose",
+        "data_dir",
+        "tenant_id",
+        "project_id",
+        "output_dir",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "evidence_gate",
+      "script": "scripts/gate_procurement_decision_package_demo.py",
+      "success_required_fields": [
+        "status",
+        "gate",
+        "output_dir",
+        "demo_result_path",
+        "demo_receipt_path",
+        "operational_approval",
+        "artifact_count",
+        "excluded_external_actions",
+        "recommendation",
+        "authorization_boundary",
+        "artifacts",
+        "demo_result_checked",
+        "artifact_inventory_checked",
+        "demo_receipt_checked"
+      ],
+      "failure_required_fields": [
+        "status",
+        "gate",
+        "output_dir",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "smoke_wrapper",
+      "script": "scripts/smoke_procurement_decision_package_demo_gate.py",
+      "success_required_fields": [
+        "status",
+        "smoke",
+        "output_dir",
+        "demo_result_path",
+        "gate_result_path",
+        "smoke_result_path",
+        "smoke_check_result_path",
+        "evidence_files",
+        "operational_approval",
+        "data_dir",
+        "demo_tenant_id",
+        "demo_project_id",
+        "seeded_decision_id",
+        "demo_receipt_path",
+        "gate_result_written",
+        "smoke_result_written",
+        "smoke_check_result_written",
+        "package_artifacts_checked",
+        "smoke_result_checked",
+        "demo_result_checked",
+        "artifact_inventory_checked",
+        "demo_receipt_checked",
+        "artifact_count",
+        "excluded_external_actions",
+        "recommendation",
+        "authorization_boundary",
+        "clean_output"
+      ],
+      "failure_required_fields": [
+        "status",
+        "smoke",
+        "data_dir",
+        "output_dir",
+        "clean_output",
+        "gate_result_path",
+        "smoke_result_path",
+        "smoke_check_result_path",
+        "evidence_files",
+        "gate_result_written",
+        "smoke_result_written",
+        "smoke_check_result_written",
+        "package_artifacts_checked",
+        "smoke_result_checked",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "smoke_checker",
+      "script": "scripts/check_procurement_decision_package_smoke_result.py",
+      "success_required_fields": [
+        "status",
+        "check",
+        "smoke_result_path",
+        "output_dir",
+        "package_artifacts_checked",
+        "smoke_result_checked",
+        "evidence_files",
+        "smoke_check_result_path",
+        "smoke_check_result_written",
+        "demo_tenant_id",
+        "demo_project_id",
+        "seeded_decision_id",
+        "artifact_count",
+        "excluded_external_actions",
+        "recommendation",
+        "authorization_boundary",
+        "operational_approval",
+        "clean_output"
+      ],
+      "failure_required_fields": [
+        "check",
+        "status",
+        "smoke_result_path",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "cli_contract_manifest_validator",
+      "script": "scripts/validate_procurement_decision_package_cli_contract_manifest.py",
+      "success_required_fields": [
+        "schema_purpose",
+        "contract_version",
+        "status",
+        "manifest_path",
+        "manifest_sha256",
+        "manifest_size_bytes",
+        "workflow",
+        "contract_status",
+        "contract_count",
+        "script_count",
+        "case_names",
+        "scripts",
+        "external_actions_excluded",
+        "success_required_fields_by_case",
+        "failure_required_fields_by_case",
+        "cli_contract_fingerprint"
+      ],
+      "failure_required_fields": [
+        "schema_purpose",
+        "contract_version",
+        "status",
+        "manifest_path",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "cli_contract_manifest_result_checker",
+      "script": "scripts/check_procurement_decision_package_cli_contract_manifest_result.py",
+      "success_required_fields": [
+        "check",
+        "status",
+        "validation_result_path",
+        "manifest_path",
+        "contract_version",
+        "manifest_sha256",
+        "manifest_size_bytes",
+        "workflow",
+        "contract_status",
+        "contract_count",
+        "script_count",
+        "case_names",
+        "scripts",
+        "external_actions_excluded",
+        "success_required_fields_by_case",
+        "failure_required_fields_by_case",
+        "cli_contract_fingerprint",
+        "validation_result_checked"
+      ],
+      "failure_required_fields": [
+        "status",
+        "check",
+        "validation_result_path",
+        "error_type",
+        "error"
+      ]
+    }
+  ]
+}
