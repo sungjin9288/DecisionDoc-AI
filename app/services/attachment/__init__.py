@@ -1,27 +1,22 @@
-"""app/services/attachment_service.py — Extract plain text from uploaded files.
+"""attachment_service — extract plain text from uploaded files.
 
-The implementation now lives in the ``app.services.attachment`` package,
-split into focused modules (constants, pdf_extraction, format_extractors,
-core). This module is kept as a backward-compatible facade that re-exports
-the full public and internal API so existing
+The implementation lives in this package, split into focused modules:
+
+- ``constants``: shared size caps, allowed/legacy extension sets, and the
+  ``AttachmentError`` exception.
+- ``pdf_extraction``: pdfplumber-based PDF extraction — both the flat-text
+  extractor (``_extract_pdf``) and the structured extractor
+  (``extract_pdf_structured``), plus char-level line reconstruction helpers.
+- ``format_extractors``: all non-PDF format extractors — DOCX, PPTX, HWPX,
+  Excel, CSV/TSV, JSON, YAML, XML, HTML, RTF, OpenDocument, plain text.
+- ``core``: public API (``extract_text``, ``extract_text_with_ai_fallback``,
+  ``extract_multiple``), extension dispatch (``_extract_by_extension``), and
+  ZIP archive traversal (``_extract_zip``, mutually recursive with the
+  dispatch function).
+
+This package re-exports the full public and internal API so existing
 ``from app.services.attachment_service import X`` imports keep working
 unchanged.
-
-Supported formats:
-- .txt / .md  : read as-is (UTF-8, latin-1 fallback)
-- .pdf        : pdfplumber — text layer + table extraction
-- .docx       : python-docx — paragraphs + tables in document order
-- .hwp / .hwpx: ZIP+XML parsing (HWPX format)
-- .xlsx / .xls: openpyxl — sheet/row/cell extraction
-- .csv        : stdlib csv module
-- .pptx       : python-pptx — slide title + body text extraction
-- .json / .yaml / .xml / .html / .rtf : structured text normalization
-- .odt / .ods / .odp                   : OpenDocument ZIP+XML extraction
-- .zip                                 : supported documents inside ZIP
-
-Per-file cap: MAX_CHARS_PER_FILE (12 000 chars / ~3 000 tokens).
-Global cap:   MAX_TOTAL_CHARS   (20 000 chars) across all files in one call.
-File size:    MAX_FILE_SIZE_BYTES (20 MB).
 """
 from __future__ import annotations
 
