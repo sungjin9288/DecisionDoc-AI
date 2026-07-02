@@ -1,11 +1,22 @@
 """pptx_service — build in-memory PPTX files from slide structures or rendered docs.
 
-The implementation now lives in the ``app.services.pptx`` package, split
-into focused modules (constants, primitives, basic_slides, visual_panels,
-structured_slide, deck_builders). This module is kept as a
-backward-compatible facade that re-exports the full public and internal API
-so existing ``from app.services.pptx_service import X`` imports keep
-working unchanged.
+The implementation lives in this package, split into focused modules:
+
+- ``constants``: shared style constants (colors, size limits).
+- ``primitives``: low-level text/shape/style helpers (``_clean_slide_text``,
+  ``_chunk_lines``, ``_add_card``, ``_style_text_frame`` …).
+- ``basic_slides``: generic slide renderers — content slide, section
+  divider, agenda, summary, table.
+- ``visual_panels``: structured-slide visual panel renderers (placeholder,
+  cards, KPI, matrix, timeline, flow, governance) plus generated
+  image/SVG asset handling.
+- ``structured_slide``: structured slide-outline helpers and the guided
+  per-slide renderer (``_render_structured_guided_slide``).
+- ``deck_builders``: the public ``build_pptx`` / ``build_pptx_from_docs``
+  deck builders.
+
+This package re-exports the full public and internal API so existing
+``from app.services.pptx_service import X`` imports keep working unchanged.
 """
 from __future__ import annotations
 
