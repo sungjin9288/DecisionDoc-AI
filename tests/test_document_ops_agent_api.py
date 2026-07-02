@@ -704,7 +704,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
 
 def test_document_ops_reviewer_signoff_summary_is_ops_key_read_only(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
-    template_path = "docs/specs/hermes_decisiondoc_agent/phase21_reviewer_signoff/signoff_record_template.json"
+    template_path = "tests/fixtures/signoff_record_template.json"
     template = json.load(open(template_path, encoding="utf-8"))
 
     pending = json.loads(json.dumps(template))

@@ -8,6 +8,9 @@ REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
 
 def _create_client(tmp_path, monkeypatch, provider="mock"):
+    # Patch load_dotenv so a developer's local .env cannot leak into the app
+    # under test — same pattern as test_provider_failed_error_contract below.
+    monkeypatch.setattr("app.main.load_dotenv", lambda *a, **kw: None)
     monkeypatch.setenv("DECISIONDOC_PROVIDER", provider)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
@@ -15,6 +18,17 @@ def _create_client(tmp_path, monkeypatch, provider="mock"):
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    # app/main.py defines a module-level `app = create_app()` (uvicorn target),
+    # so importing app.main anywhere runs load_dotenv BEFORE this fixture can
+    # patch it — a developer .env may already sit in os.environ. Remove the
+    # vars that would reroute the provider factory around test monkeypatches.
+    for leaked in (
+        "DECISIONDOC_PROVIDER_GENERATION",
+        "DECISIONDOC_PROVIDER_ATTACHMENT",
+        "DECISIONDOC_PROVIDER_VISUAL",
+        "DECISIONDOC_CACHE_ENABLED",
+    ):
+        monkeypatch.delenv(leaked, raising=False)
     from app.main import create_app
 
     return TestClient(create_app())
