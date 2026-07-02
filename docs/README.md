@@ -5,6 +5,7 @@
 - `docs/sales/` — 영업/고객 설명용 문서
 - `docs/deploy_aws.md` — AWS SAM 및 GitHub Actions 배포 runbook
 - `docs/architecture.md` — 시스템 아키텍처 개요
+- `docs/development-plan.md` — 완성을 위한 기능 개발 계획 (갭 분석·마일스톤·DoD)
 - `docs/product_direction.md` — DecisionDoc AI 제품 방향성
 - `docs/product_execution_plan.md` — 제품 방향성 실행 계획
 - `docs/product_demo_scenario.md` — local procurement decision package demo scenario

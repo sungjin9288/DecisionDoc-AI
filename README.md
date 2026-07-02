@@ -49,18 +49,38 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 
 ## Architecture
 
+레이어 수치는 실측 기반입니다 (재현 커맨드는 [docs/development-plan.md](./docs/development-plan.md) §2 참조).
+
 ```text
-Client
- → FastAPI Routes (/generate, /approvals, /admin, /auth, /billing, /dashboard ...)
- → Generate Service
-    → Bundle Catalog / DocumentSpec
-    → Jinja2 Template
-    → Provider Factory ─ Mock / OpenAI / Gemini / Claude / Local (+ fallback chain)
-    → Stabilizer / Validation / Lint
- → Storage Layer ─ Local / S3
- → Export Service (Markdown 등)
- → Project / Knowledge / Approval / History / Audit 워크플로
+Client (Web UI / CLI / API)
+  │
+  ▼
+FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
+  ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
+  │     → rate_limit → auth → tenant → billing → audit → metrics
+  ├─ Routers (23, 라우트 254): generate / approvals / projects / knowledge
+  │     / report_workflows / auth / sso / admin / audit / billing / dashboard
+  │     / history / eval / finetune / local_llm / g2b / templates / health ...
+  ▼
+Services (37) — 도메인 오케스트레이션
+  ├─ generation_service ─ 핵심 파이프라인:
+  │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
+  │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
+  ├─ export 계열: docx / pptx / pdf / hwp / excel (5종)
+  ├─ 조달 계열: g2b_collector → procurement_decision_service
+  │     → procurement_decision_package/ (13-모듈 패키지)
+  └─ 품질 계열: report_quality_learning / prompt_optimizer / validator
+  │
+  ├────────────────┬─────────────────────┐
+  ▼                ▼                     ▼
+Providers (5)    Storage (36 스토어)    Ops
+  factory +        factory +             CloudWatch 조사
+  fallback chain   Local / S3            Statuspage 연동
+  mock/openai/     (atomic write 공통)   eval / eval_live
+  gemini/claude/local
 ```
+
+**설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
 
 배포 모드: 로컬 개발 · Docker Compose · AWS SAM/Lambda. Provider는 `DECISIONDOC_PROVIDER`에 단일 또는 콤마 구분 fallback chain(`openai,gemini`)으로 지정.
 
@@ -171,6 +191,23 @@ find tests -name "test_*.py" | wc -l  # → 205
 ```
 
 > 위 수치는 `def test_` 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
+
+---
+
+## Development Plan — 완성까지 남은 것
+
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -m "not live"` → 2,690 passed, 2026-07-02 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+
+| 마일스톤 | 내용 | 외부 의존 |
+|----------|------|-----------|
+| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 |
+| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` |
+| **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 |
+| **M4** | CSP nonce 적용 — `script-src 'unsafe-inline'` 제거 | 없음 |
+| **M5** | 800줄 초과 모듈 15개 분할 (2026-07-02 procurement 패키지 분할 패턴 재사용) | 없음 |
+| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 |
+
+우선순위는 **M1·M2** — 코드가 아니라 "실증 증거"가 현재 완성의 병목입니다. 각 마일스톤의 완료 정의(DoD)·리스크·실행 순서는 계획 문서 참조.
 
 ---
 
