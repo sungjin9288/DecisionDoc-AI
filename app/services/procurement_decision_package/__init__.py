@@ -1,16 +1,12 @@
-"""Build local procurement decision package artifacts.
+"""Facade package for procurement decision package artifact generation.
+
+The implementation is split across focused modules in this package; this
+``__init__`` re-exports every public and internal symbol so that existing
+``from app.services.procurement_decision_package_service import X`` style
+imports continue to work unchanged.
 
 This module is intentionally local and deterministic. It does not call providers,
 AWS, training, model promotion, or service-resume paths.
-
-The implementation now lives in the ``app.services.procurement_decision_package``
-package, split into focused modules (constants, json_helpers, field_validators,
-package_document_validation, sample_validation, artifact_evidence, package_builder,
-cli_manifest_check, cli_manifest_contract, demo_run, smoke_gate, smoke_result_check,
-artifact_writers). This module is kept as a backward-compatible facade that
-re-exports the full public and internal API so existing
-``from app.services.procurement_decision_package_service import X`` imports keep
-working unchanged.
 """
 from __future__ import annotations
 
