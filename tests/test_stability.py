@@ -264,7 +264,7 @@ def test_retry_uses_retry_after_when_provider_is_rate_limited(tmp_path: Path, mo
                 raise ProviderFailedError("provider failed") from exc
         return {"result": "ok"}
 
-    monkeypatch.setattr("app.services.generation_service.time.sleep", lambda seconds: delays.append(seconds))
+    monkeypatch.setattr("app.services.generation.service_provider_mixin.time.sleep", lambda seconds: delays.append(seconds))
     svc._call_provider_once = fail_once_then_succeed  # type: ignore[method-assign]
     bundle_spec = MagicMock(spec=BundleSpec)
     bundle_spec.id = "tech_decision"
