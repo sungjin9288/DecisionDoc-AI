@@ -531,4 +531,18 @@ def _update_gcloud_config(cfg, payload: dict, store) -> None:
             setattr(cfg, k, v)
 
 
-app = create_app()
+# Lazy module attribute (PEP 562): `uvicorn app.main:app` and
+# `from app.main import app` still work, but importing this module no longer
+# builds the app (and thus no longer runs load_dotenv) as an import
+# side-effect — tests that monkeypatch env/providers before create_app()
+# are not polluted by a developer's local .env.
+_app = None
+
+
+def __getattr__(name: str):
+    if name == "app":
+        global _app
+        if _app is None:
+            _app = create_app()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
