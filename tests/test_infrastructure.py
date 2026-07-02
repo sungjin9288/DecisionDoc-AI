@@ -63,9 +63,77 @@ def test_security_headers_csp(client):
     csp = res.headers.get("content-security-policy", "")
     assert "default-src" in csp
     assert "script-src" in csp
-    assert "'unsafe-inline'" in csp
     assert "frame-ancestors" in csp
     assert "cdn.jsdelivr.net" not in csp
+    # Non-HTML responses carry no nonce (nothing inline to protect).
+    assert "'nonce-" not in csp
+
+
+def _script_src(csp: str) -> str:
+    """Return the script-src directive segment from a CSP header string."""
+    for part in csp.split(";"):
+        if "script-src" in part:
+            return part.strip()
+    return ""
+
+
+def _extract_csp_nonce(csp: str) -> str | None:
+    m = re.search(r"'nonce-([^']+)'", csp)
+    return m.group(1) if m else None
+
+
+@pytest.fixture
+def nonce_client(client, monkeypatch):
+    """Client with CSP nonce enforcement opted in.
+
+    Nonce emission is gated behind DECISIONDOC_CSP_NONCE_ENFORCED because a
+    nonce in script-src makes browsers ignore 'unsafe-inline' for ALL inline
+    script — including the UI's on*= handlers — until those are refactored.
+    """
+    monkeypatch.setenv("DECISIONDOC_CSP_NONCE_ENFORCED", "1")
+    return client
+
+
+def test_csp_nonce_disabled_by_default(client):
+    """Default: no nonce is emitted and 'unsafe-inline' keeps the UI working."""
+    res = client.get("/")
+    assert res.status_code == 200
+    csp = res.headers.get("content-security-policy", "")
+    assert "'nonce-" not in csp
+    assert "'unsafe-inline'" in csp
+    assert '<script nonce="' not in res.text
+
+
+def test_csp_root_has_nonce_and_matches_inline_scripts(nonce_client):
+    """(a)+(b): served HTML carries a nonce that matches every inline <script>."""
+    res = nonce_client.get("/")
+    assert res.status_code == 200
+    csp = res.headers.get("content-security-policy", "")
+    header_nonce = _extract_csp_nonce(csp)
+    assert header_nonce, "CSP script-src must include a 'nonce-...' source"
+
+    # Every inline <script> in the served HTML must carry the header nonce.
+    html_nonces = re.findall(r'<script nonce="([^"]+)"', res.text)
+    assert html_nonces, "index.html must contain inline <script> tags with a nonce"
+    assert all(n == header_nonce for n in html_nonces)
+
+    # No un-nonced bare inline <script> should remain in the served response.
+    assert "<script>" not in res.text
+
+
+def test_csp_nonce_differs_per_request(nonce_client):
+    """(c): each request receives a distinct, freshly generated nonce."""
+    n1 = _extract_csp_nonce(nonce_client.get("/").headers.get("content-security-policy", ""))
+    n2 = _extract_csp_nonce(nonce_client.get("/").headers.get("content-security-policy", ""))
+    assert n1 and n2
+    assert n1 != n2
+
+
+def test_csp_offline_page_has_nonce(nonce_client):
+    """The PWA offline fallback is served with a per-request nonce too."""
+    res = nonce_client.get("/offline.html")
+    assert res.status_code == 200
+    assert _extract_csp_nonce(res.headers.get("content-security-policy", ""))
 
 
 def test_root_html_avoids_external_cdn_scripts(client):
@@ -736,3 +804,50 @@ def test_tenant_mismatch_blocked(tmp_path, monkeypatch):
     )
     assert res.status_code == 403
     assert res.json().get("code") == "TENANT_MISMATCH"
+
+
+# ── CSP nonce helpers (unit) ────────────────────────────────────────────────
+
+def test_generate_csp_nonce_is_unique_and_urlsafe():
+    from app.middleware.security_headers import generate_csp_nonce
+
+    nonces = {generate_csp_nonce() for _ in range(100)}
+    assert len(nonces) == 100  # cryptographically distinct
+    for n in nonces:
+        assert n and all(c.isalnum() or c in "-_" for c in n)
+
+
+def test_apply_csp_nonce_stamps_bare_inline_scripts_only():
+    from app.main import _apply_csp_nonce
+
+    html = (
+        '<script>a()</script>'
+        '<script src="/static/app.js"></script>'
+        '<script>b()</script>'
+    )
+    out = _apply_csp_nonce(html, "N0NCE")
+    # Bare inline blocks receive the nonce.
+    assert out.count('<script nonce="N0NCE">') == 2
+    # External src script is untouched.
+    assert '<script src="/static/app.js"></script>' in out
+    # No bare inline <script> left.
+    assert "<script>" not in out
+
+
+def test_build_csp_omits_nonce_when_absent():
+    from app.middleware.security_headers import _build_csp
+
+    csp = _build_csp(None)
+    assert "'nonce-" not in csp
+    assert "script-src 'self' 'unsafe-inline'" in csp
+
+
+def test_build_csp_includes_nonce_when_present():
+    from app.middleware.security_headers import _build_csp
+
+    csp = _build_csp("abc123")
+    assert "'nonce-abc123'" in csp
+    assert "script-src 'self' 'nonce-abc123'" in csp
+    # With a nonce present, 'unsafe-inline' is dropped from script-src — CSP L2+
+    # browsers would ignore it anyway, so listing it would only mislead.
+    assert "'unsafe-inline'" not in csp.split("style-src")[0]

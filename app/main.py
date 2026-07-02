@@ -22,6 +22,7 @@ from app.config import (
 )
 from app.middleware.observability import install_observability_middleware
 from app.middleware.request_id import install_request_id_middleware
+from app.middleware.security_headers import csp_nonce_enforced, generate_csp_nonce
 from app.observability.logging import setup_logging
 from app.ops.factory import get_ops_service
 from app.services.search_service import SearchService
@@ -60,6 +61,25 @@ def _resolve_data_dir(*, explicit_data_dir: str = "") -> Path:
     if configured:
         return Path(configured)
     return Path("./data")
+
+
+# Matches an opening <script> tag that has no attributes (bare inline block).
+# Anchored to `<script>` / `<script >` only, so external `<script src=...>` and
+# any tag that already carries a nonce are left untouched. Uses a plain string
+# replace (no regex backtracking) for predictable performance on large HTML.
+_INLINE_SCRIPT_OPEN = "<script>"
+
+
+def _apply_csp_nonce(html: str, nonce: str) -> str:
+    """Stamp ``nonce="<nonce>"`` onto every bare inline ``<script>`` tag.
+
+    Only the exact opening token ``<script>`` is rewritten. Tags with a ``src``
+    attribute or other attributes are not matched by this token and remain
+    external/unchanged. Single ``str.replace`` pass — no regex, no backtracking.
+    """
+    if _INLINE_SCRIPT_OPEN not in html:
+        return html
+    return html.replace(_INLINE_SCRIPT_OPEN, f'<script nonce="{nonce}">')
 
 
 
@@ -306,13 +326,18 @@ def create_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
 
     @app.api_route("/", methods=["GET", "HEAD"])
-    async def root():
+    async def root(request: Request):
         """Serve the Web UI index.html (PWA entry point)."""
         index_path = static_dir / "index.html"
         if not index_path.exists():
             return {"status": "DecisionDoc AI API", "docs": "/docs"}
+        html = index_path.read_text(encoding="utf-8")
+        if csp_nonce_enforced():
+            nonce = generate_csp_nonce()
+            request.state.csp_nonce = nonce
+            html = _apply_csp_nonce(html, nonce)
         return HTMLResponse(
-            index_path.read_text(encoding="utf-8"),
+            html,
             headers={"Cache-Control": "no-store"},
         )
 
@@ -355,13 +380,17 @@ def create_app() -> FastAPI:
         raise HTTPException(404, "sw.js not found")
 
     @app.api_route("/offline.html", methods=["GET", "HEAD"])
-    async def serve_offline():
+    async def serve_offline(request: Request):
         """Serve the PWA offline fallback page."""
-        from fastapi.responses import FileResponse as _FR
         path = static_dir / "offline.html"
-        if path.exists():
-            return _FR(str(path), media_type="text/html")
-        raise HTTPException(404, "offline.html not found")
+        if not path.exists():
+            raise HTTPException(404, "offline.html not found")
+        html = path.read_text(encoding="utf-8")
+        if csp_nonce_enforced():
+            nonce = generate_csp_nonce()
+            request.state.csp_nonce = nonce
+            html = _apply_csp_nonce(html, nonce)
+        return HTMLResponse(html, media_type="text/html")
 
     @app.get("/bundles")
     def list_bundle_types(
