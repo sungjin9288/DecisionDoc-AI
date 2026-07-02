@@ -1,22 +1,35 @@
-"""Document-generation pipeline orchestration (GenerationService).
+"""Document-generation pipeline: quality guards, provider orchestration, and
+the ``GenerationService`` facade.
 
-The implementation now lives in the ``app.services.generation`` package,
-split into focused modules (context_store, text_normalization,
-quality_guard_proposal, slide_outline_data, quality_guard_attachment,
-quality_guard_finish, procurement_slide_guidance, errors) and the
-``GenerationService`` mixins (service_core_mixin, service_rendering_mixin,
-service_cache_mixin, service_provider_mixin,
-service_context_injection_mixin). This module is kept as a
-backward-compatible facade that re-exports the full public and internal API
-so existing ``from app.services.generation_service import X`` imports keep
-working unchanged.
+The implementation lives in this package, split into focused modules:
+
+- ``context_store``: generation-context thread-local capture, cross-request
+  context cache, usage recording, and the background eval thread pool.
+- ``text_normalization``: shared text/row cleanup helpers.
+- ``quality_guard_proposal``: proposal_kr bundle quality guard.
+- ``slide_outline_data``: static slide-outline fallback data.
+- ``quality_guard_attachment``: attachment-grounded and sparse-context
+  proposal quality guards.
+- ``quality_guard_finish``: performance_plan_kr quality guard and the
+  top-level quality-guard dispatcher.
+- ``procurement_slide_guidance``: procurement PDF slide-outline guidance.
+- ``errors``: provider/generation exception types and failure inspection
+  helpers.
+- ``service_core_mixin`` / ``service_rendering_mixin`` /
+  ``service_cache_mixin`` / ``service_provider_mixin`` /
+  ``service_context_injection_mixin``: the ``GenerationService`` mixins,
+  composed below into the single public class.
+
+This package re-exports the full public and internal API so existing
+``from app.services.generation_service import X`` imports keep working
+unchanged.
 """
 from __future__ import annotations
 
 from app.services.generation.context_store import (
+    _DECISION_COUNCIL_APPLIED_BUNDLE_IDS,
     _CTX_MAX_SIZE,
     _CTX_TTL_SECONDS,
-    _DECISION_COUNCIL_APPLIED_BUNDLE_IDS,
     _ctx_lock,
     _eval_done_callback,
     _eval_executor,
@@ -74,7 +87,13 @@ from app.services.generation.errors import (
     provider_failure_error_code,
     provider_failure_retry_after_seconds,
 )
-from app.services.generation import GenerationService
+from app.services.generation.service_cache_mixin import GenerationCacheMixin
+from app.services.generation.service_context_injection_mixin import (
+    GenerationContextInjectionMixin,
+)
+from app.services.generation.service_core_mixin import GenerationCoreMixin
+from app.services.generation.service_provider_mixin import GenerationProviderCallMixin
+from app.services.generation.service_rendering_mixin import GenerationRenderingMixin
 
 __all__ = [
     "GenerationService",
@@ -83,3 +102,18 @@ __all__ = [
     "BundleNotSupportedError",
     "get_generation_context",
 ]
+
+
+class GenerationService(
+    GenerationCoreMixin,
+    GenerationRenderingMixin,
+    GenerationCacheMixin,
+    GenerationProviderCallMixin,
+    GenerationContextInjectionMixin,
+):
+    _PROCUREMENT_HANDOFF_BUNDLE_IDS = {
+        "bid_decision_kr",
+        "rfp_analysis_kr",
+        "proposal_kr",
+        "performance_plan_kr",
+    }

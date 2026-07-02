@@ -1,0 +1,111 @@
+"""Generation request context tracking and background eval executor.
+
+Thread-local generation context capture, a cross-request context cache used
+by the /feedback endpoint for fine-tune collection, usage-event recording,
+and the bounded background thread pool for quality eval tasks.
+"""
+from __future__ import annotations
+
+import concurrent.futures
+import logging
+import threading
+import time
+
+_log = logging.getLogger("decisiondoc.generate")
+_DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {
+    "bid_decision_kr",
+    "proposal_kr",
+}
+
+
+def _record_usage_sync(
+    tenant_id: str,
+    user_id: str,
+    bundle_id: str,
+    request_id: str,
+    model: str,
+    tokens_input: int,
+    tokens_output: int,
+) -> None:
+    """Record a usage event to the billing/metering store (fire-and-forget)."""
+    from app.storage.usage_store import UsageStore, UsageEvent
+    from app.storage.billing_store import get_billing_store
+    import uuid as _uuid
+    from datetime import datetime as _datetime, timezone as _timezone
+
+    plan = get_billing_store(tenant_id).get_plan(tenant_id)
+    tokens_total = tokens_input + tokens_output
+    cost = (tokens_total / 1000) * plan.price_per_1k_tokens if tokens_total > 0 else 0.0
+
+    event = UsageEvent(
+        event_id=str(_uuid.uuid4()),
+        tenant_id=tenant_id,
+        user_id=user_id,
+        timestamp=_datetime.now(_timezone.utc).isoformat(),
+        event_type="doc.generate",
+        bundle_id=bundle_id,
+        tokens_input=tokens_input,
+        tokens_output=tokens_output,
+        tokens_total=tokens_total,
+        cost_usd=cost,
+        model=model,
+        request_id=request_id,
+    )
+    UsageStore().record(event)
+
+
+# ── Fine-tune context capture ─────────────────────────────────────────────────
+# Thread-local for capturing generation context within a single request.
+_generation_context: threading.local = threading.local()
+
+# In-memory cross-request context cache: request_id → (context dict, timestamp).
+# Used by the /feedback endpoint (a separate request) to find the original
+# system_prompt + output for Trigger A fine-tune collection.
+_ctx_lock: threading.Lock = threading.Lock()
+_recent_generation_contexts: dict[str, tuple[dict, float]] = {}
+_CTX_MAX_SIZE = 500   # evict oldest entries beyond this limit
+_CTX_TTL_SECONDS = 3600  # 1 hour — stale entries expire regardless of size
+
+
+def _store_generation_context(request_id: str, ctx: dict) -> None:
+    """Store ctx with timestamp; evict expired + oldest-over-limit entries."""
+    with _ctx_lock:
+        now = time.time()
+        # Purge expired entries first
+        expired = [k for k, (_, ts) in _recent_generation_contexts.items()
+                   if now - ts > _CTX_TTL_SECONDS]
+        for k in expired:
+            del _recent_generation_contexts[k]
+        # Evict oldest if still at capacity
+        if len(_recent_generation_contexts) >= _CTX_MAX_SIZE:
+            oldest = min(_recent_generation_contexts.items(), key=lambda x: x[1][1])
+            del _recent_generation_contexts[oldest[0]]
+        _recent_generation_contexts[request_id] = (ctx, now)
+
+
+def get_generation_context(request_id: str) -> dict | None:
+    """Return stored generation context for a request_id, or None if missing/expired."""
+    with _ctx_lock:
+        entry = _recent_generation_contexts.get(request_id)
+        if entry is None:
+            return None
+        ctx, ts = entry
+        if time.time() - ts > _CTX_TTL_SECONDS:
+            del _recent_generation_contexts[request_id]
+            return None
+        return ctx
+
+
+# ── Background eval executor ──────────────────────────────────────────────────
+# Bounded thread pool for background quality eval tasks.
+# Use shutdown(wait=True) during FastAPI lifespan to drain in-flight tasks.
+_eval_executor: concurrent.futures.ThreadPoolExecutor = (
+    concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="eval")
+)
+
+
+def _eval_done_callback(future: concurrent.futures.Future) -> None:  # type: ignore[type-arg]
+    """Log any unhandled exception from a background eval task."""
+    exc = future.exception()
+    if exc is not None:
+        _log.error("[Eval] Background eval task raised an exception: %s", exc, exc_info=exc)
