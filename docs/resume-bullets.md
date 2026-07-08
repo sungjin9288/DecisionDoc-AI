@@ -76,6 +76,6 @@
 ## 9. 최종 판단
 
 - 현재 이력서 반영 가능 여부: 조건부 가능
-- 이유: 코드 근거가 있는 API, service, provider/storage, bundle, export, 테스트/배포 구조가 충분하고, 로컬 non-live gate와 최신 GitHub Actions CI/CD, UI/CSP evidence가 있다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 성과는 아직 미검증이다.
+- 이유: 코드 근거가 있는 API, service, provider/storage, bundle, export, 테스트/배포 구조가 충분하고, 로컬 non-live gate와 최신 GitHub Actions CI/CD, UI/CSP 및 post-login UI flow evidence가 있다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 성과는 아직 미검증이다.
 - 이력서에 넣기 전 반드시 보완할 것: GitHub 링크, 검증된 데모 URL 또는 로컬 screenshot, 대표 API 호출 예시, 직접 설명 범위 확인
 - 가장 먼저 개선해야 할 것: `docs/completion-readiness-runbook.md` 순서대로 M1 live provider, M2 G2B 실데이터, M6 배포 smoke 중 실제 외부 증거를 하나씩 확보

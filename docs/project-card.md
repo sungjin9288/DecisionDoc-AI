@@ -1,6 +1,6 @@
 # Project Card
 
-분석 기준: 2026-07-09 현재 저장소 코드, README, docs, evidence, completion readiness receipt, 최근 git log, worktree 상태, 최신 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. 애플리케이션 코드는 수정하지 않았다.
+분석 기준: 2026-07-09 현재 저장소 코드, README, docs, evidence, completion readiness receipt, 최근 git log, worktree 상태, 최신 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. post-login recommendation auth와 local UI flow evidence까지 반영한 상태다.
 
 ## 1. Snapshot
 
@@ -14,7 +14,7 @@
 - Demo 링크: 현재 README에는 검증된 Demo URL을 싣지 않는다. 최신 로컬 UI screenshot은 `evidence/screenshots/web-ui-home.png`에 있다.
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, OpenAI/Gemini/Claude/Local/Mock provider abstraction, Docker Compose, AWS SAM/Lambda, local/S3 storage, pytest
 - 이력서 반영 가능 여부: 조건부 가능
-- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. 2026-07-09 기준 non-live pytest gate와 최신 GitHub Actions CI/CD는 통과했고 static PWA/CSP evidence도 존재한다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
+- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. 2026-07-09 기준 non-live pytest gate와 최신 GitHub Actions CI/CD는 통과했고 static PWA/CSP 및 post-login UI flow evidence도 존재한다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
 
 ## 2. One-liner
 
@@ -150,7 +150,7 @@ User / Team
 - README 또는 문서 근거: `README.md`, `docs/architecture.md`, `docs/user_manual.md`, `docs/product_local_demo_runbook.md`, `docs/product_demo_scenario.md`, `docs/development-plan.md`, `docs/roadmap.md`, `docs/contribution-note.md`, `docs/completion-readiness-runbook.md`
 - Local evidence contract 근거: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`, `--write-result`, `--result-path`
 - Completion readiness 근거: `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, gitignored `reports/completion-readiness/` local receipt.
-- 최신 UI/CSP evidence: `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/ui_csp_nonce_check.log`, `evidence/cli-logs/playwright_console.log`.
+- 최신 UI/CSP evidence: `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/ui_csp_nonce_check.log`, `evidence/cli-logs/playwright_console.log`, `evidence/cli-logs/ui_flow_evidence.json`.
 - 최근 git 상태: `main` 브랜치가 `origin/main`과 동기화되어 있고 최신 확인 시점의 worktree는 clean이다. 후속 작업 전에는 항상 `git status --short --branch`와 최신 CI/CD 상태를 다시 확인한다.
 - 실행 방법이 명확한지: 로컬 `pip install -r requirements.txt`, `python -m uvicorn app.main:app --reload`, Docker `docker compose up -d`가 문서와 설정에 존재한다.
 - 스크린샷/데모가 필요한 부분: Web UI 첫 화면, `/generate` 결과, 문서 upload flow, report workflow, export 결과, admin/ops 화면
