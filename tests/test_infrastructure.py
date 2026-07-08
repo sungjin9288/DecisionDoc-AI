@@ -2196,6 +2196,8 @@ def test_completion_readiness_runbook_keeps_external_proof_boundaries():
         "python3 scripts/check_completion_readiness.py --print-env-template",
         "reports/completion-readiness/latest.json",
         "python3 scripts/check_completion_readiness_result.py",
+        "python3 scripts/check_completion_proof_receipt.py --print-template M1",
+        "reports/completion-readiness/m1-live-provider-proof.json",
         "DECISIONDOC_PROVIDER=openai",
         "DECISIONDOC_PROVIDER=gemini",
         "DECISIONDOC_PROVIDER=claude",

@@ -23,7 +23,7 @@
 | 최신 static PWA screenshot 갱신 | 완료 | `evidence/screenshots/web-ui-home.png` |
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2796 passed, 2 skipped, 4 deselected` |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2801 passed, 2 skipped, 4 deselected` |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 
 ## 1-1. 재현 가능한 Local Evidence Contract
@@ -36,11 +36,12 @@
 | Completion readiness env template | 재현 가능 | `python3 scripts/check_completion_readiness.py --print-env-template` |
 | Completion readiness local receipt | 재현 가능 | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
 | Completion readiness receipt checker | 재현 가능 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
+| Completion proof receipt template/checker | 재현 가능 | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` |
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
-Completion readiness receipt는 gitignored `reports/completion-readiness/` 경로를 사용한다. 이 검증도 readiness만 확인하며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
+Completion readiness/proof receipt는 gitignored `reports/completion-readiness/` 경로를 사용한다. 이 검증도 readiness와 proof receipt 계약만 확인하며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
 ## 2. 검증 실패
 

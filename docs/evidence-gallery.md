@@ -42,6 +42,8 @@
 | `python3 scripts/check_completion_readiness.py --env-file .env.prod` | gitignore된 env file에서 M1/M2/M6 readiness 입력값을 읽어 점검. secret 값은 출력하지 않음 | 재현 가능 |
 | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` | M1/M2/M6 실행 준비 조건을 gitignore된 `reports/` 경로에 JSON receipt로 기록. 외부 호출 없음 | 재현 가능 |
 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` | completion readiness JSON receipt가 현재 schema, milestone order, command list, excluded action contract와 일치하는지 확인 | 재현 가능 |
+| `python3 scripts/check_completion_proof_receipt.py --print-template M1` | 실제 proof 이후 채울 no-secret proof receipt template 출력. placeholder가 남아 있으면 checker가 거부 | 재현 가능 |
+| `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` | M1/M2/M6 proof receipt의 command, timestamp, evidence refs, secret boundary 계약 확인. 외부 호출 없음 | 재현 가능 |
 | `docs/completion-readiness-runbook.md` | M1/M2/M6 proof 실행 전후 순서, 중단 기준, 문서 갱신 순서를 고정한 runbook | 재현 가능 |
 
 이 섹션은 파일이 `evidence/` package 안에 저장됐다고 주장하지 않는다. 필요할 때 위 명령으로 local-only receipt를 다시 생성한다.

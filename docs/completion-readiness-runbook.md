@@ -55,7 +55,42 @@ python3 scripts/check_completion_readiness_result.py \
 - `ok: false`이면 출력된 `missing_env`, `missing_files`, `blockers`를 먼저 해결한다.
 - 이 단계는 외부 API나 runtime을 호출하지 않는다.
 
-## 4. M1 Live Provider Proof
+## 4. Proof Receipt Contract
+
+M1/M2/M6 proof를 실제로 실행한 뒤에는 secret 없는 JSON receipt를 gitignored `reports/completion-readiness/` 아래에 남긴다. 먼저 안전한 템플릿을 만든다.
+
+```bash
+python3 scripts/check_completion_proof_receipt.py --print-template M1 \
+  > reports/completion-readiness/m1-live-provider-proof.json
+
+python3 scripts/check_completion_proof_receipt.py --print-template M2 \
+  > reports/completion-readiness/m2-g2b-stage-smoke-proof.json
+
+python3 scripts/check_completion_proof_receipt.py --print-template M6 \
+  > reports/completion-readiness/m6-deployment-smoke-proof.json
+```
+
+템플릿의 placeholder를 실제 command, timestamp, environment boundary, evidence refs, pass/fail summary로 바꾼 뒤 receipt 계약을 확인한다.
+
+```bash
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m1-live-provider-proof.json \
+  --write-result \
+  --result-path reports/completion-readiness/m1-live-provider-proof-check.json
+```
+
+검증기는 다음을 확인한다.
+
+- `command`가 해당 milestone의 허용 명령 목록에 포함됨
+- `executed_at_utc`가 UTC `Z` suffix timestamp임
+- `evidence_refs`가 비어 있지 않음
+- `secret_values_recorded`가 `false`임
+- receipt 문자열에 대표 secret pattern이 포함되지 않음
+- excluded external action boundary가 readiness 계약과 일치함
+
+proof receipt 검증도 외부 API, G2B live API, AWS runtime을 실행하지 않는다.
+
+## 5. M1 Live Provider Proof
 
 실행 조건:
 
@@ -100,7 +135,7 @@ gh workflow run live.yml --ref main -f provider=claude
 gh workflow run live.yml --ref main -f provider='openai,gemini'
 ```
 
-## 5. M2 G2B Stage Smoke
+## 6. M2 G2B Stage Smoke
 
 실행 조건:
 
@@ -132,7 +167,7 @@ python3 scripts/run_stage_procurement_smoke.py \
 - 생성된 decision package가 입찰 제출이나 법적 승인으로 해석되지 않는다는 boundary
 - 실패 시 missing input, external API error, app regression을 구분
 
-## 6. M6 Deployment Smoke
+## 7. M6 Deployment Smoke
 
 실행 조건:
 
@@ -165,7 +200,7 @@ python3 scripts/run_deployed_smoke.py \
 - runtime URL 접근성
 - README의 Demo 링크는 접근 검증 후에만 갱신
 
-## 7. 문서 갱신 순서
+## 8. 문서 갱신 순서
 
 실제 proof가 끝난 뒤에만 다음 파일을 갱신한다.
 
@@ -178,7 +213,7 @@ python3 scripts/run_deployed_smoke.py \
 
 각 문서에는 command, date, pass/fail, remaining limitation을 함께 남긴다. 측정 근거 없는 수치나 검증되지 않은 운영 표현은 쓰지 않는다.
 
-## 8. 중단 기준
+## 9. 중단 기준
 
 다음 중 하나라도 발생하면 proof를 중단하고 readiness 단계로 되돌아간다.
 
@@ -188,13 +223,16 @@ python3 scripts/run_deployed_smoke.py \
 - smoke가 입찰 제출, 법적 승인, 계약 확약으로 이어질 수 있음
 - runtime URL 또는 API key 소유권이 확인되지 않음
 
-## 9. 마무리 검증
+## 10. 마무리 검증
 
 proof 이후 최소 검증:
 
 ```bash
 python3 scripts/check_completion_readiness_result.py \
   reports/completion-readiness/latest.json
+
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m1-live-provider-proof.json
 
 python3 scripts/count_readme_metrics.py
 
