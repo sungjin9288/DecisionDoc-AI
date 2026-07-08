@@ -6,7 +6,6 @@ bookkeeping, visual-asset sanitization, and default approval-step wiring.
 from __future__ import annotations
 
 import uuid
-from dataclasses import asdict
 from typing import Any
 
 from app.config import (

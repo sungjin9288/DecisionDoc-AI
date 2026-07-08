@@ -28,10 +28,7 @@ from app.schemas import GenerateRequest, GenerateResponse, GovDocOptions
 from app.services.attachment_service import (
     AttachmentError,
     MAX_TOTAL_CHARS,
-    extract_pdf_structured,
-    extract_text_with_ai_fallback,
 )
-from app.services.visual_asset_service import generate_visual_assets_from_docs
 
 logger = logging.getLogger("decisiondoc.generate")
 

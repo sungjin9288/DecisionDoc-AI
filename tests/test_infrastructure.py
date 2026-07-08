@@ -15,7 +15,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import time
+import tomllib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -2247,3 +2249,50 @@ def test_live_workflow_covers_completion_readiness_provider_proofs():
     )
     for marker in required_runbook_markers:
         assert marker in runbook
+
+
+def test_ruff_facade_ignores_cover_only_compatibility_modules():
+    root = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    ignores = config["tool"]["ruff"]["lint"]["per-file-ignores"]
+    expected_facades = {
+        "app/routers/generate/__init__.py",
+        "app/routers/projects/__init__.py",
+        "app/services/attachment/__init__.py",
+        "app/services/attachment_service.py",
+        "app/services/generation/__init__.py",
+        "app/services/generation_service.py",
+        "app/services/pptx/__init__.py",
+        "app/services/pptx_service.py",
+        "app/services/procurement_decision_package/__init__.py",
+        "app/services/procurement_decision_package_service.py",
+        "app/services/procurement_decision_service.py",
+        "app/services/report_workflow/__init__.py",
+        "app/services/report_workflow_service.py",
+        "app/storage/knowledge/__init__.py",
+        "app/storage/knowledge_store.py",
+        "app/storage/report_workflow/__init__.py",
+        "app/storage/trajectory/__init__.py",
+        "app/storage/trajectory_store.py",
+    }
+
+    assert set(ignores) == expected_facades
+    assert all(rules == ["F401"] for rules in ignores.values())
+
+    for path in expected_facades:
+        text = (root / path).read_text(encoding="utf-8")
+        assert "facade" in text or "re-export" in text or "re-exports" in text
+
+
+def test_procurement_demo_defaults_use_system_temp_dir():
+    from app.services.procurement_decision_package.constants import (
+        DEFAULT_DECISION_PACKAGE_OUTPUT_BASE,
+        DEFAULT_DEMO_DATA_DIR,
+        DEFAULT_DEMO_OUT_DIR,
+    )
+
+    temp_dir = Path(tempfile.gettempdir())
+    assert DEFAULT_DEMO_DATA_DIR == temp_dir / "decisiondoc-procurement-package-demo-data"
+    assert DEFAULT_DEMO_OUT_DIR == temp_dir / "decisiondoc-procurement-package-demo-output"
+    assert DEFAULT_DECISION_PACKAGE_OUTPUT_BASE == temp_dir / "decisiondoc-procurement-decision-packages"

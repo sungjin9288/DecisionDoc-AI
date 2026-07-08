@@ -20,7 +20,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-09 실측: 2794 passed, 2 skipped, 4 deselected
+# 2026-07-09 실측: 2796 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

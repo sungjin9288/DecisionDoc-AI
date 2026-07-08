@@ -5,6 +5,7 @@ AWS, training, model promotion, or service-resume paths.
 """
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -290,8 +291,9 @@ DEMO_TENANT_ID = "demo-tenant"
 DEMO_PROJECT_ID = "demo-procurement-project"
 DEMO_RECOMMENDATION = "CONDITIONAL_GO"
 LOCAL_DEMO_SCENARIO_ID = "procurement-decision-package-local-demo"
-DEFAULT_DEMO_DATA_DIR = Path("/tmp/decisiondoc-procurement-package-demo-data")
-DEFAULT_DEMO_OUT_DIR = Path("/tmp/decisiondoc-procurement-package-demo-output")
+_SYSTEM_TEMP_DIR = Path(tempfile.gettempdir())
+DEFAULT_DEMO_DATA_DIR = _SYSTEM_TEMP_DIR / "decisiondoc-procurement-package-demo-data"
+DEFAULT_DEMO_OUT_DIR = _SYSTEM_TEMP_DIR / "decisiondoc-procurement-package-demo-output"
 LOCAL_DEMO_SAMPLE_DIR = (
     Path("docs")
     / "samples"
@@ -724,9 +726,7 @@ SMOKE_CHECK_DECISION_FIELDS = (
     "recommendation",
     "authorization_boundary",
 )
-DEFAULT_DECISION_PACKAGE_OUTPUT_BASE = Path(
-    "/tmp/decisiondoc-procurement-decision-packages"
-)
+DEFAULT_DECISION_PACKAGE_OUTPUT_BASE = _SYSTEM_TEMP_DIR / "decisiondoc-procurement-decision-packages"
 PROPOSAL_ALLOWED_NEXT_STEPS = [
     "prepare proposal outline",
     "assign evidence owner",

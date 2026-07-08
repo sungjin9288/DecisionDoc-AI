@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2794 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 다만 live provider, G2B 실데이터, production deployment, 실제 사용자 성과는 이번 evidence 범위에서 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2796 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 다만 live provider, G2B 실데이터, production deployment, 실제 사용자 성과는 이번 evidence 범위에서 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -59,7 +59,16 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `2794 passed, 2 skipped, 4 deselected` (2026-07-09 실측).
+결과: `2796 passed, 2 skipped, 4 deselected` (2026-07-09 실측).
+
+### CI advisory lint / security scan
+
+```bash
+ruff check app/ --select=E,F,W --ignore=E501
+bandit -r app/ -x app/providers/mock_provider.py -ll
+```
+
+결과(2026-07-09 로컬 실측): `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`. `bandit -ll`은 medium/high severity 기준이며 low severity 항목 전체 해소를 의미하지 않는다.
 
 ### Local server
 
