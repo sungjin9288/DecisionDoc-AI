@@ -2247,6 +2247,27 @@ def test_completion_readiness_runbook_keeps_external_proof_boundaries():
         assert "completion-readiness-runbook.md" in text, f"{doc_path} must link the completion runbook"
 
 
+def test_completion_readiness_receipt_examples_load_gitignored_env_file():
+    root = Path(__file__).resolve().parents[1]
+    docs_with_receipt_examples = (
+        "README.md",
+        "docs/contribution-note.md",
+        "docs/development-plan.md",
+        "docs/evidence-checklist.md",
+        "docs/evidence-gallery.md",
+        "docs/implementation-evidence.md",
+        "docs/roadmap.md",
+    )
+    stale_receipt_command = "python3 scripts/check_completion_readiness.py --json --output"
+    current_receipt_command = (
+        "python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output"
+    )
+    for doc_path in docs_with_receipt_examples:
+        text = (root / doc_path).read_text(encoding="utf-8")
+        assert current_receipt_command in text, f"{doc_path} must load .env.prod before writing readiness receipt"
+        assert stale_receipt_command not in text, f"{doc_path} has stale readiness receipt command"
+
+
 def test_live_workflow_covers_completion_readiness_provider_proofs():
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github" / "workflows" / "live.yml").read_text(encoding="utf-8")

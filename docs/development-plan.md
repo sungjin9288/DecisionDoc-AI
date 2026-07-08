@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest tests/ -m "not live" -q` → 2,803 passed, 2 skipped, 4 deselected, 2026-07-09) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest tests/ -m "not live" -q` → 2,804 passed, 2 skipped, 4 deselected, 2026-07-09) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-02: 800줄 초과 15개 전부 분할 → 0개). 2026-07-09 기준 CI advisory `ruff check app/ --select=E,F,W --ignore=E501` 통과, `bandit -ll` medium/high 0건 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD 최신 main success. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-09 실측: 2803 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-09 실측: 2804 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -28,7 +28,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 python3 scripts/check_completion_readiness.py --print-env-template
 python3 scripts/check_completion_readiness.py
 python3 scripts/check_completion_readiness.py --env-file .env.prod
-python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json
+python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
 ```
 
@@ -196,7 +196,7 @@ M5 (분할)   ── 완료
 ```
 
 - **M1·M2가 최우선**: 코드가 아닌 "증거"가 완성의 병목이다.
-- M1·M2·M6 실행 전에는 `python3 scripts/check_completion_readiness.py --print-env-template`으로 필요한 입력값을 확인하고, `python3 scripts/check_completion_readiness.py`로 provider key, G2B/stage smoke, 배포 smoke 입력값을 먼저 확인한다. secret은 gitignore된 `.env.prod` 같은 파일에 두고 `--env-file .env.prod`로 읽을 수 있다. 필요하면 `--output reports/completion-readiness/latest.json`으로 gitignore된 local receipt를 남기고 `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json`로 receipt 계약을 확인한다. 이 명령은 readiness만 확인하며 live provider, G2B live API, AWS runtime은 실행하지 않는다. 실제 proof 실행과 문서 갱신 순서는 [completion-readiness-runbook.md](./completion-readiness-runbook.md)를 따른다.
+- M1·M2·M6 실행 전에는 `python3 scripts/check_completion_readiness.py --print-env-template`으로 필요한 입력값을 확인하고, secret은 gitignore된 `.env.prod` 같은 파일에 둔 뒤 `python3 scripts/check_completion_readiness.py --env-file .env.prod`로 provider key, G2B/stage smoke, 배포 smoke 입력값을 먼저 확인한다. 필요하면 `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json`으로 gitignore된 local receipt를 남기고 `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json`로 receipt 계약을 확인한다. 이 명령은 readiness만 확인하며 live provider, G2B live API, AWS runtime은 실행하지 않는다. 실제 proof 실행과 문서 갱신 순서는 [completion-readiness-runbook.md](./completion-readiness-runbook.md)를 따른다.
 - M3·M4·M5는 외부 의존 없는 정리 마일스톤으로 완료됐다.
 - 각 마일스톤 완료 시 [roadmap.md](./roadmap.md)와 README 수치·한계 문구를 함께 갱신한다 (정직성 규칙).
 

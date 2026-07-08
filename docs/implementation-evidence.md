@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2803 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 다만 live provider, G2B 실데이터, production deployment, 실제 사용자 성과는 이번 evidence 범위에서 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2804 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 다만 live provider, G2B 실데이터, production deployment, 실제 사용자 성과는 이번 evidence 범위에서 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -28,7 +28,7 @@
 | Procurement decision package persisted receipt check | 재현 가능 | `/tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | repo 밖 receipt 검증 |
 | Static PWA 화면 제공 | 검증 완료 | `evidence/screenshots/web-ui-home.png` | Playwright screenshot | 2026-07-08 기준 로그인 화면 확인 |
 | Static PWA CSP boundary | 검증 완료 | `evidence/cli-logs/ui_csp_nonce_check.log`, `tests/test_pwa.py`, `tests/test_infrastructure.py` | HTTP header/body check + pytest | CSP nonce 있음, `script-src 'unsafe-inline'` 없음, inline handler 0개 |
-| Completion readiness receipt | 재현 가능 | `reports/completion-readiness/latest.json` (gitignored local receipt) | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` | 외부 호출 없이 M1/M2/M6 입력 부족 확인 |
+| Completion readiness receipt | 재현 가능 | `reports/completion-readiness/latest.json` (gitignored local receipt) | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` | 외부 호출 없이 M1/M2/M6 입력 부족 확인 |
 | Completion readiness receipt checker | 재현 가능 | `reports/completion-readiness/latest-check.json` (gitignored local receipt) | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` | schema/order/command/excluded action contract 확인 |
 | Completion proof receipt checker | 재현 가능 | `reports/completion-readiness/*-proof.json` (gitignored local receipt) | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py <receipt>` | 실제 proof 이후 command/timestamp/evidence refs/secret boundary contract 확인 |
 | Source-backed README metrics | 검증 완료 | `scripts/count_readme_metrics.py`, `tests/test_count_readme_metrics.py` | AST/source parser 기반 count | README 수치 drift 방지 |
@@ -60,7 +60,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `2803 passed, 2 skipped, 4 deselected` (2026-07-09 실측).
+결과: `2804 passed, 2 skipped, 4 deselected` (2026-07-09 실측).
 
 ### CI advisory lint / security scan
 
@@ -110,7 +110,7 @@ python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.
 ### Completion readiness receipt
 
 ```bash
-python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json
+python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
 ```
 

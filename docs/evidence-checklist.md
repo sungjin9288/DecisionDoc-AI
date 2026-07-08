@@ -24,7 +24,7 @@
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
 | 로그인 이후 전체 UI flow | 완료 | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2803 passed, 2 skipped, 4 deselected` |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2804 passed, 2 skipped, 4 deselected` |
 | GitHub Actions CI | 완료 | 최근 기능 변경 커밋 `fb3f89b`, CI `28961688250` success |
 | GitHub Actions CD | 완료 | 최근 기능 변경 커밋 `fb3f89b`, CD `28961688221` success. staging deploy/smoke는 설정 부재로 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
@@ -37,7 +37,7 @@
 | Manifest validation receipt | 재현 가능 | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` |
 | Persisted receipt checker | 재현 가능 | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` |
 | Completion readiness env template | 재현 가능 | `python3 scripts/check_completion_readiness.py --print-env-template` |
-| Completion readiness local receipt | 재현 가능 | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
+| Completion readiness local receipt | 재현 가능 | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` |
 | Completion readiness receipt checker | 재현 가능 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
 | Completion proof receipt template/checker | 재현 가능 | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` |
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
