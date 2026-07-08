@@ -1,6 +1,6 @@
 # DecisionDoc Completion Readiness Runbook
 
-기준일: 2026-07-08
+기준일: 2026-07-09
 
 이 runbook은 M1 live provider, M2 G2B 실데이터 smoke, M6 deployment smoke를 실행할 때 필요한 입력값과 증적 순서를 고정한다. 기본 절차는 readiness 확인까지만 수행한다. provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 각 단계에서 명시적으로 승인된 경우에만 실행한다.
 
@@ -90,6 +90,15 @@ python3 -m pytest -q \
 - fallback test에서 첫 provider 실패와 다음 provider 성공이 확인됐는지
 - secret 값이 로그에 출력되지 않았는지
 - README와 `docs/evidence-gallery.md`는 실제 pass 로그가 있을 때만 갱신
+
+GitHub Actions에서 실행할 때는 manual `live.yml` workflow를 사용한다. provider 값은 `openai`, `gemini`, `claude`, `openai,gemini` 중 하나다. `openai,gemini`는 fallback proof 전용이며 workflow 내부에서 `DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1`을 설정하고 `test_live_openai_gemini_fallback_chain_ok`만 실행한다.
+
+```bash
+gh workflow run live.yml --ref main -f provider=openai
+gh workflow run live.yml --ref main -f provider=gemini
+gh workflow run live.yml --ref main -f provider=claude
+gh workflow run live.yml --ref main -f provider='openai,gemini'
+```
 
 ## 5. M2 G2B Stage Smoke
 

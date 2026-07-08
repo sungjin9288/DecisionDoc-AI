@@ -2219,3 +2219,31 @@ def test_completion_readiness_runbook_keeps_external_proof_boundaries():
     for doc_path in docs_to_link:
         text = (root / doc_path).read_text(encoding="utf-8")
         assert "completion-readiness-runbook.md" in text, f"{doc_path} must link the completion runbook"
+
+
+def test_live_workflow_covers_completion_readiness_provider_proofs():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "live.yml").read_text(encoding="utf-8")
+    runbook = (root / "docs" / "completion-readiness-runbook.md").read_text(encoding="utf-8")
+
+    required_workflow_markers = (
+        "- openai",
+        "- gemini",
+        "- claude",
+        "- openai,gemini",
+        "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}",
+        "Missing ANTHROPIC_API_KEY secret",
+        "DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1",
+        "test_live_openai_gemini_fallback_chain_ok",
+    )
+    for marker in required_workflow_markers:
+        assert marker in workflow
+
+    required_runbook_markers = (
+        "gh workflow run live.yml --ref main -f provider=openai",
+        "gh workflow run live.yml --ref main -f provider=gemini",
+        "gh workflow run live.yml --ref main -f provider=claude",
+        "gh workflow run live.yml --ref main -f provider='openai,gemini'",
+    )
+    for marker in required_runbook_markers:
+        assert marker in runbook

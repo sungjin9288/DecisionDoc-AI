@@ -11,6 +11,8 @@ on:
         options:
           - openai
           - gemini
+          - claude
+          - openai,gemini
 
 env:
   GIT_CONFIG_COUNT: "1"
@@ -26,6 +28,7 @@ jobs:
       DECISIONDOC_TEMPLATE_VERSION: "v1"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -47,6 +50,23 @@ jobs:
             echo "Missing GEMINI_API_KEY secret"
             exit 1
           fi
+          if [ "${{ inputs.provider }}" = "claude" ] && [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "Missing ANTHROPIC_API_KEY secret"
+            exit 1
+          fi
+          if [ "${{ inputs.provider }}" = "openai,gemini" ] && [ -z "${GEMINI_API_KEY}" ]; then
+            echo "Missing GEMINI_API_KEY secret"
+            exit 1
+          fi
       - name: Run live tests
         run: |
-          python -m pytest -m live -q
+          if [ "${{ inputs.provider }}" = "openai,gemini" ]; then
+            DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1 \
+            python -m pytest \
+              tests/test_live_providers.py::test_live_openai_gemini_fallback_chain_ok \
+              -m live \
+              -q \
+              -rs
+          else
+            python -m pytest tests/test_live_providers.py -m live -q -rs
+          fi
