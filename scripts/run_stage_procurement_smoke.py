@@ -35,7 +35,7 @@ OPTIONAL_STAGE_PREREQS = (
 def _load_stage_exporter_module():
     try:
         from scripts import export_stage_procurement_smoke_env as stage_exporter_module
-    except ModuleNotFoundError:
+    except (ImportError, ModuleNotFoundError):
         module_path = REPO_ROOT / "scripts" / "export_stage_procurement_smoke_env.py"
         spec = importlib.util.spec_from_file_location("decisiondoc_stage_smoke_exporter", module_path)
         module = importlib.util.module_from_spec(spec)

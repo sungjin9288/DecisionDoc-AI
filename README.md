@@ -58,7 +58,7 @@ Client (Web UI / CLI / API)
 FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
-  ├─ Routers (23, 라우트 254): generate / approvals / projects / knowledge
+  ├─ Routers (20 top-level files, 라우트 254): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -118,7 +118,7 @@ curl http://localhost:8000/health
 `.env.example`에 **91개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
 
 ```bash
-grep -E '^[A-Z0-9_]+=' .env.example | wc -l   # → 91
+python3 scripts/count_readme_metrics.py --field env_keys  # → 91
 ```
 
 | 그룹 | 대표 키 |
@@ -138,7 +138,7 @@ grep -E '^[A-Z0-9_]+=' .env.example | wc -l   # → 91
 FastAPI 라우트는 **254개**입니다.
 
 ```bash
-grep -rE "@(app|router)\.(get|post|put|delete|patch)\(" app | wc -l   # → 254
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 254
 ```
 
 대표 도메인:
@@ -183,27 +183,37 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,447개**, **205개 파일**입니다 (소스 정의 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,551개**, **208개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-grep -rE "def test_" tests | wc -l    # → 2447
-find tests -name "test_*.py" | wc -l  # → 205
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2551
+python3 scripts/count_readme_metrics.py --field test_files      # → 208
 ```
 
-> 위 수치는 `def test_` 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
+> 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
 
 ---
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -m "not live"` → 2,690 passed, 2026-07-02 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,793 passed, 2 skipped, 4 deselected, 2026-07-08 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-02) |
+```bash
+python3 scripts/check_completion_readiness.py --print-env-template
+python3 scripts/check_completion_readiness.py
+python3 scripts/check_completion_readiness.py --env-file .env.prod
+python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json
+python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
+```
+
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따른다.
+
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-08) |
 |----------|------|-----------|--------------------|
 | **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 | 미착수 |
 | **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
 | **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
-| **M4** | CSP nonce 적용 — `script-src 'unsafe-inline'` 제거 | 없음 | ◐ nonce 배관+플래그 완료, inline 핸들러 이벤트 위임 후속 |
+| **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
 | **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ✅ 완료 — 15개 전부 분할, 800줄 초과 0개 |
 | **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
 
@@ -231,4 +241,4 @@ mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -m "
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,447 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,551 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

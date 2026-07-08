@@ -20,6 +20,11 @@
 | 생성 결과 샘플 저장 | 완료 | `evidence/generated-samples/` |
 | Swagger/OpenAPI 저장 | 완료 | `evidence/swagger/openapi.json`, `evidence/swagger/swagger-ui.html`, `evidence/swagger/openapi-summary.md` |
 | 문서 생성 API 실행 로그 저장 | 완료 | `evidence/execution-logs/document_generation_api_capture.log` |
+| 최신 static PWA screenshot 갱신 | 완료 | `evidence/screenshots/web-ui-home.png` |
+| Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
+| Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2793 passed, 2 skipped, 4 deselected` |
+| 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 
 ## 1-1. 재현 가능한 Local Evidence Contract
 
@@ -28,8 +33,14 @@
 | Procurement decision package CLI contract manifest | 재현 가능 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version` |
 | Manifest validation receipt | 재현 가능 | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` |
 | Persisted receipt checker | 재현 가능 | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` |
+| Completion readiness env template | 재현 가능 | `python3 scripts/check_completion_readiness.py --print-env-template` |
+| Completion readiness local receipt | 재현 가능 | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
+| Completion readiness receipt checker | 재현 가능 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
+| Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
+
+Completion readiness receipt는 gitignored `reports/completion-readiness/` 경로를 사용한다. 이 검증도 readiness만 확인하며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
 ## 2. 검증 실패
 
@@ -42,6 +53,7 @@
 | 체크 항목 | 상태 | 필요한 후속 작업 |
 |---|---|---|
 | Live provider 호출 | 검증 필요 | 실제 API key가 있는 별도 안전 환경에서 live smoke 실행 |
+| Live provider fallback chain | 검증 필요 | `DECISIONDOC_PROVIDER=openai,gemini`와 승인된 provider key로 fallback live test 실행 |
 | Production deployment | 검증 필요 | 배포 URL, post-deploy smoke log, 운영 접근성 확인 |
 | 로그인 이후 전체 UI flow | 검증 필요 | 테스트 계정으로 생성 화면, 결과 화면, export 버튼 screenshot 추가 |
 | Swagger UI 브라우저 렌더링 | 검증 필요 | 로컬 HTML은 저장했으나 CDN 리소스 오류로 screenshot은 빈 화면이어서 `/openapi.json`으로 대체 |

@@ -1,0 +1,5 @@
+status_header: HTTP/1.1 200 OK
+has_csp_nonce: True
+script_src_unsafe_inline: False
+html_script_nonce_count: 3
+inline_handler_count: 0

@@ -8,19 +8,11 @@ per-request nonce via :func:`generate_csp_nonce`, stamp it onto every inline
 This middleware reads that value (if present) and builds the ``script-src``
 directive with ``'nonce-<value>'`` so only the server-issued inline scripts run.
 
-Inline event-handler attributes (``onclick=`` …) are NOT covered by nonces — the
-CSP spec only recognises nonces on ``<script>``/``<style>`` *elements*. The shipped
-single-file UI still relies on ~340 inline ``on*=`` handlers (many generated at
-runtime inside JS template literals). Per the CSP spec, the mere PRESENCE of a
-nonce (or hash) in ``script-src`` makes CSP Level 2+ browsers ignore
-``'unsafe-inline'`` for ALL inline script — including ``on*=`` attributes — so
-emitting a nonce today would silently break every inline handler in real
-browsers even though ``'unsafe-inline'`` is still listed.
-
-Therefore nonce emission is gated behind ``DECISIONDOC_CSP_NONCE_ENFORCED``
-(default off). The plumbing (generation, HTML stamping, header wiring) is fully
-in place; flip the flag to ``1`` only after the inline handlers are refactored
-to delegated listeners. See ``docs/development-plan.md`` §4 (M4/G5).
+Inline event-handler attributes (``onclick=`` …) are NOT covered by nonces, so
+the single-file UI keeps all actions behind delegated listeners instead of
+``on*=`` attributes. With that boundary in place, HTML responses can emit a
+nonce by default while still allowing ``DECISIONDOC_CSP_NONCE_ENFORCED=0`` as a
+local diagnostic escape hatch. See ``docs/development-plan.md`` §4 (M4/G5).
 """
 from __future__ import annotations
 
@@ -33,13 +25,12 @@ _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def csp_nonce_enforced() -> bool:
-    """Whether per-request CSP nonces should be emitted (opt-in).
+    """Whether per-request CSP nonces should be emitted.
 
-    Off by default: a nonce in ``script-src`` disables ``'unsafe-inline'`` in
-    CSP Level 2+ browsers, which would break the UI's inline ``on*=`` handlers
-    until they are refactored to delegated listeners.
+    On by default for HTML responses. Set ``DECISIONDOC_CSP_NONCE_ENFORCED=0``
+    only when debugging legacy static HTML outside the normal app contract.
     """
-    return os.getenv("DECISIONDOC_CSP_NONCE_ENFORCED", "0").strip().lower() in _TRUTHY
+    return os.getenv("DECISIONDOC_CSP_NONCE_ENFORCED", "1").strip().lower() in _TRUTHY
 
 _STATIC_HEADERS = {
     "X-Frame-Options": "DENY",

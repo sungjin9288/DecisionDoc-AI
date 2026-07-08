@@ -75,3 +75,32 @@ def test_live_claude_generate_ok(monkeypatch):
     body = response.json()
     assert body["provider"] == "claude"
     assert len(body["docs"]) == 4
+
+
+def test_live_openai_gemini_fallback_chain_ok(monkeypatch):
+    if os.getenv("DECISIONDOC_PROVIDER") != "openai,gemini":
+        pytest.skip("Set DECISIONDOC_PROVIDER=openai,gemini to run live fallback test.")
+    if os.getenv("DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE") != "1":
+        pytest.skip("Set DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1 to prove first-provider failure.")
+    if not os.getenv("GEMINI_API_KEY"):
+        pytest.skip("Set GEMINI_API_KEY to run live fallback test.")
+    if find_spec("openai") is None:
+        pytest.skip("openai SDK is not installed.")
+    if find_spec("google.genai") is None:
+        pytest.skip("google-genai SDK is not installed.")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "invalid-openai-key-for-fallback-proof")
+    client = _live_client(monkeypatch, "openai,gemini")
+    headers = {}
+    api_key = _resolve_live_api_key()
+    if api_key:
+        headers["X-DecisionDoc-Api-Key"] = api_key
+    response = client.post(
+        "/generate",
+        json={"title": "Live fallback", "goal": "prove provider fallback"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "fallback"
+    assert len(body["docs"]) == 4

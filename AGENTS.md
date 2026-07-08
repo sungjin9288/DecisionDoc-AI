@@ -350,8 +350,8 @@ pytest tests/ -m live
 - OpenAI Provider: 20초 타임아웃(`anyio.fail_after(20)`) — Lambda 30s 타임아웃과 여유 확보
 - Provider 추가 시: `Provider` ABC 상속 → `UsageTokenMixin` mixin → `factory.py`에 분기 추가
 
-### 미완료 항목 (아키텍처 부채)
-- CSP Nonce 미적용 (`security_headers.py`는 현재 `script-src 'unsafe-inline'`에 의존)
+### 해소된 아키텍처 부채
+- CSP Nonce 적용 완료: served HTML은 기본적으로 per-request nonce를 사용하고, `script-src`에서 `unsafe-inline`을 제거한다. `DECISIONDOC_CSP_NONCE_ENFORCED=0`은 local diagnostic opt-out으로만 유지한다.
 
 ---
 
@@ -369,7 +369,7 @@ pytest tests/ -m live
 ### 필수
 
 - **테스트 수는 실제 코드로 카운트**해서 적고, 카운트 커맨드를 함께 둔다.
-  - 예: `grep -rE "def test_" tests | wc -l`, `grep -rE "\b(test|it)\(" --include="*.test.*" | wc -l`
+  - 예: `python3 scripts/count_readme_metrics.py --field test_functions`, `grep -rE "\b(test|it)\(" --include="*.test.*" | wc -l`
   - "정의된 함수 수"와 "통과 수"를 구분한다. 실제로 돌리지 않았으면 **"정의 기준 카운트, pass 여부는 별도 확인"**으로 표기.
 - **엔드포인트·환경변수·디렉터리 구조는 코드/`.env.example`에서 직접 추출**한다. 손으로 지어내지 않는다.
 - **`## Scope & Limitations` 섹션을 반드시 둔다.** 미구현·미검증·외부 의존·범위 밖 항목을 명시한다.

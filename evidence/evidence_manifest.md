@@ -3,9 +3,9 @@
 ## 1. Collection Summary
 
 - Project: DecisionDoc AI
-- Date: 2026-06-09
+- Date: 2026-07-08
 - Project type: personal PoC / MVP expansion project
-- Evidence scope: local mock-provider verification, API response capture, targeted pytest, UI screenshot, architecture diagrams
+- Evidence scope: local mock-provider verification, API response capture, targeted pytest, UI screenshot, CSP nonce check, architecture diagrams
 - Document-generation evidence priority: input samples, generated Markdown samples, API responses, OpenAPI/Swagger artifacts, execution logs
 - App source modified: no
 - New feature development: no
@@ -21,7 +21,9 @@
 | Markdown export API | `curl POST /generate/export` with API key | `evidence/api-responses/generate-export-tech-decision.json` |
 | Export output files | local storage output copied | `evidence/output-artifacts/export_adr.md`, `evidence/output-artifacts/export_onepager.md` |
 | Auth/generation/storage tests | targeted pytest | `evidence/cli-logs/pytest_generate_auth_storage.log` |
-| Static PWA screen | Playwright screenshot | `evidence/screenshots/web-ui-home.png` |
+| Static PWA screen | Playwright screenshot and accessibility snapshot | `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/playwright_snapshot.log` |
+| Static PWA CSP boundary | local HTTP header/body check | `evidence/cli-logs/ui_csp_nonce_check.log` |
+| Static PWA browser console | Playwright console warning check | `evidence/cli-logs/playwright_console.log` |
 | Input request samples | sanitized JSON/text files | `evidence/input-samples/` |
 | Generated document samples | extracted Markdown outputs | `evidence/generated-samples/` |
 | OpenAPI/Swagger schema | `curl /openapi.json`, `curl /docs` | `evidence/swagger/` |

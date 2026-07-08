@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import sys
 
 import pytest
@@ -367,6 +368,19 @@ def test_index_html_has_install_prompt():
     assert "installPWA" in content
 
 
+def test_index_html_install_prompt_uses_event_listeners():
+    content = open("app/static/index.html").read()
+    banner_start = content.index("function showInstallBanner()")
+    banner_end = content.index("async function installPWA()")
+    banner_block = content[banner_start:banner_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", banner_block) is None
+    assert "data-pwa-install" in banner_block
+    assert "data-pwa-dismiss" in banner_block
+    assert "addEventListener('click', installPWA)" in banner_block
+    assert "addEventListener('click', dismissInstallBanner)" in banner_block
+
+
 def test_index_html_has_offline_handler():
     content = open("app/static/index.html").read()
     assert "offline-indicator" in content
@@ -376,6 +390,23 @@ def test_index_html_has_mobile_bottom_nav():
     content = open("app/static/index.html").read()
     assert "mobile-bottom-nav" in content
     assert "mobile-nav-btn" in content
+
+
+def test_index_html_mobile_bottom_nav_uses_event_listeners():
+    content = open("app/static/index.html").read()
+    nav_match = re.search(r'<nav id="mobile-bottom-nav"[\s\S]*?</nav>', content)
+    assert nav_match is not None
+    nav = nav_match.group(0)
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", nav) is None
+    assert 'data-mobile-page="generate"' in nav
+    assert 'data-mobile-page="approval"' in nav
+    assert 'data-mobile-page="project-page"' in nav
+    assert 'data-mobile-page="dashboard"' in nav
+    assert "window.switchPage(pageId || 'generate')" in content
+    assert "btn.dataset.mobilePage || 'generate'" in content
+    assert 'data-page="approval-page"' not in content
+    assert 'data-page="perf-dashboard"' not in content
 
 
 def test_index_html_stops_notification_polling_on_login_screen():

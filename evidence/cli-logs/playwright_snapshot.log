@@ -1,5 +1,21 @@
+### Browser `decisiondoc-ui-evidence` opened with pid 14005.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:8765/');
+```
 ### Page
-- Page URL: http://127.0.0.1:8787/
+- Page URL: http://127.0.0.1:8765/
+- Page Title: DecisionDoc AI — AI 문서 생성기
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-07-08T14-37-23-262Z.yml)
+### Events
+- New console entries: .playwright-cli/console-2026-07-08T14-37-23-170Z.log#L1-L2
+### Ran Playwright code
+```js
+await page.setViewportSize({ width: 1440, height: 1000 });
+```
+### Page
+- Page URL: http://127.0.0.1:8765/
 - Page Title: DecisionDoc AI — AI 문서 생성기
 ### Snapshot
 ```yaml

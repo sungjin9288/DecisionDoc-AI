@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,6 +89,32 @@ def test_preflight_reports_missing_required_env(monkeypatch, capsys) -> None:
     assert "[missing] SMOKE_API_KEY" in captured
     assert "[missing] G2B_API_KEY" in captured
     assert "[info] SMOKE_PROCUREMENT_URL_OR_NUMBER=unset" in captured
+
+
+def test_direct_cli_preflight_reports_missing_required_env_without_traceback() -> None:
+    env = os.environ.copy()
+    for key in (
+        "SMOKE_BASE_URL",
+        "SMOKE_API_KEY",
+        "SMOKE_PROCUREMENT_URL_OR_NUMBER",
+        "G2B_API_KEY",
+    ):
+        env.pop(key, None)
+
+    completed = subprocess.run(
+        ["python3", "scripts/run_stage_procurement_smoke.py", "--preflight"],
+        cwd=runner.REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "Traceback" not in completed.stderr
+    assert "[missing] SMOKE_BASE_URL" in completed.stdout
+    assert "[missing] SMOKE_API_KEY" in completed.stdout
+    assert "[missing] G2B_API_KEY" in completed.stdout
 
 
 def test_print_env_template_outputs_copy_paste_command(capsys) -> None:

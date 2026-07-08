@@ -11,7 +11,10 @@ Coverage (12 tests):
 """
 from __future__ import annotations
 
+from pathlib import Path
 import re
+import shutil
+import subprocess
 import time
 
 import pytest
@@ -84,23 +87,28 @@ def _extract_csp_nonce(csp: str) -> str | None:
 
 @pytest.fixture
 def nonce_client(client, monkeypatch):
-    """Client with CSP nonce enforcement opted in.
-
-    Nonce emission is gated behind DECISIONDOC_CSP_NONCE_ENFORCED because a
-    nonce in script-src makes browsers ignore 'unsafe-inline' for ALL inline
-    script — including the UI's on*= handlers — until those are refactored.
-    """
     monkeypatch.setenv("DECISIONDOC_CSP_NONCE_ENFORCED", "1")
     return client
 
 
-def test_csp_nonce_disabled_by_default(client):
-    """Default: no nonce is emitted and 'unsafe-inline' keeps the UI working."""
+def test_csp_nonce_enabled_by_default(client):
+    """Default HTML responses carry nonce-backed script-src without unsafe-inline."""
+    res = client.get("/")
+    assert res.status_code == 200
+    csp = res.headers.get("content-security-policy", "")
+    header_nonce = _extract_csp_nonce(csp)
+    assert header_nonce
+    assert "'unsafe-inline'" not in _script_src(csp)
+    assert f'<script nonce="{header_nonce}">' in res.text
+
+
+def test_csp_nonce_can_be_disabled_for_local_diagnostics(client, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_CSP_NONCE_ENFORCED", "0")
     res = client.get("/")
     assert res.status_code == 200
     csp = res.headers.get("content-security-policy", "")
     assert "'nonce-" not in csp
-    assert "'unsafe-inline'" in csp
+    assert "'unsafe-inline'" in _script_src(csp)
     assert '<script nonce="' not in res.text
 
 
@@ -411,8 +419,9 @@ def test_root_html_exposes_profile_entry_and_removes_dark_toggle(client):
     assert "prompt('표시 이름을 입력하세요:'" not in res.text
     assert "prompt('활성 상태를 입력하세요 (active / inactive):'" not in res.text
     assert "exportDocument('pptx',  'ppt-btn'" in res.text
-    assert "downloadBatchResult('${bundleId}','pptx')" in res.text
-    assert "downloadBatchResult('${bundleId}','hwp')" in res.text
+    assert 'data-batch-format="pptx"' in res.text
+    assert 'data-batch-format="hwp"' in res.text
+    assert "downloadBatchResult(target.dataset.batchDownload || '', target.dataset.batchFormat || '')" in res.text
 
 
 def test_index_html_expands_attachment_accept_lists_for_structured_docs():
@@ -614,6 +623,46 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
     assert "_triggerBrowserDownload(blob, filename, label)" in export_document_fn.group("body")
 
 
+def test_index_html_result_download_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    block_start = content.index("function renderDownloadButtons(requestId, title)")
+    block_end = content.index("async function exportZip(requestId)", block_start)
+    block = content[block_start:block_end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'id="result-docx-btn" type="button" data-result-export="docx"',
+        'id="result-hwp-btn" type="button" data-result-export="hwp"',
+        'id="result-pdf-btn" type="button" data-result-export="pdf"',
+        'id="result-excel-btn" type="button" data-result-export="excel"',
+        'data-result-export-zip data-request-id="${safeId}"',
+        'data-result-share data-request-id="${safeId}" data-title="${safeTitle}"',
+    ):
+        assert marker in block
+    assert "onclick=\"exportDocument" not in block
+    assert "onclick=\"exportZip" not in block
+    assert "onclick=\"shareDocument" not in block
+
+
+def test_index_html_result_download_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "const RESULT_EXPORT_ACTIONS = {",
+        "docx: { format: 'docx', buttonId: 'result-docx-btn'",
+        "function wireResultDownloadActions(container)",
+        "wireResultDownloadActions(container);",
+        "container.querySelectorAll('[data-result-export]').forEach",
+        "const action = RESULT_EXPORT_ACTIONS[btn.dataset.resultExport || ''];",
+        "exportDocument(action.format, action.buttonId, action.icon, action.extension, action.label);",
+        "container.querySelector('[data-result-export-zip]')?.addEventListener('click', event => {",
+        "exportZip(event.currentTarget.dataset.requestId || '');",
+        "container.querySelector('[data-result-share]')?.addEventListener('click', event => {",
+        "shareDocument(target.dataset.requestId || '', target.dataset.title || '');",
+    ):
+        assert marker in content
+
+
 def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
     content = open("app/static/index.html", encoding="utf-8").read()
     retry_fetch_fn = re.search(
@@ -653,6 +702,1272 @@ def test_index_html_rfp_parse_uses_auth_headers():
 def test_index_html_avoids_double_quoted_inline_json_stringify_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert re.search(r"""on(?:click|keydown)\s*=\s*".*JSON\.stringify""", content) is None
+
+
+def test_index_html_page_tabs_use_event_listeners_not_inline_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    nav_match = re.search(r'<nav id="page-nav"[\s\S]*?</nav>', content)
+    assert nav_match is not None
+    nav = nav_match.group(0)
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", nav) is None
+    assert "document.querySelectorAll('.page-tab').forEach" in content
+    assert "window.switchPage(btn.dataset.page || 'generate')" in content
+
+
+def test_index_html_local_llm_setup_guide_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    setup_start = content.index('<div class="setup-tabs">')
+    setup_end = content.index('<div id="local-llm-guide-content"></div>')
+    setup_tabs = content[setup_start:setup_end]
+    guide_start = content.index("function _showSetupGuide")
+    guide_end = content.index("function _copyEnvConfig")
+    guide_block = content[guide_start:guide_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", setup_tabs) is None
+    assert 'data-setup-guide="ollama"' in setup_tabs
+    assert 'data-setup-guide="vllm"' in setup_tabs
+    assert 'data-setup-guide="lmstudio"' in setup_tabs
+    assert "btn.dataset.setupGuide || 'ollama'" in content
+    assert re.search(r"\son[a-zA-Z]+\s*=", guide_block) is None
+    assert "data-copy-env-config" in guide_block
+    assert "_copyEnvConfig(event.currentTarget)" in guide_block
+
+
+def test_index_html_sso_tabs_use_event_listeners_not_inline_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    tabs_match = re.search(r'<div class="sso-tabs"[\s\S]*?</div>', content)
+    assert tabs_match is not None
+    tabs = tabs_match.group(0)
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", tabs) is None
+    assert 'data-provider="disabled"' in tabs
+    assert 'data-provider="ldap"' in tabs
+    assert 'data-provider="saml"' in tabs
+    assert 'data-provider="gcloud"' in tabs
+    assert "tab.addEventListener('click'" in content
+    assert "switchSSOProvider(tab.dataset.provider || 'disabled')" in content
+
+
+def test_index_html_header_menu_and_notifications_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    hero_start = content.index('<div class="hero">')
+    hero_end = content.index('<div id="tenant-selector">')
+    header_block = content[hero_start:hero_end]
+    notification_start = content.index("function renderNotifications")
+    notification_end = content.index("async function handleNotifClick")
+    notification_block = content[notification_start:notification_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", header_block) is None
+    assert 'data-user-menu-action="profile"' in header_block
+    assert 'data-user-menu-action="logout"' in header_block
+    assert "data-notif-mark-all-read" in header_block
+    assert "$id('user-info')?.addEventListener('click', toggleUserMenu)" in content
+    assert "openMyProfileModal();" in content
+    assert "logout();" in content
+    assert "$id('notif-bell')?.addEventListener('click', toggleNotifPanel)" in content
+    assert "document.querySelector('[data-notif-mark-all-read]')?.addEventListener('click', markAllNotifRead)" in content
+    assert re.search(r"\son[a-zA-Z]+\s*=", notification_block) is None
+    assert 'data-notification-id="${escapeHtml(n.notification_id)}"' in notification_block
+    assert "item.addEventListener('click', () => handleNotifClick(item.dataset.notificationId || ''))" in notification_block
+
+
+def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    modal_start = content.index('<div id="profile-modal"')
+    modal_end = content.index('<svg class="wave"')
+    modal_block = content[modal_start:modal_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", modal_block) is None
+    assert modal_block.count("data-profile-close") == 2
+    assert '<form id="profile-form" class="profile-form">' in modal_block
+    assert "$id('profile-modal')?.addEventListener('click'" in content
+    assert "event.target === event.currentTarget" in content
+    assert "document.querySelectorAll('[data-profile-close]').forEach" in content
+    assert "$id('profile-form')?.addEventListener('submit', saveMyProfile)" in content
+
+
+def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    roster_start = content.index('<section id="ai-rank-roster"')
+    roster_end = content.index('<!-- Step progress indicator -->')
+    roster_block = content[roster_start:roster_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", roster_block) is None
+    assert 'data-ai-rank="executive"' in roster_block
+    assert 'data-ai-rank="proposal_bd"' in roster_block
+    assert 'data-ai-rank="delivery_pm"' in roster_block
+    assert "card.addEventListener('click', () => activateAiRank(card.dataset.aiRank))" in content
+    assert "card.addEventListener('keydown', event =>" in content
+    assert "event.key !== 'Enter' && event.key !== ' '" in content
+    assert "$id('ai-rank-status-action')?.addEventListener('click', runActiveAiRankAction)" in content
+
+
+def test_index_html_generation_quick_controls_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    controls_start = content.index("<!-- Server-side generation history section -->")
+    controls_end = content.index("<!-- Template controls (PU-1) -->")
+    controls_block = content[controls_start:controls_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", controls_block) is None
+    assert 'id="history-section-close"' in controls_block
+    assert 'id="inline-style-select"' in controls_block
+    assert 'id="project-select"' in controls_block
+    assert 'id="knowledge-badge"' in controls_block
+    assert 'id="create-project-inline-btn"' in controls_block
+    assert 'data-g2b-tab="url"' in controls_block
+    assert 'data-g2b-tab="search"' in controls_block
+    assert 'data-g2b-tab="bookmarks"' in controls_block
+    assert "data-g2b-fetch" in controls_block
+    assert "data-g2b-search" in controls_block
+    assert "data-open-from-documents" in controls_block
+    assert "data-open-from-pdf" in controls_block
+    assert "$id('history-section-close')?.addEventListener('click'" in content
+    assert "$id('inline-style-select')?.addEventListener('change'" in content
+    assert "$id('project-select')?.addEventListener('change'" in content
+    assert "$id('knowledge-badge')?.addEventListener('click', () => switchPage('knowledge-page'))" in content
+    assert "$id('create-project-inline-btn')?.addEventListener('click', showCreateProjectModal)" in content
+    assert "btn.addEventListener('click', () => switchG2BTab(btn.dataset.g2bTab || 'url', btn))" in content
+    assert "fetchG2BAnnouncement(event.currentTarget)" in content
+    assert "searchG2B(event.currentTarget)" in content
+    assert "document.querySelector('[data-open-from-documents]')?.addEventListener('click', openFromDocumentsModal)" in content
+    assert "document.querySelector('[data-open-from-pdf]')?.addEventListener('click', openFromPdfModal)" in content
+    assert "$id('rfp-parse-btn')?.addEventListener('click', parseRFP)" in content
+
+
+def test_index_html_g2b_dynamic_results_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    search_start = content.index("function _renderG2BSearchResults")
+    search_end = content.index("async function oneClickProposal", search_start)
+    search_block = content[search_start:search_end]
+    bookmarks_start = content.index("async function loadG2BBookmarks")
+    bookmarks_end = content.index("async function removeG2BBookmark", bookmarks_start)
+    bookmarks_block = content[bookmarks_start:bookmarks_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", search_block) is None
+    assert re.search(r"\son[a-zA-Z]+\s*=", bookmarks_block) is None
+    for marker in (
+        "data-g2b-select-bid",
+        "data-g2b-oneclick-bid",
+        "data-g2b-bookmark-bid",
+        "data-g2b-bookmark-select",
+        "data-g2b-bookmark-remove",
+    ):
+        assert marker in content
+
+
+def test_index_html_g2b_dynamic_result_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "function wireG2BSearchResultActions(container) {" in content
+    assert "container.querySelectorAll('[data-g2b-select-bid]').forEach" in content
+    assert "selectG2BResult(item.dataset.g2bSelectBid || '')" in content
+    assert "item.addEventListener('keydown', event =>" in content
+    assert "event.key !== 'Enter' && event.key !== ' '" in content
+    assert "oneClickProposal(btn.dataset.g2bOneclickBid || '')" in content
+    assert "toggleG2BBookmark(btn.dataset.g2bBookmarkBid || '', btn)" in content
+    assert "function wireG2BBookmarkActions(container) {" in content
+    assert "selectG2BResult(btn.dataset.g2bBookmarkSelect || '')" in content
+    assert "removeG2BBookmark(btn.dataset.g2bBookmarkRemove || '', btn)" in content
+
+
+def test_index_html_batch_results_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    block_start = content.index("function createBatchResultsPanel")
+    block_end = content.index("function viewBatchResult", block_start)
+    block = content[block_start:block_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", block) is None
+    for marker in (
+        "data-batch-close",
+        "data-batch-view",
+        "data-batch-download",
+        "data-batch-format=\"docx\"",
+        "data-batch-format=\"pdf\"",
+        "data-batch-format=\"pptx\"",
+        "data-batch-format=\"hwp\"",
+    ):
+        assert marker in block
+
+
+def test_index_html_batch_result_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "panel.querySelector('[data-batch-close]')?.addEventListener('click', () => {" in content
+    assert "panel.style.display = 'none';" in content
+    assert "function wireBatchResultActions(container) {" in content
+    assert "container.querySelector('[data-batch-view]')?.addEventListener('click', event => {" in content
+    assert "viewBatchResult(event.currentTarget.dataset.batchView || '');" in content
+    assert "container.querySelectorAll('[data-batch-download]').forEach" in content
+    assert "downloadBatchResult(target.dataset.batchDownload || '', target.dataset.batchFormat || '');" in content
+
+
+def test_index_html_bundle_empty_and_related_modal_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    bundle_start = content.index("function renderBundleGrid")
+    bundle_end = content.index("/* ── Select bundle", bundle_start)
+    bundle_block = content[bundle_start:bundle_end]
+    related_start = content.index("function _showRelatedModal")
+    related_end = content.index("window._applyRelatedBundle", related_start)
+    related_block = content[related_start:related_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", bundle_block) is None
+    assert re.search(r"\son[a-zA-Z]+\s*=", related_block) is None
+    assert "data-bundle-refresh" in bundle_block
+    assert "data-related-bundle-id" in related_block
+    assert 'id="related-close-btn" type="button"' in related_block
+
+
+def test_index_html_bundle_empty_and_related_modal_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "grid.querySelector('[data-bundle-refresh]')?.addEventListener('click', loadBundles)" in content
+    assert "modal.querySelector('#related-close-btn')?.addEventListener('click', close)" in content
+    assert "modal.querySelectorAll('[data-related-bundle-id]').forEach" in content
+    assert "window._applyRelatedBundle(item.dataset.relatedBundleId || '')" in content
+    assert "item.addEventListener('mouseenter', () => {" in content
+    assert "item.style.borderColor = 'var(--p1,#6366f1)';" in content
+    assert "item.addEventListener('mouseleave', () => {" in content
+    assert "item.style.borderColor = 'var(--border,#e5e7eb)';" in content
+
+
+def test_index_html_rfp_result_modal_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    modal_start = content.index("function showRFPParseResult")
+    modal_end = content.index("function rfpFillField")
+    modal_block = content[modal_start:modal_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", modal_block) is None
+    assert "data-rfp-fill-target" in modal_block
+    assert "data-rfp-fill-value" in modal_block
+    assert "data-rfp-close" in modal_block
+    assert "overlay.querySelectorAll('[data-rfp-fill-target]').forEach" in modal_block
+    assert "rfpFillField(btn.dataset.rfpFillTarget || '', btn.dataset.rfpFillValue || '', btn)" in modal_block
+    assert "overlay.querySelector('[data-rfp-close]')?.addEventListener('click', () => overlay.remove())" in modal_block
+
+
+def test_index_html_knowledge_page_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    page_start = content.index('<section id="knowledge-page"')
+    page_end = content.index("<!-- ── 단계형 보고서 워크플로우")
+    page_block = content[page_start:page_end]
+
+    assert re.search(r"\son[a-zA-Z]+\s*=", page_block) is None
+    assert 'id="knowledge-project-select"' in page_block
+    assert 'id="knowledge-project-refresh-btn"' in page_block
+    assert 'id="knowledge-upload-area"' in page_block
+    assert 'id="knowledge-file-input"' in page_block
+    assert 'id="knowledge-file-pick-btn"' in page_block
+    assert 'id="knowledge-context-preview-btn"' in page_block
+    assert 'id="knowledge-temporal-graph-btn"' in page_block
+    assert 'data-close-modal="knowledge-context-modal"' in page_block
+    assert 'data-close-modal="knowledge-temporal-graph-modal"' in page_block
+    assert "data-preview-knowledge-context-inputs" in page_block
+    assert "data-preview-knowledge-graph-inputs" in page_block
+    assert "data-copy-knowledge-graph-json" in page_block
+    assert "data-download-knowledge-graph-json" in page_block
+    assert "data-knowledge-promote-close" in page_block
+    assert "data-knowledge-metadata-close" in page_block
+    assert '<form id="knowledge-promote-form">' in page_block
+    assert '<form id="knowledge-metadata-form">' in page_block
+
+
+def test_index_html_knowledge_page_listener_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "$id('knowledge-project-select')?.addEventListener('change'" in content
+    assert "$id('knowledge-project-refresh-btn')?.addEventListener('click', loadKnowledgeProjectSelector)" in content
+    assert "knowledgeUploadArea.addEventListener('click'" in content
+    assert "knowledgeUploadArea.addEventListener('dragover'" in content
+    assert "knowledgeUploadArea.addEventListener('drop', knowledgeDrop)" in content
+    assert "$id('knowledge-file-input')?.addEventListener('change'" in content
+    assert "$id('knowledge-file-pick-btn')?.addEventListener('click'" in content
+    assert "$id('knowledge-context-preview-btn')?.addEventListener('click', () => previewKnowledgeContext())" in content
+    assert "$id('knowledge-temporal-graph-btn')?.addEventListener('click', () => previewKnowledgeTemporalGraph())" in content
+    assert "document.querySelectorAll('[data-close-modal]').forEach" in content
+    assert "document.querySelector('[data-preview-knowledge-context-inputs]')?.addEventListener('click'" in content
+    assert "document.querySelector('[data-preview-knowledge-graph-inputs]')?.addEventListener('click'" in content
+    assert "document.querySelector('[data-copy-knowledge-graph-json]')?.addEventListener('click', copyKnowledgeTemporalGraphJson)" in content
+    assert "document.querySelector('[data-download-knowledge-graph-json]')?.addEventListener('click', downloadKnowledgeTemporalGraphJson)" in content
+    assert "document.querySelectorAll('[data-knowledge-promote-close]').forEach" in content
+    assert "$id('knowledge-promote-form')?.addEventListener('submit', submitKnowledgePromotion)" in content
+    assert "document.querySelectorAll('[data-knowledge-metadata-close]').forEach" in content
+    assert "$id('knowledge-metadata-form')?.addEventListener('submit', submitKnowledgeMetadataUpdate)" in content
+
+
+def test_index_html_knowledge_doc_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadKnowledgeDocs(projectId)")
+    end = content.index("function _knowledgeFileIcon(filename)", start)
+    block = content[start:end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-knowledge-doc-action="metadata"',
+        'data-knowledge-doc-action="delete"',
+        'data-project-id="${escapeHtml(projectId)}"',
+        'data-doc-id="${escapeHtml(doc.doc_id)}"',
+        "wireKnowledgeDocActions(list);",
+        "function wireKnowledgeDocActions(list)",
+        "list.querySelectorAll('[data-knowledge-doc-action]').forEach",
+        "await openKnowledgeMetadataModal(projectId, docId);",
+        "await deleteKnowledgeDoc(projectId, docId);",
+    ):
+        assert marker in block
+
+
+def test_index_html_locations_page_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    page_start = content.index('<section id="locations-page"')
+    page_match = re.search(r'<section id="locations-page"[\s\S]*?\n</section>', content[page_start:])
+    assert page_match is not None
+    page_block = page_match.group(0)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", page_block)
+    for action in (
+        "open-create-location",
+        "close-create-location",
+        "close-api-key",
+        "close-users",
+        "close-create-user",
+        "close-edit-user",
+        "close-procurement-summary",
+    ):
+        assert f'data-location-action="{action}"' in page_block
+    assert 'data-location-backdrop-action="close-create-user"' in page_block
+    assert 'data-location-backdrop-action="close-edit-user"' in page_block
+    assert '<form id="create-location-form">' in page_block
+    assert '<form id="location-user-create-form">' in page_block
+    assert '<form id="location-user-edit-form">' in page_block
+
+
+def test_index_html_locations_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "const LOCATION_ACTIONS = {" in content
+    for mapping in (
+        "'open-create-location': () => showLocationModal('create-location-modal')",
+        "'close-create-location': () => hideLocationModal('create-location-modal')",
+        "'close-api-key': () => hideLocationModal('location-key-modal')",
+        "'close-users': () => hideLocationModal('location-users-modal')",
+        "'close-create-user': closeLocationCreateUserModal",
+        "'close-edit-user': closeLocationUserEditModal",
+        "'close-procurement-summary': () => window.closeLocationProcurementSummary?.()",
+    ):
+        assert mapping in content
+    assert "document.querySelectorAll('[data-location-action]').forEach" in content
+    assert "const action = LOCATION_ACTIONS[el.dataset.locationAction || ''];" in content
+    assert "document.querySelectorAll('[data-location-backdrop-action]').forEach" in content
+    assert "if (event.target !== event.currentTarget) return;" in content
+    assert "$id('create-location-form')?.addEventListener('submit', createLocation)" in content
+    assert "$id('location-user-create-form')?.addEventListener('submit', submitLocationCreateUser)" in content
+    assert "$id('location-user-edit-form')?.addEventListener('submit', submitLocationUserEdit)" in content
+    assert "$id('location-user-create-role')?.addEventListener('change', syncLocationCreateUserRoleDefaults)" in content
+
+
+def test_index_html_has_no_inline_event_handlers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", content)
+
+
+def test_index_html_location_dynamic_and_procurement_actions_are_delegated():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function runLocationDynamicAction(button)",
+        "function runLocationProcurementSummaryAction(button)",
+        "document.addEventListener('click', event => {",
+        "event.target.closest?.('[data-location-dynamic-action]')",
+        "event.target.closest?.(",
+        "[data-location-procurement-open],",
+        "window.openProjectFromProcurementSummaryFromButton?.(button)",
+        "window.copyProjectProcurementSummaryLinkFromButton?.(button)",
+        "window.copyLocationProcurementSummaryLink?.()",
+        "window.openLocationProcurementSharedLinkFromButton?.(button)",
+        "window.copyLocationProcurementSharedLinkFromButton?.(button)",
+        "window.revokeLocationProcurementShareFromButton?.(button)",
+        "window.applyLocationProcurementTriagePreset?.(data.locationProcurementPreset)",
+        "window.applyLocationProcurementTriagePreset?.('stale_share_review')",
+        "window.setLocationProcurementCandidateOrder?.(data.locationProcurementOrder)",
+        "window.setLocationProcurementCandidateScope?.(data.locationProcurementScopeCta)",
+        "window.setLocationProcurementCandidateScope?.(data.locationProcurementScope)",
+        "window.toggleLocationProcurementCandidateStatusFilter?.(data.locationProcurementStatusFilter)",
+        "window.clearLocationProcurementCandidateStatusFilters?.()",
+        "window.toggleLocationProcurementActivityActionFilter?.(data.locationProcurementActivityFilter)",
+        "window.clearLocationProcurementActivityActionFilters?.()",
+        'data-location-dynamic-action="open-key"',
+        'data-location-dynamic-action="open-users"',
+        'data-location-dynamic-action="open-procurement-summary"',
+        'data-location-dynamic-action="rotate-key"',
+        'data-location-dynamic-action="edit-user-assignment"',
+        'data-location-dynamic-action="stale-share-review"',
+        'data-location-dynamic-action="copy-stale-share-focus-review-link"',
+        'data-location-procurement-share-open="true"',
+        'data-location-procurement-share-copy="true"',
+        'data-location-procurement-stale-share-review-preset="true"',
+        'data-location-procurement-scope-cta="unresolved_only"',
+    ):
+        assert marker in content
+
+
+def test_index_html_bundle_recommendation_close_uses_event_listener():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function showBundleRecommendation(bundleIds)")
+    end = content.index("// Wire up recommendation triggers", start)
+    block = content[start:end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    assert "const closeButton = document.createElement('button')" in block
+    assert "closeButton.addEventListener('click', () => badge.remove())" in block
+    assert "badge.replaceChildren('✨ ', title, ` ${names.join(', ')} `, closeButton)" in block
+
+
+def test_index_html_upload_modals_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    page_start = content.index('<div id="from-documents-modal"')
+    page_end = content.index("<!-- ── 번들 비교 모달", page_start)
+    modal_block = content[page_start:page_end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", modal_block)
+    assert 'data-upload-modal-backdrop="documents"' in modal_block
+    assert 'data-upload-modal-backdrop="pdf"' in modal_block
+    assert 'data-upload-modal-action="close-documents"' in modal_block
+    assert 'data-upload-modal-action="close-pdf"' in modal_block
+    assert 'id="from-documents-dropzone"' in modal_block
+    assert 'id="from-pdf-dropzone"' in modal_block
+    assert '<input type="file" id="from-documents-file-input"' in modal_block
+    assert '<input type="file" id="from-pdf-file-input"' in modal_block
+    assert 'id="from-documents-submit-btn" type="button"' in modal_block
+    assert 'id="from-pdf-submit-btn" type="button"' in modal_block
+
+
+def test_index_html_upload_modal_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "const UPLOAD_MODAL_ACTIONS = {" in content
+    assert "'close-documents': closeFromDocumentsModal" in content
+    assert "'close-pdf': closeFromPdfModal" in content
+    assert "document.querySelectorAll('[data-upload-modal-action]').forEach" in content
+    assert "const action = UPLOAD_MODAL_ACTIONS[el.dataset.uploadModalAction || ''];" in content
+    assert "document.querySelectorAll('[data-upload-modal-backdrop]').forEach" in content
+    assert "if (event.target !== event.currentTarget) return;" in content
+    assert "wireUploadDropzone('from-documents-dropzone', 'from-documents-file-input', fromDocumentsHandleDrop)" in content
+    assert "wireUploadDropzone('from-pdf-dropzone', 'from-pdf-file-input', fromPdfHandleDrop)" in content
+    assert "$id('from-documents-file-input')?.addEventListener('change', event => fromDocumentsFilesSelected(event.currentTarget))" in content
+    assert "$id('from-pdf-file-input')?.addEventListener('change', event => fromPdfFileSelected(event.currentTarget))" in content
+    assert "$id('from-documents-submit-btn')?.addEventListener('click', submitFromDocuments)" in content
+    assert "$id('from-pdf-submit-btn')?.addEventListener('click', submitFromPdf)" in content
+
+
+def test_index_html_static_shell_controls_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    slices = [
+        ('<div id="project-page"', "<!-- ── 지식 관리"),
+        ('<section id="approval-page"', "<!-- ── 스타일 관리"),
+        ('<div id="style-page"', "<!-- ── 거점 관리"),
+        ('<div id="history-panel"', "<!-- ── 문서 → 초안 생성 모달"),
+    ]
+    for start_marker, end_marker in slices:
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        block = content[start:end]
+        assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+
+    ops_start = content.index('id="ops-window"')
+    ops_end = content.index('id="ops-reason"', ops_start)
+    assert not re.search(r"\son[a-zA-Z]+\s*=", content[ops_start:ops_end])
+
+    for marker in (
+        'id="project-search-btn"',
+        'id="project-create-btn"',
+        'id="approval-search-btn"',
+        'id="style-create-btn"',
+        'id="history-search-input"',
+        'id="history-star-filter"',
+        'id="ops-window"',
+    ):
+        assert marker in content
+
+
+def test_index_html_static_shell_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "$id('project-search-btn')?.addEventListener('click', loadProjects)" in content
+    assert "$id('project-create-btn')?.addEventListener('click', showCreateProjectModal)" in content
+    assert "$id('approval-search-btn')?.addEventListener('click', loadApprovals)" in content
+    assert "$id('style-create-btn')?.addEventListener('click', showCreateStyleModal)" in content
+    assert "$id('history-search-input')?.addEventListener('input', event => {" in content
+    assert "loadServerHistory(event.currentTarget.value);" in content
+    assert "$id('history-star-filter')?.addEventListener('click', toggleHistoryStarFilter)" in content
+    assert "$id('ops-window')?.addEventListener('input', event => {" in content
+    assert "if (label) label.textContent = event.currentTarget.value;" in content
+
+
+def test_index_html_share_auth_approval_project_modals_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function showShareModal(shareUrl, expiresAt, title, source = null)", "function copyShareUrl",),
+        ("function showLoginScreen()", "function showRegisterScreen",),
+        ("function showRegisterScreen(e)", "async function submitRegister",),
+        ("function showApprovalRequestModal(source = null)", "async function submitApprovalRequest",),
+        ("function showCreateProjectModal()", "async function createProject",),
+        ("function renderProjectList(projects)", "async function parseApiErrorResponse",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        "data-share-copy",
+        "data-share-close",
+        "data-auth-register",
+        "data-auth-login-return",
+        "data-approval-modal-cancel",
+        "data-approval-modal-submit",
+        "data-project-modal-cancel",
+        "data-project-modal-submit",
+        "data-project-empty-create",
+        'data-project-open="${escapeHtml(p.project_id)}"',
+    ):
+        assert marker in block
+
+
+def test_index_html_share_auth_approval_project_modal_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function wireShareModalActions(modal, source = null)",
+        "modal.querySelector('[data-share-copy]')?.addEventListener('click', copyShareUrl)",
+        "modal.querySelector('[data-share-close]')?.addEventListener('click', () => modal.remove())",
+        "handleProjectDocumentDecisionCouncilFollowUp(source?.projectId || '', source?.docId || '')",
+        "screen.querySelector('[data-auth-register]')?.addEventListener('click', showRegisterScreen)",
+        "screen.querySelector('[data-auth-login-return]')?.addEventListener('click', e => {",
+        "function wireApprovalRequestModalActions(overlay, source)",
+        "overlay.querySelector('[data-approval-modal-cancel]')?.addEventListener('click', close)",
+        "overlay.querySelector('[data-approval-modal-submit]')?.addEventListener('click', submitApprovalRequest)",
+        "function wireProjectCreateModalActions(modal)",
+        "modal.querySelector('[data-project-modal-cancel]')?.addEventListener('click', () => modal.remove())",
+        "modal.querySelector('[data-project-modal-submit]')?.addEventListener('click', createProject)",
+        "function wireProjectListActions(container)",
+        "container.querySelector('[data-project-empty-create]')?.addEventListener('click', showCreateProjectModal)",
+        "container.querySelectorAll('[data-project-open]').forEach",
+        "openProjectDetailFromList(card.dataset.projectOpen || '')",
+    ):
+        assert marker in content
+
+
+def test_index_html_project_meeting_and_procurement_role_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderProjectMeetingRecordingList(projectId, recordings)", "function setProcurementActionStatus",),
+        ("function getProcurementRoleBoardItems(project, decision, docs)", "function getVisibleProcurementRoleItems",),
+        ("function renderProcurementRoleBoard(project, decision, docs)", "function getProcurementRoleRecentLog",),
+        ("function renderProcurementRoleBriefPanel(project, decision, docs)", "window.selectProcurementRoleBrief",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        "data-meeting-recording-transcribe",
+        "data-meeting-recording-approve",
+        "data-meeting-recording-generate",
+        "data-procurement-role-action",
+        "data-procurement-brief-tab",
+        "data-procurement-brief-action",
+        "actionKey: !hasOpportunity ? 'focus-url' : 'refresh-decision'",
+        "actionKey: canDownstream ? 'generate-bundle' : 'scroll-url'",
+        "actionKey: overrideRequired",
+    ):
+        assert marker in block
+
+
+def test_index_html_project_meeting_and_procurement_role_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function wireMeetingRecordingActions(container, projectId)",
+        "submitMeetingRecordingUpload(projectId)",
+        "transcribeMeetingRecording(projectId, btn.dataset.meetingRecordingTranscribe || '')",
+        "approveMeetingRecording(projectId, btn.dataset.meetingRecordingApprove || '')",
+        "generateMeetingRecordingDocuments(projectId, btn.dataset.meetingRecordingGenerate || '')",
+        "function runProcurementRoleAction(btn)",
+        "document.getElementById('project-procurement-url-input')?.focus()",
+        "refreshProjectProcurementDecision(projectId)",
+        "generateProjectProcurementBundle(projectId, btn.dataset.bundleId || '')",
+        "window.selectProcurementRoleBrief?.(card.dataset.procurementRole || '')",
+        "window.selectProcurementRoleBrief?.(btn.dataset.procurementBriefTab || '')",
+        "runProcurementRoleAction(btn)",
+        "wireMeetingRecordingActions(container, p.project_id);",
+        "wireProcurementRoleActions(container);",
+    ):
+        assert marker in content
+
+
+def test_index_html_project_detail_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderProcurementDecisionCouncilPanel(project, decision, docs, councilSession)", "function renderProjectProcurementRemediationStrip",),
+        ("function renderProjectProcurementRemediationStrip(project, decision)", "function renderProcurementOverridePanel",),
+        ("function renderProcurementOverridePanel(project, decision)", "function getProcurementBundleDefaults",),
+        ("function renderProjectDetail(p, procurementDecision = null, options = {})", "function _renderBundleBreakdown",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-project-detail-action="decision-council-run"',
+        'data-project-detail-action="procurement-generate"',
+        "procurement-remediation-retry",
+        "procurement-remediation-review",
+        'data-project-detail-action="procurement-override-focus"',
+        'data-project-detail-action="procurement-override-history"',
+        'data-project-detail-action="procurement-override-save"',
+        'data-project-detail-action="hide"',
+        'data-project-detail-action="voice-brief-import"',
+        'data-project-detail-action="procurement-import"',
+        'data-project-detail-action="doc-approval"',
+        'data-project-detail-action="doc-share"',
+        'data-project-detail-action="doc-download"',
+    ):
+        assert marker in block
+
+
+def test_index_html_project_detail_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function runProjectDetailAction(btn, fallbackProjectId)",
+        "window.hideProjectDetail?.();",
+        "returnToLocationProcurementSummary(projectId)",
+        "downloadYearlyArchive(Number(btn.dataset.fiscalYear || 0))",
+        "submitVoiceBriefImport(projectId)",
+        "submitProjectProcurementImport(projectId)",
+        "runProjectDecisionCouncil(projectId)",
+        "retryProjectProcurementRemediation(projectId)",
+        "dismissProjectProcurementRemediationContext(projectId)",
+        "useProcurementOverrideHistoryItem(btn, Number(btn.dataset.procurementOverrideHistoryIndex || 0))",
+        "handleProjectDocumentDecisionCouncilFollowUp(projectId, docId)",
+        "downloadProjectDoc(projectId, docId, btn.dataset.format || '')",
+        "function wireProjectDetailActions(container, projectId)",
+        "container.querySelectorAll('[data-project-detail-action]').forEach",
+        "wireProjectDetailActions(container, p.project_id);",
+    ):
+        assert marker in content
+
+
+def test_index_html_project_search_and_dashboard_retry_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("// Project search with debounce", "/* ── Dashboard state",),
+        ("async function loadDashboard()", "/* ── Fine-tune dataset card",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-project-open="${escapeHtml(r.project_id)}"',
+        "wireProjectListActions(container);",
+        "data-dashboard-retry",
+        "wireDashboardRetry(tbody);",
+        "wireDashboardRetry(feedList);",
+    ):
+        assert marker in block
+
+
+def test_index_html_dashboard_retry_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function wireDashboardRetry(container)",
+        "container?.querySelectorAll('[data-dashboard-retry]').forEach",
+        "btn.addEventListener('click', loadDashboard)",
+    ):
+        assert marker in content
+
+
+def test_index_html_style_profile_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function renderStyleList(profiles)")
+    end = content.index("async function saveBundleOverride(profileId)", start)
+    block = content[start:end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-style-action="create"',
+        'data-style-profile-id="${escapeHtml(p.profile_id)}"',
+        "function wireStyleListActions(listEl)",
+        "data-style-tone-autosave",
+        'data-style-detail-action="back"',
+        'data-style-detail-action="set-default"',
+        'data-style-detail-action="delete"',
+        'data-style-detail-action="pick-file"',
+        'data-style-detail-action="remove-example"',
+        'data-style-detail-action="remove-bundle"',
+        'data-style-detail-action="add-bundle"',
+        "wireStyleDetailActions(container, p.profile_id);",
+        "data-style-modal-close",
+        "data-style-create-submit",
+        "data-style-bundle-save",
+    ):
+        assert marker in block
+
+
+def test_index_html_style_profile_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "listEl.querySelector('[data-style-action=\"create\"]')?.addEventListener('click', showCreateStyleModal)",
+        "listEl.querySelectorAll('[data-style-profile-id]').forEach",
+        "loadStyleDetail(card.dataset.styleProfileId || '')",
+        "function wireStyleDetailActions(container, profileId)",
+        "'set-default': () => setDefaultStyle(profileId)",
+        "'pick-file': () => document.getElementById('style-file-input')?.click()",
+        "removeStyleExample(profileId, btn.dataset.exampleId || '')",
+        "removeBundleOverride(profileId, btn.dataset.bundleId || '')",
+        "autoSaveTone(profileId)",
+        "analyzeStyleDocuments(profileId)",
+        "function wireCreateStyleModalActions(modal)",
+        "modal.querySelector('[data-style-create-submit]')?.addEventListener('click', submitCreateStyleProfile)",
+        "function wireBundleOverrideModalActions(modal, profileId)",
+        "modal.querySelector('[data-style-bundle-save]')?.addEventListener('click', () => saveBundleOverride(profileId))",
+    ):
+        assert marker in content
+
+
+def test_index_html_approval_dynamic_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderApprovalList(approvals)", "async function loadApprovalDetail",),
+        ("function renderApprovalDetail(a)", "function approvalActionBodyFromButton",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-approval-open="${escapeHtml(a.approval_id)}"',
+        "wireApprovalListActions(container);",
+        "data-approval-back",
+        'data-approval-download-format="${fmt}"',
+        'data-approval-flow-action="submit"',
+        'data-approval-flow-action="review/approve"',
+        'data-approval-flow-action="review/request-changes"',
+        'data-approval-flow-action="approve"',
+        'data-approval-flow-action="reject"',
+        'data-approval-body-key="reviewer"',
+        'data-approval-body-key="comment"',
+        "wireApprovalDetailActions(container);",
+    ):
+        assert marker in block
+
+
+def test_index_html_approval_dynamic_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function wireApprovalListActions(container)",
+        "container.querySelectorAll('[data-approval-open]').forEach",
+        "item.addEventListener('keydown', event => {",
+        "loadApprovalDetail(item.dataset.approvalOpen || '')",
+        "function approvalActionBodyFromButton(btn)",
+        "function wireApprovalDetailActions(container)",
+        "container.querySelector('[data-approval-back]')?.addEventListener('click'",
+        "container.querySelectorAll('[data-approval-download-format]').forEach",
+        "downloadApprovedDoc(btn.dataset.approvalId || '', btn.dataset.approvalDownloadFormat || '')",
+        "container.querySelectorAll('[data-approval-flow-action]').forEach",
+        "approvalActionBodyFromButton(btn)",
+    ):
+        assert marker in content
+
+
+def test_index_html_history_dynamic_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    local_start = content.index("function renderHistoryList()")
+    local_end = content.index("$id('history-toggle-btn').addEventListener", local_start)
+    server_start = content.index("async function loadServerHistory")
+    server_end = content.index("function reuseHistoryEntry(item)", server_start)
+
+    history_block = content[local_start:local_end] + content[server_start:server_end]
+    assert not re.search(r"\son[a-zA-Z]+\s*=", history_block)
+    for marker in (
+        "data-history-clear",
+        "data-history-star",
+        "data-history-reuse",
+        "data-history-delete",
+    ):
+        assert marker in history_block
+    assert "JSON.stringify(item).replace" not in history_block
+
+
+def test_index_html_history_dynamic_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "const _serverHistoryEntriesById = new Map();",
+        "function rememberServerHistoryEntries(items)",
+        "function getServerHistoryEntry(entryId)",
+        "rememberServerHistoryEntries(items);",
+        "list.querySelector('[data-history-clear]')?.addEventListener('click', clearHistory)",
+        "list.querySelectorAll('[data-history-star]').forEach",
+        "toggleHistoryStar(btn.dataset.entryId || '', btn);",
+        "list.querySelectorAll('[data-history-reuse]').forEach",
+        "const item = getServerHistoryEntry(btn.dataset.entryId || '');",
+        "if (item) reuseHistoryEntry(item);",
+        "list.querySelectorAll('[data-history-delete]').forEach",
+        "deleteServerHistory(btn.dataset.entryId || '');",
+    ):
+        assert marker in content
+
+
+def test_index_html_message_thread_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    block_start = content.index("function renderMessageThread(container, messages, contextType, contextId)")
+    block_end = content.index("async function sendMessage(contextType, contextId)", block_start)
+    block = content[block_start:block_end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    assert "data-message-input" in block
+    assert "data-message-send" in block
+    assert 'id="msg-input-${escapeHtml(contextId)}"' in block
+
+
+def test_index_html_message_thread_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "container.querySelector('[data-message-input]')?.addEventListener('keydown', event => {",
+        "if (event.key !== 'Enter') return;",
+        "sendMessage(contextType, contextId);",
+        "container.querySelector('[data-message-send]')?.addEventListener('click', () => {",
+    ):
+        assert marker in content
+
+
+def test_index_html_onboarding_wizard_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    block_start = content.index("function showOnboardingWizard()")
+    block_end = content.index("/* ── G2B deadline alerts", block_start)
+    block = content[block_start:block_end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-onboard-use-case="consulting"',
+        'data-onboard-use-case="internal"',
+        'data-onboard-use-case="both"',
+        'data-onboard-style="default-official"',
+        'data-onboard-style="default-consulting"',
+        'data-onboard-style="default-internal"',
+        'id="onboard-skip" type="button"',
+        'id="onboard-next" type="button"',
+    ):
+        assert marker in block
+    assert "event.currentTarget" not in block
+
+
+def test_index_html_onboarding_wizard_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function wireOnboardStepActions()",
+        "overlay.querySelectorAll('[data-onboard-use-case]').forEach",
+        "window.selectUseCase(btn.dataset.onboardUseCase || '', btn);",
+        "overlay.querySelectorAll('[data-onboard-style]').forEach",
+        "window.selectOnboardStyle(btn.dataset.onboardStyle || '', btn);",
+        "if (selectedButton) selectedButton.classList.add('selected');",
+        "$id('onboard-skip')?.addEventListener('click', finishOnboarding)",
+        "$id('onboard-next')?.addEventListener('click', () => window.nextOnboardStep())",
+    ):
+        assert marker in content
+
+
+def test_index_html_ops_static_controls_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    compare_start = content.index('<div id="compare-modal"')
+    compare_end = content.index("<!-- ── 비교 결과", compare_start)
+    assert not re.search(r"\son[a-zA-Z]+\s*=", content[compare_start:compare_end])
+
+    ops_start = content.index('id="audit-log-search-btn"')
+    ops_end = content.index('id="billing-panel"', ops_start)
+    ops_block = content[ops_start:ops_end]
+    assert not re.search(r"\son[a-zA-Z]+\s*=", ops_block)
+    for marker in (
+        'id="compare-modal-close-btn"',
+        'id="audit-log-search-btn"',
+        'id="audit-log-export-btn"',
+        'id="sso-refresh-btn"',
+        'id="billing-refresh-btn"',
+    ):
+        assert marker in content
+
+
+def test_index_html_ops_static_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "$id('compare-modal-close-btn')?.addEventListener('click', () => {" in content
+    assert "$id('compare-modal').style.display = 'none';" in content
+    assert "$id('audit-log-search-btn')?.addEventListener('click', () => {" in content
+    assert "action: document.getElementById('audit-action-filter')?.value || ''" in content
+    assert "result: document.getElementById('audit-result-filter')?.value || ''" in content
+    assert "$id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs)" in content
+    assert "$id('sso-refresh-btn')?.addEventListener('click', loadSSOConfig)" in content
+    assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content
+
+
+def test_index_html_sso_billing_dynamic_controls_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    block_start = content.index("// ── SSO Login Buttons")
+    block_end = content.index("async function cancelBilling()", block_start)
+    block = content[block_start:block_end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        "data-sso-ldap-login",
+        'data-sso-action="test-ldap"',
+        'data-sso-action="save-ldap"',
+        'data-sso-action="save-saml"',
+        'data-sso-action="save-gcloud"',
+        "data-billing-plan-id",
+        "data-billing-cancel",
+    ):
+        assert marker in block
+
+
+def test_index_html_sso_billing_dynamic_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "container.querySelector('[data-sso-ldap-login]')?.addEventListener('click', submitLDAPLogin)" in content
+    assert "function wireSSOFormActions(container) {" in content
+    assert "'test-ldap': testLDAPConnection" in content
+    assert "'save-ldap': saveLDAPConfig" in content
+    assert "'save-saml': saveSAMLConfig" in content
+    assert "'save-gcloud': saveGCloudConfig" in content
+    assert "container.querySelectorAll('[data-sso-action]').forEach" in content
+    assert "if (action) btn.addEventListener('click', action);" in content
+    assert "function wireBillingActions(panel) {" in content
+    assert "panel.querySelectorAll('[data-billing-plan-id]').forEach" in content
+    assert "btn.addEventListener('click', () => startCheckout(btn.dataset.billingPlanId || ''));" in content
+    assert "panel.querySelector('[data-billing-cancel]')?.addEventListener('click', cancelBilling)" in content
+
+
+def test_index_html_report_workflow_page_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    page_start = content.index('<section id="report-workflow-page"')
+    page_match = re.search(r'<section id="report-workflow-page"[\s\S]*?\n</section>', content[page_start:])
+    assert page_match is not None
+    page_block = page_match.group(0)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", page_block)
+    assert 'data-report-workflow-action="load"' in page_block
+    assert 'data-report-workflow-action="create"' in page_block
+
+
+def test_index_html_report_workflow_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "const REPORT_WORKFLOW_ACTIONS = {" in content
+    assert "load: loadReportWorkflows" in content
+    assert "create: createReportWorkflow" in content
+    assert "document.querySelectorAll('[data-report-workflow-action]').forEach" in content
+    assert "const action = REPORT_WORKFLOW_ACTIONS[btn.dataset.reportWorkflowAction || ''];" in content
+    assert "if (action) action();" in content
+
+
+def test_index_html_report_workflow_list_and_artifacts_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderReportWorkflowQualityArtifactSummary(data)", "async function loadReportWorkflowQualityArtifacts",),
+        ("async function loadReportWorkflows()", "async function createReportWorkflow",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-rw-quality-artifacts-action="load"',
+        'data-rw-quality-artifacts-action="download"',
+        'data-report-workflow-select="${escapeHtml(item.report_workflow_id)}"',
+    ):
+        assert marker in block
+
+
+def test_index_html_report_workflow_list_and_artifacts_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {",
+        "load: loadReportWorkflowQualityArtifacts",
+        "download: downloadReportWorkflowQualityArtifacts",
+        "wireReportWorkflowQualityArtifactActions(el);",
+        "function wireReportWorkflowQualityArtifactActions(container)",
+        "container.querySelectorAll('[data-rw-quality-artifacts-action]').forEach",
+        "const action = REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS[btn.dataset.rwQualityArtifactsAction || ''];",
+        "wireReportWorkflowListActions(list);",
+        "function wireReportWorkflowListActions(list)",
+        "list.querySelectorAll('[data-report-workflow-select]').forEach",
+        "selectReportWorkflow(btn.dataset.reportWorkflowSelect || '')",
+    ):
+        assert marker in content
+
+
+def test_index_html_report_workflow_detail_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function renderReportWorkflowDetail(item)")
+    end = content.index("function renderReportWorkflowRoleLine(item)", start)
+    block = content[start:end]
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-rw-detail-action="workflow-action"',
+        'data-report-workflow-id="${workflowId}"',
+        'data-rw-action-path="planning/generate"',
+        'data-rw-action-path="planning/approve"',
+        'data-rw-action-path="slides/generate"',
+        'data-rw-action-body="empty-object"',
+        'data-rw-action-path="final/submit"',
+        'data-rw-action-path="final/pm-approve"',
+        'data-rw-action-path="final/executive-approve"',
+        'data-rw-detail-action="planning-change"',
+        'data-rw-detail-action="final-change"',
+        'data-rw-detail-action="visual-assets"',
+        'data-rw-detail-action="download-pptx"',
+        'data-rw-detail-action="download-snapshot"',
+        'data-rw-detail-action="develop-preview"',
+        "wireReportWorkflowDetailActions(el);",
+    ):
+        assert marker in block
+
+
+def test_index_html_report_workflow_detail_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "const REPORT_WORKFLOW_DETAIL_ACTIONS = {",
+        "'planning-change': requestReportWorkflowPlanningChange",
+        "'final-change': requestReportWorkflowFinalChange",
+        "'visual-assets': generateReportWorkflowVisualAssets",
+        "'download-pptx': downloadReportWorkflowPptx",
+        "'download-snapshot': downloadReportWorkflowSnapshot",
+        "'develop-preview': runReportWorkflowDevelopPreview",
+        "function wireReportWorkflowDetailActions(container)",
+        "container.querySelectorAll('[data-rw-detail-action]').forEach",
+        "const workflowId = btn.dataset.reportWorkflowId || '';",
+        "const detailAction = btn.dataset.rwDetailAction || '';",
+        "const actionPath = btn.dataset.rwActionPath || '';",
+        "runReportWorkflowAction(workflowId, actionPath, {});",
+        "runReportWorkflowAction(workflowId, actionPath);",
+        "const action = REPORT_WORKFLOW_DETAIL_ACTIONS[detailAction];",
+        "if (action) action(workflowId, btn);",
+    ):
+        assert marker in content
+
+
+def test_index_html_report_workflow_quality_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderReportWorkflowDevelopPreview(data)", "async function runReportWorkflowDevelopPreview",),
+        ("function renderReportWorkflowPromotion(item)", "function reportWorkflowLatestQualityArtifact",),
+        ("function renderReportWorkflowQualityLearning(item)", "function reportWorkflowSplitLines",),
+        ("function renderReportWorkflowQualityReviewChecklist(previewResult = null)", "function refreshReportWorkflowQualityReviewChecklist",),
+        ("function renderReportWorkflowQualityValidation(result)", "function reportWorkflowQualityReviewPacketBoundary",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-rw-detail-action="apply-develop-preview"',
+        'data-rw-detail-action="develop-preview-artifact"',
+        'data-rw-detail-action="open-project"',
+        'data-rw-detail-action="open-knowledge"',
+        'data-rw-detail-action="promote"',
+        'data-rw-detail-action="quality-preview"',
+        'data-rw-detail-action="quality-review-packet"',
+        'data-rw-detail-action="quality-save"',
+        'data-rw-detail-action="focus-quality-field"',
+    ):
+        assert marker in block
+
+
+def test_index_html_report_workflow_quality_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "'apply-develop-preview': applyReportWorkflowDevelopPreviewToQualityArtifact",
+        "'develop-preview-artifact': applyReportWorkflowDevelopPreviewAndPreviewArtifact",
+        "'promote': promoteReportWorkflow",
+        "'quality-preview': previewReportWorkflowQualityArtifact",
+        "'quality-review-packet': downloadReportWorkflowQualityReviewPacket",
+        "'quality-save': saveReportWorkflowQualityArtifact",
+        "'open-project': (_workflowId, btn) => openReportWorkflowProject(btn.dataset.projectId || '', btn.dataset.projectDocId || '')",
+        "'open-knowledge': (_workflowId, btn) => openReportWorkflowKnowledge(btn.dataset.projectId || '')",
+        "'focus-quality-field': (_workflowId, btn) => focusReportWorkflowQualityField(btn.dataset.focusTargetId || '')",
+        "if (action) action(workflowId, btn);",
+        "wireReportWorkflowDetailActions(resultEl);",
+        "wireReportWorkflowDetailActions(el);",
+    ):
+        assert marker in content
+
+
+def test_index_html_report_workflow_slide_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderReportWorkflowSlides(slides, item)", "function reportWorkflowVisualAssetDataUri",),
+        ("function renderReportWorkflowSlideVisualWorkspace(slide, item, finalLocked)", "async function runReportWorkflowAction",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        'data-rw-detail-action="workflow-action"',
+        'data-rw-action-path="slides/${escapeHtml(slide.slide_id)}/approve"',
+        'data-rw-detail-action="slide-change"',
+        'data-rw-detail-action="slide-edit-assets"',
+        'data-rw-detail-action="slide-select-asset"',
+        'data-slide-id="${escapeHtml(slide.slide_id)}"',
+        'data-asset-id="${escapeHtml(assetId)}"',
+    ):
+        assert marker in block
+
+
+def test_index_html_report_workflow_slide_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "'slide-change': (workflowId, btn) => requestReportWorkflowSlideChange(workflowId, btn.dataset.slideId || '')",
+        "'slide-edit-assets': (workflowId, btn) => editReportWorkflowSlideVisualAssets(workflowId, btn.dataset.slideId || '')",
+        "'slide-select-asset': (workflowId, btn) => selectReportWorkflowSlideVisualAsset(workflowId, btn.dataset.slideId || '', btn.dataset.assetId || '')",
+        "if (action) action(workflowId, btn);",
+    ):
+        assert marker in content
+
+
+def test_index_html_document_ops_page_uses_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    page_start = content.index('<section id="document-ops-page"')
+    page_match = re.search(r'<section id="document-ops-page"[\s\S]*?\n</section>', content[page_start:])
+    assert page_match is not None
+    page_block = page_match.group(0)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", page_block)
+    for action in (
+        "load-trajectories",
+        "preview-export",
+        "export-trajectories",
+        "load-exports",
+        "load-readiness",
+        "preview-plan",
+        "request-execution",
+        "load-audit-checklist",
+        "export-audit",
+        "load-governance",
+        "load-signoff",
+        "download-signoff",
+        "load-adapter-contract",
+        "load-rehearsal",
+        "run-agent",
+    ):
+        assert f'data-docops-action="{action}"' in page_block
+
+
+def test_index_html_document_ops_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "const DOCUMENT_OPS_ACTIONS = {" in content
+    for mapping in (
+        "'load-trajectories': loadDocumentOpsTrajectories",
+        "'preview-export': previewDocumentOpsExport",
+        "'export-trajectories': exportDocumentOpsTrajectories",
+        "'load-readiness': loadDocumentOpsTrainingReadiness",
+        "'request-execution': requestDocumentOpsTrainingExecution",
+        "'load-audit-checklist': loadDocumentOpsTrainingAuditChecklist",
+        "'export-audit': exportDocumentOpsTrainingAudit",
+        "'load-signoff': loadDocumentOpsReviewerSignoffSummary",
+        "'download-signoff': downloadDocumentOpsReviewerSignoffSummary",
+        "'load-rehearsal': loadDocumentOpsTrainingRehearsal",
+        "'run-agent': runDocumentOpsAgent",
+    ):
+        assert mapping in content
+    assert "document.querySelectorAll('[data-docops-action]').forEach" in content
+    assert "const action = DOCUMENT_OPS_ACTIONS[btn.dataset.docopsAction || ''];" in content
+    assert "if (action) action();" in content
+
+
+def test_index_html_document_ops_dynamic_actions_use_event_listeners():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    blocks = []
+    for start_marker, end_marker in (
+        ("function renderDocumentOpsTrajectoryCard(item)", "async function reviewDocumentOpsTrajectory",),
+        ("function renderDocumentOpsExports(data)", "async function downloadDocumentOpsExport",),
+        ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
+        ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),
+    ):
+        start = content.index(start_marker)
+        end = content.index(end_marker, start)
+        blocks.append(content[start:end])
+    block = "\n".join(blocks)
+
+    assert not re.search(r"\son[a-zA-Z]+\s*=", block)
+    for marker in (
+        "data-docops-trajectory-review=\"true\"",
+        "data-docops-trajectory-review=\"false\"",
+        "data-docops-export-download=\"${escapeHtml(filename)}\"",
+        "data-docops-training-execution-refresh",
+        "data-docops-training-audit-download=\"${escapeHtml(item?.audit_file || '')}\"",
+        "data-docops-training-audit-export",
+        "data-docops-training-audit-refresh",
+        "data-docops-training-audit-download=\"${escapeHtml(data.audit_file)}\"",
+    ):
+        assert marker in block
+
+
+def test_index_html_document_ops_dynamic_action_wiring_exists():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "wireDocumentOpsTrajectoryReviewActions(el);",
+        "function wireDocumentOpsTrajectoryReviewActions(container)",
+        "container.querySelectorAll('[data-docops-trajectory-review]').forEach",
+        "btn.dataset.docopsTrajectoryReview === 'true'",
+        "wireDocumentOpsExportDownloadActions(el);",
+        "function wireDocumentOpsExportDownloadActions(container)",
+        "downloadDocumentOpsExport(btn.dataset.docopsExportDownload || '')",
+        "el.querySelector('[data-docops-training-execution-refresh]')?.addEventListener('click', loadDocumentOpsTrainingExecutionRequests)",
+        "wireDocumentOpsTrainingAuditActions(el);",
+        "function wireDocumentOpsTrainingAuditActions(container)",
+        "downloadDocumentOpsTrainingAudit(btn.dataset.docopsTrainingAuditDownload || '')",
+        "container.querySelector('[data-docops-training-audit-export]')?.addEventListener('click', exportDocumentOpsTrainingAudit)",
+        "container.querySelector('[data-docops-training-audit-refresh]')?.addEventListener('click', loadDocumentOpsTrainingAuditChecklist)",
+    ):
+        assert marker in content
 
 
 def test_nginx_configs_keep_sse_and_attachment_generation_on_long_timeouts():
@@ -851,3 +2166,56 @@ def test_build_csp_includes_nonce_when_present():
     # With a nonce present, 'unsafe-inline' is dropped from script-src — CSP L2+
     # browsers would ignore it anyway, so listing it would only mislead.
     assert "'unsafe-inline'" not in csp.split("style-src")[0]
+
+
+def test_completion_readiness_local_receipts_and_prod_env_stay_gitignored():
+    if shutil.which("git") is None:
+        pytest.skip("git is required to verify ignore rules")
+
+    root = Path(__file__).resolve().parents[1]
+    for path in (
+        ".env.prod",
+        "reports/completion-readiness/latest.json",
+        "reports/completion-readiness/latest-check.json",
+    ):
+        completed = subprocess.run(
+            ["git", "check-ignore", "-q", path],
+            check=False,
+            cwd=root,
+        )
+        assert completed.returncode == 0, f"{path} must remain gitignored"
+
+
+def test_completion_readiness_runbook_keeps_external_proof_boundaries():
+    root = Path(__file__).resolve().parents[1]
+    runbook = (root / "docs" / "completion-readiness-runbook.md").read_text(encoding="utf-8")
+
+    required_markers = (
+        "python3 scripts/check_completion_readiness.py --print-env-template",
+        "reports/completion-readiness/latest.json",
+        "python3 scripts/check_completion_readiness_result.py",
+        "DECISIONDOC_PROVIDER=openai",
+        "DECISIONDOC_PROVIDER=gemini",
+        "DECISIONDOC_PROVIDER=claude",
+        "test_live_openai_gemini_fallback_chain_ok",
+        "python3 scripts/run_stage_procurement_smoke.py",
+        "python3 scripts/run_deployed_smoke.py",
+        "provider API, G2B live API, AWS runtime",
+        "bid submission, legal approval, contractual commitment",
+    )
+    for marker in required_markers:
+        assert marker in runbook
+
+    docs_to_link = (
+        "README.md",
+        "docs/development-plan.md",
+        "docs/roadmap.md",
+        "docs/evidence-gallery.md",
+        "docs/evidence-checklist.md",
+        "docs/contribution-note.md",
+        "docs/project-card.md",
+        "docs/resume-bullets.md",
+    )
+    for doc_path in docs_to_link:
+        text = (root / doc_path).read_text(encoding="utf-8")
+        assert "completion-readiness-runbook.md" in text, f"{doc_path} must link the completion runbook"
