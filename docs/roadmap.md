@@ -1,6 +1,6 @@
 # Development Roadmap
 
-분석 기준: 2026-07-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태, 최신 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. 로드맵은 포트폴리오 완성보다 먼저 재현 가능한 검증 evidence 확보를 우선한다.
+분석 기준: 2026-07-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태, 최근 기능 변경 기준 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. 로드맵은 포트폴리오 완성보다 먼저 재현 가능한 검증 evidence 확보를 우선한다.
 
 제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
 
@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최신 자동화 검증: main `fb3f89b` 기준 GitHub Actions CI `28961688250` success, CD `28961688221` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
+- 최근 기능 변경 기준 자동화 검증: main `fb3f89b` 기준 GitHub Actions CI `28961688250` success, CD `28961688221` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다. 문서 전용 커밋의 최신 CI 상태는 GitHub Actions에서 별도로 확인한다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: live provider chain(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상/스크린샷, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례

@@ -30,8 +30,8 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | 검증 | 현재 증거 |
 |---|---|
 | Non-live pytest gate | `pytest tests/ -m "not live" -q` -> 2026-07-09 실측 `2803 passed, 2 skipped, 4 deselected` |
-| GitHub Actions CI | main `fb3f89b` 기준 CI `28961688250` success |
-| GitHub Actions CD | main `fb3f89b` 기준 CD `28961688221` success. staging deploy/smoke는 설정 부재로 skip되어 M6 proof로 보지 않는다 |
+| GitHub Actions CI | 최근 기능 변경 커밋 `fb3f89b` 기준 CI `28961688250` success |
+| GitHub Actions CD | 최근 기능 변경 커밋 `fb3f89b` 기준 CD `28961688221` success. staging deploy/smoke는 설정 부재로 skip되어 M6 proof로 보지 않는다 |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |

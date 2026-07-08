@@ -1,6 +1,6 @@
 # Project Card
 
-분석 기준: 2026-07-09 현재 저장소 코드, README, docs, evidence, completion readiness receipt, 최근 git log, worktree 상태, 최신 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. post-login recommendation auth와 local UI flow evidence까지 반영한 상태다.
+분석 기준: 2026-07-09 현재 저장소 코드, README, docs, evidence, completion readiness receipt, 최근 git log, worktree 상태, 최근 기능 변경 기준 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. post-login recommendation auth와 local UI flow evidence까지 반영한 상태다.
 
 ## 1. Snapshot
 
@@ -14,7 +14,7 @@
 - Demo 링크: 현재 README에는 검증된 Demo URL을 싣지 않는다. 최신 로컬 UI screenshot은 `evidence/screenshots/web-ui-home.png`에 있다.
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, OpenAI/Gemini/Claude/Local/Mock provider abstraction, Docker Compose, AWS SAM/Lambda, local/S3 storage, pytest
 - 이력서 반영 가능 여부: 조건부 가능
-- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. 2026-07-09 기준 non-live pytest gate와 최신 GitHub Actions CI/CD는 통과했고 static PWA/CSP 및 post-login UI flow evidence도 존재한다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
+- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. 2026-07-09 기준 non-live pytest gate와 최근 기능 변경 기준 GitHub Actions CI/CD는 통과했고 static PWA/CSP 및 post-login UI flow evidence도 존재한다. 다만 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
 
 ## 2. One-liner
 
