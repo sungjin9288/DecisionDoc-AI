@@ -1,6 +1,6 @@
 # DecisionDoc AI Contribution Note
 
-기준일: 2026-07-08
+기준일: 2026-07-09
 
 이 문서는 DecisionDoc AI를 포트폴리오나 면접에서 설명할 때 사용할 수 있는 직접 구현 범위와 검증 범위를 정리한다. 제품 성과나 운영 상태를 과장하기 위한 문서가 아니라, 코드와 증거로 설명 가능한 범위를 좁히기 위한 문서다.
 
@@ -30,6 +30,8 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | 검증 | 현재 증거 |
 |---|---|
 | Non-live pytest gate | `pytest tests/ -m "not live" -q` -> 2026-07-09 실측 `2802 passed, 2 skipped, 4 deselected` |
+| GitHub Actions CI | main `1cf75b8` 기준 CI `28958935201` success |
+| GitHub Actions CD | main `1cf75b8` 기준 CD `28958935333` success. staging deploy/smoke는 설정 부재로 skip되어 M6 proof로 보지 않는다 |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |

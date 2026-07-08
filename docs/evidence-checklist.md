@@ -24,6 +24,8 @@
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
 | Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2802 passed, 2 skipped, 4 deselected` |
+| GitHub Actions CI | 완료 | main `1cf75b8`, CI `28958935201` success |
+| GitHub Actions CD | 완료 | main `1cf75b8`, CD `28958935333` success. staging deploy/smoke는 설정 부재로 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 
 ## 1-1. 재현 가능한 Local Evidence Contract

@@ -218,7 +218,7 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 secret 없는 proof receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따른다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-08) |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-09) |
 |----------|------|-----------|--------------------|
 | **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 | 미착수 |
 | **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |

@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-08** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), 2026-07-02 정리 커밋, M4 CSP nonce 완료 기준)
+> 기준일: **2026-07-09** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), 2026-07-02 정리 커밋, M4 CSP nonce 완료, 최신 CI/CD success 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -14,7 +14,7 @@
 |----|------|-----------|
 | **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest tests/ -m "not live" -q` → 2,802 passed, 2 skipped, 4 deselected, 2026-07-09) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-02: 800줄 초과 15개 전부 분할 → 0개). 2026-07-09 기준 CI advisory `ruff check app/ --select=E,F,W --ignore=E501` 통과, `bandit -ll` medium/high 0건 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
-| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 배포 접근성 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
+| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD 최신 main success. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
@@ -93,14 +93,14 @@ Providers (5)    Storage (36 스토어)    Ops
 
 ## 3. 갭 분석 — 무엇이 완성을 막고 있나
 
-| # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-08) |
+| # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-09) |
 |---|-----|------------|--------|--------------------|
 | G1 | **Live provider 미실증** — openai/gemini/claude 연동 코드는 완비, 실 API 호출 검증 0회 | `pytest -m live` 미실행 (키 필요) | HIGH | 미착수 (키 필요) |
 | G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
 | G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **✅ 완전 해소** (2026-07-02, 15개 전부 분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
-| G6 | **배포 접근성 미검증** — 운영 URL 동작 보장 없음 (README §Scope 명시) | — | MED | 미착수 |
+| G6 | **배포 접근성 미검증** — 최신 GitHub Actions CD는 성공했지만 staging deploy/smoke는 설정 부재로 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `28958935333` success, staging deploy/smoke skipped | MED | 미착수 |
 | G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
 
 ---
