@@ -1125,6 +1125,16 @@ def test_index_html_bundle_recommendation_close_uses_event_listener():
     assert "badge.replaceChildren('✨ ', title, ` ${names.join(', ')} `, closeButton)" in block
 
 
+def test_index_html_bundle_recommendation_request_uses_auth_headers():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function triggerBundleRecommend()")
+    end = content.index("function showBundleRecommendation(bundleIds)", start)
+    block = content[start:end]
+
+    assert "fetch('/generate/recommend-bundle'" in block
+    assert "headers: {'Content-Type':'application/json', ...getAuthHeaders()}" in block
+
+
 def test_index_html_upload_modals_use_event_listeners():
     content = open("app/static/index.html", encoding="utf-8").read()
     page_start = content.index('<div id="from-documents-modal"')

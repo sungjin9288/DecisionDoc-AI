@@ -23,7 +23,8 @@
 | 최신 static PWA screenshot 갱신 | 완료 | `evidence/screenshots/web-ui-home.png` |
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2802 passed, 2 skipped, 4 deselected` |
+| 로그인 이후 전체 UI flow | 완료 | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2803 passed, 2 skipped, 4 deselected` |
 | GitHub Actions CI | 완료 | main `1cf75b8`, CI `28958935201` success |
 | GitHub Actions CD | 완료 | main `1cf75b8`, CD `28958935333` success. staging deploy/smoke는 설정 부재로 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
@@ -40,6 +41,7 @@
 | Completion readiness receipt checker | 재현 가능 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
 | Completion proof receipt template/checker | 재현 가능 | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` |
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
+| Local post-login UI flow evidence | 재현 가능 | `python3 scripts/capture_ui_flow_evidence.py` |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
@@ -58,7 +60,6 @@ Completion readiness/proof receipt는 gitignored `reports/completion-readiness/`
 | Live provider 호출 | 검증 필요 | 실제 API key가 있는 별도 안전 환경에서 live smoke 실행 |
 | Live provider fallback chain | 검증 필요 | `DECISIONDOC_PROVIDER=openai,gemini`와 승인된 provider key로 fallback live test 실행 |
 | Production deployment | 검증 필요 | 배포 URL, post-deploy smoke log, 운영 접근성 확인 |
-| 로그인 이후 전체 UI flow | 검증 필요 | 테스트 계정으로 생성 화면, 결과 화면, export 버튼 screenshot 추가 |
 | Swagger UI 브라우저 렌더링 | 검증 필요 | 로컬 HTML은 저장했으나 CDN 리소스 오류로 screenshot은 빈 화면이어서 `/openapi.json`으로 대체 |
 | 사용자 성과 수치 | 현재 없음 | 실제 사용자 피드백 또는 측정 지표 확보 전까지 사용 금지 |
 | Live G2B / provider procurement flow | 검증 필요 | local fixture contract 검증과 별개로 `G2B_API_KEY`와 승인된 provider credential이 있는 안전 환경에서만 확인 |
