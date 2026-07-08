@@ -35,6 +35,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     strategy:
       matrix:
         python-version: ["3.12"]
@@ -54,11 +55,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
+        timeout-minutes: 10
         env:
           NODE_OPTIONS: --no-deprecation
-        run: playwright install chromium --with-deps
+        run: python -m playwright install chromium --with-deps
 
       - name: Run full test suite
+        timeout-minutes: 25
         env:
           ENVIRONMENT: test
           JWT_SECRET_KEY: test-secret-key-32-chars-minimum!!

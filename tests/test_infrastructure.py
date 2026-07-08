@@ -2006,6 +2006,18 @@ def test_dockerfile_uses_pinned_playwright_for_browser_install():
     assert "pip install --no-cache-dir playwright" not in dockerfile
 
 
+def test_ci_playwright_install_has_bounded_timeout_and_python_module_entrypoint():
+    workflow = open(".github/workflows/ci.yml", encoding="utf-8").read()
+
+    assert re.search(r"test:\n[\s\S]*?timeout-minutes:\s*40", workflow)
+    assert re.search(
+        r"- name: Install Playwright browsers\n\s+timeout-minutes:\s*10\n[\s\S]*?run: python -m playwright install chromium --with-deps",
+        workflow,
+    )
+    assert re.search(r"- name: Run full test suite\n\s+timeout-minutes:\s*25", workflow)
+    assert "run: playwright install chromium --with-deps" not in workflow
+
+
 def test_favicon_stays_public_even_after_user_registration(client):
     register = client.post(
         "/auth/register",
