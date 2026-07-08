@@ -29,7 +29,7 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 
 | 검증 | 현재 증거 |
 |---|---|
-| Non-live pytest gate | `pytest tests/ -m "not live" -q` -> 2026-07-09 실측 `2801 passed, 2 skipped, 4 deselected` |
+| Non-live pytest gate | `pytest tests/ -m "not live" -q` -> 2026-07-09 실측 `2802 passed, 2 skipped, 4 deselected` |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
