@@ -100,7 +100,7 @@ Providers (5)    Storage (36 스토어)    Ops
 | G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **✅ 완전 해소** (2026-07-02, 15개 전부 분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
-| G6 | **배포 접근성 미검증** — 최근 기능 변경 기준 GitHub Actions CD는 성공했지만 staging deploy/smoke는 설정 부재로 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `28961688221` success, staging deploy/smoke skipped | MED | 미착수 |
+| G6 | **배포 접근성 미검증** — 최신 main GitHub Actions CD는 성공했지만 staging deploy/smoke는 설정 부재로 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `29026326101` success, staging deploy/smoke skipped | MED | 미착수 |
 | G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
 
 ---
