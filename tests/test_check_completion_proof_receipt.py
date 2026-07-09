@@ -7,18 +7,24 @@ from pathlib import Path
 from scripts import check_completion_proof_receipt as checker
 from scripts.check_completion_readiness import EXCLUDED_EXTERNAL_ACTIONS, MILESTONE_COMMANDS
 
+MILESTONE_TITLES = {
+    "M1": "Live provider proof",
+    "M2": "G2B live procurement smoke",
+    "M6": "Deployment and post-deploy smoke proof",
+}
 
-def _valid_receipt() -> dict[str, object]:
+
+def _valid_receipt(*, milestone_id: str = "M1", command: str | None = None) -> dict[str, object]:
     return {
         "schema_version": "decisiondoc.completion_proof_receipt.v1",
         "scope": "proof receipt only; documents external proof result without executing external actions",
-        "milestone_id": "M1",
-        "title": "Live provider proof",
+        "milestone_id": milestone_id,
+        "title": MILESTONE_TITLES[milestone_id],
         "status": "passed",
-        "command": MILESTONE_COMMANDS["M1"][0],
+        "command": command or MILESTONE_COMMANDS[milestone_id][0],
         "executed_at_utc": "2026-07-09T01:02:03Z",
         "environment_boundary": "approved manual live provider workflow; secret values redacted",
-        "evidence_summary": "OpenAI live provider proof passed in GitHub Actions.",
+        "evidence_summary": f"{milestone_id} completion proof passed in the approved environment.",
         "evidence_refs": [
             "https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/123",
         ],
@@ -45,6 +51,28 @@ def test_completion_proof_receipt_accepts_current_contract(tmp_path: Path) -> No
     assert result["summary"]["milestone_id"] == "M1"
     assert result["summary"]["status"] == "passed"
     assert "provider API execution" in result["external_actions_excluded"]
+
+
+def test_completion_proof_receipt_accepts_runbook_commands(tmp_path: Path) -> None:
+    runbook_commands = (
+        ("M1", "gh workflow run live.yml --ref main -f provider=openai"),
+        ("M1", "gh workflow run live.yml --ref main -f provider=gemini"),
+        ("M1", "gh workflow run live.yml --ref main -f provider=claude"),
+        ("M1", "gh workflow run live.yml --ref main -f provider='openai,gemini'"),
+        ("M2", "python3 scripts/run_stage_procurement_smoke.py --env-file .env.prod --preflight"),
+        ("M2", "python3 scripts/run_stage_procurement_smoke.py --env-file .env.prod"),
+        ("M6", "python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight"),
+        ("M6", "python3 scripts/run_deployed_smoke.py --env-file .env.prod"),
+    )
+
+    for milestone_id, command in runbook_commands:
+        receipt_path = tmp_path / f"{milestone_id}-{len(command)}-proof.json"
+        _write_json(receipt_path, _valid_receipt(milestone_id=milestone_id, command=command))
+
+        result = checker.check_completion_proof_receipt(receipt_path)
+
+        assert result["ok"] is True
+        assert result["summary"]["milestone_id"] == milestone_id
 
 
 def test_completion_proof_receipt_rejects_unapproved_command(tmp_path: Path) -> None:

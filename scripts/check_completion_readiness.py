@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Mapping, Sequence
 from uuid import uuid4
@@ -33,12 +32,20 @@ MILESTONE_COMMANDS = {
         "DECISIONDOC_PROVIDER=gemini python3 -m pytest -q tests/test_live_providers.py -m live -rs",
         "DECISIONDOC_PROVIDER=claude python3 -m pytest -q tests/test_live_providers.py -m live -rs",
         "DECISIONDOC_PROVIDER=openai,gemini DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1 python3 -m pytest -q tests/test_live_providers.py::test_live_openai_gemini_fallback_chain_ok -m live -rs",
+        "gh workflow run live.yml --ref main -f provider=openai",
+        "gh workflow run live.yml --ref main -f provider=gemini",
+        "gh workflow run live.yml --ref main -f provider=claude",
+        "gh workflow run live.yml --ref main -f provider='openai,gemini'",
     ),
     "M2": (
+        "python3 scripts/run_stage_procurement_smoke.py --env-file .env.prod --preflight",
+        "python3 scripts/run_stage_procurement_smoke.py --env-file .env.prod",
         "python3 scripts/run_stage_procurement_smoke.py --preflight",
         "python3 scripts/run_stage_procurement_smoke.py",
     ),
     "M6": (
+        "python3 scripts/run_deployed_smoke.py --env-file .env.prod --preflight",
+        "python3 scripts/run_deployed_smoke.py --env-file .env.prod",
         "python3 scripts/run_deployed_smoke.py --preflight",
         "python3 scripts/run_deployed_smoke.py",
     ),
