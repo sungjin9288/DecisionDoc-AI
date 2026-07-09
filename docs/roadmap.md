@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최신 main 자동화 검증: main `edda2ec` 기준 GitHub Actions CI `29026326061` success, CD `29026326101` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `01b9fbc` 기준 GitHub Actions CI `29027090095` success, CD `29027088935` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: live provider chain(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상/스크린샷, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -46,7 +46,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - mock provider 기준 로컬 실행 절차와 대표 API 경로가 정리되어 있다.
   - 로컬 evidence gallery와 샘플 산출물이 존재한다.
   - 2026-07-08 기준 최신 static PWA screenshot과 CSP nonce 확인 로그를 갱신했다.
-  - 2026-07-09 기준 최신 main CI/CD가 성공했다.
+  - 2026-07-09 기준 main CI/CD 증적을 확인했다.
   - 직접 구현 범위와 말하면 안 되는 범위를 [contribution-note.md](./contribution-note.md)에 분리했다.
 - 남은 작업:
   - 포트폴리오용 짧은 데모 영상이 필요하면 별도 캡처한다.
