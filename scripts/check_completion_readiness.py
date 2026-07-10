@@ -74,6 +74,14 @@ ENV_TEMPLATE_LINES = (
     "python3 scripts/check_completion_readiness.py --env-file .env.prod",
     "python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json",
     "python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json",
+    "",
+    "# No-secret proof receipts after approved external proof",
+    "python3 scripts/check_completion_proof_receipt.py --print-template M1 > reports/completion-readiness/m1-live-provider-proof.json",
+    "python3 scripts/check_completion_proof_receipt.py --print-template M2 > reports/completion-readiness/m2-g2b-stage-smoke-proof.json",
+    "python3 scripts/check_completion_proof_receipt.py --print-template M6 > reports/completion-readiness/m6-deployment-smoke-proof.json",
+    "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json",
+    "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m2-g2b-stage-smoke-proof.json",
+    "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m6-deployment-smoke-proof.json",
 )
 
 

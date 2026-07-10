@@ -276,6 +276,9 @@ def test_completion_readiness_prints_env_template_without_real_secret_values() -
     assert "DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1" in completed.stdout
     assert "G2B_API_KEY=your-data-go-kr-key" in completed.stdout
     assert "python3 scripts/check_completion_readiness.py --env-file .env.prod" in completed.stdout
+    assert "python3 scripts/check_completion_proof_receipt.py --print-template M1" in completed.stdout
+    assert "reports/completion-readiness/m2-g2b-stage-smoke-proof.json" in completed.stdout
+    assert "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m6-deployment-smoke-proof.json" in completed.stdout
     assert "sk-" not in completed.stdout
     assert completed.stderr == ""
 
