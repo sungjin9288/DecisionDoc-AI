@@ -2216,6 +2216,7 @@ def test_completion_readiness_runbook_keeps_external_proof_boundaries():
 
     required_markers = (
         "python3 scripts/check_completion_readiness.py --print-env-template",
+        "python3 scripts/check_completion_readiness.py --print-proof-plan",
         "reports/completion-readiness/latest.json",
         "python3 scripts/check_completion_readiness_result.py",
         "python3 scripts/check_completion_proof_receipt.py --print-template M1",

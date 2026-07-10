@@ -20,7 +20,7 @@
 python3 scripts/check_completion_readiness.py --print-env-template
 ```
 
-템플릿을 바탕으로 gitignore된 파일에 값을 넣는다.
+이 출력은 env 항목만 포함하므로 env file parser로 그대로 읽을 수 있다. 템플릿을 바탕으로 gitignore된 파일에 실제 값을 넣는다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template > /tmp/decisiondoc-completion-env-template.txt
@@ -28,6 +28,14 @@ python3 scripts/check_completion_readiness.py --print-env-template > /tmp/decisi
 ```
 
 `/tmp/decisiondoc-completion-env-template.txt`는 복사용 임시 파일이다. secret을 넣지 않는다. 실제 실행에는 `.env.prod` 또는 운영자가 지정한 별도 env file을 사용한다.
+
+readiness와 proof receipt 명령은 별도 실행 계획으로 확인한다.
+
+```bash
+python3 scripts/check_completion_readiness.py --print-proof-plan
+```
+
+이 출력은 secret 값을 포함하지 않으며 명령을 자동 실행하지 않는다.
 
 ## 3. Readiness Receipt
 

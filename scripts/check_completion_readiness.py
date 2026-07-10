@@ -56,21 +56,28 @@ ENV_TEMPLATE_LINES = (
     "# Fill these in a gitignored file such as .env.prod before running live/deploy proof.",
     "",
     "# M1: live provider proof",
-    "OPENAI_API_KEY=your-openai-api-key",
-    "GEMINI_API_KEY=your-gemini-api-key",
-    "ANTHROPIC_API_KEY=your-anthropic-api-key",
+    "OPENAI_API_KEY=",
+    "GEMINI_API_KEY=",
+    "ANTHROPIC_API_KEY=",
     "DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1",
     "",
     "# M2: G2B live procurement smoke",
-    "SMOKE_BASE_URL=https://your-stage.example.com",
-    "SMOKE_API_KEY=your-stage-api-key",
-    "G2B_API_KEY=your-data-go-kr-key",
+    "SMOKE_BASE_URL=",
+    "SMOKE_API_KEY=",
+    "G2B_API_KEY=",
     "",
     "# M6: deployment and post-deploy smoke proof",
-    "ALLOWED_ORIGINS=https://your-runtime.example.com",
-    "DECISIONDOC_API_KEYS=your-runtime-api-key",
+    "ALLOWED_ORIGINS=",
+    "DECISIONDOC_API_KEYS=",
+)
+
+PROOF_PLAN_LINES = (
+    "# DecisionDoc completion proof plan",
+    "# These commands prepare local receipts. External proof still requires explicit approval.",
     "",
-    "# Local readiness receipt",
+    "mkdir -p reports/completion-readiness",
+    "",
+    "# Check readiness and validate the local receipt",
     "python3 scripts/check_completion_readiness.py --env-file .env.prod",
     "python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json",
     "python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json",
@@ -290,6 +297,10 @@ def _print_env_template() -> None:
     print("\n".join(ENV_TEMPLATE_LINES))
 
 
+def _print_proof_plan() -> None:
+    print("\n".join(PROOF_PLAN_LINES))
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Check local readiness for the remaining DecisionDoc completion milestones without external calls.",
@@ -303,7 +314,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--print-env-template",
         action="store_true",
-        help="Print a copy-paste env template for the remaining completion milestones.",
+        help="Print a copy-paste env file template for the remaining completion milestones.",
+    )
+    parser.add_argument(
+        "--print-proof-plan",
+        action="store_true",
+        help="Print the local readiness and proof receipt commands without executing them.",
     )
     return parser
 
@@ -312,6 +328,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
     if args.print_env_template:
         _print_env_template()
+        return 0
+    if args.print_proof_plan:
+        _print_proof_plan()
         return 0
     result = check_completion_readiness(
         repo=args.repo,

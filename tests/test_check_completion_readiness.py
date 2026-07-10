@@ -256,7 +256,7 @@ def test_completion_readiness_cli_env_file_redacts_secret_values(tmp_path: Path)
         assert secret not in serialized
 
 
-def test_completion_readiness_prints_env_template_without_real_secret_values() -> None:
+def test_completion_readiness_prints_parseable_env_template_without_real_secret_values(tmp_path: Path) -> None:
     completed = subprocess.run(
         [
             "python3",
@@ -270,15 +270,46 @@ def test_completion_readiness_prints_env_template_without_real_secret_values() -
     )
 
     assert completed.returncode == 0
-    assert "OPENAI_API_KEY=your-openai-api-key" in completed.stdout
-    assert "GEMINI_API_KEY=your-gemini-api-key" in completed.stdout
-    assert "ANTHROPIC_API_KEY=your-anthropic-api-key" in completed.stdout
+    assert "OPENAI_API_KEY=" in completed.stdout
+    assert "GEMINI_API_KEY=" in completed.stdout
+    assert "ANTHROPIC_API_KEY=" in completed.stdout
     assert "DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1" in completed.stdout
-    assert "G2B_API_KEY=your-data-go-kr-key" in completed.stdout
+    assert "G2B_API_KEY=" in completed.stdout
+    assert "python3 scripts/" not in completed.stdout
+    assert "sk-" not in completed.stdout
+    assert completed.stderr == ""
+
+    env_file = tmp_path / ".env.prod"
+    env_file.write_text(completed.stdout, encoding="utf-8")
+    values = readiness._load_env_file(env_file)
+    assert values["OPENAI_API_KEY"] == ""
+    assert values["DECISIONDOC_API_KEYS"] == ""
+
+    result = readiness.check_completion_readiness(env={}, env_file=env_file)
+    assert result["ok"] is False
+    assert {item["status"] for item in result["milestones"]} == {"blocked"}
+
+
+def test_completion_readiness_prints_local_proof_plan_without_secret_values() -> None:
+    completed = subprocess.run(
+        [
+            "python3",
+            "scripts/check_completion_readiness.py",
+            "--print-proof-plan",
+        ],
+        cwd=readiness.REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "mkdir -p reports/completion-readiness" in completed.stdout
     assert "python3 scripts/check_completion_readiness.py --env-file .env.prod" in completed.stdout
     assert "python3 scripts/check_completion_proof_receipt.py --print-template M1" in completed.stdout
     assert "reports/completion-readiness/m2-g2b-stage-smoke-proof.json" in completed.stdout
     assert "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m6-deployment-smoke-proof.json" in completed.stdout
+    assert "your-openai-api-key" not in completed.stdout
     assert "sk-" not in completed.stdout
     assert completed.stderr == ""
 

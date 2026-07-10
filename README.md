@@ -183,10 +183,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,563개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,564개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2563
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2564
 python3 scripts/count_readme_metrics.py --field test_files      # → 209
 ```
 
@@ -209,6 +209,7 @@ mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest test
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
+python3 scripts/check_completion_readiness.py --print-proof-plan
 python3 scripts/check_completion_readiness.py
 python3 scripts/check_completion_readiness.py --env-file .env.prod
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
@@ -216,7 +217,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/check_completion_proof_receipt.py --print-template M1
 ```
 
-위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 입력값뿐 아니라 M1/M2/M6 no-secret proof receipt 생성·검증 명령 scaffold도 함께 출력합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 secret 없는 proof receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따른다.
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 secret 없는 proof receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
 | 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-09) |
 |----------|------|-----------|--------------------|
@@ -251,4 +252,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,563 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,564 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
