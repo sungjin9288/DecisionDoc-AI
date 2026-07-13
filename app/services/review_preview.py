@@ -124,6 +124,7 @@ def build_review_dashboard(
     manifest: dict[str, Any],
     bundle_previews: dict[str, dict[str, list[str]]],
     bundle_documents: dict[str, dict[str, str]] | None = None,
+    human_review_receipt_path: str | None = None,
 ) -> str:
     bundle_documents = bundle_documents or {}
     bundle_sections: list[str] = []
@@ -233,6 +234,11 @@ def build_review_dashboard(
     overall_passed = manifest.get("status") == "passed"
     overall_status = "자동 검증 통과" if overall_passed else "추가 검토 필요"
     overall_tone = "pass" if overall_passed else "pending"
+    receipt_link = (
+        f'<a class="file-link" href="{html.escape(human_review_receipt_path)}">사람 검토 receipt</a>'
+        if human_review_receipt_path
+        else ""
+    )
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -282,6 +288,7 @@ def build_review_dashboard(
     }}
     .page-header h1 {{ margin: 0 0 8px; font-size: 30px; line-height: 1.25; }}
     .page-header p {{ margin: 0; color: var(--muted); line-height: 1.55; }}
+    .header-actions {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }}
     .eyebrow {{
       margin-bottom: 7px !important;
       color: var(--accent-strong) !important;
@@ -439,7 +446,10 @@ def build_review_dashboard(
         <h1>완성 문서 검토</h1>
         <p>생성 시각 {html.escape(generated_at)}</p>
       </div>
-      <span class="status status-{overall_tone}">{overall_status}</span>
+      <div class="header-actions">
+        {receipt_link}
+        <span class="status status-{overall_tone}">{overall_status}</span>
+      </div>
     </header>
     <section class="summary" aria-label="검증 요약">
       <div class="metric"><span>Bundle</span><strong>{summary.get('bundle_count', 0)}</strong></div>

@@ -19,6 +19,33 @@ python3 scripts/build_finished_doc_review_samples.py \
 
 [`current/review.html`](./current/review.html)은 bundle별 request 근거, validator/lint/numeric coverage 상태, factual·human review 경계, 생성 Markdown 본문을 함께 보여주는 self-contained local review console이다. 2026-07-13 Playwright로 `1440x1000`과 `390x844` viewport를 확인했으며 mobile horizontal overflow가 없음을 검증했다.
 
+## Human Review Receipt
+
+[`current/human_review_receipt.json`](./current/human_review_receipt.json)은 factual grounding과 visual review의 사람 판단을 기록하는 companion receipt다. receipt는 `manifest.json`의 SHA256, schema version, 생성 시각에 결속된다. manifest가 receipt 자체를 artifact로 포함하면 순환 hash가 생기므로 receipt는 manifest artifact 목록 밖에 둔다.
+
+builder는 검토 입력이 없는 `pending` receipt만 생성한다. 기존 receipt에 reviewer, notes, review state가 하나라도 기록되어 있으면 evidence 재생성을 거부해 사람의 판단을 덮어쓰지 않는다.
+
+```bash
+# 현재 receipt와 manifest 결속 검증
+python3 scripts/manage_finished_doc_human_review.py validate \
+  docs/samples/bundle_quality_evidence/current/human_review_receipt.json
+
+# 한 bundle의 factual/visual review를 함께 기록
+python3 scripts/manage_finished_doc_human_review.py record \
+  docs/samples/bundle_quality_evidence/current/human_review_receipt.json \
+  --bundle proposal_kr \
+  --reviewer "reviewer-name" \
+  --factual-grounding passed \
+  --visual-review passed \
+  --notes "요청 근거와 렌더링 결과를 대조함"
+
+# receipt가 없는 별도 evidence package에 pending receipt 생성
+python3 scripts/manage_finished_doc_human_review.py init \
+  --evidence-dir path/to/evidence-package
+```
+
+모든 bundle의 두 review 항목이 `passed`일 때만 receipt status가 `completed`가 된다. `needs_revision`이 하나라도 있으면 전체 status도 `needs_revision`이다. 이 receipt는 문서 검토 기록이며 provider call, 배포, 제출, 계약 또는 다른 외부 action을 승인하지 않는다.
+
 ## Scope And Limitations
 
 - 모든 sample은 local mock provider가 만든 fictional fixture다.
@@ -26,5 +53,5 @@ python3 scripts/build_finished_doc_review_samples.py \
 - `numeric_grounding_review`는 단위가 붙은 출력 수치가 request에도 있는지 literal coverage를 검사한다. 일치하지 않으면 package status를 `review_required`로 낮춘다.
 - numeric coverage는 수치의 사실성, 최신성, 문맥상 올바른 사용을 증명하지 않는다.
 - review console에 본문과 상태가 노출되더라도 사람의 검토·승인 기록을 대신하지 않는다.
-- factual grounding과 human visual review는 이 package로 검증하지 않았으며 manifest에서도 `false`다.
+- 현재 tracked receipt는 `pending`이며 factual grounding과 human visual review를 완료했다고 주장하지 않는다.
 - provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume은 실행하지 않는다.

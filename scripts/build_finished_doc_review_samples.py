@@ -24,6 +24,11 @@ if str(REPO_ROOT) not in sys.path:
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.bundle_catalog.registry import get_bundle_spec  # noqa: E402
+from app.eval.human_review_receipt import (  # noqa: E402
+    build_pending_human_review_receipt,
+    has_recorded_human_input,
+    validate_human_review_receipt,
+)
 from app.eval.lints import lint_docs  # noqa: E402
 from app.eval.numeric_grounding import review_numeric_grounding  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -103,6 +108,25 @@ def _reset_generated_dir(path: Path) -> None:
             raise RuntimeError(f"refusing to replace an unrecognized output directory: {path}") from exc
         if not isinstance(manifest.get("bundles"), dict):
             raise RuntimeError(f"refusing to replace an unrecognized output directory: {path}")
+        receipt_path = path / "human_review_receipt.json"
+        if receipt_path.exists():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"refusing to replace an invalid review receipt: {receipt_path}") from exc
+            if not isinstance(receipt, dict):
+                raise RuntimeError(f"refusing to replace an invalid review receipt: {receipt_path}")
+            validation = validate_human_review_receipt(
+                receipt,
+                manifest,
+                manifest_sha256=_sha256(manifest_path),
+            )
+            if not validation["ok"]:
+                raise RuntimeError(f"refusing to replace an invalid review receipt: {receipt_path}")
+            if has_recorded_human_input(receipt):
+                raise RuntimeError(
+                    f"refusing to replace review evidence with recorded human input: {path}"
+                )
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
 
@@ -462,13 +486,27 @@ def run(
             manifest=manifest,
             bundle_previews=bundle_previews,
             bundle_documents=bundle_documents,
+            human_review_receipt_path="human_review_receipt.json",
         ),
     )
     manifest["artifacts"] = {
         "quality_report": _file_evidence(quality_report_path, relative_to=run_dir),
         "review_dashboard": _file_evidence(review_dashboard_path, relative_to=run_dir),
     }
-    _write_json(run_dir / "manifest.json", manifest)
+    manifest_path = run_dir / "manifest.json"
+    _write_json(manifest_path, manifest)
+    human_review_receipt = build_pending_human_review_receipt(
+        manifest,
+        manifest_sha256=_sha256(manifest_path),
+    )
+    receipt_validation = validate_human_review_receipt(
+        human_review_receipt,
+        manifest,
+        manifest_sha256=_sha256(manifest_path),
+    )
+    if not receipt_validation["ok"]:
+        raise RuntimeError(f"generated human review receipt is invalid: {receipt_validation['errors']}")
+    _write_json(run_dir / "human_review_receipt.json", human_review_receipt)
 
     latest_dir = output_root / "latest"
     if mirror_latest and run_dir != latest_dir:

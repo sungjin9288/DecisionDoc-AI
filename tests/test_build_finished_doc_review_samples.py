@@ -3,10 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from app.eval.human_review_receipt import (
+    record_bundle_review,
+    validate_human_review_receipt,
+)
 from scripts.build_finished_doc_review_samples import (
     EVIDENCE_SCHEMA_VERSION,
     EXCLUDED_EXTERNAL_ACTIONS,
@@ -43,6 +48,22 @@ def _assert_evidence_files(root: Path, manifest: dict) -> None:
         artifact_path = root / artifact["path"]
         assert artifact_path.stat().st_size == artifact["size_bytes"]
         assert _sha256(artifact_path) == artifact["sha256"]
+
+
+def _assert_pending_human_review_receipt(root: Path, manifest: dict) -> dict:
+    receipt_path = root / "human_review_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    result = validate_human_review_receipt(
+        receipt,
+        manifest,
+        manifest_sha256=_sha256(root / "manifest.json"),
+    )
+    assert result["ok"] is True
+    assert result["status"] == "pending"
+    assert result["completed"] is False
+    assert result["reviewed_count"] == 0
+    assert all(value is False for value in receipt["external_actions_authorized"].values())
+    return receipt
 
 
 def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monkeypatch) -> None:
@@ -86,6 +107,7 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
         assert bundle["quality"]["factual_grounding_verified"] is False
         assert bundle["quality"]["human_visual_review_completed"] is False
     _assert_evidence_files(run_dir, manifest)
+    _assert_pending_human_review_receipt(run_dir, manifest)
     quality_report = (run_dir / "quality_report.md").read_text(encoding="utf-8")
     assert "Numeric coverage does not prove factual truth" in quality_report
     assert "Factual grounding and human visual review are not marked complete" in quality_report
@@ -93,6 +115,7 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
     assert "완성 문서 검토" in review_dashboard
     assert "수치 근거 확인" in review_dashboard
     assert "사람의 시각 검토" in review_dashboard
+    assert 'href="human_review_receipt.json"' in review_dashboard
     assert "# 사업 이해" in review_dashboard
     assert "# 사업수행계획서" in review_dashboard
     assert not (tmp_path / "latest").exists()
@@ -114,6 +137,7 @@ def test_committed_bundle_quality_evidence_matches_manifest() -> None:
     assert manifest["summary"]["unsupported_numeric_claim_count"] == 0
     assert all(value is False for value in manifest["external_actions"].values())
     _assert_evidence_files(COMMITTED_EVIDENCE_DIR, manifest)
+    _assert_pending_human_review_receipt(COMMITTED_EVIDENCE_DIR, manifest)
 
 
 def test_review_sample_builder_preserves_unrecognized_output_directory(tmp_path: Path) -> None:
@@ -132,3 +156,39 @@ def test_review_sample_builder_preserves_unrecognized_output_directory(tmp_path:
         )
 
     assert existing_file.read_text(encoding="utf-8") == "user-owned\n"
+
+
+def test_review_sample_builder_preserves_recorded_human_input(tmp_path: Path) -> None:
+    run_dir = run(
+        tmp_path,
+        ["proposal_kr"],
+        [],
+        run_name="current",
+        mirror_latest=False,
+    )
+    receipt_path = run_dir / "human_review_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    recorded_receipt = record_bundle_review(
+        receipt,
+        bundle_type="proposal_kr",
+        reviewer="Local reviewer",
+        factual_grounding="passed",
+        visual_review="passed",
+        notes="Reviewed against local fictional evidence.",
+        reviewed_at=datetime.now(timezone.utc).isoformat(),
+    )
+    receipt_path.write_text(
+        json.dumps(recorded_receipt, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="recorded human input"):
+        run(
+            tmp_path,
+            ["proposal_kr"],
+            [],
+            run_name="current",
+            mirror_latest=False,
+        )
+
+    assert json.loads(receipt_path.read_text(encoding="utf-8")) == recorded_receipt
