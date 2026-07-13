@@ -22,11 +22,16 @@ from app.eval.human_review_receipt import (  # noqa: E402
     record_bundle_review,
     validate_human_review_receipt,
 )
+from app.eval.finished_document_packet import (  # noqa: E402
+    build_finished_document_review_packet,
+    verify_finished_document_review_packet,
+)
 from app.services.human_review_preview import build_human_review_summary  # noqa: E402
 
 
 RECEIPT_FILENAME = "human_review_receipt.json"
 SUMMARY_FILENAME = "human_review.html"
+PACKET_FILENAME = "finished_document_review_packet.zip"
 MANIFEST_FILENAME = "manifest.json"
 
 
@@ -45,17 +50,21 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _write_text_atomic(path: Path, content: str) -> None:
+def _write_bytes_atomic(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     try:
-        with temporary_path.open("w", encoding="utf-8") as handle:
+        with temporary_path.open("wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    _write_bytes_atomic(path, content.encode("utf-8"))
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -227,6 +236,74 @@ def _render_summary(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _package_review(args: argparse.Namespace) -> dict[str, Any]:
+    receipt_path = args.receipt.resolve()
+    receipt, result = _validation_for_path(receipt_path)
+    if not result["ok"]:
+        raise ValueError(f"receipt is invalid: {result['errors']}")
+    if not result["completed"]:
+        raise ValueError("review packet requires every bundle review to be accepted")
+
+    requested_output = args.output or Path(PACKET_FILENAME)
+    output_path = (
+        requested_output
+        if requested_output.is_absolute()
+        else receipt_path.parent / requested_output
+    ).resolve()
+    if output_path.suffix.lower() != ".zip":
+        raise ValueError("review packet output must use a .zip extension")
+
+    manifest_path = _manifest_for_receipt(receipt_path, receipt)
+    manifest = _read_json(manifest_path)
+    summary_path = _write_summary(
+        receipt_path=receipt_path,
+        receipt=receipt,
+        manifest=manifest,
+        validation=result,
+    )
+    packet_content, packet_manifest = build_finished_document_review_packet(
+        evidence_dir=receipt_path.parent,
+        manifest=manifest,
+        receipt=receipt,
+    )
+    packet_validation = verify_finished_document_review_packet(packet_content)
+    if not packet_validation["ok"]:
+        raise ValueError(f"generated review packet is invalid: {packet_validation['errors']}")
+
+    _write_bytes_atomic(output_path, packet_content)
+    return {
+        "ok": True,
+        "command": "package",
+        "receipt_path": str(receipt_path),
+        "summary_path": str(summary_path),
+        "packet_path": str(output_path),
+        "packet_sha256": hashlib.sha256(packet_content).hexdigest(),
+        "entry_count": packet_validation["entry_count"],
+        "artifact_count": packet_manifest["summary"]["artifact_count"],
+        "status": packet_manifest["status"],
+    }
+
+
+def _verify_packet(args: argparse.Namespace) -> dict[str, Any]:
+    packet_path = args.packet.resolve()
+    content = packet_path.read_bytes()
+    result = verify_finished_document_review_packet(content)
+    packet_manifest = result.get("packet_manifest")
+    packet_manifest = packet_manifest if isinstance(packet_manifest, dict) else {}
+    summary = packet_manifest.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    return {
+        "command": "verify-packet",
+        "packet_path": str(packet_path),
+        "packet_sha256": hashlib.sha256(content).hexdigest(),
+        "ok": result["ok"],
+        "status": packet_manifest.get("status"),
+        "entry_count": result["entry_count"],
+        "artifact_count": summary.get("artifact_count"),
+        "errors": result["errors"],
+    }
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -262,6 +339,21 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("receipt", type=Path)
     render_parser.add_argument("--output", type=Path)
     render_parser.set_defaults(handler=_render_summary)
+
+    package_parser = subparsers.add_parser(
+        "package",
+        help="Build a verified ZIP from a completed review receipt.",
+    )
+    package_parser.add_argument("receipt", type=Path)
+    package_parser.add_argument("--output", type=Path)
+    package_parser.set_defaults(handler=_package_review)
+
+    verify_packet_parser = subparsers.add_parser(
+        "verify-packet",
+        help="Verify a finished-document review packet ZIP.",
+    )
+    verify_packet_parser.add_argument("packet", type=Path)
+    verify_packet_parser.set_defaults(handler=_verify_packet)
     return parser
 
 

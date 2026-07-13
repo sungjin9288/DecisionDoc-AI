@@ -29,6 +29,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
 | 공공조달 Go/No-Go | G2B 연동 기반 procurement copilot 흐름 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 decision package, handoff, sign-off, export boundary, CLI contract 검증 경로 |
+| 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 
 ---
 
@@ -190,7 +191,7 @@ python3 scripts/build_finished_doc_review_samples.py \
 python3 -m app.eval --out-dir reports/eval/v1
 ```
 
-2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)이며, [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)에서 request 근거, 검증 상태, 생성 Markdown 본문을 함께 확인할 수 있습니다. [human review summary](./docs/samples/bundle_quality_evidence/current/human_review.html)는 bundle별 사람 검토 상태와 외부 action 경계를 보여주며, 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)는 현재 manifest SHA256에 결속된 `pending` 상태입니다. 아직 사람 검토 완료를 주장하지 않습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. dashboard 노출도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
+2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)이며, [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)에서 request 근거, 검증 상태, 생성 Markdown 본문을 함께 확인할 수 있습니다. [human review summary](./docs/samples/bundle_quality_evidence/current/human_review.html)는 bundle별 사람 검토 상태와 외부 action 경계를 보여주며, 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)는 현재 manifest SHA256에 결속된 `pending` 상태입니다. 아직 사람 검토 완료를 주장하지 않으므로 final review packet도 생성하지 않았습니다. Completed receipt에서는 manifest-declared artifact와 embedded SHA256 index만 담은 deterministic ZIP을 만들고 다시 검증할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. dashboard 노출도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
 
 ```bash
 pytest tests/                 # 전체
@@ -198,11 +199,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,587개**, **214개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,591개**, **215개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2587
-python3 scripts/count_readme_metrics.py --field test_files      # → 214
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2591
+python3 scripts/count_readme_metrics.py --field test_files      # → 215
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -256,6 +257,7 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
+- Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
 ---
 
@@ -268,4 +270,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,587 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,591 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

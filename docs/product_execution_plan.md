@@ -121,6 +121,7 @@ Current local evidence slice:
 - `review.html` shows generated documents and automatic validation evidence.
 - `human_review.html` shows the manifest-bound receipt state, reviewer record, notes, and external-action boundary.
 - `manage_finished_doc_human_review.py` keeps receipt validation and summary rendering available without provider or AWS execution.
+- A completed receipt can produce a deterministic review packet containing only manifest-declared artifacts and an embedded SHA256 index; pending review cannot be packaged as final.
 
 ### Verification
 

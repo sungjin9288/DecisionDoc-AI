@@ -50,6 +50,22 @@ python3 scripts/manage_finished_doc_human_review.py render \
 
 모든 bundle의 두 review 항목이 `passed`일 때만 receipt status가 `completed`가 된다. `needs_revision`이 하나라도 있으면 전체 status도 `needs_revision`이다. 이 receipt는 문서 검토 기록이며 provider call, 배포, 제출, 계약 또는 다른 외부 action을 승인하지 않는다.
 
+## Completed Review Packet
+
+모든 bundle review가 완료된 evidence directory는 검증 가능한 ZIP packet으로 내보낼 수 있다. `package`는 manifest가 선언한 파일만 포함하고 `packet_manifest.json`에 각 entry의 SHA256과 byte size를 기록한다. Pending 또는 변조된 receipt, manifest hash 불일치, evidence directory 밖의 경로는 packet 생성 전에 거부한다.
+
+```bash
+# completed receipt에서만 동작
+python3 scripts/manage_finished_doc_human_review.py package \
+  path/to/completed-evidence/human_review_receipt.json
+
+# 전달받은 packet의 파일 목록과 SHA256 재검증
+python3 scripts/manage_finished_doc_human_review.py verify-packet \
+  path/to/completed-evidence/finished_document_review_packet.zip
+```
+
+Packet에는 `manifest.json`, receipt, reviewer summary, manifest-declared response snapshot, Markdown, export, preview, quality artifact와 embedded packet manifest만 들어간다. ZIP 생성은 외부 action을 승인하거나 실행하지 않는다.
+
 ## Scope And Limitations
 
 - 모든 sample은 local mock provider가 만든 fictional fixture다.
@@ -59,4 +75,5 @@ python3 scripts/manage_finished_doc_human_review.py render \
 - review console에 본문과 상태가 노출되더라도 사람의 검토·승인 기록을 대신하지 않는다.
 - 현재 tracked receipt는 `pending`이며 factual grounding과 human visual review를 완료했다고 주장하지 않는다.
 - `human_review.html`은 receipt의 현재 내용을 표시하는 파생 화면이며 독립적인 승인 증적이 아니다.
+- 현재 tracked sample에는 completed receipt가 없으므로 final review packet도 커밋하지 않는다.
 - provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume은 실행하지 않는다.

@@ -72,6 +72,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 tracked review dashboard에서 request 근거, validator/lint/numeric 상태, factual·human review 미완료 경계, 생성 Markdown 본문을 한 화면에 확인하도록 보강했다.
   - 2026-07-13 tracked manifest SHA256에 결속된 human review receipt와 `init/record/validate` CLI를 추가했다. 모든 bundle의 factual·visual review가 통과해야만 완료되며 외부 action 승인은 계속 `false`로 유지된다.
   - 2026-07-13 receipt 상태, reviewer, notes, manifest 결속, 외부 action 경계를 한 화면에서 확인하는 `human_review.html` companion view와 CLI `render` 경로를 추가했다. JSON receipt는 계속 증적 원본으로 유지한다.
+  - 2026-07-13 completed receipt만 허용하는 finished-document review packet과 `package/verify-packet` CLI를 추가했다. Manifest-declared artifact만 포함하고 embedded SHA256 index, path boundary, tamper detection을 검증한다.
   - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
 - 남은 작업:
   - M1 live provider chain을 승인된 키로 검증

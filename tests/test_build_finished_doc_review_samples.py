@@ -17,6 +17,7 @@ from scripts.build_finished_doc_review_samples import (
     EXCLUDED_EXTERNAL_ACTIONS,
     run,
 )
+from scripts.manage_finished_doc_human_review import main as review_cli_main
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +73,11 @@ def _assert_pending_human_review_receipt(root: Path, manifest: dict) -> dict:
     return receipt
 
 
-def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monkeypatch) -> None:
+def test_review_sample_builder_writes_mock_quality_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "openai")
     monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "gemini")
     monkeypatch.setenv("DECISIONDOC_API_KEY", "existing-local-value")
@@ -128,6 +133,43 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
     assert os.environ["DECISIONDOC_PROVIDER"] == "openai"
     assert os.environ["DECISIONDOC_PROVIDER_GENERATION"] == "gemini"
     assert os.environ["DECISIONDOC_API_KEY"] == "existing-local-value"
+
+    receipt_path = run_dir / "human_review_receipt.json"
+    packet_path = run_dir / "finished_document_review_packet.zip"
+    assert review_cli_main(["package", str(receipt_path)]) == 1
+    pending_result = json.loads(capsys.readouterr().out)
+    assert "requires every bundle review to be accepted" in pending_result["error"]
+    assert not packet_path.exists()
+
+    for bundle_type in ("proposal_kr", "performance_plan_kr"):
+        assert review_cli_main(
+            [
+                "record",
+                str(receipt_path),
+                "--bundle",
+                bundle_type,
+                "--reviewer",
+                "Local reviewer",
+                "--factual-grounding",
+                "passed",
+                "--visual-review",
+                "passed",
+                "--notes",
+                "Reviewed against local fictional evidence.",
+            ]
+        ) == 0
+        capsys.readouterr()
+
+    assert review_cli_main(["package", str(receipt_path)]) == 0
+    package_result = json.loads(capsys.readouterr().out)
+    assert package_result["status"] == "completed"
+    assert package_result["entry_count"] == package_result["artifact_count"] + 1
+    assert packet_path.is_file()
+
+    assert review_cli_main(["verify-packet", str(packet_path)]) == 0
+    packet_validation = json.loads(capsys.readouterr().out)
+    assert packet_validation["ok"] is True
+    assert packet_validation["packet_sha256"] == package_result["packet_sha256"]
 
 
 def test_committed_bundle_quality_evidence_matches_manifest() -> None:
