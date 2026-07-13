@@ -176,6 +176,7 @@ Expected artifacts:
 - `audit_manifest.json`
 - `export_manifest.json`
 - `pending_signoff.json`
+- `procurement_review.html`
 - `proposal_handoff.json`
 - `reviewer_handoff.json`
 - `signoff_summary.md`
@@ -183,17 +184,18 @@ Expected artifacts:
 
 Recommended inspection order:
 
-1. `decision_summary.md`
-2. `evidence_summary.md`
-3. `bid_readiness_checklist.md`
-4. `reviewer_handoff.json`
-5. `proposal_handoff.json`
-6. `pending_signoff.json`
-7. `signoff_summary.md`
-8. `audit_manifest.json`
-9. `export_manifest.json`
-10. `demo_run_result.json` when present
-11. `demo_evidence_receipt.md` when present
+1. `procurement_review.html`
+2. `decision_summary.md`
+3. `evidence_summary.md`
+4. `bid_readiness_checklist.md`
+5. `reviewer_handoff.json`
+6. `proposal_handoff.json`
+7. `pending_signoff.json`
+8. `signoff_summary.md`
+9. `audit_manifest.json`
+10. `export_manifest.json`
+11. `demo_run_result.json` when present
+12. `demo_evidence_receipt.md` when present
 
 `demo_run_result.json` includes SHA256 and byte-size inventory entries for the generated package artifacts. This inventory covers the package files listed above, not `demo_run_result.json` itself, because the evidence file would otherwise need to checksum its own changing content.
 `demo_evidence_receipt.md` summarizes the final local evidence state for human review and repeats the non-authorization boundary.
@@ -204,6 +206,7 @@ The local checker also validates the item-level shapes inside `hard_filters`, `s
 `proposal_handoff.json` records package-to-proposal handoff metadata for drafting preparation only; it does not authorize bid submission, legal approval, or contractual commitment. The local checker also verifies allowed next steps and keeps `blocked_until` aligned with the required inputs.
 `pending_signoff.json` stays as a pending review record only. The local checker validates its field order, pending status, reviewer, review-only scope, and false operational approval.
 `signoff_summary.md` gives a reviewer-readable sign-off summary for the pending review state and repeats that operational approval is false.
+`procurement_review.html` is the script-free one-screen review workspace. It projects the same validated package and remains one of the 12 package artifacts; it is not a separate approval surface.
 `audit_manifest.json` is the audit packet index. It lists the review package artifacts, groups decision, evidence, validation, handoff, and sign-off files, and repeats the excluded external actions before `export_manifest.json` is inspected. The local checker validates those grouped artifact sections as fixed lists so packet structure drift is caught with the other local evidence checks.
 `export_manifest.json` keeps a fixed field order and repeats the included artifacts and excluded actions that the local checker validates before handoff.
 
@@ -243,6 +246,15 @@ python3 scripts/check_procurement_decision_package_artifacts.py /tmp/decisiondoc
 
 The checker returns JSON on success and failure. Failures exit non-zero with `status: "failed"`, `error_type`, and `error`, so automation does not need to parse Python tracebacks.
 The seeded demo runner already performs this check automatically and rewrites `demo_run_result.json` with the final self-check result. Use the standalone checker when inspecting an existing output directory; if `demo_run_result.json` is present, the checker also verifies that evidence file, compares the recorded artifact inventory against the current package files, and checks the reviewer-readable receipt markers.
+
+Create a portable review packet after the directory check passes, then verify the saved ZIP independently:
+
+```bash
+python3 scripts/manage_procurement_decision_review_packet.py create /tmp/decisiondoc-procurement-package-demo-output --packet /tmp/decisiondoc-procurement-review.zip
+python3 scripts/manage_procurement_decision_review_packet.py verify /tmp/decisiondoc-procurement-review.zip
+```
+
+The output is a deterministic ZIP containing the 12 package artifacts plus embedded `packet_manifest.json`. It remains `review_ready`, preserves `operational_approval: false`, and does not turn pending sign-off into final approval. Verification checks exact entry order, path boundaries, SHA256 and size fingerprints, excluded actions, and the package's semantic artifact contract, so a fingerprint-adjusted but internally inconsistent archive is still rejected.
 
 Run the local evidence gate for a reviewer-facing summary:
 

@@ -63,13 +63,13 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (37) — 도메인 오케스트레이션
+Services (38) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
   ├─ export 계열: docx / pptx / pdf / hwp / excel (5종)
   ├─ 조달 계열: g2b_collector → procurement_decision_service
-  │     → procurement_decision_package/ (13-모듈 패키지, 2026-07-02 분할)
+  │     → procurement_decision_package/ (15-모듈 패키지, 2026-07-02 분할 후 확장)
   └─ 품질 계열: report_quality_learning / prompt_optimizer / validator
   │
   ├────────────────┬─────────────────────┐

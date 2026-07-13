@@ -19,6 +19,7 @@ from app.services.procurement_decision_package_service import (
     GATE_NAME,
     LOCAL_DEMO_CLI_CONTRACT_MANIFEST_PATH,
     LOCAL_DEMO_SCENARIO_ID,
+    PACKET_SCHEMA_VERSION,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
     SMOKE_CHECK_NAME,
     SMOKE_NAME,
@@ -151,6 +152,7 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     smoke_data = tmp_path / SMOKE_DATA_DIR_NAME
     smoke_out = tmp_path / SMOKE_OUTPUT_DIR_NAME
     manifest_validation_result_path = tmp_path / CUSTOM_MANIFEST_VALIDATION_RESULT_NAME
+    packet_path = tmp_path / "procurement-review-packet.zip"
 
     validator_result = _run_success_case(
         "sample_validator",
@@ -181,6 +183,24 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     assert artifact_check_result["demo_result_checked"] is False
     assert artifact_check_result["artifact_inventory_checked"] is False
     assert artifact_check_result["demo_receipt_checked"] is False
+
+    packet_result = _run_success_case(
+        "packet_manager",
+        "create",
+        str(sample_out),
+        "--packet",
+        str(packet_path),
+        success_contract=success_contract,
+        contracts=contracts,
+    )
+    assert packet_result["operation"] == "create"
+    assert packet_result["source_dir"] == str(sample_out)
+    assert packet_result["packet_path"] == str(packet_path)
+    assert packet_result["schema_version"] == PACKET_SCHEMA_VERSION
+    assert packet_result["artifact_count"] == len(builder_result["artifacts"])
+    assert packet_result["entry_count"] == len(builder_result["artifacts"]) + 1
+    assert packet_result["operational_approval"] is False
+    assert packet_result["packet_verified"] is True
 
     demo_result = _run_success_case(
         "demo_runner",

@@ -1,18 +1,19 @@
 {
   "schema_purpose": "procurement_decision_package_cli_contract_manifest",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "status": "passed",
   "manifest_path": "docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json",
-  "manifest_sha256": "714f731d7628fe2bbb5b410f7189506a0eff3db055013446c64fc0de69f44a1d",
-  "manifest_size_bytes": 8415,
+  "manifest_sha256": "0ef62a34a07dd18eace14b4cb367df879a066320e2019872897f7918a703244b",
+  "manifest_size_bytes": 9099,
   "workflow": "procurement_decision_package_local_demo",
   "contract_status": "local_only",
-  "contract_count": 10,
-  "script_count": 10,
+  "contract_count": 11,
+  "script_count": 11,
   "case_names": [
     "sample_validator",
     "sample_builder",
     "artifact_checker",
+    "packet_manager",
     "demo_runner",
     "project_export",
     "evidence_gate",
@@ -25,6 +26,7 @@
     "scripts/validate_procurement_decision_package_sample.py",
     "scripts/build_procurement_decision_package_sample.py",
     "scripts/check_procurement_decision_package_artifacts.py",
+    "scripts/manage_procurement_decision_review_packet.py",
     "scripts/run_procurement_decision_package_demo.py",
     "scripts/export_procurement_decision_package.py",
     "scripts/gate_procurement_decision_package_demo.py",
@@ -72,6 +74,22 @@
       "demo_result_checked",
       "artifact_inventory_checked",
       "demo_receipt_checked"
+    ],
+    "packet_manager": [
+      "status",
+      "operation",
+      "source_dir",
+      "packet_path",
+      "packet_sha256",
+      "packet_size_bytes",
+      "schema_version",
+      "package_id",
+      "recommendation",
+      "artifact_count",
+      "entry_count",
+      "authorization_boundary",
+      "operational_approval",
+      "packet_verified"
     ],
     "demo_runner": [
       "status",
@@ -230,6 +248,14 @@
       "error_type",
       "error"
     ],
+    "packet_manager": [
+      "status",
+      "operation",
+      "source_dir",
+      "packet_path",
+      "error_type",
+      "error"
+    ],
     "demo_runner": [
       "schema_purpose",
       "status",
@@ -297,5 +323,5 @@
       "error"
     ]
   },
-  "cli_contract_fingerprint": "fb588f4ba36b997d0a41c95a735d0fce3918f59ed5007aebfdcc52be674dcf2b"
+  "cli_contract_fingerprint": "3d35b158909764b26edfff7316d06d74a15b34fb5a1c8daab36662121cbc48b9"
 }

@@ -198,14 +198,16 @@ Focus on a narrow, demonstrable workflow:
 7. Validate completed review.
 8. Export the final package.
 
+### Current reviewer foundation
+
+- `procurement_review.html` provides one script-free view for package, evidence, gaps, and sign-off state.
+- The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.
+- Packet status stays `review_ready`; `operational_approval` remains false and independent verification rejects path, fingerprint, membership, and semantic drift.
+- Validation summaries and authorization boundaries remain visible to non-engineering reviewers.
+
 ### Next
 
-Productize the reviewer experience:
-
-- one view for package, evidence, gaps, and sign-off state,
-- clear distinction between review acceptance and operational approval,
-- exportable audit packet,
-- validation summary visible to non-engineering reviewers.
+Connect this local reviewer foundation to explicitly approved external evaluation lanes without weakening the local evidence contract.
 
 ### Later
 

@@ -1,6 +1,6 @@
 {
   "schema_purpose": "procurement_decision_package_cli_contract_manifest",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "workflow": "procurement_decision_package_local_demo",
   "contract_status": "local_only",
   "stdout_json_contract": {
@@ -92,6 +92,34 @@
       "failure_required_fields": [
         "status",
         "output_dir",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "packet_manager",
+      "script": "scripts/manage_procurement_decision_review_packet.py",
+      "success_required_fields": [
+        "status",
+        "operation",
+        "source_dir",
+        "packet_path",
+        "packet_sha256",
+        "packet_size_bytes",
+        "schema_version",
+        "package_id",
+        "recommendation",
+        "artifact_count",
+        "entry_count",
+        "authorization_boundary",
+        "operational_approval",
+        "packet_verified"
+      ],
+      "failure_required_fields": [
+        "status",
+        "operation",
+        "source_dir",
+        "packet_path",
         "error_type",
         "error"
       ]

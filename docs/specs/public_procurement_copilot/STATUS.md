@@ -11488,3 +11488,15 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - Playwright desktop verification at 1440x1000 reported body width 1440, script count 0, 11 sibling artifact links, one current artifact, and no final console error; mobile verification at 390x844 reported body width 390, single-column status/artifact layout, and table overflow contained inside three table wrappers
   - full relevant gate passed: `python3 -m py_compile app/services/procurement_decision_package/*.py app/services/procurement_decision_package_service.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_builder.py tests/test_check_procurement_decision_package_artifacts.py tests/test_procurement_decision_package_docs_contract.py` followed by the 16-file procurement/README pytest gate: 299 passed in 11.17s
   - OpenAI, Gemini, and Claude paid provider tests were deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed
+
+- local procurement portable review packet completion
+  - added `review_packet.py` and `manage_procurement_decision_review_packet.py create/verify` to package the validated 12-artifact review directory as a deterministic ZIP
+  - embedded `packet_manifest.json` records fixed artifact order, SHA256 and byte-size fingerprints, package identity, recommendation, excluded actions, `review_ready`, and `operational_approval: false`
+  - verifier rejects source symlinks, unexpected or reordered entries, oversized content, path-boundary violations, fingerprint drift, and semantic drift even when a changed artifact's manifest fingerprint is recomputed
+  - promoted the packet manager into CLI stdout contract version `1.1.0` and refreshed the tracked manifest validation and recheck receipts; success and handled failure remain JSON-only without traceback parsing
+  - manual local proof generated the same ZIP SHA256 twice (`e71c2978c7b3b8033579f937fa32a485d252667c4a9cc7cf6c05bbeab893bd6c`) and independently verified 12 artifacts plus one embedded manifest with `CONDITIONAL_GO`, explicit authorization boundary, and false operational approval
+  - `python3 -m py_compile` passed for the procurement package, packet CLI, and changed tests; focused `ruff --select=E,F,W --ignore=E501` reported `All checks passed!`
+  - focused packet and CLI contract gate passed: 71 passed in 4.80s
+  - full relevant 17-file procurement/README gate passed: 304 passed in 11.63s
+  - `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 top-level service files, 2,604 test functions, and 217 test files
+  - OpenAI, Gemini, and Claude paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed

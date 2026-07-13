@@ -131,6 +131,7 @@ def test_local_evidence_clis_return_json_failures_no_tracebacks(tmp_path: Path) 
     missing_sample_input = tmp_path / MISSING_SAMPLE_INPUT_NAME
     sample_out = tmp_path / SAMPLE_OUTPUT_DIR_NAME
     missing_artifacts = tmp_path / MISSING_ARTIFACTS_DIR_NAME
+    missing_packet_path = tmp_path / "missing-packet.zip"
     demo_out = tmp_path / DEMO_OUTPUT_DIR_NAME
     export_data_dir = tmp_path / EXPORT_DATA_DIR_NAME
     export_out = tmp_path / EXPORT_OUTPUT_DIR_NAME
@@ -156,6 +157,13 @@ def test_local_evidence_clis_return_json_failures_no_tracebacks(tmp_path: Path) 
         _cli_case(
             "artifact_checker",
             str(missing_artifacts),
+        ),
+        _cli_case(
+            "packet_manager",
+            "create",
+            str(missing_artifacts),
+            "--packet",
+            str(missing_packet_path),
         ),
         _cli_case(
             "demo_runner",

@@ -16,6 +16,7 @@ from app.services.procurement_decision_package_service import (
     DECISION_PACKAGE_NAME,
     EXPORT_MANIFEST_NAME,
     LOCAL_DEMO_CLI_CONTRACT_MANIFEST_PATH,
+    PACKET_MANIFEST_NAME,
     PENDING_SIGNOFF_NAME,
     PROPOSAL_HANDOFF_NAME,
     REVIEWER_HANDOFF_NAME,
@@ -45,6 +46,15 @@ SAMPLE_README_LOCAL_EVIDENCE_COMMANDS = [
         "python3 scripts/build_procurement_decision_package_sample.py "
         "--out-dir /tmp/decisiondoc-procurement-demo"
     ),
+    (
+        "python3 scripts/manage_procurement_decision_review_packet.py create "
+        "/tmp/decisiondoc-procurement-demo --packet "
+        "/tmp/decisiondoc-procurement-review.zip"
+    ),
+    (
+        "python3 scripts/manage_procurement_decision_review_packet.py verify "
+        "/tmp/decisiondoc-procurement-review.zip"
+    ),
     "python3 scripts/validate_procurement_decision_package_sample.py",
     (
         "python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py "
@@ -59,6 +69,7 @@ SAMPLE_README_FOCUSED_REGRESSION_TESTS = [
     "tests/test_procurement_decision_package_sample.py",
     "tests/test_procurement_decision_package_builder.py",
     "tests/test_procurement_decision_package_review_workspace.py",
+    "tests/test_procurement_decision_package_review_packet.py",
     "tests/test_procurement_decision_package_cli_contract_manifest.py",
     "tests/test_check_procurement_decision_package_cli_contract_manifest_result.py",
     "tests/test_procurement_decision_package_docs_contract.py",
@@ -128,6 +139,11 @@ FIELD_CONTRACT_MARKERS = [
     "audit packet index",
     EXPORT_MANIFEST_NAME,
     "fixed field order",
+    Path(CLI_CONTRACT_MANIFEST_CASE_SCRIPTS["packet_manager"]).name,
+    PACKET_MANIFEST_NAME,
+    "deterministic ZIP",
+    "review_ready",
+    "operational_approval",
 ]
 LOCAL_MACHINE_PATH_FRAGMENTS = [
     "/Users/",

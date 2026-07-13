@@ -318,7 +318,7 @@ SMOKE_CHECK_RESULT_NAME = "demo_smoke_check_result.json"
 CLI_CONTRACT_MANIFEST_SCHEMA_PURPOSE = (
     "procurement_decision_package_cli_contract_manifest"
 )
-CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.0.0"
+CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.1.0"
 CLI_CONTRACT_MANIFEST_WORKFLOW = "procurement_decision_package_local_demo"
 CLI_CONTRACT_MANIFEST_CONTRACT_STATUS = "local_only"
 CLI_CONTRACT_MANIFEST_IDENTITY_VALUES = (
@@ -450,6 +450,7 @@ CLI_CONTRACT_MANIFEST_CASE_ORDER = (
     "sample_validator",
     "sample_builder",
     "artifact_checker",
+    "packet_manager",
     "demo_runner",
     "project_export",
     "evidence_gate",
@@ -463,6 +464,7 @@ CLI_CONTRACT_MANIFEST_CASE_SCRIPTS = {
     "sample_validator": "scripts/validate_procurement_decision_package_sample.py",
     "sample_builder": "scripts/build_procurement_decision_package_sample.py",
     "artifact_checker": "scripts/check_procurement_decision_package_artifacts.py",
+    "packet_manager": "scripts/manage_procurement_decision_review_packet.py",
     "demo_runner": "scripts/run_procurement_decision_package_demo.py",
     "project_export": "scripts/export_procurement_decision_package.py",
     "evidence_gate": "scripts/gate_procurement_decision_package_demo.py",
@@ -503,6 +505,22 @@ CLI_CONTRACT_MANIFEST_SUCCESS_FIELDS_BY_CASE = {
         "authorization_boundary",
         "operational_approval",
         *DEMO_EVIDENCE_CHECK_FIELDS,
+    ),
+    "packet_manager": (
+        "status",
+        "operation",
+        "source_dir",
+        "packet_path",
+        "packet_sha256",
+        "packet_size_bytes",
+        "schema_version",
+        "package_id",
+        "recommendation",
+        "artifact_count",
+        "entry_count",
+        "authorization_boundary",
+        "operational_approval",
+        "packet_verified",
     ),
     "demo_runner": (
         "status",
@@ -616,6 +634,14 @@ CLI_CONTRACT_MANIFEST_FAILURE_FIELDS_BY_CASE = {
         "error",
     ),
     "artifact_checker": ("status", "output_dir", "error_type", "error"),
+    "packet_manager": (
+        "status",
+        "operation",
+        "source_dir",
+        "packet_path",
+        "error_type",
+        "error",
+    ),
     "demo_runner": (
         "schema_purpose",
         "status",

@@ -86,10 +86,13 @@ human review receipt는 manifest 순환 hash를 피하기 위해 manifest artifa
 
 Completed review packet 테스트는 pending receipt 거부, manifest-declared artifact 선별, source hash/size 확인, path traversal 차단, deterministic ZIP, embedded `packet_manifest.json`, archive 변조 탐지를 검증한다. Packet index와 receipt는 모든 external action을 계속 `false`로 유지해야 한다.
 
+Procurement review packet 테스트는 검증된 12-artifact directory의 deterministic ZIP 생성, embedded `packet_manifest.json`, source symlink 차단, exact entry order와 path boundary, SHA256/size tamper detection, fingerprint를 다시 맞춘 semantic drift 거부, `review_ready`, `operational_approval: false`, create/verify CLI의 machine-readable success/failure 출력을 검증한다.
+
 생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 입력, review draft 다운로드, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
 
 ```bash
 pytest -q tests/test_finished_document_packet.py tests/test_finished_doc_human_review.py tests/test_build_finished_doc_review_samples.py
+pytest -q tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_cli_success_contract.py tests/test_procurement_decision_package_cli_failure_contract.py
 ```
 
 ### E2E 시험 (Playwright)

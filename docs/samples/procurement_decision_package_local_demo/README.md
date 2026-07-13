@@ -46,6 +46,15 @@ The generated `procurement_review.html` is a script-free, read-only browser work
 The generated `audit_manifest.json` is the audit packet index. It groups the local review artifacts and repeats the excluded external actions so the packet can be checked without treating it as operational approval. The sample validator and artifact checker both verify those grouped artifact sections as fixed lists.
 The generated `export_manifest.json` keeps a fixed field order and repeats the included artifacts and excluded actions that the sample validator and artifact checker verify before handoff.
 
+Create and verify a portable review packet:
+
+```bash
+python3 scripts/manage_procurement_decision_review_packet.py create /tmp/decisiondoc-procurement-demo --packet /tmp/decisiondoc-procurement-review.zip
+python3 scripts/manage_procurement_decision_review_packet.py verify /tmp/decisiondoc-procurement-review.zip
+```
+
+The packet is a deterministic ZIP containing the 12 validated package artifacts plus embedded `packet_manifest.json`. Its status is `review_ready`, not approved: the verifier rechecks exact entry order, SHA256 and byte-size fingerprints, package semantics, path boundaries, excluded actions, and `operational_approval: false`. Rebuilding unchanged source artifacts produces the same ZIP bytes.
+
 Run the local sample validator:
 
 ```bash
@@ -65,7 +74,7 @@ outside this sample directory.
 Run the focused regression tests:
 
 ```bash
-pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
+pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
 ```
 
 ## Boundary
