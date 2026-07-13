@@ -25,12 +25,13 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.bundle_catalog.registry import get_bundle_spec  # noqa: E402
 from app.eval.lints import lint_docs  # noqa: E402
+from app.eval.numeric_grounding import review_numeric_grounding  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.services.review_preview import build_review_dashboard, preview_export_bytes  # noqa: E402
 from app.services.validator import validate_docs  # noqa: E402
 
 
-EVIDENCE_SCHEMA_VERSION = "decisiondoc.finished_document_review.v2"
+EVIDENCE_SCHEMA_VERSION = "decisiondoc.finished_document_review.v3"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "output" / "review_samples"
 DEFAULT_FORMATS = ("docx", "pdf", "pptx", "hwp")
 GOLDEN_EXAMPLE_DIR = REPO_ROOT / "app" / "bundle_catalog" / "golden_examples"
@@ -206,6 +207,7 @@ def _write_markdown_docs(
 def _quality_evidence(
     *,
     bundle_type: str,
+    request_payload: dict[str, Any],
     docs: list[dict[str, Any]],
     generated_files: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
@@ -220,13 +222,15 @@ def _quality_evidence(
     golden_path = GOLDEN_EXAMPLE_DIR / f"{bundle_type}_example.md"
     if not golden_path.is_file():
         raise RuntimeError(f"canonical golden example is missing: {golden_path}")
+    numeric_grounding_review = review_numeric_grounding(request_payload, rendered)
     return {
         "validator_pass": True,
         "lint_pass": not lint_errors,
         "lint_errors": lint_errors,
         "generated_markdown": generated_files,
         "canonical_golden_example": _file_evidence(golden_path, relative_to=REPO_ROOT),
-        "review_scope": "structural_validation_and_bundle_lint",
+        "review_scope": "structural_validation_bundle_lint_and_numeric_coverage",
+        "numeric_grounding_review": numeric_grounding_review,
         "factual_grounding_verified": False,
         "human_visual_review_completed": False,
     }
@@ -298,6 +302,8 @@ def _render_quality_report(manifest: dict[str, Any]) -> str:
             f"| `{bundle_type}` | {bundle['doc_count']} | "
             f"{'pass' if quality['validator_pass'] else 'fail'} | "
             f"{'pass' if quality['lint_pass'] else 'fail'} | "
+            f"{quality['numeric_grounding_review']['status']} | "
+            f"{quality['numeric_grounding_review']['unsupported_count']} | "
             f"`{quality['canonical_golden_example']['sha256']}` |"
         )
     return "\n".join(
@@ -314,15 +320,18 @@ def _render_quality_report(manifest: dict[str, Any]) -> str:
             f"- generated documents: `{summary['document_count']}`",
             f"- validator passes: `{summary['validator_pass_count']}`",
             f"- lint passes: `{summary['lint_pass_count']}`",
+            f"- numeric grounding passes: `{summary['numeric_grounding_pass_count']}`",
+            f"- unsupported numeric claims: `{summary['unsupported_numeric_claim_count']}`",
             "",
-            "| bundle | docs | validator | bundle lint | canonical golden SHA256 |",
-            "| --- | ---: | --- | --- | --- |",
+            "| bundle | docs | validator | bundle lint | numeric coverage | unsupported claims | canonical golden SHA256 |",
+            "| --- | ---: | --- | --- | --- | ---: | --- |",
             *rows,
             "",
             "## Scope And Limitations",
             "",
             "- These are deterministic fictional fixtures generated with the local mock provider.",
-            "- The evidence proves schema validation and bundle-aware structural lint only.",
+            "- Numeric coverage checks whether unit-bearing output numbers also appear in the request; unmatched values remain review items.",
+            "- Numeric coverage does not prove factual truth, freshness, or correct contextual use.",
             "- Factual grounding and human visual review are not marked complete by this report.",
             "- No provider API, AWS runtime, dataset upload, training, model promotion, or production resume action ran.",
             "",
@@ -398,6 +407,7 @@ def run(
                     )
                     quality = _quality_evidence(
                         bundle_type=bundle_type,
+                        request_payload=payload,
                         docs=docs,
                         generated_files=generated_file_evidence,
                     )
@@ -422,8 +432,20 @@ def run(
         "document_count": sum(int(bundle["doc_count"]) for bundle in bundle_records),
         "validator_pass_count": sum(bool(bundle["quality"]["validator_pass"]) for bundle in bundle_records),
         "lint_pass_count": sum(bool(bundle["quality"]["lint_pass"]) for bundle in bundle_records),
+        "numeric_grounding_pass_count": sum(
+            bundle["quality"]["numeric_grounding_review"]["status"] == "passed"
+            for bundle in bundle_records
+        ),
+        "unsupported_numeric_claim_count": sum(
+            int(bundle["quality"]["numeric_grounding_review"]["unsupported_count"])
+            for bundle in bundle_records
+        ),
     }
-    manifest["status"] = "passed"
+    manifest["status"] = (
+        "passed"
+        if manifest["summary"]["numeric_grounding_pass_count"] == len(bundle_records)
+        else "review_required"
+    )
 
     quality_report_path = run_dir / "quality_report.md"
     review_dashboard_path = run_dir / "review.html"

@@ -1,7 +1,7 @@
 {
-  "schema_version": "decisiondoc.finished_document_review.v2",
+  "schema_version": "decisiondoc.finished_document_review.v3",
   "status": "passed",
-  "generated_at": "2026-07-13T06:04:01.142785+00:00",
+  "generated_at": "2026-07-13T06:14:52.773968+00:00",
   "execution_mode": {
     "provider": "mock",
     "storage": "temporary_local",
@@ -11,7 +11,9 @@
     "bundle_count": 2,
     "document_count": 6,
     "validator_pass_count": 2,
-    "lint_pass_count": 2
+    "lint_pass_count": 2,
+    "numeric_grounding_pass_count": 2,
+    "unsupported_numeric_claim_count": 0
   },
   "bundles": {
     "proposal_kr": {
@@ -45,23 +47,23 @@
         "generated_markdown": {
           "business_understanding": {
             "path": "proposal_kr/markdown/business_understanding.md",
-            "sha256": "53a01869616558f55d0ba38763185381c322859bc74710888689fbcb4c673da2",
-            "size_bytes": 9782
+            "sha256": "bd643de9a6f4826700ae2d47932f8bd2998de9db6b3355a0627c063af95456ad",
+            "size_bytes": 9878
           },
           "tech_proposal": {
             "path": "proposal_kr/markdown/tech_proposal.md",
-            "sha256": "ea1e69b07be3efd3c105ce84660f577b5149b26a2434b7b446a96643a2d2683d",
-            "size_bytes": 11588
+            "sha256": "536f23e24d2083fc482db3f4b1d23bdc1c1df0dd4e8bd0ea6bcfc7902f59890c",
+            "size_bytes": 11611
           },
           "execution_plan": {
             "path": "proposal_kr/markdown/execution_plan.md",
-            "sha256": "6660ae7223a6f42c89e37c432b44d834451b0f80c21830881ac9576a6d1fc59e",
-            "size_bytes": 9942
+            "sha256": "c3f969e1ec5dfba18bc2ef73017aa5bc7ff321fa0e3c9539790ccce3090890ec",
+            "size_bytes": 10220
           },
           "expected_impact": {
             "path": "proposal_kr/markdown/expected_impact.md",
-            "sha256": "6108f13c1779cff2635e4648d99c2e2fd347a1a127935256f05bc3f6204d0a2b",
-            "size_bytes": 7885
+            "sha256": "a0f6f53dfc86e379eaf3f457eb7ba30348d7cac5ae100d2db5c038ccd8b380c7",
+            "size_bytes": 8061
           }
         },
         "canonical_golden_example": {
@@ -69,7 +71,22 @@
           "sha256": "7daba879e518aeaa6083bc815da528c40a5f5da7867cd31c5b5f4086ffdc2f7d",
           "size_bytes": 4645
         },
-        "review_scope": "structural_validation_and_bundle_lint",
+        "review_scope": "structural_validation_bundle_lint_and_numeric_coverage",
+        "numeric_grounding_review": {
+          "status": "passed",
+          "scope": "literal_unit_bearing_numeric_coverage",
+          "proves_factual_truth": false,
+          "source_tokens": [
+            "24개월",
+            "6500000000원"
+          ],
+          "output_tokens": [
+            "24개월",
+            "6500000000원"
+          ],
+          "unsupported_count": 0,
+          "unsupported_claims": []
+        },
         "factual_grounding_verified": false,
         "human_visual_review_completed": false
       }
@@ -103,13 +120,13 @@
         "generated_markdown": {
           "performance_overview": {
             "path": "performance_plan_kr/markdown/performance_overview.md",
-            "sha256": "c07e74569b4b39b40b04acff8f0b7cf2ce0aa2ecfff4a478cba3e4f9d1c2ca79",
-            "size_bytes": 6845
+            "sha256": "feaca11b348838f31045249970b797def27f207c48446e5dafb7577aff276d0a",
+            "size_bytes": 7069
           },
           "quality_risk_plan": {
             "path": "performance_plan_kr/markdown/quality_risk_plan.md",
-            "sha256": "ae2910c46dcc64b969c63805636baea3323d9e0457f3b8581aa8858de8b7a8be",
-            "size_bytes": 5539
+            "sha256": "9c2dad97cd278f0610be4aa885e1db5221e6197d476b1dc56541b99af289d93d",
+            "size_bytes": 5584
           }
         },
         "canonical_golden_example": {
@@ -117,7 +134,28 @@
           "sha256": "78a04001f3108a389a1006ab2640af6986ef71b311f2a560b4ffc0e130e863b5",
           "size_bytes": 4133
         },
-        "review_scope": "structural_validation_and_bundle_lint",
+        "review_scope": "structural_validation_bundle_lint_and_numeric_coverage",
+        "numeric_grounding_review": {
+          "status": "passed",
+          "scope": "literal_unit_bearing_numeric_coverage",
+          "proves_factual_truth": false,
+          "source_tokens": [
+            "12월",
+            "1월",
+            "2026년",
+            "2027년",
+            "24개월"
+          ],
+          "output_tokens": [
+            "12월",
+            "1월",
+            "2026년",
+            "2027년",
+            "24개월"
+          ],
+          "unsupported_count": 0,
+          "unsupported_claims": []
+        },
         "factual_grounding_verified": false,
         "human_visual_review_completed": false
       }
@@ -126,12 +164,12 @@
   "artifacts": {
     "quality_report": {
       "path": "quality_report.md",
-      "sha256": "211b447823683c73b5769ea3e5e7995b705313374ada61c3596a3389a5b60b38",
-      "size_bytes": 919
+      "sha256": "fb8afa64a6043568b0f84f85ab133477279eb3d2874592ef3817cc104225f9b6",
+      "size_bytes": 1200
     },
     "review_dashboard": {
       "path": "review.html",
-      "sha256": "ec67d342116977491cfafe5c206fe892b0474cfb41b881998b999a64c30033f9",
+      "sha256": "294770104cea8f477eb677b0539b47c78d97693c26997411c0332bda0add021d",
       "size_bytes": 4255
     }
   },

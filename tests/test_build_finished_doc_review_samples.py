@@ -71,17 +71,24 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
         "document_count": 6,
         "validator_pass_count": 2,
         "lint_pass_count": 2,
+        "numeric_grounding_pass_count": 2,
+        "unsupported_numeric_claim_count": 0,
     }
     assert manifest["external_actions"] == {action: False for action in EXCLUDED_EXTERNAL_ACTIONS}
     for bundle in manifest["bundles"].values():
         assert bundle["quality"]["validator_pass"] is True
         assert bundle["quality"]["lint_pass"] is True
+        numeric_review = bundle["quality"]["numeric_grounding_review"]
+        assert numeric_review["status"] == "passed"
+        assert numeric_review["unsupported_count"] == 0
+        assert numeric_review["scope"] == "literal_unit_bearing_numeric_coverage"
+        assert numeric_review["proves_factual_truth"] is False
         assert bundle["quality"]["factual_grounding_verified"] is False
         assert bundle["quality"]["human_visual_review_completed"] is False
     _assert_evidence_files(run_dir, manifest)
-    assert "Factual grounding and human visual review are not marked complete" in (
-        run_dir / "quality_report.md"
-    ).read_text(encoding="utf-8")
+    quality_report = (run_dir / "quality_report.md").read_text(encoding="utf-8")
+    assert "Numeric coverage does not prove factual truth" in quality_report
+    assert "Factual grounding and human visual review are not marked complete" in quality_report
     assert not (tmp_path / "latest").exists()
     assert os.environ["DECISIONDOC_PROVIDER"] == "openai"
     assert os.environ["DECISIONDOC_PROVIDER_GENERATION"] == "gemini"
@@ -97,6 +104,8 @@ def test_committed_bundle_quality_evidence_matches_manifest() -> None:
     assert manifest["summary"]["document_count"] == 6
     assert manifest["summary"]["validator_pass_count"] == 2
     assert manifest["summary"]["lint_pass_count"] == 2
+    assert manifest["summary"]["numeric_grounding_pass_count"] == 2
+    assert manifest["summary"]["unsupported_numeric_claim_count"] == 0
     assert all(value is False for value in manifest["external_actions"].values())
     _assert_evidence_files(COMMITTED_EVIDENCE_DIR, manifest)
 

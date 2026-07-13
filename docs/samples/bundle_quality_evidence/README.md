@@ -21,5 +21,7 @@ python3 scripts/build_finished_doc_review_samples.py \
 
 - 모든 sample은 local mock provider가 만든 fictional fixture다.
 - `validator_pass`는 document schema validation, `lint_pass`는 bundle별 필수 heading·빈 section·금지 token 검사를 뜻한다.
+- `numeric_grounding_review`는 단위가 붙은 출력 수치가 request에도 있는지 literal coverage를 검사한다. 일치하지 않으면 package status를 `review_required`로 낮춘다.
+- numeric coverage는 수치의 사실성, 최신성, 문맥상 올바른 사용을 증명하지 않는다.
 - factual grounding과 human visual review는 이 package로 검증하지 않았으며 manifest에서도 `false`다.
 - provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume은 실행하지 않는다.
