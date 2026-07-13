@@ -1,0 +1,25 @@
+# Bundle Quality Evidence
+
+`proposal_kr`와 `performance_plan_kr`의 대표 mock generation sample을 구조 품질 evidence와 함께 보관한다.
+
+## Regenerate
+
+저장소 루트에서 실행한다.
+
+```bash
+python3 scripts/build_finished_doc_review_samples.py \
+  --output-dir docs/samples/bundle_quality_evidence \
+  --run-name current \
+  --no-latest \
+  --bundles proposal_kr,performance_plan_kr \
+  --formats ''
+```
+
+현재 package의 기준 파일은 [`current/manifest.json`](./current/manifest.json)이다. manifest는 생성된 Markdown과 response snapshot, reviewer-facing quality report/dashboard, canonical golden example의 SHA256과 byte size를 기록한다. `tests/test_build_finished_doc_review_samples.py`가 이 값과 현재 파일을 다시 비교한다.
+
+## Scope And Limitations
+
+- 모든 sample은 local mock provider가 만든 fictional fixture다.
+- `validator_pass`는 document schema validation, `lint_pass`는 bundle별 필수 heading·빈 section·금지 token 검사를 뜻한다.
+- factual grounding과 human visual review는 이 package로 검증하지 않았으며 manifest에서도 `false`다.
+- provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume은 실행하지 않는다.

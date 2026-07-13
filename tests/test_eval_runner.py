@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from app.eval.runner import run_eval
 

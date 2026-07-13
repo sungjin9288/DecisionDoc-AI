@@ -177,17 +177,32 @@ python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.
 
 ## Testing
 
+대표 bundle sample과 구조 품질 evidence를 local mock provider로 재생성합니다.
+
+```bash
+python3 scripts/build_finished_doc_review_samples.py \
+  --output-dir docs/samples/bundle_quality_evidence \
+  --run-name current \
+  --no-latest \
+  --bundles proposal_kr,performance_plan_kr \
+  --formats ''
+
+python3 -m app.eval --out-dir reports/eval/v1
+```
+
+2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과이며, [offline eval report](./reports/eval/v1/eval_report.md) 기준 fixture 10건 중 10건 통과입니다. 모두 mock/local 구조 검증 결과이며 factual grounding, human visual review, live provider 품질을 증명하지 않습니다.
+
 ```bash
 pytest tests/                 # 전체
 pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,569개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,574개**, **211개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2571
-python3 scripts/count_readme_metrics.py --field test_files      # → 209
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2574
+python3 scripts/count_readme_metrics.py --field test_files      # → 211
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -253,4 +268,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,569 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,574 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -1,6 +1,6 @@
 # Case Study
 
-분석 기준: 2026-06-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태를 기준으로 업데이트했다. 구현 완료 표현은 코드 근거가 있는 항목에만 사용했다.
+분석 기준: 2026-07-13 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태를 기준으로 업데이트했다. 구현 완료 표현은 코드 근거가 있는 항목에만 사용했다.
 
 ## 1. 배경
 
@@ -68,6 +68,7 @@
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
 - Dockerfile, Docker Compose, AWS SAM 설정
 - pytest 테스트 suite와 smoke script
+- 대표 bundle의 local mock sample, canonical golden fingerprint, validator/lint 결과를 묶은 tracked quality evidence package
 
 ### 개발 중
 
@@ -114,6 +115,8 @@
 - 구현 완료 기능: 문서 생성 API, 파일/PDF 기반 생성, export, provider/storage abstraction, bundle catalog, 프로젝트/지식/승인/이력/report workflow 일부, health/ops 기능
 - 로컬 실행 가능 여부: 설정상 가능. `pip install -r requirements.txt` 후 `python -m uvicorn app.main:app --reload`, 또는 `docker compose up -d`
 - 테스트 여부: pytest 테스트 suite와 smoke script가 존재한다. 현재 local procurement decision package evidence path는 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 stdout JSON success/failure contract를 고정하고, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`와 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`로 manifest와 persisted receipt를 검증한다. 검증 receipt는 `--write-result --result-path <path>`로 repo 밖 경로에 남길 수 있다.
+- 생성 품질 evidence: 2026-07-13 `scripts/build_finished_doc_review_samples.py`를 mock/Markdown-only 모드로 실행해 `proposal_kr`, `performance_plan_kr` 2개 bundle의 6개 생성 문서를 저장했다. `docs/samples/bundle_quality_evidence/current/manifest.json`은 bundle별 validator/lint 통과와 canonical golden SHA256을 기록하며, factual grounding과 human visual review는 미검증으로 남긴다.
+- offline eval evidence: 2026-07-13 `python3 -m app.eval --out-dir reports/eval/v1` 실행 결과 fixture 10건 중 10건이 validator/lint gate를 통과했다. 이 결과는 `reports/eval/v1/eval_report.json`과 `.md`에 있으며 mock provider 결과이지 live provider 품질 증거는 아니다.
 - 배포 여부: 문서상 Docker Compose, AWS SAM, 운영 URL 기준이 존재한다. 현재 접근 가능성은 검증 필요.
 - 사용자 피드백: 현재 없음. 임의 생성 금지.
 - 수치 성과:

@@ -68,17 +68,18 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
+  - 2026-07-13 `proposal_kr`, `performance_plan_kr`의 대표 mock sample 6개 문서와 canonical golden fingerprint, validator/lint 결과를 tracked evidence package로 정리했다.
+  - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
 - 남은 작업:
-  - bundle별 대표 golden examples 정리
-  - eval/lint 결과를 README와 case study에 반영
   - M1 live provider chain을 승인된 키로 검증
 - 완료 기준:
   - 최소 2개 bundle에 대해 생성 결과 샘플과 품질 검증 결과 확보
   - mock provider와 최소 1개 live provider 검증 기록 존재
   - 사용자 피드백 또는 자체 평가 기준 문서화
 - 산출물:
-  - quality evaluation report
-  - before/after sample
+  - quality evaluation report: `reports/eval/v1/eval_report.{json,md}`
+  - representative bundle sample: `docs/samples/bundle_quality_evidence/current/`
+  - before/after sample: report quality correction artifact 흐름에서 유지
   - provider validation note
 
 ## 5. Phase 3 - 서비스화 / 배포

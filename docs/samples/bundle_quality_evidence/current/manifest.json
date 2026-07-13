@@ -1,0 +1,146 @@
+{
+  "schema_version": "decisiondoc.finished_document_review.v2",
+  "status": "passed",
+  "generated_at": "2026-07-13T06:04:01.142785+00:00",
+  "execution_mode": {
+    "provider": "mock",
+    "storage": "temporary_local",
+    "fixture_kind": "fictional"
+  },
+  "summary": {
+    "bundle_count": 2,
+    "document_count": 6,
+    "validator_pass_count": 2,
+    "lint_pass_count": 2
+  },
+  "bundles": {
+    "proposal_kr": {
+      "title": "국토교통 통합형 서비스 발굴 경연 사업 제안서",
+      "request": {
+        "title": "국토교통 통합형 서비스 발굴 경연 사업 제안서",
+        "goal": "교통약자 안전 확보와 도시 운영 효율 개선을 동시에 달성할 수 있는 AI 기반 통합 서비스를 제안한다.",
+        "context": "발주처는 국토교통부이며, 실증 대상은 보행자 안전구역·대중교통 환승 거점이다. 예산은 65억 원, 사업 기간은 24개월, 최종 산출물은 제안서·발표자료·수행계획서 패키지다.",
+        "constraints": "개인정보 및 위치정보 보호를 충족해야 하며, 1차년도 내 시범 운영과 정량 KPI 검증을 완료해야 한다.",
+        "audience": "발주처 평가위원, PMO, 도시교통 실무 책임자",
+        "bundle_type": "proposal_kr"
+      },
+      "response_snapshot": {
+        "path": "proposal_kr/generate_response.json",
+        "sha256": "85c87e16736e5b9cdaf10232b1270c4c7e707094f164779a7144ddaa9ea10157",
+        "size_bytes": 296
+      },
+      "doc_count": 4,
+      "exports": {},
+      "markdown_docs": {
+        "business_understanding": "proposal_kr/markdown/business_understanding.md",
+        "tech_proposal": "proposal_kr/markdown/tech_proposal.md",
+        "execution_plan": "proposal_kr/markdown/execution_plan.md",
+        "expected_impact": "proposal_kr/markdown/expected_impact.md"
+      },
+      "preview_files": {},
+      "quality": {
+        "validator_pass": true,
+        "lint_pass": true,
+        "lint_errors": [],
+        "generated_markdown": {
+          "business_understanding": {
+            "path": "proposal_kr/markdown/business_understanding.md",
+            "sha256": "53a01869616558f55d0ba38763185381c322859bc74710888689fbcb4c673da2",
+            "size_bytes": 9782
+          },
+          "tech_proposal": {
+            "path": "proposal_kr/markdown/tech_proposal.md",
+            "sha256": "ea1e69b07be3efd3c105ce84660f577b5149b26a2434b7b446a96643a2d2683d",
+            "size_bytes": 11588
+          },
+          "execution_plan": {
+            "path": "proposal_kr/markdown/execution_plan.md",
+            "sha256": "6660ae7223a6f42c89e37c432b44d834451b0f80c21830881ac9576a6d1fc59e",
+            "size_bytes": 9942
+          },
+          "expected_impact": {
+            "path": "proposal_kr/markdown/expected_impact.md",
+            "sha256": "6108f13c1779cff2635e4648d99c2e2fd347a1a127935256f05bc3f6204d0a2b",
+            "size_bytes": 7885
+          }
+        },
+        "canonical_golden_example": {
+          "path": "app/bundle_catalog/golden_examples/proposal_kr_example.md",
+          "sha256": "7daba879e518aeaa6083bc815da528c40a5f5da7867cd31c5b5f4086ffdc2f7d",
+          "size_bytes": 4645
+        },
+        "review_scope": "structural_validation_and_bundle_lint",
+        "factual_grounding_verified": false,
+        "human_visual_review_completed": false
+      }
+    },
+    "performance_plan_kr": {
+      "title": "국토교통 통합형 서비스 발굴 경연 사업수행계획서",
+      "request": {
+        "title": "국토교통 통합형 서비스 발굴 경연 사업수행계획서",
+        "goal": "보행자 안전구역·환승 거점의 교통약자 안전을 개선하는 AI 통합 플랫폼을 24개월 내 구축·검수·이관한다.",
+        "context": "계약 기간은 2026년 1월부터 2027년 12월까지이며, 발주처는 국토교통부다. 산출물은 착수보고서, AI 설계서, 통합 테스트 결과서, 완료보고서, 운영 매뉴얼이다.",
+        "constraints": "단계별 검수 기준과 운영 회의체를 명확히 정의해야 하고, 공공 클라우드·현장 장비 연동을 동시에 고려해야 한다.",
+        "audience": "발주처 감독관, 사업 PM, 품질 검수 위원",
+        "bundle_type": "performance_plan_kr"
+      },
+      "response_snapshot": {
+        "path": "performance_plan_kr/generate_response.json",
+        "sha256": "22fc3e68e09c162de859f3fc305a3d0798266f02c148adf12cb151225befa5ff",
+        "size_bytes": 266
+      },
+      "doc_count": 2,
+      "exports": {},
+      "markdown_docs": {
+        "performance_overview": "performance_plan_kr/markdown/performance_overview.md",
+        "quality_risk_plan": "performance_plan_kr/markdown/quality_risk_plan.md"
+      },
+      "preview_files": {},
+      "quality": {
+        "validator_pass": true,
+        "lint_pass": true,
+        "lint_errors": [],
+        "generated_markdown": {
+          "performance_overview": {
+            "path": "performance_plan_kr/markdown/performance_overview.md",
+            "sha256": "c07e74569b4b39b40b04acff8f0b7cf2ce0aa2ecfff4a478cba3e4f9d1c2ca79",
+            "size_bytes": 6845
+          },
+          "quality_risk_plan": {
+            "path": "performance_plan_kr/markdown/quality_risk_plan.md",
+            "sha256": "ae2910c46dcc64b969c63805636baea3323d9e0457f3b8581aa8858de8b7a8be",
+            "size_bytes": 5539
+          }
+        },
+        "canonical_golden_example": {
+          "path": "app/bundle_catalog/golden_examples/performance_plan_kr_example.md",
+          "sha256": "78a04001f3108a389a1006ab2640af6986ef71b311f2a560b4ffc0e130e863b5",
+          "size_bytes": 4133
+        },
+        "review_scope": "structural_validation_and_bundle_lint",
+        "factual_grounding_verified": false,
+        "human_visual_review_completed": false
+      }
+    }
+  },
+  "artifacts": {
+    "quality_report": {
+      "path": "quality_report.md",
+      "sha256": "211b447823683c73b5769ea3e5e7995b705313374ada61c3596a3389a5b60b38",
+      "size_bytes": 919
+    },
+    "review_dashboard": {
+      "path": "review.html",
+      "sha256": "ec67d342116977491cfafe5c206fe892b0474cfb41b881998b999a64c30033f9",
+      "size_bytes": 4255
+    }
+  },
+  "external_actions": {
+    "provider_api_execution": false,
+    "aws_runtime_execution": false,
+    "dataset_upload": false,
+    "training_execution": false,
+    "model_promotion": false,
+    "production_service_resume": false
+  }
+}

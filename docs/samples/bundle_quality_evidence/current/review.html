@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Finished Document Review</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7ff;
+      --panel: #ffffff;
+      --border: #d7ddf3;
+      --text: #1f2543;
+      --muted: #6b7392;
+      --accent: #624fff;
+      --accent-soft: #ece9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+      background: linear-gradient(180deg, #eef1ff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .shell {
+      width: min(1280px, calc(100vw - 40px));
+      margin: 32px auto 48px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #1b2145 0%, #624fff 100%);
+      color: white;
+      border-radius: 28px;
+      padding: 28px 30px;
+      box-shadow: 0 24px 60px rgba(54, 63, 128, 0.18);
+    }
+    .hero h1 { margin: 0 0 8px; font-size: 34px; }
+    .hero p { margin: 0; color: rgba(255,255,255,0.86); }
+    .bundle {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 24px;
+      margin-top: 24px;
+      box-shadow: 0 14px 36px rgba(73, 87, 155, 0.08);
+    }
+    .bundle h2 { margin: 0 0 6px; font-size: 26px; }
+    .bundle-meta { color: var(--muted); margin-bottom: 14px; }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: white;
+      padding: 8px 12px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .pill.secondary {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .preview-card, .pdf-panel {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      background: #fafbff;
+    }
+    .preview-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      color: var(--muted);
+    }
+    .preview-head a { color: var(--accent); text-decoration: none; font-size: 13px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 0 0 8px; line-height: 1.5; }
+    iframe {
+      width: 100%;
+      height: 560px;
+      border: 0;
+      border-radius: 12px;
+      background: white;
+    }
+    @media (max-width: 960px) {
+      .preview-grid { grid-template-columns: 1fr; }
+      .shell { width: min(100vw - 20px, 1280px); margin-top: 16px; }
+      iframe { height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>Finished Document Review</h1>
+      <p>생성 시각: 2026-07-13T06:04:01.142785+00:00 · export 파일과 preview 추출본을 한 화면에서 검토합니다.</p>
+    </section>
+    <section class='bundle'><h2>국토교통 통합형 서비스 발굴 경연 사업 제안서</h2><div class='bundle-meta'>proposal_kr · 문서 4개</div><div class='pill-row'></div><div class='pill-row'><a class="pill secondary" href="proposal_kr/markdown/business_understanding.md">business_understanding</a><a class="pill secondary" href="proposal_kr/markdown/tech_proposal.md">tech_proposal</a><a class="pill secondary" href="proposal_kr/markdown/execution_plan.md">execution_plan</a><a class="pill secondary" href="proposal_kr/markdown/expected_impact.md">expected_impact</a></div><div class='preview-grid'></div></section><section class='bundle'><h2>국토교통 통합형 서비스 발굴 경연 사업수행계획서</h2><div class='bundle-meta'>performance_plan_kr · 문서 2개</div><div class='pill-row'></div><div class='pill-row'><a class="pill secondary" href="performance_plan_kr/markdown/performance_overview.md">performance_overview</a><a class="pill secondary" href="performance_plan_kr/markdown/quality_risk_plan.md">quality_risk_plan</a></div><div class='preview-grid'></div></section>
+  </main>
+</body>
+</html>

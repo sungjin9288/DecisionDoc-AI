@@ -2,12 +2,12 @@
   "eval_version": "v1",
   "template_version": "v1",
   "provider": "mock",
-  "generated_at": "2026-02-11T06:11:39.826157+00:00",
+  "generated_at": "2026-07-13T05:56:57.470248+00:00",
   "summary": {
     "fixtures": 10,
     "pass_count": 10,
     "fail_count": 0,
-    "avg_total_chars": 2322
+    "avg_total_chars": 2262
   },
   "results": [
     {
@@ -23,11 +23,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 823,
-        "onepager": 474,
+        "adr": 793,
+        "onepager": 455,
         "eval_plan": 445,
-        "ops_checklist": 563,
-        "total": 2305
+        "ops_checklist": 531,
+        "total": 2224
       },
       "errors": []
     },
@@ -44,11 +44,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 837,
-        "onepager": 466,
+        "adr": 820,
+        "onepager": 447,
         "eval_plan": 437,
-        "ops_checklist": 555,
-        "total": 2295
+        "ops_checklist": 523,
+        "total": 2227
       },
       "errors": []
     },
@@ -66,10 +66,10 @@
       "banned_token_violations": 0,
       "length_chars": {
         "adr": 815,
-        "onepager": 510,
+        "onepager": 508,
         "eval_plan": 448,
-        "ops_checklist": 566,
-        "total": 2339
+        "ops_checklist": 534,
+        "total": 2305
       },
       "errors": []
     },
@@ -86,11 +86,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 770,
-        "onepager": 465,
+        "adr": 740,
+        "onepager": 446,
         "eval_plan": 436,
-        "ops_checklist": 554,
-        "total": 2225
+        "ops_checklist": 522,
+        "total": 2144
       },
       "errors": []
     },
@@ -107,11 +107,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 806,
-        "onepager": 465,
+        "adr": 789,
+        "onepager": 446,
         "eval_plan": 436,
-        "ops_checklist": 554,
-        "total": 2261
+        "ops_checklist": 522,
+        "total": 2193
       },
       "errors": []
     },
@@ -128,11 +128,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 807,
-        "onepager": 467,
+        "adr": 777,
+        "onepager": 448,
         "eval_plan": 438,
-        "ops_checklist": 556,
-        "total": 2268
+        "ops_checklist": 524,
+        "total": 2187
       },
       "errors": []
     },
@@ -149,11 +149,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 869,
-        "onepager": 531,
+        "adr": 856,
+        "onepager": 529,
         "eval_plan": 444,
-        "ops_checklist": 562,
-        "total": 2406
+        "ops_checklist": 530,
+        "total": 2359
       },
       "errors": []
     },
@@ -170,11 +170,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 859,
-        "onepager": 528,
+        "adr": 846,
+        "onepager": 526,
         "eval_plan": 443,
-        "ops_checklist": 561,
-        "total": 2391
+        "ops_checklist": 529,
+        "total": 2344
       },
       "errors": []
     },
@@ -191,11 +191,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 845,
-        "onepager": 508,
+        "adr": 832,
+        "onepager": 506,
         "eval_plan": 440,
-        "ops_checklist": 558,
-        "total": 2351
+        "ops_checklist": 526,
+        "total": 2304
       },
       "errors": []
     },
@@ -212,11 +212,11 @@
       },
       "banned_token_violations": 0,
       "length_chars": {
-        "adr": 869,
-        "onepager": 504,
+        "adr": 856,
+        "onepager": 502,
         "eval_plan": 443,
-        "ops_checklist": 561,
-        "total": 2377
+        "ops_checklist": 529,
+        "total": 2330
       },
       "errors": []
     }
