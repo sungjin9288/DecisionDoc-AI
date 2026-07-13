@@ -30,6 +30,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 공공조달 Go/No-Go | G2B 연동 기반 procurement copilot 흐름 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
+| 품질 교정 파일럿 | UI에서 선택한 ready artifact 3~5개를 source SHA-256·tenant·순서가 기록된 local review pack으로 연결 |
 
 ---
 
@@ -155,6 +156,17 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 256
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/export` |
 
+UI에서 내려받은 품질 교정 파일럿 JSONL을 local review pack으로 가져옵니다.
+
+```bash
+python3 scripts/create_report_quality_pilot_pack.py \
+  --batch-id pilot-rqc-001 \
+  --source-jsonl ~/Downloads/report_quality_pilot_artifacts.jsonl \
+  --output-root reports/report-quality
+```
+
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하며, 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+
 스모크 검증 (문서화된 대표 시나리오):
 
 ```bash
@@ -200,10 +212,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,620개**, **219개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,625개**, **219개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2620
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2625
 python3 scripts/count_readme_metrics.py --field test_files      # → 219
 ```
 
@@ -222,7 +234,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,868 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,873 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -271,4 +283,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,620 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,625 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -23,12 +23,12 @@ Report Workflow 생성 시:
 - 민감 원문은 요약/metadata/reference만 사용
 - 최종 승인 전까지 학습 후보로 보지 않음
 
-리뷰를 시작하기 전 draft artifact와 체크리스트를 생성한다.
+Report Workflow UI에서 ready artifact 3~5개를 선택하고 `report_quality_pilot_artifacts.jsonl`로 내려받은 뒤, 로컬 review pack으로 가져온다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \
   --batch-id pilot-rqc-001 \
-  --sample-count 3 \
+  --source-jsonl ~/Downloads/report_quality_pilot_artifacts.jsonl \
   --output-root reports/report-quality
 ```
 
@@ -37,15 +37,28 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/REVIEW_INDEX.md`
 - `reports/report-quality/pilot-rqc-001/drafts/*.json`
 - `reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl`
+- `reports/report-quality/pilot-rqc-001/SOURCE_MANIFEST.json`
 
 주의:
 
-- 생성 직후 draft는 `accepted_for_learning=false`이고 `human_review_status=pending`이다.
-- 사람이 교정 근거, 점수, scan 결과, 최종본 reference를 채우기 전에는 `--require-ready` batch validation이 실패하는 것이 정상이다.
-- `accepted_for_learning=true`로 바꾼 artifact 안에 `TODO_*` placeholder가 남아 있으면 validator가 차단한다.
+- import는 UTF-8 JSONL, ready artifact 3~5개, 중복 없는 artifact ID, 단일 tenant를 요구한다.
+- 같은 batch ID의 출력 디렉터리에 기존 파일이 있으면 stale artifact가 섞이지 않도록 import를 거부한다.
+- `SOURCE_MANIFEST.json`은 원본 경로와 SHA-256, tenant, 선택 순서를 기록한다. 이후 sync도 이 순서를 그대로 적용하며 manifest와 draft 구성이 다르면 실패한다.
+- 가져온 artifact는 이미 ready gate를 통과했더라도 사람이 교정 내용과 점수, scan 결과를 다시 검토한다.
 - 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
-사람이 `drafts/*.json`을 수정한 뒤에는 JSONL을 다시 동기화한다.
+실제 ready artifact가 아직 없다면 non-ready draft를 먼저 만들 수 있다.
+
+```bash
+python3 scripts/create_report_quality_pilot_pack.py \
+  --batch-id pilot-rqc-001 \
+  --sample-count 3 \
+  --output-root reports/report-quality
+```
+
+이 fallback으로 만든 draft는 `accepted_for_learning=false`, `human_review_status=pending`이다. 사람이 교정 근거, 점수, scan 결과, 최종본 reference를 채우기 전에는 `--require-ready` 검증이 실패하는 것이 정상이며, `accepted_for_learning=true`인 artifact에 `TODO_*`가 남아 있으면 validator가 차단한다.
+
+사람이 `drafts/*.json`을 검토하거나 수정한 뒤에는 JSONL을 다시 동기화한다.
 
 검수자가 채워야 할 항목을 한눈에 확인하려면 worksheet를 만든다.
 

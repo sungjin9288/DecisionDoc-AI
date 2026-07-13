@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,11 +19,18 @@ if str(REPO_ROOT) not in sys.path:
 from app.services.report_quality_learning import validate_correction_artifact  # noqa: E402
 
 
+SOURCE_MANIFEST_NAME = "SOURCE_MANIFEST.json"
+ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -35,6 +45,35 @@ def _default_output_path(pack_dir: Path) -> Path:
     if existing:
         return existing[0]
     return pack_dir / f"{pack_dir.name}-drafts.jsonl"
+
+
+def _ordered_draft_paths(pack_dir: Path, drafts_dir: Path) -> tuple[list[Path], bool]:
+    draft_paths = sorted(drafts_dir.glob("*.json"))
+    manifest_path = pack_dir / SOURCE_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return draft_paths, False
+
+    manifest = _load_json(manifest_path)
+    source = manifest.get("source")
+    artifact_ids = source.get("artifact_ids") if isinstance(source, dict) else None
+    if not isinstance(artifact_ids, list) or not artifact_ids:
+        raise ValueError(f"{manifest_path}: source.artifact_ids must be a non-empty list")
+    if any(not isinstance(value, str) or not ARTIFACT_ID_PATTERN.fullmatch(value) for value in artifact_ids):
+        raise ValueError(f"{manifest_path}: source.artifact_ids contains an unsafe artifact_id")
+    if len(set(artifact_ids)) != len(artifact_ids):
+        raise ValueError(f"{manifest_path}: source.artifact_ids must be unique")
+
+    ordered_paths = [drafts_dir / f"{artifact_id}.json" for artifact_id in artifact_ids]
+    missing = [path.name for path in ordered_paths if not path.is_file()]
+    extra = sorted(path.name for path in set(draft_paths) - set(ordered_paths))
+    if missing or extra:
+        details: list[str] = []
+        if missing:
+            details.append(f"missing drafts: {', '.join(missing)}")
+        if extra:
+            details.append(f"untracked drafts: {', '.join(extra)}")
+        raise ValueError(f"{manifest_path}: source order does not match drafts ({'; '.join(details)})")
+    return ordered_paths, True
 
 
 def sync_report_quality_pilot_pack(
@@ -55,7 +94,7 @@ def sync_report_quality_pilot_pack(
         else _default_output_path(resolved_pack_dir).resolve()
     )
 
-    draft_paths = sorted(drafts_dir.glob("*.json"))
+    draft_paths, source_order_applied = _ordered_draft_paths(resolved_pack_dir, drafts_dir)
     if not draft_paths:
         raise ValueError(f"no draft JSON files found: {drafts_dir}")
 
@@ -110,6 +149,7 @@ def sync_report_quality_pilot_pack(
         "pack_dir": str(resolved_pack_dir),
         "drafts_dir": str(drafts_dir),
         "output_path": str(resolved_output_path),
+        "source_order_applied": source_order_applied,
         "min_records": min_records,
         "require_ready": require_ready,
         "artifact_count": artifact_count,

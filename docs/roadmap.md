@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2868 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2873 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -75,6 +75,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 correction artifact에 stable content identity와 SHA-256 preview fingerprint를 적용했다. Save는 현재 workflow/input과 일치하는 preview만 허용하고 누락·stale input·중복 artifact를 거부하며, review packet validator도 embedded artifact fingerprint를 재검증한다.
   - 2026-07-13 저장된 correction artifact를 tenant 범위에서 단건 조회하는 detail API와 UI 검토·개별 JSON 다운로드 동선을 추가했다. 응답은 metadata-only artifact, validation, preview fingerprint를 보존하며 provider call, dataset upload, training execution은 계속 차단한다.
   - 2026-07-14 ready correction artifact 3~5개를 UI에서 직접 고르고 ordered pilot JSONL로 내려받는 tenant-safe selection flow를 추가했다. 서버는 개수, 중복·alias 중복, 존재 여부, ready gate를 재검증하며 외부 학습 작업은 실행하지 않는다.
+  - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-13 `proposal_kr`, `performance_plan_kr`의 대표 mock sample 6개 문서와 canonical golden fingerprint, validator/lint, request 대비 단위 수치 literal coverage 결과를 tracked evidence package로 정리했다. numeric coverage는 factual truth 검증과 분리한다.
   - 2026-07-13 tracked review dashboard에서 request 근거, validator/lint/numeric 상태, factual·human review 미완료 경계, 생성 Markdown 본문을 한 화면에 확인하도록 보강했다.
   - 2026-07-13 tracked manifest SHA256에 결속된 human review receipt와 `init/record/validate` CLI를 추가했다. 모든 bundle의 factual·visual review가 통과해야만 완료되며 외부 action 승인은 계속 `false`로 유지된다.
