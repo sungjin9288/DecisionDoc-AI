@@ -1212,6 +1212,137 @@ class TestProjectProcurementApi:
             "현재 procurement 대비 이전 review 기준"
         )
 
+    def test_stale_review_bound_approval_requires_explicit_final_acknowledgement(self, client):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "현재 procurement 근거를 확인했습니다.",
+            },
+            headers=HEADERS,
+        )
+        assert completed.status_code == 200
+
+        generated = client.post(
+            "/generate/stream",
+            json={
+                "title": "결재 freshness 제안서",
+                "goal": "검토 근거와 최종 승인 경계를 확인한다",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        )
+        assert generated.status_code == 200
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        proposal = next(
+            doc
+            for doc in reversed(project["documents"])
+            if doc["bundle_id"] == "proposal_kr"
+        )
+
+        created = client.post(
+            "/approvals",
+            json={
+                "request_id": proposal["request_id"],
+                "bundle_id": proposal["bundle_id"],
+                "title": proposal["title"],
+                "drafter": "기안자",
+                "docs": json.loads(proposal["doc_snapshot"]),
+                "project_id": pid,
+                "project_document_id": proposal["doc_id"],
+            },
+            headers=HEADERS,
+        )
+        assert created.status_code == 200
+        approval = created.json()
+        approval_id = approval["approval_id"]
+        assert approval["project_document_binding_status"] == "current"
+        assert approval["procurement_review_document_status"] == "current"
+        assert approval["source_procurement_review_document_status"] == "current"
+        assert approval["freshness_acknowledgement_required"] is False
+
+        self._ready_decision(client, pid)
+        detail = client.get(f"/approvals/{approval_id}", headers=HEADERS).json()
+        assert detail["project_document_binding_status"] == "current"
+        assert detail["procurement_review_document_status"] == "stale_procurement_review"
+        assert detail["source_procurement_review_document_status"] == "current"
+        assert detail["freshness_acknowledgement_required"] is True
+
+        submitted = client.post(
+            f"/approvals/{approval_id}/submit",
+            json={"username": "기안자", "reviewer": "검토자"},
+            headers=HEADERS,
+        )
+        assert submitted.status_code == 200
+        reviewed = client.post(
+            f"/approvals/{approval_id}/review/approve",
+            json={"username": "검토자"},
+            headers=HEADERS,
+        )
+        assert reviewed.status_code == 200
+
+        blocked = client.post(
+            f"/approvals/{approval_id}/approve",
+            json={"username": "결재자", "approver": "결재자"},
+            headers=HEADERS,
+        )
+        assert blocked.status_code == 409
+        assert blocked.json()["detail"]["code"] == (
+            "approval_document_freshness_acknowledgement_required"
+        )
+        assert client.get(f"/approvals/{approval_id}", headers=HEADERS).json()["status"] == (
+            "in_review"
+        )
+
+        approved = client.post(
+            f"/approvals/{approval_id}/approve",
+            json={
+                "username": "결재자",
+                "approver": "결재자",
+                "freshness_acknowledged": True,
+            },
+            headers=HEADERS,
+        )
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "approved"
+        assert approved.json()["freshness_acknowledged"] is True
+        assert approved.json()["freshness_acknowledged_by"] == "결재자"
+        assert approved.json()["freshness_acknowledged_at"]
+        assert approved.json()["freshness_warning_present"] is True
+        assert approved.json()["freshness_acknowledgement_required"] is False
+
+        from app.storage.audit_store import AuditStore
+
+        approval_audits = AuditStore("system").query(
+            "system",
+            filters={"action": "approval.approve"},
+        )
+        stale_audits = [
+            entry
+            for entry in approval_audits
+            if entry["detail"].get("approval_project_document_id") == proposal["doc_id"]
+        ]
+        assert {entry["result"] for entry in stale_audits} == {"success", "failure"}
+        assert {entry["detail"]["approval_freshness_acknowledged"] for entry in stale_audits} == {
+            False,
+            True,
+        }
+        assert all(
+            entry["detail"]["approval_procurement_review_document_status"]
+            == "stale_procurement_review"
+            for entry in stale_audits
+        )
+
     def test_review_inbox_filters_tenant_queue_and_includes_project_context(self, client):
         pending_project_id = self._pid(client)
         completed_project = client.post(
@@ -2329,10 +2460,130 @@ class TestProjectDocumentReuseFlows:
             headers=HEADERS,
         )
         assert approval.status_code == 200
+        assert approval.json()["project_id"] == pid
+        assert approval.json()["project_document_id"] == doc["doc_id"]
+        assert approval.json()["project_document_binding_status"] == "current"
+        assert approval.json()["freshness_acknowledgement_required"] is False
 
         refreshed = client.get(f"/projects/{pid}", headers=HEADERS).json()
         assert refreshed["documents"][0]["approval_id"] == approval.json()["approval_id"]
         assert refreshed["documents"][0]["approval_status"] == "draft"
+
+    def test_project_document_approval_rejects_mismatched_request_identity(self, client):
+        pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
+        created = client.post(
+            f"/projects/{pid}/documents",
+            json={
+                "request_id": "req-project-approval-binding",
+                "bundle_id": "bid_decision_kr",
+                "title": "결재 binding 문서",
+                "docs": [{"doc_type": "go_no_go_memo", "markdown": "# 판단 요약"}],
+            },
+            headers=HEADERS,
+        )
+        assert created.status_code == 200
+        doc = client.get(f"/projects/{pid}", headers=HEADERS).json()["documents"][0]
+
+        approval = client.post(
+            "/approvals",
+            json={
+                "request_id": "req-spoofed",
+                "bundle_id": doc["bundle_id"],
+                "title": doc["title"],
+                "drafter": "홍길동",
+                "docs": json.loads(doc["doc_snapshot"]),
+                "project_id": pid,
+                "project_document_id": doc["doc_id"],
+            },
+            headers=HEADERS,
+        )
+
+        assert approval.status_code == 409
+        assert approval.json()["detail"]["code"] == "approval_project_document_mismatch"
+
+    def test_project_document_approval_requires_binding_for_duplicate_request_id(self, client):
+        project_ids = [
+            client.post(
+                "/projects",
+                json={**PROJ_PAYLOAD, "name": f"중복 결재 프로젝트 {index}"},
+                headers=HEADERS,
+            ).json()["project_id"]
+            for index in (1, 2)
+        ]
+        for project_id in project_ids:
+            created = client.post(
+                f"/projects/{project_id}/documents",
+                json={
+                    "request_id": "req-duplicate-approval-binding",
+                    "bundle_id": "bid_decision_kr",
+                    "title": "중복 request 결재 문서",
+                    "docs": [{"doc_type": "go_no_go_memo", "markdown": "# 판단 요약"}],
+                },
+                headers=HEADERS,
+            )
+            assert created.status_code == 200
+
+        approval = client.post(
+            "/approvals",
+            json={
+                "request_id": "req-duplicate-approval-binding",
+                "bundle_id": "bid_decision_kr",
+                "title": "중복 request 결재 문서",
+                "drafter": "홍길동",
+                "docs": [{"doc_type": "go_no_go_memo", "markdown": "# 판단 요약"}],
+            },
+            headers=HEADERS,
+        )
+
+        assert approval.status_code == 409
+        assert approval.json()["detail"]["code"] == (
+            "approval_project_document_binding_required"
+        )
+
+    def test_project_document_approval_does_not_auto_bind_another_tenant(self, client):
+        project_store = client.app.state.project_store
+        other_project = project_store.create("tenant-b", name="다른 tenant 프로젝트")
+        other_document = project_store.add_document(
+            other_project.project_id,
+            request_id="req-other-tenant-approval",
+            bundle_id="bid_decision_kr",
+            title="다른 tenant 결재 문서",
+            docs=[{"doc_type": "go_no_go_memo", "markdown": "# 다른 tenant"}],
+            tenant_id="tenant-b",
+        )
+
+        unbound = client.post(
+            "/approvals",
+            json={
+                "request_id": "req-other-tenant-approval",
+                "bundle_id": "bid_decision_kr",
+                "title": "system 일반 결재",
+                "drafter": "홍길동",
+                "docs": [{"doc_type": "memo", "markdown": "# system"}],
+            },
+            headers=HEADERS,
+        )
+        assert unbound.status_code == 200
+        assert unbound.json()["project_id"] == ""
+        assert unbound.json()["project_document_binding_status"] == "not_linked"
+
+        cross_tenant = client.post(
+            "/approvals",
+            json={
+                "request_id": other_document.request_id,
+                "bundle_id": other_document.bundle_id,
+                "title": other_document.title,
+                "drafter": "홍길동",
+                "docs": json.loads(other_document.doc_snapshot),
+                "project_id": other_project.project_id,
+                "project_document_id": other_document.doc_id,
+            },
+            headers=HEADERS,
+        )
+        assert cross_tenant.status_code == 404
+        assert cross_tenant.json()["detail"]["code"] == (
+            "approval_project_document_not_found"
+        )
 
     def test_project_document_can_create_share_link(self, client):
         pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]

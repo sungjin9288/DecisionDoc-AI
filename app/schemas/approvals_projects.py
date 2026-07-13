@@ -11,6 +11,8 @@ class CreateApprovalRequest(BaseModel):
     drafter: str
     docs: list[dict] = Field(default_factory=list)
     gov_options: dict | None = None
+    project_id: str = ""
+    project_document_id: str = ""
 
 
 class ApprovalActionRequest(BaseModel):
@@ -19,6 +21,7 @@ class ApprovalActionRequest(BaseModel):
     comment: str = ""
     reviewer: str | None = None   # used in submit_for_review
     approver: str | None = None   # used in approve_review → sets approver
+    freshness_acknowledged: bool = False
 
 
 class UpdateApprovalDocsRequest(BaseModel):

@@ -61,6 +61,19 @@ class ApprovalRecord:
     current_docs: str       # JSON string of latest docs
     gov_options: dict | None
     reviewer_approved: bool = False   # internal: reviewer has approved
+    project_id: str = ""
+    project_document_id: str = ""
+    source_decision_council_document_status: str = ""
+    source_decision_council_document_status_tone: str = ""
+    source_decision_council_document_status_copy: str = ""
+    source_decision_council_document_status_summary: str = ""
+    source_procurement_review_document_status: str = ""
+    source_procurement_review_document_status_tone: str = ""
+    source_procurement_review_document_status_copy: str = ""
+    source_procurement_review_document_status_summary: str = ""
+    freshness_acknowledged: bool = False
+    freshness_acknowledged_by: str = ""
+    freshness_acknowledged_at: str = ""
 
 
 class ApprovalStore(BaseJsonStore):
@@ -128,6 +141,35 @@ class ApprovalStore(BaseJsonStore):
             current_docs=d.get("current_docs", "[]"),
             gov_options=d.get("gov_options"),
             reviewer_approved=d.get("reviewer_approved", False),
+            project_id=d.get("project_id", ""),
+            project_document_id=d.get("project_document_id", ""),
+            source_decision_council_document_status=d.get(
+                "source_decision_council_document_status", ""
+            ),
+            source_decision_council_document_status_tone=d.get(
+                "source_decision_council_document_status_tone", ""
+            ),
+            source_decision_council_document_status_copy=d.get(
+                "source_decision_council_document_status_copy", ""
+            ),
+            source_decision_council_document_status_summary=d.get(
+                "source_decision_council_document_status_summary", ""
+            ),
+            source_procurement_review_document_status=d.get(
+                "source_procurement_review_document_status", ""
+            ),
+            source_procurement_review_document_status_tone=d.get(
+                "source_procurement_review_document_status_tone", ""
+            ),
+            source_procurement_review_document_status_copy=d.get(
+                "source_procurement_review_document_status_copy", ""
+            ),
+            source_procurement_review_document_status_summary=d.get(
+                "source_procurement_review_document_status_summary", ""
+            ),
+            freshness_acknowledged=d.get("freshness_acknowledged", False),
+            freshness_acknowledged_by=d.get("freshness_acknowledged_by", ""),
+            freshness_acknowledged_at=d.get("freshness_acknowledged_at", ""),
         )
 
     def _find(self, approval_id: str, tenant_id: str | None = None) -> tuple[str, list[dict], int, ApprovalRecord] | None:
@@ -179,6 +221,16 @@ class ApprovalStore(BaseJsonStore):
         drafter: str,
         docs: list[dict],
         gov_options: dict | None = None,
+        project_id: str = "",
+        project_document_id: str = "",
+        decision_council_document_status: str = "",
+        decision_council_document_status_tone: str = "",
+        decision_council_document_status_copy: str = "",
+        decision_council_document_status_summary: str = "",
+        procurement_review_document_status: str = "",
+        procurement_review_document_status_tone: str = "",
+        procurement_review_document_status_copy: str = "",
+        procurement_review_document_status_summary: str = "",
     ) -> ApprovalRecord:
         with self._lock:
             records = self._load(tenant_id)
@@ -203,6 +255,16 @@ class ApprovalStore(BaseJsonStore):
                 current_docs=docs_json,
                 gov_options=gov_options,
                 reviewer_approved=False,
+                project_id=project_id,
+                project_document_id=project_document_id,
+                source_decision_council_document_status=decision_council_document_status,
+                source_decision_council_document_status_tone=decision_council_document_status_tone,
+                source_decision_council_document_status_copy=decision_council_document_status_copy,
+                source_decision_council_document_status_summary=decision_council_document_status_summary,
+                source_procurement_review_document_status=procurement_review_document_status,
+                source_procurement_review_document_status_tone=procurement_review_document_status_tone,
+                source_procurement_review_document_status_copy=procurement_review_document_status_copy,
+                source_procurement_review_document_status_summary=procurement_review_document_status_summary,
             )
             records.append(self._to_dict(rec))
             self._save(tenant_id, records)
@@ -298,7 +360,15 @@ class ApprovalStore(BaseJsonStore):
             rec.approver = approver or rec.approver
             return self._flush(tenant_id, records, idx, rec)
 
-    def approve_final(self, approval_id: str, author: str, comment: str = "", tenant_id: str | None = None) -> ApprovalRecord:
+    def approve_final(
+        self,
+        approval_id: str,
+        author: str,
+        comment: str = "",
+        tenant_id: str | None = None,
+        *,
+        freshness_acknowledged: bool = False,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -315,6 +385,10 @@ class ApprovalStore(BaseJsonStore):
                 )
             rec.status = ApprovalStatus.APPROVED.value
             rec.approved_at = _now_iso()
+            if freshness_acknowledged:
+                rec.freshness_acknowledged = True
+                rec.freshness_acknowledged_by = author
+                rec.freshness_acknowledged_at = rec.approved_at
             if comment:
                 rec.comments.append(ApprovalComment(
                     comment_id=str(uuid.uuid4()), stage="approval", author=author,

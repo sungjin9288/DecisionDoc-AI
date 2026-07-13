@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,918 passed, 2 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,931 passed, 1 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-02: 800줄 초과 15개 전부 분할 → 0개). 2026-07-09 기준 CI advisory `ruff check app/ --select=E,F,W --ignore=E501` 통과, `bandit -ll` medium/high 0건 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2918 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2931 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -63,7 +63,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (38) — 도메인 오케스트레이션
+Services (39) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환

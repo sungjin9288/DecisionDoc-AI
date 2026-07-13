@@ -3,6 +3,16 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone approval freshness evidence
+
+- Project-linked approval creation validates the current tenant's project, document, request, and bundle identity. If project identifiers are omitted, a unique current-tenant request match is bound automatically; ambiguous matches are rejected and another tenant's document is never used.
+- Approval records persist request-time Decision Council and procurement-review freshness evidence. Approval detail resolves the current source document again so procurement or council changes remain visible after the request was created.
+- Final approval returns `409 approval_document_freshness_acknowledgement_required` when the current binding or freshness state is non-current and the caller has not explicitly acknowledged it.
+- A successful acknowledgement stores the actor and approval timestamp in the approval record and writes binding, council, review, and acknowledgement evidence to the existing approval audit entry. This application approval does not grant bid submission, legal, contractual, provider, deployment, training, or service-resume authority.
+- Focused approval/project/audit/infrastructure verification passes with 388 tests. Paid provider tests and every external runtime action remain deferred.
+- The broader approval, project, audit, infrastructure, tenant, security, state-backend, and README metric gate passes with 481 tests. Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,931 passed, 1 skipped, and 4 deselected in 229.15 seconds.
+- A local uvicorn HTTP QA created a project document and then called `/approvals` with only its request identity. The server recovered the unique current-tenant project/document binding and returned `project_document_binding_status: current`, `freshness_warning_present: false`, and `freshness_acknowledgement_required: false`; the temporary local server was then stopped.
+
 ## Post-milestone review-bound document freshness
 
 - Review-bound `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` documents now persist the source procurement timestamp alongside packet SHA256, review decision, reviewed time, and the false operational-approval boundary.

@@ -718,9 +718,14 @@ class TestApprovalApiActions:
         client.post(f"/approvals/{aid}/submit", json={"username": "검토자A", "reviewer": "검토자A"}, headers=HEADERS)
         client.post(f"/approvals/{aid}/review/approve", json={"username": "검토자A"}, headers=HEADERS)
         res = client.post(f"/approvals/{aid}/approve",
-                          json={"username": "결재자B", "approver": "결재자B"}, headers=HEADERS)
+                          json={
+                              "username": "결재자B",
+                              "approver": "결재자B",
+                              "freshness_acknowledged": True,
+                          }, headers=HEADERS)
         assert res.status_code == 200
         assert res.json()["status"] == "approved"
+        assert res.json()["freshness_acknowledged"] is False
 
     def test_reject_endpoint(self, client):
         rec = self._create(client)

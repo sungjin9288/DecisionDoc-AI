@@ -339,6 +339,22 @@ def _append_audit_entries(
             getattr(request.state, "share_procurement_review_document_status_summary", "") or ""
         )
         share_project_document_id = getattr(request.state, "share_project_document_id", "") or ""
+        approval_project_id = getattr(request.state, "approval_project_id", "") or ""
+        approval_project_document_id = (
+            getattr(request.state, "approval_project_document_id", "") or ""
+        )
+        approval_document_binding_status = (
+            getattr(request.state, "approval_document_binding_status", "") or ""
+        )
+        approval_decision_council_document_status = (
+            getattr(request.state, "approval_decision_council_document_status", "") or ""
+        )
+        approval_procurement_review_document_status = (
+            getattr(request.state, "approval_procurement_review_document_status", "") or ""
+        )
+        approval_freshness_acknowledged = getattr(
+            request.state, "approval_freshness_acknowledged", None
+        )
         detail = {
             "method": request.method,
             "path": path,
@@ -419,6 +435,22 @@ def _append_audit_entries(
             detail["share_procurement_review_document_status_summary"] = share_procurement_review_document_status_summary
         if share_project_document_id:
             detail["share_project_document_id"] = share_project_document_id
+        if approval_project_id:
+            detail["project_id"] = approval_project_id
+        if approval_project_document_id:
+            detail["approval_project_document_id"] = approval_project_document_id
+        if approval_document_binding_status:
+            detail["approval_document_binding_status"] = approval_document_binding_status
+        if approval_decision_council_document_status:
+            detail["approval_decision_council_document_status"] = (
+                approval_decision_council_document_status
+            )
+        if approval_procurement_review_document_status:
+            detail["approval_procurement_review_document_status"] = (
+                approval_procurement_review_document_status
+            )
+        if approval_freshness_acknowledged is not None:
+            detail["approval_freshness_acknowledged"] = approval_freshness_acknowledged
 
         store = AuditStore(tenant_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")

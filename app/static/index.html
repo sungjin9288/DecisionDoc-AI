@@ -17232,6 +17232,46 @@
     }
   }
 
+  function renderApprovalFreshnessPanel(approval) {
+    if (!approval?.project_id || !approval?.project_document_id) return '';
+    const items = [
+      {
+        status: approval.project_document_binding_status,
+        tone: approval.project_document_binding_status_tone,
+        copy: approval.project_document_binding_status_copy,
+        summary: approval.project_document_binding_status_summary,
+      },
+      {
+        status: approval.decision_council_document_status,
+        tone: approval.decision_council_document_status_tone,
+        copy: approval.decision_council_document_status_copy,
+        summary: approval.decision_council_document_status_summary,
+      },
+      {
+        status: approval.procurement_review_document_status,
+        tone: approval.procurement_review_document_status_tone,
+        copy: approval.procurement_review_document_status_copy,
+        summary: approval.procurement_review_document_status_summary,
+      },
+    ].filter(item => item.status);
+    if (!items.length) return '';
+    const hasWarning = Boolean(approval.freshness_warning_present);
+    const acknowledgementRecorded = Boolean(approval.freshness_acknowledged);
+    return `
+      <div class="approval-modal-alert" data-approval-document-freshness="${acknowledgementRecorded ? 'acknowledged' : (hasWarning ? 'acknowledgement_required' : 'current')}">
+        <strong>${acknowledgementRecorded ? '원본 문서 상태 확인 후 승인됨' : (hasWarning ? '원본 문서 상태 확인 필요' : '원본 문서 상태 확인됨')}</strong>
+        ${items.map(item => `
+          <span>
+            <span class="tag ${escapeHtml(item.tone || 'muted')}">${escapeHtml(item.copy || item.status)}</span>
+            ${escapeHtml(item.summary || '')}
+          </span>
+        `).join('')}
+        ${acknowledgementRecorded ? `
+          <span>${escapeHtml(approval.freshness_acknowledged_by || '결재자')} · ${escapeHtml((approval.freshness_acknowledged_at || '').slice(0, 16).replace('T', ' '))}</span>
+        ` : (hasWarning ? '<span>최종 승인 시 이 상태를 확인했다는 명시적 acknowledgement가 approval record와 audit에 기록됩니다.</span>' : '')}
+      </div>`;
+  }
+
   function renderApprovalDetail(a) {
     const s         = APPROVAL_STATUS_LABEL[a.status] || { label: a.status, color: '#888' };
     const container = $id('approval-detail');
@@ -17273,6 +17313,7 @@
       </div>` : '';
 
     const actionsHtml = _renderApprovalActions(a, username);
+    const freshnessHtml = renderApprovalFreshnessPanel(a);
 
     const downloadHtml = a.status === 'approved' ? `
       <div class="approval-download">
@@ -17295,6 +17336,7 @@
         <span>검토자: ${a.reviewer || '미지정'}</span>
         <span>결재자: ${a.approver || '미지정'}</span>
       </div>
+      ${freshnessHtml}
       ${timelineHtml}
       ${commentsHtml}
       ${actionsHtml}
@@ -17358,7 +17400,8 @@
           <textarea id="approve-comment" placeholder="결재 의견 (선택)" rows="3"></textarea>
           <div class="btn-row">
             <button class="btn btn-primary" style="padding:7px 14px;border-radius:6px;background:#22c55e;color:#fff;border:none;cursor:pointer;font-weight:600"
-              data-approval-id="${escapeHtml(a.approval_id)}" data-approval-flow-action="approve" data-approval-field="approve-comment" data-approval-body-key="comment">
+              data-approval-id="${escapeHtml(a.approval_id)}" data-approval-flow-action="approve" data-approval-field="approve-comment" data-approval-body-key="comment"
+              data-approval-freshness-required="${a.freshness_acknowledgement_required ? 'true' : 'false'}">
               ✅ 최종 승인
             </button>
             <button class="btn-danger"
@@ -17391,10 +17434,17 @@
     });
     container.querySelectorAll('[data-approval-flow-action]').forEach(btn => {
       btn.addEventListener('click', () => {
+        const action = btn.dataset.approvalFlowAction || '';
+        const body = approvalActionBodyFromButton(btn);
+        if (action === 'approve' && btn.dataset.approvalFreshnessRequired === 'true') {
+          const confirmed = confirm('현재 원본과 다른 결재 문서입니다. 표시된 freshness 상태를 확인하고 최종 승인하시겠습니까?');
+          if (!confirmed) return;
+          body.freshness_acknowledged = true;
+        }
         approvalAction(
           btn.dataset.approvalId || '',
-          btn.dataset.approvalFlowAction || '',
-          approvalActionBodyFromButton(btn),
+          action,
+          body,
         );
       });
     });
@@ -17409,8 +17459,8 @@
         body: JSON.stringify({ username, ...body }),
       });
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detail || e.message || `서버 오류 ${res.status}`);
+        const error = await parseApiErrorResponse(res);
+        throw new Error(error.message || `서버 오류 ${res.status}`);
       }
       showNotification('처리 완료', 'success');
       await loadApprovalDetail(approvalId);
@@ -17829,6 +17879,8 @@
           drafter,
           docs,
           gov_options: source.govOptions ?? getGovOptions(),
+          project_id: source.projectId || '',
+          project_document_id: source.docId || '',
         }),
       });
       if (!res.ok) {

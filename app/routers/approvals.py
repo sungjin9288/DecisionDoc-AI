@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.auth.api_key import require_api_key
 from app.dependencies import get_tenant_id
+from app.routers.projects._shared import _serialize_project_detail
 from app.schemas import (
     ApprovalActionRequest,
     CreateApprovalRequest,
@@ -24,6 +25,20 @@ from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 
 router = APIRouter(tags=["approvals"])
+
+_DECISION_COUNCIL_STATUS_FIELDS = (
+    "decision_council_document_status",
+    "decision_council_document_status_tone",
+    "decision_council_document_status_copy",
+    "decision_council_document_status_summary",
+)
+_PROCUREMENT_REVIEW_STATUS_FIELDS = (
+    "procurement_review_document_status",
+    "procurement_review_document_status_tone",
+    "procurement_review_document_status_copy",
+    "procurement_review_document_status_summary",
+)
+_FRESHNESS_STATUS_FIELDS = _DECISION_COUNCIL_STATUS_FIELDS + _PROCUREMENT_REVIEW_STATUS_FIELDS
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +103,184 @@ def _sync_project_document_approval_state(
         pass
 
 
+def _lookup_approval_project_document(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+    project_document_id: str,
+    request_id: str,
+    bundle_id: str,
+) -> tuple[str, dict | None]:
+    if not project_id and not project_document_id:
+        return "not_linked", None
+    if not project_id or not project_document_id:
+        return "mismatch", None
+
+    project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
+    if project is None:
+        return "missing", None
+
+    detail = _serialize_project_detail(request, tenant_id=tenant_id, project=project)
+    document = next(
+        (
+            item
+            for item in detail.get("documents", [])
+            if item.get("doc_id") == project_document_id
+        ),
+        None,
+    )
+    if document is None:
+        return "missing", None
+    if request_id and document.get("request_id") != request_id:
+        return "mismatch", None
+    if bundle_id and document.get("bundle_id") != bundle_id:
+        return "mismatch", None
+    return "current", document
+
+
+def _require_approval_project_document(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+    project_document_id: str,
+    request_id: str,
+    bundle_id: str,
+) -> dict | None:
+    binding_status, document = _lookup_approval_project_document(
+        request,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        project_document_id=project_document_id,
+        request_id=request_id,
+        bundle_id=bundle_id,
+    )
+    if binding_status == "not_linked":
+        return None
+    if binding_status == "missing":
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "approval_project_document_not_found",
+                "message": "현재 tenant에서 결재 대상 프로젝트 문서를 찾을 수 없습니다.",
+            },
+        )
+    if binding_status == "mismatch":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approval_project_document_mismatch",
+                "message": "결재 요청의 project, document, request, bundle 식별자가 일치하지 않습니다.",
+            },
+        )
+    return document
+
+
+def _resolve_approval_project_binding(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+    project_document_id: str,
+    request_id: str,
+) -> tuple[str, str]:
+    if project_id or project_document_id or not request_id:
+        return project_id, project_document_id
+
+    matches = [
+        (project.project_id, document.doc_id)
+        for project in request.app.state.project_store.list_by_tenant(tenant_id)
+        for document in project.documents
+        if document.request_id == request_id
+    ]
+    if not matches:
+        return "", ""
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approval_project_document_binding_required",
+                "message": "같은 request ID를 사용하는 프로젝트 문서가 여러 개입니다. project와 document 식별자를 지정해야 합니다.",
+            },
+        )
+    return matches[0]
+
+
+def _freshness_values(document: dict | None) -> dict[str, str]:
+    if document is None:
+        return {field: "" for field in _FRESHNESS_STATUS_FIELDS}
+    return {
+        field: str(document.get(field) or "").strip()
+        for field in _FRESHNESS_STATUS_FIELDS
+    }
+
+
+def _approval_binding_copy(status: str) -> tuple[str, str, str]:
+    if status == "current":
+        return "success", "프로젝트 문서 연결 확인", "현재 tenant의 원본 프로젝트 문서와 결재 기록이 일치합니다."
+    if status == "missing":
+        return "danger", "원본 프로젝트 문서 없음", "결재 기록이 참조한 프로젝트 문서를 현재 tenant에서 찾을 수 없습니다."
+    if status == "mismatch":
+        return "danger", "원본 프로젝트 문서 불일치", "결재 기록의 project, document, request, bundle 식별자가 현재 원본과 일치하지 않습니다."
+    return "muted", "프로젝트 문서 연결 없음", "일반 결재 또는 legacy 기록으로 프로젝트 문서 freshness를 재검증하지 않습니다."
+
+
+def _serialize_approval_record(record, request: Request, *, tenant_id: str) -> dict:
+    payload = asdict(record)
+    binding_status, document = _lookup_approval_project_document(
+        request,
+        tenant_id=tenant_id,
+        project_id=record.project_id,
+        project_document_id=record.project_document_id,
+        request_id=record.request_id,
+        bundle_id=record.bundle_id,
+    )
+    binding_tone, binding_copy, binding_summary = _approval_binding_copy(binding_status)
+    payload["project_document_binding_status"] = binding_status
+    payload["project_document_binding_status_tone"] = binding_tone
+    payload["project_document_binding_status_copy"] = binding_copy
+    payload["project_document_binding_status_summary"] = binding_summary
+
+    current_values = _freshness_values(document)
+    for field, current_value in current_values.items():
+        source_value = str(payload.get(f"source_{field}") or "").strip()
+        payload[field] = current_value or source_value
+
+    freshness_warning_present = (
+        binding_status in {"missing", "mismatch"}
+        or any(
+            payload.get(field) and payload.get(field) != "current"
+            for field in (
+                "decision_council_document_status",
+                "procurement_review_document_status",
+            )
+        )
+    )
+    payload["freshness_warning_present"] = freshness_warning_present
+    payload["freshness_acknowledgement_required"] = (
+        freshness_warning_present
+        and record.status != "approved"
+        and not record.freshness_acknowledged
+    )
+    return payload
+
+
+def _record_approval_freshness_audit(request: Request, payload: dict, *, acknowledged: bool) -> None:
+    request.state.approval_project_id = payload.get("project_id") or ""
+    request.state.approval_project_document_id = payload.get("project_document_id") or ""
+    request.state.approval_document_binding_status = (
+        payload.get("project_document_binding_status") or ""
+    )
+    request.state.approval_decision_council_document_status = (
+        payload.get("decision_council_document_status") or ""
+    )
+    request.state.approval_procurement_review_document_status = (
+        payload.get("procurement_review_document_status") or ""
+    )
+    request.state.approval_freshness_acknowledged = acknowledged
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -97,6 +290,22 @@ def create_approval_endpoint(payload: CreateApprovalRequest, request: Request) -
     """Create a new approval workflow record (기안 단계)."""
     tenant_id = get_tenant_id(request)
     approval_store = request.app.state.approval_store
+    project_id, project_document_id = _resolve_approval_project_binding(
+        request,
+        tenant_id=tenant_id,
+        project_id=payload.project_id,
+        project_document_id=payload.project_document_id,
+        request_id=payload.request_id,
+    )
+    project_document = _require_approval_project_document(
+        request,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        project_document_id=project_document_id,
+        request_id=payload.request_id,
+        bundle_id=payload.bundle_id,
+    )
+    freshness = _freshness_values(project_document)
     rec = approval_store.create(
         tenant_id=tenant_id,
         request_id=payload.request_id,
@@ -105,6 +314,9 @@ def create_approval_endpoint(payload: CreateApprovalRequest, request: Request) -
         drafter=payload.drafter,
         docs=payload.docs,
         gov_options=payload.gov_options,
+        project_id=project_id,
+        project_document_id=project_document_id,
+        **freshness,
     )
     _sync_project_document_approval_state(
         request,
@@ -113,7 +325,9 @@ def create_approval_endpoint(payload: CreateApprovalRequest, request: Request) -
         approval_id=rec.approval_id,
         approval_status=rec.status,
     )
-    return asdict(rec)
+    response = _serialize_approval_record(rec, request, tenant_id=tenant_id)
+    _record_approval_freshness_audit(request, response, acknowledged=False)
+    return response
 
 
 @router.get("/approvals", dependencies=[Depends(require_api_key)])
@@ -152,7 +366,7 @@ def get_approval_endpoint(approval_id: str, request: Request) -> dict:
     rec = approval_store.get(approval_id, tenant_id=tenant_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"결재 문서를 찾을 수 없습니다: {approval_id}")
-    return asdict(rec)
+    return _serialize_approval_record(rec, request, tenant_id=tenant_id)
 
 
 @router.post("/approvals/{approval_id}/submit", dependencies=[Depends(require_api_key)])
@@ -257,6 +471,33 @@ async def final_approve_endpoint(approval_id: str, payload: ApprovalActionReques
     tenant_id = get_tenant_id(request)
     approval_store = request.app.state.approval_store
     actor_name = getattr(request.state, "username", payload.username or "")
+    current = approval_store.get(approval_id, tenant_id=tenant_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail=f"결재 문서를 찾을 수 없습니다: {approval_id}")
+    freshness = _serialize_approval_record(current, request, tenant_id=tenant_id)
+    freshness_acknowledged = (
+        payload.freshness_acknowledged and freshness["freshness_warning_present"]
+    )
+    _record_approval_freshness_audit(
+        request,
+        freshness,
+        acknowledged=freshness_acknowledged,
+    )
+    if freshness["freshness_acknowledgement_required"] and not freshness_acknowledged:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approval_document_freshness_acknowledgement_required",
+                "message": "현재 원본과 다른 결재 문서입니다. 상태를 확인하고 명시적으로 승인해야 합니다.",
+                "project_document_binding_status": freshness["project_document_binding_status"],
+                "decision_council_document_status": freshness[
+                    "decision_council_document_status"
+                ],
+                "procurement_review_document_status": freshness[
+                    "procurement_review_document_status"
+                ],
+            },
+        )
     if payload.approver:
         try:
             approval_store.submit_for_approval(
@@ -272,6 +513,7 @@ async def final_approve_endpoint(approval_id: str, payload: ApprovalActionReques
             author=payload.username,
             comment=payload.comment,
             tenant_id=tenant_id,
+            freshness_acknowledged=freshness_acknowledged,
         )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -292,7 +534,7 @@ async def final_approve_endpoint(approval_id: str, payload: ApprovalActionReques
     except Exception:
         pass
     _emit_approval_event(request, approval_id, "approved")
-    return asdict(rec)
+    return _serialize_approval_record(rec, request, tenant_id=tenant_id)
 
 
 @router.post("/approvals/{approval_id}/reject", dependencies=[Depends(require_api_key)])
