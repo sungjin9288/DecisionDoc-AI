@@ -123,6 +123,7 @@ Current local evidence slice:
 - `manage_procurement_decision_review_packet.py` wraps those 12 validated artifacts in a deterministic ZIP with an embedded SHA256 manifest. The packet remains `review_ready`, keeps `operational_approval: false`, and can be independently reverified after handoff.
 - `manage_procurement_review_receipt.py` creates `procurement_review_receipt.json` outside the packet, binds it to `packet_sha256`, and moves `review_status` once from `pending` to `completed` for the requested reviewer. Completion records review evidence only and keeps operational approval false.
 - `manage_procurement_review_receipt.py render/apply-draft` adds a packet/receipt-bound browser input path without changing the script-free packet artifact. The downloaded draft is rejected when source bytes, reviewer identity, field order, UTC time, or the false operational-approval boundary drift.
+- `manage_procurement_reviewed_package.py create/verify` closes the local export loop after review completion by wrapping the unchanged packet and completed receipt in a deterministic three-entry audit envelope. `review_completed` records the outcome for accepted, changes-requested, or rejected reviews and never grants operational approval.
 - `review.html` shows generated documents and automatic validation evidence.
 - `human_review.html` combines request evidence, automatic validation, generated Markdown, manifest-bound receipt state, reviewer notes, and the external-action boundary in one workspace. Reviewer input is downloaded as a source-bound draft rather than written directly to evidence.
 - `manage_finished_doc_human_review.py` validates and atomically applies a draft only when its manifest and receipt hashes still match, without provider or AWS execution.
@@ -141,6 +142,7 @@ Current local evidence slice:
 - Hard filters and unknown data are visible.
 - Reviewer sign-off remains separate from operational approval.
 - A local reviewer decision can be recorded once and revalidated against the exact packet bytes.
+- A completed review can be exported and independently reverified without modifying its source packet or receipt.
 - The demo does not depend on live provider or AWS availability.
 
 ## 5. 90-Day Plan

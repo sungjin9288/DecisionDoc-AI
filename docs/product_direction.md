@@ -204,6 +204,7 @@ Focus on a narrow, demonstrable workflow:
 - The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.
 - Packet status stays `review_ready`; `operational_approval` remains false and independent verification rejects path, fingerprint, membership, and semantic drift.
 - `manage_procurement_review_receipt.py` keeps `procurement_review_receipt.json` outside the packet, binds it to `packet_sha256`, and records one requested-reviewer decision through a validated `review_status` transition.
+- `manage_procurement_reviewed_package.py` exports the unchanged packet and completed receipt as a deterministic review-completed audit envelope while preserving the same non-authorization boundary.
 - Validation summaries and authorization boundaries remain visible to non-engineering reviewers.
 
 ### Next

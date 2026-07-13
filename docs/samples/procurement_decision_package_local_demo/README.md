@@ -66,6 +66,15 @@ python3 scripts/manage_procurement_review_receipt.py validate /tmp/decisiondoc-p
 
 Open `/tmp/procurement_review_receipt.html`, choose a decision, enter the rationale, and download `/tmp/procurement_review_draft.json`. The HTML and draft remain outside the ZIP. The receipt keeps `packet_sha256`; its `review_status` moves from `pending` to `completed` once. `apply-draft` requires exact packet and pending-receipt SHA256/size values, the requested reviewer, canonical UTC review time, the explicit authorization boundary, and boolean `operational_approval: false` before that atomic transition.
 
+Wrap the original packet and completed receipt in a deterministic review-completed audit envelope, then verify it independently:
+
+```bash
+python3 scripts/manage_procurement_reviewed_package.py create /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --output /tmp/procurement-reviewed-package.zip
+python3 scripts/manage_procurement_reviewed_package.py verify /tmp/procurement-reviewed-package.zip
+```
+
+`procurement-reviewed-package.zip` contains only the original review packet, the completed receipt, and `reviewed_package_manifest.json`. Its status is `review_completed`, which records the review outcome for any supported decision and does not grant operational approval. Verification repeats the inner packet and receipt semantic checks, validates both source hashes and sizes, and rejects reordered entries, pending receipts, stale evidence, authority drift, and overwritten history.
+
 For a terminal-only review, `record` remains available as an alternative to `render` and `apply-draft`:
 
 ```bash
@@ -91,7 +100,7 @@ outside this sample directory.
 Run the focused regression tests:
 
 ```bash
-pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_review_receipt.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
+pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_review_receipt.py tests/test_procurement_decision_package_reviewed_package.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
 ```
 
 ## Boundary

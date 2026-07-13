@@ -78,6 +78,16 @@ SAMPLE_README_LOCAL_EVIDENCE_COMMANDS = [
         "/tmp/procurement_review_receipt.json"
     ),
     (
+        "python3 scripts/manage_procurement_reviewed_package.py create "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json --output "
+        "/tmp/procurement-reviewed-package.zip"
+    ),
+    (
+        "python3 scripts/manage_procurement_reviewed_package.py verify "
+        "/tmp/procurement-reviewed-package.zip"
+    ),
+    (
         "python3 scripts/manage_procurement_review_receipt.py record "
         "/tmp/decisiondoc-procurement-review.zip --receipt "
         "/tmp/procurement_review_receipt.json --reviewer executive-reviewer "
@@ -100,6 +110,7 @@ SAMPLE_README_FOCUSED_REGRESSION_TESTS = [
     "tests/test_procurement_decision_package_review_workspace.py",
     "tests/test_procurement_decision_package_review_packet.py",
     "tests/test_procurement_decision_package_review_receipt.py",
+    "tests/test_procurement_decision_package_reviewed_package.py",
     "tests/test_procurement_decision_package_cli_contract_manifest.py",
     "tests/test_check_procurement_decision_package_cli_contract_manifest_result.py",
     "tests/test_procurement_decision_package_docs_contract.py",
@@ -178,6 +189,10 @@ FIELD_CONTRACT_MARKERS = [
     "procurement_review_receipt.json",
     "packet_sha256",
     "review_status",
+    Path(CLI_CONTRACT_MANIFEST_CASE_SCRIPTS["reviewed_package_manager"]).name,
+    "procurement-reviewed-package.zip",
+    "reviewed_package_manifest.json",
+    "review_completed",
 ]
 REVIEW_DRAFT_DOCS = [
     "docs/product_local_demo_runbook.md",

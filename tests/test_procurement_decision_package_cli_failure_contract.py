@@ -133,6 +133,7 @@ def test_local_evidence_clis_return_json_failures_no_tracebacks(tmp_path: Path) 
     missing_artifacts = tmp_path / MISSING_ARTIFACTS_DIR_NAME
     missing_packet_path = tmp_path / "missing-packet.zip"
     missing_review_receipt = tmp_path / "missing-review-receipt.json"
+    missing_reviewed_package = tmp_path / "missing-reviewed-package.zip"
     demo_out = tmp_path / DEMO_OUTPUT_DIR_NAME
     export_data_dir = tmp_path / EXPORT_DATA_DIR_NAME
     export_out = tmp_path / EXPORT_OUTPUT_DIR_NAME
@@ -172,6 +173,15 @@ def test_local_evidence_clis_return_json_failures_no_tracebacks(tmp_path: Path) 
             str(missing_packet_path),
             "--receipt",
             str(missing_review_receipt),
+        ),
+        _cli_case(
+            "reviewed_package_manager",
+            "create",
+            str(missing_packet_path),
+            "--receipt",
+            str(missing_review_receipt),
+            "--output",
+            str(missing_reviewed_package),
         ),
         _cli_case(
             "demo_runner",

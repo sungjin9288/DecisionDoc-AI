@@ -3,19 +3,20 @@
   "status": "passed",
   "validation_result_path": "docs/samples/procurement_decision_package_local_demo/cli_contract_manifest_validation_result.json",
   "manifest_path": "docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json",
-  "contract_version": "1.2.0",
-  "manifest_sha256": "d85b54dcc513b07ef4a0593abcfa0f5b31c08438dfcc324ecf9520110eaec12e",
-  "manifest_size_bytes": 9859,
+  "contract_version": "1.3.0",
+  "manifest_sha256": "9df044c5a939abc95ace6fcb000ddaaf29fad9ff5773c51385b5fbc1716be1ad",
+  "manifest_size_bytes": 10688,
   "workflow": "procurement_decision_package_local_demo",
   "contract_status": "local_only",
-  "contract_count": 12,
-  "script_count": 12,
+  "contract_count": 13,
+  "script_count": 13,
   "case_names": [
     "sample_validator",
     "sample_builder",
     "artifact_checker",
     "packet_manager",
     "review_receipt_manager",
+    "reviewed_package_manager",
     "demo_runner",
     "project_export",
     "evidence_gate",
@@ -30,6 +31,7 @@
     "scripts/check_procurement_decision_package_artifacts.py",
     "scripts/manage_procurement_decision_review_packet.py",
     "scripts/manage_procurement_review_receipt.py",
+    "scripts/manage_procurement_reviewed_package.py",
     "scripts/run_procurement_decision_package_demo.py",
     "scripts/export_procurement_decision_package.py",
     "scripts/gate_procurement_decision_package_demo.py",
@@ -112,6 +114,26 @@
       "authorization_boundary",
       "operational_approval",
       "receipt_valid"
+    ],
+    "reviewed_package_manager": [
+      "status",
+      "operation",
+      "source_packet_path",
+      "receipt_path",
+      "package_path",
+      "package_sha256",
+      "package_size_bytes",
+      "schema_version",
+      "reviewed_package_status",
+      "package_id",
+      "recommendation",
+      "reviewer",
+      "decision",
+      "reviewed_at",
+      "entry_count",
+      "authorization_boundary",
+      "operational_approval",
+      "package_verified"
     ],
     "demo_runner": [
       "status",
@@ -286,6 +308,15 @@
       "error_type",
       "error"
     ],
+    "reviewed_package_manager": [
+      "status",
+      "operation",
+      "source_packet_path",
+      "receipt_path",
+      "package_path",
+      "error_type",
+      "error"
+    ],
     "demo_runner": [
       "schema_purpose",
       "status",
@@ -353,6 +384,6 @@
       "error"
     ]
   },
-  "cli_contract_fingerprint": "fd9488daeafc31d40e78c6da441d634a645dbbd8b0bd06fc41c6b909eafc77ad",
+  "cli_contract_fingerprint": "6f270f6ded65b47681ed511b81d6c4da371c99e5b932a1fba0cf2e83c57b711b",
   "validation_result_checked": true
 }

@@ -22,6 +22,8 @@ from app.services.procurement_decision_package_service import (
     PACKET_SCHEMA_VERSION,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
     REVIEW_RECEIPT_PENDING,
+    REVIEWED_PACKAGE_SCHEMA_VERSION,
+    REVIEWED_PACKAGE_STATUS,
     SMOKE_CHECK_NAME,
     SMOKE_NAME,
     SMOKE_RESULT_NAME,
@@ -155,6 +157,7 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     manifest_validation_result_path = tmp_path / CUSTOM_MANIFEST_VALIDATION_RESULT_NAME
     packet_path = tmp_path / "procurement-review-packet.zip"
     review_receipt_path = tmp_path / "procurement-review-receipt.json"
+    reviewed_package_path = tmp_path / "procurement-reviewed-package.zip"
 
     validator_result = _run_success_case(
         "sample_validator",
@@ -223,6 +226,43 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     assert review_receipt_result["reviewed_at"] is None
     assert review_receipt_result["operational_approval"] is False
     assert review_receipt_result["receipt_valid"] is True
+
+    completed_receipt_result = _run_success_case(
+        "review_receipt_manager",
+        "record",
+        str(packet_path),
+        "--receipt",
+        str(review_receipt_path),
+        "--reviewer",
+        "executive-reviewer",
+        "--decision",
+        "accepted",
+        "--rationale",
+        "Reviewed against the local package evidence.",
+        "--reviewed-at",
+        "2026-07-13T15:30:00Z",
+        success_contract=success_contract,
+        contracts=contracts,
+    )
+    assert completed_receipt_result["review_status"] == "completed"
+
+    reviewed_package_result = _run_success_case(
+        "reviewed_package_manager",
+        "create",
+        str(packet_path),
+        "--receipt",
+        str(review_receipt_path),
+        "--output",
+        str(reviewed_package_path),
+        success_contract=success_contract,
+        contracts=contracts,
+    )
+    assert reviewed_package_result["schema_version"] == REVIEWED_PACKAGE_SCHEMA_VERSION
+    assert reviewed_package_result["reviewed_package_status"] == REVIEWED_PACKAGE_STATUS
+    assert reviewed_package_result["decision"] == "accepted"
+    assert reviewed_package_result["entry_count"] == 3
+    assert reviewed_package_result["operational_approval"] is False
+    assert reviewed_package_result["package_verified"] is True
 
     demo_result = _run_success_case(
         "demo_runner",

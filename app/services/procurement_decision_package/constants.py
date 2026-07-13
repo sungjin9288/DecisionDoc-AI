@@ -318,7 +318,7 @@ SMOKE_CHECK_RESULT_NAME = "demo_smoke_check_result.json"
 CLI_CONTRACT_MANIFEST_SCHEMA_PURPOSE = (
     "procurement_decision_package_cli_contract_manifest"
 )
-CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.2.0"
+CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.3.0"
 CLI_CONTRACT_MANIFEST_WORKFLOW = "procurement_decision_package_local_demo"
 CLI_CONTRACT_MANIFEST_CONTRACT_STATUS = "local_only"
 CLI_CONTRACT_MANIFEST_IDENTITY_VALUES = (
@@ -452,6 +452,7 @@ CLI_CONTRACT_MANIFEST_CASE_ORDER = (
     "artifact_checker",
     "packet_manager",
     "review_receipt_manager",
+    "reviewed_package_manager",
     "demo_runner",
     "project_export",
     "evidence_gate",
@@ -467,6 +468,7 @@ CLI_CONTRACT_MANIFEST_CASE_SCRIPTS = {
     "artifact_checker": "scripts/check_procurement_decision_package_artifacts.py",
     "packet_manager": "scripts/manage_procurement_decision_review_packet.py",
     "review_receipt_manager": "scripts/manage_procurement_review_receipt.py",
+    "reviewed_package_manager": "scripts/manage_procurement_reviewed_package.py",
     "demo_runner": "scripts/run_procurement_decision_package_demo.py",
     "project_export": "scripts/export_procurement_decision_package.py",
     "evidence_gate": "scripts/gate_procurement_decision_package_demo.py",
@@ -542,6 +544,26 @@ CLI_CONTRACT_MANIFEST_SUCCESS_FIELDS_BY_CASE = {
         "authorization_boundary",
         "operational_approval",
         "receipt_valid",
+    ),
+    "reviewed_package_manager": (
+        "status",
+        "operation",
+        "source_packet_path",
+        "receipt_path",
+        "package_path",
+        "package_sha256",
+        "package_size_bytes",
+        "schema_version",
+        "reviewed_package_status",
+        "package_id",
+        "recommendation",
+        "reviewer",
+        "decision",
+        "reviewed_at",
+        "entry_count",
+        "authorization_boundary",
+        "operational_approval",
+        "package_verified",
     ),
     "demo_runner": (
         "status",
@@ -668,6 +690,15 @@ CLI_CONTRACT_MANIFEST_FAILURE_FIELDS_BY_CASE = {
         "operation",
         "packet_path",
         "receipt_path",
+        "error_type",
+        "error",
+    ),
+    "reviewed_package_manager": (
+        "status",
+        "operation",
+        "source_packet_path",
+        "receipt_path",
+        "package_path",
         "error_type",
         "error",
     ),
