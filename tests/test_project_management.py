@@ -1320,6 +1320,45 @@ class TestProjectProcurementApi:
         assert approved.json()["freshness_acknowledged_at"]
         assert approved.json()["freshness_warning_present"] is True
         assert approved.json()["freshness_acknowledgement_required"] is False
+        assert len(approved.json()["approved_source_fingerprint"]) == 64
+        assert approved.json()["current_source_fingerprint"] == approved.json()[
+            "approved_source_fingerprint"
+        ]
+        assert approved.json()["post_approval_source_changed"] is False
+        assert approved.json()["source_change_acknowledgement_required"] is False
+
+        unchanged_download = client.get(
+            f"/approvals/{approval_id}/download/docx",
+            headers=HEADERS,
+        )
+        assert unchanged_download.status_code == 200
+
+        self._ready_decision(client, pid)
+        drifted_detail = client.get(
+            f"/approvals/{approval_id}",
+            headers=HEADERS,
+        ).json()
+        assert drifted_detail["post_approval_source_changed"] is True
+        assert drifted_detail["source_change_acknowledgement_required"] is True
+        assert drifted_detail["current_source_fingerprint"] != drifted_detail[
+            "approved_source_fingerprint"
+        ]
+
+        blocked_download = client.get(
+            f"/approvals/{approval_id}/download/docx",
+            headers=HEADERS,
+        )
+        assert blocked_download.status_code == 409
+        assert blocked_download.json()["detail"]["code"] == (
+            "approved_document_source_change_acknowledgement_required"
+        )
+
+        acknowledged_download = client.get(
+            f"/approvals/{approval_id}/download/docx",
+            params={"source_change_acknowledged": "true"},
+            headers=HEADERS,
+        )
+        assert acknowledged_download.status_code == 200
 
         from app.storage.audit_store import AuditStore
 
@@ -1342,6 +1381,25 @@ class TestProjectProcurementApi:
             == "stale_procurement_review"
             for entry in stale_audits
         )
+
+        download_audits = AuditStore("system").query(
+            "system",
+            filters={"action": "doc.download"},
+        )
+        drift_download_audits = [
+            entry
+            for entry in download_audits
+            if entry["detail"].get("approval_project_document_id") == proposal["doc_id"]
+            and entry["detail"].get("approval_post_approval_source_changed") is True
+        ]
+        assert {entry["result"] for entry in drift_download_audits} == {
+            "success",
+            "failure",
+        }
+        assert {
+            entry["detail"]["approval_source_change_acknowledged"]
+            for entry in drift_download_audits
+        } == {False, True}
 
     def test_review_inbox_filters_tenant_queue_and_includes_project_context(self, client):
         pending_project_id = self._pid(client)

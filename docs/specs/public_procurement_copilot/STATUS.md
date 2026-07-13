@@ -3,6 +3,18 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone approved export source drift evidence
+
+- Project-linked approvals persist a deterministic SHA-256 fingerprint of the source state at final approval. The fingerprint covers the project-document identity, procurement update timestamp, latest Decision Council session/revision, and bound procurement-review evidence without including the mutable approval status itself.
+- Approval detail compares the current tenant-scoped source fingerprint with the approval-time fingerprint and exposes `post_approval_source_changed` plus `source_change_acknowledgement_required`. Legacy or generic approvals without a project-document binding keep the existing download behavior.
+- Approved document download returns `409 approved_document_source_change_acknowledgement_required` when the source changes after final approval. The UI shows a separate post-approval warning and sends `source_change_acknowledged=true` only after explicit operator confirmation.
+- Download audit evidence distinguishes post-approval source drift from the acknowledgement used during final approval. Both the blocked attempt and the explicitly acknowledged download record project/document binding, current council/review status, drift state, and acknowledgement state.
+- The exported bytes remain the immutable approved document snapshot. This check does not rewrite the approved document or grant bid submission, legal, contractual, provider, deployment, training, or service-resume authority.
+- Focused approval/freshness/download/UI verification passes with 97 tests. The broader approval, project, audit, infrastructure, tenant, security, and state-backend gate passes with 479 tests; application Ruff E/F/W, Bandit medium/high, Python compile, inline JavaScript parsing, and `git diff --check` also pass.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,932 passed, 1 skipped, and 4 deselected in 225.94 seconds.
+- A temporary mock/local uvicorn HTTP QA produced a 64-character approval fingerprint, downloaded the unchanged approved snapshot with 200, removed the bound project document, observed `post_approval_source_changed: true`, received 409 without acknowledgement, and downloaded with 200 after explicit acknowledgement. The server was stopped and the temporary data was removed.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone approval freshness evidence
 
 - Project-linked approval creation validates the current tenant's project, document, request, and bundle identity. If project identifiers are omitted, a unique current-tenant request match is bound automatically; ambiguous matches are rejected and another tenant's document is never used.

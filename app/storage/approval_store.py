@@ -74,6 +74,7 @@ class ApprovalRecord:
     freshness_acknowledged: bool = False
     freshness_acknowledged_by: str = ""
     freshness_acknowledged_at: str = ""
+    approved_source_fingerprint: str = ""
 
 
 class ApprovalStore(BaseJsonStore):
@@ -170,6 +171,7 @@ class ApprovalStore(BaseJsonStore):
             freshness_acknowledged=d.get("freshness_acknowledged", False),
             freshness_acknowledged_by=d.get("freshness_acknowledged_by", ""),
             freshness_acknowledged_at=d.get("freshness_acknowledged_at", ""),
+            approved_source_fingerprint=d.get("approved_source_fingerprint", ""),
         )
 
     def _find(self, approval_id: str, tenant_id: str | None = None) -> tuple[str, list[dict], int, ApprovalRecord] | None:
@@ -368,6 +370,7 @@ class ApprovalStore(BaseJsonStore):
         tenant_id: str | None = None,
         *,
         freshness_acknowledged: bool = False,
+        approved_source_fingerprint: str = "",
     ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
@@ -385,6 +388,7 @@ class ApprovalStore(BaseJsonStore):
                 )
             rec.status = ApprovalStatus.APPROVED.value
             rec.approved_at = _now_iso()
+            rec.approved_source_fingerprint = approved_source_fingerprint
             if freshness_acknowledged:
                 rec.freshness_acknowledged = True
                 rec.freshness_acknowledged_by = author

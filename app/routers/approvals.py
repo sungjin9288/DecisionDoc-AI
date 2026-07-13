@@ -4,6 +4,7 @@ Extracted from app/main.py to keep the main module lean.
 """
 from __future__ import annotations
 
+import hashlib
 import json as _json
 import re
 import urllib.parse
@@ -216,6 +217,84 @@ def _freshness_values(document: dict | None) -> dict[str, str]:
     }
 
 
+def _approval_source_fingerprint(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+    binding_status: str,
+    document: dict | None,
+) -> str:
+    if not project_id or document is None:
+        return ""
+
+    procurement_record = None
+    procurement_store = getattr(request.app.state, "procurement_store", None)
+    if procurement_store is not None:
+        procurement_record = procurement_store.get(project_id, tenant_id=tenant_id)
+
+    latest_council = None
+    council_service = getattr(request.app.state, "decision_council_service", None)
+    if council_service is not None:
+        latest_council = council_service.get_latest_procurement_council(
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+
+    review_record = None
+    packet_sha256 = str(
+        document.get("source_procurement_review_packet_sha256") or ""
+    ).strip()
+    review_store = getattr(request.app.state, "procurement_review_store", None)
+    if review_store is not None and packet_sha256:
+        try:
+            review_record = review_store.get(
+                tenant_id=tenant_id,
+                project_id=project_id,
+                packet_sha256=packet_sha256,
+            )
+        except ValueError:
+            review_record = None
+
+    source_state = {
+        "binding_status": binding_status,
+        "document": {
+            "doc_id": document.get("doc_id"),
+            "request_id": document.get("request_id"),
+            "bundle_id": document.get("bundle_id"),
+            "source_decision_council_session_id": document.get(
+                "source_decision_council_session_id"
+            ),
+            "source_decision_council_session_revision": document.get(
+                "source_decision_council_session_revision"
+            ),
+            "source_procurement_review_packet_sha256": packet_sha256,
+            "source_procurement_review_source_updated_at": document.get(
+                "source_procurement_review_source_updated_at"
+            ),
+            "decision_council_document_status": document.get(
+                "decision_council_document_status"
+            ),
+            "procurement_review_document_status": document.get(
+                "procurement_review_document_status"
+            ),
+        },
+        "current_procurement_updated_at": getattr(procurement_record, "updated_at", ""),
+        "latest_council_session_id": getattr(latest_council, "session_id", ""),
+        "latest_council_session_revision": getattr(latest_council, "session_revision", None),
+        "review_status": getattr(review_record, "review_status", ""),
+        "review_decision": getattr(review_record, "decision", ""),
+        "review_operational_approval": getattr(review_record, "operational_approval", None),
+    }
+    canonical = _json.dumps(
+        source_state,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _approval_binding_copy(status: str) -> tuple[str, str, str]:
     if status == "current":
         return "success", "프로젝트 문서 연결 확인", "현재 tenant의 원본 프로젝트 문서와 결재 기록이 일치합니다."
@@ -263,6 +342,22 @@ def _serialize_approval_record(record, request: Request, *, tenant_id: str) -> d
         and record.status != "approved"
         and not record.freshness_acknowledged
     )
+    current_source_fingerprint = _approval_source_fingerprint(
+        request,
+        tenant_id=tenant_id,
+        project_id=record.project_id,
+        binding_status=binding_status,
+        document=document,
+    )
+    payload["current_source_fingerprint"] = current_source_fingerprint
+    payload["post_approval_source_changed"] = bool(
+        record.status == "approved"
+        and record.approved_source_fingerprint
+        and current_source_fingerprint != record.approved_source_fingerprint
+    )
+    payload["source_change_acknowledgement_required"] = payload[
+        "post_approval_source_changed"
+    ]
     return payload
 
 
@@ -279,6 +374,19 @@ def _record_approval_freshness_audit(request: Request, payload: dict, *, acknowl
         payload.get("procurement_review_document_status") or ""
     )
     request.state.approval_freshness_acknowledged = acknowledged
+
+
+def _record_approval_download_freshness_audit(
+    request: Request,
+    payload: dict,
+    *,
+    acknowledged: bool,
+) -> None:
+    _record_approval_freshness_audit(request, payload, acknowledged=False)
+    request.state.approval_post_approval_source_changed = bool(
+        payload.get("post_approval_source_changed")
+    )
+    request.state.approval_source_change_acknowledged = acknowledged
 
 
 # ---------------------------------------------------------------------------
@@ -514,6 +622,7 @@ async def final_approve_endpoint(approval_id: str, payload: ApprovalActionReques
             comment=payload.comment,
             tenant_id=tenant_id,
             freshness_acknowledged=freshness_acknowledged,
+            approved_source_fingerprint=freshness["current_source_fingerprint"],
         )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -596,7 +705,12 @@ def update_approval_docs_endpoint(approval_id: str, payload: UpdateApprovalDocsR
 
 
 @router.get("/approvals/{approval_id}/download/{fmt}", dependencies=[Depends(require_api_key)])
-async def download_approved_doc_endpoint(approval_id: str, fmt: str, request: Request) -> Response:
+async def download_approved_doc_endpoint(
+    approval_id: str,
+    fmt: str,
+    request: Request,
+    source_change_acknowledged: bool = False,
+) -> Response:
     """Download approved document. Only works when status=approved.
     Uses doc_snapshot (immutable approved version) + stored gov_options."""
     tenant_id = get_tenant_id(request)
@@ -608,6 +722,32 @@ async def download_approved_doc_endpoint(approval_id: str, fmt: str, request: Re
         raise HTTPException(
             status_code=400,
             detail=f"승인된 문서만 다운로드할 수 있습니다. 현재 상태: {rec.status}"
+        )
+    freshness = _serialize_approval_record(rec, request, tenant_id=tenant_id)
+    source_change_acknowledged = bool(
+        source_change_acknowledged and freshness["post_approval_source_changed"]
+    )
+    _record_approval_download_freshness_audit(
+        request,
+        freshness,
+        acknowledged=source_change_acknowledged,
+    )
+    if freshness["source_change_acknowledgement_required"] and not source_change_acknowledged:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_document_source_change_acknowledgement_required",
+                "message": "최종 승인 이후 원본 상태가 변경되었습니다. 현재 상태를 확인하고 다운로드해야 합니다.",
+                "project_document_binding_status": freshness[
+                    "project_document_binding_status"
+                ],
+                "decision_council_document_status": freshness[
+                    "decision_council_document_status"
+                ],
+                "procurement_review_document_status": freshness[
+                    "procurement_review_document_status"
+                ],
+            },
         )
     try:
         docs = _json.loads(rec.doc_snapshot)

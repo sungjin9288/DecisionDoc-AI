@@ -17257,16 +17257,25 @@
     if (!items.length) return '';
     const hasWarning = Boolean(approval.freshness_warning_present);
     const acknowledgementRecorded = Boolean(approval.freshness_acknowledged);
+    const sourceChangedAfterApproval = Boolean(approval.post_approval_source_changed);
+    const panelState = sourceChangedAfterApproval
+      ? 'post_approval_source_changed'
+      : (acknowledgementRecorded ? 'acknowledged' : (hasWarning ? 'acknowledgement_required' : 'current'));
+    const panelTitle = sourceChangedAfterApproval
+      ? '승인 후 원본 변경 확인 필요'
+      : (acknowledgementRecorded ? '원본 문서 상태 확인 후 승인됨' : (hasWarning ? '원본 문서 상태 확인 필요' : '원본 문서 상태 확인됨'));
     return `
-      <div class="approval-modal-alert" data-approval-document-freshness="${acknowledgementRecorded ? 'acknowledged' : (hasWarning ? 'acknowledgement_required' : 'current')}">
-        <strong>${acknowledgementRecorded ? '원본 문서 상태 확인 후 승인됨' : (hasWarning ? '원본 문서 상태 확인 필요' : '원본 문서 상태 확인됨')}</strong>
+      <div class="approval-modal-alert" data-approval-document-freshness="${panelState}">
+        <strong>${panelTitle}</strong>
         ${items.map(item => `
           <span>
             <span class="tag ${escapeHtml(item.tone || 'muted')}">${escapeHtml(item.copy || item.status)}</span>
             ${escapeHtml(item.summary || '')}
           </span>
         `).join('')}
-        ${acknowledgementRecorded ? `
+        ${sourceChangedAfterApproval ? `
+          <span>최종 승인 시점 이후 원본 기준이 변경되었습니다. 현재 상태를 확인한 뒤 승인 스냅샷을 다운로드하세요.</span>
+        ` : acknowledgementRecorded ? `
           <span>${escapeHtml(approval.freshness_acknowledged_by || '결재자')} · ${escapeHtml((approval.freshness_acknowledged_at || '').slice(0, 16).replace('T', ' '))}</span>
         ` : (hasWarning ? '<span>최종 승인 시 이 상태를 확인했다는 명시적 acknowledgement가 approval record와 audit에 기록됩니다.</span>' : '')}
       </div>`;
@@ -17320,7 +17329,8 @@
         <h5 style="margin:0 0 10px;font-size:.9rem">📥 승인 문서 다운로드</h5>
         <div class="btn-row">
           ${['docx','pdf','hwp','excel'].map(fmt =>
-            `<button class="action-btn" data-approval-download-format="${fmt}" data-approval-id="${escapeHtml(a.approval_id)}">${fmt.toUpperCase()}</button>`
+            `<button class="action-btn" data-approval-download-format="${fmt}" data-approval-id="${escapeHtml(a.approval_id)}"
+              data-approval-source-change-required="${a.source_change_acknowledgement_required ? 'true' : 'false'}">${fmt.toUpperCase()}</button>`
           ).join('')}
         </div>
       </div>` : '';
@@ -17429,7 +17439,16 @@
     });
     container.querySelectorAll('[data-approval-download-format]').forEach(btn => {
       btn.addEventListener('click', () => {
-        downloadApprovedDoc(btn.dataset.approvalId || '', btn.dataset.approvalDownloadFormat || '');
+        let sourceChangeAcknowledged = false;
+        if (btn.dataset.approvalSourceChangeRequired === 'true') {
+          sourceChangeAcknowledged = confirm('최종 승인 이후 원본 상태가 변경되었습니다. 현재 상태를 확인하고 승인 스냅샷을 다운로드하시겠습니까?');
+          if (!sourceChangeAcknowledged) return;
+        }
+        downloadApprovedDoc(
+          btn.dataset.approvalId || '',
+          btn.dataset.approvalDownloadFormat || '',
+          sourceChangeAcknowledged,
+        );
       });
     });
     container.querySelectorAll('[data-approval-flow-action]').forEach(btn => {
@@ -17469,12 +17488,13 @@
     }
   }
 
-  async function downloadApprovedDoc(approvalId, format) {
+  async function downloadApprovedDoc(approvalId, format, sourceChangeAcknowledged = false) {
     try {
-      const res = await fetch(`/approvals/${approvalId}/download/${format}`, { headers: getAuthHeaders()});
+      const query = sourceChangeAcknowledged ? '?source_change_acknowledged=true' : '';
+      const res = await fetch(`/approvals/${approvalId}/download/${format}${query}`, { headers: getAuthHeaders()});
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detail || e.message || '다운로드 실패');
+        const error = await parseApiErrorResponse(res);
+        throw new Error(error.message || '다운로드 실패');
       }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);

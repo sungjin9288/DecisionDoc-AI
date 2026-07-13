@@ -268,6 +268,21 @@ class TestValidTransitions:
         updated = store.approve_final(rec.approval_id, author="결재자B")
         assert updated.approved_at is not None
 
+    def test_approve_final_persists_source_fingerprint(self, tmp_path):
+        store = _store(tmp_path)
+        rec = _create_rec(store)
+        store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        store.approve_review(rec.approval_id, author="검토자A")
+
+        updated = store.approve_final(
+            rec.approval_id,
+            author="결재자B",
+            approved_source_fingerprint="a" * 64,
+        )
+
+        assert updated.approved_source_fingerprint == "a" * 64
+        assert store.get(rec.approval_id).approved_source_fingerprint == "a" * 64
+
     def test_reject_from_in_review(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)

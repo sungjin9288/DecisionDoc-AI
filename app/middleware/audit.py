@@ -355,6 +355,12 @@ def _append_audit_entries(
         approval_freshness_acknowledged = getattr(
             request.state, "approval_freshness_acknowledged", None
         )
+        approval_post_approval_source_changed = getattr(
+            request.state, "approval_post_approval_source_changed", None
+        )
+        approval_source_change_acknowledged = getattr(
+            request.state, "approval_source_change_acknowledged", None
+        )
         detail = {
             "method": request.method,
             "path": path,
@@ -451,6 +457,14 @@ def _append_audit_entries(
             )
         if approval_freshness_acknowledged is not None:
             detail["approval_freshness_acknowledged"] = approval_freshness_acknowledged
+        if approval_post_approval_source_changed is not None:
+            detail["approval_post_approval_source_changed"] = (
+                approval_post_approval_source_changed
+            )
+        if approval_source_change_acknowledged is not None:
+            detail["approval_source_change_acknowledged"] = (
+                approval_source_change_acknowledged
+            )
 
         store = AuditStore(tenant_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
