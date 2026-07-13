@@ -1,6 +1,6 @@
 # Implementation Evidence
 
-분석 기준: 2026-07-08 현재 로컬 repo, mock provider 기반 runtime evidence, non-live pytest gate, completion readiness receipt, static PWA/CSP evidence.
+분석 기준: 2026-07-13 현재 로컬 repo, mock provider 기반 runtime evidence, OpenAI live proof, non-live pytest gate, completion readiness/proof receipt, static PWA/CSP evidence.
 
 ## 1. 프로젝트 유형 판단
 
@@ -8,11 +8,11 @@
 |---|---|
 | 프로젝트명 | DecisionDoc AI |
 | 프로젝트 유형 | 개인 PoC / MVP 확장 프로젝트로 판단 |
-| 현재 상태 | MVP/PoC 구현 후 외부 실증 대기 |
+| 현재 상태 | MVP/PoC 구현 후 외부 실증 진행 중 |
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2805 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 다만 live provider, G2B 실데이터, production deployment, 실제 사용자 성과는 이번 evidence 범위에서 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-09 기준 non-live 전체 게이트는 `2805 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -33,7 +33,7 @@
 | Completion proof receipt checker | 재현 가능 | `reports/completion-readiness/*-proof.json` (gitignored local receipt) | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py <receipt>` | 실제 proof 이후 command/timestamp/evidence refs/secret boundary contract 확인 |
 | Source-backed README metrics | 검증 완료 | `scripts/count_readme_metrics.py`, `tests/test_count_readme_metrics.py` | AST/source parser 기반 count | README 수치 drift 방지 |
 | Contribution boundary note | 생성 완료 | `docs/contribution-note.md` | 문서 marker/hygiene check | 직접 설명 가능한 범위와 금지 주장 분리 |
-| Provider fallback/live provider | 검증 필요 | `app/providers/factory.py` | 코드 근거만 확인 | 실제 cloud key 사용 안 함 |
+| Provider fallback/live provider | 부분 검증 | `app/providers/factory.py`, `reports/completion-readiness/m1-live-provider-proof.json` (gitignored) | 승인된 live pytest + v2 receipt | OpenAI 통과; Gemini/Claude/fallback은 외부 quota/billing blocker |
 | Production deployment | 검증 필요 | `Dockerfile`, `docker-compose.yml`, `infra/sam/template.yaml` | 설정 파일 근거만 확인 | 배포 실행 안 함 |
 | 사용자 성과 수치 | 미구현/현재 없음 | 저장소 근거 없음 | 해당 없음 | 임의 생성 금지 |
 
@@ -114,7 +114,19 @@ python3 scripts/check_completion_readiness.py --env-file .env.prod --json --outp
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
 ```
 
-이 명령은 M1 live provider, M2 G2B live smoke, M6 deployment smoke의 실행 준비 조건을 확인한다. 현재 receipt는 M1/M2/M6를 `blocked`로 표시한다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
+이 명령은 M1 live provider, M2 G2B live smoke, M6 deployment smoke의 실행 준비 조건을 확인한다. 2026-07-13 receipt에서 M1은 `ready_to_execute`, M2/M6는 입력 부족으로 `blocked`다. Readiness checker는 provider API, G2B live API, AWS runtime 또는 다른 외부 action을 실행하지 않는다.
+
+### M1 live provider proof
+
+```bash
+DECISIONDOC_PROVIDER=openai python3 -m pytest -q tests/test_live_providers.py::test_live_openai_generate_ok -m live -rs
+DECISIONDOC_PROVIDER=gemini python3 -m pytest -q tests/test_live_providers.py::test_live_gemini_generate_ok -m live -rs
+DECISIONDOC_PROVIDER=claude python3 -m pytest -q tests/test_live_providers.py::test_live_claude_generate_ok -m live -rs
+DECISIONDOC_PROVIDER=openai,gemini DECISIONDOC_LIVE_FALLBACK_FORCE_OPENAI_FAILURE=1 \
+  python3 -m pytest -q tests/test_live_providers.py::test_live_openai_gemini_fallback_chain_ok -m live -rs
+```
+
+2026-07-13 결과: OpenAI는 `1 passed in 23.26s`. Gemini는 `gemini-2.5-pro`와 repo 기본 `gemini-2.0-flash` 모두 HTTP 429, Claude는 HTTP 400과 account credit balance 부족으로 blocked. Fallback은 OpenAI 강제 401 뒤 Gemini 호출까지 확인했으나 Gemini 429로 성공 assertion을 충족하지 못했다. `reports/completion-readiness/m1-live-provider-proof.json`은 `status: blocked`이며 v2 checker `ok: true`다. Secret은 receipt에 기록하지 않았다.
 
 ### Static PWA / CSP evidence
 
@@ -139,17 +151,18 @@ python3 -m pytest -q tests/test_pwa.py \
 - Static PWA root가 CSP nonce 적용 상태로 렌더링되고 inline `on*=` handler가 남아 있지 않음.
 - Procurement decision package local evidence contract manifest와 persisted receipt checker가 repo 밖 `/tmp` receipt 경로로 재현 가능함.
 - Completion readiness receipt/checker가 M1/M2/M6의 남은 외부 입력을 secret 출력 없이 확인함.
+- OpenAI provider가 승인된 live key로 실제 `/generate` bundle을 1회 생성하고 live test를 통과함.
 - Contribution note가 포트폴리오/면접에서 설명 가능한 범위와 금지 주장을 분리함.
 
 ## 5. 검증 실패 기능
 
-- 이번 evidence 수집 범위에서 실패로 확정된 구현 기능은 없음.
+- 이번 evidence 수집 범위에서 실패로 확정된 구현 기능은 없음. Gemini HTTP 429와 Claude credit 부족은 외부 account 상태로 분류함.
 - 참고: `/health`의 `provider_policy_checks.quality_first`는 mock provider 설정 때문에 `degraded`로 표시된다. 이는 portfolio evidence에서 local mock verification을 사용했기 때문이며, production provider policy는 별도 검증 필요 항목이다.
 
 ## 6. 미구현 / 검증 필요
 
-- live OpenAI/Gemini/Claude provider 호출: API key를 사용하지 않아 검증하지 않음.
-- live provider fallback chain: 테스트 경로는 있으나 실 API 호출 증거는 없음.
+- live Gemini/Claude provider 성공: API 호출은 도달했으나 각각 quota와 credit balance 때문에 성공 proof가 없음.
+- live provider fallback chain: OpenAI 강제 실패 뒤 Gemini 전환 호출은 확인했으나 Gemini quota 때문에 성공 proof가 없음.
 - 실제 production deployment: 배포하지 않음.
 - live G2B/procurement provider flow: fixture 기반 local evidence contract 검증과 별도이며, 승인된 API key/credential 환경에서만 확인 가능.
 - 사용자 성과 수치: 저장소 내 근거 없음.

@@ -94,9 +94,9 @@ Providers (5)    Storage (36 스토어)    Ops
 
 ## 3. 갭 분석 — 무엇이 완성을 막고 있나
 
-| # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-09) |
+| # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-13) |
 |---|-----|------------|--------|--------------------|
-| G1 | **Live provider 미실증** — openai/gemini/claude 연동 코드는 완비, 실 API 호출 검증 0회 | `pytest -m live` 미실행 (키 필요) | HIGH | 미착수 (키 필요) |
+| G1 | **Live provider 부분 실증** — OpenAI 1회 통과, Gemini/Claude/fallback 성공 proof 잔여 | 2026-07-13 M1 blocked receipt | HIGH | 진행 중 (Gemini quota, Anthropic credits 필요) |
 | G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
 | G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **✅ 완전 해소** (2026-07-02, 15개 전부 분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
@@ -116,6 +116,7 @@ Providers (5)    Storage (36 스토어)    Ops
   3. 실행 로그·타임스탬프·커맨드를 `docs/evidence-gallery.md`에 증적으로 기록.
 - 완료 정의(DoD): live 테스트 통과 로그가 docs에 남고, README의 "live 미검증" 한계 문구를 "N회 실증(날짜·커맨드)"으로 갱신.
 - 리스크: provider별 요금·rate limit → mock 대비 diff가 큰 응답은 stabilizer 회귀로 흡수.
+- 2026-07-13 실행 결과: OpenAI live generation은 `1 passed in 23.26s`. Gemini는 `gemini-2.5-pro`와 `gemini-2.0-flash` 모두 HTTP 429, Claude는 account credit balance 부족으로 HTTP 400. Fallback은 OpenAI 강제 401 뒤 Gemini 호출까지 확인했지만 Gemini 429로 성공하지 못했다. M1은 `blocked`이며 quota/credits 복구 후 잔여 3개 test를 재실행한다.
 
 ### M2 — G2B 실데이터 End-to-End (G2) · 외부 의존: `G2B_API_KEY` (data.go.kr)
 

@@ -183,10 +183,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,564개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,567개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2564
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2567
 python3 scripts/count_readme_metrics.py --field test_files      # → 209
 ```
 
@@ -219,9 +219,9 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 secret 없는 proof receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-09) |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-13) |
 |----------|------|-----------|--------------------|
-| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | API 키, 소액 비용 | 미착수 |
+| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 진행 중 — 2026-07-13 OpenAI 1회 통과; 나머지 blocked |
 | **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
 | **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
 | **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
@@ -239,6 +239,7 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 - 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
+- Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 
 ---
@@ -252,4 +253,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,564 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,567 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

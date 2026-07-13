@@ -44,12 +44,24 @@
 | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` | gitignore된 env file에서 M1/M2/M6 readiness 입력값을 읽고, 실행 준비 조건을 gitignore된 `reports/` 경로에 JSON receipt로 기록. 외부 호출 없음 | 재현 가능 |
 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` | completion readiness JSON receipt가 현재 schema, milestone order, command list, excluded action contract와 일치하는지 확인 | 재현 가능 |
 | `python3 scripts/check_completion_proof_receipt.py --print-template M1` | 실제 proof 이후 채울 no-secret proof receipt template 출력. placeholder가 남아 있으면 checker가 거부 | 재현 가능 |
-| `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` | M1/M2/M6 proof receipt의 command, timestamp, evidence refs, secret boundary 계약 확인. 외부 호출 없음 | 재현 가능 |
+| `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` | v2 proof receipt의 command, timestamp, evidence refs, secret boundary, milestone별 미실행 action 계약 확인. checker 자체는 외부 호출 없음 | 재현 가능 |
 | `docs/completion-readiness-runbook.md` | M1/M2/M6 proof 실행 전후 순서, 중단 기준, 문서 갱신 순서를 고정한 runbook | 재현 가능 |
 
 이 섹션은 파일이 `evidence/` package 안에 저장됐다고 주장하지 않는다. 필요할 때 위 명령으로 local-only receipt를 다시 생성한다.
 
-## 3-2. Portfolio / Interview Boundary
+## 3-2. M1 Live Provider Proof (2026-07-13)
+
+| 실행 | 결과 | 증적 |
+|---|---|---|
+| OpenAI `/generate` live test | `1 passed in 23.26s` | `reports/completion-readiness/m1-openai-junit.xml` (gitignored local receipt) |
+| Gemini `/generate` live test | `gemini-2.5-pro`, `gemini-2.0-flash` 모두 API HTTP 429로 blocked | `reports/completion-readiness/m1-gemini-2.5-pro-quota-failure-junit.xml`, `m1-gemini-junit.xml` |
+| Claude `/generate` live test | API HTTP 400. no-secret 진단에서 account credit balance 부족 확인 | `reports/completion-readiness/m1-claude-junit.xml` |
+| OpenAI -> Gemini fallback live test | OpenAI 강제 401 뒤 Gemini 호출 확인. Gemini HTTP 429로 성공 assertion은 미달 | `reports/completion-readiness/m1-fallback-junit.xml` |
+| M1 no-secret receipt | `status: blocked`, v2 checker `ok: true` | `reports/completion-readiness/m1-live-provider-proof.json`, `m1-live-provider-proof-check.json` |
+
+M1 DoD는 아직 충족하지 않았다. Gemini quota/billing과 Anthropic credits를 복구한 뒤 Gemini, Claude, fallback test를 다시 통과해야 한다. G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
+## 3-3. Portfolio / Interview Boundary
 
 | 파일 | 설명 | 상태 |
 |---|---|---|

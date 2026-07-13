@@ -2201,6 +2201,8 @@ def test_completion_readiness_local_receipts_and_prod_env_stay_gitignored():
         ".env.prod",
         "reports/completion-readiness/latest.json",
         "reports/completion-readiness/latest-check.json",
+        "reports/completion-readiness/m1-live-provider-proof.json",
+        "reports/completion-readiness/m1-live-provider-proof-check.json",
     ):
         completed = subprocess.run(
             ["git", "check-ignore", "-q", path],
@@ -2221,6 +2223,8 @@ def test_completion_readiness_runbook_keeps_external_proof_boundaries():
         "python3 scripts/check_completion_readiness_result.py",
         "python3 scripts/check_completion_proof_receipt.py --print-template M1",
         "reports/completion-readiness/m1-live-provider-proof.json",
+        "Proof receipt v2",
+        "M1 live receipt에서는 `provider API execution`",
         "DECISIONDOC_PROVIDER=openai",
         "DECISIONDOC_PROVIDER=gemini",
         "DECISIONDOC_PROVIDER=claude",

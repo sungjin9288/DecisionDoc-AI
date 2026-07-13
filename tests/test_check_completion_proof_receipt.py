@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from scripts import check_completion_proof_receipt as checker
-from scripts.check_completion_readiness import EXCLUDED_EXTERNAL_ACTIONS, MILESTONE_COMMANDS
+from scripts.check_completion_readiness import MILESTONE_COMMANDS
 
 MILESTONE_TITLES = {
     "M1": "Live provider proof",
@@ -15,13 +15,14 @@ MILESTONE_TITLES = {
 
 
 def _valid_receipt(*, milestone_id: str = "M1", command: str | None = None) -> dict[str, object]:
+    resolved_command = command or MILESTONE_COMMANDS[milestone_id][0]
     return {
-        "schema_version": "decisiondoc.completion_proof_receipt.v1",
-        "scope": "proof receipt only; documents external proof result without executing external actions",
+        "schema_version": "decisiondoc.completion_proof_receipt.v2",
+        "scope": "proof receipt only; documents approved external proof without executing additional external actions",
         "milestone_id": milestone_id,
         "title": MILESTONE_TITLES[milestone_id],
         "status": "passed",
-        "command": command or MILESTONE_COMMANDS[milestone_id][0],
+        "command": resolved_command,
         "executed_at_utc": "2026-07-09T01:02:03Z",
         "environment_boundary": "approved manual live provider workflow; secret values redacted",
         "evidence_summary": f"{milestone_id} completion proof passed in the approved environment.",
@@ -32,7 +33,7 @@ def _valid_receipt(*, milestone_id: str = "M1", command: str | None = None) -> d
             "This receipt covers M1 only and does not prove G2B or deployment smoke.",
         ],
         "secret_values_recorded": False,
-        "excluded_external_actions": list(EXCLUDED_EXTERNAL_ACTIONS),
+        "excluded_external_actions": checker.excluded_external_actions_for(milestone_id, resolved_command),
     }
 
 
@@ -46,11 +47,68 @@ def test_completion_proof_receipt_accepts_current_contract(tmp_path: Path) -> No
 
     result = checker.check_completion_proof_receipt(receipt_path)
 
-    assert result["schema_version"] == "decisiondoc.completion_proof_receipt_check.v1"
+    assert result["schema_version"] == "decisiondoc.completion_proof_receipt_check.v2"
     assert result["ok"] is True
     assert result["summary"]["milestone_id"] == "M1"
     assert result["summary"]["status"] == "passed"
-    assert "provider API execution" in result["external_actions_excluded"]
+    assert "provider API execution" not in result["external_actions_excluded"]
+    assert "G2B live API execution" in result["external_actions_excluded"]
+
+
+def test_completion_proof_receipt_excludes_only_unexecuted_actions(tmp_path: Path) -> None:
+    executed_actions = {
+        "M1": ("provider API execution", MILESTONE_COMMANDS["M1"][0]),
+        "M2": ("G2B live API execution", MILESTONE_COMMANDS["M2"][1]),
+        "M6": ("AWS runtime execution", MILESTONE_COMMANDS["M6"][1]),
+    }
+
+    for milestone_id, (executed_action, command) in executed_actions.items():
+        receipt_path = tmp_path / f"{milestone_id}-proof.json"
+        payload = _valid_receipt(milestone_id=milestone_id, command=command)
+        _write_json(receipt_path, payload)
+
+        result = checker.check_completion_proof_receipt(receipt_path)
+
+        assert executed_action not in result["external_actions_excluded"]
+        assert len(result["external_actions_excluded"]) == 9
+
+
+def test_completion_proof_receipt_preflight_keeps_runtime_action_excluded(tmp_path: Path) -> None:
+    for milestone_id, expected_action in (
+        ("M2", "G2B live API execution"),
+        ("M6", "AWS runtime execution"),
+    ):
+        receipt_path = tmp_path / f"{milestone_id}-preflight-proof.json"
+        payload = _valid_receipt(milestone_id=milestone_id)
+        _write_json(receipt_path, payload)
+
+        result = checker.check_completion_proof_receipt(receipt_path)
+
+        assert expected_action in result["external_actions_excluded"]
+        assert len(result["external_actions_excluded"]) == 10
+
+
+def test_completion_proof_receipt_rejects_readiness_exclusion_list(tmp_path: Path) -> None:
+    receipt_path = tmp_path / "m1-proof.json"
+    payload = _valid_receipt()
+    payload["excluded_external_actions"] = [
+        "provider API execution",
+        *payload["excluded_external_actions"],
+    ]
+    _write_json(receipt_path, payload)
+
+    completed = subprocess.run(
+        ["python3", "scripts/check_completion_proof_receipt.py", str(receipt_path)],
+        cwd=checker.ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    result = json.loads(completed.stdout)
+    assert result["ok"] is False
+    assert "excluded_external_actions drifted" in result["error"]
 
 
 def test_completion_proof_receipt_accepts_runbook_commands(tmp_path: Path) -> None:
@@ -164,4 +222,4 @@ def test_completion_proof_receipt_writes_check_result(tmp_path: Path) -> None:
     assert check_path.exists()
     result = json.loads(check_path.read_text(encoding="utf-8"))
     assert result["ok"] is True
-    assert result["schema_version"] == "decisiondoc.completion_proof_receipt_check.v1"
+    assert result["schema_version"] == "decisiondoc.completion_proof_receipt_check.v2"

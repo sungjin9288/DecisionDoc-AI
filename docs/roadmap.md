@@ -14,7 +14,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
 - 최근 확인한 main 자동화 증적: commit `01b9fbc` 기준 GitHub Actions CI `29027090095` success, CD `29027088935` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
-- 미검증/외부 의존: live provider chain(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
+- 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상/스크린샷, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
 현재 로컬 기준 검증:
@@ -31,7 +31,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 | 마일스톤 | 현재 상태 | 다음 조건 |
 |---|---|---|
-| M1 Live provider 실증 | 미착수. openai/gemini/claude 실호출 증거 없음 | API 키와 소액 비용 승인 후 `tests/test_live_providers.py -m live` 실행 로그 확보 |
+| M1 Live provider 실증 | 진행 중. 2026-07-13 OpenAI 1회 통과; Gemini HTTP 429, Claude credit 부족, fallback 성공 미달 | Gemini quota/billing과 Anthropic credits 복구 후 Gemini/Claude/fallback live test 재실행 |
 | M2 G2B 실데이터 end-to-end | 미착수. `G2B_API_KEY` 없이 live 수집 불가 | stage URL/API key/G2B key 확보 후 `scripts/run_stage_procurement_smoke.py` 증적화 |
 | M3 Export 5종 대칭성 | 완료 | README와 샘플 산출물의 수치가 코드와 계속 일치하는지 유지 |
 | M4 CSP nonce | 완료. inline `on*=` handler 0개, nonce 기본 on | 새 UI 이벤트 추가 시 inline handler 금지 guard 유지 |
@@ -121,7 +121,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 | 우선순위 | 작업 | 이유 | 예상 산출물 |
 |---|---|---|---|
-| 1 | M1 live provider 실증 준비 | provider abstraction의 실제 호출 증거가 아직 없음 | live provider validation note |
+| 1 | M1 live provider 실증 완료 | OpenAI proof는 있으나 Gemini/Claude/fallback 성공 증거가 남음 | blocked receipt 갱신 후 live provider validation note 완료 |
 | 2 | M2 G2B 실데이터 smoke 준비 | 공공조달 흐름은 live key 없이는 end-to-end 증거가 없음 | G2B smoke receipt |
 | 3 | M6 배포/post-deploy smoke 준비 | README Demo 링크를 채우려면 접근성 evidence가 필요 | deployment note, smoke report |
 | 4 | 포트폴리오용 짧은 UI recording 선택 캡처 | 최신 screenshot은 갱신됐고, 영상은 제출 방식에 따라 선택 필요 | short recording |

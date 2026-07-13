@@ -1,8 +1,8 @@
 # DecisionDoc Completion Readiness Runbook
 
-기준일: 2026-07-09
+기준일: 2026-07-13
 
-이 runbook은 M1 live provider, M2 G2B 실데이터 smoke, M6 deployment smoke를 실행할 때 필요한 입력값과 증적 순서를 고정한다. 기본 절차는 readiness 확인까지만 수행한다. provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 각 단계에서 명시적으로 승인된 경우에만 실행한다.
+이 runbook은 M1 live provider, M2 G2B 실데이터 smoke, M6 deployment smoke를 실행할 때 필요한 입력값과 증적 순서를 고정한다. 기본 절차는 readiness 확인까지만 수행한다. provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 각 단계에서 명시적으로 승인된 경우에만 실행한다. Proof receipt v2는 receipt의 command가 실제 proof를 실행한 경우에만 해당 action을 제외 목록에서 제거하고 나머지 외부 action 경계를 유지한다.
 
 ## 1. 원칙
 
@@ -94,7 +94,9 @@ python3 scripts/check_completion_proof_receipt.py \
 - `evidence_refs`가 비어 있지 않음
 - `secret_values_recorded`가 `false`임
 - receipt 문자열에 대표 secret pattern이 포함되지 않음
-- excluded external action boundary가 readiness 계약과 일치함
+- excluded external action boundary가 milestone별 proof 계약과 일치함
+
+M1 live receipt에서는 `provider API execution`, M2 실제 smoke receipt에서는 `G2B live API execution`, M6 실제 smoke receipt에서는 `AWS runtime execution`이 제외 목록에 없어야 한다. M2/M6 preflight receipt는 runtime action을 실행하지 않으므로 전체 제외 목록을 유지한다. 나머지 외부 action은 정해진 순서대로 유지한다.
 
 proof receipt 검증도 외부 API, G2B live API, AWS runtime을 실행하지 않는다.
 

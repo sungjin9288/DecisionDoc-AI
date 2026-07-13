@@ -21,9 +21,9 @@ from scripts.check_completion_readiness import (  # noqa: E402
 )
 
 
-RECEIPT_SCHEMA_VERSION = "decisiondoc.completion_proof_receipt.v1"
-CHECK_SCHEMA_VERSION = "decisiondoc.completion_proof_receipt_check.v1"
-EXPECTED_SCOPE = "proof receipt only; documents external proof result without executing external actions"
+RECEIPT_SCHEMA_VERSION = "decisiondoc.completion_proof_receipt.v2"
+CHECK_SCHEMA_VERSION = "decisiondoc.completion_proof_receipt_check.v2"
+EXPECTED_SCOPE = "proof receipt only; documents approved external proof without executing additional external actions"
 EXPECTED_FIELDS = {
     "schema_version",
     "scope",
@@ -43,6 +43,22 @@ MILESTONE_TITLES = {
     "M1": "Live provider proof",
     "M2": "G2B live procurement smoke",
     "M6": "Deployment and post-deploy smoke proof",
+}
+MILESTONE_EXECUTED_ACTIONS = {
+    "M1": "provider API execution",
+    "M2": "G2B live API execution",
+    "M6": "AWS runtime execution",
+}
+MILESTONE_EXECUTION_COMMANDS = {
+    "M1": set(MILESTONE_COMMANDS["M1"]),
+    "M2": {
+        "python3 scripts/run_stage_procurement_smoke.py --env-file .env.prod",
+        "python3 scripts/run_stage_procurement_smoke.py",
+    },
+    "M6": {
+        "python3 scripts/run_deployed_smoke.py --env-file .env.prod",
+        "python3 scripts/run_deployed_smoke.py",
+    },
 }
 ALLOWED_STATUSES = {"passed", "failed", "blocked"}
 SECRET_PATTERNS = (
@@ -117,6 +133,13 @@ def _assert_no_secret_values(payload: Mapping[str, object]) -> None:
                 raise ValueError("receipt appears to contain a secret value")
 
 
+def excluded_external_actions_for(milestone_id: str, command: str) -> list[str]:
+    if command not in MILESTONE_EXECUTION_COMMANDS[milestone_id]:
+        return list(EXCLUDED_EXTERNAL_ACTIONS)
+    executed_action = MILESTONE_EXECUTED_ACTIONS[milestone_id]
+    return [action for action in EXCLUDED_EXTERNAL_ACTIONS if action != executed_action]
+
+
 def _validate_receipt(payload: Mapping[str, object]) -> dict[str, object]:
     fields = set(payload)
     if fields != EXPECTED_FIELDS:
@@ -152,7 +175,8 @@ def _validate_receipt(payload: Mapping[str, object]) -> dict[str, object]:
 
     if payload["secret_values_recorded"] is not False:
         raise ValueError("secret_values_recorded must be false")
-    if payload["excluded_external_actions"] != list(EXCLUDED_EXTERNAL_ACTIONS):
+    excluded_external_actions = excluded_external_actions_for(milestone_id, command)
+    if payload["excluded_external_actions"] != excluded_external_actions:
         raise ValueError("excluded_external_actions drifted")
     _assert_no_secret_values(payload)
     return {
@@ -167,13 +191,15 @@ def check_completion_proof_receipt(path: Path) -> dict[str, object]:
     resolved = Path(path).expanduser()
     payload = _load_json_object(resolved)
     summary = _validate_receipt(payload)
+    milestone_id = str(summary["milestone_id"])
+    command = str(payload["command"])
     return {
         "schema_version": CHECK_SCHEMA_VERSION,
         "ok": True,
         "receipt_path": str(resolved),
         "receipt_schema_version": RECEIPT_SCHEMA_VERSION,
         "summary": summary,
-        "external_actions_excluded": list(EXCLUDED_EXTERNAL_ACTIONS),
+        "external_actions_excluded": excluded_external_actions_for(milestone_id, command),
     }
 
 
@@ -189,13 +215,14 @@ def build_check_failure_result(path: Path, exc: Exception) -> dict[str, object]:
 def build_template(milestone_id: str) -> dict[str, object]:
     if milestone_id not in MILESTONE_TITLES:
         raise ValueError(f"unknown milestone_id: {milestone_id}")
+    command = MILESTONE_COMMANDS[milestone_id][0]
     return {
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "scope": EXPECTED_SCOPE,
         "milestone_id": milestone_id,
         "title": MILESTONE_TITLES[milestone_id],
         "status": "blocked",
-        "command": MILESTONE_COMMANDS[milestone_id][0],
+        "command": command,
         "executed_at_utc": "2026-07-09T00:00:00Z",
         "environment_boundary": "approved external proof environment; no secrets recorded",
         "evidence_summary": "Replace with pass/fail summary before checking this receipt.",
@@ -206,7 +233,7 @@ def build_template(milestone_id: str) -> dict[str, object]:
             "Replace with any remaining external limitation, or use an empty list.",
         ],
         "secret_values_recorded": False,
-        "excluded_external_actions": list(EXCLUDED_EXTERNAL_ACTIONS),
+        "excluded_external_actions": excluded_external_actions_for(milestone_id, command),
     }
 
 
