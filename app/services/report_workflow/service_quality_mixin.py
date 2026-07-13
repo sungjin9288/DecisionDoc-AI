@@ -1,11 +1,13 @@
 """Quality correction artifact and develop-quality-improvement preview flows."""
 from __future__ import annotations
 
+import hmac
 import json
 from typing import Any
 
 from app.services.report_quality_learning import (
     build_correction_artifact_from_snapshot,
+    correction_artifact_fingerprint,
     validate_correction_artifact,
 )
 from app.storage.report_workflow_store import ReportWorkflowRecord
@@ -27,6 +29,7 @@ class ReportWorkflowQualityMixin:
         return {
             "artifact": artifact,
             "validation": validation,
+            "preview_fingerprint": correction_artifact_fingerprint(artifact),
             "persisted": False,
         }
 
@@ -38,6 +41,11 @@ class ReportWorkflowQualityMixin:
         correction: dict[str, Any],
         actor: str = "",
     ) -> dict[str, Any]:
+        expected_fingerprint = str(correction.get("preview_fingerprint") or "").strip()
+        if not expected_fingerprint:
+            raise ValueError(
+                "preview_fingerprint is required; preview the correction artifact before saving"
+            )
         result = self.preview_quality_correction_artifact(
             report_workflow_id,
             tenant_id=tenant_id,
@@ -47,12 +55,23 @@ class ReportWorkflowQualityMixin:
         if not validation["ok"] or not validation["ready_for_learning"]:
             errors = validation.get("errors") or ["correction artifact is not ready for learning"]
             raise ValueError("; ".join(str(item) for item in errors))
+        if not hmac.compare_digest(expected_fingerprint, result["preview_fingerprint"]):
+            raise ValueError(
+                "preview_fingerprint does not match the current workflow and correction input; preview again"
+            )
+        if self._quality_correction_artifact_exists(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            artifact_id=result["artifact"]["artifact_id"],
+        ):
+            raise ValueError("this correction artifact has already been saved")
         rec = self.store.append_learning_artifact(
             report_workflow_id,
             kind="report_quality_correction_accepted",
             payload={
                 "artifact": result["artifact"],
                 "validation": validation,
+                "preview_fingerprint": result["preview_fingerprint"],
             },
             actor=actor,
             tenant_id=tenant_id,
@@ -61,8 +80,24 @@ class ReportWorkflowQualityMixin:
             "report_workflow": rec,
             "artifact": result["artifact"],
             "validation": validation,
+            "preview_fingerprint": result["preview_fingerprint"],
             "persisted": True,
         }
+
+    def _quality_correction_artifact_exists(
+        self,
+        report_workflow_id: str,
+        *,
+        tenant_id: str,
+        artifact_id: str,
+    ) -> bool:
+        record = self._require_record(report_workflow_id, tenant_id=tenant_id)
+        for wrapper in record.learning_artifacts:
+            payload = wrapper.get("payload") if isinstance(wrapper, dict) else None
+            artifact = payload.get("artifact") if isinstance(payload, dict) else None
+            if isinstance(artifact, dict) and artifact.get("artifact_id") == artifact_id:
+                return True
+        return False
 
     def preview_develop_quality_improvement(
         self,

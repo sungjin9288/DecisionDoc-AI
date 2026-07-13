@@ -8754,6 +8754,7 @@
       checklist,
       preview_validation: preview?.validation || null,
       preview_artifact: preview?.artifact || null,
+      preview_fingerprint: preview?.preview_fingerprint || '',
       preview_persisted: preview?.persisted === true,
       preview_artifact_id: preview?.validation?.artifact_id || preview?.artifact?.artifact_id || '',
       develop_preview: developResult ? {
@@ -8792,14 +8793,19 @@
     if (resultEl) resultEl.innerHTML = '<div style="font-size:.74rem;color:var(--muted);">검증 중...</div>';
     try {
       const endpoint = persist ? 'learning/correction-artifact' : 'learning/correction-artifact/preview';
+      const payload = buildReportWorkflowQualityCorrectionPayload();
+      if (persist) {
+        payload.preview_fingerprint = _reportWorkflowLastQualityPreview?.preview_fingerprint || '';
+      }
       const res = await fetch(`/report-workflows/${encodeURIComponent(id)}/${endpoint}`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildReportWorkflowQualityCorrectionPayload()),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(async () => ({ detail: await res.text() }));
       if (!res.ok) throw new Error(data?.detail || JSON.stringify(data));
       if (persist) {
+        _reportWorkflowLastQualityPreview = null;
         _reportWorkflowCurrentId = data?.report_workflow?.report_workflow_id || id;
         renderReportWorkflowDetail(data.report_workflow || _reportWorkflowCurrent || {});
         await loadReportWorkflows();

@@ -150,6 +150,7 @@ class ReportQualityCorrectionArtifactRequest(BaseModel):
     forbidden_terms_scan: str = "not_run"
     privacy_security_scan: str = "not_run"
     human_review_status: str = "pending"
+    preview_fingerprint: str = Field(default="", pattern=r"^(?:|[0-9a-f]{64})$")
 
 
 class ReportWorkflowDevelopQualityPreviewRequest(BaseModel):

@@ -193,7 +193,7 @@ Artifact count: 3
 Ready artifacts: 3
 ```
 
-API 경로로 저장할 때는 먼저 preview를 호출해 blocker를 확인한다.
+API 경로로 저장할 때는 먼저 preview를 호출해 blocker와 `preview_fingerprint`를 확인한다.
 
 ```bash
 curl -sS -X POST \
@@ -203,15 +203,23 @@ curl -sS -X POST \
   --data @path/to/correction_payload.json
 ```
 
-`validation.ready_for_learning=true`가 확인된 뒤에만 저장 endpoint를 호출한다.
+`validation.ready_for_learning=true`가 확인된 뒤, preview 응답의 `preview_fingerprint`를 변경하지 않은 correction payload에 추가해서 저장 endpoint를 호출한다. Preview 후 score, rationale, summary, workflow 상태가 바뀌었다면 기존 fingerprint를 재사용하지 않고 preview부터 다시 실행한다.
 
 ```bash
+PREVIEW_FINGERPRINT=<preview-response.preview_fingerprint>
+jq --arg fingerprint "$PREVIEW_FINGERPRINT" \
+  '. + {preview_fingerprint: $fingerprint}' \
+  path/to/correction_payload.json \
+  > path/to/preview_bound_correction_payload.json
+
 curl -sS -X POST \
   "$BASE_URL/report-workflows/$REPORT_WORKFLOW_ID/learning/correction-artifact" \
   -H "X-DecisionDoc-Api-Key: $DECISIONDOC_API_KEY" \
   -H "Content-Type: application/json" \
-  --data @path/to/correction_payload.json
+  --data @path/to/preview_bound_correction_payload.json
 ```
+
+동일 artifact를 두 번 저장하거나 현재 입력과 맞지 않는 fingerprint를 보내면 save는 실패한다. Review packet JSON에도 fingerprint가 포함되며 local validator가 embedded preview artifact의 SHA-256과 대조한다.
 
 ## 6. Fine-Tuning 전 Stop Gate
 

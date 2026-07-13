@@ -133,6 +133,23 @@ def _final_approve_workflow(client: TestClient, workflow_id: str) -> dict:
     return executive.json()
 
 
+def _preview_bound_quality_payload(
+    client: TestClient,
+    workflow_id: str,
+    payload: dict,
+) -> tuple[dict, dict]:
+    preview = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact/preview",
+        json=payload,
+    )
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    return preview_body, {
+        **payload,
+        "preview_fingerprint": preview_body["preview_fingerprint"],
+    }
+
+
 def test_report_workflow_crud_and_tenant_boundary(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client)
@@ -302,6 +319,9 @@ def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypat
     assert artifact["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
     assert _contains_key(artifact, "content_base64") is False
     assert _contains_key(artifact, "api_key") is False
+    assert len(preview_body["preview_fingerprint"]) == 64
+
+    payload["preview_fingerprint"] = preview_body["preview_fingerprint"]
 
     saved = client.post(
         f"/report-workflows/{workflow_id}/learning/correction-artifact",
@@ -312,10 +332,56 @@ def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypat
     saved_body = saved.json()
     assert saved_body["persisted"] is True
     assert saved_body["validation"]["ready_for_learning"] is True
+    assert saved_body["artifact"] == preview_body["artifact"]
+    assert saved_body["preview_fingerprint"] == preview_body["preview_fingerprint"]
     stored_artifact = saved_body["report_workflow"]["learning_artifacts"][-1]
     assert stored_artifact["kind"] == "report_quality_correction_accepted"
     assert stored_artifact["payload"]["validation"]["artifact_id"] == saved_body["artifact"]["artifact_id"]
+    assert stored_artifact["payload"]["preview_fingerprint"] == preview_body["preview_fingerprint"]
     assert _contains_key(stored_artifact, "content_base64") is False
+
+    duplicate = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=payload,
+    )
+    assert duplicate.status_code == 400
+    assert "already been saved" in duplicate.json()["detail"]
+
+
+def test_report_quality_correction_save_requires_current_preview(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    workflow_id = created["report_workflow_id"]
+    _final_approve_workflow(client, workflow_id)
+    payload = _accepted_quality_correction_payload()
+
+    missing_preview = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=payload,
+    )
+    assert missing_preview.status_code == 400
+    assert "preview_fingerprint is required" in missing_preview.json()["detail"]
+
+    preview_body, preview_bound_payload = _preview_bound_quality_payload(
+        client,
+        workflow_id,
+        payload,
+    )
+    preview_bound_payload["after_planning_summary"] = "preview 이후 변경된 교정 결과"
+    stale_preview = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=preview_bound_payload,
+    )
+
+    assert stale_preview.status_code == 400
+    assert "preview again" in stale_preview.json()["detail"]
+    refreshed_preview, _ = _preview_bound_quality_payload(
+        client,
+        workflow_id,
+        preview_bound_payload,
+    )
+    assert refreshed_preview["preview_fingerprint"] != preview_body["preview_fingerprint"]
+    assert refreshed_preview["artifact"]["artifact_id"] != preview_body["artifact"]["artifact_id"]
 
 
 def test_report_quality_correction_preview_rejects_empty_dimension_rationale(tmp_path, monkeypatch):
@@ -381,9 +447,14 @@ def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, m
     workflow_id = created["report_workflow_id"]
     _final_approve_workflow(client, workflow_id)
 
+    _, save_payload = _preview_bound_quality_payload(
+        client,
+        workflow_id,
+        _accepted_quality_correction_payload(),
+    )
     saved = client.post(
         f"/report-workflows/{workflow_id}/learning/correction-artifact",
-        json=_accepted_quality_correction_payload(),
+        json=save_payload,
     )
     assert saved.status_code == 200
 
@@ -431,9 +502,14 @@ def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_p
     client.post(f"/report-workflows/{not_final_id}/planning/approve", json={"username": "pm", "comment": ""})
     client.post(f"/report-workflows/{not_final_id}/slides/generate", json={})
 
+    _, status_payload = _preview_bound_quality_payload(
+        client,
+        not_final_id,
+        _accepted_quality_correction_payload(),
+    )
     blocked_by_status = client.post(
         f"/report-workflows/{not_final_id}/learning/correction-artifact",
-        json=_accepted_quality_correction_payload(),
+        json=status_payload,
     )
 
     assert blocked_by_status.status_code == 400
@@ -442,9 +518,14 @@ def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_p
     no_opt_in = _create_workflow(client, slide_count=2, learning_opt_in=False)
     no_opt_in_id = no_opt_in["report_workflow_id"]
     _final_approve_workflow(client, no_opt_in_id)
+    _, opt_in_payload = _preview_bound_quality_payload(
+        client,
+        no_opt_in_id,
+        _accepted_quality_correction_payload(),
+    )
     blocked_by_opt_in = client.post(
         f"/report-workflows/{no_opt_in_id}/learning/correction-artifact",
-        json=_accepted_quality_correction_payload(),
+        json=opt_in_payload,
     )
 
     assert blocked_by_opt_in.status_code == 400

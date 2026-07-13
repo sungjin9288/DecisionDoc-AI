@@ -21,6 +21,7 @@ from app.services.report_quality_learning import (  # noqa: E402
     MIN_REQUIRED_DIMENSION_SCORE,
     MIN_VISUAL_DESIGN_SCORE,
     REQUIRED_DIMENSIONS,
+    correction_artifact_fingerprint,
     validate_correction_artifact,
 )
 
@@ -221,6 +222,7 @@ def validate_review_packet(payload: dict[str, Any], *, require_ready: bool = Fal
     preview_artifact_validation: dict[str, Any] = {}
     preview_artifact_ok = False
     preview_artifact_ready = False
+    preview_fingerprint = str(payload.get("preview_fingerprint") or "").strip()
     if isinstance(preview_artifact, dict):
         preview_artifact_validation = validate_correction_artifact(preview_artifact)
         preview_artifact_ok = preview_artifact_validation.get("ok") is True
@@ -228,6 +230,8 @@ def validate_review_packet(payload: dict[str, Any], *, require_ready: bool = Fal
         preview_artifact_id = preview_artifact_validation.get("artifact_id") or preview_artifact.get("artifact_id")
         if preview.get("artifact_id") and preview_artifact_id and preview.get("artifact_id") != preview_artifact_id:
             errors.append("preview_validation.artifact_id must match preview_artifact.artifact_id")
+        if preview_fingerprint and preview_fingerprint != correction_artifact_fingerprint(preview_artifact):
+            errors.append("preview_fingerprint must match preview_artifact content")
         for error in preview_artifact_validation.get("errors") or []:
             errors.append(f"preview_artifact: {error}")
     elif preview_artifact is not None:
@@ -245,6 +249,8 @@ def validate_review_packet(payload: dict[str, Any], *, require_ready: bool = Fal
             errors.append("ready review packets require preview_artifact validation ok=true")
         if not preview_artifact_ready:
             errors.append("ready review packets require preview_artifact ready_for_learning=true")
+        if not preview_fingerprint:
+            errors.append("ready review packets require preview_fingerprint")
 
     boundary = _as_dict(payload.get("training_boundary"), field="training_boundary", errors=errors)
     for key in NO_SIDE_EFFECT_BOUNDARY_KEYS:

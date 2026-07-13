@@ -1,9 +1,10 @@
 """Report quality correction artifacts for pre-fine-tuning learning gates."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any
-import uuid
 
 
 EXPECTED_SCHEMA = "decisiondoc_report_quality_correction_artifact.v1"
@@ -45,6 +46,29 @@ PLACEHOLDER_MARKERS = ("TODO_", "TODO:", "TODO ")
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _canonical_json(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def correction_artifact_fingerprint(artifact: dict[str, Any]) -> str:
+    """Return the content fingerprint used to bind preview and persistence."""
+    return hashlib.sha256(_canonical_json(artifact)).hexdigest()
+
+
+def _stable_artifact_id(artifact: dict[str, Any]) -> str:
+    identity = {
+        key: value
+        for key, value in artifact.items()
+        if key not in {"artifact_id", "created_at"}
+    }
+    return f"rqa_{hashlib.sha256(_canonical_json(identity)).hexdigest()[:24]}"
 
 
 def _as_dict(value: Any, *, field: str, errors: list[str]) -> dict[str, Any]:
@@ -292,7 +316,6 @@ def build_correction_artifact_from_snapshot(
     artifact_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a metadata-only correction artifact from a report workflow snapshot."""
-    artifact_id = artifact_id or f"rqa_{uuid.uuid4().hex}"
     dimension_scores = correction.get("dimension_scores")
     if not isinstance(dimension_scores, dict):
         dimension_scores = _default_dimension_scores()
@@ -306,10 +329,10 @@ def build_correction_artifact_from_snapshot(
     learning = snapshot.get("learning") if isinstance(snapshot.get("learning"), dict) else {}
     source = snapshot.get("source") if isinstance(snapshot.get("source"), dict) else {}
     promotion = snapshot.get("promotion") if isinstance(snapshot.get("promotion"), dict) else {}
-    return {
+    artifact = {
         "schema_version": EXPECTED_SCHEMA,
-        "artifact_id": artifact_id,
-        "created_at": _now_iso(),
+        "artifact_id": artifact_id or "",
+        "created_at": correction.get("reviewed_at") or _now_iso(),
         "workflow_reference": {
             "tenant_id": snapshot.get("tenant_id", ""),
             "report_workflow_id": snapshot.get("report_workflow_id", ""),
@@ -362,3 +385,6 @@ def build_correction_artifact_from_snapshot(
         },
         "training_boundary": {key: False for key in FORBIDDEN_BOUNDARY_KEYS},
     }
+    if not artifact["artifact_id"]:
+        artifact["artifact_id"] = _stable_artifact_id(artifact)
+    return artifact

@@ -52,6 +52,8 @@
 - `human_review_status=changes_requested`: 수정 후 재검토
 - `human_review_status=blocked`: 민감정보, 허위 주장, 권한 문제 등으로 사용 금지
 
+API/UI에서 교정 입력을 바꾼 경우에는 반드시 preview를 다시 실행한다. Save는 마지막 server preview의 `preview_fingerprint`와 현재 입력에서 계산한 artifact fingerprint가 같을 때만 허용되며, 이미 저장된 동일 artifact는 다시 저장하지 않는다.
+
 ## First SFT Target
 
 초기 fine-tuning은 PPT 디자인 자체보다 아래 narrow task를 먼저 대상으로 한다.

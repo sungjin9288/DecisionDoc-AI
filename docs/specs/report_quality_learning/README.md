@@ -28,6 +28,8 @@
 - Reviewer가 score와 dimension 평가 근거를 직접 입력해야 한다.
 - `accepted_for_learning=true`인 artifact는 모든 required dimension의 rationale가 비어 있지 않아야 한다.
 - Preview와 save는 같은 server validator를 사용하며, 미입력 score/rationale는 blocker로 반환한다.
+- Preview 응답은 artifact 전체의 SHA-256 `preview_fingerprint`를 반환한다. Save는 이 값을 현재 workflow snapshot과 correction input으로 다시 만든 artifact와 대조하며, 누락·입력 변경·중복 artifact 저장을 거부한다.
+- `preview_fingerprint`는 검토한 내용과 저장 내용의 동일성을 확인하는 값이다. 사용자 인증이나 전자서명을 대체하지 않는다.
 - 이 gate는 correction artifact 품질만 검증하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 ## Artifacts

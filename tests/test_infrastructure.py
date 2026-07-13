@@ -394,6 +394,8 @@ def test_root_html_exposes_report_workflow_quality_artifact_ui(client):
     assert "downloadReportWorkflowQualityArtifacts" in res.text
     assert "learning/correction-artifact/preview" in res.text
     assert "learning/correction-artifact" in res.text
+    assert "payload.preview_fingerprint = _reportWorkflowLastQualityPreview?.preview_fingerprint || ''" in res.text
+    assert "_reportWorkflowLastQualityPreview = null" in res.text
     assert "learning/correction-artifacts/export" in res.text
     assert "Ready JSONL" in res.text
     assert "metadata-only before/after 교정 데이터" in res.text
@@ -501,6 +503,7 @@ def test_index_html_report_workflow_exposes_develop_quality_preview():
     assert "buildReportWorkflowQualityReviewPacket" in content
     assert "decisiondoc_report_quality_review_packet.v1" in content
     assert "preview_artifact: preview?.artifact || null" in content
+    assert "preview_fingerprint: preview?.preview_fingerprint || ''" in content
     assert "server_file_written: false" in content
     assert "provider_fine_tune_api_call_authorized: false" in content
     assert "initReportWorkflowQualityChecklist" in content

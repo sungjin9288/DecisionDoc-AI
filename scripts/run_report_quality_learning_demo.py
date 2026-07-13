@@ -226,6 +226,11 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
     if preview.get("persisted") is not False or preview.get("validation", {}).get("ready_for_learning") is not True:
         raise DemoError("correction artifact preview did not pass the learning gate")
 
+    preview_fingerprint = preview.get("preview_fingerprint")
+    if not isinstance(preview_fingerprint, str) or len(preview_fingerprint) != 64:
+        raise DemoError("correction artifact preview returned no content fingerprint")
+    correction_payload["preview_fingerprint"] = preview_fingerprint
+
     saved = _request_json(
         client,
         "POST",
@@ -234,6 +239,10 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
     )
     if saved.get("persisted") is not True or saved.get("validation", {}).get("ready_for_learning") is not True:
         raise DemoError("correction artifact was not persisted as a ready learning candidate")
+    if saved.get("preview_fingerprint") != preview_fingerprint:
+        raise DemoError("saved correction artifact does not match the preview fingerprint")
+    if saved.get("artifact") != preview.get("artifact"):
+        raise DemoError("saved correction artifact differs from the reviewed preview")
 
     summary = _request_json(
         client,
@@ -264,6 +273,7 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
         "slide_count": slide_count,
         "artifact_id": artifact_id,
         "artifact_schema_version": validation.get("schema_version"),
+        "preview_fingerprint": preview_fingerprint,
         "ready_artifact_count": summary.get("ready_artifacts"),
         "exported_record_count": len(artifacts),
     }
@@ -299,6 +309,8 @@ def run_demo() -> dict[str, Any]:
             "ready_artifact_count": result["ready_artifact_count"],
             "exported_record_count": result["exported_record_count"],
             "export_validation_passed": True,
+            "preview_bound_save": True,
+            "preview_fingerprint": result["preview_fingerprint"],
         },
         "completed_stages": [
             "workflow_created",

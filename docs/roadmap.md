@@ -71,6 +71,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
+  - 2026-07-13 correction artifact에 stable content identity와 SHA-256 preview fingerprint를 적용했다. Save는 현재 workflow/input과 일치하는 preview만 허용하고 누락·stale input·중복 artifact를 거부하며, review packet validator도 embedded artifact fingerprint를 재검증한다.
   - 2026-07-13 `proposal_kr`, `performance_plan_kr`의 대표 mock sample 6개 문서와 canonical golden fingerprint, validator/lint, request 대비 단위 수치 literal coverage 결과를 tracked evidence package로 정리했다. numeric coverage는 factual truth 검증과 분리한다.
   - 2026-07-13 tracked review dashboard에서 request 근거, validator/lint/numeric 상태, factual·human review 미완료 경계, 생성 Markdown 본문을 한 화면에 확인하도록 보강했다.
   - 2026-07-13 tracked manifest SHA256에 결속된 human review receipt와 `init/record/validate` CLI를 추가했다. 모든 bundle의 factual·visual review가 통과해야만 완료되며 외부 action 승인은 계속 `false`로 유지된다.

@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from app.services.report_quality_learning import correction_artifact_fingerprint
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPEC_DIR = REPO_ROOT / "docs/specs/report_quality_learning"
@@ -1290,6 +1292,7 @@ def _review_packet(*, ready: bool = True) -> dict:
             "schema_version": "decisiondoc_report_quality_correction_artifact.v1",
         } if ready else None,
         "preview_artifact": preview_artifact if ready else None,
+        "preview_fingerprint": correction_artifact_fingerprint(preview_artifact) if ready else "",
         "preview_persisted": False,
         "preview_artifact_id": "rqc_ready" if ready else "",
         "develop_preview": {
@@ -1835,6 +1838,7 @@ def test_review_packet_validator_rejects_side_effect_boundary_break():
     packet = _review_packet()
     packet["training_boundary"]["provider_fine_tune_api_call_authorized"] = True
     packet["preview_persisted"] = True
+    packet.pop("preview_fingerprint")
 
     result = validator.validate_review_packet(packet, require_ready=True)
 
@@ -1843,6 +1847,7 @@ def test_review_packet_validator_rejects_side_effect_boundary_break():
     joined = "\n".join(result["errors"])
     assert "provider_fine_tune_api_call_authorized must be false" in joined
     assert "preview_persisted must remain false" in joined
+    assert "ready review packets require preview_fingerprint" in joined
 
 
 def test_review_packet_validator_cross_checks_preview_artifact():
@@ -1857,6 +1862,7 @@ def test_review_packet_validator_cross_checks_preview_artifact():
     assert result["preview_artifact_ok"] is False
     joined = "\n".join(result["errors"])
     assert "preview_artifact: training_boundary.provider_job_creation_authorized must be false" in joined
+    assert "preview_fingerprint must match preview_artifact content" in joined
 
 
 def test_review_packet_validator_rejects_pending_packet_when_ready_required(tmp_path, capsys):
@@ -1885,6 +1891,7 @@ def test_review_packet_batch_summary_accepts_ready_packets(tmp_path, capsys):
     second["preview_validation"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["workflow_reference"]["report_workflow_id"] = "rw_quality_ready_002"
+    second["preview_fingerprint"] = correction_artifact_fingerprint(second["preview_artifact"])
     first_path = tmp_path / "report-quality-review-packet-rw_quality_ready.json"
     second_path = tmp_path / "report-quality-review-packet-rw_quality_ready_002.json"
     first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
@@ -1955,6 +1962,7 @@ def test_review_packet_artifact_export_writes_ready_correction_jsonl(tmp_path, c
     second["preview_validation"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["workflow_reference"]["report_workflow_id"] = "rw_quality_ready_002"
+    second["preview_fingerprint"] = correction_artifact_fingerprint(second["preview_artifact"])
     first_path = tmp_path / "packet-one.json"
     second_path = tmp_path / "packet-two.json"
     first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
@@ -2026,6 +2034,7 @@ def test_review_packet_evidence_pipeline_builds_all_local_outputs(tmp_path, caps
     second["preview_validation"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["workflow_reference"]["report_workflow_id"] = "rw_quality_ready_002"
+    second["preview_fingerprint"] = correction_artifact_fingerprint(second["preview_artifact"])
     first_path = tmp_path / "packet-one.json"
     second_path = tmp_path / "packet-two.json"
     first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
@@ -2096,6 +2105,7 @@ def test_review_packet_evidence_validator_accepts_generated_pipeline(tmp_path, c
     second["preview_validation"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["workflow_reference"]["report_workflow_id"] = "rw_quality_ready_002"
+    second["preview_fingerprint"] = correction_artifact_fingerprint(second["preview_artifact"])
     first_path = tmp_path / "packet-one.json"
     second_path = tmp_path / "packet-two.json"
     first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
@@ -2166,6 +2176,7 @@ def test_review_packet_handoff_generator_creates_reviewer_index(tmp_path, capsys
     second["preview_validation"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["artifact_id"] = "rqc_ready_002"
     second["preview_artifact"]["workflow_reference"]["report_workflow_id"] = "rw_quality_ready_002"
+    second["preview_fingerprint"] = correction_artifact_fingerprint(second["preview_artifact"])
     first_path = tmp_path / "packet-one.json"
     second_path = tmp_path / "packet-two.json"
     first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")

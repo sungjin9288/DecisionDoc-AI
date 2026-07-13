@@ -90,12 +90,17 @@ Procurement review packet 테스트는 검증된 12-artifact directory의 determ
 
 Procurement review receipt 테스트는 packet 밖 companion JSON의 deterministic pending state, `packet_sha256` binding, requested reviewer 일치, accepted/changes-requested/rejected 결정, non-empty rationale, canonical UTC timestamp, one-time `review_status` transition, stale packet과 field-order drift, false가 아닌 operational approval, CLI JSON success/failure를 검증한다.
 
+Report quality correction 테스트는 server preview와 save artifact의 exact equality, SHA-256 fingerprint binding, fingerprint 누락과 stale input 거부, 동일 artifact 중복 저장 차단, review packet embedded artifact fingerprint 재검증을 포함한다. Local demo는 mock provider와 임시 storage만 사용하고 저장된 artifact와 preview가 동일한지 확인한다.
+
 생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 입력, review draft 다운로드, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
 
 ```bash
 pytest -q tests/test_finished_document_packet.py tests/test_finished_doc_human_review.py tests/test_build_finished_doc_review_samples.py
 pytest -q tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_cli_success_contract.py tests/test_procurement_decision_package_cli_failure_contract.py
 pytest -q tests/test_procurement_decision_package_review_receipt.py tests/test_procurement_decision_package_docs_contract.py
+pytest -q tests/test_report_workflows_api.py -k quality_correction
+pytest -q tests/test_run_report_quality_learning_demo.py
+pytest -q tests/test_report_quality_learning.py -k review_packet_validator
 ```
 
 ### E2E 시험 (Playwright)

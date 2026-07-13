@@ -609,6 +609,7 @@ def save_report_quality_correction_artifact(
         "report_workflow": asdict(result["report_workflow"]),
         "artifact": result["artifact"],
         "validation": result["validation"],
+        "preview_fingerprint": result["preview_fingerprint"],
         "persisted": result["persisted"],
     }
 
