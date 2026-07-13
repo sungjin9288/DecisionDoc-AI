@@ -119,8 +119,8 @@ The surface must answer:
 Current local evidence slice:
 
 - `review.html` shows generated documents and automatic validation evidence.
-- `human_review.html` combines request evidence, automatic validation, generated Markdown, manifest-bound receipt state, reviewer notes, and the external-action boundary in one read-only workspace.
-- `manage_finished_doc_human_review.py` keeps receipt validation and summary rendering available without provider or AWS execution.
+- `human_review.html` combines request evidence, automatic validation, generated Markdown, manifest-bound receipt state, reviewer notes, and the external-action boundary in one workspace. Reviewer input is downloaded as a source-bound draft rather than written directly to evidence.
+- `manage_finished_doc_human_review.py` validates and atomically applies a draft only when its manifest and receipt hashes still match, without provider or AWS execution.
 - A completed receipt can produce a deterministic review packet containing only manifest-declared artifacts and an embedded SHA256 index; pending review cannot be packaged as final.
 
 ### Verification

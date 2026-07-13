@@ -191,7 +191,7 @@ python3 scripts/build_finished_doc_review_samples.py \
 python3 -m app.eval --out-dir reports/eval/v1
 ```
 
-2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)입니다. [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)는 manifest가 hash로 관리하는 자동 검증 원본이며, [reviewer workspace](./docs/samples/bundle_quality_evidence/current/human_review.html)는 request 근거, 자동 검증, 생성 Markdown, bundle별 사람 검토 상태와 외부 action 경계를 한 화면에 보여줍니다. 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)는 현재 manifest SHA256에 결속된 `pending` 상태입니다. 아직 사람 검토 완료를 주장하지 않으므로 final review packet도 생성하지 않았습니다. Completed receipt에서는 manifest-declared artifact와 embedded SHA256 index만 담은 deterministic ZIP을 만들고 다시 검증할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. 화면 노출도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
+2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)입니다. [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)는 manifest가 hash로 관리하는 자동 검증 원본이며, [reviewer workspace](./docs/samples/bundle_quality_evidence/current/human_review.html)는 request 근거, 자동 검증, 생성 Markdown, bundle별 사람 검토 상태와 외부 action 경계를 한 화면에 보여줍니다. Reviewer가 화면에서 작성한 값은 현재 manifest와 receipt SHA256에 결속된 local draft JSON으로만 내려받으며, `apply-draft` 검증을 통과해야 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)에 atomic update됩니다. Tracked receipt는 현재 `pending` 상태이고 아직 사람 검토 완료를 주장하지 않으므로 final review packet도 생성하지 않았습니다. Completed receipt에서는 manifest-declared artifact와 embedded SHA256 index만 담은 deterministic ZIP을 만들고 다시 검증할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. 화면 노출과 draft 생성도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
 
 ```bash
 pytest tests/                 # 전체
@@ -199,10 +199,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,591개**, **215개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,593개**, **215개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2591
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2593
 python3 scripts/count_readme_metrics.py --field test_files      # → 215
 ```
 

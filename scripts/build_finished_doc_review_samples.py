@@ -507,13 +507,15 @@ def run(
     )
     if not receipt_validation["ok"]:
         raise RuntimeError(f"generated human review receipt is invalid: {receipt_validation['errors']}")
-    _write_json(run_dir / "human_review_receipt.json", human_review_receipt)
+    receipt_path = run_dir / "human_review_receipt.json"
+    _write_json(receipt_path, human_review_receipt)
     _write_text(
         run_dir / "human_review.html",
         build_human_review_summary(
             manifest=manifest,
             receipt=human_review_receipt,
             validation=receipt_validation,
+            receipt_sha256=_sha256(receipt_path),
             bundle_documents=bundle_documents,
         ),
     )

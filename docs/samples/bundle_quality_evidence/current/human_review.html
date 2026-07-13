@@ -96,6 +96,15 @@
     .review-states dd { margin: 0; min-height: 28px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
     .notes { padding: 16px 0 0; }
     .notes p { margin: 0; padding: 13px 15px; border-left: 3px solid var(--border-strong); background: var(--surface-muted); font-size: 13px; white-space: pre-wrap; }
+    .review-entry { margin: 22px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); }
+    .review-entry legend { padding: 0; font-size: 13px; font-weight: 800; }
+    .review-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
+    .review-fields label { display: grid; gap: 6px; min-width: 0; }
+    .review-fields label span { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .review-fields select, .review-fields input, .review-fields textarea { width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+    .review-fields textarea { resize: vertical; line-height: 1.55; }
+    .review-fields select:focus, .review-fields input:focus, .review-fields textarea:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .review-notes { grid-column: 1 / -1; }
     .documents { margin-top: 24px; }
     .document { border-top: 1px solid var(--border); background: var(--surface); }
     .document:last-child { border-bottom: 1px solid var(--border); }
@@ -111,12 +120,21 @@
     .boundary h2 { margin-bottom: 14px; }
     .boundary ul { margin: 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }
     .boundary li { display: flex; justify-content: space-between; gap: 16px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border); }
+    .draft-actions { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 24px 0; border-bottom: 1px solid var(--border-strong); }
+    .draft-actions h2 { font-size: 16px; }
+    .draft-actions p { min-height: 20px; margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .draft-actions p[data-tone="pass"] { color: var(--pass-text); }
+    .draft-actions p[data-tone="fail"] { color: var(--fail-text); }
+    .primary-action { min-height: 42px; padding: 9px 14px; border: 1px solid var(--accent); border-radius: 5px; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+    .primary-action:hover { background: var(--accent-strong); }
+    .primary-action:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
     @media (max-width: 780px) {
       .summary, .review-states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .metric:nth-child(2), .review-states > div:nth-child(2) { border-right: 0; }
       .metric:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
       .review-states > div:nth-child(3) { padding-left: 0; }
       .review-context { grid-template-columns: 1fr; }
+      .review-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
       .shell { width: min(100vw - 24px, 1080px); }
@@ -133,16 +151,25 @@
       .request-data dt { padding-bottom: 0; border-bottom: 0; }
       .request-data dd { padding-top: 4px; }
       .boundary li { align-items: flex-start; padding: 10px 0; }
+      .review-fields { grid-template-columns: 1fr; }
+      .review-notes { grid-column: auto; }
+      .draft-actions { align-items: stretch; flex-direction: column; }
+      .primary-action { width: 100%; }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
+  <main class="shell" data-review-workspace
+        data-draft-schema-version="decisiondoc.finished_document_human_review_draft.v1"
+        data-draft-scope="proposes local human review updates; does not modify the receipt or authorize external actions"
+        data-receipt-path="human_review_receipt.json"
+        data-receipt-sha256="2f6517c9b8da5fd136941a13d291f51dcd27690ad7b732d5a89e7790a6a11897"
+        data-manifest-sha256="67167dfb01a7ec360c87424ca776daf16368a61bae678acde750f41e6ff8da43">
     <header class="page-header">
       <div>
         <p class="eyebrow">Manifest-bound review workspace</p>
         <h1>문서 검토 작업공간</h1>
-        <p>최근 기록 2026-07-13T12:35:32.824390+00:00</p>
+        <p>최근 기록 2026-07-13T12:59:01.252775+00:00</p>
       </div>
       <div class="header-actions">
         <a class="file-link" href="review.html">자동 검증 원본</a>
@@ -160,12 +187,13 @@
       <h2>증적 결속</h2>
       <dl>
         <dt>Manifest</dt><dd><a class="file-link" href="manifest.json">manifest.json</a></dd>
-        <dt>Manifest SHA256</dt><dd><code>17d12011c5d9791ded023c7257588f4a06f0201e1dc69953f5fc43debb28a265</code></dd>
+        <dt>Manifest SHA256</dt><dd><code>67167dfb01a7ec360c87424ca776daf16368a61bae678acde750f41e6ff8da43</code></dd>
+        <dt>Receipt SHA256</dt><dd><code>2f6517c9b8da5fd136941a13d291f51dcd27690ad7b732d5a89e7790a6a11897</code></dd>
         <dt>Schema</dt><dd><code>decisiondoc.finished_document_review.v3</code></dd>
-        <dt>생성 시각</dt><dd>2026-07-13T12:35:32.824390+00:00</dd>
+        <dt>생성 시각</dt><dd>2026-07-13T12:59:01.252775+00:00</dd>
       </dl>
     </section>
-    <section class='review-row'><header class='review-row-header'><div><p class='bundle-id'>proposal_kr</p><h2>국토교통 통합형 서비스 발굴 경연 사업 제안서</h2></div><span class="status status-pending">검토 대기</span></header><div class='review-context'><section class='context-section'><h3>요청 근거</h3><dl class='request-data'><dt>목표</dt><dd>교통약자 안전 확보와 도시 운영 효율 개선을 동시에 달성할 수 있는 AI 기반 통합 서비스를 제안한다.</dd><dt>입력 근거</dt><dd>발주처는 국토교통부이며, 실증 대상은 보행자 안전구역·대중교통 환승 거점이다. 예산은 65억 원, 사업 기간은 24개월, 최종 산출물은 제안서·발표자료·수행계획서 패키지다.</dd><dt>제약 조건</dt><dd>개인정보 및 위치정보 보호를 충족해야 하며, 1차년도 내 시범 운영과 정량 KPI 검증을 완료해야 한다.</dd><dt>검토 대상</dt><dd>발주처 평가위원, PMO, 도시교통 실무 책임자</dd></dl></section><section class='context-section'><h3>자동 검증</h3><dl class='check-list'><div><dt>Schema validator</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>Bundle lint</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>수치 근거</dt><dd><span class="status status-pass">통과</span></dd></div></dl></section></div><dl class='review-states'><div><dt>사실 근거</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>시각 검토</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>검토자</dt><dd>미지정</dd></div><div><dt>검토 시각</dt><dd>미검토</dd></div></dl><div class='notes'><h3>검토 메모</h3><p>기록 없음</p></div><section class='documents'><h3>생성 문서</h3><details class='document' open><summary><strong>business_understanding</strong><span>58 lines</span></summary><div class='document-body'><a class='file-link' href='proposal_kr/markdown/business_understanding.md'>Markdown 원문</a><pre># 사업 이해: 국토교통 통합형 서비스 발굴 경연 사업 제안서
+    <section class='review-row'><header class='review-row-header'><div><p class='bundle-id'>proposal_kr</p><h2>국토교통 통합형 서비스 발굴 경연 사업 제안서</h2></div><span class="status status-pending">검토 대기</span></header><div class='review-context'><section class='context-section'><h3>요청 근거</h3><dl class='request-data'><dt>목표</dt><dd>교통약자 안전 확보와 도시 운영 효율 개선을 동시에 달성할 수 있는 AI 기반 통합 서비스를 제안한다.</dd><dt>입력 근거</dt><dd>발주처는 국토교통부이며, 실증 대상은 보행자 안전구역·대중교통 환승 거점이다. 예산은 65억 원, 사업 기간은 24개월, 최종 산출물은 제안서·발표자료·수행계획서 패키지다.</dd><dt>제약 조건</dt><dd>개인정보 및 위치정보 보호를 충족해야 하며, 1차년도 내 시범 운영과 정량 KPI 검증을 완료해야 한다.</dd><dt>검토 대상</dt><dd>발주처 평가위원, PMO, 도시교통 실무 책임자</dd></dl></section><section class='context-section'><h3>자동 검증</h3><dl class='check-list'><div><dt>Schema validator</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>Bundle lint</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>수치 근거</dt><dd><span class="status status-pass">통과</span></dd></div></dl></section></div><dl class='review-states'><div><dt>사실 근거</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>시각 검토</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>검토자</dt><dd>미지정</dd></div><div><dt>검토 시각</dt><dd>미검토</dd></div></dl><div class='notes'><h3>검토 메모</h3><p>기록 없음</p></div><fieldset class="review-entry" data-review-form data-bundle="proposal_kr"><legend>검토 기록 작성</legend><div class="review-fields"><label><span>사실 근거</span><select name="factual_grounding"><option value="" selected>선택</option><option value="passed">통과</option><option value="needs_revision">수정 필요</option></select></label><label><span>시각 검토</span><select name="visual_review"><option value="" selected>선택</option><option value="passed">통과</option><option value="needs_revision">수정 필요</option></select></label><label><span>검토자</span><input name="reviewer" value="" autocomplete="name"></label><label class="review-notes"><span>검토 메모</span><textarea name="notes" rows="3"></textarea></label></div></fieldset><section class='documents'><h3>생성 문서</h3><details class='document' open><summary><strong>business_understanding</strong><span>58 lines</span></summary><div class='document-body'><a class='file-link' href='proposal_kr/markdown/business_understanding.md'>Markdown 원문</a><pre># 사업 이해: 국토교통 통합형 서비스 발굴 경연 사업 제안서
 
 ## 제안 요약
 본 제안은 핵심 정책 목표를 공공기관이 실제 운영 KPI로 관리할 수 있도록 데이터 통합, AI 분석, 운영 대시보드를 하나의 사업 범위로 묶은 안입니다. 사업 배경과 현황 문제를 정책 목표와 연결해 설명하고, 단계별 추진 전략과 기대효과를 같은 KPI 체계 안에서 제시해 평가위원이 실현 가능성과 효과성을 동시에 확인할 수 있게 구성합니다. 또한 초기 구축과 파일럿, 확산 단계를 구분해 예산 집행과 성과 검증 시점을 명확히 합니다.
@@ -411,7 +439,7 @@ ROI는 입력된 사업비와 검증된 현행 운영비 기준선이 확보된 
 | 8 | ROI 분석 | 투자비용과 검증된 누적 절감액 비교. Break-Even Point와 ROI 산식 표시 | 투자비용과 검증된 누적 절감액 비교 · Break-Even Point와 ROI 산식 표시 | 그래프 — 손익분기 그래프(X: 월, Y: 누적 효과). 투자비용 선 vs 누적효과 선 교차. | 손익분기 그래프(X: 월, Y: 누적 효과). 투자비용 선 vs 누적효과 선 교차. |
 | 9 | 성과 모니터링 계획 | KPI 대시보드 구성 + 월별/분기별 보고 체계 + 모델 재학습 주기 | KPI 대시보드 구성 · 월별/분기별 보고 체계 · 모델 재학습 주기 | 화면 와이어프레임 — 대시보드 목업 와이어프레임. KPI 지표 표(지표명·현재값·목표값·측정주기). | 대시보드 목업 와이어프레임. KPI 지표 표(지표명·현재값·목표값·측정주기). |
 | 10 | 결론 — 왜 지금, 왜 우리인가 | 국토교통 통합형 서비스 발굴 경연 도입의 시급성 + 제안사 차별화 + 성공 확신 메시지 | 국토교통 통합형 서비스 발굴 경연 도입의 시급성 · 제안사 차별화 · 성공 확신 메시지 | 비교 표 — 강렬한 마무리 슬라이드. 중앙 대형 키 메시지 1문장. 표지 테마 동일 적용. | 강렬한 마무리 슬라이드. 중앙 대형 키 메시지 1문장. 표지 테마 동일 적용. |
-</pre></div></details></section></section><section class='review-row'><header class='review-row-header'><div><p class='bundle-id'>performance_plan_kr</p><h2>국토교통 통합형 서비스 발굴 경연 사업수행계획서</h2></div><span class="status status-pending">검토 대기</span></header><div class='review-context'><section class='context-section'><h3>요청 근거</h3><dl class='request-data'><dt>목표</dt><dd>보행자 안전구역·환승 거점의 교통약자 안전을 개선하는 AI 통합 플랫폼을 24개월 내 구축·검수·이관한다.</dd><dt>입력 근거</dt><dd>계약 기간은 2026년 1월부터 2027년 12월까지이며, 발주처는 국토교통부다. 산출물은 착수보고서, AI 설계서, 통합 테스트 결과서, 완료보고서, 운영 매뉴얼이다.</dd><dt>제약 조건</dt><dd>단계별 검수 기준과 운영 회의체를 명확히 정의해야 하고, 공공 클라우드·현장 장비 연동을 동시에 고려해야 한다.</dd><dt>검토 대상</dt><dd>발주처 감독관, 사업 PM, 품질 검수 위원</dd></dl></section><section class='context-section'><h3>자동 검증</h3><dl class='check-list'><div><dt>Schema validator</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>Bundle lint</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>수치 근거</dt><dd><span class="status status-pass">통과</span></dd></div></dl></section></div><dl class='review-states'><div><dt>사실 근거</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>시각 검토</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>검토자</dt><dd>미지정</dd></div><div><dt>검토 시각</dt><dd>미검토</dd></div></dl><div class='notes'><h3>검토 메모</h3><p>기록 없음</p></div><section class='documents'><h3>생성 문서</h3><details class='document' open><summary><strong>performance_overview</strong><span>67 lines</span></summary><div class='document-body'><a class='file-link' href='performance_plan_kr/markdown/performance_overview.md'>Markdown 원문</a><pre># 사업수행계획서: 국토교통 통합형 서비스 발굴 경연 사업수행계획서
+</pre></div></details></section></section><section class='review-row'><header class='review-row-header'><div><p class='bundle-id'>performance_plan_kr</p><h2>국토교통 통합형 서비스 발굴 경연 사업수행계획서</h2></div><span class="status status-pending">검토 대기</span></header><div class='review-context'><section class='context-section'><h3>요청 근거</h3><dl class='request-data'><dt>목표</dt><dd>보행자 안전구역·환승 거점의 교통약자 안전을 개선하는 AI 통합 플랫폼을 24개월 내 구축·검수·이관한다.</dd><dt>입력 근거</dt><dd>계약 기간은 2026년 1월부터 2027년 12월까지이며, 발주처는 국토교통부다. 산출물은 착수보고서, AI 설계서, 통합 테스트 결과서, 완료보고서, 운영 매뉴얼이다.</dd><dt>제약 조건</dt><dd>단계별 검수 기준과 운영 회의체를 명확히 정의해야 하고, 공공 클라우드·현장 장비 연동을 동시에 고려해야 한다.</dd><dt>검토 대상</dt><dd>발주처 감독관, 사업 PM, 품질 검수 위원</dd></dl></section><section class='context-section'><h3>자동 검증</h3><dl class='check-list'><div><dt>Schema validator</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>Bundle lint</dt><dd><span class="status status-pass">통과</span></dd></div><div><dt>수치 근거</dt><dd><span class="status status-pass">통과</span></dd></div></dl></section></div><dl class='review-states'><div><dt>사실 근거</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>시각 검토</dt><dd><span class="status status-pending">미검토</span></dd></div><div><dt>검토자</dt><dd>미지정</dd></div><div><dt>검토 시각</dt><dd>미검토</dd></div></dl><div class='notes'><h3>검토 메모</h3><p>기록 없음</p></div><fieldset class="review-entry" data-review-form data-bundle="performance_plan_kr"><legend>검토 기록 작성</legend><div class="review-fields"><label><span>사실 근거</span><select name="factual_grounding"><option value="" selected>선택</option><option value="passed">통과</option><option value="needs_revision">수정 필요</option></select></label><label><span>시각 검토</span><select name="visual_review"><option value="" selected>선택</option><option value="passed">통과</option><option value="needs_revision">수정 필요</option></select></label><label><span>검토자</span><input name="reviewer" value="" autocomplete="name"></label><label class="review-notes"><span>검토 메모</span><textarea name="notes" rows="3"></textarea></label></div></fieldset><section class='documents'><h3>생성 문서</h3><details class='document' open><summary><strong>performance_overview</strong><span>67 lines</span></summary><div class='document-body'><a class='file-link' href='performance_plan_kr/markdown/performance_overview.md'>Markdown 원문</a><pre># 사업수행계획서: 국토교통 통합형 서비스 발굴 경연 사업수행계획서
 
 ## 수행 총괄 요약
 국토교통 통합형 서비스 발굴 경연 수행계획서는 계약 범위, 일정, 산출물, 투입 인력, 승인 게이트를 하나의 실행 문서로 정리한 결과물입니다. 착수 이후 요구사항 정의와 설계, 개발·시험, 배포·운영 교육까지 단계별 책임과 완료 기준을 명확히 두어 발주처가 중간점검과 최종 검수 시점 모두에서 진행 상태를 객관적으로 확인할 수 있게 구성했습니다. 특히 산출물·인력·WBS를 서로 연결해 일정과 품질, 자원 배분이 분리되지 않도록 설계했습니다. 조달 연계 참고: 계약 기간은 2026년 1월부터 2027년 12월까지이며, 발주처는 국토교통부다. 산출물은 착수보고서, AI 설계서, 통합 테스트 결과서, 완료보고서, 운영 매뉴얼이다.
@@ -530,10 +558,100 @@ ROI는 입력된 사업비와 검증된 현행 운영비 기준선이 확보된 
 | 5 | 변경관리 및 이슈 대응 | 변경 요청 처리, 영향도 검토, 승인 절차, 이력 관리 원칙 | 변경 요청 처리, 영향도 검토, 승인 절차, 이력 관리 원칙 | 프로세스 흐름도 — 변경관리 흐름도. | 변경관리 흐름도. |
 | 6 | 보고 체계와 운영 통제 | 보행자 안전구역·환승 거점의 교통약자 안전을 개선하는 AI 통합 플랫폼을 24개월 내 구축·검수·이관한다. 달성을 위한 주간·월간·분기 보고 체계와 escalation 규칙 | 보행자 안전구역·환승 거점의 교통약자 안전을 개선하는 AI 통합 플랫폼을 24개월 내 구축·검수·이관한다 · 달성을 위한 주간·월간·분기 보고 체계와 escalation 규칙 | 타임라인 — 보고 cadence 타임라인과 책임자 구분. | 보고 cadence 타임라인과 책임자 구분. |
 </pre></div></details></section></section>
+    <section class="draft-actions">
+      <div>
+        <h2>검토 Draft</h2>
+        <p data-review-draft-message role="status" aria-live="polite"></p>
+      </div>
+      <button class="primary-action" type="button" data-download-review-draft>Review draft 다운로드</button>
+    </section>
     <section class="boundary">
       <h2>외부 실행 권한</h2>
-      <ul><li><code>provider_api_execution</code><span class="status status-pending">승인 안 됨</span></li><li><code>aws_runtime_execution</code><span class="status status-pending">승인 안 됨</span></li><li><code>dataset_upload</code><span class="status status-pending">승인 안 됨</span></li><li><code>training_execution</code><span class="status status-pending">승인 안 됨</span></li><li><code>model_promotion</code><span class="status status-pending">승인 안 됨</span></li><li><code>production_service_resume</code><span class="status status-pending">승인 안 됨</span></li></ul>
+      <ul><li data-external-action="provider_api_execution"><code>provider_api_execution</code><span class="status status-pending">승인 안 됨</span></li><li data-external-action="aws_runtime_execution"><code>aws_runtime_execution</code><span class="status status-pending">승인 안 됨</span></li><li data-external-action="dataset_upload"><code>dataset_upload</code><span class="status status-pending">승인 안 됨</span></li><li data-external-action="training_execution"><code>training_execution</code><span class="status status-pending">승인 안 됨</span></li><li data-external-action="model_promotion"><code>model_promotion</code><span class="status status-pending">승인 안 됨</span></li><li data-external-action="production_service_resume"><code>production_service_resume</code><span class="status status-pending">승인 안 됨</span></li></ul>
     </section>
   </main>
+  <script>
+(() => {
+  const workspace = document.querySelector("[data-review-workspace]");
+  const downloadButton = document.querySelector("[data-download-review-draft]");
+  const message = document.querySelector("[data-review-draft-message]");
+  if (!workspace || !downloadButton || !message) return;
+
+  const readField = (group, name) => group.querySelector(`[name="${name}"]`).value.trim();
+  const reviewGroups = Array.from(document.querySelectorAll("[data-review-form]"));
+
+  function reviewValues(group) {
+    return {
+      factual_grounding: readField(group, "factual_grounding"),
+      visual_review: readField(group, "visual_review"),
+      reviewer: readField(group, "reviewer"),
+      notes: readField(group, "notes"),
+    };
+  }
+
+  reviewGroups.forEach(group => {
+    group.dataset.initialReview = JSON.stringify(reviewValues(group));
+  });
+
+  function readReview(group) {
+    const review = reviewValues(group);
+    const values = Object.values(review);
+    if (values.every(value => !value)) return null;
+    if (JSON.stringify(review) === group.dataset.initialReview) return null;
+    if (values.some(value => !value)) {
+      const missingField = Object.entries(review).find(([, value]) => !value)[0];
+      group.querySelector(`[name="${missingField}"]`).focus();
+      throw new Error(`${group.dataset.bundle}: 검토 항목을 모두 입력해야 합니다.`);
+    }
+    return review;
+  }
+
+  downloadButton.addEventListener("click", () => {
+    try {
+      const reviews = Object.create(null);
+      reviewGroups.forEach(group => {
+        const review = readReview(group);
+        if (review) reviews[group.dataset.bundle] = review;
+      });
+      if (!Object.keys(reviews).length) {
+        throw new Error("저장할 검토 기록이 없습니다.");
+      }
+
+      const externalActions = Object.create(null);
+      document.querySelectorAll("[data-external-action]").forEach(row => {
+        externalActions[row.dataset.externalAction] = false;
+      });
+      const draft = {
+        schema_version: workspace.dataset.draftSchemaVersion,
+        scope: workspace.dataset.draftScope,
+        created_at: new Date().toISOString(),
+        source: {
+          receipt_path: workspace.dataset.receiptPath,
+          receipt_sha256: workspace.dataset.receiptSha256,
+          manifest_path: "manifest.json",
+          manifest_sha256: workspace.dataset.manifestSha256,
+        },
+        reviews,
+        external_actions_authorized: externalActions,
+      };
+
+      const blob = new Blob([`${JSON.stringify(draft, null, 2)}
+`], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "human_review_draft.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      message.dataset.tone = "pass";
+      message.textContent = `${Object.keys(reviews).length}개 bundle 검토 draft를 생성했습니다.`;
+    } catch (error) {
+      message.dataset.tone = "fail";
+      message.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+})();
+</script>
 </body>
 </html>

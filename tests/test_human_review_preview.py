@@ -9,6 +9,7 @@ from app.services.human_review_preview import build_human_review_summary
 
 
 MANIFEST_SHA256 = "a" * 64
+RECEIPT_SHA256 = "b" * 64
 MANIFEST = {
     "schema_version": "decisiondoc.finished_document_review.v3",
     "generated_at": "2026-07-13T10:00:00+00:00",
@@ -53,6 +54,7 @@ def _render(receipt: dict) -> str:
         manifest=MANIFEST,
         receipt=receipt,
         validation=validation,
+        receipt_sha256=RECEIPT_SHA256,
         bundle_documents=DOCUMENTS,
     )
 
@@ -73,10 +75,19 @@ def test_human_review_summary_shows_pending_state_and_evidence_boundary() -> Non
     assert "# 제안서" in summary
     assert "&lt;script&gt;alert(&#x27;document&#x27;)&lt;/script&gt;" in summary
     assert MANIFEST_SHA256 in summary
+    assert RECEIPT_SHA256 in summary
     assert summary.count("승인 안 됨") == 2
     assert 'href="review.html"' in summary
     assert 'href="human_review_receipt.json"' in summary
-    assert "<script" not in summary
+    assert "<script>alert('document')</script>" not in summary
+    assert 'data-download-review-draft' in summary
+    assert 'name="factual_grounding"' in summary
+    assert 'name="visual_review"' in summary
+    assert 'name="reviewer"' in summary
+    assert 'name="notes"' in summary
+    assert 'link.download = "human_review_draft.json"' in summary
+    assert "group.dataset.initialReview" in summary
+    assert "Object.create(null)" in summary
     assert summary.count("<div") == summary.count("</div>")
 
 
@@ -112,6 +123,7 @@ def test_human_review_summary_escapes_reviewer_content_and_shows_completion() ->
         manifest=MANIFEST,
         receipt=completed,
         validation=validation,
+        receipt_sha256=RECEIPT_SHA256,
         receipt_path="javascript:alert.json",
     )
     assert 'href="javascript%3Aalert.json"' in encoded_link_summary

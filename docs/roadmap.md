@@ -74,6 +74,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 receipt 상태, reviewer, notes, manifest 결속, 외부 action 경계를 한 화면에서 확인하는 `human_review.html` companion view와 CLI `render` 경로를 추가했다. JSON receipt는 계속 증적 원본으로 유지한다.
   - 2026-07-13 completed receipt만 허용하는 finished-document review packet과 `package/verify-packet` CLI를 추가했다. Manifest-declared artifact만 포함하고 embedded SHA256 index, path boundary, tamper detection을 검증한다.
   - 2026-07-13 `human_review.html`을 request 근거, 자동 검증, 생성 문서, 사람 검토, 외부 권한 경계를 한 화면에서 확인하는 unified reviewer workspace로 확장했다. Manifest-owned `review.html`은 자동 검증 원본으로 유지한다.
+  - 2026-07-13 reviewer workspace에서 bundle별 검토 값을 source-bound draft JSON으로 내려받고 `apply-draft` CLI가 manifest/receipt hash와 비승인 경계를 검증한 뒤 receipt를 atomic update하는 local sign-off 입력 흐름을 추가했다.
   - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
 - 남은 작업:
   - M1 live provider chain을 승인된 키로 검증

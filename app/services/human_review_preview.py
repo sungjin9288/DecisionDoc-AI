@@ -5,6 +5,8 @@ import html
 from typing import Any, Mapping
 from urllib.parse import quote
 
+from app.eval.human_review_receipt import DRAFT_SCHEMA_VERSION, DRAFT_SCOPE
+
 
 STATUS_LABELS = {
     "pending": "검토 대기",
@@ -16,6 +18,90 @@ STATUS_LABELS = {
     "not_authorized": "승인 안 됨",
     "authorized": "승인됨",
 }
+
+
+REVIEW_DRAFT_SCRIPT = """<script>
+(() => {
+  const workspace = document.querySelector("[data-review-workspace]");
+  const downloadButton = document.querySelector("[data-download-review-draft]");
+  const message = document.querySelector("[data-review-draft-message]");
+  if (!workspace || !downloadButton || !message) return;
+
+  const readField = (group, name) => group.querySelector(`[name="${name}"]`).value.trim();
+  const reviewGroups = Array.from(document.querySelectorAll("[data-review-form]"));
+
+  function reviewValues(group) {
+    return {
+      factual_grounding: readField(group, "factual_grounding"),
+      visual_review: readField(group, "visual_review"),
+      reviewer: readField(group, "reviewer"),
+      notes: readField(group, "notes"),
+    };
+  }
+
+  reviewGroups.forEach(group => {
+    group.dataset.initialReview = JSON.stringify(reviewValues(group));
+  });
+
+  function readReview(group) {
+    const review = reviewValues(group);
+    const values = Object.values(review);
+    if (values.every(value => !value)) return null;
+    if (JSON.stringify(review) === group.dataset.initialReview) return null;
+    if (values.some(value => !value)) {
+      const missingField = Object.entries(review).find(([, value]) => !value)[0];
+      group.querySelector(`[name="${missingField}"]`).focus();
+      throw new Error(`${group.dataset.bundle}: 검토 항목을 모두 입력해야 합니다.`);
+    }
+    return review;
+  }
+
+  downloadButton.addEventListener("click", () => {
+    try {
+      const reviews = Object.create(null);
+      reviewGroups.forEach(group => {
+        const review = readReview(group);
+        if (review) reviews[group.dataset.bundle] = review;
+      });
+      if (!Object.keys(reviews).length) {
+        throw new Error("저장할 검토 기록이 없습니다.");
+      }
+
+      const externalActions = Object.create(null);
+      document.querySelectorAll("[data-external-action]").forEach(row => {
+        externalActions[row.dataset.externalAction] = false;
+      });
+      const draft = {
+        schema_version: workspace.dataset.draftSchemaVersion,
+        scope: workspace.dataset.draftScope,
+        created_at: new Date().toISOString(),
+        source: {
+          receipt_path: workspace.dataset.receiptPath,
+          receipt_sha256: workspace.dataset.receiptSha256,
+          manifest_path: "manifest.json",
+          manifest_sha256: workspace.dataset.manifestSha256,
+        },
+        reviews,
+        external_actions_authorized: externalActions,
+      };
+
+      const blob = new Blob([`${JSON.stringify(draft, null, 2)}\n`], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "human_review_draft.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      message.dataset.tone = "pass";
+      message.textContent = `${Object.keys(reviews).length}개 bundle 검토 draft를 생성했습니다.`;
+    } catch (error) {
+      message.dataset.tone = "fail";
+      message.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+})();
+</script>"""
 
 
 def _label(value: Any) -> str:
@@ -99,6 +185,35 @@ def _document_rows(
     return "".join(rows)
 
 
+def _review_state_options(selected_value: Any) -> str:
+    selected = str(selected_value or "")
+    if selected == "not_reviewed":
+        selected = ""
+    options = (("", "선택"), ("passed", "통과"), ("needs_revision", "수정 필요"))
+    return "".join(
+        f'<option value="{value}"{" selected" if value == selected else ""}>{label}</option>'
+        for value, label in options
+    )
+
+
+def _review_input(bundle_type: str, review: Mapping[str, Any]) -> str:
+    reviewer = html.escape(str(review.get("reviewer") or ""), quote=True)
+    notes = html.escape(str(review.get("notes") or ""))
+    return (
+        f'<fieldset class="review-entry" data-review-form data-bundle="{html.escape(bundle_type, quote=True)}">'
+        "<legend>검토 기록 작성</legend>"
+        '<div class="review-fields">'
+        '<label><span>사실 근거</span><select name="factual_grounding">'
+        f'{_review_state_options(review.get("factual_grounding"))}</select></label>'
+        '<label><span>시각 검토</span><select name="visual_review">'
+        f'{_review_state_options(review.get("visual_review"))}</select></label>'
+        f'<label><span>검토자</span><input name="reviewer" value="{reviewer}" autocomplete="name"></label>'
+        f'<label class="review-notes"><span>검토 메모</span><textarea name="notes" rows="3">{notes}</textarea></label>'
+        "</div>"
+        "</fieldset>"
+    )
+
+
 def _bundle_review_rows(
     manifest: Mapping[str, Any],
     receipt: Mapping[str, Any],
@@ -152,6 +267,7 @@ def _bundle_review_rows(
             "<h3>검토 메모</h3>"
             f"<p>{html.escape(notes)}</p>"
             "</div>"
+            f"{_review_input(str(bundle_type), review)}"
             "<section class='documents'>"
             "<h3>생성 문서</h3>"
             f"{_document_rows(bundle, documents)}"
@@ -166,7 +282,7 @@ def _external_action_rows(receipt: Mapping[str, Any]) -> str:
     if not isinstance(actions, Mapping):
         return ""
     return "".join(
-        "<li>"
+        f'<li data-external-action="{html.escape(str(action), quote=True)}">'
         f"<code>{html.escape(str(action))}</code>"
         f"{_status('authorized' if authorized else 'not_authorized')}"
         "</li>"
@@ -179,17 +295,19 @@ def build_human_review_summary(
     manifest: Mapping[str, Any],
     receipt: Mapping[str, Any],
     validation: Mapping[str, Any],
+    receipt_sha256: str,
     bundle_documents: Mapping[str, Mapping[str, str]] | None = None,
     receipt_path: str = "human_review_receipt.json",
     review_dashboard_path: str = "review.html",
 ) -> str:
-    """Render a read-only HTML summary from a validated review receipt."""
+    """Render a local reviewer workspace from a validated review receipt."""
     receipt_status = receipt.get("status")
     valid = validation.get("ok") is True
     overall_status = receipt_status if valid else "needs_revision"
     evidence = receipt.get("evidence")
     evidence = evidence if isinstance(evidence, Mapping) else {}
     bundle_documents = bundle_documents or {}
+    manifest_sha256 = str(evidence.get("manifest_sha256") or "")
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -289,6 +407,15 @@ def build_human_review_summary(
     .review-states dd {{ margin: 0; min-height: 28px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }}
     .notes {{ padding: 16px 0 0; }}
     .notes p {{ margin: 0; padding: 13px 15px; border-left: 3px solid var(--border-strong); background: var(--surface-muted); font-size: 13px; white-space: pre-wrap; }}
+    .review-entry {{ margin: 22px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); }}
+    .review-entry legend {{ padding: 0; font-size: 13px; font-weight: 800; }}
+    .review-fields {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }}
+    .review-fields label {{ display: grid; gap: 6px; min-width: 0; }}
+    .review-fields label span {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
+    .review-fields select, .review-fields input, .review-fields textarea {{ width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }}
+    .review-fields textarea {{ resize: vertical; line-height: 1.55; }}
+    .review-fields select:focus, .review-fields input:focus, .review-fields textarea:focus {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+    .review-notes {{ grid-column: 1 / -1; }}
     .documents {{ margin-top: 24px; }}
     .document {{ border-top: 1px solid var(--border); background: var(--surface); }}
     .document:last-child {{ border-bottom: 1px solid var(--border); }}
@@ -304,12 +431,21 @@ def build_human_review_summary(
     .boundary h2 {{ margin-bottom: 14px; }}
     .boundary ul {{ margin: 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }}
     .boundary li {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border); }}
+    .draft-actions {{ display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 24px 0; border-bottom: 1px solid var(--border-strong); }}
+    .draft-actions h2 {{ font-size: 16px; }}
+    .draft-actions p {{ min-height: 20px; margin: 5px 0 0; color: var(--muted); font-size: 13px; }}
+    .draft-actions p[data-tone="pass"] {{ color: var(--pass-text); }}
+    .draft-actions p[data-tone="fail"] {{ color: var(--fail-text); }}
+    .primary-action {{ min-height: 42px; padding: 9px 14px; border: 1px solid var(--accent); border-radius: 5px; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap; }}
+    .primary-action:hover {{ background: var(--accent-strong); }}
+    .primary-action:focus-visible {{ outline: 2px solid var(--accent-strong); outline-offset: 3px; }}
     @media (max-width: 780px) {{
       .summary, .review-states {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       .metric:nth-child(2), .review-states > div:nth-child(2) {{ border-right: 0; }}
       .metric:nth-child(-n+2) {{ border-bottom: 1px solid var(--border); }}
       .review-states > div:nth-child(3) {{ padding-left: 0; }}
       .review-context {{ grid-template-columns: 1fr; }}
+      .review-fields {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
     }}
     @media (max-width: 560px) {{
       .shell {{ width: min(100vw - 24px, 1080px); }}
@@ -326,11 +462,20 @@ def build_human_review_summary(
       .request-data dt {{ padding-bottom: 0; border-bottom: 0; }}
       .request-data dd {{ padding-top: 4px; }}
       .boundary li {{ align-items: flex-start; padding: 10px 0; }}
+      .review-fields {{ grid-template-columns: 1fr; }}
+      .review-notes {{ grid-column: auto; }}
+      .draft-actions {{ align-items: stretch; flex-direction: column; }}
+      .primary-action {{ width: 100%; }}
     }}
   </style>
 </head>
 <body>
-  <main class="shell">
+  <main class="shell" data-review-workspace
+        data-draft-schema-version="{html.escape(DRAFT_SCHEMA_VERSION, quote=True)}"
+        data-draft-scope="{html.escape(DRAFT_SCOPE, quote=True)}"
+        data-receipt-path="{html.escape(receipt_path, quote=True)}"
+        data-receipt-sha256="{html.escape(receipt_sha256, quote=True)}"
+        data-manifest-sha256="{html.escape(manifest_sha256, quote=True)}">
     <header class="page-header">
       <div>
         <p class="eyebrow">Manifest-bound review workspace</p>
@@ -354,15 +499,24 @@ def build_human_review_summary(
       <dl>
         <dt>Manifest</dt><dd><a class="file-link" href="manifest.json">{html.escape(str(evidence.get('manifest_path') or 'manifest.json'))}</a></dd>
         <dt>Manifest SHA256</dt><dd><code>{html.escape(str(evidence.get('manifest_sha256') or '기록 없음'))}</code></dd>
+        <dt>Receipt SHA256</dt><dd><code>{html.escape(receipt_sha256)}</code></dd>
         <dt>Schema</dt><dd><code>{html.escape(str(evidence.get('manifest_schema_version') or '기록 없음'))}</code></dd>
         <dt>생성 시각</dt><dd>{html.escape(str(evidence.get('manifest_generated_at') or '기록 없음'))}</dd>
       </dl>
     </section>
     {_bundle_review_rows(manifest, receipt, bundle_documents)}
+    <section class="draft-actions">
+      <div>
+        <h2>검토 Draft</h2>
+        <p data-review-draft-message role="status" aria-live="polite"></p>
+      </div>
+      <button class="primary-action" type="button" data-download-review-draft>Review draft 다운로드</button>
+    </section>
     <section class="boundary">
       <h2>외부 실행 권한</h2>
       <ul>{_external_action_rows(receipt)}</ul>
     </section>
   </main>
+  {REVIEW_DRAFT_SCRIPT}
 </body>
 </html>"""

@@ -2,13 +2,13 @@
   "schema_version": "decisiondoc.finished_document_human_review.v1",
   "scope": "records factual and visual review decisions for local generated documents; does not authorize external actions",
   "status": "pending",
-  "created_at": "2026-07-13T12:35:32.824390+00:00",
-  "updated_at": "2026-07-13T12:35:32.824390+00:00",
+  "created_at": "2026-07-13T12:59:01.252775+00:00",
+  "updated_at": "2026-07-13T12:59:01.252775+00:00",
   "evidence": {
     "manifest_path": "manifest.json",
-    "manifest_sha256": "17d12011c5d9791ded023c7257588f4a06f0201e1dc69953f5fc43debb28a265",
+    "manifest_sha256": "67167dfb01a7ec360c87424ca776daf16368a61bae678acde750f41e6ff8da43",
     "manifest_schema_version": "decisiondoc.finished_document_review.v3",
-    "manifest_generated_at": "2026-07-13T12:35:32.824390+00:00"
+    "manifest_generated_at": "2026-07-13T12:59:01.252775+00:00"
   },
   "bundle_reviews": {
     "proposal_kr": {

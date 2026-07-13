@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create, update, and validate finished-document human review receipts."""
+"""Create, draft, update, and validate finished-document human review receipts."""
 from __future__ import annotations
 
 import argparse
@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.eval.human_review_receipt import (  # noqa: E402
+    apply_human_review_draft,
     build_pending_human_review_receipt,
     record_bundle_review,
     validate_human_review_receipt,
@@ -158,6 +159,7 @@ def _write_summary(
         manifest=manifest,
         receipt=receipt,
         validation=validation,
+        receipt_sha256=_sha256(receipt_path),
         bundle_documents=_load_bundle_documents(receipt_path.parent, manifest),
         receipt_path=receipt_path.name,
     )
@@ -252,6 +254,54 @@ def _validate_receipt(args: argparse.Namespace) -> dict[str, Any]:
     receipt_path = args.receipt.resolve()
     _, result = _validation_for_path(receipt_path)
     return {"command": "validate", "receipt_path": str(receipt_path), **result}
+
+
+def _apply_draft(args: argparse.Namespace) -> dict[str, Any]:
+    receipt_path = args.receipt.resolve()
+    draft_path = args.draft.resolve()
+    receipt, before = _validation_for_path(receipt_path)
+    if not before["ok"]:
+        raise ValueError(f"receipt is invalid before draft application: {before['errors']}")
+
+    manifest_path = _manifest_for_receipt(receipt_path, receipt)
+    manifest = _read_json(manifest_path)
+    draft = _read_json(draft_path)
+    source_receipt_sha256 = _sha256(receipt_path)
+    manifest_sha256 = _sha256(manifest_path)
+    updated = apply_human_review_draft(
+        receipt,
+        draft,
+        manifest,
+        receipt_sha256=source_receipt_sha256,
+        manifest_sha256=manifest_sha256,
+        receipt_path=receipt_path.name,
+    )
+    result = validate_human_review_receipt(
+        updated,
+        manifest,
+        manifest_sha256=manifest_sha256,
+    )
+    if not result["ok"]:
+        raise ValueError(f"updated receipt is invalid: {result['errors']}")
+    if _sha256(receipt_path) != source_receipt_sha256:
+        raise ValueError("receipt changed while the review draft was being applied")
+
+    _write_json_atomic(receipt_path, updated)
+    summary_path = _write_summary(
+        receipt_path=receipt_path,
+        receipt=updated,
+        manifest=manifest,
+        validation=result,
+    )
+    return {
+        "ok": True,
+        "command": "apply-draft",
+        "draft_path": str(draft_path),
+        "receipt_path": str(receipt_path),
+        "summary_path": str(summary_path),
+        "draft_review_count": len(draft["reviews"]),
+        **result,
+    }
 
 
 def _render_summary(args: argparse.Namespace) -> dict[str, Any]:
@@ -372,7 +422,15 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("receipt", type=Path)
     validate_parser.set_defaults(handler=_validate_receipt)
 
-    render_parser = subparsers.add_parser("render", help="Render a read-only reviewer summary.")
+    apply_draft_parser = subparsers.add_parser(
+        "apply-draft",
+        help="Validate and atomically apply a browser-generated review draft.",
+    )
+    apply_draft_parser.add_argument("receipt", type=Path)
+    apply_draft_parser.add_argument("draft", type=Path)
+    apply_draft_parser.set_defaults(handler=_apply_draft)
+
+    render_parser = subparsers.add_parser("render", help="Render the local reviewer workspace.")
     render_parser.add_argument("receipt", type=Path)
     render_parser.add_argument("--output", type=Path)
     render_parser.set_defaults(handler=_render_summary)

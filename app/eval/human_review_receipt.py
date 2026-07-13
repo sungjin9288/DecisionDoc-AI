@@ -7,9 +7,13 @@ from typing import Any, Mapping
 
 
 SCHEMA_VERSION = "decisiondoc.finished_document_human_review.v1"
+DRAFT_SCHEMA_VERSION = "decisiondoc.finished_document_human_review_draft.v1"
 SCOPE = (
     "records factual and visual review decisions for local generated documents; "
     "does not authorize external actions"
+)
+DRAFT_SCOPE = (
+    "proposes local human review updates; does not modify the receipt or authorize external actions"
 )
 REVIEW_STATES = {"not_reviewed", "passed", "needs_revision"}
 
@@ -148,6 +152,147 @@ def record_bundle_review(
     }
     updated["status"] = _receipt_status(bundle_reviews)
     updated["updated_at"] = reviewed_at
+    return updated
+
+
+def validate_human_review_draft(
+    draft: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    *,
+    receipt_sha256: str,
+    manifest_sha256: str,
+    receipt_path: str = "human_review_receipt.json",
+) -> dict[str, Any]:
+    errors: list[str] = []
+    if set(draft) != {
+        "schema_version",
+        "scope",
+        "created_at",
+        "source",
+        "reviews",
+        "external_actions_authorized",
+    }:
+        errors.append("draft fields do not match the schema")
+    if draft.get("schema_version") != DRAFT_SCHEMA_VERSION:
+        errors.append("draft schema_version does not match")
+    if draft.get("scope") != DRAFT_SCOPE:
+        errors.append("draft scope does not match")
+
+    created_at = _parse_timestamp(draft.get("created_at"))
+    if created_at is None:
+        errors.append("draft created_at must be an ISO-8601 timestamp with timezone")
+    receipt_updated_at = _parse_timestamp(receipt.get("updated_at"))
+    if created_at is not None and receipt_updated_at is not None and created_at < receipt_updated_at:
+        errors.append("draft created_at must not be earlier than the current receipt update time")
+
+    source = draft.get("source")
+    if not _valid_sha256(receipt_sha256):
+        errors.append("receipt_sha256 must be a 64-character hexadecimal digest")
+    if not _valid_sha256(manifest_sha256):
+        errors.append("manifest_sha256 must be a 64-character hexadecimal digest")
+    expected_source = {
+        "receipt_path": receipt_path,
+        "receipt_sha256": receipt_sha256,
+        "manifest_path": "manifest.json",
+        "manifest_sha256": manifest_sha256,
+    }
+    if not isinstance(source, Mapping) or dict(source) != expected_source:
+        errors.append("draft source does not match the current receipt and manifest")
+
+    receipt_reviews = receipt.get("bundle_reviews")
+    bundle_types = set(receipt_reviews) if isinstance(receipt_reviews, Mapping) else set()
+    manifest_bundles = manifest.get("bundles")
+    if not isinstance(manifest_bundles, Mapping) or set(manifest_bundles) != bundle_types:
+        errors.append("receipt bundle reviews do not match manifest bundles")
+
+    reviews = draft.get("reviews")
+    review_count = 0
+    if not isinstance(reviews, Mapping) or not reviews:
+        errors.append("draft reviews must contain at least one bundle review")
+        reviews = {}
+    elif not set(reviews).issubset(bundle_types):
+        errors.append("draft reviews contain an unknown bundle")
+
+    expected_review_fields = {"factual_grounding", "visual_review", "reviewer", "notes"}
+    for bundle_type, review in reviews.items():
+        if not isinstance(review, Mapping):
+            errors.append(f"{bundle_type} draft review must be an object")
+            continue
+        if set(review) != expected_review_fields:
+            errors.append(f"{bundle_type} draft review fields do not match the schema")
+            continue
+        review_count += 1
+        if review.get("factual_grounding") not in REVIEW_STATES - {"not_reviewed"}:
+            errors.append(f"{bundle_type} factual_grounding must be passed or needs_revision")
+        if review.get("visual_review") not in REVIEW_STATES - {"not_reviewed"}:
+            errors.append(f"{bundle_type} visual_review must be passed or needs_revision")
+        for field in ("reviewer", "notes"):
+            value = review.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"{bundle_type} {field} must not be empty")
+            elif value != value.strip():
+                errors.append(f"{bundle_type} {field} must not contain surrounding whitespace")
+
+        current_review = receipt_reviews.get(bundle_type) if isinstance(receipt_reviews, Mapping) else None
+        if isinstance(current_review, Mapping) and all(
+            current_review.get(field) == review.get(field)
+            for field in expected_review_fields
+        ):
+            errors.append(f"{bundle_type} draft review does not change the current receipt")
+
+    expected_actions = receipt.get("external_actions_authorized")
+    if (
+        not isinstance(expected_actions, Mapping)
+        or not expected_actions
+        or any(value is not False for value in expected_actions.values())
+    ):
+        errors.append("receipt must keep every external action unauthorized")
+    elif draft.get("external_actions_authorized") != dict(expected_actions):
+        errors.append("draft must keep every external action unauthorized")
+
+    return {
+        "ok": not errors,
+        "review_count": review_count,
+        "errors": errors,
+        "warnings": [
+            "Applying a review draft records document review only and does not authorize external actions."
+        ],
+    }
+
+
+def apply_human_review_draft(
+    receipt: Mapping[str, Any],
+    draft: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    *,
+    receipt_sha256: str,
+    manifest_sha256: str,
+    receipt_path: str = "human_review_receipt.json",
+) -> dict[str, Any]:
+    validation = validate_human_review_draft(
+        draft,
+        receipt,
+        manifest,
+        receipt_sha256=receipt_sha256,
+        manifest_sha256=manifest_sha256,
+        receipt_path=receipt_path,
+    )
+    if not validation["ok"]:
+        raise ValueError(f"human review draft is invalid: {validation['errors']}")
+
+    updated = dict(receipt)
+    reviews = draft["reviews"]
+    for bundle_type, review in reviews.items():
+        updated = record_bundle_review(
+            updated,
+            bundle_type=str(bundle_type),
+            reviewer=review["reviewer"],
+            factual_grounding=review["factual_grounding"],
+            visual_review=review["visual_review"],
+            notes=review["notes"],
+            reviewed_at=draft["created_at"],
+        )
     return updated
 
 

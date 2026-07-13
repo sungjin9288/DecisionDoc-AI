@@ -1,6 +1,6 @@
 # Bundle Quality Evidence
 
-- generated_at: `2026-07-13T12:35:32.824390+00:00`
+- generated_at: `2026-07-13T12:59:01.252775+00:00`
 - provider: `mock`
 - status: `passed`
 

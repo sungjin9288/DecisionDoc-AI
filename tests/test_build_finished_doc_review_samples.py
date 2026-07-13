@@ -70,6 +70,9 @@ def _assert_pending_human_review_receipt(root: Path, manifest: dict) -> dict:
     assert "요청 근거" in summary
     assert "자동 검증" in summary
     assert "# 사업 이해" in summary
+    assert "검토 기록 작성" in summary
+    assert "Review draft 다운로드" in summary
+    assert _sha256(receipt_path) in summary
     assert receipt["evidence"]["manifest_sha256"] in summary
     assert "human_review_receipt" not in manifest["artifacts"]
     assert "human_review_summary" not in manifest["artifacts"]
