@@ -44,7 +44,7 @@ python3 scripts/count_readme_metrics.py --field router_files      # → 20 (top-
 python3 scripts/count_readme_metrics.py --field service_files     # → 38 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 36 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 254 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 255 (라우트)
 ```
 
 ```text
@@ -56,7 +56,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
   │
-  ├─ Routers (20 top-level files, 라우트 254):
+  ├─ Routers (20 top-level files, 라우트 255):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

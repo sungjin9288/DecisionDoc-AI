@@ -111,6 +111,10 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "/export/snapshot" in html
     assert "/report-workflows/learning/correction-artifacts?ready_only=false&limit=20" in html
     assert "/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=200" in html
+    assert "/report-workflows/learning/correction-artifacts/${encodeURIComponent(normalizedId)}" in html
+    assert 'data-rw-quality-artifacts-action="inspect"' in html
+    assert 'data-rw-quality-artifacts-action="download-one"' in html
+    assert "report_quality_correction_artifact_${safeId}.json" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html
     assert "visual-assets/generate" in html

@@ -7661,8 +7661,12 @@
           <strong style="font-size:.78rem;color:#1f2a44;">${escapeHtml(item.workflow_title || item.report_workflow_id || 'artifact')}</strong>
           <span style="font-size:.68rem;font-weight:850;color:${item.ready_for_learning ? '#166534' : '#92400e'};background:${item.ready_for_learning ? '#dcfce7' : '#fef3c7'};border-radius:999px;padding:.12rem .45rem;">${item.ready_for_learning ? 'ready' : 'blocked'}</span>
         </div>
-        <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;">${escapeHtml(item.artifact_id || item.store_artifact_id || '')}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(item.artifact_id || item.store_artifact_id || '')}</div>
         <div style="font-size:.72rem;color:#334155;margin-top:.25rem;">score=${escapeHtml(String(item.overall_score ?? 'n/a'))} · reviewer=${escapeHtml(item.reviewer || item.actor || 'n/a')} · ${escapeHtml(item.domain || item.client || '')}</div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.45rem;">
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="inspect" data-rw-quality-artifact-id="${escapeHtml(item.artifact_id || item.store_artifact_id || '')}">🔍 검토</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-one" data-rw-quality-artifact-id="${escapeHtml(item.artifact_id || item.store_artifact_id || '')}">⬇️ JSON</button>
+        </div>
       </div>
     `).join('');
     el.innerHTML = `
@@ -7683,6 +7687,7 @@
         <div style="border-radius:12px;background:#f1f5f9;color:#334155;padding:.6rem;"><strong>${Number(data?.returned || 0)}</strong><br><span style="font-size:.7rem;">shown</span></div>
       </div>
       ${latestRows ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.5rem;margin-top:.7rem;">${latestRows}</div>` : '<div style="font-size:.76rem;color:var(--muted);margin-top:.7rem;">아직 저장된 품질 교정 artifact가 없습니다. 최종 승인 workflow에서 “품질 교정 artifact 저장”을 먼저 수행하세요.</div>'}
+      <div id="rw-quality-artifact-detail" style="margin-top:.7rem;"></div>
     `;
     wireReportWorkflowQualityArtifactActions(el);
   }
@@ -7690,15 +7695,98 @@
   const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {
     load: loadReportWorkflowQualityArtifacts,
     download: downloadReportWorkflowQualityArtifacts,
+    inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
+    'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
+    close: () => {
+      const detail = $id('rw-quality-artifact-detail');
+      if (detail) detail.innerHTML = '';
+    },
   };
 
   function wireReportWorkflowQualityArtifactActions(container) {
     container.querySelectorAll('[data-rw-quality-artifacts-action]').forEach(btn => {
       btn.addEventListener('click', () => {
         const action = REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS[btn.dataset.rwQualityArtifactsAction || ''];
-        if (action) action();
+        if (action) action(btn);
       });
     });
+  }
+
+  async function fetchReportWorkflowQualityArtifact(artifactId) {
+    const normalizedId = String(artifactId || '').trim();
+    if (!normalizedId) throw new Error('artifact_id가 비어 있습니다.');
+    const res = await fetch(`/report-workflows/learning/correction-artifacts/${encodeURIComponent(normalizedId)}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  function renderReportWorkflowQualityArtifactDetail(item) {
+    const el = $id('rw-quality-artifact-detail');
+    if (!el) return;
+    const validation = item?.validation || {};
+    const errors = Array.isArray(validation.errors) ? validation.errors : [];
+    const warnings = Array.isArray(validation.warnings) ? validation.warnings : [];
+    const ready = validation.ready_for_learning === true;
+    const artifactJson = JSON.stringify(item, null, 2);
+    el.innerHTML = `<div style="border:1px solid ${ready ? 'rgba(22,101,52,.28)' : 'rgba(180,83,9,.28)'};border-radius:12px;padding:.75rem;background:${ready ? 'rgba(22,101,52,.05)' : 'rgba(245,158,11,.07)'};">
+      <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.82rem;font-weight:900;color:#1f2a44;">${escapeHtml(item.workflow_title || item.artifact_id || 'Correction artifact')}</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(item.artifact_id || '')} · fingerprint=${escapeHtml(item.preview_fingerprint || 'n/a')}</div>
+        </div>
+        <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:.7rem;font-weight:850;color:${ready ? '#166534' : '#92400e'};background:${ready ? '#dcfce7' : '#fef3c7'};border-radius:999px;padding:.16rem .5rem;">${ready ? 'ready' : 'blocked'}</span>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-one" data-rw-quality-artifact-id="${escapeHtml(item.artifact_id || item.store_artifact_id || '')}">⬇️ JSON</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="close" aria-label="Artifact 상세 닫기">✕</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;margin-top:.6rem;font-size:.72rem;">
+        <div><strong>Reviewer</strong><br>${escapeHtml(item.reviewer || item.actor || 'n/a')}</div>
+        <div><strong>Overall score</strong><br>${escapeHtml(String(item.overall_score ?? 'n/a'))}</div>
+        <div><strong>Validation</strong><br>ok=${String(validation.ok === true)}</div>
+        <div><strong>External actions</strong><br>provider/upload/training 차단</div>
+      </div>
+      ${errors.length ? `<div style="font-size:.72rem;color:#991b1b;margin-top:.55rem;">${errors.map(error => escapeHtml(error)).join('<br>')}</div>` : ''}
+      ${warnings.length ? `<div style="font-size:.72rem;color:#92400e;margin-top:.55rem;">${warnings.map(warning => escapeHtml(warning)).join('<br>')}</div>` : ''}
+      <details style="margin-top:.6rem;">
+        <summary style="cursor:pointer;font-size:.74rem;font-weight:850;color:#334155;">전체 metadata 확인</summary>
+        <pre style="max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:.65rem;font-size:.68rem;line-height:1.45;margin:.45rem 0 0;">${escapeHtml(artifactJson)}</pre>
+      </details>
+    </div>`;
+    wireReportWorkflowQualityArtifactActions(el);
+  }
+
+  async function loadReportWorkflowQualityArtifactDetail(artifactId) {
+    const el = $id('rw-quality-artifact-detail');
+    if (!el) return;
+    el.innerHTML = '<div style="font-size:.76rem;color:var(--muted);">Artifact 상세를 불러오는 중...</div>';
+    try {
+      renderReportWorkflowQualityArtifactDetail(await fetchReportWorkflowQualityArtifact(artifactId));
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (err) {
+      el.innerHTML = `<div style="color:#ef4444;font-size:.78rem;">품질 교정 artifact 상세 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  }
+
+  async function downloadReportWorkflowQualityArtifact(artifactId) {
+    try {
+      const item = await fetchReportWorkflowQualityArtifact(artifactId);
+      const blob = new Blob([JSON.stringify(item, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeId = String(item.artifact_id || item.store_artifact_id || 'artifact').replace(/[^a-zA-Z0-9._-]+/g, '_');
+      a.href = url;
+      a.download = `report_quality_correction_artifact_${safeId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification('Correction artifact JSON 다운로드를 시작했습니다.', 'success');
+    } catch (err) {
+      showNotification('Correction artifact JSON 다운로드 실패: ' + (err.message || err), 'error');
+    }
   }
 
   async function loadReportWorkflowQualityArtifacts() {

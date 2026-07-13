@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -476,6 +477,42 @@ def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, m
     assert item["overall_score"] == 0.88
     assert item["task_types"] == ["proposal_planning", "slide_message_design"]
     assert "artifact" not in item
+
+    detail = client.get(
+        f"/report-workflows/learning/correction-artifacts/{item['artifact_id']}"
+    )
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["report_type"] == "report_quality_correction_artifact_detail"
+    assert detail_body["artifact_id"] == item["artifact_id"]
+    assert detail_body["store_artifact_id"] == item["store_artifact_id"]
+    assert detail_body["report_workflow_id"] == workflow_id
+    assert detail_body["artifact"]["workflow_reference"]["source_material_policy"] == "metadata_only"
+    assert detail_body["validation"]["ready_for_learning"] is True
+    assert len(detail_body["preview_fingerprint"]) == 64
+    assert detail_body["training_boundary"]["external_dataset_upload_authorized"] is False
+    assert detail_body["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert detail_body["training_boundary"]["training_execution_authorized"] is False
+    assert _contains_key(detail_body, "content_base64") is False
+    assert _contains_key(detail_body, "api_key") is False
+
+    detail_by_store_id = client.get(
+        f"/report-workflows/learning/correction-artifacts/{item['store_artifact_id']}"
+    )
+    assert detail_by_store_id.status_code == 200
+    assert detail_by_store_id.json()["artifact_id"] == item["artifact_id"]
+
+    with pytest.raises(KeyError, match="quality correction artifact not found"):
+        client.app.state.report_workflow_service.get_quality_correction_artifact(
+            item["artifact_id"],
+            tenant_id="other",
+        )
+
+    missing_detail = client.get(
+        "/report-workflows/learning/correction-artifacts/rqc_missing"
+    )
+    assert missing_detail.status_code == 404
+    assert "quality correction artifact not found" in missing_detail.json()["detail"]
 
     other_tenant = client.get(
         "/report-workflows/learning/correction-artifacts",

@@ -192,7 +192,20 @@ class ReportWorkflowQualityMixin:
         }
         if include_artifact:
             row["artifact"] = artifact
+            row["validation"] = validation
+            row["preview_fingerprint"] = str(payload.get("preview_fingerprint") or "")
         return row
+
+    @staticmethod
+    def _quality_training_boundary() -> dict[str, bool]:
+        return {
+            "external_dataset_upload_authorized": False,
+            "provider_fine_tune_api_call_authorized": False,
+            "provider_job_creation_authorized": False,
+            "provider_job_polling_authorized": False,
+            "training_execution_authorized": False,
+            "model_promotion_authorized": False,
+        }
 
     def _build_develop_quality_payload(
         self,
@@ -352,15 +365,34 @@ class ReportWorkflowQualityMixin:
             "not_ready_artifacts": len(rows) - ready_count,
             "returned": len(limited),
             "artifacts": limited,
-            "training_boundary": {
-                "external_dataset_upload_authorized": False,
-                "provider_fine_tune_api_call_authorized": False,
-                "provider_job_creation_authorized": False,
-                "provider_job_polling_authorized": False,
-                "training_execution_authorized": False,
-                "model_promotion_authorized": False,
-            },
+            "training_boundary": self._quality_training_boundary(),
         }
+
+    def get_quality_correction_artifact(
+        self,
+        artifact_id: str,
+        *,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Return one saved metadata-only artifact within the active tenant."""
+        requested_id = str(artifact_id or "").strip()
+        if not requested_id:
+            raise ValueError("artifact_id must be non-empty")
+
+        for rec in self.store.list_by_tenant(tenant_id):
+            for wrapper in rec.learning_artifacts:
+                if not isinstance(wrapper, dict) or wrapper.get("kind") != "report_quality_correction_accepted":
+                    continue
+                row = self._quality_correction_artifact_row(rec, wrapper, include_artifact=True)
+                if requested_id not in {row["artifact_id"], row["store_artifact_id"]}:
+                    continue
+                return {
+                    "report_type": "report_quality_correction_artifact_detail",
+                    **row,
+                    "training_boundary": self._quality_training_boundary(),
+                }
+
+        raise KeyError(f"quality correction artifact not found: {requested_id}")
 
     def export_quality_correction_artifacts_jsonl(
         self,

@@ -146,6 +146,22 @@ def export_report_quality_correction_artifacts(
     )
 
 
+@router.get(
+    "/report-workflows/learning/correction-artifacts/{artifact_id}",
+    dependencies=[Depends(require_api_key)],
+)
+def get_report_quality_correction_artifact(artifact_id: str, request: Request) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        return _get_service(request).get_quality_correction_artifact(
+            artifact_id,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    raise HTTPException(status_code=500, detail="correction artifact lookup failed")
+
+
 @router.get("/report-workflows/{report_workflow_id}", dependencies=[Depends(require_api_key)])
 def get_report_workflow(report_workflow_id: str, request: Request) -> dict:
     tenant_id = get_tenant_id(request)

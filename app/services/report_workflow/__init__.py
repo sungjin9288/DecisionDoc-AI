@@ -11,7 +11,7 @@ The implementation lives in this package, split into focused modules:
 - ``service_export_mixin``: PPTX export, export snapshot, and visual asset
   generation.
 - ``service_quality_mixin``: quality correction artifact preview/save/list/
-  export plus the develop-quality-improvement preview flow.
+  detail/export plus the develop-quality-improvement preview flow.
 - ``service_approval_mixin``: final approval workflow (PM review / executive
   review) and project/knowledge promotion.
 
