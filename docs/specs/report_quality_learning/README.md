@@ -375,7 +375,7 @@ python3 scripts/check_report_quality_artifacts.py \
   --output tmp/report_quality_correction_artifacts.jsonl
 ```
 
-이 helper도 local review artifact를 다운로드하고 검증할 뿐이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+이 helper는 summary/export count·tenant 일치, artifact ID uniqueness, single-tenant batch, ready gate를 모두 확인한 뒤에만 local JSONL을 쓴다. 실패 시 새 파일을 만들거나 기존 output을 덮어쓰지 않는다. Provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
 
 다운로드한 JSONL을 파일럿 batch evidence로 남길 때는:
 
@@ -388,7 +388,7 @@ python3 scripts/summarize_report_quality_artifacts.py \
   --markdown reports/report-quality/pilot-rqc-001-summary.md
 ```
 
-manifest는 reviewer, document type, score distribution, blocker, no-training boundary를 요약한다.
+manifest는 reviewer, document type, score distribution, unique artifact 수, tenant 수, blocker, no-training boundary를 요약한다. Duplicate artifact와 mixed-tenant batch는 follow-up blocker로 남고 readiness를 통과하지 못한다. Source는 symlink가 아닌 `.jsonl`만 허용하며, downstream evidence validator가 실제 JSONL identity를 독립 재계산한다.
 
 ## Operating Rule
 
@@ -803,6 +803,6 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
      --require-ready
    ```
    - `output_written=true`와 `output_sha256`이 함께 반환된 실행만 현재 draft가 반영된 sync 성공으로 본다. 실패 실행은 기존 output을 변경하지 않는다.
-12. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
-13. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
+12. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
+13. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
 14. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

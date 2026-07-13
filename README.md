@@ -165,7 +165,7 @@ python3 scripts/create_report_quality_pilot_pack.py \
   --output-root reports/report-quality
 ```
 
-입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하고, 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync도 모든 validation과 ready gate가 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하고, 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync와 운영 API checker는 validation, summary/export count, unique artifact, single-tenant, ready gate를 모두 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
 
 스모크 검증 (문서화된 대표 시나리오):
 
@@ -212,10 +212,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,633개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,637개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2633
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2637
 python3 scripts/count_readme_metrics.py --field test_files      # → 220
 ```
 
@@ -234,7 +234,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,881 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,885 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -283,4 +283,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,633 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,637 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

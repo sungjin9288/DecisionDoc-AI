@@ -196,8 +196,12 @@ expected output:
 PASS report quality correction artifact export check
 ready_artifacts=3
 artifact_count=3
+output_written=true
+output_sha256=<sha256>
 training_boundary=not_authorized
 ```
+
+Checker는 summary의 ready count·tenant와 export artifact 수·tenant를 대조하고, artifact ID 중복이나 tenant 혼합, validation·ready gate 실패가 있으면 JSONL을 쓰지 않는다. 기존 output이 있어도 실패 실행은 덮어쓰지 않는다. 출력은 `.jsonl`만 허용하며 symlink를 거부한다.
 
 다운로드된 JSONL을 batch evidence로 남길 때:
 
@@ -217,6 +221,8 @@ Report quality batch readiness: PASS
 Artifact count: 3
 Ready artifacts: 3
 ```
+
+Batch manifest는 unique artifact 수와 tenant 수를 함께 기록한다. 중복 artifact ID는 `duplicate_artifact_ids`, 여러 tenant가 섞인 batch는 `mixed_tenants_present` blocker로 남아 readiness를 통과하지 못한다. Source는 regular `.jsonl`이어야 하며, Manifest와 Markdown output은 source JSONL을 덮어쓸 수 없고 symlink도 허용하지 않는다. Review packet evidence validator는 manifest의 readiness를 그대로 신뢰하지 않고 실제 artifact JSONL에서 ID와 tenant를 다시 계산한다.
 
 API 경로로 저장할 때는 먼저 preview를 호출해 blocker와 `preview_fingerprint`를 확인한다.
 

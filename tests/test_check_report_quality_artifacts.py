@@ -21,9 +21,10 @@ def _load_script_module():
     return module
 
 
-def _ready_artifact(artifact_id: str) -> dict:
+def _ready_artifact(artifact_id: str, *, tenant_id: str = "tenant-a") -> dict:
     payload = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     payload["artifact_id"] = artifact_id
+    payload["workflow_reference"]["tenant_id"] = tenant_id
     payload["quality_baseline"]["overall_score"] = 0.88
     for key in payload["quality_baseline"]["dimension_scores"]:
         payload["quality_baseline"]["dimension_scores"][key] = 0.86
@@ -92,7 +93,12 @@ def test_check_report_quality_artifacts_fetches_exports_and_validates_jsonl(tmp_
     assert result["summary"]["ready_artifacts"] == 2
     assert result["validation"]["artifact_count"] == 2
     assert result["validation"]["ready_artifacts"] == 2
+    assert result["validation"]["unique_artifact_ids"] is True
+    assert result["validation"]["tenant_ids"] == ["tenant-a"]
+    assert result["output_written"] is True
+    assert result["output_sha256"]
     assert result["side_effect_boundary"]["provider_fine_tune_api_call_authorized"] is False
+    assert result["side_effect_boundary"]["writes_local_jsonl"] is True
     assert output_path.exists()
     assert len([line for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]) == 2
     assert all(headers.get("x-decisiondoc-api-key") == "api-key" for headers in seen_headers)
@@ -137,5 +143,102 @@ def test_check_report_quality_artifacts_rejects_training_boundary_violation():
             base_url="https://example.test",
             api_key="api-key",
             min_records=2,
+            client=client,
+        )
+
+
+def test_check_report_quality_artifacts_rejects_summary_tenant_mismatch():
+    script = _load_script_module()
+    summary = _summary_payload(ready_artifacts=2)
+    summary["tenant_id"] = "tenant-b"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/report-workflows/learning/correction-artifacts":
+            return httpx.Response(200, json=summary)
+        return httpx.Response(404, json={"detail": request.url.path})
+
+    client = httpx.Client(base_url="https://example.test", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(SystemExit, match="does not match requested tenant"):
+        script.run_report_quality_artifact_check(
+            base_url="https://example.test",
+            api_key="api-key",
+            tenant_id="tenant-a",
+            min_records=2,
+            client=client,
+        )
+
+
+def test_check_report_quality_artifacts_preserves_output_when_export_is_invalid(tmp_path):
+    script = _load_script_module()
+    output_path = tmp_path / "report_quality_correction_artifacts.jsonl"
+    output_path.write_text("existing validated export\n", encoding="utf-8")
+    original_output = output_path.read_bytes()
+    duplicate = _ready_artifact("rqc_duplicate", tenant_id="tenant-a")
+    wrong_tenant = _ready_artifact("rqc_duplicate", tenant_id="tenant-b")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/report-workflows/learning/correction-artifacts":
+            return httpx.Response(200, json=_summary_payload(ready_artifacts=2))
+        if request.url.path == "/report-workflows/learning/correction-artifacts/export":
+            text = "\n".join(
+                json.dumps(item, ensure_ascii=False)
+                for item in (duplicate, wrong_tenant)
+            ) + "\n"
+            return httpx.Response(200, text=text)
+        return httpx.Response(404, json={"detail": request.url.path})
+
+    client = httpx.Client(base_url="https://example.test", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(SystemExit, match="duplicate artifact_id values") as exc_info:
+        script.run_report_quality_artifact_check(
+            base_url="https://example.test",
+            api_key="api-key",
+            tenant_id="tenant-a",
+            min_records=2,
+            output_path=output_path,
+            client=client,
+        )
+
+    assert "does not match expected tenant" in str(exc_info.value)
+    assert output_path.read_bytes() == original_output
+
+    symlink_output = tmp_path / "linked.jsonl"
+    symlink_output.symlink_to("target.jsonl")
+    with pytest.raises(SystemExit, match="must not be a symlink"):
+        script.run_report_quality_artifact_check(
+            base_url="https://example.test",
+            api_key="api-key",
+            output_path=symlink_output,
+            client=client,
+        )
+
+
+def test_check_report_quality_artifacts_rejects_summary_export_count_mismatch():
+    script = _load_script_module()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/report-workflows/learning/correction-artifacts":
+            return httpx.Response(200, json=_summary_payload(ready_artifacts=3))
+        if request.url.path == "/report-workflows/learning/correction-artifacts/export":
+            return httpx.Response(200, text=_jsonl_payload(2))
+        return httpx.Response(404, json={"detail": request.url.path})
+
+    client = httpx.Client(base_url="https://example.test", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(SystemExit, match="does not match expected count 3 from summary"):
+        script.run_report_quality_artifact_check(
+            base_url="https://example.test",
+            api_key="api-key",
+            tenant_id="tenant-a",
+            min_records=2,
+            client=client,
+        )
+
+    with pytest.raises(SystemExit, match="min_records must not exceed 200"):
+        script.run_report_quality_artifact_check(
+            base_url="https://example.test",
+            api_key="api-key",
+            min_records=201,
             client=client,
         )

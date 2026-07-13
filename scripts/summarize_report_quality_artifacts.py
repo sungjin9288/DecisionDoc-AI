@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import uuid
 from collections import Counter
@@ -39,9 +40,44 @@ def _sha256(path: Path) -> str:
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid.uuid4().hex}")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _resolve_source_path(path: Path) -> Path:
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise SystemExit("Source JSONL path must not be a symlink")
+    resolved = expanded.resolve()
+    if resolved.suffix.lower() != ".jsonl":
+        raise SystemExit("Source JSONL path must use the .jsonl extension")
+    if not resolved.is_file():
+        raise SystemExit(f"JSONL file not found: {resolved}")
+    return resolved
+
+
+def _resolve_output_path(
+    path: Path | None,
+    *,
+    source_path: Path,
+    suffix: str,
+    label: str,
+) -> Path | None:
+    if path is None:
+        return None
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise SystemExit(f"{label} path must not be a symlink")
+    resolved = expanded.resolve()
+    if resolved == source_path:
+        raise SystemExit(f"{label} path must not overwrite the source JSONL")
+    if resolved.suffix.lower() != suffix:
+        raise SystemExit(f"{label} path must use the {suffix} extension")
+    return resolved
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -89,6 +125,7 @@ def _artifact_summary(payload: dict[str, Any], validation: dict[str, Any], *, li
     return {
         "line": line_no,
         "artifact_id": payload.get("artifact_id", ""),
+        "tenant_id": workflow.get("tenant_id", ""),
         "report_workflow_id": workflow.get("report_workflow_id", ""),
         "workflow_status": workflow.get("workflow_status", ""),
         "learning_opt_in": bool(workflow.get("learning_opt_in")),
@@ -146,10 +183,8 @@ def create_report_quality_batch_manifest(
     batch_id: str = "",
     min_records: int = 3,
 ) -> dict[str, Any]:
-    resolved_path = jsonl_path.expanduser().resolve()
+    resolved_path = _resolve_source_path(jsonl_path)
     min_records = max(1, int(min_records or 1))
-    if not resolved_path.exists():
-        raise SystemExit(f"JSONL file not found: {resolved_path}")
 
     loaded_artifacts, parse_errors = _load_artifacts(resolved_path)
     artifact_rows: list[dict[str, Any]] = []
@@ -158,6 +193,8 @@ def create_report_quality_batch_manifest(
     document_types: Counter[str] = Counter()
     domains: Counter[str] = Counter()
     reviewers: Counter[str] = Counter()
+    tenant_ids: Counter[str] = Counter()
+    artifact_ids: Counter[str] = Counter()
     task_types: Counter[str] = Counter()
     skills: Counter[str] = Counter()
 
@@ -183,6 +220,10 @@ def create_report_quality_batch_manifest(
             domains[str(row["domain"])] += 1
         if row["reviewer"]:
             reviewers[str(row["reviewer"])] += 1
+        if row["tenant_id"]:
+            tenant_ids[str(row["tenant_id"])] += 1
+        if row["artifact_id"]:
+            artifact_ids[str(row["artifact_id"])] += 1
         task_types.update(row["task_types"])
         skills.update(row["skills"])
 
@@ -190,6 +231,11 @@ def create_report_quality_batch_manifest(
     valid_artifacts = sum(1 for row in artifact_rows if row["validation_ok"])
     ready_artifacts = sum(1 for row in artifact_rows if row["ready_for_learning"])
     boundary_issues = _boundary_issues(loaded_artifacts)
+    duplicate_artifact_ids = sorted(
+        artifact_id
+        for artifact_id, count in artifact_ids.items()
+        if count > 1
+    )
     blocker_reasons: list[str] = []
     if parse_errors:
         blocker_reasons.append("jsonl_parse_errors")
@@ -201,6 +247,10 @@ def create_report_quality_batch_manifest(
         blocker_reasons.append("not_ready_artifacts_present")
     if boundary_issues:
         blocker_reasons.append("training_boundary_violation")
+    if duplicate_artifact_ids:
+        blocker_reasons.append("duplicate_artifact_ids")
+    if len(tenant_ids) > 1:
+        blocker_reasons.append("mixed_tenants_present")
 
     ready_for_human_training_review = not blocker_reasons and artifact_count >= min_records
     manifest = {
@@ -232,6 +282,13 @@ def create_report_quality_batch_manifest(
             "parse_errors": len(parse_errors),
             "reviewer_count": len(reviewers),
             "document_type_count": len(document_types),
+            "unique_artifact_count": len(artifact_ids),
+            "tenant_count": len(tenant_ids),
+        },
+        "integrity": {
+            "unique_artifact_ids": not duplicate_artifact_ids,
+            "duplicate_artifact_ids": duplicate_artifact_ids,
+            "single_tenant": len(tenant_ids) == 1,
         },
         "quality": {
             "overall_score": _score_summary(overall_scores),
@@ -244,6 +301,7 @@ def create_report_quality_batch_manifest(
             "document_types": _counter_payload(document_types),
             "domains": _counter_payload(domains),
             "reviewers": _counter_payload(reviewers),
+            "tenants": _counter_payload(tenant_ids),
             "task_types": _counter_payload(task_types),
             "skills": _counter_payload(skills),
         },
@@ -294,6 +352,7 @@ def render_batch_markdown(manifest: dict[str, Any]) -> str:
 - ready_artifacts: `{counts.get('ready_artifacts', 0)}`
 - min_records: `{readiness.get('min_records', 0)}`
 - reviewer_count: `{counts.get('reviewer_count', 0)}`
+- tenant_count: `{counts.get('tenant_count', 0)}`
 - document_type_count: `{counts.get('document_type_count', 0)}`
 - overall_score_avg: `{overall.get('avg', '-')}`
 
@@ -305,6 +364,7 @@ def render_batch_markdown(manifest: dict[str, Any]) -> str:
 
 - document_types: `{json.dumps(distribution.get('document_types') or {}, ensure_ascii=False, sort_keys=True)}`
 - reviewers: `{json.dumps(distribution.get('reviewers') or {}, ensure_ascii=False, sort_keys=True)}`
+- tenants: `{json.dumps(distribution.get('tenants') or {}, ensure_ascii=False, sort_keys=True)}`
 - task_types: `{json.dumps(distribution.get('task_types') or {}, ensure_ascii=False, sort_keys=True)}`
 - skills: `{json.dumps(distribution.get('skills') or {}, ensure_ascii=False, sort_keys=True)}`
 
@@ -339,16 +399,31 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
+    source_path = _resolve_source_path(args.jsonl)
+    output_path = _resolve_output_path(
+        args.output,
+        source_path=source_path,
+        suffix=".json",
+        label="Manifest output",
+    )
+    markdown_path = _resolve_output_path(
+        args.markdown,
+        source_path=source_path,
+        suffix=".md",
+        label="Markdown output",
+    )
+    if output_path is not None and output_path == markdown_path:
+        raise SystemExit("Manifest and Markdown output paths must be different")
     manifest = create_report_quality_batch_manifest(
-        jsonl_path=args.jsonl,
+        jsonl_path=source_path,
         batch_id=args.batch_id,
         min_records=args.min_records,
     )
     manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    if args.output:
-        _write_text_atomic(args.output, manifest_text)
-    if args.markdown:
-        _write_text_atomic(args.markdown, render_batch_markdown(manifest))
+    if output_path is not None:
+        _write_text_atomic(output_path, manifest_text)
+    if markdown_path is not None:
+        _write_text_atomic(markdown_path, render_batch_markdown(manifest))
     if args.json:
         print(manifest_text, end="")
     else:
@@ -356,8 +431,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Batch id: {manifest['batch_id']}")
         print(f"Artifact count: {manifest['counts']['artifact_count']}")
         print(f"Ready artifacts: {manifest['counts']['ready_artifacts']}")
-        print(f"Manifest: {args.output}")
-        print(f"Markdown: {args.markdown}")
+        print(f"Manifest: {output_path}")
+        print(f"Markdown: {markdown_path}")
     return 0 if manifest["readiness"]["ok"] else 1
 
 

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 
 import httpx
 
@@ -20,6 +22,7 @@ from app.services.report_quality_learning import validate_correction_artifact  #
 
 
 DEFAULT_TIMEOUT_SEC = 60.0
+MAX_EXPORT_RECORDS = 200
 DEFAULT_OUTPUT_PATH = Path("tmp/report_quality_correction_artifacts.jsonl")
 TRAINING_BOUNDARY_KEYS = (
     "external_dataset_upload_authorized",
@@ -67,9 +70,24 @@ def _assert_http_status(label: str, response: httpx.Response, expected: int) -> 
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _resolve_output_path(output_path: Path | None) -> Path | None:
+    if output_path is None:
+        return None
+    expanded = output_path.expanduser()
+    if expanded.is_symlink():
+        raise SystemExit("Output path must not be a symlink")
+    resolved = expanded.resolve()
+    if resolved.suffix.lower() != ".jsonl":
+        raise SystemExit("Output path must use the .jsonl extension")
+    return resolved
 
 
 def _validate_training_boundary(summary: dict[str, Any]) -> list[str]:
@@ -83,10 +101,19 @@ def _validate_training_boundary(summary: dict[str, Any]) -> list[str]:
     return issues
 
 
-def _validate_jsonl(text: str, *, min_records: int, require_ready: bool) -> dict[str, Any]:
+def _validate_jsonl(
+    text: str,
+    *,
+    min_records: int,
+    require_ready: bool,
+    expected_tenant_id: str = "",
+) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
+    seen_artifact_ids: set[str] = set()
+    duplicate_artifact_ids: set[str] = set()
+    tenant_ids: set[str] = set()
     for line_no, raw_line in enumerate(text.splitlines(), start=1):
         raw_line = raw_line.strip()
         if not raw_line:
@@ -100,9 +127,28 @@ def _validate_jsonl(text: str, *, min_records: int, require_ready: bool) -> dict
             errors.append(f"line {line_no}: artifact root must be an object")
             continue
         validation = validate_correction_artifact(payload)
+        artifact_id = str(validation.get("artifact_id") or "").strip()
+        workflow = payload.get("workflow_reference")
+        artifact_tenant_id = (
+            str(workflow.get("tenant_id") or "").strip()
+            if isinstance(workflow, dict)
+            else ""
+        )
+        if artifact_id:
+            if artifact_id in seen_artifact_ids:
+                duplicate_artifact_ids.add(artifact_id)
+            seen_artifact_ids.add(artifact_id)
+        if artifact_tenant_id:
+            tenant_ids.add(artifact_tenant_id)
+        if expected_tenant_id and artifact_tenant_id != expected_tenant_id:
+            errors.append(
+                f"line {line_no}: tenant_id {artifact_tenant_id!r} does not match "
+                f"expected tenant {expected_tenant_id!r}"
+            )
         row = {
             "line": line_no,
-            "artifact_id": validation.get("artifact_id"),
+            "artifact_id": artifact_id,
+            "tenant_id": artifact_tenant_id,
             "ok": bool(validation.get("ok")),
             "ready_for_learning": bool(validation.get("ready_for_learning")),
             "errors": list(validation.get("errors") or []),
@@ -119,6 +165,12 @@ def _validate_jsonl(text: str, *, min_records: int, require_ready: bool) -> dict
         errors.append(f"artifact_count {artifact_count} is below min_records {min_records}")
     if require_ready and ready_artifacts != artifact_count:
         errors.append("not all artifacts are ready_for_learning")
+    if duplicate_artifact_ids:
+        errors.append(
+            "duplicate artifact_id values: " + ", ".join(sorted(duplicate_artifact_ids))
+        )
+    if len(tenant_ids) > 1:
+        errors.append("multiple tenant_id values: " + ", ".join(sorted(tenant_ids)))
     for row in results:
         for error in row["errors"]:
             errors.append(f"line {row['line']}: {error}")
@@ -132,6 +184,12 @@ def _validate_jsonl(text: str, *, min_records: int, require_ready: bool) -> dict
         "valid_artifacts": valid_artifacts,
         "ready_artifacts": ready_artifacts,
         "not_ready_artifacts": artifact_count - ready_artifacts,
+        "unique_artifact_ids": not duplicate_artifact_ids,
+        "duplicate_artifact_ids": sorted(duplicate_artifact_ids),
+        "tenant_ids": sorted(tenant_ids),
+        "tenant_consistent": len(tenant_ids) <= 1 and (
+            not expected_tenant_id or tenant_ids == {expected_tenant_id}
+        ),
         "errors": errors,
         "warnings": warnings,
         "results": results,
@@ -152,7 +210,10 @@ def run_report_quality_artifact_check(
     base_url = _required_value(base_url, name="base_url").rstrip("/")
     api_key = _required_value(api_key, name="api_key")
     min_records = max(1, int(min_records or 1))
-    limit = max(min_records, min(int(limit or 200), 500))
+    if min_records > MAX_EXPORT_RECORDS:
+        raise SystemExit(f"min_records must not exceed {MAX_EXPORT_RECORDS}")
+    limit = max(min_records, min(int(limit or MAX_EXPORT_RECORDS), MAX_EXPORT_RECORDS))
+    resolved_output_path = _resolve_output_path(output_path)
     owns_client = client is None
     http = client or httpx.Client(timeout=timeout_sec)
     headers = _headers(api_key, tenant_id)
@@ -167,6 +228,14 @@ def run_report_quality_artifact_check(
         boundary_issues = _validate_training_boundary(summary)
         if boundary_issues:
             raise SystemExit("; ".join(boundary_issues))
+
+        requested_tenant_id = tenant_id.strip()
+        summary_tenant_id = str(summary.get("tenant_id") or "").strip()
+        if requested_tenant_id and summary_tenant_id != requested_tenant_id:
+            raise SystemExit(
+                f"summary.tenant_id {summary_tenant_id!r} does not match "
+                f"requested tenant {requested_tenant_id!r}"
+            )
 
         ready_artifacts = int(summary.get("ready_artifacts") or 0)
         total_artifacts = int(summary.get("total_artifacts") or 0)
@@ -187,16 +256,34 @@ def run_report_quality_artifact_check(
                 f"expected 200, got {export_response.status_code}: {export_response.text[:500]}"
             )
         jsonl_text = export_response.text
-        validation = _validate_jsonl(jsonl_text, min_records=min_records, require_ready=True)
-        if output_path is not None:
-            _write_text_atomic(output_path, jsonl_text)
-
+        validation = _validate_jsonl(
+            jsonl_text,
+            min_records=min_records,
+            require_ready=True,
+            expected_tenant_id=requested_tenant_id or summary_tenant_id,
+        )
         if not validation["ok"]:
             raise SystemExit("; ".join(str(item) for item in validation["errors"]))
+        expected_export_count = min(ready_artifacts, limit)
+        if validation["artifact_count"] != expected_export_count:
+            raise SystemExit(
+                f"export artifact_count {validation['artifact_count']} does not match "
+                f"expected count {expected_export_count} from summary"
+            )
+
+        output_written = resolved_output_path is not None
+        output_sha256: str | None = None
+        if resolved_output_path is not None:
+            _write_text_atomic(resolved_output_path, jsonl_text)
+            output_sha256 = hashlib.sha256(resolved_output_path.read_bytes()).hexdigest()
 
         return {
             "status": "passed",
-            "tenant_id": tenant_id or "system",
+            "tenant_id": (
+                requested_tenant_id
+                or summary_tenant_id
+                or next(iter(validation["tenant_ids"]), "system")
+            ),
             "summary": {
                 "total_artifacts": total_artifacts,
                 "ready_artifacts": ready_artifacts,
@@ -204,11 +291,16 @@ def run_report_quality_artifact_check(
                 "returned": int(summary.get("returned") or 0),
             },
             "validation": validation,
-            "output_path": str(output_path) if output_path is not None else "",
+            "output_path": str(resolved_output_path) if resolved_output_path is not None else "",
+            "output_written": output_written,
+            "output_sha256": output_sha256,
             "side_effect_boundary": {
                 "downloads_jsonl_for_local_review": True,
+                "writes_local_jsonl": output_written,
                 "external_dataset_upload_authorized": False,
                 "provider_fine_tune_api_call_authorized": False,
+                "provider_job_creation_authorized": False,
+                "provider_job_polling_authorized": False,
                 "training_execution_authorized": False,
                 "model_promotion_authorized": False,
             },
@@ -261,6 +353,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"artifact_count={validation['artifact_count']}")
         print(f"min_records={validation['min_records']}")
         print(f"output_path={result['output_path'] or '-'}")
+        print(f"output_written={str(result['output_written']).lower()}")
+        if result["output_sha256"]:
+            print(f"output_sha256={result['output_sha256']}")
         print("training_boundary=not_authorized")
     return 0
 

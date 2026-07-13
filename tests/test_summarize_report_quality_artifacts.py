@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts/summarize_report_quality_artifacts.py"
@@ -18,9 +20,16 @@ def _load_script_module():
     return module
 
 
-def _ready_artifact(artifact_id: str, *, reviewer: str = "pm-reviewer", document_type: str = "proposal") -> dict:
+def _ready_artifact(
+    artifact_id: str,
+    *,
+    reviewer: str = "pm-reviewer",
+    document_type: str = "proposal",
+    tenant_id: str = "tenant-a",
+) -> dict:
     payload = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     payload["artifact_id"] = artifact_id
+    payload["workflow_reference"]["tenant_id"] = tenant_id
     payload["document_profile"]["document_type"] = document_type
     payload["quality_baseline"]["overall_score"] = 0.88
     for key in payload["quality_baseline"]["dimension_scores"]:
@@ -68,6 +77,10 @@ def test_summarize_report_quality_artifacts_creates_ready_manifest(tmp_path):
     assert manifest["counts"]["artifact_count"] == 3
     assert manifest["counts"]["ready_artifacts"] == 3
     assert manifest["counts"]["reviewer_count"] == 2
+    assert manifest["counts"]["unique_artifact_count"] == 3
+    assert manifest["counts"]["tenant_count"] == 1
+    assert manifest["integrity"]["unique_artifact_ids"] is True
+    assert manifest["integrity"]["single_tenant"] is True
     assert manifest["distribution"]["document_types"] == {"proposal": 2, "onepager": 1}
     assert manifest["distribution"]["reviewers"] == {"pm": 2, "exec": 1}
     assert manifest["quality"]["overall_score"]["avg"] == 0.88
@@ -109,6 +122,32 @@ def test_summarize_report_quality_artifacts_reports_parse_and_boundary_errors(tm
     assert manifest["boundary_issues"]
 
 
+def test_summarize_report_quality_artifacts_blocks_duplicate_and_mixed_tenant_batch(tmp_path):
+    script = _load_script_module()
+    jsonl_path = tmp_path / "mixed_batch.jsonl"
+    _write_jsonl(
+        jsonl_path,
+        [
+            _ready_artifact("rqc_duplicate", tenant_id="tenant-a"),
+            _ready_artifact("rqc_duplicate", tenant_id="tenant-b"),
+            _ready_artifact("rqc_unique", tenant_id="tenant-b"),
+        ],
+    )
+
+    manifest = script.create_report_quality_batch_manifest(
+        jsonl_path=jsonl_path,
+        min_records=3,
+    )
+
+    assert manifest["readiness"]["ok"] is False
+    assert "duplicate_artifact_ids" in manifest["readiness"]["blocker_reasons"]
+    assert "mixed_tenants_present" in manifest["readiness"]["blocker_reasons"]
+    assert manifest["integrity"]["duplicate_artifact_ids"] == ["rqc_duplicate"]
+    assert manifest["integrity"]["single_tenant"] is False
+    assert manifest["counts"]["unique_artifact_count"] == 2
+    assert manifest["counts"]["tenant_count"] == 2
+
+
 def test_summarize_report_quality_artifacts_cli_writes_outputs(tmp_path, capsys):
     script = _load_script_module()
     jsonl_path = tmp_path / "report_quality_correction_artifacts.jsonl"
@@ -133,3 +172,40 @@ def test_summarize_report_quality_artifacts_cli_writes_outputs(tmp_path, capsys)
     assert markdown_path.exists()
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["batch_id"] == "batch-cli"
     assert "Report quality batch readiness: PASS" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit, match="must not overwrite the source JSONL"):
+        script.main([
+            str(jsonl_path),
+            "--min-records",
+            "2",
+            "--output",
+            str(jsonl_path),
+            "--markdown",
+            str(markdown_path),
+        ])
+
+    symlink_manifest = tmp_path / "linked-manifest.json"
+    symlink_manifest.symlink_to("manifest-target.json")
+    with pytest.raises(SystemExit, match="must not be a symlink"):
+        script.main([
+            str(jsonl_path),
+            "--min-records",
+            "2",
+            "--output",
+            str(symlink_manifest),
+            "--markdown",
+            str(markdown_path),
+        ])
+
+    symlink_source = tmp_path / "linked-source.jsonl"
+    symlink_source.symlink_to(jsonl_path.name)
+    with pytest.raises(SystemExit, match="Source JSONL path must not be a symlink"):
+        script.main([
+            str(symlink_source),
+            "--min-records",
+            "2",
+            "--output",
+            str(manifest_path),
+            "--markdown",
+            str(markdown_path),
+        ])

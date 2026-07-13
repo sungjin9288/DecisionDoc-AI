@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
-import sys
 from typing import Any, Sequence
 
 
@@ -58,6 +58,40 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _jsonl_identity(path: Path) -> dict[str, Any]:
+    artifact_ids: list[str] = []
+    tenant_ids: set[str] = set()
+    for line_no, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw_line.strip():
+            continue
+        payload = json.loads(raw_line)
+        if not isinstance(payload, dict):
+            raise ValueError(f"line {line_no}: artifact root must be an object")
+        artifact_id = str(payload.get("artifact_id") or "").strip()
+        workflow = _as_dict(payload.get("workflow_reference"))
+        tenant_id = str(workflow.get("tenant_id") or "").strip()
+        if not artifact_id:
+            raise ValueError(f"line {line_no}: artifact_id must be non-empty")
+        if not tenant_id:
+            raise ValueError(f"line {line_no}: workflow_reference.tenant_id must be non-empty")
+        artifact_ids.append(artifact_id)
+        tenant_ids.add(tenant_id)
+
+    artifact_id_counts = Counter(artifact_ids)
+    duplicate_artifact_ids = sorted(
+        artifact_id
+        for artifact_id, count in artifact_id_counts.items()
+        if count > 1
+    )
+    return {
+        "artifact_count": len(artifact_ids),
+        "unique_artifact_count": len(set(artifact_ids)),
+        "duplicate_artifact_ids": duplicate_artifact_ids,
+        "tenant_count": len(tenant_ids),
+        "single_tenant": len(tenant_ids) == 1,
+    }
 
 
 def _resolve_output(path_value: Any, *, field: str, errors: list[str]) -> Path | None:
@@ -150,6 +184,7 @@ def validate_review_packet_evidence_manifest(
     artifact_jsonl = output_paths.get("artifact_jsonl")
     artifact_export = loaded_outputs.get("artifact_export_manifest") or {}
     artifact_batch = loaded_outputs.get("artifact_batch_manifest") or {}
+    artifact_identity: dict[str, Any] | None = None
     if artifact_jsonl is not None:
         actual_hash = _sha256(artifact_jsonl)
         export_hash = _as_dict(artifact_export.get("output")).get("jsonl_sha256")
@@ -158,6 +193,10 @@ def validate_review_packet_evidence_manifest(
             errors.append("artifact_export_manifest.output.jsonl_sha256 does not match artifact_jsonl")
         if batch_hash and batch_hash != actual_hash:
             errors.append("artifact_batch_manifest.source.jsonl_sha256 does not match artifact_jsonl")
+        try:
+            artifact_identity = _jsonl_identity(artifact_jsonl)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"artifact_jsonl identity validation failed: {exc}")
 
     pipeline_counts = _as_dict(manifest.get("counts"))
     packet_counts = _as_dict((loaded_outputs.get("review_packet_manifest") or {}).get("counts"))
@@ -169,6 +208,26 @@ def validate_review_packet_evidence_manifest(
         errors.append("pipeline counts.exported_artifacts must match artifact export manifest")
     if artifact_counts and pipeline_counts.get("ready_artifacts") != artifact_counts.get("ready_artifacts"):
         errors.append("pipeline counts.ready_artifacts must match artifact batch manifest")
+
+    if artifact_identity is not None:
+        for key in ("artifact_count", "unique_artifact_count", "tenant_count"):
+            if key in artifact_counts and artifact_counts.get(key) != artifact_identity[key]:
+                errors.append(f"artifact_batch_manifest.counts.{key} does not match artifact_jsonl")
+
+        artifact_integrity = _as_dict(artifact_batch.get("integrity"))
+        expected_integrity = {
+            "unique_artifact_ids": not artifact_identity["duplicate_artifact_ids"],
+            "duplicate_artifact_ids": artifact_identity["duplicate_artifact_ids"],
+            "single_tenant": artifact_identity["single_tenant"],
+        }
+        for key, expected in expected_integrity.items():
+            if key in artifact_integrity and artifact_integrity.get(key) != expected:
+                errors.append(f"artifact_batch_manifest.integrity.{key} does not match artifact_jsonl")
+
+        if require_ready and artifact_identity["duplicate_artifact_ids"]:
+            errors.append("artifact_jsonl must have unique artifact_id values")
+        if require_ready and not artifact_identity["single_tenant"]:
+            errors.append("artifact_jsonl must contain exactly one tenant_id")
 
     return {
         "report_type": "report_quality_review_packet_evidence_validation",

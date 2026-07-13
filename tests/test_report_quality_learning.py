@@ -2153,7 +2153,14 @@ def test_review_packet_evidence_validator_rejects_hash_and_boundary_breaks(tmp_p
     )
     manifest_path = Path(manifest["outputs"]["pipeline_manifest"])
     artifact_jsonl = Path(manifest["outputs"]["artifact_jsonl"])
+    artifact_batch_manifest = Path(manifest["outputs"]["artifact_batch_manifest"])
     artifact_jsonl.write_text(artifact_jsonl.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    artifact_batch = json.loads(artifact_batch_manifest.read_text(encoding="utf-8"))
+    artifact_batch["integrity"]["unique_artifact_ids"] = False
+    artifact_batch_manifest.write_text(
+        json.dumps(artifact_batch, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     payload["side_effect_boundary"]["provider_fine_tune_api_called"] = True
     manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -2164,6 +2171,7 @@ def test_review_packet_evidence_validator_rejects_hash_and_boundary_breaks(tmp_p
     joined = "\n".join(result["errors"])
     assert "provider_fine_tune_api_called must be false" in joined
     assert "jsonl_sha256 does not match artifact_jsonl" in joined
+    assert "integrity.unique_artifact_ids does not match artifact_jsonl" in joined
 
 
 def test_review_packet_handoff_generator_creates_reviewer_index(tmp_path, capsys):
