@@ -187,6 +187,7 @@
       "recommendation": "CONDITIONAL_GO",
       "included_artifacts": [
         "decision_package.json",
+        "procurement_review.html",
         "decision_summary.md",
         "evidence_summary.md",
         "bid_readiness_checklist.md",
@@ -200,6 +201,7 @@
       ],
       "decision_artifacts": [
         "decision_package.json",
+        "procurement_review.html",
         "decision_summary.md",
         "bid_readiness_checklist.md"
       ],
@@ -233,6 +235,7 @@
     "export_manifest": {
       "included_artifacts": [
         "decision_package.json",
+        "procurement_review.html",
         "decision_summary.md",
         "evidence_summary.md",
         "bid_readiness_checklist.md",

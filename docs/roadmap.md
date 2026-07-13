@@ -65,6 +65,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 - 목표: 생성 품질과 프로젝트 지식 재사용 흐름을 강화한다.
 - 현재 상태:
   - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
+  - 2026-07-13 local procurement package에 script-free `procurement_review.html`을 추가해 recommendation, hard filters, score factors, evidence gaps, bid readiness, handoff, pending sign-off, 실행 권한 경계를 한 화면에서 확인한다. 이 화면은 12개 artifact audit/export/hash inventory에 포함되며 별도 승인 workflow를 만들지 않는다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
@@ -77,7 +78,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 reviewer workspace에서 bundle별 검토 값을 source-bound draft JSON으로 내려받고 `apply-draft` CLI가 manifest/receipt hash와 비승인 경계를 검증한 뒤 receipt를 atomic update하는 local sign-off 입력 흐름을 추가했다.
   - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
 - 남은 작업:
-  - M1 live provider chain을 승인된 키로 검증
+  - M1 live provider chain의 잔여 Gemini/Claude/fallback proof는 비용 발생 테스트를 미루라는 사용자 요청에 따라 보류한다.
 - 완료 기준:
   - 최소 2개 bundle에 대해 생성 결과 샘플과 품질 검증 결과 확보
   - mock provider와 최소 1개 live provider 검증 기록 존재

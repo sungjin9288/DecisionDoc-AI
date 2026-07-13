@@ -1,6 +1,6 @@
 # Procurement Decision Package Local Demo Sample
 
-Updated: 2026-06-23
+Updated: 2026-07-13
 
 This folder contains fixture-style sample artifacts for the local product demo scenario in [DecisionDoc AI Local Product Demo Scenario](../../product_demo_scenario.md).
 
@@ -42,6 +42,7 @@ The generated `reviewer_handoff.json` records reviewer handoff metadata. The sam
 The generated `proposal_handoff.json` contains package-to-proposal handoff metadata for drafting preparation only. It keeps excluded operational actions attached to the handoff, keeps allowed next steps fixed, and keeps `blocked_until` aligned with required inputs so proposal drafting cannot be mistaken for bid submission, legal approval, or contractual commitment.
 The generated `pending_signoff.json` remains a pending review record only. The sample validator and artifact checker verify field order, pending status, reviewer, review-only scope, and false operational approval.
 The generated `signoff_summary.md` gives a reviewer-readable sign-off summary for the pending review state and repeats that operational approval is false.
+The generated `procurement_review.html` is a script-free, read-only browser workspace. It brings the recommendation, hard filters, score factors, evidence gaps, bid-readiness checklist, reviewer/proposal handoff, pending sign-off, artifact index, and non-authorization boundary into one screen without introducing another approval action. The checker verifies its package identity, recommendation, boundary text, artifact list, and script-free contract.
 The generated `audit_manifest.json` is the audit packet index. It groups the local review artifacts and repeats the excluded external actions so the packet can be checked without treating it as operational approval. The sample validator and artifact checker both verify those grouped artifact sections as fixed lists.
 The generated `export_manifest.json` keeps a fixed field order and repeats the included artifacts and excluded actions that the sample validator and artifact checker verify before handoff.
 
@@ -64,7 +65,7 @@ outside this sample directory.
 Run the focused regression tests:
 
 ```bash
-pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
+pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
 ```
 
 ## Boundary

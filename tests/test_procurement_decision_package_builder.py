@@ -16,6 +16,7 @@ from app.services.procurement_decision_package_service import (
     LOCAL_DEMO_SAMPLE_INPUT_PATH,
     NON_AUTHORIZATION_MARKER,
     PENDING_SIGNOFF_NAME,
+    PROCUREMENT_REVIEW_NAME,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
     build_and_write,
     build_decision_package,
@@ -59,6 +60,10 @@ def _decision_summary_path(output_dir: Path) -> Path:
 
 def _pending_signoff_path(output_dir: Path) -> Path:
     return _artifact_path(output_dir, PENDING_SIGNOFF_NAME)
+
+
+def _procurement_review_path(output_dir: Path) -> Path:
+    return _artifact_path(output_dir, PROCUREMENT_REVIEW_NAME)
 
 
 def _load_stdout_json(cli_run: subprocess.CompletedProcess[str]) -> dict[str, object]:
@@ -106,9 +111,13 @@ def test_write_package_artifacts_creates_reviewable_local_package(tmp_path: Path
         assert _artifact_path(tmp_path, artifact_name).exists(), artifact_name
 
     decision_summary = _decision_summary_path(tmp_path).read_text(encoding="utf-8")
+    procurement_review = _procurement_review_path(tmp_path).read_text(encoding="utf-8")
     pending_signoff = load_json(_pending_signoff_path(tmp_path))
 
     assert NON_AUTHORIZATION_MARKER in decision_summary
+    assert 'data-procurement-review-workspace' in procurement_review
+    assert DEMO_RECOMMENDATION in procurement_review
+    assert NON_AUTHORIZATION_MARKER in procurement_review
     assert pending_signoff["operational_approval"] is False
 
 

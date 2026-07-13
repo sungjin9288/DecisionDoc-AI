@@ -11477,3 +11477,14 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - sample local absolute path scan: `rg -n "/Users/sungjin|/private/var|/tmp/pytest|/var/folders" docs/samples/procurement_decision_package_local_demo -g '*.json'` reported no matches
   - AWS runtime, provider API, dataset upload, training execution, model promotion, service resume, bid submission, legal approval, and contractual commitment were not executed
   - changes remain unstaged and uncommitted
+
+- local procurement one-screen reviewer workspace completion
+  - added `procurement_review.html` as a self-contained, script-free, read-only projection of a validated procurement decision package
+  - the workspace presents recommendation, score factors, hard filters, source evidence, missing evidence, bid readiness, reviewer/proposal handoff, pending sign-off, artifact links, and the explicit non-authorization boundary without creating a second approval workflow
+  - promoted the workspace to the fixed package contract: `INCLUDED_ARTIFACT_ORDER`, audit decision artifacts, export manifest, demo inventory, SHA256 receipt, and artifact count now cover 12 package artifacts
+  - added HTML escaping tests and checker failures for missing boundary text or injected scripts; the package checker now verifies package identity, recommendation, boundary text, complete artifact names, and the script-free marker
+  - refreshed the sample contract, product execution plan, roadmap, development-plan service count, sample README, and top-level README metrics; `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 service files, 2,599 test functions, and 216 test files
+  - local demo passed with `artifact_count: 12`, `recommendation: CONDITIONAL_GO`, `authorization_boundary: explicit`, `operational_approval: false`, and all demo result/inventory/receipt checks true
+  - Playwright desktop verification at 1440x1000 reported body width 1440, script count 0, 11 sibling artifact links, one current artifact, and no final console error; mobile verification at 390x844 reported body width 390, single-column status/artifact layout, and table overflow contained inside three table wrappers
+  - full relevant gate passed: `python3 -m py_compile app/services/procurement_decision_package/*.py app/services/procurement_decision_package_service.py tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_builder.py tests/test_check_procurement_decision_package_artifacts.py tests/test_procurement_decision_package_docs_contract.py` followed by the 16-file procurement/README pytest gate: 299 passed in 11.17s
+  - OpenAI, Gemini, and Claude paid provider tests were deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed

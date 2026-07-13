@@ -49,6 +49,7 @@ Make the product direction tangible through a narrow local demo path.
 - Persist local demo run evidence as `demo_run_result.json`.
 - Add an operator-readable validation summary with `operator_summary` and `next_review_action` so a reviewer can see the review state without inferring it from raw JSON flags.
 - Add package-to-proposal handoff metadata for drafting preparation while preserving the same non-authorization boundary.
+- Add `procurement_review.html` as a script-free, read-only browser workspace that presents recommendation, hard filters, score factors, evidence gaps, bid readiness, handoff state, and authorization boundaries in one artifact.
 - Version the local evidence CLI stdout contract in `cli_contract_manifest.json` so automation can rely on stable `status`, `error_type`, and `error` fields instead of traceback parsing.
 - Validate the CLI contract manifest and persisted manifest validation receipt through `validate_procurement_decision_package_cli_contract_manifest.py` and `check_procurement_decision_package_cli_contract_manifest_result.py`.
 - Keep all flows runnable with `mock` provider and local storage.
@@ -118,6 +119,7 @@ The surface must answer:
 
 Current local evidence slice:
 
+- `procurement_review.html` gives non-engineering reviewers one read-only procurement package surface and remains part of the same 12-artifact audit, export, fingerprint, and tamper-check contract. It does not create a second approval workflow.
 - `review.html` shows generated documents and automatic validation evidence.
 - `human_review.html` combines request evidence, automatic validation, generated Markdown, manifest-bound receipt state, reviewer notes, and the external-action boundary in one workspace. Reviewer input is downloaded as a source-bound draft rather than written directly to evidence.
 - `manage_finished_doc_human_review.py` validates and atomically applies a draft only when its manifest and receipt hashes still match, without provider or AWS execution.

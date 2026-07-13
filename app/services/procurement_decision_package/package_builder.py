@@ -44,6 +44,7 @@ from app.services.procurement_decision_package.constants import (
     NON_APPROVAL_MARKER,
     NON_AUTHORIZATION_NOTE,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
+    PROCUREMENT_REVIEW_NAME,
     PROPOSAL_ALLOWED_NEXT_STEPS,
     PROPOSAL_HANDOFF_SCOPE,
     SIGNOFF_SCOPE,
@@ -67,6 +68,9 @@ from app.services.procurement_decision_package.package_document_validation impor
 from app.services.procurement_decision_package.sample_validation import (
     validate_demo_input,
     validate_expected_package_for_sample,
+)
+from app.services.procurement_decision_package.review_workspace import (
+    render_procurement_review_workspace,
 )
 
 def build_decision_package(sample_input: dict[str, Any]) -> dict[str, Any]:
@@ -745,6 +749,11 @@ def write_package_artifacts(
     }
     for artifact_name, artifact_text in markdown_artifacts.items():
         write_text_atomic(output_dir / artifact_name, artifact_text.rstrip() + "\n")
+
+    write_text_atomic(
+        output_dir / PROCUREMENT_REVIEW_NAME,
+        render_procurement_review_workspace(package_doc),
+    )
 
     return {
         "schema_purpose": package_doc["schema_purpose"],

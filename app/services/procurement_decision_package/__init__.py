@@ -100,6 +100,7 @@ from app.services.procurement_decision_package.constants import (
     PENDING_SIGNOFF_NAME,
     PROCUREMENT_DECISION_PACKAGE_SAMPLE_VALIDATION_SCHEMA_PURPOSE,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
+    PROCUREMENT_REVIEW_NAME,
     PROPOSAL_ALLOWED_NEXT_STEPS,
     PROPOSAL_HANDOFF_FIELD_ORDER,
     PROPOSAL_HANDOFF_NAME,
@@ -245,6 +246,7 @@ from app.services.procurement_decision_package.artifact_evidence import (
     validate_local_package_coverage,
     validate_markdown_artifact_files,
     validate_package_artifact_files,
+    validate_procurement_review_text,
     validate_signoff_summary_text,
 )
 from app.services.procurement_decision_package.package_builder import (
@@ -370,4 +372,7 @@ from app.services.procurement_decision_package.artifact_writers import (
     _render_signoff_summary,
     write_json_atomic,
     write_text_atomic,
+)
+from app.services.procurement_decision_package.review_workspace import (
+    render_procurement_review_workspace,
 )

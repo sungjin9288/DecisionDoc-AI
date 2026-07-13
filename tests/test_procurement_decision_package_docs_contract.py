@@ -58,6 +58,7 @@ SAMPLE_README_LOCAL_EVIDENCE_COMMANDS = [
 SAMPLE_README_FOCUSED_REGRESSION_TESTS = [
     "tests/test_procurement_decision_package_sample.py",
     "tests/test_procurement_decision_package_builder.py",
+    "tests/test_procurement_decision_package_review_workspace.py",
     "tests/test_procurement_decision_package_cli_contract_manifest.py",
     "tests/test_check_procurement_decision_package_cli_contract_manifest_result.py",
     "tests/test_procurement_decision_package_docs_contract.py",

@@ -23,6 +23,7 @@ from app.services.procurement_decision_package_service import (
     INCLUDED_ARTIFACT_ORDER,
     NON_AUTHORIZATION_MARKER,
     PENDING_SIGNOFF_NAME,
+    PROCUREMENT_REVIEW_NAME,
     PROPOSAL_HANDOFF_NAME,
     REVIEWER_HANDOFF_NAME,
     SIGNOFF_SUMMARY_NAME,
@@ -170,6 +171,24 @@ def test_accepts_seeded_demo_output(tmp_path: Path) -> None:
     assert artifact_check_result["demo_result_checked"] is True
     assert artifact_check_result["artifact_inventory_checked"] is True
     assert artifact_check_result["demo_receipt_checked"] is True
+
+
+def test_rejects_procurement_review_without_boundary(tmp_path: Path) -> None:
+    out_dir = _run_seeded_demo(tmp_path)
+    review_path = _artifact_path(out_dir, PROCUREMENT_REVIEW_NAME)
+    _replace_text(review_path, NON_AUTHORIZATION_MARKER, "boundary removed")
+
+    with pytest.raises(ValueError, match="missing review markers"):
+        check_package_artifacts(out_dir)
+
+
+def test_rejects_scripted_procurement_review(tmp_path: Path) -> None:
+    out_dir = _run_seeded_demo(tmp_path)
+    review_path = _artifact_path(out_dir, PROCUREMENT_REVIEW_NAME)
+    _append_text(review_path, "<script></script>")
+
+    with pytest.raises(ValueError, match="must remain script-free"):
+        check_package_artifacts(out_dir)
 
 
 def test_rejects_top_level_order_drift(tmp_path: Path) -> None:
@@ -1081,7 +1100,7 @@ def test_rejects_receipt_row_order_drift(tmp_path: Path) -> None:
     )
     _write_text(receipt_path, "\n".join(receipt_lines))
 
-    assert expected_artifacts[:2] == [DECISION_PACKAGE_NAME, DECISION_SUMMARY_NAME]
+    assert expected_artifacts[:2] == [DECISION_PACKAGE_NAME, PROCUREMENT_REVIEW_NAME]
     with pytest.raises(ValueError, match="artifact inventory rows must match the expected order"):
         check_package_artifacts(out_dir)
 

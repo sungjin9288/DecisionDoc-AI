@@ -6,6 +6,7 @@ AWS, training, model promotion, or service-resume paths.
 from __future__ import annotations
 
 import hashlib
+import html
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from app.services.procurement_decision_package.constants import (
     JSON_ARTIFACT_PACKAGE_FIELDS,
     NON_AUTHORIZATION_MARKER,
     PACKAGE_EVIDENCE_TYPES,
+    PROCUREMENT_REVIEW_NAME,
     SIGNOFF_SUMMARY_NAME,
     SIGNOFF_SUMMARY_REQUIRED_MARKERS,
     VALIDATION_SUMMARY_NAME,
@@ -75,6 +77,10 @@ def validate_local_package_artifacts(output_dir: Path) -> dict[str, Any]:
         )
 
     validate_markdown_artifact_files(output_dir)
+    validate_procurement_review_text(
+        (output_dir / PROCUREMENT_REVIEW_NAME).read_text(encoding="utf-8"),
+        package=package,
+    )
     return package
 
 
@@ -461,6 +467,31 @@ def validate_evidence_summary_text(evidence_summary: str) -> None:
             f"{EVIDENCE_SUMMARY_NAME} missing evidence type markers: "
             f"{', '.join(missing_markers)}"
         )
+
+
+def validate_procurement_review_text(
+    review_html: str,
+    *,
+    package: dict[str, Any],
+) -> None:
+    required_markers = [
+        "data-procurement-review-workspace",
+        html.escape(str(package["package_id"]), quote=True),
+        html.escape(str(package["recommendation"]), quote=True),
+        html.escape(
+            str(package["reviewer_handoff"]["non_authorization_note"]),
+            quote=True,
+        ),
+        *INCLUDED_ARTIFACT_ORDER,
+    ]
+    missing_markers = _missing_markers(required_markers, review_html)
+    if missing_markers:
+        raise ValueError(
+            f"{PROCUREMENT_REVIEW_NAME} missing review markers: "
+            f"{', '.join(missing_markers)}"
+        )
+    if "<script" in review_html.lower():
+        raise ValueError(f"{PROCUREMENT_REVIEW_NAME} must remain script-free")
 
 
 def _missing_markers(markers: Sequence[str], text: str) -> list[str]:
