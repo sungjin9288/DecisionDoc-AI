@@ -521,6 +521,42 @@ def test_index_html_document_ops_shows_read_only_training_readiness():
     assert "/api/agent/document-ops/trajectories/training-readiness?limit=20" in content
     assert "read-only · no training · no upload" in content
     assert "provider_job_started_count" in content
+    assert "data?.artifact_chain || {}" in content
+    assert "Freeze 파일 무결성" in content
+    assert "Freeze와 Approval 일치" in content
+
+
+def test_index_html_document_ops_connects_local_review_chain_without_external_execution():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for field_id in (
+        "docops-reviewer",
+        "docops-ops-key-input",
+        "docops-freeze-reviewer",
+        "docops-training-approver",
+        "docops-execution-requester",
+        "docops-auditor",
+        "docops-training-provider",
+        "docops-training-base-model",
+        "docops-eval-suite",
+    ):
+        assert f'id="{field_id}"' in content
+
+    assert "freezeDocumentOpsExport(filename)" in content
+    assert "approveDocumentOpsTrainingFromFreeze(manifestId)" in content
+    assert "/api/agent/document-ops/trajectories/exports/${encodeURIComponent(filename)}/freeze" in content
+    assert "/api/agent/document-ops/trajectories/freezes/${encodeURIComponent(manifestId)}/training-approval" in content
+    assert "training_allowed: false" in content
+    assert "start_training: false" in content
+    assert "upload_dataset: false" in content
+    assert "call_provider_api: false" in content
+    assert "$id('docops-ops-key-input')?.value?.trim()" in content
+    assert "if (input !== sourceInput) input.value = opsKey;" in content
+    assert "if (!schemaValidRateInput || !sourceReferenceCoverageInput)" in content
+    assert "hydrateOpsKeyInput();\n  if (new URLSearchParams(window.location.search).get('ops') === '1')" in content
+    assert "Dataset upload, provider API 호출, training 실행, model promotion은 항상 차단됩니다." in content
+    assert "body.document-ops-active #history-toggle-btn" in content
+    assert '.docops-workspace { grid-template-columns: minmax(0, 1fr); }' in content
 
 
 def test_index_html_document_ops_shows_dry_run_training_plan_preview():
@@ -528,7 +564,8 @@ def test_index_html_document_ops_shows_dry_run_training_plan_preview():
     assert "Training Execution Plan Preview" in content
     assert "previewDocumentOpsTrainingPlan()" in content
     assert "/api/agent/document-ops/trajectories/training-plan/preview?" in content
-    assert "provider-agnostic · dry-run · no provider API calls · no upload" in content
+    assert "planning · dry-run · no provider API calls · no upload" in content
+    assert "await loadDocumentOpsTrainingExecutionRequests();" in content
     assert "Execution steps" in content
 
 
@@ -1943,7 +1980,8 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
     blocks = []
     for start_marker, end_marker in (
         ("function renderDocumentOpsTrajectoryCard(item)", "async function reviewDocumentOpsTrajectory",),
-        ("function renderDocumentOpsExports(data)", "async function downloadDocumentOpsExport",),
+        ("function renderDocumentOpsExports(data, freezeData = {})", "async function downloadDocumentOpsExport",),
+        ("function renderDocumentOpsTrainingReadiness(data)", "async function approveDocumentOpsTrainingFromFreeze",),
         ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
         ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),
     ):
@@ -1956,7 +1994,9 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
     for marker in (
         "data-docops-trajectory-review=\"true\"",
         "data-docops-trajectory-review=\"false\"",
+        "data-docops-export-freeze=\"${escapeHtml(filename)}\"",
         "data-docops-export-download=\"${escapeHtml(filename)}\"",
+        "data-docops-training-approve=\"${escapeHtml(latestFreeze?.manifest_id || '')}\"",
         "data-docops-training-execution-refresh",
         "data-docops-training-audit-download=\"${escapeHtml(item?.audit_file || '')}\"",
         "data-docops-training-audit-export",
@@ -1974,9 +2014,11 @@ def test_index_html_document_ops_dynamic_action_wiring_exists():
         "function wireDocumentOpsTrajectoryReviewActions(container)",
         "container.querySelectorAll('[data-docops-trajectory-review]').forEach",
         "btn.dataset.docopsTrajectoryReview === 'true'",
-        "wireDocumentOpsExportDownloadActions(el);",
-        "function wireDocumentOpsExportDownloadActions(container)",
+        "wireDocumentOpsExportActions(el);",
+        "function wireDocumentOpsExportActions(container)",
+        "freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || '')",
         "downloadDocumentOpsExport(btn.dataset.docopsExportDownload || '')",
+        "approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || '')",
         "el.querySelector('[data-docops-training-execution-refresh]')?.addEventListener('click', loadDocumentOpsTrainingExecutionRequests)",
         "wireDocumentOpsTrainingAuditActions(el);",
         "function wireDocumentOpsTrainingAuditActions(container)",

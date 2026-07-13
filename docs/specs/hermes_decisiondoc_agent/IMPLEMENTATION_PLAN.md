@@ -122,12 +122,17 @@ Acceptance:
 
 Goal: keep the browser flow aligned with the tested API contract.
 
+Status: implemented for the local review and governance workbench. The browser now exposes the
+named-actor review, export, freeze, dry-run approval, execution-request, audit, and integrity
+summary paths already supported by the API. It does not expose an execution path.
+
 Work:
 
 - expose only controls supported by current endpoints
 - show review, export eligibility, freeze, and governance state without claiming training completion
 - preserve CSP nonce, API-key, ops-key, and maintenance-mode behavior
 - add browser QA only when the UI behavior changes
+- keep desktop and mobile controls readable without unrelated fixed navigation covering inputs
 
 Acceptance:
 

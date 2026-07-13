@@ -2937,8 +2937,12 @@
       padding: 0 1rem;
       display: flex;
       gap: 0.5rem;
+      overflow-x: auto;
+      scrollbar-width: thin;
     }
     .page-tab {
+      flex: 0 0 auto;
+      white-space: nowrap;
       padding: 0.48rem 1.2rem;
       border: 1.5px solid var(--border);
       border-radius: 999px;
@@ -4477,6 +4481,139 @@
       gap: 1rem;
     }
 
+    /* DocumentOps local review flow */
+    .docops-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .docops-heading-kicker {
+      color: var(--accent, #0f766e);
+      font-size: .75rem;
+      font-weight: 800;
+    }
+    .docops-boundary {
+      max-width: 360px;
+      border-left: 3px solid var(--accent, #0f766e);
+      padding: .55rem .7rem;
+      background: var(--accent-soft, rgba(15, 118, 110, .1));
+      color: var(--text, #1f2937);
+      font-size: .76rem;
+      line-height: 1.5;
+    }
+    .docops-toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .75rem;
+      margin-bottom: 1rem;
+      padding: .85rem 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .docops-toolbar-group {
+      display: flex;
+      align-content: flex-start;
+      gap: .4rem;
+      flex-wrap: wrap;
+    }
+    .docops-toolbar-title {
+      flex-basis: 100%;
+      color: var(--muted);
+      font-size: .7rem;
+      font-weight: 800;
+    }
+    .docops-toolbar .action-btn,
+    .docops-more-tools .action-btn {
+      min-height: 34px;
+      border-radius: 6px;
+      font-size: .75rem;
+      padding: .4rem .62rem;
+    }
+    .docops-more-tools {
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: .75rem;
+    }
+    .docops-more-tools summary {
+      width: fit-content;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: 750;
+    }
+    .docops-more-tools[open] summary { margin-bottom: .65rem; }
+    .docops-operator-context {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: .65rem;
+      margin-bottom: 1rem;
+      padding: .9rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-solid);
+    }
+    .docops-operator-context h3 {
+      grid-column: 1 / -1;
+      margin: 0;
+      font-size: .9rem;
+    }
+    .docops-field {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: .25rem;
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 700;
+    }
+    .docops-field .gov-input {
+      width: 100%;
+      min-width: 0;
+    }
+    .docops-operator-note {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.5;
+    }
+    .docops-chain-state {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: .45rem;
+      margin-bottom: .65rem;
+    }
+    .docops-chain-item {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .55rem;
+      background: rgba(255, 255, 255, .52);
+    }
+    .docops-chain-item[data-state="pass"] { border-color: rgba(22, 101, 52, .35); }
+    .docops-chain-item[data-state="block"] { border-color: rgba(185, 28, 28, .35); }
+    .docops-workspace {
+      display: grid;
+      grid-template-columns: minmax(280px, .85fr) minmax(0, 1.25fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    body.document-ops-active .hero,
+    body.document-ops-active .wave,
+    body.document-ops-active #onboarding-banner { display: none !important; }
+    body.document-ops-active #mobile-bottom-nav,
+    body.document-ops-active #history-toggle-btn,
+    body.document-ops-active #history-panel { display: none !important; }
+    @media (max-width: 880px) {
+      .docops-toolbar { grid-template-columns: 1fr; }
+      .docops-operator-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .docops-workspace { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .docops-operator-context { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body class="auth-pending">
@@ -5564,31 +5701,93 @@
 
 <!-- ── DocumentOps Agent ─────────────────────────────────────────────── -->
 <section id="document-ops-page" style="display:none; max-width:1120px; margin:0 auto; padding:1.5rem 1rem;" aria-label="DocumentOps Agent">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+  <div class="docops-header">
     <div>
-      <div style="font-size:.78rem;font-weight:800;color:var(--p1);letter-spacing:.08em;text-transform:uppercase;">Hermes-inspired DocumentOps</div>
-      <h2 style="font-size:1.45rem;font-weight:900;margin:.2rem 0;">🧠 AI 기획·근거·품질 개선 Agent</h2>
-      <p style="margin:0;color:var(--muted);font-size:.9rem;">기획안, 근거 gap, 최종 승인 브리프, Develop 품질 개선을 생성하고 QA gate와 trajectory 리뷰를 관리합니다.</p>
+      <div class="docops-heading-kicker">DocumentOps</div>
+      <h2 style="font-size:1.45rem;font-weight:900;margin:.2rem 0;">기획·근거·품질 검토 작업대</h2>
+      <p style="margin:0;color:var(--muted);font-size:.9rem;">문서를 생성하고 QA, 사람 검토, dataset 증적, governance 상태를 한 흐름에서 관리합니다.</p>
     </div>
-    <div style="display:flex;gap:.45rem;flex-wrap:wrap;">
-      <button type="button" class="action-btn" data-docops-action="load-trajectories">🔄 리뷰 목록</button>
-      <button type="button" class="action-btn" data-docops-action="preview-export">🔎 Export preview</button>
-      <button type="button" class="action-btn" data-docops-action="export-trajectories">📦 SFT export</button>
-      <button type="button" class="action-btn" data-docops-action="load-exports">📥 Reviewed JSONL</button>
-      <button type="button" class="action-btn" data-docops-action="load-readiness">🧭 Readiness</button>
-      <button type="button" class="action-btn" data-docops-action="preview-plan">🧩 Plan preview</button>
-      <button type="button" class="action-btn" data-docops-action="request-execution">📝 Request record</button>
-      <button type="button" class="action-btn" data-docops-action="load-audit-checklist">🧾 Audit checklist</button>
-      <button type="button" class="action-btn" data-docops-action="export-audit">📤 Audit export</button>
-      <button type="button" class="action-btn" data-docops-action="load-governance">📊 Governance</button>
-      <button type="button" class="action-btn" data-docops-action="load-signoff">✅ Sign-off summary</button>
-      <button type="button" class="action-btn" data-docops-action="download-signoff">⬇️ Sign-off JSON</button>
-      <button type="button" class="action-btn" data-docops-action="load-adapter-contract">🔌 Adapter</button>
-      <button type="button" class="action-btn" data-docops-action="load-rehearsal">🧪 Rehearsal</button>
+    <div class="docops-boundary">
+      이 화면은 로컬 검토 증적만 기록합니다. Dataset upload, provider API 호출, training 실행, model promotion은 항상 차단됩니다.
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.25fr);gap:1rem;align-items:start;">
+  <div class="docops-toolbar" aria-label="DocumentOps 작업 단계">
+    <div class="docops-toolbar-group">
+      <div class="docops-toolbar-title">1. 검토</div>
+      <button type="button" class="action-btn" data-docops-action="load-trajectories">리뷰 목록</button>
+      <button type="button" class="action-btn" data-docops-action="preview-export">Export 후보</button>
+    </div>
+    <div class="docops-toolbar-group">
+      <div class="docops-toolbar-title">2. Dataset 증적</div>
+      <button type="button" class="action-btn" data-docops-action="export-trajectories">JSONL 생성</button>
+      <button type="button" class="action-btn" data-docops-action="load-exports">Export·Freeze</button>
+      <button type="button" class="action-btn" data-docops-action="load-readiness">Readiness·Approval</button>
+    </div>
+    <div class="docops-toolbar-group">
+      <div class="docops-toolbar-title">3. Governance 검토</div>
+      <button type="button" class="action-btn" data-docops-action="preview-plan">Plan preview</button>
+      <button type="button" class="action-btn" data-docops-action="request-execution">Request 기록</button>
+      <button type="button" class="action-btn" data-docops-action="load-audit-checklist">Audit 검토</button>
+      <button type="button" class="action-btn" data-docops-action="export-audit">Audit 저장</button>
+      <button type="button" class="action-btn" data-docops-action="load-governance">Governance</button>
+    </div>
+  </div>
+
+  <details class="docops-more-tools">
+    <summary>추가 증적 도구</summary>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+      <button type="button" class="action-btn" data-docops-action="load-signoff">Sign-off 요약</button>
+      <button type="button" class="action-btn" data-docops-action="download-signoff">Sign-off JSON</button>
+      <button type="button" class="action-btn" data-docops-action="load-adapter-contract">Adapter 계약</button>
+      <button type="button" class="action-btn" data-docops-action="load-rehearsal">Rehearsal</button>
+    </div>
+  </details>
+
+  <div class="docops-operator-context" aria-label="DocumentOps 검토 담당자와 계획 조건">
+    <h3>검토 담당자와 계획 조건</h3>
+    <label class="docops-field">Trajectory 검토자
+      <input id="docops-reviewer" class="gov-input" autocomplete="name" placeholder="예: content-reviewer">
+    </label>
+    <label class="docops-field">Ops key
+      <input id="docops-ops-key-input" class="gov-input" type="password" autocomplete="new-password" placeholder="X-DecisionDoc-Ops-Key">
+    </label>
+    <label class="docops-field">Dataset freeze 검토자
+      <input id="docops-freeze-reviewer" class="gov-input" autocomplete="off" placeholder="예: dataset-owner">
+    </label>
+    <label class="docops-field">Dry-run 승인자
+      <input id="docops-training-approver" class="gov-input" autocomplete="off" placeholder="예: ml-owner">
+    </label>
+    <label class="docops-field">Execution request 기록자
+      <input id="docops-execution-requester" class="gov-input" autocomplete="off" placeholder="예: ops-owner">
+    </label>
+    <label class="docops-field">Pre-execution 감사자
+      <input id="docops-auditor" class="gov-input" autocomplete="off" placeholder="예: compliance-owner">
+    </label>
+    <label class="docops-field">Planning provider
+      <select id="docops-training-provider" class="gov-input">
+        <option value="provider_agnostic">Provider 미정</option>
+        <option value="openai">OpenAI 계획</option>
+        <option value="gemini">Gemini 계획</option>
+        <option value="claude">Claude 계획</option>
+      </select>
+    </label>
+    <label class="docops-field">Base model
+      <input id="docops-training-base-model" class="gov-input" autocomplete="off" placeholder="선택 전이면 비워두기">
+    </label>
+    <label class="docops-field">Eval suite
+      <input id="docops-eval-suite" class="gov-input" value="document_ops_offline_eval">
+    </label>
+    <label class="docops-field">Schema valid rate
+      <input id="docops-eval-schema-rate" class="gov-input" type="number" min="0" max="1" step="0.01" value="1">
+    </label>
+    <label class="docops-field">Source reference coverage
+      <input id="docops-eval-source-rate" class="gov-input" type="number" min="0" max="1" step="0.01" value="1">
+    </label>
+    <p class="docops-operator-note">Freeze 검토자, dry-run 승인자, request 기록자, 감사자는 서로 다른 사람이어야 합니다. Provider와 model은 계획 metadata일 뿐 외부 호출을 시작하지 않습니다.</p>
+  </div>
+
+  <div class="docops-workspace">
     <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;">
       <h3 style="margin:0 0 .75rem;font-size:1rem;font-weight:850;">Agent 실행</h3>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">작업 유형</label>
@@ -6341,6 +6540,7 @@
 
   /* ── Tab page switcher ─────────────────────────────────────────── */
   window.switchPage = function switchPage(page) {
+    document.body.classList.toggle('document-ops-active', page === 'document-ops-page');
     document.querySelectorAll('.page-tab').forEach(b => {
       const match = b.dataset.page === page;
       b.classList.toggle('active', match);
@@ -6467,6 +6667,62 @@
     if (taskType === 'decision_brief') return 'decision-brief-builder';
     if (taskType === 'develop_quality_improvement') return 'develop-document-improver';
     return 'policy-planning';
+  }
+
+  function documentOpsRequiredField(id, label) {
+    const input = $id(id);
+    const value = String(input?.value || '').trim();
+    if (value) return value;
+    showNotification(`${label}을 입력해주세요.`, 'warn');
+    input?.focus();
+    return '';
+  }
+
+  function documentOpsPlanningSelection() {
+    return {
+      provider: String($id('docops-training-provider')?.value || 'provider_agnostic').trim(),
+      baseModel: String($id('docops-training-base-model')?.value || '').trim(),
+    };
+  }
+
+  function documentOpsPlanningParams() {
+    const selection = documentOpsPlanningSelection();
+    const params = new URLSearchParams({ limit: '20', provider: selection.provider });
+    if (selection.baseModel) params.set('base_model', selection.baseModel);
+    return params;
+  }
+
+  function documentOpsEvalPlan() {
+    const suite = documentOpsRequiredField('docops-eval-suite', 'Eval suite');
+    if (!suite) return null;
+    const schemaValidRateInput = String($id('docops-eval-schema-rate')?.value || '').trim();
+    const sourceReferenceCoverageInput = String($id('docops-eval-source-rate')?.value || '').trim();
+    if (!schemaValidRateInput || !sourceReferenceCoverageInput) {
+      showNotification('Eval 기준을 모두 입력해주세요.', 'warn');
+      return null;
+    }
+    const schemaValidRate = Number(schemaValidRateInput);
+    const sourceReferenceCoverage = Number(sourceReferenceCoverageInput);
+    if (![schemaValidRate, sourceReferenceCoverage].every(value => Number.isFinite(value) && value >= 0 && value <= 1)) {
+      showNotification('Eval 기준은 0에서 1 사이 숫자로 입력해주세요.', 'warn');
+      return null;
+    }
+    return {
+      suite,
+      required_metrics: {
+        schema_valid_rate: schemaValidRate,
+        source_reference_coverage: sourceReferenceCoverage,
+      },
+    };
+  }
+
+  function renderDocumentOpsChainItem(label, value) {
+    const state = value === true ? 'pass' : value === false ? 'block' : 'pending';
+    const status = value === true ? '확인됨' : value === false ? '차단' : '대기';
+    return `<div class="docops-chain-item" data-state="${state}">
+      <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+      <div style="font-size:.78rem;font-weight:900;margin-top:.18rem;">${status}</div>
+    </div>`;
   }
 
   async function runDocumentOpsAgent() {
@@ -6668,6 +6924,8 @@
 
   async function reviewDocumentOpsTrajectory(trajectoryId, accepted) {
     if (!trajectoryId) return;
+    const reviewer = documentOpsRequiredField('docops-reviewer', 'Trajectory 검토자');
+    if (!reviewer) return;
     const notes = window.prompt(accepted ? '승인 메모를 입력하세요.' : '반려 사유를 입력하세요.', accepted ? '학습 후보 승인' : '학습 후보 제외');
     if (notes === null) return;
     try {
@@ -6676,7 +6934,7 @@
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accepted: !!accepted,
-          reviewer: (typeof getCurrentUsername === 'function' ? getCurrentUsername() : '') || 'operator',
+          reviewer,
           notes,
           quality_score: accepted ? 0.9 : null,
         }),
@@ -6716,34 +6974,49 @@
       const taskType = ($id('docops-task-type')?.value || '').trim();
       const params = new URLSearchParams({ limit: '20' });
       if (taskType) params.set('task_type', taskType);
-      const res = await fetch(`/api/agent/document-ops/trajectories/reviewed-sft-exports?${params}`, {
-        headers: getOpsAccessHeaders(),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      renderDocumentOpsExports(data);
+      const [exportsRes, freezesRes] = await Promise.all([
+        fetch(`/api/agent/document-ops/trajectories/reviewed-sft-exports?${params}`, {
+          headers: getOpsAccessHeaders(),
+        }),
+        fetch('/api/agent/document-ops/trajectories/freezes?limit=200', {
+          headers: getOpsAccessHeaders(),
+        }),
+      ]);
+      if (!exportsRes.ok) throw new Error(await exportsRes.text());
+      if (!freezesRes.ok) throw new Error(await freezesRes.text());
+      renderDocumentOpsExports(await exportsRes.json(), await freezesRes.json());
     } catch (err) {
       el.innerHTML = `<div style="color:#ef4444;">Export 목록 로드 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Export 목록 로드 실패: ' + (err.message || err), 'error');
     }
   }
 
-  function renderDocumentOpsExports(data) {
+  function renderDocumentOpsExports(data, freezeData = {}) {
     const el = $id('document-ops-export-list');
     if (!el) return;
     el.style.display = 'block';
     const exports = Array.isArray(data?.exports) ? data.exports : [];
+    const freezes = Array.isArray(freezeData?.freezes) ? freezeData.freezes : [];
     const rows = exports.map(item => {
       const filename = String(item?.filename || '');
       const exists = item?.exists !== false;
+      const matchingFreeze = freezes.find(freeze => (
+        freeze?.export_filename === filename
+        && freeze?.export_sha256 === item?.content_sha256
+      ));
+      const frozen = matchingFreeze?.integrity_verified === true;
       return `<div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.55);display:flex;justify-content:space-between;gap:.7rem;align-items:center;flex-wrap:wrap;">
         <div>
           <strong style="font-size:.8rem;color:#1f2a44;">${escapeHtml(filename)}</strong>
           <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">
-            records=${Number(item?.record_count || 0)} · size=${formatBytes(Number(item?.size_bytes || 0))} · ${escapeHtml(item?.exported_at || '')}
+            records=${Number(item?.record_count || 0)} · size=${formatBytes(Number(item?.size_bytes || 0))} · sha=${escapeHtml(String(item?.content_sha256 || '').slice(0, 12) || '-')}<br>
+            freeze=${escapeHtml(matchingFreeze?.manifest_id || 'not recorded')} · integrity=${frozen ? 'verified' : matchingFreeze ? 'failed' : 'pending'}
           </div>
         </div>
-        <button class="action-btn" type="button" data-docops-export-download="${escapeHtml(filename)}" style="font-size:.72rem;padding:.3rem .65rem;" ${exists ? '' : 'disabled'}>다운로드</button>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+          <button class="action-btn" type="button" data-docops-export-freeze="${escapeHtml(filename)}" style="font-size:.72rem;padding:.3rem .65rem;" ${exists && !frozen ? '' : 'disabled'}>${frozen ? 'Freeze 확인됨' : 'Freeze 기록'}</button>
+          <button class="action-btn" type="button" data-docops-export-download="${escapeHtml(filename)}" style="font-size:.72rem;padding:.3rem .65rem;" ${exists ? '' : 'disabled'}>다운로드</button>
+        </div>
       </div>`;
     }).join('');
     el.innerHTML = `
@@ -6756,13 +7029,40 @@
       </div>
       ${exports.length ? `<div style="display:flex;flex-direction:column;gap:.45rem;">${rows}</div>` : '<div style="font-size:.76rem;color:var(--muted);">아직 생성된 reviewed SFT JSONL artifact가 없습니다.</div>'}
     `;
-    wireDocumentOpsExportDownloadActions(el);
+    wireDocumentOpsExportActions(el);
   }
 
-  function wireDocumentOpsExportDownloadActions(container) {
+  function wireDocumentOpsExportActions(container) {
+    container.querySelectorAll('[data-docops-export-freeze]').forEach(btn => {
+      btn.addEventListener('click', () => freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || ''));
+    });
     container.querySelectorAll('[data-docops-export-download]').forEach(btn => {
       btn.addEventListener('click', () => downloadDocumentOpsExport(btn.dataset.docopsExportDownload || ''));
     });
+  }
+
+  async function freezeDocumentOpsExport(filename) {
+    if (!filename) return;
+    const reviewer = documentOpsRequiredField('docops-freeze-reviewer', 'Dataset freeze 검토자');
+    if (!reviewer) return;
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/exports/${encodeURIComponent(filename)}/freeze`, {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reviewer,
+          notes: 'Local UI dataset freeze review',
+          sample_limit: 5,
+          training_allowed: false,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const manifest = await res.json();
+      showNotification(`Dataset freeze를 기록했습니다: ${manifest.manifest_id}`, 'success');
+      await Promise.all([loadDocumentOpsExports(), loadDocumentOpsTrainingReadiness()]);
+    } catch (err) {
+      showNotification('Dataset freeze 기록 실패: ' + (err.message || err), 'error');
+    }
   }
 
   async function downloadDocumentOpsExport(filename) {
@@ -6817,6 +7117,13 @@
     const latestExport = data?.latest_reviewed_export || {};
     const latestFreeze = data?.latest_dataset_freeze || {};
     const latestApproval = data?.latest_training_approval || {};
+    const chain = data?.artifact_chain || {};
+    const canApprove = (
+      latestFreeze?.exists === true
+      && chain?.freeze_integrity_verified === true
+      && chain?.freeze_matches_latest_export === true
+      && chain?.approval_matches_latest_freeze !== true
+    );
     const metricCards = [
       ['reviewed JSONL', data?.reviewed_export_count ?? 0],
       ['freezes', data?.freeze_count ?? 0],
@@ -6844,6 +7151,14 @@
           export=${escapeHtml(latestExport?.filename || '-')} · freeze=${escapeHtml(latestFreeze?.manifest_id || '-')} · approval=${escapeHtml(latestApproval?.approval_id || '-')}<br>
           eval suite=${escapeHtml(latestEval?.suite || '-')} · required metrics=${escapeHtml((latestEval?.required_metric_names || []).join(', ') || '-')}
         </div>
+        <button class="action-btn" type="button" data-docops-training-approve="${escapeHtml(latestFreeze?.manifest_id || '')}" style="margin-top:.55rem;font-size:.72rem;padding:.3rem .65rem;" ${canApprove ? '' : 'disabled'}>${chain?.approval_matches_latest_freeze === true ? 'Dry-run 승인 확인됨' : 'Dry-run 승인 기록'}</button>
+      </div>
+      <div class="docops-chain-state" aria-label="Readiness artifact chain">
+        ${renderDocumentOpsChainItem('Freeze 파일 무결성', chain?.freeze_integrity_verified)}
+        ${renderDocumentOpsChainItem('Export와 Freeze 일치', chain?.freeze_matches_latest_export)}
+        ${renderDocumentOpsChainItem('Approval 파일 무결성', chain?.approval_integrity_verified)}
+        ${renderDocumentOpsChainItem('Freeze와 Approval 일치', chain?.approval_matches_latest_freeze)}
+        ${renderDocumentOpsChainItem('Approval 실행 차단', chain?.approval_guard_clean)}
       </div>
       <div style="border:1px solid ${guard?.no_training_started ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${guard?.no_training_started ? 'rgba(34,197,94,.06)' : 'rgba(239,68,68,.06)'};margin-bottom:.65rem;">
         <div style="font-size:.76rem;font-weight:900;color:${guard?.no_training_started ? '#15803d' : '#b91c1c'};">Training guard</div>
@@ -6856,6 +7171,36 @@
         <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
       </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">모든 read-only readiness gate가 충족되었습니다. 학습 실행은 별도 승인 단계입니다.</div>'}
     `;
+    el.querySelector('[data-docops-training-approve]')?.addEventListener('click', event => {
+      approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || '');
+    });
+  }
+
+  async function approveDocumentOpsTrainingFromFreeze(manifestId) {
+    if (!manifestId) return;
+    const approver = documentOpsRequiredField('docops-training-approver', 'Dry-run 승인자');
+    if (!approver) return;
+    const evalPlan = documentOpsEvalPlan();
+    if (!evalPlan) return;
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/freezes/${encodeURIComponent(manifestId)}/training-approval`, {
+        method: 'POST',
+        headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          approver,
+          eval_plan: evalPlan,
+          notes: 'Local UI dry-run approval',
+          dry_run: true,
+          start_training: false,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const approval = await res.json();
+      showNotification(`Dry-run approval을 기록했습니다: ${approval.approval_id}`, 'success');
+      await loadDocumentOpsTrainingReadiness();
+    } catch (err) {
+      showNotification('Dry-run approval 기록 실패: ' + (err.message || err), 'error');
+    }
   }
 
   async function previewDocumentOpsTrainingPlan() {
@@ -6864,7 +7209,7 @@
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training plan preview 생성 중...</div>';
     try {
-      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const params = documentOpsPlanningParams();
       const res = await fetch(`/api/agent/document-ops/trajectories/training-plan/preview?${params}`, {
         headers: getOpsAccessHeaders(),
       });
@@ -6891,7 +7236,7 @@
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
         <div>
           <strong style="font-size:.92rem;">Training Execution Plan Preview</strong>
-          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">provider-agnostic · dry-run · no provider API calls · no upload</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">${escapeHtml(spec?.provider || 'provider_agnostic')} planning · dry-run · no provider API calls · no upload</div>
         </div>
         <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${blocked ? '#fee2e2' : '#dcfce7'};color:${blocked ? '#b91c1c' : '#15803d'};">${blocked ? 'BLOCKED' : 'PREVIEW READY'}</span>
       </div>
@@ -6921,15 +7266,17 @@
   }
 
   async function requestDocumentOpsTrainingExecution() {
-    const requester = window.prompt('Training execution request 기록자 이름을 입력하세요. 학습/업로드는 시작되지 않습니다.');
-    if (!requester || !requester.trim()) return;
+    const requester = documentOpsRequiredField('docops-execution-requester', 'Execution request 기록자');
+    if (!requester) return;
+    const selection = documentOpsPlanningSelection();
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-execution-requests', {
         method: 'POST',
         headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requester: requester.trim(),
-          provider: 'provider_agnostic',
+          requester,
+          provider: selection.provider,
+          base_model: selection.baseModel || null,
           notes: 'UI record-only request',
           start_training: false,
           upload_dataset: false,
@@ -6937,8 +7284,8 @@
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      renderDocumentOpsTrainingExecutionRequests({ training_execution_requests: [trainingExecutionRequestSummary(data)], total: 1 });
+      await res.json();
+      await loadDocumentOpsTrainingExecutionRequests();
       showNotification('Training execution request record를 저장했습니다. 학습/업로드는 시작되지 않았습니다.', 'success');
     } catch (err) {
       showNotification('Training execution request 실패: ' + (err.message || err), 'error');
@@ -6961,28 +7308,6 @@
     }
   }
 
-  function trainingExecutionRequestSummary(data) {
-    const plan = data?.plan_preview || {};
-    const dataset = plan?.dataset || {};
-    const gate = data?.request_gate || {};
-    const twoPerson = data?.two_person_guard || {};
-    const guard = data?.execution_guard || {};
-    return {
-      request_id: data?.request_id,
-      manifest_id: dataset?.freeze_manifest_id,
-      provider: plan?.provider,
-      base_model: plan?.base_model,
-      requester: gate?.requester,
-      prior_training_approver: gate?.prior_training_approver,
-      two_person_guard_satisfied: twoPerson?.satisfied,
-      training_execution_allowed: guard?.training_execution_allowed,
-      provider_job_started: guard?.provider_job_started,
-      external_upload_started: guard?.external_upload_started,
-      created_at: data?.created_at,
-      exists: true,
-    };
-  }
-
   function renderDocumentOpsTrainingExecutionRequests(data) {
     const el = $id('document-ops-training-execution-requests');
     if (!el) return;
@@ -6995,7 +7320,8 @@
       </div>
       <div style="font-size:.73rem;color:var(--muted);line-height:1.5;margin-top:.25rem;">
         requester=${escapeHtml(item?.requester || '-')} · prior approver=${escapeHtml(item?.prior_training_approver || '-')} · provider=${escapeHtml(item?.provider || '-')} · base=${escapeHtml(item?.base_model || '-')}<br>
-        freeze=${escapeHtml(item?.manifest_id || '-')} · training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'}
+        freeze=${escapeHtml(item?.manifest_id || '-')} · integrity=${item?.integrity_verified ? 'verified' : 'failed'}<br>
+        training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_api=${item?.provider_api_calls_allowed ? 'allowed' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'} · promotion=${item?.model_promotion_allowed ? 'allowed' : 'false'}
       </div>
     </div>`).join('');
     el.innerHTML = `
@@ -7017,7 +7343,7 @@
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">pre-execution audit checklist 로드 중...</div>';
     try {
-      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const params = documentOpsPlanningParams();
       const [checklistRes, auditsRes] = await Promise.all([
         fetch(`/api/agent/document-ops/trajectories/training-audit/checklist?${params}`, {
           headers: getOpsAccessHeaders(),
@@ -7036,15 +7362,17 @@
   }
 
   async function exportDocumentOpsTrainingAudit() {
-    const auditor = window.prompt('Pre-execution audit export 감사자 이름을 입력하세요. 학습/업로드/provider 호출은 시작되지 않습니다.');
-    if (!auditor || !auditor.trim()) return;
+    const auditor = documentOpsRequiredField('docops-auditor', 'Pre-execution 감사자');
+    if (!auditor) return;
+    const selection = documentOpsPlanningSelection();
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-audit/export', {
         method: 'POST',
         headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          auditor: auditor.trim(),
-          provider: 'provider_agnostic',
+          auditor,
+          provider: selection.provider,
+          base_model: selection.baseModel || null,
           notes: 'UI pre-execution audit export',
           start_training: false,
           upload_dataset: false,
@@ -7081,7 +7409,7 @@
       </div>
       <div style="font-size:.72rem;color:var(--muted);line-height:1.45;margin-top:.2rem;">
         auditor=${escapeHtml(item?.auditor || '-')} · request=${escapeHtml(item?.request_id || '-')} · freeze=${escapeHtml(item?.manifest_id || '-')}<br>
-        training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'}
+        integrity=${item?.integrity_verified ? 'verified' : 'failed'} · training_allowed=${item?.training_execution_allowed ? 'true' : 'false'} · provider_api=${item?.provider_api_calls_allowed ? 'allowed' : 'false'} · provider_job=${item?.provider_job_started ? 'started' : '0'} · upload=${item?.external_upload_started ? 'started' : '0'} · promotion=${item?.model_promotion_allowed ? 'allowed' : 'false'}
       </div>
     </div>`).join('');
     el.innerHTML = `
@@ -7092,7 +7420,7 @@
         </div>
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
           <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${ready ? '#dcfce7' : '#fee2e2'};color:${ready ? '#15803d' : '#b91c1c'};">${ready ? 'READY FOR REVIEW' : 'BLOCKED'}</span>
-          <button class="action-btn" type="button" data-docops-training-audit-export style="font-size:.72rem;padding:.3rem .65rem;">Export audit</button>
+          <button class="action-btn" type="button" data-docops-training-audit-export style="font-size:.72rem;padding:.3rem .65rem;" ${ready ? '' : 'disabled'}>Audit 저장</button>
         </div>
       </div>
       <div style="border:1px solid var(--border);border-radius:12px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.65rem;">
@@ -7177,7 +7505,7 @@
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training governance summary 로드 중...</div>';
     try {
-      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const params = documentOpsPlanningParams();
       const res = await fetch(`/api/agent/document-ops/trajectories/training-governance/summary?${params}`, {
         headers: getOpsAccessHeaders(),
       });
@@ -7197,6 +7525,12 @@
     const counts = data?.counts || {};
     const latest = data?.latest || {};
     const guards = data?.guard_counts || {};
+    const artifactChain = data?.artifact_chain || {};
+    const auditChain = data?.audit_chain || {};
+    const auditChecklist = data?.audit_checklist || {};
+    const requestChainCheck = Array.isArray(auditChecklist?.checklist)
+      ? auditChecklist.checklist.find(item => item?.id === 'artifact_chain_consistent')
+      : null;
     const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
     const countCards = [
       ['reviewed JSONL', counts?.reviewed_sft_exports ?? 0],
@@ -7226,6 +7560,13 @@
           export=${escapeHtml(latest?.reviewed_sft_export?.filename || '-')} · freeze=${escapeHtml(latest?.dataset_freeze?.manifest_id || '-')} · approval=${escapeHtml(latest?.dry_run_training_approval?.approval_id || '-')}<br>
           request=${escapeHtml(latest?.training_execution_request?.request_id || '-')} · audit=${escapeHtml(latest?.pre_execution_audit?.audit_id || '-')}
         </div>
+      </div>
+      <div class="docops-chain-state" aria-label="Governance artifact chain">
+        ${renderDocumentOpsChainItem('Export→Freeze→Approval', artifactChain?.consistent)}
+        ${renderDocumentOpsChainItem('Request artifact 무결성', auditChecklist?.latest_training_execution_request?.integrity_verified)}
+        ${renderDocumentOpsChainItem('Request와 현재 chain 일치', requestChainCheck?.passed)}
+        ${renderDocumentOpsChainItem('Audit artifact 무결성', auditChain?.integrity_verified)}
+        ${renderDocumentOpsChainItem('Audit와 현재 chain 일치', auditChain?.matches_current_chain)}
       </div>
       <div style="border:1px solid ${data?.no_side_effects ? 'rgba(34,197,94,.28)' : 'rgba(239,68,68,.28)'};border-radius:12px;padding:.65rem;background:${data?.no_side_effects ? 'rgba(34,197,94,.06)' : 'rgba(239,68,68,.06)'};margin-bottom:.65rem;">
         <div style="font-size:.76rem;font-weight:900;color:${data?.no_side_effects ? '#15803d' : '#b91c1c'};">No-side-effect guard</div>
@@ -7345,7 +7686,8 @@
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training adapter contract 로드 중...</div>';
     try {
-      const params = new URLSearchParams({ provider: 'provider_agnostic' });
+      const params = documentOpsPlanningParams();
+      params.delete('limit');
       const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/contract?${params}`, {
         headers: getOpsAccessHeaders(),
       });
@@ -7399,7 +7741,7 @@
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training execution rehearsal 로드 중...</div>';
     try {
-      const params = new URLSearchParams({ limit: '20', provider: 'provider_agnostic' });
+      const params = documentOpsPlanningParams();
       const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?${params}`, {
         headers: getOpsAccessHeaders(),
       });
@@ -10935,11 +11277,19 @@
   }
 
   function getOpsKeyValue() {
-    return $id('ops-key-input')?.value?.trim() || localStorage.getItem('dd_ops_key') || '';
+    return (
+      $id('docops-ops-key-input')?.value?.trim()
+      || $id('ops-key-input')?.value?.trim()
+      || localStorage.getItem('dd_ops_key')
+      || ''
+    );
   }
 
-  function persistOpsKey() {
-    const opsKey = $id('ops-key-input')?.value?.trim() || '';
+  function persistOpsKey(sourceInput = null) {
+    const opsKey = sourceInput ? sourceInput.value.trim() : getOpsKeyValue();
+    [$id('ops-key-input'), $id('docops-ops-key-input')].filter(Boolean).forEach(input => {
+      if (input !== sourceInput) input.value = opsKey;
+    });
     if (opsKey) localStorage.setItem('dd_ops_key', opsKey);
     else localStorage.removeItem('dd_ops_key');
   }
@@ -10952,14 +11302,14 @@
   }
 
   function hydrateOpsKeyInput() {
-    const input = $id('ops-key-input');
-    if (!input) return;
     const stored = localStorage.getItem('dd_ops_key') || '';
-    if (!input.value && stored) input.value = stored;
-    if (input.dataset.boundOpsPersistence === '1') return;
-    input.addEventListener('change', persistOpsKey);
-    input.addEventListener('blur', persistOpsKey);
-    input.dataset.boundOpsPersistence = '1';
+    [$id('ops-key-input'), $id('docops-ops-key-input')].filter(Boolean).forEach(input => {
+      if (!input.value && stored) input.value = stored;
+      if (input.dataset.boundOpsPersistence === '1') return;
+      input.addEventListener('change', () => persistOpsKey(input));
+      input.addEventListener('blur', () => persistOpsKey(input));
+      input.dataset.boundOpsPersistence = '1';
+    });
   }
 
   async function loadTenantList() {
@@ -14450,10 +14800,10 @@
   });
 
   /* ── Ops 대시보드 ─────────────────────────────────────────────── */
+  hydrateOpsKeyInput();
   if (new URLSearchParams(window.location.search).get('ops') === '1') {
     const opsPanel = $id('ops-panel');
     if (opsPanel) opsPanel.style.display = 'block';
-    hydrateOpsKeyInput();
     window.addEventListener('load', () => {
       window.loadOpsPostDeployReports?.();
       window.loadLocalLLMStatus?.();
