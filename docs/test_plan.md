@@ -82,9 +82,9 @@ pytest -q tests/test_finished_doc_human_review.py tests/test_build_finished_doc_
 
 첫 번째 명령은 mock provider의 fictional fixture를 생성하고 schema validator, bundle-aware lint, request 대비 단위 수치 literal coverage, canonical golden hash를 manifest에 기록한다. 미근거 단위 수치가 있으면 package status는 `review_required`가 된다. 이 검사는 수치의 사실성·최신성·문맥 적합성을 증명하지 않으므로 factual grounding과 human visual review는 자동 통과로 간주하지 않는다. 두 번째 명령은 기본 10개 offline eval fixture의 validator/lint report를 갱신한다. 세 번째 명령은 companion human review receipt가 현재 manifest SHA256에 결속되어 있고 외부 action authorization을 모두 `false`로 유지하는지 확인한다. 모든 경로는 live provider API를 호출하지 않는다.
 
-human review receipt는 manifest 순환 hash를 피하기 위해 manifest artifact 목록 밖에 둔다. 각 bundle의 factual grounding과 visual review를 함께 기록하며, 모든 bundle이 두 항목 모두 `passed`일 때만 `completed`가 된다. builder는 사람 입력이 기록된 receipt가 있는 evidence directory를 재생성하지 않는다.
+human review receipt는 manifest 순환 hash를 피하기 위해 manifest artifact 목록 밖에 둔다. 각 bundle의 factual grounding과 visual review를 함께 기록하며, 모든 bundle이 두 항목 모두 `passed`일 때만 `completed`가 된다. builder는 사람 입력이 기록된 receipt가 있는 evidence directory를 재생성하지 않는다. `human_review.html`은 receipt와 validation 결과에서 재생성하는 읽기 전용 companion view이며 증적 원본으로 취급하지 않는다.
 
-생성된 `review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
+생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 기록, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
 
 ### E2E 시험 (Playwright)
 ```bash

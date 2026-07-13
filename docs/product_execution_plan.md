@@ -1,6 +1,6 @@
 # DecisionDoc AI Product Execution Plan
 
-Updated: 2026-06-23
+Updated: 2026-07-13
 
 This document translates [DecisionDoc AI Product Direction](./product_direction.md) into an execution plan. It is an internal planning document and does not claim production readiness, customer adoption, measured business impact, or autonomous approval capability.
 
@@ -115,6 +115,12 @@ The surface must answer:
 - What is missing?
 - Who needs to review?
 - Does this authorize any operational action?
+
+Current local evidence slice:
+
+- `review.html` shows generated documents and automatic validation evidence.
+- `human_review.html` shows the manifest-bound receipt state, reviewer record, notes, and external-action boundary.
+- `manage_finished_doc_human_review.py` keeps receipt validation and summary rendering available without provider or AWS execution.
 
 ### Verification
 

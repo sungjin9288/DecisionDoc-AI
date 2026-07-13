@@ -22,9 +22,11 @@ from app.eval.human_review_receipt import (  # noqa: E402
     record_bundle_review,
     validate_human_review_receipt,
 )
+from app.services.human_review_preview import build_human_review_summary  # noqa: E402
 
 
 RECEIPT_FILENAME = "human_review_receipt.json"
+SUMMARY_FILENAME = "human_review.html"
 MANIFEST_FILENAME = "manifest.json"
 
 
@@ -43,18 +45,22 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     try:
         with temporary_path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+            handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    _write_text_atomic(path, content)
 
 
 def _manifest_for_receipt(receipt_path: Path, receipt: dict[str, Any]) -> Path:
@@ -78,6 +84,39 @@ def _validation_for_path(receipt_path: Path) -> tuple[dict[str, Any], dict[str, 
 
 def _print_json(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _summary_path(receipt_path: Path, requested_output: Path | None = None) -> Path:
+    requested_output = requested_output or Path(SUMMARY_FILENAME)
+    output_path = (
+        requested_output
+        if requested_output.is_absolute()
+        else receipt_path.parent / requested_output
+    ).resolve()
+    if output_path.parent != receipt_path.parent.resolve():
+        raise ValueError("review summary output must be beside the receipt")
+    return output_path
+
+
+def _write_summary(
+    *,
+    receipt_path: Path,
+    receipt: dict[str, Any],
+    manifest: dict[str, Any],
+    validation: dict[str, Any],
+    output: Path | None = None,
+) -> Path:
+    if not validation["ok"]:
+        raise ValueError(f"cannot render an invalid receipt: {validation['errors']}")
+    output_path = _summary_path(receipt_path, output)
+    summary = build_human_review_summary(
+        manifest=manifest,
+        receipt=receipt,
+        validation=validation,
+        receipt_path=receipt_path.name,
+    )
+    _write_text_atomic(output_path, summary)
+    return output_path
 
 
 def _init_receipt(args: argparse.Namespace) -> dict[str, Any]:
@@ -107,7 +146,19 @@ def _init_receipt(args: argparse.Namespace) -> dict[str, Any]:
     if not result["ok"]:
         raise ValueError(f"generated receipt is invalid: {result['errors']}")
     _write_json_atomic(output_path, receipt)
-    return {"ok": True, "command": "init", "receipt_path": str(output_path), **result}
+    summary_path = _write_summary(
+        receipt_path=output_path,
+        receipt=receipt,
+        manifest=manifest,
+        validation=result,
+    )
+    return {
+        "ok": True,
+        "command": "init",
+        "receipt_path": str(output_path),
+        "summary_path": str(summary_path),
+        **result,
+    }
 
 
 def _record_review(args: argparse.Namespace) -> dict[str, Any]:
@@ -136,13 +187,44 @@ def _record_review(args: argparse.Namespace) -> dict[str, Any]:
     if not result["ok"]:
         raise ValueError(f"updated receipt is invalid: {result['errors']}")
     _write_json_atomic(receipt_path, updated)
-    return {"ok": True, "command": "record", "receipt_path": str(receipt_path), **result}
+    summary_path = _write_summary(
+        receipt_path=receipt_path,
+        receipt=updated,
+        manifest=manifest,
+        validation=result,
+    )
+    return {
+        "ok": True,
+        "command": "record",
+        "receipt_path": str(receipt_path),
+        "summary_path": str(summary_path),
+        **result,
+    }
 
 
 def _validate_receipt(args: argparse.Namespace) -> dict[str, Any]:
     receipt_path = args.receipt.resolve()
     _, result = _validation_for_path(receipt_path)
     return {"command": "validate", "receipt_path": str(receipt_path), **result}
+
+
+def _render_summary(args: argparse.Namespace) -> dict[str, Any]:
+    receipt_path = args.receipt.resolve()
+    receipt, result = _validation_for_path(receipt_path)
+    manifest = _read_json(_manifest_for_receipt(receipt_path, receipt))
+    summary_path = _write_summary(
+        receipt_path=receipt_path,
+        receipt=receipt,
+        manifest=manifest,
+        validation=result,
+        output=args.output,
+    )
+    return {
+        "command": "render",
+        "receipt_path": str(receipt_path),
+        "summary_path": str(summary_path),
+        **result,
+    }
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -175,6 +257,11 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_parser = subparsers.add_parser("validate", help="Validate a receipt against its manifest.")
     validate_parser.add_argument("receipt", type=Path)
     validate_parser.set_defaults(handler=_validate_receipt)
+
+    render_parser = subparsers.add_parser("render", help="Render a read-only reviewer summary.")
+    render_parser.add_argument("receipt", type=Path)
+    render_parser.add_argument("--output", type=Path)
+    render_parser.set_defaults(handler=_render_summary)
     return parser
 
 

@@ -124,7 +124,7 @@ def build_review_dashboard(
     manifest: dict[str, Any],
     bundle_previews: dict[str, dict[str, list[str]]],
     bundle_documents: dict[str, dict[str, str]] | None = None,
-    human_review_receipt_path: str | None = None,
+    human_review_summary_path: str | None = None,
 ) -> str:
     bundle_documents = bundle_documents or {}
     bundle_sections: list[str] = []
@@ -234,9 +234,9 @@ def build_review_dashboard(
     overall_passed = manifest.get("status") == "passed"
     overall_status = "자동 검증 통과" if overall_passed else "추가 검토 필요"
     overall_tone = "pass" if overall_passed else "pending"
-    receipt_link = (
-        f'<a class="file-link" href="{html.escape(human_review_receipt_path)}">사람 검토 receipt</a>'
-        if human_review_receipt_path
+    human_review_link = (
+        f'<a class="file-link" href="{html.escape(human_review_summary_path)}">사람 검토 기록</a>'
+        if human_review_summary_path
         else ""
     )
 
@@ -447,7 +447,7 @@ def build_review_dashboard(
         <p>생성 시각 {html.escape(generated_at)}</p>
       </div>
       <div class="header-actions">
-        {receipt_link}
+        {human_review_link}
         <span class="status status-{overall_tone}">{overall_status}</span>
       </div>
     </header>

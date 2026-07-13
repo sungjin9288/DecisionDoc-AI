@@ -108,7 +108,7 @@ def test_build_review_dashboard_includes_pdf_iframe_and_preview_text() -> None:
                 "business_understanding": "# 사업 이해\n\n<script>alert('unsafe')</script>",
             }
         },
-        human_review_receipt_path="human_review_receipt.json",
+        human_review_summary_path="human_review.html",
     )
     assert "완성 문서 검토" in html
     assert "자동 검증 통과" in html
@@ -123,4 +123,4 @@ def test_build_review_dashboard_includes_pdf_iframe_and_preview_text() -> None:
     assert "proposal_kr/exports/proposal_kr.pdf" in html
     assert "제안서 요약" in html
     assert "proposal_kr/previews/docx.txt" in html
-    assert 'href="human_review_receipt.json"' in html
+    assert 'href="human_review.html"' in html

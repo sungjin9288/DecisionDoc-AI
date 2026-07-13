@@ -63,6 +63,12 @@ def _assert_pending_human_review_receipt(root: Path, manifest: dict) -> dict:
     assert result["completed"] is False
     assert result["reviewed_count"] == 0
     assert all(value is False for value in receipt["external_actions_authorized"].values())
+    summary = (root / "human_review.html").read_text(encoding="utf-8")
+    assert "사람 검토 기록" in summary
+    assert "검토 대기" in summary
+    assert receipt["evidence"]["manifest_sha256"] in summary
+    assert "human_review_receipt" not in manifest["artifacts"]
+    assert "human_review_summary" not in manifest["artifacts"]
     return receipt
 
 
@@ -115,7 +121,7 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
     assert "완성 문서 검토" in review_dashboard
     assert "수치 근거 확인" in review_dashboard
     assert "사람의 시각 검토" in review_dashboard
-    assert 'href="human_review_receipt.json"' in review_dashboard
+    assert 'href="human_review.html"' in review_dashboard
     assert "# 사업 이해" in review_dashboard
     assert "# 사업수행계획서" in review_dashboard
     assert not (tmp_path / "latest").exists()

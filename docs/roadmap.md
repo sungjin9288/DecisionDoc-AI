@@ -71,6 +71,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 `proposal_kr`, `performance_plan_kr`의 대표 mock sample 6개 문서와 canonical golden fingerprint, validator/lint, request 대비 단위 수치 literal coverage 결과를 tracked evidence package로 정리했다. numeric coverage는 factual truth 검증과 분리한다.
   - 2026-07-13 tracked review dashboard에서 request 근거, validator/lint/numeric 상태, factual·human review 미완료 경계, 생성 Markdown 본문을 한 화면에 확인하도록 보강했다.
   - 2026-07-13 tracked manifest SHA256에 결속된 human review receipt와 `init/record/validate` CLI를 추가했다. 모든 bundle의 factual·visual review가 통과해야만 완료되며 외부 action 승인은 계속 `false`로 유지된다.
+  - 2026-07-13 receipt 상태, reviewer, notes, manifest 결속, 외부 action 경계를 한 화면에서 확인하는 `human_review.html` companion view와 CLI `render` 경로를 추가했다. JSON receipt는 계속 증적 원본으로 유지한다.
   - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
 - 남은 작업:
   - M1 live provider chain을 승인된 키로 검증

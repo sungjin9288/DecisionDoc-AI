@@ -194,11 +194,14 @@ def test_cli_initializes_records_and_validates_receipt(
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
     receipt_path = tmp_path / "human_review_receipt.json"
+    summary_path = tmp_path / "human_review.html"
 
     assert main(["init", "--evidence-dir", str(tmp_path)]) == 0
     init_result = json.loads(capsys.readouterr().out)
     assert init_result["status"] == "pending"
     assert receipt_path.is_file()
+    assert init_result["summary_path"] == str(summary_path.resolve())
+    assert "검토 대기" in summary_path.read_text(encoding="utf-8")
 
     for bundle_type in ("proposal_kr", "performance_plan_kr"):
         assert main(
@@ -225,6 +228,13 @@ def test_cli_initializes_records_and_validates_receipt(
     validation = json.loads(capsys.readouterr().out)
     assert validation["status"] == "completed"
     assert validation["completed"] is True
+    assert "검토 완료" in summary_path.read_text(encoding="utf-8")
+
+    summary_path.unlink()
+    assert main(["render", str(receipt_path)]) == 0
+    render_result = json.loads(capsys.readouterr().out)
+    assert render_result["summary_path"] == str(summary_path.resolve())
+    assert "검토 완료" in summary_path.read_text(encoding="utf-8")
     assert not list(tmp_path.glob("*.tmp.*"))
 
     manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()

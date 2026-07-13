@@ -17,13 +17,13 @@ python3 scripts/build_finished_doc_review_samples.py \
 
 현재 package의 기준 파일은 [`current/manifest.json`](./current/manifest.json)이다. manifest는 생성된 Markdown과 response snapshot, reviewer-facing quality report/dashboard, canonical golden example의 SHA256과 byte size를 기록한다. `tests/test_build_finished_doc_review_samples.py`가 이 값과 현재 파일을 다시 비교한다.
 
-[`current/review.html`](./current/review.html)은 bundle별 request 근거, validator/lint/numeric coverage 상태, factual·human review 경계, 생성 Markdown 본문을 함께 보여주는 self-contained local review console이다. 2026-07-13 Playwright로 `1440x1000`과 `390x844` viewport를 확인했으며 mobile horizontal overflow가 없음을 검증했다.
+[`current/review.html`](./current/review.html)은 bundle별 request 근거, validator/lint/numeric coverage 상태, factual·human review 경계, 생성 Markdown 본문을 함께 보여주는 self-contained local review console이다. [`current/human_review.html`](./current/human_review.html)은 현재 receipt의 bundle별 검토 상태, reviewer, notes, manifest 결속, 외부 action 비승인 상태를 읽기 전용으로 보여준다. 두 화면은 서로 연결된다.
 
 ## Human Review Receipt
 
 [`current/human_review_receipt.json`](./current/human_review_receipt.json)은 factual grounding과 visual review의 사람 판단을 기록하는 companion receipt다. receipt는 `manifest.json`의 SHA256, schema version, 생성 시각에 결속된다. manifest가 receipt 자체를 artifact로 포함하면 순환 hash가 생기므로 receipt는 manifest artifact 목록 밖에 둔다.
 
-builder는 검토 입력이 없는 `pending` receipt만 생성한다. 기존 receipt에 reviewer, notes, review state가 하나라도 기록되어 있으면 evidence 재생성을 거부해 사람의 판단을 덮어쓰지 않는다.
+builder는 검토 입력이 없는 `pending` receipt와 읽기 전용 summary를 함께 생성한다. 기존 receipt에 reviewer, notes, review state가 하나라도 기록되어 있으면 evidence 재생성을 거부해 사람의 판단을 덮어쓰지 않는다. summary는 receipt에서 다시 만들 수 있는 파생 화면이며 검토 증적의 원본은 JSON receipt다.
 
 ```bash
 # 현재 receipt와 manifest 결속 검증
@@ -42,6 +42,10 @@ python3 scripts/manage_finished_doc_human_review.py record \
 # receipt가 없는 별도 evidence package에 pending receipt 생성
 python3 scripts/manage_finished_doc_human_review.py init \
   --evidence-dir path/to/evidence-package
+
+# receipt 원본을 바꾸지 않고 읽기 화면만 재생성
+python3 scripts/manage_finished_doc_human_review.py render \
+  docs/samples/bundle_quality_evidence/current/human_review_receipt.json
 ```
 
 모든 bundle의 두 review 항목이 `passed`일 때만 receipt status가 `completed`가 된다. `needs_revision`이 하나라도 있으면 전체 status도 `needs_revision`이다. 이 receipt는 문서 검토 기록이며 provider call, 배포, 제출, 계약 또는 다른 외부 action을 승인하지 않는다.
@@ -54,4 +58,5 @@ python3 scripts/manage_finished_doc_human_review.py init \
 - numeric coverage는 수치의 사실성, 최신성, 문맥상 올바른 사용을 증명하지 않는다.
 - review console에 본문과 상태가 노출되더라도 사람의 검토·승인 기록을 대신하지 않는다.
 - 현재 tracked receipt는 `pending`이며 factual grounding과 human visual review를 완료했다고 주장하지 않는다.
+- `human_review.html`은 receipt의 현재 내용을 표시하는 파생 화면이며 독립적인 승인 증적이 아니다.
 - provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume은 실행하지 않는다.

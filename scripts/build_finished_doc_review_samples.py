@@ -32,6 +32,7 @@ from app.eval.human_review_receipt import (  # noqa: E402
 from app.eval.lints import lint_docs  # noqa: E402
 from app.eval.numeric_grounding import review_numeric_grounding  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.services.human_review_preview import build_human_review_summary  # noqa: E402
 from app.services.review_preview import build_review_dashboard, preview_export_bytes  # noqa: E402
 from app.services.validator import validate_docs  # noqa: E402
 
@@ -486,7 +487,7 @@ def run(
             manifest=manifest,
             bundle_previews=bundle_previews,
             bundle_documents=bundle_documents,
-            human_review_receipt_path="human_review_receipt.json",
+            human_review_summary_path="human_review.html",
         ),
     )
     manifest["artifacts"] = {
@@ -507,6 +508,14 @@ def run(
     if not receipt_validation["ok"]:
         raise RuntimeError(f"generated human review receipt is invalid: {receipt_validation['errors']}")
     _write_json(run_dir / "human_review_receipt.json", human_review_receipt)
+    _write_text(
+        run_dir / "human_review.html",
+        build_human_review_summary(
+            manifest=manifest,
+            receipt=human_review_receipt,
+            validation=receipt_validation,
+        ),
+    )
 
     latest_dir = output_root / "latest"
     if mirror_latest and run_dir != latest_dir:
