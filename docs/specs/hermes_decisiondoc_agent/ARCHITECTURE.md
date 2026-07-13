@@ -19,11 +19,11 @@ project
   -> training/evaluation
 ```
 
-## Proposed Components
+## Current Components
 
 ### 1. DocumentOps Agent Service
 
-Future module:
+Current module:
 
 ```text
 app/agents/document_ops_agent.py
@@ -32,69 +32,62 @@ app/agents/document_ops_agent.py
 Responsibilities:
 
 - Select a task skill.
-- Build an evidence-grounded plan.
-- Retrieve project and knowledge context.
+- Build a prompt from the supplied requirements, project context, and source references.
 - Generate structured drafts through existing providers.
 - Run self-review and QA checks.
-- Produce artifact-ready payloads for PPTX/DOCX/report services.
-- Write trajectory records for training.
+- Return a structured draft and optionally write a redacted trajectory record.
 
-The service should call DecisionDoc providers through `ProviderFactory`; it should not call external model SDKs directly.
+The agent resolves a DecisionDoc provider through the existing capability factory; it does not call
+external model SDKs directly.
 
 ### 2. Skill Registry
 
-Future module:
+Current modules:
 
 ```text
 app/agents/skills/
+app/agents/skill_registry.py
 ```
 
-Initial curated skills:
+Current curated skills:
 
 | Skill | Purpose |
 |---|---|
-| `proposal-intake` | Convert raw RFP/user notes into scope, audience, constraints, and deliverables |
 | `policy-planning` | Build policy logic, implementation pathway, governance, and risk structure |
-| `public-sector-style` | Enforce public-sector consulting tone and non-exaggerated wording |
 | `evidence-gap-checker` | Separate confirmed, assumed, and TODO claims |
-| `forbidden-expression-checker` | Catch banned terms and unsafe claims |
-| `deckops-native-ppt` | Convert slide spec into PPT-ready layout and content blocks |
 | `decision-brief-builder` | Produce executive decision documents and recommendation memos |
-| `red-team-review` | Challenge persuasiveness, evidence gaps, security/privacy, and operational feasibility |
-| `export-readiness-qa` | Check that PPTX/DOCX/PDF deliverables are complete and shareable |
+| `develop-document-improver` | Critique an existing draft and return concrete revision tasks and an improved draft |
 
 Skills should be data, not arbitrary executable code.
 
 ### 3. Trajectory Store
 
-Future module:
+Current facade and implementation package:
 
 ```text
 app/storage/trajectory_store.py
+app/storage/trajectory/
 ```
 
 Reason:
 
 `FineTuneStore` currently stores OpenAI message records. That is useful for SFT but too thin for agent learning because it loses the planning, evidence, critique, QA, and revision process.
 
-Trajectory records should preserve:
+Trajectory records preserve:
 
 - user task and constraints
 - selected skill and skill version
 - context sources
 - plan
-- tool trace summary
 - draft output
-- critique/review findings
-- revised output
+- critique and revision tasks
 - QA result
 - human feedback
-- export status
-- safety flags
+- review and export metadata
 
 ### 4. Evaluation Harness
 
-Future module:
+Current module:
 
 ```text
 app/evals/document_ops/
@@ -140,15 +133,14 @@ Use only for local research:
 ```text
 Client request
   -> FastAPI route
-  -> GenerationService
+  -> DocumentOpsService
   -> DocumentOpsAgent
   -> SkillRegistry
-  -> Project/Knowledge stores
-  -> ProviderFactory
-  -> Draft artifact payload
+  -> configured Provider
+  -> structured draft
   -> QA/Eval gates
-  -> PPTX/DOCX/PDF service
-  -> Audit + TrajectoryStore
+  -> tenant-scoped TrajectoryStore
+  -> human review and SFT export
 ```
 
 ## Training Flow
@@ -158,11 +150,13 @@ Human-reviewed successful work
   -> TrajectoryStore
   -> QA scoring
   -> Export as SFT JSONL
-  -> FineTuneStore / FineTuneOrchestrator
-  -> Provider-specific fine-tuning
-  -> ModelRegistry promotion
-  -> Capability-specific provider routing
+  -> Dataset freeze
+  -> Dry-run approval, readiness, and audit records
+  -> Disabled provider-adapter rehearsal
 ```
+
+Provider-specific dataset upload, fine-tuning, evaluation, model promotion, and capability routing
+remain outside the implemented execution boundary and require separate approval.
 
 ## Security Boundaries
 
