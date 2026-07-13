@@ -10,8 +10,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.routers.admin._procurement_quality_helpers import (
-    _is_procurement_stale_share_activity,
-    _record_procurement_stale_share_activity,
+    _record_procurement_share_activity,
 )
 from app.routers.admin._procurement_quality_queues import _build_procurement_stale_share_queue
 
@@ -19,6 +18,7 @@ from app.routers.admin._procurement_quality_queues import _build_procurement_sta
 def _empty_procurement_location_overview() -> dict[str, object]:
     return {
         "stale_external_share_queue_count": 0,
+        "recovered_external_share_count": 0,
         "active_stale_external_share_queue_count": 0,
         "active_accessed_stale_external_share_queue_count": 0,
         "active_unaccessed_stale_external_share_queue_count": 0,
@@ -56,20 +56,23 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
         if str(entry.get("action", "")) not in {"share.create", "share.view"}:
             continue
         detail = entry.get("detail", {})
-        if not _is_procurement_stale_share_activity(detail):
-            continue
         linked_project_id = ""
         if isinstance(detail, dict):
             linked_project_id = str(detail.get("project_id", "") or "").strip()
         if not linked_project_id or linked_project_id not in decision_project_ids:
             continue
-        _record_procurement_stale_share_activity(
+        _record_procurement_share_activity(
             stale_share_events_by_key,
             linked_project_id=linked_project_id,
             entry=entry,
         )
 
-    stale_external_share_queue, _, _ = _build_procurement_stale_share_queue(
+    (
+        stale_external_share_queue,
+        _,
+        _,
+        recovered_external_share_count,
+    ) = _build_procurement_stale_share_queue(
         stale_share_events_by_key,
         project_map=project_map,
         share_store=share_store,
@@ -79,6 +82,7 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
     )
     return {
         "stale_external_share_queue_count": len(stale_external_share_queue),
+        "recovered_external_share_count": recovered_external_share_count,
         "active_stale_external_share_queue_count": int(active_stale_external_share_queue_count),
         "active_accessed_stale_external_share_queue_count": int(
             sum(

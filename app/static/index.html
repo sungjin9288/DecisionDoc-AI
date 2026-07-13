@@ -22853,6 +22853,7 @@
     const activeAccessedStaleShareCount = Number(procurement.active_accessed_stale_external_share_queue_count || 0);
     const activeUnaccessedStaleShareCount = Number(procurement.active_unaccessed_stale_external_share_queue_count || 0);
     const staleShareQueueCount = Number(procurement.stale_external_share_queue_count || 0);
+    const recoveredShareCount = Number(procurement.recovered_external_share_count || 0);
     const topStaleShareItem = procurement.top_stale_external_share_item || null;
     const topStaleShareLabel = topStaleShareItem
       ? escapeHtml(
@@ -22904,6 +22905,9 @@
               : ''}
             ${staleShareQueueCount > activeStaleShareCount
               ? `<span class="loc-badge">queue ${staleShareQueueCount}개</span>`
+              : ''}
+            ${recoveredShareCount > 0
+              ? `<span class="loc-badge">복구 확인 ${recoveredShareCount}개</span>`
               : ''}
           </div>
           ${topStaleShareItem
@@ -24252,6 +24256,7 @@
     const staleExternalShareQueueCount = Number(
       sharing.stale_external_share_queue_count ?? staleExternalShareQueue.length
     );
+    const recoveredExternalShareCount = Number(sharing.recovered_external_share_count || 0);
     const activeStaleExternalShareQueueCount = Number(
       sharing.active_stale_external_share_queue_count
       ?? staleExternalShareQueue.filter((item) => item?.share_is_active === true).length
@@ -24826,6 +24831,7 @@
                 ${missingStaleExternalShareRecordCount ? `· 레코드 없음 <strong>${missingStaleExternalShareRecordCount}</strong>` : ''}
                 · 최근 public 열람 우선 정렬
                 · risk audit <strong>${staleExternalShareEventCount}</strong>
+                · 복구 확인 <strong>${recoveredExternalShareCount}</strong>
                 · 원본 연결/변경 <strong>${changedSourceShareCount}</strong>
                 · procurement 기준 stale <strong>${staleProcurementShareCount}</strong>
                 · revision stale <strong>${staleRevisionShareCount}</strong>
@@ -24835,7 +24841,7 @@
             <div class="location-procurement-candidate-list">${queueItems}</div>
           `;
         })()
-      : '<p class="location-procurement-copy">현재 외부 공유 재확인 queue가 없습니다.</p>';
+      : `<p class="location-procurement-copy">현재 외부 공유 재확인 queue가 없습니다.${recoveredExternalShareCount ? ` 최근 current 재확인으로 ${recoveredExternalShareCount}개 링크가 queue에서 해소됐습니다.` : ''}</p>`;
     const candidateOrderControlsHtml = triagePresetButtons.length || toggleableUnresolvedCandidateCount > 1 || hasResolvedOrMonitorCandidates
       ? `<div class="location-procurement-toolbar">
           <div class="location-procurement-copy">

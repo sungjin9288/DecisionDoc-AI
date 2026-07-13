@@ -1340,7 +1340,7 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     assert focused_summary["focused_project"]["stale_external_share_item"]["bundle_label"] == "의사결정 문서"
 
 
-def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
+def test_admin_procurement_stale_share_queue_tracks_unique_drift_links_and_current_recovery(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1396,6 +1396,18 @@ def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
     )
     share_store.increment_access(share.share_id)
     share_store.increment_access(share.share_id)
+    recovered_share = share_store.create(
+        tenant_id=tenant_id,
+        request_id="req-share-drift-recovered",
+        title="Recovered share drift view",
+        created_by="reviewer",
+        bundle_id="proposal_kr",
+        project_id=project.project_id,
+        project_document_id="doc-share-drift-view",
+        source_fingerprint="source-before-share",
+        decision_council_document_status="current",
+        procurement_review_document_status="current",
+    )
 
     audit_store = AuditStore(tenant_id)
     audit_store.append(
@@ -1453,6 +1465,60 @@ def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
                 session_id="sess-share-drift-view",
             )
         )
+    audit_store.append(
+        AuditLog(
+            log_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            timestamp="2026-07-14T01:15:00+00:00",
+            user_id="public",
+            username="public-viewer",
+            user_role="anonymous",
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            action="share.view",
+            resource_type="share",
+            resource_id=recovered_share.share_id,
+            resource_name="",
+            result="success",
+            detail={
+                "project_id": project.project_id,
+                "share_project_document_id": "doc-share-drift-view",
+                "bundle_type": "proposal_kr",
+                "share_source_binding_status": "missing",
+                "share_post_share_source_changed": True,
+                "share_decision_council_document_status": "current",
+                "share_procurement_review_document_status": "current",
+            },
+            session_id="sess-share-drift-recovered",
+        )
+    )
+    audit_store.append(
+        AuditLog(
+            log_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            timestamp="2026-07-14T01:30:00+00:00",
+            user_id="public",
+            username="public-viewer",
+            user_role="anonymous",
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            action="share.view",
+            resource_type="share",
+            resource_id=recovered_share.share_id,
+            resource_name="",
+            result="success",
+            detail={
+                "project_id": project.project_id,
+                "share_project_document_id": "doc-share-drift-view",
+                "bundle_type": "proposal_kr",
+                "share_source_binding_status": "current",
+                "share_post_share_source_changed": False,
+                "share_decision_council_document_status": "current",
+                "share_procurement_review_document_status": "current",
+            },
+            session_id="sess-share-drift-recovered",
+        )
+    )
 
     login = _register_and_login(client)
     auth_headers = {"Authorization": f"Bearer {login['access_token']}"}
@@ -1464,9 +1530,10 @@ def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
     assert response.status_code == 200
     summary = response.json()["procurement"]
 
-    assert summary["activity"]["action_counts"] == {"share.view": 2}
+    assert summary["activity"]["action_counts"] == {"share.view": 3}
     assert summary["activity"]["activity_action_filters"] == ["share.create", "share.view"]
     assert [event["action"] for event in summary["activity"]["recent_events"]] == [
+        "share.view",
         "share.view",
         "share.view",
     ]
@@ -1479,12 +1546,13 @@ def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
     assert item["share_risk_status_copy"] == "공유 원본 문서 없음"
     assert item["source_binding_status"] == "missing"
     assert item["post_share_source_changed"] is True
-    assert item["latest_shared_at"] == share.created_at
+    assert item["latest_shared_at"] == "2026-07-14T01:00:00+00:00"
     assert item["latest_shared_by_username"] == "reviewer"
     assert item["latest_risk_observed_at"] == "2026-07-14T01:20:00+00:00"
     assert item["latest_risk_observed_by_username"] == "public-viewer"
     assert item["latest_risk_action"] == "share.view"
     assert item["share_access_count"] == 2
+    assert summary["sharing"]["recovered_external_share_count"] == 1
     assert summary["sharing"]["stale_external_share_status_counts"] == {"source_missing": 1}
 
     locations_response = client.get(
@@ -1496,8 +1564,64 @@ def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
         row for row in locations_response.json() if row["tenant_id"] == tenant_id
     )
     assert location["procurement"]["stale_external_share_queue_count"] == 1
+    assert location["procurement"]["recovered_external_share_count"] == 1
     assert location["procurement"]["top_stale_external_share_item"]["share_risk_status"] == "source_missing"
     assert location["procurement"]["top_stale_external_share_item"]["stale_share_count"] == 1
+
+    audit_store.append(
+        AuditLog(
+            log_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            timestamp="2026-07-14T01:40:00+00:00",
+            user_id="public",
+            username="public-viewer",
+            user_role="anonymous",
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            action="share.view",
+            resource_type="share",
+            resource_id=share.share_id,
+            resource_name="",
+            result="success",
+            detail={
+                "project_id": project.project_id,
+                "share_project_document_id": "doc-share-drift-view",
+                "bundle_type": "proposal_kr",
+                "share_source_binding_status": "current",
+                "share_post_share_source_changed": False,
+                "share_decision_council_document_status": "current",
+                "share_procurement_review_document_status": "current",
+            },
+            session_id="sess-share-drift-view",
+        )
+    )
+
+    recovered_response = client.get(
+        f"/admin/locations/{tenant_id}/procurement-quality-summary"
+        "?activity_actions=share.create,share.view",
+        headers=auth_headers,
+    )
+    assert recovered_response.status_code == 200
+    recovered_summary = recovered_response.json()["procurement"]
+    assert recovered_summary["sharing"]["stale_external_share_queue_count"] == 0
+    assert recovered_summary["sharing"]["recovered_external_share_count"] == 2
+    assert recovered_summary["sharing"]["stale_external_share_status_counts"] == {}
+    assert recovered_summary["sharing"]["stale_external_share_queue"] == []
+
+    recovered_locations_response = client.get(
+        "/admin/locations?include_procurement=1",
+        headers=auth_headers,
+    )
+    assert recovered_locations_response.status_code == 200
+    recovered_location = next(
+        row
+        for row in recovered_locations_response.json()
+        if row["tenant_id"] == tenant_id
+    )
+    assert recovered_location["procurement"]["stale_external_share_queue_count"] == 0
+    assert recovered_location["procurement"]["recovered_external_share_count"] == 2
+    assert recovered_location["procurement"]["has_active_stale_share_exposure"] is False
+    assert recovered_location["procurement"]["top_stale_external_share_item"] is None
 
 
 def test_admin_procurement_quality_summary_includes_stale_proposal_share_queue(

@@ -289,7 +289,7 @@ def _is_procurement_stale_share_activity(detail: object) -> bool:
     return bool(_resolve_procurement_stale_share_evidence(detail))
 
 
-def _record_procurement_stale_share_activity(
+def _record_procurement_share_activity(
     events_by_key: dict[tuple[str, str, str], dict[str, object]],
     *,
     linked_project_id: str,
@@ -305,8 +305,9 @@ def _record_procurement_stale_share_activity(
         {
             "latest": None,
             "latest_create": None,
+            "latest_by_share_id": {},
             "create_by_share_id": {},
-            "share_ids": set(),
+            "risk_seen_share_ids": set(),
         },
     )
     state["latest"] = _pick_newer_audit_entry(
@@ -320,9 +321,16 @@ def _record_procurement_stale_share_activity(
         ) or entry
     share_id = str(entry.get("resource_id", "") or "").strip()
     if share_id:
-        share_ids = state.setdefault("share_ids", set())
-        if isinstance(share_ids, set):
-            share_ids.add(share_id)
+        latest_by_share_id = state.setdefault("latest_by_share_id", {})
+        if isinstance(latest_by_share_id, dict):
+            latest_by_share_id[share_id] = _pick_newer_audit_entry(
+                latest_by_share_id.get(share_id),
+                entry,
+            ) or entry
+        if _is_procurement_stale_share_activity(detail):
+            risk_seen_share_ids = state.setdefault("risk_seen_share_ids", set())
+            if isinstance(risk_seen_share_ids, set):
+                risk_seen_share_ids.add(share_id)
         if str(entry.get("action", "")) == "share.create":
             create_by_share_id = state.setdefault("create_by_share_id", {})
             if isinstance(create_by_share_id, dict):

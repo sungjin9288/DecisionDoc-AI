@@ -2663,6 +2663,7 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
               },
               sharing: {
                 stale_external_share_queue_count: 1,
+                recovered_external_share_count: 1,
                 active_stale_external_share_queue_count: 1,
                 active_accessed_stale_external_share_queue_count: 1,
                 active_unaccessed_stale_external_share_queue_count: 0,
@@ -2798,6 +2799,7 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
     assert "아직 열람 없음 0" in modal_text
     assert "비활성 링크 0" in modal_text
     assert "risk audit 2" in modal_text
+    assert "복구 확인 1" in modal_text
     assert "원본 연결/변경 1" in modal_text
     assert "Stale council 기반 의사결정 문서" in modal_text
     assert "활성 공유 링크" in modal_text
@@ -2814,6 +2816,22 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
     assert copied_url.endswith("/shared/share-stale-001")
     page.locator('#location-procurement-modal-body button:has-text("공유 링크 열기")').click()
     assert page.evaluate("() => window.__openedSharedUrl") == "/shared/share-stale-001"
+    page.evaluate(
+        """() => {
+          const state = _locationProcurementSummaryModalState;
+          state.data.procurement.sharing.stale_external_share_queue_count = 0;
+          state.data.procurement.sharing.active_stale_external_share_queue_count = 0;
+          state.data.procurement.sharing.active_accessed_stale_external_share_queue_count = 0;
+          state.data.procurement.sharing.recovered_external_share_count = 2;
+          state.data.procurement.sharing.stale_external_share_status_counts = {};
+          state.data.procurement.sharing.stale_external_share_queue = [];
+          document.getElementById('location-procurement-modal-body').innerHTML =
+            renderLocationProcurementSummary(state.data, '');
+        }"""
+    )
+    recovered_modal_text = page.locator("#location-procurement-modal-body").inner_text()
+    assert "현재 외부 공유 재확인 queue가 없습니다." in recovered_modal_text
+    assert "2개 링크가 queue에서 해소됐습니다." in recovered_modal_text
 
 
 def test_g2b_search_result_click_selects_announcement(page):

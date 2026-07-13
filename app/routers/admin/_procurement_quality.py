@@ -40,7 +40,7 @@ from app.routers.admin._procurement_quality_helpers import (
     _normalize_procurement_override_candidate_scope,
     _normalize_procurement_override_candidate_statuses,
     _normalize_procurement_override_candidate_view,
-    _record_procurement_stale_share_activity,
+    _record_procurement_share_activity,
     _resolve_procurement_activity_link,
     _resolve_procurement_followup_reference,
     _resolve_procurement_remediation_status,
@@ -187,10 +187,10 @@ def _build_procurement_quality_summary(
         if action not in _PROCUREMENT_ACTIVITY_ACTIONS:
             continue
         detail = entry.get("detail", {})
-        if action in {"share.create", "share.view"} and not _is_procurement_stale_share_activity(
+        is_share_activity = action in {"share.create", "share.view"}
+        is_stale_share_activity = is_share_activity and _is_procurement_stale_share_activity(
             detail
-        ):
-            continue
+        )
         linked_project_id, linked_approval_id = _resolve_procurement_activity_link(
             entry,
             decision_project_ids=decision_project_ids,
@@ -198,6 +198,14 @@ def _build_procurement_quality_summary(
             approval_to_project_id=approval_to_project_id,
         )
         if not linked_project_id and not linked_approval_id:
+            continue
+        if is_share_activity and linked_project_id:
+            _record_procurement_share_activity(
+                stale_share_events_by_key,
+                linked_project_id=linked_project_id,
+                entry=entry,
+            )
+        if is_share_activity and not is_stale_share_activity:
             continue
         activity_counts[action] += 1
         if linked_project_id:
@@ -241,12 +249,6 @@ def _build_procurement_quality_summary(
                     handoff_event_state["copied"] = entry
                 if action == "procurement.remediation_link_opened" and "opened" not in handoff_event_state:
                     handoff_event_state["opened"] = entry
-            if action in {"share.create", "share.view"}:
-                _record_procurement_stale_share_activity(
-                    stale_share_events_by_key,
-                    linked_project_id=linked_project_id,
-                    entry=entry,
-                )
         recent_activity.append(
             _build_procurement_recent_event(
                 entry,
@@ -354,12 +356,15 @@ def _build_procurement_quality_summary(
             override_candidate_map={**handoff_project_context_map, **override_candidate_map},
         )
     )
-    stale_external_share_queue, stale_external_share_status_counts, stale_external_share_by_project = (
-        _build_procurement_stale_share_queue(
-            stale_share_events_by_key,
-            project_map=project_map,
-            share_store=share_store,
-        )
+    (
+        stale_external_share_queue,
+        stale_external_share_status_counts,
+        stale_external_share_by_project,
+        recovered_external_share_count,
+    ) = _build_procurement_stale_share_queue(
+        stale_share_events_by_key,
+        project_map=project_map,
+        share_store=share_store,
     )
     active_stale_external_share_queue_count = sum(
         1 for item in stale_external_share_queue if item.get("share_is_active") is True
@@ -647,6 +652,7 @@ def _build_procurement_quality_summary(
         },
         "sharing": {
             "stale_external_share_queue_count": len(stale_external_share_queue),
+            "recovered_external_share_count": recovered_external_share_count,
             "active_stale_external_share_queue_count": active_stale_external_share_queue_count,
             "active_accessed_stale_external_share_queue_count": active_accessed_stale_external_share_queue_count,
             "active_unaccessed_stale_external_share_queue_count": active_unaccessed_stale_external_share_queue_count,

@@ -16,7 +16,12 @@ def _build_procurement_stale_share_queue(
     *,
     project_map: dict[str, object],
     share_store,
-) -> tuple[list[dict[str, object]], dict[str, int], dict[str, dict[str, object]]]:
+) -> tuple[
+    list[dict[str, object]],
+    dict[str, int],
+    dict[str, dict[str, object]],
+    int,
+]:
     project_document_lookup: dict[tuple[str, str], object] = {}
     for project_id, project in project_map.items():
         for document in getattr(project, "documents", []):
@@ -25,17 +30,45 @@ def _build_procurement_stale_share_queue(
     queue: list[dict[str, object]] = []
     status_counts: Counter[str] = Counter()
     latest_by_project: dict[str, dict[str, object]] = {}
+    recovered_share_count = 0
 
     for key, payload in stale_share_events_by_key.items():
         project_id, project_document_id, bundle_type = key
-        entry = payload.get("latest") if isinstance(payload, dict) else None
-        if not isinstance(entry, dict):
-            continue
+        latest_by_share_id = payload.get("latest_by_share_id") if isinstance(payload, dict) else None
+        risk_seen_share_ids = payload.get("risk_seen_share_ids") if isinstance(payload, dict) else None
+        if isinstance(latest_by_share_id, dict):
+            risky_shares: list[tuple[dict[str, object], dict[str, object]]] = []
+            for candidate_share_id, candidate_entry in latest_by_share_id.items():
+                if not isinstance(candidate_entry, dict):
+                    continue
+                candidate_risk = _resolve_procurement_stale_share_evidence(
+                    candidate_entry.get("detail", {})
+                )
+                if candidate_risk:
+                    risky_shares.append((candidate_entry, candidate_risk))
+                elif isinstance(risk_seen_share_ids, set) and candidate_share_id in risk_seen_share_ids:
+                    recovered_share_count += 1
+            if not risky_shares:
+                continue
+            risky_shares.sort(
+                key=lambda item: str(item[0].get("timestamp", "")),
+                reverse=True,
+            )
+            entry, risk = risky_shares[0]
+            stale_share_count = len(risky_shares)
+        else:
+            entry = payload.get("latest") if isinstance(payload, dict) else None
+            if not isinstance(entry, dict):
+                continue
+            risk = _resolve_procurement_stale_share_evidence(entry.get("detail", {}))
+            if not risk:
+                continue
+            stale_share_count = (
+                int(payload.get("count", 0) or 0) if isinstance(payload, dict) else 0
+            )
+
         detail = entry.get("detail", {})
-        risk = _resolve_procurement_stale_share_evidence(detail)
         risk_status = str(risk.get("status", "") or "")
-        if not risk_status:
-            continue
         share_id = str(entry.get("resource_id", "") or "").strip()
         share_link = share_store.get(share_id) if share_id else None
         create_by_share_id = payload.get("create_by_share_id") if isinstance(payload, dict) else None
@@ -50,11 +83,6 @@ def _build_procurement_stale_share_queue(
             and isinstance(payload, dict)
         ):
             latest_create = payload.get("latest_create")
-        share_ids = payload.get("share_ids") if isinstance(payload, dict) else None
-        if isinstance(share_ids, (set, list, tuple)):
-            stale_share_count = len(set(str(item) for item in share_ids if str(item).strip()))
-        else:
-            stale_share_count = int(payload.get("count", 0) or 0) if isinstance(payload, dict) else 0
         latest_shared_at = (
             str(latest_create.get("timestamp", "") or "")
             if isinstance(latest_create, dict)
@@ -178,7 +206,7 @@ def _build_procurement_stale_share_queue(
             latest_by_project[project_id] = queue_item
 
     queue.sort(key=_sort_procurement_stale_share_queue_item)
-    return queue, _sorted_counts(status_counts), latest_by_project
+    return queue, _sorted_counts(status_counts), latest_by_project, recovered_share_count
 
 
 def _build_procurement_handoff_queue(
