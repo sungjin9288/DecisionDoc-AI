@@ -120,6 +120,8 @@ python3 scripts/sync_report_quality_pilot_pack.py \
   --require-ready
 ```
 
+Sync는 모든 artifact validation과 `--require-ready` 조건이 통과한 뒤에만 JSONL을 쓴다. 실패 결과의 `output_written=false`는 이번 실행이 파일을 만들거나 덮어쓰지 않았다는 뜻이며, 이전 실행에서 남은 같은 경로의 파일은 변경하지 않는다. 성공 결과는 `output_written=true`와 `output_sha256`을 함께 반환한다. 출력은 `.jsonl`만 허용하고 symlink나 import 원본 source JSONL 경로는 거부한다.
+
 ## 3. 생성과 교정
 
 각 샘플마다 아래를 기록한다.

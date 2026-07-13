@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -16,7 +17,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.services.report_quality_learning import validate_correction_artifact  # noqa: E402
-from scripts.report_quality_pilot_pack_provenance import load_pilot_pack  # noqa: E402
+from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    PilotPackSnapshot,
+    load_pilot_pack,
+)
 
 
 def _write_text_atomic(path: Path, text: str) -> None:
@@ -36,6 +40,29 @@ def _default_output_path(pack_dir: Path) -> Path:
     return pack_dir / f"{pack_dir.name}-drafts.jsonl"
 
 
+def _resolve_output_path(
+    *,
+    snapshot: PilotPackSnapshot,
+    output_path: Path | None,
+) -> Path:
+    candidate = output_path if output_path is not None else _default_output_path(snapshot.pack_dir)
+    expanded = candidate.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("symlink output files are not allowed")
+    resolved = expanded.resolve()
+    if resolved.suffix.lower() != ".jsonl":
+        raise ValueError("output path must use the .jsonl extension")
+
+    protected_paths = {draft.path for draft in snapshot.drafts}
+    if snapshot.source_manifest_path is not None:
+        protected_paths.add(snapshot.source_manifest_path)
+    if resolved in protected_paths:
+        raise ValueError("output path must not overwrite a pilot pack input file")
+    if snapshot.source_jsonl_path is not None and resolved == snapshot.source_jsonl_path:
+        raise ValueError("output path must not overwrite the imported source JSONL")
+    return resolved
+
+
 def sync_report_quality_pilot_pack(
     *,
     pack_dir: Path,
@@ -47,10 +74,9 @@ def sync_report_quality_pilot_pack(
     snapshot = load_pilot_pack(resolved_pack_dir)
     drafts_dir = resolved_pack_dir / "drafts"
     min_records = max(1, int(min_records or 1))
-    resolved_output_path = (
-        output_path.expanduser().resolve()
-        if output_path is not None
-        else _default_output_path(resolved_pack_dir).resolve()
+    resolved_output_path = _resolve_output_path(
+        snapshot=snapshot,
+        output_path=output_path,
     )
 
     payloads: list[dict[str, Any]] = []
@@ -84,23 +110,30 @@ def sync_report_quality_pilot_pack(
     if require_ready and ready_artifacts != artifact_count:
         errors.append("not all artifacts are ready_for_learning")
 
-    jsonl_text = "\n".join(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        for payload in payloads
-    )
-    if jsonl_text:
-        jsonl_text += "\n"
-    _write_text_atomic(resolved_output_path, jsonl_text)
-
     ok = valid_artifacts == artifact_count and artifact_count >= min_records and (
         not require_ready or ready_artifacts == artifact_count
     )
+    output_written = False
+    output_sha256: str | None = None
+    if ok:
+        jsonl_text = "\n".join(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            for payload in payloads
+        )
+        if jsonl_text:
+            jsonl_text += "\n"
+        _write_text_atomic(resolved_output_path, jsonl_text)
+        output_written = True
+        output_sha256 = hashlib.sha256(resolved_output_path.read_bytes()).hexdigest()
+
     return {
         "report_type": "report_quality_pilot_pack_sync",
         "ok": ok,
         "pack_dir": str(resolved_pack_dir),
         "drafts_dir": str(drafts_dir),
         "output_path": str(resolved_output_path),
+        "output_written": output_written,
+        "output_sha256": output_sha256,
         "source_order_applied": snapshot.source_order_applied,
         "min_records": min_records,
         "require_ready": require_ready,
@@ -113,7 +146,7 @@ def sync_report_quality_pilot_pack(
         "artifacts": rows,
         "side_effect_boundary": {
             "reads_local_draft_json": True,
-            "writes_local_jsonl": True,
+            "writes_local_jsonl": output_written,
             "external_dataset_upload_started": False,
             "provider_fine_tune_api_called": False,
             "provider_job_created": False,
@@ -156,9 +189,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         status = "PASS" if result["ok"] else "FAIL"
-        print(f"{status} report quality pilot pack synced")
+        outcome = "synced" if result["ok"] else "sync blocked"
+        print(f"{status} report quality pilot pack {outcome}")
         print(f"pack_dir={result['pack_dir']}")
         print(f"output_path={result['output_path']}")
+        print(f"output_written={str(result['output_written']).lower()}")
+        if result["output_sha256"]:
+            print(f"output_sha256={result['output_sha256']}")
         print(f"artifact_count={result['artifact_count']}")
         print(f"min_records={result['min_records']}")
         print(f"ready_artifacts={result['ready_artifacts']}")

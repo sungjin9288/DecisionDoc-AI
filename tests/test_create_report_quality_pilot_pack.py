@@ -160,6 +160,19 @@ def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
     ]
     assert [artifact["artifact_id"] for artifact in synced_artifacts] == artifact_ids
 
+    source_manifest["source"]["path"] = str(Path("..") / ".." / source_path.name)
+    Path(result["source_manifest_path"]).write_text(
+        json.dumps(source_manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must not overwrite the imported source JSONL"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=Path(result["output_dir"]),
+            output_path=source_path,
+            min_records=3,
+            require_ready=True,
+        )
+
 
 def test_create_report_quality_pilot_pack_cli_imports_source_jsonl(tmp_path, capsys):
     script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_cli_import")

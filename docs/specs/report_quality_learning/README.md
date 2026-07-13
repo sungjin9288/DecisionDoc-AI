@@ -297,6 +297,7 @@
 - `scripts/sync_report_quality_pilot_pack.py`
   - 사람이 수정한 `drafts/*.json`을 batch JSONL로 다시 동기화한다.
   - source manifest가 있으면 UI 선택 순서를 보존하고, manifest와 draft 구성이 다르면 실패한다. `--require-ready`를 붙이면 모든 artifact가 학습 후보 gate를 통과하는지 확인한다.
+  - Validation 또는 ready gate 실패 시 JSONL을 생성·덮어쓰지 않는다. 성공한 write만 `output_written=true`와 SHA-256을 반환하고, symlink·비-JSONL·import 원본 source 경로 overwrite를 거부한다.
 - `scripts/create_report_quality_review_sheet.py`
   - `drafts/*.json` 기준으로 사람이 채워야 할 reviewer, score, scan, approval 필드를 markdown worksheet로 만든다.
   - Source import pack에서는 source manifest SHA-256, tenant, artifact 순서, 각 draft SHA-256을 `human_review_manifest.json`에 함께 결속한다. Worksheet와 manifest만 생성하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
@@ -801,6 +802,7 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
      --min-records 3 \
      --require-ready
    ```
+   - `output_written=true`와 `output_sha256`이 함께 반환된 실행만 현재 draft가 반영된 sync 성공으로 본다. 실패 실행은 기존 output을 변경하지 않는다.
 12. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count와 export JSONL을 한 번 더 검증한다.
 13. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다.
 14. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

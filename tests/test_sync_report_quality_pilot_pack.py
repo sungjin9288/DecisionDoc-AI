@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 
@@ -44,7 +45,9 @@ def test_sync_report_quality_pilot_pack_writes_jsonl_from_drafts(tmp_path):
     assert result["ok"] is True
     assert result["artifact_count"] == 3
     assert result["ready_artifacts"] == 0
+    assert result["output_written"] is True
     output_path = Path(result["output_path"])
+    assert result["output_sha256"] == hashlib.sha256(output_path.read_bytes()).hexdigest()
     lines = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 3
     assert lines[0]["before"]["planning_summary"] == "AI 초안은 문제 정의와 실행 계획의 연결이 약함"
@@ -54,6 +57,10 @@ def test_sync_report_quality_pilot_pack_writes_jsonl_from_drafts(tmp_path):
 def test_sync_report_quality_pilot_pack_require_ready_fails_for_pending_drafts(tmp_path):
     sync_script = _load_module(SYNC_SCRIPT_PATH, "sync_report_quality_pilot_pack")
     pack_dir = _create_pack(tmp_path)
+    output_path = pack_dir / "pilot-rqc-sync-drafts.jsonl"
+    original_output = output_path.read_bytes()
+    first_draft = pack_dir / "drafts/pilot-rqc-sync_sample_001.json"
+    first_draft.write_text(first_draft.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
     result = sync_script.sync_report_quality_pilot_pack(
         pack_dir=pack_dir,
@@ -64,7 +71,41 @@ def test_sync_report_quality_pilot_pack_require_ready_fails_for_pending_drafts(t
     assert result["ok"] is False
     assert result["ready_artifacts"] == 0
     assert "not all artifacts are ready_for_learning" in "\n".join(result["errors"])
-    assert Path(result["output_path"]).exists()
+    assert result["output_written"] is False
+    assert result["output_sha256"] is None
+    assert result["side_effect_boundary"]["writes_local_jsonl"] is False
+    assert output_path.read_bytes() == original_output
+
+
+def test_sync_failure_does_not_create_or_redirect_output(tmp_path):
+    sync_script = _load_module(SYNC_SCRIPT_PATH, "sync_report_quality_pilot_pack_output_guard")
+    pack_dir = _create_pack(tmp_path)
+    blocked_output = tmp_path / "blocked.jsonl"
+
+    result = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=pack_dir,
+        output_path=blocked_output,
+        min_records=3,
+        require_ready=True,
+    )
+
+    assert result["ok"] is False
+    assert result["output_written"] is False
+    assert not blocked_output.exists()
+
+    symlink_output = tmp_path / "linked.jsonl"
+    symlink_output.symlink_to("target.jsonl")
+    with pytest.raises(ValueError, match="symlink output files are not allowed"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            output_path=symlink_output,
+        )
+
+    with pytest.raises(ValueError, match="output path must use the .jsonl extension"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            output_path=tmp_path / "not-jsonl.json",
+        )
 
 
 def test_sync_report_quality_pilot_pack_rejects_source_manifest_drift(tmp_path):
@@ -141,5 +182,6 @@ def test_sync_report_quality_pilot_pack_cli_require_ready_returns_nonzero(tmp_pa
 
     assert exit_code == 1
     out = capsys.readouterr().out
-    assert "FAIL report quality pilot pack synced" in out
+    assert "FAIL report quality pilot pack sync blocked" in out
+    assert "output_written=false" in out
     assert "not all artifacts are ready_for_learning" in out

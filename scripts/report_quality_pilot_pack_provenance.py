@@ -36,6 +36,7 @@ class PilotPackSnapshot:
     pack_dir: Path
     drafts: tuple[DraftSnapshot, ...]
     source_manifest_path: Path | None = None
+    source_jsonl_path: Path | None = None
     source_manifest_sha256: str | None = None
     source_jsonl_sha256: str | None = None
     tenant_id: str | None = None
@@ -193,6 +194,13 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
         drafts=drafts,
     )
     source = manifest["source"]
+    source_path_value = source.get("path")
+    source_jsonl_path: Path | None = None
+    if isinstance(source_path_value, str) and source_path_value.strip():
+        source_jsonl_path = Path(source_path_value.strip()).expanduser()
+        if not source_jsonl_path.is_absolute():
+            source_jsonl_path = manifest_path.parent / source_jsonl_path
+        source_jsonl_path = source_jsonl_path.resolve()
     tenant_id = str(source.get("tenant_id") or "").strip()
     source_jsonl_sha256 = str(source.get("sha256") or "").strip()
     if not tenant_id:
@@ -209,6 +217,7 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
         pack_dir=resolved_pack_dir,
         drafts=ordered_drafts,
         source_manifest_path=manifest_path,
+        source_jsonl_path=source_jsonl_path,
         source_manifest_sha256=manifest_sha256,
         source_jsonl_sha256=source_jsonl_sha256,
         tenant_id=tenant_id,
