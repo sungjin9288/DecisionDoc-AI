@@ -1510,8 +1510,8 @@ def test_locations_page_stale_share_risk_strip_opens_review_preset(page):
     assert "우선 확인: 입찰 의사결정 문서" in card_text
     assert "현재 procurement 대비 이전 council 기준" in card_text
     assert "활성 공유 링크 · 조회 1회" in card_text
-    assert "최근 stale 공유: e2e_admin" in card_text
-    assert "· 1회" in card_text
+    assert "최근 위험 관측: e2e_admin" in card_text
+    assert "영향 링크 1개" in card_text
     card.locator('button:has-text("공유 링크 복사")').click()
     copied_url = page.evaluate("() => window.__copiedSharedUrl")
     assert copied_url is not None
@@ -1520,14 +1520,14 @@ def test_locations_page_stale_share_risk_strip_opens_review_preset(page):
     tenant_review_url = page.evaluate("() => window.__copiedSharedUrl")
     assert tenant_review_url is not None
     assert "location_procurement_tenant=system" in tenant_review_url
-    assert "location_procurement_activity_actions=share.create" in tenant_review_url
+    assert "location_procurement_activity_actions=share.create%2Cshare.view" in tenant_review_url
     assert "location_procurement_focus_project" not in tenant_review_url
     card.locator('button:has-text("위험 문서 review 링크")').click()
     focused_review_url = page.evaluate("() => window.__copiedSharedUrl")
     assert focused_review_url is not None
     assert "location_procurement_tenant=system" in focused_review_url
     assert f"location_procurement_focus_project={project_id}" in focused_review_url
-    assert "location_procurement_activity_actions=share.create" in focused_review_url
+    assert "location_procurement_activity_actions=share.create%2Cshare.view" in focused_review_url
     card.locator('button:has-text("공유 링크 열기")').click()
     assert page.evaluate("() => window.__openedSharedUrl") == f"/shared/{share.share_id}"
     card.locator('[data-location-procurement-stale-share-focus-review="system"]').click()
@@ -1535,7 +1535,7 @@ def test_locations_page_stale_share_risk_strip_opens_review_preset(page):
     page.wait_for_selector('[data-location-procurement-preset="stale_share_review"].active', timeout=5000)
     page.wait_for_selector(f'[data-location-procurement-focus="{project_id}"]', timeout=5000)
     focused_text = page.locator(f'[data-location-procurement-focus="{project_id}"]').inner_text()
-    assert "외부 공유 기준" in focused_text
+    assert "외부 공유 위험" in focused_text
     assert "활성 공유 링크" in focused_text
     page.locator('#location-procurement-modal .btn-secondary').last.click()
     page.wait_for_selector("#location-procurement-modal", state="hidden", timeout=5000)
@@ -2668,7 +2668,7 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                 active_unaccessed_stale_external_share_queue_count: 0,
                 inactive_stale_external_share_queue_count: 0,
                 missing_stale_external_share_record_count: 0,
-                stale_external_share_status_counts: { stale_procurement: 1 },
+                stale_external_share_status_counts: { source_changed: 1 },
                 stale_external_share_queue: [
                   {
                     project_id: 'proj-stale-share',
@@ -2676,13 +2676,22 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                     project_document_id: 'doc-stale-share-1',
                     project_document_title: 'Stale council 기반 의사결정 문서',
                     bundle_type: 'bid_decision_kr',
-                    decision_council_document_status: 'stale_procurement',
-                    decision_council_document_status_tone: 'danger',
-                    decision_council_document_status_copy: '현재 procurement 대비 이전 council 기준',
-                    decision_council_document_status_summary: '현재 procurement recommendation 또는 checklist가 바뀌어 외부 공유 전 재확인이 필요합니다.',
+                    share_risk_status: 'source_changed',
+                    share_risk_status_tone: 'danger',
+                    share_risk_status_copy: '공유 이후 원본 상태 변경',
+                    share_risk_status_summary: '공유 링크 생성 이후 현재 원본 기준이 달라졌습니다.',
+                    decision_council_document_status: 'current',
+                    decision_council_document_status_tone: 'success',
+                    decision_council_document_status_copy: '현재 council 기준',
+                    decision_council_document_status_summary: '현재 council revision과 일치합니다.',
+                    source_binding_status: 'current',
+                    post_share_source_changed: true,
                     latest_shared_at: '2026-03-31T00:40:00+00:00',
                     latest_shared_by_username: 'admin',
-                    stale_share_count: 2,
+                    latest_risk_observed_at: '2026-04-02T09:15:00+00:00',
+                    latest_risk_observed_by_username: 'public-viewer',
+                    latest_risk_action: 'share.view',
+                    stale_share_count: 1,
                     share_id: 'share-stale-001',
                     share_url: '/shared/share-stale-001',
                     share_record_found: true,
@@ -2707,14 +2716,14 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                 projects_with_downstream_handoff: 0,
               },
               activity: {
-                action_counts: { 'share.create': 2 },
-                scope_action_counts: { 'share.create': 2 },
-                visible_action_counts: { 'share.create': 2 },
+                action_counts: { 'share.create': 1, 'share.view': 1 },
+                scope_action_counts: { 'share.create': 1, 'share.view': 1 },
+                visible_action_counts: { 'share.create': 1, 'share.view': 1 },
                 activity_action_filters: [],
                 recent_events: [
                   {
                     timestamp: '2026-03-31T00:40:00+00:00',
-                    action: 'share.create',
+                    action: 'share.view',
                     result: 'success',
                     resource_type: 'share',
                     linked_project_id: 'proj-stale-share',
@@ -2725,9 +2734,11 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                     recommendation: null,
                     procurement_operation: null,
                     procurement_context_kind: null,
-                    share_decision_council_document_status: 'stale_procurement',
-                    share_decision_council_document_status_copy: '현재 procurement 대비 이전 council 기준',
-                    share_decision_council_document_status_summary: '현재 procurement recommendation 또는 checklist가 바뀌어 외부 공유 전 재확인이 필요합니다.',
+                    share_decision_council_document_status: 'current',
+                    share_decision_council_document_status_copy: '현재 council 기준',
+                    share_decision_council_document_status_summary: '현재 council revision과 일치합니다.',
+                    share_source_binding_status: 'current',
+                    share_post_share_source_changed: true,
                     share_project_document_id: 'doc-stale-share-1',
                   },
                 ],
@@ -2779,21 +2790,24 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
     assert page.locator('[data-location-procurement-preset="stale_share_review"]').inner_text() == '외부 공유 review (1)'
     page.wait_for_selector('[data-location-procurement-preset="stale_share_review"].active', timeout=5000)
     page.wait_for_selector('[data-location-procurement-activity-filter="share.create"].active', timeout=5000)
+    page.wait_for_selector('[data-location-procurement-activity-filter="share.view"].active', timeout=5000)
     modal_text = page.locator("#location-procurement-modal-body").inner_text()
     assert "외부 공유 재확인 queue" in modal_text
     assert "활성 링크 1" in modal_text
     assert "최근 public 열람 있음 1" in modal_text
     assert "아직 열람 없음 0" in modal_text
     assert "비활성 링크 0" in modal_text
-    assert "누적 stale share event 2" in modal_text
+    assert "risk audit 2" in modal_text
+    assert "원본 연결/변경 1" in modal_text
     assert "Stale council 기반 의사결정 문서" in modal_text
     assert "활성 공유 링크" in modal_text
     assert "최근 public 열람 있음" in modal_text
-    assert "최근 stale 공유: admin · 2회" in modal_text
+    assert "외부 공유 위험:" in modal_text
+    assert "공유 이후 원본 상태 변경" in modal_text
+    assert "공유 생성: admin · 2026-03-31 · 영향 링크 1개" in modal_text
     assert "공유 링크 상태: 활성 공유 링크 · 조회 2회 · 최근 열람 2026-04-02 · 2026-04-07 만료" in modal_text
-    assert "세부 활동: Stale council 문서 공유" in modal_text
-    assert "공유 문서 기준: 현재 procurement 대비 이전 council 기준" in modal_text
-    assert "외부 공유 전 재확인이 필요합니다." in modal_text
+    assert "공유 링크 원본 변경 확인" in modal_text
+    assert "공유 링크 생성 이후 현재 원본 기준이 달라졌습니다." in modal_text
     page.locator('#location-procurement-modal-body button:has-text("공유 링크 복사")').click()
     copied_url = page.evaluate("() => window.__copiedSharedUrl")
     assert copied_url is not None

@@ -3,6 +3,15 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone public share drift operations queue
+
+- The admin procurement quality summary and Locations overview now consume drift-bearing `share.view` audit entries together with stale `share.create` entries. Source binding failures, post-share source changes, stale procurement reviews, and stale Decision Council evidence share one operator-facing risk queue.
+- Queue aggregation keeps creation evidence separate from the latest risk observation. Repeated public views of the same share update the latest observed action, actor, and time without inflating the affected unique-share count.
+- The stale-share review preset and copied review URLs preserve both `share.create` and `share.view` filters. Queue cards show the risk reason, link activity, original creation evidence, affected-link count, and the existing revoke/open/copy actions.
+- Focused tenant checks pass with 5 tests, focused Playwright checks pass with 2 tests, and the broader tenant/audit/project/infrastructure/Playwright gate passes with 408 tests plus 1 skipped test. Source drift, unique-link deduplication, filter persistence, and the Locations risk surface all use mock/local state only.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,936 passed, 1 skipped, and 4 deselected in 225.89 seconds.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone public share source drift evidence
 
 - Project-linked share creation validates the current tenant's project, document, request, and bundle identity. Mismatched or cross-tenant bindings are rejected, and client-supplied council/review status cannot override the server-calculated source state.

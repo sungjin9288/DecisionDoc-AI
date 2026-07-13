@@ -28,6 +28,7 @@ _PROCUREMENT_ACTIVITY_ACTIONS = (
     "procurement.recommend",
     "procurement.override_reason",
     "share.create",
+    "share.view",
     "procurement.remediation_link_copied",
     "procurement.remediation_link_opened",
     "procurement.downstream_blocked",
@@ -60,12 +61,6 @@ _PROCUREMENT_HANDOFF_QUEUE_STATUSES = (
     "opened_unresolved",
     "opened_resolved",
 )
-_PROCUREMENT_STALE_SHARE_STATUSES = (
-    "stale_procurement",
-    "stale_revision",
-)
-
-
 def _sorted_counts(counter: Counter[str]) -> dict[str, int]:
     return {
         key: value
@@ -201,19 +196,140 @@ def _build_procurement_recent_event(
         "share_project_document_id": (
             detail.get("share_project_document_id") if isinstance(detail, dict) else None
         ),
+        "share_procurement_review_document_status": (
+            detail.get("share_procurement_review_document_status")
+            if isinstance(detail, dict)
+            else None
+        ),
+        "share_procurement_review_document_status_copy": (
+            detail.get("share_procurement_review_document_status_copy")
+            if isinstance(detail, dict)
+            else None
+        ),
+        "share_source_binding_status": (
+            detail.get("share_source_binding_status") if isinstance(detail, dict) else None
+        ),
+        "share_post_share_source_changed": (
+            detail.get("share_post_share_source_changed") if isinstance(detail, dict) else None
+        ),
     }
 
 
-def _is_procurement_stale_share_activity(detail: object) -> bool:
+def _resolve_procurement_stale_share_evidence(detail: object) -> dict[str, object]:
     if not isinstance(detail, dict):
-        return False
+        return {}
     if str(detail.get("bundle_type", "") or "").strip() not in {
         "bid_decision_kr",
         "proposal_kr",
     }:
-        return False
-    share_status = str(detail.get("share_decision_council_document_status", "") or "").strip()
-    return bool(share_status) and share_status != "current"
+        return {}
+
+    binding_status = str(detail.get("share_source_binding_status", "") or "").strip()
+    if binding_status in {"missing", "mismatch"}:
+        return {
+            "status": f"source_{binding_status}",
+            "tone": "danger",
+            "copy": (
+                "공유 원본 문서 없음"
+                if binding_status == "missing"
+                else "공유 원본 연결 불일치"
+            ),
+            "summary": (
+                "공유 링크가 참조한 프로젝트 문서를 현재 tenant에서 찾을 수 없습니다."
+                if binding_status == "missing"
+                else "공유 링크의 project, document, request, bundle 연결을 다시 확인해야 합니다."
+            ),
+        }
+
+    council_status = str(
+        detail.get("share_decision_council_document_status", "") or ""
+    ).strip()
+    if council_status and council_status != "current":
+        return {
+            "status": council_status,
+            "tone": str(
+                detail.get("share_decision_council_document_status_tone", "") or ""
+            ).strip(),
+            "copy": str(
+                detail.get("share_decision_council_document_status_copy", "") or ""
+            ).strip(),
+            "summary": str(
+                detail.get("share_decision_council_document_status_summary", "") or ""
+            ).strip(),
+        }
+
+    review_status = str(
+        detail.get("share_procurement_review_document_status", "") or ""
+    ).strip()
+    if review_status and review_status != "current":
+        return {
+            "status": review_status,
+            "tone": str(
+                detail.get("share_procurement_review_document_status_tone", "") or ""
+            ).strip(),
+            "copy": str(
+                detail.get("share_procurement_review_document_status_copy", "") or ""
+            ).strip(),
+            "summary": str(
+                detail.get("share_procurement_review_document_status_summary", "") or ""
+            ).strip(),
+        }
+
+    if detail.get("share_post_share_source_changed") is True:
+        return {
+            "status": "source_changed",
+            "tone": "danger",
+            "copy": "공유 이후 원본 상태 변경",
+            "summary": "공유 링크 생성 이후 현재 원본 기준이 달라졌습니다.",
+        }
+    return {}
+
+
+def _is_procurement_stale_share_activity(detail: object) -> bool:
+    return bool(_resolve_procurement_stale_share_evidence(detail))
+
+
+def _record_procurement_stale_share_activity(
+    events_by_key: dict[tuple[str, str, str], dict[str, object]],
+    *,
+    linked_project_id: str,
+    entry: dict[str, object],
+) -> None:
+    detail = entry.get("detail", {})
+    key = _build_procurement_stale_share_queue_key(
+        linked_project_id=linked_project_id,
+        detail=detail,
+    )
+    state = events_by_key.setdefault(
+        key,
+        {
+            "latest": None,
+            "latest_create": None,
+            "create_by_share_id": {},
+            "share_ids": set(),
+        },
+    )
+    state["latest"] = _pick_newer_audit_entry(
+        state.get("latest"),
+        entry,
+    ) or entry
+    if str(entry.get("action", "")) == "share.create":
+        state["latest_create"] = _pick_newer_audit_entry(
+            state.get("latest_create"),
+            entry,
+        ) or entry
+    share_id = str(entry.get("resource_id", "") or "").strip()
+    if share_id:
+        share_ids = state.setdefault("share_ids", set())
+        if isinstance(share_ids, set):
+            share_ids.add(share_id)
+        if str(entry.get("action", "")) == "share.create":
+            create_by_share_id = state.setdefault("create_by_share_id", {})
+            if isinstance(create_by_share_id, dict):
+                create_by_share_id[share_id] = _pick_newer_audit_entry(
+                    create_by_share_id.get(share_id),
+                    entry,
+                ) or entry
 
 
 def _pick_newer_audit_entry(
@@ -616,19 +732,22 @@ def _sort_procurement_stale_share_queue_item(item: dict[str, object]) -> tuple[o
     elif item.get("share_is_active") is True:
         share_state_rank = 0 if int(item.get("share_access_count", 0) or 0) > 0 else 1
     status_rank = {
+        "source_missing": 0,
+        "source_mismatch": 0,
         "stale_procurement": 0,
         "stale_revision": 1,
-    }.get(str(item.get("decision_council_document_status", "")), 2)
+        "stale_procurement_review": 1,
+        "source_changed": 2,
+    }.get(str(item.get("share_risk_status", "")), 3)
     last_access_dt = _parse_iso_datetime(str(item.get("share_last_accessed_at") or ""))
     last_access_rank = -(last_access_dt.timestamp()) if last_access_dt is not None else float("inf")
-    shared_dt = _parse_iso_datetime(str(item.get("latest_shared_at") or ""))
-    shared_rank = -(shared_dt.timestamp()) if shared_dt is not None else float("inf")
+    observed_dt = _parse_iso_datetime(str(item.get("latest_risk_observed_at") or ""))
+    observed_rank = -(observed_dt.timestamp()) if observed_dt is not None else float("inf")
     return (
         share_state_rank,
         last_access_rank,
         status_rank,
-        shared_rank,
+        observed_rank,
         str(item.get("project_name", "") or item.get("project_id", "")),
         str(item.get("project_document_title", "") or item.get("project_document_id", "")),
     )
-

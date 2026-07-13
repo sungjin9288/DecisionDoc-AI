@@ -1295,11 +1295,16 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     ]
     stale_share_item = summary["sharing"]["stale_external_share_queue"][0]
     assert stale_share_item["project_document_id"] == "doc-stale-share-1"
+    assert stale_share_item["share_risk_status"] == "stale_revision"
+    assert stale_share_item["share_risk_status_copy"] == "이전 council revision (r1)"
     assert stale_share_item["decision_council_document_status"] == "stale_revision"
     assert stale_share_item["decision_council_document_status_copy"] == "이전 council revision (r1)"
     assert stale_share_item["bundle_label"] == "의사결정 문서"
     assert stale_share_item["latest_shared_at"] == "2026-03-31T00:45:00+00:00"
     assert stale_share_item["latest_shared_by_username"] == "reviewer"
+    assert stale_share_item["latest_risk_observed_at"] == "2026-03-31T00:45:00+00:00"
+    assert stale_share_item["latest_risk_observed_by_username"] == "reviewer"
+    assert stale_share_item["latest_risk_action"] == "share.create"
     assert stale_share_item["stale_share_count"] == 3
     assert stale_share_item["share_id"] == share_2.share_id
     assert stale_share_item["share_url"] == f"/shared/{share_2.share_id}"
@@ -1333,6 +1338,166 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     assert focused_summary["focused_project"]["stale_external_share_item"]["share_access_count"] == 2
     assert focused_summary["focused_project"]["stale_external_share_item"]["share_last_accessed_at"] == latest_share_record["last_accessed_at"]
     assert focused_summary["focused_project"]["stale_external_share_item"]["bundle_label"] == "의사결정 문서"
+
+
+def test_admin_procurement_stale_share_queue_deduplicates_repeated_drift_views(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app.schemas import (
+        NormalizedProcurementOpportunity,
+        ProcurementDecisionUpsert,
+        ProcurementRecommendation,
+    )
+    from app.storage.audit_store import AuditLog, AuditStore
+    from app.storage.share_store import ShareStore
+
+    tenant_id = "t-proc-share-drift-view"
+    client = _make_client(tmp_path, monkeypatch)
+    client.post(
+        "/admin/tenants",
+        json={"tenant_id": tenant_id, "display_name": "Procurement Share Drift Team"},
+        headers=_ops_headers(),
+    )
+
+    project = client.app.state.project_store.create(tenant_id, "Share Drift Project")
+    client.app.state.procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id=project.project_id,
+            tenant_id=tenant_id,
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="PROC-SHARE-DRIFT-001",
+                title="Share Drift Project",
+                issuer="조달청",
+            ),
+            recommendation=ProcurementRecommendation(
+                value="NO_GO",
+                summary="공유 이후 원본 drift 운영 queue 확인",
+            ),
+        )
+    )
+    share_store = ShareStore(
+        tenant_id,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    share = share_store.create(
+        tenant_id=tenant_id,
+        request_id="req-share-drift-view",
+        title="Share drift view",
+        created_by="reviewer",
+        bundle_id="proposal_kr",
+        project_id=project.project_id,
+        project_document_id="doc-share-drift-view",
+        source_fingerprint="source-before-share",
+        decision_council_document_status="current",
+        procurement_review_document_status="current",
+    )
+    share_store.increment_access(share.share_id)
+    share_store.increment_access(share.share_id)
+
+    audit_store = AuditStore(tenant_id)
+    audit_store.append(
+        AuditLog(
+            log_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            timestamp="2026-07-14T01:00:00+00:00",
+            user_id="u-reviewer",
+            username="reviewer",
+            user_role="admin",
+            ip_address="127.0.0.1",
+            user_agent="pytest",
+            action="share.create",
+            resource_type="share",
+            resource_id=share.share_id,
+            resource_name="",
+            result="success",
+            detail={
+                "project_id": project.project_id,
+                "share_project_document_id": "doc-share-drift-view",
+                "bundle_type": "proposal_kr",
+                "share_source_binding_status": "current",
+                "share_post_share_source_changed": False,
+                "share_decision_council_document_status": "current",
+                "share_procurement_review_document_status": "current",
+            },
+            session_id="sess-share-drift-create",
+        )
+    )
+    for timestamp in ("2026-07-14T01:10:00+00:00", "2026-07-14T01:20:00+00:00"):
+        audit_store.append(
+            AuditLog(
+                log_id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
+                timestamp=timestamp,
+                user_id="public",
+                username="public-viewer",
+                user_role="anonymous",
+                ip_address="127.0.0.1",
+                user_agent="pytest",
+                action="share.view",
+                resource_type="share",
+                resource_id=share.share_id,
+                resource_name="",
+                result="success",
+                detail={
+                    "project_id": project.project_id,
+                    "share_project_document_id": "doc-share-drift-view",
+                    "bundle_type": "proposal_kr",
+                    "share_source_binding_status": "missing",
+                    "share_post_share_source_changed": True,
+                    "share_decision_council_document_status": "current",
+                    "share_procurement_review_document_status": "current",
+                },
+                session_id="sess-share-drift-view",
+            )
+        )
+
+    login = _register_and_login(client)
+    auth_headers = {"Authorization": f"Bearer {login['access_token']}"}
+    response = client.get(
+        f"/admin/locations/{tenant_id}/procurement-quality-summary"
+        "?activity_actions=share.create,share.view",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    summary = response.json()["procurement"]
+
+    assert summary["activity"]["action_counts"] == {"share.view": 2}
+    assert summary["activity"]["activity_action_filters"] == ["share.create", "share.view"]
+    assert [event["action"] for event in summary["activity"]["recent_events"]] == [
+        "share.view",
+        "share.view",
+    ]
+    queue = summary["sharing"]["stale_external_share_queue"]
+    assert len(queue) == 1
+    item = queue[0]
+    assert item["share_id"] == share.share_id
+    assert item["stale_share_count"] == 1
+    assert item["share_risk_status"] == "source_missing"
+    assert item["share_risk_status_copy"] == "공유 원본 문서 없음"
+    assert item["source_binding_status"] == "missing"
+    assert item["post_share_source_changed"] is True
+    assert item["latest_shared_at"] == share.created_at
+    assert item["latest_shared_by_username"] == "reviewer"
+    assert item["latest_risk_observed_at"] == "2026-07-14T01:20:00+00:00"
+    assert item["latest_risk_observed_by_username"] == "public-viewer"
+    assert item["latest_risk_action"] == "share.view"
+    assert item["share_access_count"] == 2
+    assert summary["sharing"]["stale_external_share_status_counts"] == {"source_missing": 1}
+
+    locations_response = client.get(
+        "/admin/locations?include_procurement=1",
+        headers=auth_headers,
+    )
+    assert locations_response.status_code == 200
+    location = next(
+        row for row in locations_response.json() if row["tenant_id"] == tenant_id
+    )
+    assert location["procurement"]["stale_external_share_queue_count"] == 1
+    assert location["procurement"]["top_stale_external_share_item"]["share_risk_status"] == "source_missing"
+    assert location["procurement"]["top_stale_external_share_item"]["stale_share_count"] == 1
 
 
 def test_admin_procurement_quality_summary_includes_stale_proposal_share_queue(
@@ -1523,37 +1688,28 @@ def test_admin_locations_can_include_procurement_stale_share_overview(
     assert resp.status_code == 200
     locations = resp.json()
     location = next(item for item in locations if item["tenant_id"] == "t-loc-stale-card")
-    assert location["procurement"] == {
-        "stale_external_share_queue_count": 1,
-        "active_stale_external_share_queue_count": 1,
-        "active_accessed_stale_external_share_queue_count": 1,
-        "active_unaccessed_stale_external_share_queue_count": 0,
-        "inactive_stale_external_share_queue_count": 0,
-        "missing_stale_external_share_record_count": 0,
-        "has_active_stale_share_exposure": True,
-        "top_stale_external_share_item": {
-            "project_id": project.project_id,
-            "project_name": "Location Card Project",
-            "project_document_id": "doc-location-card-share",
-            "project_document_title": "",
-            "bundle_type": "bid_decision_kr",
-            "bundle_label": "의사결정 문서",
-            "decision_council_document_status": "stale_procurement",
-            "decision_council_document_status_tone": "danger",
-            "decision_council_document_status_copy": "현재 procurement 대비 이전 council 기준",
-            "decision_council_document_status_summary": "현재 procurement recommendation 또는 checklist가 바뀌어 외부 공유 전 재확인이 필요합니다.",
-            "latest_shared_at": "2026-03-31T00:45:00+00:00",
-            "latest_shared_by_username": "admin",
-            "stale_share_count": 1,
-            "share_id": share.share_id,
-            "share_url": f"/shared/{share.share_id}",
-            "share_record_found": True,
-            "share_is_active": True,
-            "share_access_count": 1,
-            "share_last_accessed_at": share_store.get(share.share_id)["last_accessed_at"],
-            "share_expires_at": share.expires_at,
-        },
-    }
+    overview = location["procurement"]
+    assert overview["stale_external_share_queue_count"] == 1
+    assert overview["active_stale_external_share_queue_count"] == 1
+    assert overview["active_accessed_stale_external_share_queue_count"] == 1
+    assert overview["active_unaccessed_stale_external_share_queue_count"] == 0
+    assert overview["inactive_stale_external_share_queue_count"] == 0
+    assert overview["missing_stale_external_share_record_count"] == 0
+    assert overview["has_active_stale_share_exposure"] is True
+    top_item = overview["top_stale_external_share_item"]
+    assert top_item["project_id"] == project.project_id
+    assert top_item["project_document_id"] == "doc-location-card-share"
+    assert top_item["bundle_type"] == "bid_decision_kr"
+    assert top_item["share_risk_status"] == "stale_procurement"
+    assert top_item["decision_council_document_status"] == "stale_procurement"
+    assert top_item["latest_shared_at"] == "2026-03-31T00:45:00+00:00"
+    assert top_item["latest_risk_observed_at"] == "2026-03-31T00:45:00+00:00"
+    assert top_item["latest_risk_action"] == "share.create"
+    assert top_item["stale_share_count"] == 1
+    assert top_item["share_id"] == share.share_id
+    assert top_item["share_is_active"] is True
+    assert top_item["share_access_count"] == 1
+    assert top_item["share_last_accessed_at"] == share_store.get(share.share_id)["last_accessed_at"]
 
 
 def test_admin_location_procurement_quality_summary_prioritizes_recently_accessed_stale_share_queue(

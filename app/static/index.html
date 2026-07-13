@@ -22797,7 +22797,7 @@
       'latest_followup',
       'all',
       [],
-      ['share.create'],
+      ['share.create', 'share.view'],
     );
   };
 
@@ -22808,7 +22808,7 @@
       'latest_followup',
       'all',
       [],
-      ['share.create'],
+      ['share.create', 'share.view'],
     );
   };
 
@@ -22870,15 +22870,15 @@
     const topStaleShareStatusCopy = topStaleShareItem
       ? escapeHtml(
           String(
-            topStaleShareItem.decision_council_document_status_copy
-            || getProcurementStaleShareStatusLabel(topStaleShareItem.decision_council_document_status)
+            topStaleShareItem.share_risk_status_copy
+            || getProcurementStaleShareStatusLabel(topStaleShareItem.share_risk_status)
             || ''
           ).trim()
         )
       : '';
     const topStaleShareLatestCopy = topStaleShareItem
       ? escapeHtml(
-          `${String(topStaleShareItem.latest_shared_by_username || 'unknown').trim() || 'unknown'} · ${formatProcurementActivityTime(topStaleShareItem.latest_shared_at, '기준 시점')} · ${Number(topStaleShareItem.stale_share_count || 0)}회`
+          `${String(topStaleShareItem.latest_risk_observed_by_username || 'unknown').trim() || 'unknown'} · ${formatProcurementActivityTime(topStaleShareItem.latest_risk_observed_at, '관측 시점')} · 영향 링크 ${Number(topStaleShareItem.stale_share_count || 0)}개`
         )
       : '';
     const topStaleShareBundleLabel = topStaleShareItem
@@ -22910,7 +22910,7 @@
             ? `<div style="font-size:.79rem; color:#7f1d1d; line-height:1.5;">
                 우선 확인: <strong>${topStaleShareLabel}</strong>${topStaleShareBundleLabel ? ` · ${topStaleShareBundleLabel}` : ''}<br>
                 ${topStaleShareStatusCopy} · ${topStaleShareStateCopy}<br>
-                최근 stale 공유: ${topStaleShareLatestCopy}
+                최근 위험 관측: ${topStaleShareLatestCopy}
               </div>`
             : ''}
           <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
@@ -23054,6 +23054,8 @@
         return 'override 사유 저장';
       case 'share.create':
         return 'Stale council 문서 공유';
+      case 'share.view':
+        return '공유 링크 원본 변경 확인';
       case 'procurement.remediation_link_copied':
         return 'Remediation 링크 공유';
       case 'procurement.remediation_link_opened':
@@ -23131,10 +23133,18 @@
 
   function getProcurementStaleShareStatusLabel(status) {
     switch (status) {
+      case 'source_missing':
+        return '공유 원본 문서 없음';
+      case 'source_mismatch':
+        return '공유 원본 연결 불일치';
+      case 'source_changed':
+        return '공유 이후 원본 상태 변경';
       case 'stale_procurement':
         return '현재 procurement 대비 이전 council 기준';
       case 'stale_revision':
         return '이전 council revision';
+      case 'stale_procurement_review':
+        return '현재 procurement 대비 이전 review 기준';
       default:
         return '외부 공유 재확인';
     }
@@ -23142,9 +23152,13 @@
 
   function getProcurementStaleShareStatusClass(status) {
     switch (status) {
+      case 'source_missing':
+      case 'source_mismatch':
+      case 'source_changed':
       case 'stale_procurement':
         return 'danger';
       case 'stale_revision':
+      case 'stale_procurement_review':
         return 'warning';
       default:
         return 'muted';
@@ -23388,6 +23402,7 @@
       'procurement.recommend',
       'procurement.override_reason',
       'share.create',
+      'share.view',
       'procurement.remediation_link_copied',
       'procurement.remediation_link_opened',
       'procurement.downstream_blocked',
@@ -23653,7 +23668,7 @@
       'latest_followup',
       'all',
       [],
-      ['share.create'],
+      ['share.create', 'share.view'],
     );
     try {
       await navigator.clipboard.writeText(url);
@@ -23678,7 +23693,7 @@
       'latest_followup',
       'all',
       [],
-      ['share.create'],
+      ['share.create', 'share.view'],
     );
     try {
       await navigator.clipboard.writeText(url);
@@ -23857,7 +23872,7 @@
           && matchesLocationProcurementFilters(candidateStatusFilters, [], normalizeLocationProcurementCandidateStatusFilters)
           && matchesLocationProcurementFilters(
             activityActionFilters,
-            ['share.create'],
+            ['share.create', 'share.view'],
             normalizeLocationProcurementActivityActionFilters,
           );
       default:
@@ -24133,7 +24148,7 @@
     } else if (preset === 'stale_share_review') {
       nextScope = 'all';
       nextStatusFilters = [];
-      nextActivityFilters = ['share.create'];
+      nextActivityFilters = ['share.create', 'share.view'];
     } else {
       return;
     }
@@ -24232,7 +24247,8 @@
     const sharedNotOpenedCount = Number(remediationQueueStatusCounts.shared_not_opened || 0);
     const openedUnresolvedCount = Number(remediationQueueStatusCounts.opened_unresolved || 0);
     const openedResolvedCount = Number(remediationQueueStatusCounts.opened_resolved || 0);
-    const staleExternalShareEventCount = Number(actionCounts['share.create'] || 0);
+    const staleExternalShareEventCount = Number(actionCounts['share.create'] || 0)
+      + Number(actionCounts['share.view'] || 0);
     const staleExternalShareQueueCount = Number(
       sharing.stale_external_share_queue_count ?? staleExternalShareQueue.length
     );
@@ -24258,6 +24274,10 @@
     );
     const staleProcurementShareCount = Number(staleExternalShareStatusCounts.stale_procurement || 0);
     const staleRevisionShareCount = Number(staleExternalShareStatusCounts.stale_revision || 0);
+    const staleReviewShareCount = Number(staleExternalShareStatusCounts.stale_procurement_review || 0);
+    const changedSourceShareCount = Number(staleExternalShareStatusCounts.source_missing || 0)
+      + Number(staleExternalShareStatusCounts.source_mismatch || 0)
+      + Number(staleExternalShareStatusCounts.source_changed || 0);
     const showsUnresolvedStatuses = !candidateStatusFilters.length
       || candidateStatusFilters.some((status) => status === 'needs_override_reason' || status === 'ready_to_retry');
     const activeStatusFilterLabel = candidateStatusFilters.length
@@ -24600,10 +24620,10 @@
               ${handoffSourceBits ? `<div class="location-procurement-copy">handoff 기준: ${escapeHtml(handoffSourceBits)}</div>` : ''}
             ` : ''}
             ${staleExternalShareItem ? `
-              <div class="location-procurement-copy">외부 공유 기준: ${escapeHtml(`${staleExternalShareItem.bundle_label || getProcurementBundleLabel(staleExternalShareItem.bundle_type)} · ${staleExternalShareItem.decision_council_document_status_copy || getProcurementStaleShareStatusLabel(staleExternalShareItem.decision_council_document_status)} · ${formatProcurementActivityTime(staleExternalShareItem.latest_shared_at, '기준 시점')}`)}</div>
-              <div class="location-procurement-copy">최근 stale 공유: ${escapeHtml(`${staleExternalShareItem.latest_shared_by_username || 'unknown'} · ${Number(staleExternalShareItem.stale_share_count || 0)}회`)}</div>
+              <div class="location-procurement-copy">외부 공유 위험: ${escapeHtml(`${staleExternalShareItem.bundle_label || getProcurementBundleLabel(staleExternalShareItem.bundle_type)} · ${staleExternalShareItem.share_risk_status_copy || getProcurementStaleShareStatusLabel(staleExternalShareItem.share_risk_status)} · ${formatProcurementActivityTime(staleExternalShareItem.latest_risk_observed_at, '관측 시점')}`)}</div>
+              <div class="location-procurement-copy">공유 생성: ${escapeHtml(`${staleExternalShareItem.latest_shared_by_username || 'unknown'} · ${formatProcurementActivityTime(staleExternalShareItem.latest_shared_at, '생성 시점')} · 영향 링크 ${Number(staleExternalShareItem.stale_share_count || 0)}개`)}</div>
               <div class="location-procurement-copy">공유 링크 상태: ${escapeHtml(getProcurementShareLinkStateCopy(staleExternalShareItem))}</div>
-              ${staleExternalShareItem.decision_council_document_status_summary ? `<div class="location-procurement-copy">${escapeHtml(staleExternalShareItem.decision_council_document_status_summary)}</div>` : ''}
+              ${staleExternalShareItem.share_risk_status_summary ? `<div class="location-procurement-copy">${escapeHtml(staleExternalShareItem.share_risk_status_summary)}</div>` : ''}
             ` : ''}
             <div class="location-procurement-copy">최근 이벤트: ${escapeHtml(latestEventCopy)}</div>
             <div class="location-procurement-copy" style="margin-top:6px;">최근 override: ${escapeHtml(latestOverride ? `${latestOverride.reason} (${latestOverride.actor || 'unknown'})` : '기록 없음')}</div>
@@ -24747,17 +24767,17 @@
                 <div class="location-procurement-candidate-title">${escapeHtml(item.project_name || item.project_id || '프로젝트')}</div>
                 <div class="location-procurement-candidate-meta">
                   ${isFocused ? '<span class="location-procurement-chip">방금 확인한 프로젝트</span>' : ''}
-                  <span class="location-procurement-chip ${getProcurementStaleShareStatusClass(item.decision_council_document_status)}">${escapeHtml(item.decision_council_document_status_copy || getProcurementStaleShareStatusLabel(item.decision_council_document_status))}</span>
+                  <span class="location-procurement-chip ${getProcurementStaleShareStatusClass(item.share_risk_status)}">${escapeHtml(item.share_risk_status_copy || getProcurementStaleShareStatusLabel(item.share_risk_status))}</span>
                   <span class="location-procurement-chip ${getProcurementShareLinkStateClass(item)}">${escapeHtml(getProcurementShareLinkStateLabel(item))}</span>
                   <span class="location-procurement-chip ${getProcurementShareAccessUrgencyClass(item)}">${escapeHtml(getProcurementShareAccessUrgencyLabel(item))}</span>
                   ${item.bundle_type ? `<span class="location-procurement-chip">${escapeHtml(item.bundle_label || _bundleNameMap[item.bundle_type] || item.bundle_type)}</span>` : ''}
                 </div>
               </div>
               <div class="location-procurement-copy">공유 문서: <strong>${escapeHtml(item.project_document_title || item.project_document_id || 'project document')}</strong></div>
-              <div class="location-procurement-copy">외부 공유 기준: ${escapeHtml(`${item.bundle_label || getProcurementBundleLabel(item.bundle_type)} · ${item.decision_council_document_status_copy || getProcurementStaleShareStatusLabel(item.decision_council_document_status)} · ${formatProcurementActivityTime(item.latest_shared_at, '기준 시점')}`)}</div>
-              <div class="location-procurement-copy">최근 stale 공유: ${escapeHtml(`${item.latest_shared_by_username || 'unknown'} · ${Number(item.stale_share_count || 0)}회`)}</div>
+              <div class="location-procurement-copy">외부 공유 위험: ${escapeHtml(`${item.bundle_label || getProcurementBundleLabel(item.bundle_type)} · ${item.share_risk_status_copy || getProcurementStaleShareStatusLabel(item.share_risk_status)} · ${formatProcurementActivityTime(item.latest_risk_observed_at, '관측 시점')}`)}</div>
+              <div class="location-procurement-copy">공유 생성: ${escapeHtml(`${item.latest_shared_by_username || 'unknown'} · ${formatProcurementActivityTime(item.latest_shared_at, '생성 시점')} · 영향 링크 ${Number(item.stale_share_count || 0)}개`)}</div>
               <div class="location-procurement-copy">공유 링크 상태: ${escapeHtml(getProcurementShareLinkStateCopy(item))}</div>
-              ${item.decision_council_document_status_summary ? `<div class="location-procurement-copy" style="margin-top:6px;">${escapeHtml(item.decision_council_document_status_summary)}</div>` : ''}
+              ${item.share_risk_status_summary ? `<div class="location-procurement-copy" style="margin-top:6px;">${escapeHtml(item.share_risk_status_summary)}</div>` : ''}
               <div class="location-procurement-footer">
                 <button
                   type="button"
@@ -24805,9 +24825,11 @@
                 · 비활성 링크 <strong>${inactiveStaleExternalShareQueueCount}</strong>
                 ${missingStaleExternalShareRecordCount ? `· 레코드 없음 <strong>${missingStaleExternalShareRecordCount}</strong>` : ''}
                 · 최근 public 열람 우선 정렬
-                · 누적 stale share event <strong>${staleExternalShareEventCount}</strong>
+                · risk audit <strong>${staleExternalShareEventCount}</strong>
+                · 원본 연결/변경 <strong>${changedSourceShareCount}</strong>
                 · procurement 기준 stale <strong>${staleProcurementShareCount}</strong>
                 · revision stale <strong>${staleRevisionShareCount}</strong>
+                · review stale <strong>${staleReviewShareCount}</strong>
               </div>
             </div>
             <div class="location-procurement-candidate-list">${queueItems}</div>
@@ -24916,6 +24938,7 @@
             <div class="location-procurement-toggle" role="group" aria-label="최근 이벤트 세부 활동">
               ${[
                 'share.create',
+                'share.view',
                 'procurement.remediation_link_copied',
                 'procurement.remediation_link_opened',
                 'procurement.downstream_blocked',

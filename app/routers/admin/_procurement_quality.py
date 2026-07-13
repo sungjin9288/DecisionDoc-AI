@@ -28,7 +28,6 @@ from app.routers.admin._procurement_quality_helpers import (
     _PROCUREMENT_HANDOFF_BUNDLE_IDS,
     _build_procurement_handoff_queue_key,
     _build_procurement_recent_event,
-    _build_procurement_stale_share_queue_key,
     _extract_latest_override_reason,
     _find_latest_procurement_project_entry,
     _hydrate_procurement_followup_state,
@@ -41,7 +40,7 @@ from app.routers.admin._procurement_quality_helpers import (
     _normalize_procurement_override_candidate_scope,
     _normalize_procurement_override_candidate_statuses,
     _normalize_procurement_override_candidate_view,
-    _pick_newer_audit_entry,
+    _record_procurement_stale_share_activity,
     _resolve_procurement_activity_link,
     _resolve_procurement_followup_reference,
     _resolve_procurement_remediation_status,
@@ -188,7 +187,9 @@ def _build_procurement_quality_summary(
         if action not in _PROCUREMENT_ACTIVITY_ACTIONS:
             continue
         detail = entry.get("detail", {})
-        if action == "share.create" and not _is_procurement_stale_share_activity(detail):
+        if action in {"share.create", "share.view"} and not _is_procurement_stale_share_activity(
+            detail
+        ):
             continue
         linked_project_id, linked_approval_id = _resolve_procurement_activity_link(
             entry,
@@ -240,20 +241,12 @@ def _build_procurement_quality_summary(
                     handoff_event_state["copied"] = entry
                 if action == "procurement.remediation_link_opened" and "opened" not in handoff_event_state:
                     handoff_event_state["opened"] = entry
-            if action == "share.create":
-                stale_share_key = _build_procurement_stale_share_queue_key(
+            if action in {"share.create", "share.view"}:
+                _record_procurement_stale_share_activity(
+                    stale_share_events_by_key,
                     linked_project_id=linked_project_id,
-                    detail=detail,
+                    entry=entry,
                 )
-                stale_share_state = stale_share_events_by_key.setdefault(
-                    stale_share_key,
-                    {"latest": None, "count": 0},
-                )
-                stale_share_state["latest"] = _pick_newer_audit_entry(
-                    stale_share_state.get("latest"),
-                    entry,
-                ) or entry
-                stale_share_state["count"] = int(stale_share_state.get("count", 0) or 0) + 1
         recent_activity.append(
             _build_procurement_recent_event(
                 entry,

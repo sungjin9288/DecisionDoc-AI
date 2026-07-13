@@ -1,14 +1,10 @@
-"""app/routers/admin/_procurement_quality_queues.py — Procurement remediation/share queue builders.
-
-Extracted from app/routers/admin.py (moved verbatim; no behavior changes).
-Split out of _procurement_quality_helpers.py to keep each module under 800 lines.
-"""
+"""Procurement remediation and external-share queue builders."""
 from __future__ import annotations
 
 from collections import Counter
 
 from app.routers.admin._procurement_quality_helpers import (
-    _PROCUREMENT_STALE_SHARE_STATUSES,
+    _resolve_procurement_stale_share_evidence,
     _sort_procurement_handoff_queue_item,
     _sort_procurement_stale_share_queue_item,
     _sorted_counts,
@@ -36,15 +32,39 @@ def _build_procurement_stale_share_queue(
         if not isinstance(entry, dict):
             continue
         detail = entry.get("detail", {})
-        share_status = (
-            str(detail.get("share_decision_council_document_status", "") or "")
-            if isinstance(detail, dict)
-            else ""
-        )
-        share_id = str(entry.get("resource_id", "") or "").strip()
-        if share_status not in _PROCUREMENT_STALE_SHARE_STATUSES:
+        risk = _resolve_procurement_stale_share_evidence(detail)
+        risk_status = str(risk.get("status", "") or "")
+        if not risk_status:
             continue
+        share_id = str(entry.get("resource_id", "") or "").strip()
         share_link = share_store.get(share_id) if share_id else None
+        create_by_share_id = payload.get("create_by_share_id") if isinstance(payload, dict) else None
+        latest_create = (
+            create_by_share_id.get(share_id)
+            if share_id and isinstance(create_by_share_id, dict)
+            else None
+        )
+        if (
+            not isinstance(latest_create, dict)
+            and not isinstance(create_by_share_id, dict)
+            and isinstance(payload, dict)
+        ):
+            latest_create = payload.get("latest_create")
+        share_ids = payload.get("share_ids") if isinstance(payload, dict) else None
+        if isinstance(share_ids, (set, list, tuple)):
+            stale_share_count = len(set(str(item) for item in share_ids if str(item).strip()))
+        else:
+            stale_share_count = int(payload.get("count", 0) or 0) if isinstance(payload, dict) else 0
+        latest_shared_at = (
+            str(latest_create.get("timestamp", "") or "")
+            if isinstance(latest_create, dict)
+            else str((share_link or {}).get("created_at", "") or "")
+        )
+        latest_shared_by_username = (
+            str(latest_create.get("username", "") or "")
+            if isinstance(latest_create, dict)
+            else str((share_link or {}).get("created_by", "") or "")
+        )
         project = project_map.get(project_id)
         document = project_document_lookup.get((project_id, project_document_id))
         queue_item = {
@@ -64,7 +84,15 @@ def _build_procurement_stale_share_queue(
                 bundle_type or str(getattr(document, "bundle_id", "") or ""),
                 bundle_type or str(getattr(document, "bundle_id", "") or "") or "downstream",
             ),
-            "decision_council_document_status": share_status,
+            "share_risk_status": risk_status,
+            "share_risk_status_tone": str(risk.get("tone", "") or ""),
+            "share_risk_status_copy": str(risk.get("copy", "") or ""),
+            "share_risk_status_summary": str(risk.get("summary", "") or ""),
+            "decision_council_document_status": (
+                str(detail.get("share_decision_council_document_status", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
             "decision_council_document_status_tone": (
                 str(detail.get("share_decision_council_document_status_tone", "") or "")
                 if isinstance(detail, dict)
@@ -80,9 +108,42 @@ def _build_procurement_stale_share_queue(
                 if isinstance(detail, dict)
                 else ""
             ),
-            "latest_shared_at": str(entry.get("timestamp", "") or ""),
-            "latest_shared_by_username": str(entry.get("username", "") or ""),
-            "stale_share_count": int(payload.get("count", 0) or 0) if isinstance(payload, dict) else 0,
+            "procurement_review_document_status": (
+                str(detail.get("share_procurement_review_document_status", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
+            "procurement_review_document_status_tone": (
+                str(detail.get("share_procurement_review_document_status_tone", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
+            "procurement_review_document_status_copy": (
+                str(detail.get("share_procurement_review_document_status_copy", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
+            "procurement_review_document_status_summary": (
+                str(detail.get("share_procurement_review_document_status_summary", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
+            "source_binding_status": (
+                str(detail.get("share_source_binding_status", "") or "")
+                if isinstance(detail, dict)
+                else ""
+            ),
+            "post_share_source_changed": (
+                detail.get("share_post_share_source_changed") is True
+                if isinstance(detail, dict)
+                else False
+            ),
+            "latest_shared_at": latest_shared_at,
+            "latest_shared_by_username": latest_shared_by_username,
+            "latest_risk_observed_at": str(entry.get("timestamp", "") or ""),
+            "latest_risk_observed_by_username": str(entry.get("username", "") or ""),
+            "latest_risk_action": str(entry.get("action", "") or ""),
+            "stale_share_count": stale_share_count,
             "share_id": share_id or None,
             "share_url": f"/shared/{share_id}" if share_id else None,
             "share_record_found": isinstance(share_link, dict),
@@ -108,11 +169,11 @@ def _build_procurement_stale_share_queue(
             ),
         }
         queue.append(queue_item)
-        status_counts[share_status] += 1
+        status_counts[risk_status] += 1
 
         current_item = latest_by_project.get(project_id)
-        if current_item is None or str(queue_item.get("latest_shared_at", "")) > str(
-            current_item.get("latest_shared_at", "")
+        if current_item is None or str(queue_item.get("latest_risk_observed_at", "")) > str(
+            current_item.get("latest_risk_observed_at", "")
         ):
             latest_by_project[project_id] = queue_item
 

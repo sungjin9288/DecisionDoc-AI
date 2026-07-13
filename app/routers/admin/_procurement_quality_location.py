@@ -10,9 +10,8 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.routers.admin._procurement_quality_helpers import (
-    _build_procurement_stale_share_queue_key,
     _is_procurement_stale_share_activity,
-    _pick_newer_audit_entry,
+    _record_procurement_stale_share_activity,
 )
 from app.routers.admin._procurement_quality_queues import _build_procurement_stale_share_queue
 
@@ -54,7 +53,7 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
     )
     stale_share_events_by_key: dict[tuple[str, str, str], dict[str, object]] = {}
     for entry in audit_store.query_all(tenant_id):
-        if str(entry.get("action", "")) != "share.create":
+        if str(entry.get("action", "")) not in {"share.create", "share.view"}:
             continue
         detail = entry.get("detail", {})
         if not _is_procurement_stale_share_activity(detail):
@@ -64,19 +63,11 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
             linked_project_id = str(detail.get("project_id", "") or "").strip()
         if not linked_project_id or linked_project_id not in decision_project_ids:
             continue
-        stale_share_key = _build_procurement_stale_share_queue_key(
+        _record_procurement_stale_share_activity(
+            stale_share_events_by_key,
             linked_project_id=linked_project_id,
-            detail=detail,
+            entry=entry,
         )
-        stale_share_state = stale_share_events_by_key.setdefault(
-            stale_share_key,
-            {"latest": None, "count": 0},
-        )
-        stale_share_state["latest"] = _pick_newer_audit_entry(
-            stale_share_state.get("latest"),
-            entry,
-        ) or entry
-        stale_share_state["count"] = int(stale_share_state.get("count", 0) or 0) + 1
 
     stale_external_share_queue, _, _ = _build_procurement_stale_share_queue(
         stale_share_events_by_key,
