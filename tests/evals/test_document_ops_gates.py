@@ -45,7 +45,9 @@ def test_document_ops_gate_blocks_forbidden_terms() -> None:
     assert result.hard_gate_pass is False
     assert result.recommended_next_action == "request_changes"
     assert "평가기준" in result.forbidden_terms
-    assert any(issue.code == "forbidden_terms" for issue in result.issues)
+    issue = next(issue for issue in result.issues if issue.code == "forbidden_terms")
+    assert issue.affected_field == "draft"
+    assert "중립 표현" in issue.remediation_hint
 
 
 def test_document_ops_gate_blocks_confirmed_claims_without_sources() -> None:
@@ -57,7 +59,9 @@ def test_document_ops_gate_blocks_confirmed_claims_without_sources() -> None:
     )
 
     assert result.hard_gate_pass is False
-    assert any(issue.code == "unsupported_confirmed_claims" for issue in result.issues)
+    issue = next(issue for issue in result.issues if issue.code == "unsupported_confirmed_claims")
+    assert issue.affected_field == "evidence_status.source_references"
+    assert "출처" in issue.remediation_hint
 
 
 def test_document_ops_gate_blocks_certainty_when_open_gaps_exist() -> None:
@@ -69,7 +73,9 @@ def test_document_ops_gate_blocks_certainty_when_open_gaps_exist() -> None:
     )
 
     assert result.hard_gate_pass is False
-    assert any(issue.code == "certainty_with_open_gaps" for issue in result.issues)
+    issue = next(issue for issue in result.issues if issue.code == "certainty_with_open_gaps")
+    assert issue.affected_field == "draft"
+    assert "조건부 표현" in issue.remediation_hint
 
 
 def test_document_ops_gate_blocks_policy_brief_without_governance_security_review() -> None:
@@ -81,7 +87,9 @@ def test_document_ops_gate_blocks_policy_brief_without_governance_security_revie
     )
 
     assert result.hard_gate_pass is False
-    assert any(issue.code == "missing_governance_privacy_security" for issue in result.issues)
+    issue = next(issue for issue in result.issues if issue.code == "missing_governance_privacy_security")
+    assert issue.affected_field == "draft"
+    assert "운영책임" in issue.remediation_hint
 
 
 def test_document_ops_gate_collects_more_evidence_when_only_warning_remains() -> None:
@@ -101,3 +109,21 @@ def test_document_ops_gate_collects_more_evidence_when_only_warning_remains() ->
     assert result.hard_gate_pass is True
     assert result.recommended_next_action == "collect_more_evidence"
     assert "evidence_gap:no_confirmed_sources" in result.warnings
+    issue = next(issue for issue in result.issues if issue.code == "evidence_gap:no_confirmed_sources")
+    assert issue.affected_field == "evidence_status.source_references"
+    assert "assumption" in issue.remediation_hint
+
+
+def test_document_ops_gate_explains_missing_draft_and_plan() -> None:
+    result = evaluate_document_ops_output(
+        task_type="decision_brief",
+        draft="",
+        plan=[],
+        evidence_status={},
+    )
+
+    issues = {issue.code: issue for issue in result.issues}
+    assert issues["missing_output_sections"].affected_field == "draft"
+    assert "검토 가능한 본문" in issues["missing_output_sections"].remediation_hint
+    assert issues["missing_plan"].affected_field == "plan"
+    assert "plan에 추가" in issues["missing_plan"].remediation_hint

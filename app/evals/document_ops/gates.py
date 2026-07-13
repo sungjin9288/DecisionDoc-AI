@@ -45,7 +45,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="forbidden_terms",
                 severity="blocker",
+                affected_field="draft",
                 message="금지 또는 제출 민감 표현이 draft에 남아 있습니다.",
+                remediation_hint="표시된 표현을 삭제하고 검증 가능한 중립 표현으로 다시 작성하세요.",
                 evidence=forbidden_hits,
             )
         )
@@ -55,7 +57,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="evidence_gap:no_confirmed_sources",
                 severity="warning",
+                affected_field="evidence_status.source_references",
                 message="확인된 근거 또는 source reference가 없어 confirmed claim로 사용할 수 없습니다.",
+                remediation_hint="공식 출처를 연결하거나 해당 내용을 assumption 또는 gap으로 분류하세요.",
             )
         )
 
@@ -64,7 +68,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="unsupported_confirmed_claims",
                 severity="blocker",
+                affected_field="evidence_status.source_references",
                 message="confirmed 항목이 있지만 연결된 source reference가 없습니다.",
+                remediation_hint="각 confirmed 항목의 출처를 연결하거나 근거가 없는 항목을 assumption으로 이동하세요.",
                 evidence=confirmed[:5],
             )
         )
@@ -75,7 +81,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="certainty_with_open_gaps",
                 severity="blocker",
+                affected_field="draft",
                 message="미확인 gap이 있는데 성과/비용/KPI를 확정적으로 표현했습니다.",
+                remediation_hint="미확인 수치를 조건부 표현으로 바꾸고 확정에 필요한 근거를 gap에 명시하세요.",
                 evidence=overconfident_hits,
             )
         )
@@ -88,7 +96,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="missing_governance_privacy_security",
                 severity="blocker",
+                affected_field="draft",
                 message="정책/공공 기획안에 필요한 개인정보, 보안, 운영책임, 리스크 검토가 없습니다.",
+                remediation_hint="개인정보, 보안, 권한, 운영책임, 로그/감사, 리스크 중 적용 항목을 본문에 추가하세요.",
             )
         )
 
@@ -97,7 +107,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="missing_output_sections",
                 severity="blocker",
+                affected_field="draft",
                 message="검토 가능한 draft 본문이 부족합니다.",
+                remediation_hint="문제, 근거, 실행, 운영 또는 승인 판단을 구분한 검토 가능한 본문을 작성하세요.",
             )
         )
 
@@ -106,7 +118,9 @@ def evaluate_document_ops_output(
             DocumentOpsGateIssue(
                 code="missing_plan",
                 severity="warning",
+                affected_field="plan",
                 message="작업 plan이 없어 검토/수정 흐름을 추적하기 어렵습니다.",
+                remediation_hint="요구사항 확인, 근거 검토, 수정 또는 승인 순서를 plan에 추가하세요.",
             )
         )
 

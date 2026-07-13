@@ -6,6 +6,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+DocumentOpsIssueCode = Literal[
+    "forbidden_terms",
+    "evidence_gap:no_confirmed_sources",
+    "unsupported_confirmed_claims",
+    "certainty_with_open_gaps",
+    "missing_governance_privacy_security",
+    "missing_output_sections",
+    "missing_plan",
+]
+
+
 DEFAULT_FORBIDDEN_TERMS = (
     "평가기준",
     "평가항목",
@@ -52,9 +63,11 @@ class RubricDimension(BaseModel):
 class DocumentOpsGateIssue(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    code: str = Field(..., min_length=1)
+    code: DocumentOpsIssueCode
     severity: Literal["blocker", "warning"]
+    affected_field: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1)
+    remediation_hint: str = Field(..., min_length=1)
     evidence: list[str] = Field(default_factory=list)
 
 

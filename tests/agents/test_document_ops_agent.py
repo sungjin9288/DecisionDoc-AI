@@ -172,6 +172,9 @@ def test_document_ops_agent_marks_local_fallback_when_provider_output_is_invalid
     assert result.qa["fallback_used"] is True
     assert result.qa["hard_gate_pass"] is False
     assert "agent_fallback:JSONDecodeError" in result.quality_warnings
+    assert result.qa["gate_issues"]
+    assert all(issue["affected_field"] for issue in result.qa["gate_issues"])
+    assert all(issue["remediation_hint"] for issue in result.qa["gate_issues"])
 
 
 def test_document_ops_agent_normalizes_live_provider_payload_variants() -> None:

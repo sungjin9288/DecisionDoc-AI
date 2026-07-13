@@ -110,6 +110,25 @@ def test_document_ops_run_supports_develop_quality_improvement(tmp_path, monkeyp
     assert body["trajectory"]["revision_tasks"] == body["revision_tasks"]
 
 
+def test_document_ops_run_returns_actionable_gate_issues(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "evidence_gap_review",
+            "requirements": {"title": "근거 미확인 초안"},
+        },
+    )
+
+    assert response.status_code == 200
+    issues = response.json()["qa"]["gate_issues"]
+    evidence_issue = next(issue for issue in issues if issue["code"] == "evidence_gap:no_confirmed_sources")
+    assert evidence_issue["affected_field"] == "evidence_status.source_references"
+    assert "공식 출처" in evidence_issue["remediation_hint"]
+
+
 def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     created = client.post(

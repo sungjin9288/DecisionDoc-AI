@@ -21,7 +21,7 @@ dependency가 아니다.
 |---|---|---|
 | Agent loop | `app/agents/document_ops_agent.py` | skill 선택, prompt 구성, provider draft, local QA, fallback, trajectory capture |
 | Skills | `app/agents/skills/` | first-party Markdown assets만 로드 |
-| QA and eval | `app/evals/document_ops/` | forbidden terms, evidence, required content, task-specific hard gates와 rubric |
+| QA and eval | `app/evals/document_ops/` | task-specific hard gates, stable issue code, affected field, remediation hint와 rubric |
 | API | `app/routers/document_ops_agent.py` | tenant-aware run, review, export, freeze, approval, audit, governance endpoints |
 | Service | `app/services/document_ops_service.py` | agent와 trajectory storage를 route에서 분리해 orchestration |
 | Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/` | tenant-scoped persistence, review, stats, export, freeze, approval records |
@@ -110,7 +110,7 @@ pytest -q \
   tests/storage/test_trajectory_store.py
 ```
 
-The five files currently define 45 test functions. Reproduce the source count with:
+The five files currently define 47 test functions. Reproduce the source count with:
 
 ```bash
 python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
@@ -126,9 +126,9 @@ source count is not a pass claim.
 
 Last local verification on 2026-07-14:
 
-- focused DocumentOps suite: 45 passed
+- focused DocumentOps suite: 47 passed
 - report-workflow and infrastructure integration: 140 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2885 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2887 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

@@ -38,6 +38,9 @@ historical phase numbers.
 
 Goal: make local failures actionable without another evidence wrapper.
 
+Status: implemented for the current hard-gate set. Extend the same contract when a new gate is
+added.
+
 Work:
 
 - add a deterministic fixture for each new hard-gate failure mode
