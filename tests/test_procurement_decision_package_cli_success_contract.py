@@ -21,6 +21,7 @@ from app.services.procurement_decision_package_service import (
     LOCAL_DEMO_SCENARIO_ID,
     PACKET_SCHEMA_VERSION,
     PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
+    REVIEW_RECEIPT_PENDING,
     SMOKE_CHECK_NAME,
     SMOKE_NAME,
     SMOKE_RESULT_NAME,
@@ -153,6 +154,7 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     smoke_out = tmp_path / SMOKE_OUTPUT_DIR_NAME
     manifest_validation_result_path = tmp_path / CUSTOM_MANIFEST_VALIDATION_RESULT_NAME
     packet_path = tmp_path / "procurement-review-packet.zip"
+    review_receipt_path = tmp_path / "procurement-review-receipt.json"
 
     validator_result = _run_success_case(
         "sample_validator",
@@ -201,6 +203,26 @@ def test_local_evidence_clis_return_success_json_with_passed_status(tmp_path: Pa
     assert packet_result["entry_count"] == len(builder_result["artifacts"]) + 1
     assert packet_result["operational_approval"] is False
     assert packet_result["packet_verified"] is True
+
+    review_receipt_result = _run_success_case(
+        "review_receipt_manager",
+        "init",
+        str(packet_path),
+        "--receipt",
+        str(review_receipt_path),
+        success_contract=success_contract,
+        contracts=contracts,
+    )
+    assert review_receipt_result["operation"] == "init"
+    assert review_receipt_result["packet_path"] == str(packet_path)
+    assert review_receipt_result["receipt_path"] == str(review_receipt_path)
+    assert review_receipt_result["review_status"] == REVIEW_RECEIPT_PENDING
+    assert review_receipt_result["packet_sha256"] == packet_result["packet_sha256"]
+    assert review_receipt_result["reviewer"] == "executive-reviewer"
+    assert review_receipt_result["decision"] is None
+    assert review_receipt_result["reviewed_at"] is None
+    assert review_receipt_result["operational_approval"] is False
+    assert review_receipt_result["receipt_valid"] is True
 
     demo_result = _run_success_case(
         "demo_runner",

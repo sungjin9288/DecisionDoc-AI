@@ -318,7 +318,7 @@ SMOKE_CHECK_RESULT_NAME = "demo_smoke_check_result.json"
 CLI_CONTRACT_MANIFEST_SCHEMA_PURPOSE = (
     "procurement_decision_package_cli_contract_manifest"
 )
-CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.1.0"
+CLI_CONTRACT_MANIFEST_CONTRACT_VERSION = "1.2.0"
 CLI_CONTRACT_MANIFEST_WORKFLOW = "procurement_decision_package_local_demo"
 CLI_CONTRACT_MANIFEST_CONTRACT_STATUS = "local_only"
 CLI_CONTRACT_MANIFEST_IDENTITY_VALUES = (
@@ -451,6 +451,7 @@ CLI_CONTRACT_MANIFEST_CASE_ORDER = (
     "sample_builder",
     "artifact_checker",
     "packet_manager",
+    "review_receipt_manager",
     "demo_runner",
     "project_export",
     "evidence_gate",
@@ -465,6 +466,7 @@ CLI_CONTRACT_MANIFEST_CASE_SCRIPTS = {
     "sample_builder": "scripts/build_procurement_decision_package_sample.py",
     "artifact_checker": "scripts/check_procurement_decision_package_artifacts.py",
     "packet_manager": "scripts/manage_procurement_decision_review_packet.py",
+    "review_receipt_manager": "scripts/manage_procurement_review_receipt.py",
     "demo_runner": "scripts/run_procurement_decision_package_demo.py",
     "project_export": "scripts/export_procurement_decision_package.py",
     "evidence_gate": "scripts/gate_procurement_decision_package_demo.py",
@@ -521,6 +523,25 @@ CLI_CONTRACT_MANIFEST_SUCCESS_FIELDS_BY_CASE = {
         "authorization_boundary",
         "operational_approval",
         "packet_verified",
+    ),
+    "review_receipt_manager": (
+        "status",
+        "operation",
+        "packet_path",
+        "receipt_path",
+        "receipt_sha256",
+        "receipt_size_bytes",
+        "receipt_schema_version",
+        "review_status",
+        "packet_sha256",
+        "package_id",
+        "recommendation",
+        "reviewer",
+        "decision",
+        "reviewed_at",
+        "authorization_boundary",
+        "operational_approval",
+        "receipt_valid",
     ),
     "demo_runner": (
         "status",
@@ -639,6 +660,14 @@ CLI_CONTRACT_MANIFEST_FAILURE_FIELDS_BY_CASE = {
         "operation",
         "source_dir",
         "packet_path",
+        "error_type",
+        "error",
+    ),
+    "review_receipt_manager": (
+        "status",
+        "operation",
+        "packet_path",
+        "receipt_path",
         "error_type",
         "error",
     ),

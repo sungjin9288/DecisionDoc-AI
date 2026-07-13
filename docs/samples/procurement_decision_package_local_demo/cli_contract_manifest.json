@@ -1,6 +1,6 @@
 {
   "schema_purpose": "procurement_decision_package_cli_contract_manifest",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "workflow": "procurement_decision_package_local_demo",
   "contract_status": "local_only",
   "stdout_json_contract": {
@@ -120,6 +120,37 @@
         "operation",
         "source_dir",
         "packet_path",
+        "error_type",
+        "error"
+      ]
+    },
+    {
+      "case_name": "review_receipt_manager",
+      "script": "scripts/manage_procurement_review_receipt.py",
+      "success_required_fields": [
+        "status",
+        "operation",
+        "packet_path",
+        "receipt_path",
+        "receipt_sha256",
+        "receipt_size_bytes",
+        "receipt_schema_version",
+        "review_status",
+        "packet_sha256",
+        "package_id",
+        "recommendation",
+        "reviewer",
+        "decision",
+        "reviewed_at",
+        "authorization_boundary",
+        "operational_approval",
+        "receipt_valid"
+      ],
+      "failure_required_fields": [
+        "status",
+        "operation",
+        "packet_path",
+        "receipt_path",
         "error_type",
         "error"
       ]

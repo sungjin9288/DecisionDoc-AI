@@ -55,6 +55,23 @@ SAMPLE_README_LOCAL_EVIDENCE_COMMANDS = [
         "python3 scripts/manage_procurement_decision_review_packet.py verify "
         "/tmp/decisiondoc-procurement-review.zip"
     ),
+    (
+        "python3 scripts/manage_procurement_review_receipt.py init "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json"
+    ),
+    (
+        "python3 scripts/manage_procurement_review_receipt.py record "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json --reviewer executive-reviewer "
+        "--decision accepted --rationale \"Reviewed against package evidence.\" "
+        "--reviewed-at 2026-07-13T14:30:00Z"
+    ),
+    (
+        "python3 scripts/manage_procurement_review_receipt.py validate "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json"
+    ),
     "python3 scripts/validate_procurement_decision_package_sample.py",
     (
         "python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py "
@@ -70,6 +87,7 @@ SAMPLE_README_FOCUSED_REGRESSION_TESTS = [
     "tests/test_procurement_decision_package_builder.py",
     "tests/test_procurement_decision_package_review_workspace.py",
     "tests/test_procurement_decision_package_review_packet.py",
+    "tests/test_procurement_decision_package_review_receipt.py",
     "tests/test_procurement_decision_package_cli_contract_manifest.py",
     "tests/test_check_procurement_decision_package_cli_contract_manifest_result.py",
     "tests/test_procurement_decision_package_docs_contract.py",
@@ -144,6 +162,10 @@ FIELD_CONTRACT_MARKERS = [
     "deterministic ZIP",
     "review_ready",
     "operational_approval",
+    Path(CLI_CONTRACT_MANIFEST_CASE_SCRIPTS["review_receipt_manager"]).name,
+    "procurement_review_receipt.json",
+    "packet_sha256",
+    "review_status",
 ]
 LOCAL_MACHINE_PATH_FRAGMENTS = [
     "/Users/",

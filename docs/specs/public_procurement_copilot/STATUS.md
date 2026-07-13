@@ -11500,3 +11500,17 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - full relevant 17-file procurement/README gate passed: 304 passed in 11.63s
   - `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 top-level service files, 2,604 test functions, and 217 test files
   - OpenAI, Gemini, and Claude paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed
+
+- local procurement packet-bound review receipt completion
+  - added `review_receipt.py` and `manage_procurement_review_receipt.py init/record/validate` so the requested reviewer can record one local decision against exact packet bytes
+  - `procurement_review_receipt.json` remains outside the deterministic ZIP to avoid a circular hash and records packet SHA256/size/schema, package identity, recommendation, reviewer, decision, rationale, canonical UTC review time, explicit authorization boundary, and false operational approval
+  - pending receipts keep decision fields null; record accepts only `accepted`, `changes_requested`, or `rejected`, requires the packet-requested reviewer and non-empty rationale, and moves `review_status` to `completed` exactly once
+  - validation rejects stale packets, wrong reviewers, unknown decisions, non-UTC timestamps, empty rationale, field-order drift, false-like values such as integer zero in place of boolean false, and completed-receipt re-record attempts
+  - promoted the local evidence CLI contract to `1.2.0` with a `review_receipt_manager` success/failure case and regenerated both tracked manifest validation receipts
+  - manual local proof moved the sample receipt from pending to completed/accepted, retained packet SHA256 `e71c2978c7b3b8033579f937fa32a485d252667c4a9cc7cf6c05bbeab893bd6c`, revalidated it successfully, and rejected a second decision with JSON failure and exit 1
+  - focused receipt and CLI/docs contract gate passed: 77 passed in 5.73s
+  - full relevant 18-file procurement/README gate passed: 312 passed in 12.16s
+  - `python3 -m py_compile` passed for the full procurement package and changed scripts/tests; focused `ruff --select=E,F,W --ignore=E501` reported `All checks passed!`
+  - `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 top-level service files, 2,609 test functions, and 218 test files
+  - this companion receipt does not introduce a second application approval workflow and does not authorize any external action
+  - OpenAI, Gemini, and Claude paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed

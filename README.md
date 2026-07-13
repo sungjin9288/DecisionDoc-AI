@@ -28,7 +28,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 감사·프라이버시 | `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 등 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
 | 공공조달 Go/No-Go | G2B 연동 기반 procurement copilot 흐름 (`G2B_API_KEY`, 스모크 옵션 제공) |
-| 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, `procurement_review.html` one-screen 검토, deterministic review ZIP, handoff, sign-off, export boundary, CLI contract 검증 경로 |
+| 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound reviewer receipt, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 
 ---
@@ -69,7 +69,7 @@ Services (38) — 도메인 오케스트레이션
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
   ├─ export 계열: docx / pptx / pdf / hwp / excel (5종)
   ├─ 조달 계열: g2b_collector → procurement_decision_service
-  │     → procurement_decision_package/ (15-모듈 패키지)
+  │     → procurement_decision_package/ (16-모듈 패키지)
   └─ 품질 계열: report_quality_learning / prompt_optimizer / validator
   │
   ├────────────────┬─────────────────────┐
@@ -199,11 +199,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,604개**, **217개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,609개**, **218개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2604
-python3 scripts/count_readme_metrics.py --field test_files      # → 217
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2609
+python3 scripts/count_readme_metrics.py --field test_files      # → 218
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -270,4 +270,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,604 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 254 · 테스트 2,609 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

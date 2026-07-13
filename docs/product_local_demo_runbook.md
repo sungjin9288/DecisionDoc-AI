@@ -256,6 +256,16 @@ python3 scripts/manage_procurement_decision_review_packet.py verify /tmp/decisio
 
 The output is a deterministic ZIP containing the 12 package artifacts plus embedded `packet_manifest.json`. It remains `review_ready`, preserves `operational_approval: false`, and does not turn pending sign-off into final approval. Verification checks exact entry order, path boundaries, SHA256 and size fingerprints, excluded actions, and the package's semantic artifact contract, so a fingerprint-adjusted but internally inconsistent archive is still rejected.
 
+Initialize the companion review receipt, record the requested reviewer's decision, and validate the completed receipt:
+
+```bash
+python3 scripts/manage_procurement_review_receipt.py init /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json
+python3 scripts/manage_procurement_review_receipt.py record /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --reviewer executive-reviewer --decision accepted --rationale "Reviewed against package evidence." --reviewed-at 2026-07-13T14:30:00Z
+python3 scripts/manage_procurement_review_receipt.py validate /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json
+```
+
+`procurement_review_receipt.json` is companion evidence, not a 13th package artifact. It stays outside the ZIP and records the packet's `packet_sha256`, package identity, requested reviewer, `review_status`, decision, rationale, and UTC review time. A completed receipt cannot be recorded again, cannot be used with a different packet, and always preserves `operational_approval: false`; review acceptance authorizes no provider, deployment, training, bid, legal, or contractual action.
+
 Run the local evidence gate for a reviewer-facing summary:
 
 ```bash
@@ -280,7 +290,7 @@ This writes `/tmp/decisiondoc-procurement-package-demo-output/demo_gate_result.j
 Run the local package validator and builder tests:
 
 ```bash
-pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_service.py tests/test_export_procurement_decision_package.py tests/test_run_procurement_decision_package_demo.py tests/test_check_procurement_decision_package_artifacts.py tests/test_gate_procurement_decision_package_demo.py tests/test_smoke_procurement_decision_package_demo_gate.py tests/test_check_procurement_decision_package_smoke_result.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
+pytest -q tests/test_procurement_decision_package_sample.py tests/test_procurement_decision_package_builder.py tests/test_procurement_decision_package_service.py tests/test_export_procurement_decision_package.py tests/test_run_procurement_decision_package_demo.py tests/test_check_procurement_decision_package_artifacts.py tests/test_gate_procurement_decision_package_demo.py tests/test_smoke_procurement_decision_package_demo_gate.py tests/test_check_procurement_decision_package_smoke_result.py tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_review_receipt.py tests/test_procurement_decision_package_cli_contract_manifest.py tests/test_check_procurement_decision_package_cli_contract_manifest_result.py tests/test_procurement_decision_package_docs_contract.py tests/test_procurement_decision_package_cli_failure_contract.py tests/test_procurement_decision_package_cli_success_contract.py
 ```
 
 Expected result:

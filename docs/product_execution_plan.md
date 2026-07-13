@@ -121,6 +121,7 @@ Current local evidence slice:
 
 - `procurement_review.html` gives non-engineering reviewers one read-only procurement package surface and remains part of the same 12-artifact audit, export, fingerprint, and tamper-check contract. It does not create a second approval workflow.
 - `manage_procurement_decision_review_packet.py` wraps those 12 validated artifacts in a deterministic ZIP with an embedded SHA256 manifest. The packet remains `review_ready`, keeps `operational_approval: false`, and can be independently reverified after handoff.
+- `manage_procurement_review_receipt.py` creates `procurement_review_receipt.json` outside the packet, binds it to `packet_sha256`, and moves `review_status` once from `pending` to `completed` for the requested reviewer. Completion records review evidence only and keeps operational approval false.
 - `review.html` shows generated documents and automatic validation evidence.
 - `human_review.html` combines request evidence, automatic validation, generated Markdown, manifest-bound receipt state, reviewer notes, and the external-action boundary in one workspace. Reviewer input is downloaded as a source-bound draft rather than written directly to evidence.
 - `manage_finished_doc_human_review.py` validates and atomically applies a draft only when its manifest and receipt hashes still match, without provider or AWS execution.
@@ -138,6 +139,7 @@ Current local evidence slice:
 - One procurement opportunity can move from source data to reviewable decision package.
 - Hard filters and unknown data are visible.
 - Reviewer sign-off remains separate from operational approval.
+- A local reviewer decision can be recorded once and revalidated against the exact packet bytes.
 - The demo does not depend on live provider or AWS availability.
 
 ## 5. 90-Day Plan
@@ -190,6 +192,7 @@ Prepare the product workflow for external evaluation without overstating operati
 | 6 | Add export packet | deterministic ZIP plus embedded manifest | create/verify path proves package, evidence, validation, sign-off, tamper detection, and non-approval boundary |
 | 7 | Add demo runbook | concise operator instructions | new user can follow local path |
 | 8 | Add versioned CLI evidence contract | `cli_contract_manifest.json` plus validator/checker receipt | success/failure matrix and docs contract tests pass |
+| 9 | Add packet-bound review receipt | companion `procurement_review_receipt.json` | pending/init, completed record, stale packet, reviewer, re-record, and non-approval checks pass |
 
 ## 7. Engineering Guardrails
 

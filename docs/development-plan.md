@@ -69,7 +69,7 @@ Services (38) — 도메인 오케스트레이션
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
   ├─ export 계열: docx / pptx / pdf / hwp / excel (5종)
   ├─ 조달 계열: g2b_collector → procurement_decision_service
-  │     → procurement_decision_package/ (15-모듈 패키지, 2026-07-02 분할 후 확장)
+  │     → procurement_decision_package/ (16-모듈 패키지, 2026-07-02 분할 후 확장)
   └─ 품질 계열: report_quality_learning / prompt_optimizer / validator
   │
   ├────────────────┬─────────────────────┐

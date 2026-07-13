@@ -67,6 +67,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
   - 2026-07-13 local procurement package에 script-free `procurement_review.html`을 추가해 recommendation, hard filters, score factors, evidence gaps, bid readiness, handoff, pending sign-off, 실행 권한 경계를 한 화면에서 확인한다. 이 화면은 12개 artifact audit/export/hash inventory에 포함되며 별도 승인 workflow를 만들지 않는다.
   - 2026-07-13 검증된 12개 procurement artifact를 embedded `packet_manifest.json`과 함께 deterministic ZIP으로 묶는 `manage_procurement_decision_review_packet.py create/verify` 경로를 추가했다. Packet은 `review_ready`와 `operational_approval: false`를 유지하고 path, membership, SHA256/size, semantic drift를 재검증한다.
+  - 2026-07-13 packet 밖의 `procurement_review_receipt.json`을 `packet_sha256`에 결속하고 요청 reviewer의 결정을 `pending`에서 `completed`로 한 번만 기록하는 `manage_procurement_review_receipt.py init/record/validate` 경로를 추가했다. Review 완료는 기존 approval workflow나 외부 실행 권한을 대체하지 않는다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
