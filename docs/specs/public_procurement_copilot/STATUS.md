@@ -3,6 +3,17 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone public share source drift evidence
+
+- Project-linked share creation validates the current tenant's project, document, request, and bundle identity. Mismatched or cross-tenant bindings are rejected, and client-supplied council/review status cannot override the server-calculated source state.
+- Each linked share stores the project/document binding and a deterministic SHA-256 source fingerprint. Generic or legacy shares without that binding preserve the existing share-time status behavior.
+- Every public `GET /shared/{share_id}` resolves the current tenant-scoped project document again. Changed council/review evidence renders the current warning state, while a removed source document renders an explicit post-share source-change warning without blocking the existing shared document response.
+- Successful share creation, public access, and revoke audit entries use the concrete share ID. `share.view` audit detail records the current binding status, council/review freshness, and whether the source changed after link creation.
+- Focused share/approval/project/audit/UI verification passes with 27 tests. The broader tenant, security, state-backend, Decision Council, infrastructure, and workflow gate passes with 504 tests.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,935 passed, 1 skipped, and 4 deselected in 226.49 seconds. Application Ruff E/F/W, Bandit medium/high, Python compile, three inline JavaScript parse checks, README metric count, and `git diff --check` also pass.
+- A temporary mock/local uvicorn HTTP QA returned a 64-character share fingerprint and `current` binding. The public page returned 200 without a drift warning before source deletion, then returned 200 with the post-share source-change and missing-source warnings after deletion. The server was stopped and temporary data was removed.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone approved export source drift evidence
 
 - Project-linked approvals persist a deterministic SHA-256 fingerprint of the source state at final approval. The fingerprint covers the project-document identity, procurement update timestamp, latest Decision Council session/revision, and bound procurement-review evidence without including the mutable approval status itself.

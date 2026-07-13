@@ -9,6 +9,12 @@ from fastapi.responses import HTMLResponse
 
 from app.auth.api_key import require_api_key
 from app.dependencies import require_auth
+from app.routers.projects._provenance import (
+    PROJECT_DOCUMENT_FRESHNESS_FIELDS,
+    lookup_project_document,
+    project_document_freshness_values,
+    project_document_source_fingerprint,
+)
 from app.schemas import CreateShareRequest, UpdateHistoryVisualAssetsRequest
 
 router = APIRouter(tags=["history"])
@@ -184,37 +190,127 @@ def remove_g2b_bookmark(bid_number: str, request: Request):
 
 # ── Share Links ────────────────────────────────────────────────────────────────
 
+
+def _share_request_freshness(payload: CreateShareRequest) -> dict[str, str]:
+    return {
+        field: str(getattr(payload, field, "") or "").strip()
+        for field in PROJECT_DOCUMENT_FRESHNESS_FIELDS
+    }
+
+
+def _require_share_project_document(
+    request: Request,
+    *,
+    tenant_id: str,
+    payload: CreateShareRequest,
+) -> tuple[str, dict | None]:
+    binding_status, document = lookup_project_document(
+        request,
+        tenant_id=tenant_id,
+        project_id=payload.project_id,
+        project_document_id=payload.project_document_id,
+        request_id=payload.request_id,
+        bundle_id=payload.bundle_id,
+    )
+    if binding_status == "current" and document is not None:
+        if (
+            document.get("request_id") != payload.request_id
+            or document.get("bundle_id") != payload.bundle_id
+        ):
+            binding_status = "mismatch"
+    if binding_status == "missing":
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "share_project_document_not_found",
+                "message": "현재 tenant에서 공유할 프로젝트 문서를 찾을 수 없습니다.",
+            },
+        )
+    if binding_status == "mismatch":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "share_project_document_mismatch",
+                "message": "공유 요청의 project, document, request, bundle 식별자가 일치하지 않습니다.",
+            },
+        )
+    return binding_status, document
+
+
+def _refresh_shared_project_document(
+    request: Request,
+    *,
+    tenant_id: str,
+    link: dict,
+) -> dict:
+    current = dict(link)
+    project_id = str(link.get("project_id") or "").strip()
+    project_document_id = str(link.get("project_document_id") or "").strip()
+    binding_status, document = lookup_project_document(
+        request,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        project_document_id=project_document_id,
+        request_id=str(link.get("request_id") or ""),
+        bundle_id=str(link.get("bundle_id") or ""),
+    )
+    if binding_status == "current":
+        current.update(project_document_freshness_values(document))
+
+    current_fingerprint = project_document_source_fingerprint(
+        request,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        binding_status=binding_status,
+        document=document,
+    )
+    source_fingerprint = str(link.get("source_fingerprint") or "")
+    current["project_document_binding_status"] = binding_status
+    current["current_source_fingerprint"] = current_fingerprint
+    current["post_share_source_changed"] = bool(
+        source_fingerprint and current_fingerprint != source_fingerprint
+    )
+    return current
+
+
+def _record_share_provenance_audit(request: Request, link: dict) -> None:
+    request.state.share_id = str(link.get("share_id") or "")
+    request.state.bundle_type = str(link.get("bundle_id") or "")
+    request.state.procurement_project_id = str(link.get("project_id") or "")
+    request.state.share_project_document_id = str(
+        link.get("project_document_id") or ""
+    )
+    for field in PROJECT_DOCUMENT_FRESHNESS_FIELDS:
+        setattr(request.state, f"share_{field}", str(link.get(field) or ""))
+    request.state.share_source_binding_status = str(
+        link.get("project_document_binding_status") or ""
+    )
+    request.state.share_post_share_source_changed = bool(
+        link.get("post_share_source_changed")
+    )
+
+
 @router.post("/share", dependencies=[Depends(require_api_key)])
 def create_share_link(payload: CreateShareRequest, request: Request):
     require_auth(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
-    request.state.bundle_type = payload.bundle_id or ""
-    request.state.procurement_project_id = payload.project_id or ""
-    request.state.share_project_document_id = payload.project_document_id or ""
-    request.state.share_decision_council_document_status = (
-        payload.decision_council_document_status or ""
+    binding_status, project_document = _require_share_project_document(
+        request,
+        tenant_id=tenant_id,
+        payload=payload,
     )
-    request.state.share_decision_council_document_status_tone = (
-        payload.decision_council_document_status_tone or ""
+    freshness = (
+        project_document_freshness_values(project_document)
+        if binding_status == "current"
+        else _share_request_freshness(payload)
     )
-    request.state.share_decision_council_document_status_copy = (
-        payload.decision_council_document_status_copy or ""
-    )
-    request.state.share_decision_council_document_status_summary = (
-        payload.decision_council_document_status_summary or ""
-    )
-    request.state.share_procurement_review_document_status = (
-        payload.procurement_review_document_status or ""
-    )
-    request.state.share_procurement_review_document_status_tone = (
-        payload.procurement_review_document_status_tone or ""
-    )
-    request.state.share_procurement_review_document_status_copy = (
-        payload.procurement_review_document_status_copy or ""
-    )
-    request.state.share_procurement_review_document_status_summary = (
-        payload.procurement_review_document_status_summary or ""
+    source_fingerprint = project_document_source_fingerprint(
+        request,
+        tenant_id=tenant_id,
+        project_id=payload.project_id,
+        binding_status=binding_status,
+        document=project_document,
     )
     from app.storage.share_store import ShareStore
     store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
@@ -224,20 +320,25 @@ def create_share_link(payload: CreateShareRequest, request: Request):
         title=payload.title,
         created_by=user_id,
         bundle_id=payload.bundle_id,
+        project_id=payload.project_id,
+        project_document_id=payload.project_document_id,
+        source_fingerprint=source_fingerprint,
         expires_days=payload.expires_days,
-        decision_council_document_status=payload.decision_council_document_status,
-        decision_council_document_status_tone=payload.decision_council_document_status_tone,
-        decision_council_document_status_copy=payload.decision_council_document_status_copy,
-        decision_council_document_status_summary=payload.decision_council_document_status_summary,
-        procurement_review_document_status=payload.procurement_review_document_status,
-        procurement_review_document_status_tone=payload.procurement_review_document_status_tone,
-        procurement_review_document_status_copy=payload.procurement_review_document_status_copy,
-        procurement_review_document_status_summary=payload.procurement_review_document_status_summary,
+        **freshness,
     )
+    response_link = {
+        **link.__dict__,
+        "project_document_binding_status": binding_status,
+        "post_share_source_changed": False,
+    }
+    _record_share_provenance_audit(request, response_link)
     return {
         "share_id": link.share_id,
         "share_url": f"/shared/{link.share_id}",
         "expires_at": link.expires_at,
+        "project_document_binding_status": binding_status,
+        "source_fingerprint": source_fingerprint,
+        **freshness,
     }
 
 
@@ -254,9 +355,16 @@ def view_shared_document(share_id: str, request: Request):
         )
         link = store.get(share_id)
         if link and link.get("is_active"):
+            current_link = _refresh_shared_project_document(
+                request,
+                tenant_id=tenant.tenant_id,
+                link=link,
+            )
+            request.state.tenant_id = tenant.tenant_id
+            _record_share_provenance_audit(request, current_link)
             store.increment_access(share_id)
-            title = link.get("title", "공유 문서")
-            request_id = link.get("request_id", "")
+            title = current_link.get("title", "공유 문서")
+            request_id = current_link.get("request_id", "")
             doc_html = ""
             if request_id:
                 try:
@@ -278,8 +386,13 @@ def view_shared_document(share_id: str, request: Request):
                 _render_shared_page(
                     title,
                     doc_html,
-                    decision_council_warning=_render_shared_decision_council_warning(link),
-                    procurement_review_warning=_render_shared_procurement_review_warning(link),
+                    source_warning=_render_shared_source_warning(current_link),
+                    decision_council_warning=_render_shared_decision_council_warning(
+                        current_link
+                    ),
+                    procurement_review_warning=_render_shared_procurement_review_warning(
+                        current_link
+                    ),
                 )
             )
     raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
@@ -337,6 +450,27 @@ def _render_shared_decision_council_warning(link: dict) -> str:
     )
 
 
+def _render_shared_source_warning(link: dict) -> str:
+    import html as _html
+
+    if not link.get("post_share_source_changed"):
+        return ""
+    binding_status = str(
+        link.get("project_document_binding_status") or ""
+    ).strip()
+    summary = (
+        "공유 링크가 참조한 프로젝트 문서를 현재 tenant에서 찾을 수 없습니다."
+        if binding_status == "missing"
+        else "공유 링크 생성 이후 원본 기준이 변경되었습니다. 아래 상태와 문서 내용을 함께 확인하세요."
+    )
+    return (
+        '<div class="share-warning danger" data-shared-source-change="true">'
+        "<strong>공유 이후 원본 상태 변경</strong>"
+        f"<span>{_html.escape(summary)}</span>"
+        "</div>"
+    )
+
+
 def _render_shared_procurement_review_warning(link: dict) -> str:
     import html as _html
 
@@ -362,6 +496,7 @@ def _render_shared_page(
     title: str,
     doc_html: str,
     *,
+    source_warning: str = "",
     decision_council_warning: str = "",
     procurement_review_warning: str = "",
 ) -> str:
@@ -404,6 +539,7 @@ def _render_shared_page(
   <h1>📄 {safe_title} <span class="dd-badge">공유 문서</span></h1>
   <div class="share-meta">DecisionDoc AI로 생성된 문서입니다.</div>
 </div>
+{source_warning}
 {decision_council_warning}
 {procurement_review_warning}
 {doc_html}
@@ -426,4 +562,5 @@ def revoke_share_link(share_id: str, request: Request):
     )
     if not success:
         raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
+    request.state.share_id = share_id
     return {"message": "공유 링크가 비활성화되었습니다.", "share_id": share_id}

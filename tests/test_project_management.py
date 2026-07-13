@@ -1182,6 +1182,30 @@ class TestProjectProcurementApi:
         assert proposal["procurement_review_document_status_tone"] == "success"
         assert proposal["procurement_review_document_status_copy"] == "현재 review 기준"
 
+        shared = client.post(
+            "/share",
+            json={
+                "request_id": proposal["request_id"],
+                "title": proposal["title"],
+                "bundle_id": proposal["bundle_id"],
+                "project_id": pid,
+                "project_document_id": proposal["doc_id"],
+                "procurement_review_document_status": "stale_procurement_review",
+                "procurement_review_document_status_tone": "danger",
+            },
+            headers=_auth_headers(client),
+        )
+        assert shared.status_code == 200
+        assert shared.json()["project_document_binding_status"] == "current"
+        assert shared.json()["procurement_review_document_status"] == "current"
+        assert len(shared.json()["source_fingerprint"]) == 64
+        share_id = shared.json()["share_id"]
+
+        current_shared_page = client.get(f"/shared/{share_id}")
+        assert current_shared_page.status_code == 200
+        assert 'data-shared-source-change="true"' not in current_shared_page.text
+        assert "data-shared-procurement-review-warning" not in current_shared_page.text
+
         from app.storage.audit_store import AuditStore
 
         audit_entries = AuditStore("system").query(
@@ -1210,6 +1234,32 @@ class TestProjectProcurementApi:
         assert stale_proposal["procurement_review_document_status_tone"] == "danger"
         assert stale_proposal["procurement_review_document_status_copy"] == (
             "현재 procurement 대비 이전 review 기준"
+        )
+
+        stale_shared_page = client.get(f"/shared/{share_id}")
+        assert stale_shared_page.status_code == 200
+        assert 'data-shared-source-change="true"' in stale_shared_page.text
+        assert "공유 이후 원본 상태 변경" in stale_shared_page.text
+        assert (
+            'data-shared-procurement-review-warning="stale_procurement_review"'
+            in stale_shared_page.text
+        )
+
+        share_view_audits = AuditStore("system").query(
+            "system",
+            filters={"action": "share.view"},
+        )
+        stale_share_view = next(
+            entry
+            for entry in share_view_audits
+            if entry["resource_id"] == share_id
+            and entry["detail"].get("share_post_share_source_changed") is True
+        )
+        assert stale_share_view["detail"]["project_id"] == pid
+        assert stale_share_view["detail"]["share_project_document_id"] == proposal["doc_id"]
+        assert stale_share_view["detail"]["share_source_binding_status"] == "current"
+        assert stale_share_view["detail"]["share_procurement_review_document_status"] == (
+            "stale_procurement_review"
         )
 
     def test_stale_review_bound_approval_requires_explicit_final_acknowledgement(self, client):
@@ -2643,6 +2693,126 @@ class TestProjectDocumentReuseFlows:
             "approval_project_document_not_found"
         )
 
+    def test_project_document_share_rejects_mismatch_and_another_tenant(self, client):
+        pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
+        document = client.post(
+            f"/projects/{pid}/documents",
+            json={
+                "request_id": "req-project-share-binding",
+                "bundle_id": "proposal_kr",
+                "title": "공유 binding 문서",
+                "docs": [{"doc_type": "proposal", "markdown": "# 제안"}],
+            },
+            headers=HEADERS,
+        ).json()
+
+        mismatch = client.post(
+            "/share",
+            json={
+                "request_id": "req-spoofed-share",
+                "bundle_id": document["bundle_id"],
+                "title": document["title"],
+                "project_id": pid,
+                "project_document_id": document["doc_id"],
+            },
+            headers=_auth_headers(client),
+        )
+        assert mismatch.status_code == 409
+        assert mismatch.json()["detail"]["code"] == "share_project_document_mismatch"
+
+        empty_identity = client.post(
+            "/share",
+            json={
+                "request_id": "",
+                "bundle_id": "",
+                "title": document["title"],
+                "project_id": pid,
+                "project_document_id": document["doc_id"],
+            },
+            headers=_auth_headers(client),
+        )
+        assert empty_identity.status_code == 409
+        assert empty_identity.json()["detail"]["code"] == "share_project_document_mismatch"
+
+        other_project = client.app.state.project_store.create(
+            "tenant-share-b",
+            name="다른 tenant 공유 프로젝트",
+        )
+        other_document = client.app.state.project_store.add_document(
+            other_project.project_id,
+            request_id="req-other-tenant-share",
+            bundle_id="proposal_kr",
+            title="다른 tenant 공유 문서",
+            docs=[{"doc_type": "proposal", "markdown": "# 다른 tenant"}],
+            tenant_id="tenant-share-b",
+        )
+        cross_tenant = client.post(
+            "/share",
+            json={
+                "request_id": other_document.request_id,
+                "bundle_id": other_document.bundle_id,
+                "title": other_document.title,
+                "project_id": other_project.project_id,
+                "project_document_id": other_document.doc_id,
+            },
+            headers=_auth_headers(client),
+        )
+        assert cross_tenant.status_code == 404
+        assert cross_tenant.json()["detail"]["code"] == (
+            "share_project_document_not_found"
+        )
+
+    def test_project_document_share_warns_when_source_document_is_removed(self, client):
+        pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
+        document = client.post(
+            f"/projects/{pid}/documents",
+            json={
+                "request_id": "req-removed-project-share",
+                "bundle_id": "proposal_kr",
+                "title": "삭제 원본 공유 문서",
+                "docs": [{"doc_type": "proposal", "markdown": "# 삭제 전 원본"}],
+            },
+            headers=HEADERS,
+        ).json()
+        shared = client.post(
+            "/share",
+            json={
+                "request_id": document["request_id"],
+                "bundle_id": document["bundle_id"],
+                "title": document["title"],
+                "project_id": pid,
+                "project_document_id": document["doc_id"],
+            },
+            headers=_auth_headers(client),
+        )
+        assert shared.status_code == 200
+        share_id = shared.json()["share_id"]
+
+        removed = client.delete(
+            f"/projects/{pid}/documents/{document['doc_id']}",
+            headers=HEADERS,
+        )
+        assert removed.status_code == 200
+
+        shared_page = client.get(f"/shared/{share_id}")
+        assert shared_page.status_code == 200
+        assert 'data-shared-source-change="true"' in shared_page.text
+        assert "공유 링크가 참조한 프로젝트 문서를 현재 tenant에서 찾을 수 없습니다." in (
+            shared_page.text
+        )
+
+        from app.storage.audit_store import AuditStore
+
+        view_audits = AuditStore("system").query(
+            "system",
+            filters={"action": "share.view"},
+        )
+        missing_view = next(
+            entry for entry in view_audits if entry["resource_id"] == share_id
+        )
+        assert missing_view["detail"]["share_source_binding_status"] == "missing"
+        assert missing_view["detail"]["share_post_share_source_changed"] is True
+
     def test_project_document_can_create_share_link(self, client):
         pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
         created = client.post(
@@ -2671,3 +2841,4 @@ class TestProjectDocumentReuseFlows:
         )
         assert response.status_code == 200
         assert response.json()["share_url"].startswith("/shared/")
+        assert response.json()["project_document_binding_status"] == "not_linked"

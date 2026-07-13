@@ -398,6 +398,12 @@ def test_resolve_action_approval_approve():
     assert _resolve_action("POST", "/approvals/abc-123/approve", 200) == "approval.approve"
 
 
+def test_resolve_action_public_share_view():
+    from app.middleware.audit import _resolve_action
+
+    assert _resolve_action("GET", "/shared/share-token-123", 200) == "share.view"
+
+
 def test_resolve_action_procurement_import():
     from app.middleware.audit import _resolve_action
     assert _resolve_action("POST", "/projects/proj-1/imports/g2b-opportunity", 200) == "procurement.import"
@@ -648,6 +654,21 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
     login = _register_and_login(client)
     headers = _auth(login)
+    project = client.post(
+        "/projects",
+        headers=headers,
+        json={"name": "공유 감사 프로젝트", "fiscal_year": 2026},
+    ).json()
+    document = client.post(
+        f"/projects/{project['project_id']}/documents",
+        headers=headers,
+        json={
+            "request_id": "req-share-audit",
+            "bundle_id": "bid_decision_kr",
+            "title": "공유 감사 로그 테스트",
+            "docs": [{"doc_type": "go_no_go_memo", "markdown": "# 공유 감사"}],
+        },
+    ).json()
 
     created = client.post(
         "/share",
@@ -657,20 +678,15 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
             "title": "공유 감사 로그 테스트",
             "bundle_id": "bid_decision_kr",
             "expires_days": 7,
-            "project_id": "proj-share-audit",
-            "project_document_id": "doc-share-audit",
-            "decision_council_document_status": "stale_procurement",
-            "decision_council_document_status_tone": "danger",
-            "decision_council_document_status_copy": "현재 procurement 대비 이전 council 기준",
-            "decision_council_document_status_summary": "현재 procurement recommendation 또는 checklist가 바뀌어 이 공유 문서는 최신 council/procurement 기준과 일치하지 않습니다.",
-            "procurement_review_document_status": "stale_procurement_review",
-            "procurement_review_document_status_tone": "danger",
-            "procurement_review_document_status_copy": "현재 procurement 대비 이전 review 기준",
-            "procurement_review_document_status_summary": "새 review를 완료한 뒤 문서를 다시 생성해야 합니다.",
+            "project_id": project["project_id"],
+            "project_document_id": document["doc_id"],
         },
     )
     assert created.status_code == 200
     share_id = created.json()["share_id"]
+
+    viewed = client.get(f"/shared/{share_id}")
+    assert viewed.status_code == 200
 
     revoked = client.delete(f"/share/{share_id}", headers=headers)
     assert revoked.status_code == 200
@@ -680,16 +696,20 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
     create_entries = store.query("system", filters={"action": "share.create"})
     assert len(create_entries) >= 1
     latest_create = create_entries[0]
+    assert latest_create["resource_id"] == share_id
     assert latest_create["detail"]["bundle_type"] == "bid_decision_kr"
-    assert latest_create["detail"]["project_id"] == "proj-share-audit"
-    assert latest_create["detail"]["share_project_document_id"] == "doc-share-audit"
-    assert latest_create["detail"]["share_decision_council_document_status"] == "stale_procurement"
-    assert latest_create["detail"]["share_decision_council_document_status_tone"] == "danger"
-    assert latest_create["detail"]["share_decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
-    assert latest_create["detail"]["share_procurement_review_document_status"] == "stale_procurement_review"
-    assert latest_create["detail"]["share_procurement_review_document_status_tone"] == "danger"
-    assert latest_create["detail"]["share_procurement_review_document_status_copy"] == "현재 procurement 대비 이전 review 기준"
-    assert len(store.query("system", filters={"action": "share.revoke"})) >= 1
+    assert latest_create["detail"]["project_id"] == project["project_id"]
+    assert latest_create["detail"]["share_project_document_id"] == document["doc_id"]
+    assert latest_create["detail"]["share_source_binding_status"] == "current"
+    assert latest_create["detail"]["share_post_share_source_changed"] is False
+
+    latest_view = store.query("system", filters={"action": "share.view"})[0]
+    assert latest_view["resource_id"] == share_id
+    assert latest_view["detail"]["share_source_binding_status"] == "current"
+    assert latest_view["detail"]["share_post_share_source_changed"] is False
+
+    latest_revoke = store.query("system", filters={"action": "share.revoke"})[0]
+    assert latest_revoke["resource_id"] == share_id
 
 
 def test_audit_procurement_import_logged(tmp_path, monkeypatch):

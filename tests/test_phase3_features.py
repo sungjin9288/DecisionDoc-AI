@@ -174,6 +174,9 @@ def test_share_store_create_and_get():
         title="테스트 문서",
         created_by="user1",
         bundle_id="proposal_kr",
+        project_id="project-share-1",
+        project_document_id="document-share-1",
+        source_fingerprint="f" * 64,
         expires_days=7,
         decision_council_document_status="stale_procurement",
         decision_council_document_status_tone="danger",
@@ -183,6 +186,9 @@ def test_share_store_create_and_get():
     assert link.share_id
     assert link.title == "테스트 문서"
     assert link.bundle_id == "proposal_kr"
+    assert link.project_id == "project-share-1"
+    assert link.project_document_id == "document-share-1"
+    assert link.source_fingerprint == "f" * 64
     assert link.is_active is True
     assert link.decision_council_document_status == "stale_procurement"
 
@@ -193,6 +199,9 @@ def test_share_store_create_and_get():
     assert retrieved["last_accessed_at"] == ""
     assert retrieved["decision_council_document_status"] == "stale_procurement"
     assert retrieved["decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
+    assert retrieved["project_id"] == "project-share-1"
+    assert retrieved["project_document_id"] == "document-share-1"
+    assert retrieved["source_fingerprint"] == "f" * 64
 
 
 def test_share_store_revoke():

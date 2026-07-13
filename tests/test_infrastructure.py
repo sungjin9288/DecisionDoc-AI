@@ -1295,6 +1295,9 @@ def test_index_html_share_auth_approval_project_modal_wiring_exists():
 
     for marker in (
         "function wireShareModalActions(modal, source = null)",
+        "const modalSource = source ? {",
+        "decisionCouncilDocumentStatus: data.decision_council_document_status || ''",
+        "procurementReviewDocumentStatus: data.procurement_review_document_status || ''",
         "modal.querySelector('[data-share-copy]')?.addEventListener('click', copyShareUrl)",
         "modal.querySelector('[data-share-close]')?.addEventListener('click', () => modal.remove())",
         "handleProjectDocumentDecisionCouncilFollowUp(source?.projectId || '', source?.docId || '')",

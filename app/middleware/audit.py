@@ -43,6 +43,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/approvals/{id}/approve"): "approval.approve",
     ("POST", "/approvals/{id}/reject"): "approval.reject",
     ("POST", "/share"): "share.create",
+    ("GET", "/shared/{id}"): "share.view",
     ("DELETE", "/share/{id}"): "share.revoke",
     ("POST", "/admin/users"): "user.create",
     ("PATCH", "/admin/users/{id}"): "user.update",
@@ -339,6 +340,13 @@ def _append_audit_entries(
             getattr(request.state, "share_procurement_review_document_status_summary", "") or ""
         )
         share_project_document_id = getattr(request.state, "share_project_document_id", "") or ""
+        share_id = getattr(request.state, "share_id", "") or ""
+        share_source_binding_status = (
+            getattr(request.state, "share_source_binding_status", "") or ""
+        )
+        share_post_share_source_changed = getattr(
+            request.state, "share_post_share_source_changed", None
+        )
         approval_project_id = getattr(request.state, "approval_project_id", "") or ""
         approval_project_document_id = (
             getattr(request.state, "approval_project_document_id", "") or ""
@@ -441,6 +449,12 @@ def _append_audit_entries(
             detail["share_procurement_review_document_status_summary"] = share_procurement_review_document_status_summary
         if share_project_document_id:
             detail["share_project_document_id"] = share_project_document_id
+        if share_id:
+            detail["share_id"] = share_id
+        if share_source_binding_status:
+            detail["share_source_binding_status"] = share_source_binding_status
+        if share_post_share_source_changed is not None:
+            detail["share_post_share_source_changed"] = share_post_share_source_changed
         if approval_project_id:
             detail["project_id"] = approval_project_id
         if approval_project_document_id:
@@ -565,6 +579,10 @@ def _build_audit_log(
         decision_council_project_id=decision_council_project_id,
         decision_council_session_id=decision_council_session_id,
     )
+    share_id = getattr(request.state, "share_id", "") or ""
+    if action.startswith("share.") and share_id:
+        resource_type = "share"
+        resource_id = share_id
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

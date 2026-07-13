@@ -28,6 +28,9 @@ class ShareLink:
     last_accessed_at: str = ""
     is_active: bool = True
     bundle_id: str = ""
+    project_id: str = ""
+    project_document_id: str = ""
+    source_fingerprint: str = ""
     decision_council_document_status: str = ""
     decision_council_document_status_tone: str = ""
     decision_council_document_status_copy: str = ""
@@ -80,6 +83,9 @@ class ShareStore(BaseJsonStore):
         title: str,
         created_by: str,
         bundle_id: str = "",
+        project_id: str = "",
+        project_document_id: str = "",
+        source_fingerprint: str = "",
         expires_days: int = 7,
         decision_council_document_status: str = "",
         decision_council_document_status_tone: str = "",
@@ -104,6 +110,9 @@ class ShareStore(BaseJsonStore):
             created_at=datetime.now().isoformat(),
             expires_at=expires_at,
             bundle_id=bundle_id,
+            project_id=project_id,
+            project_document_id=project_document_id,
+            source_fingerprint=source_fingerprint,
             decision_council_document_status=decision_council_document_status,
             decision_council_document_status_tone=decision_council_document_status_tone,
             decision_council_document_status_copy=decision_council_document_status_copy,
@@ -128,6 +137,9 @@ class ShareStore(BaseJsonStore):
                 "last_accessed_at": "",
                 "is_active": True,
                 "bundle_id": bundle_id,
+                "project_id": project_id,
+                "project_document_id": project_document_id,
+                "source_fingerprint": source_fingerprint,
                 "decision_council_document_status": decision_council_document_status,
                 "decision_council_document_status_tone": decision_council_document_status_tone,
                 "decision_council_document_status_copy": decision_council_document_status_copy,

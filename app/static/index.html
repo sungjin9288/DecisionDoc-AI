@@ -15312,7 +15312,18 @@
         throw Object.assign(new Error(err.message), { code: err.code });
       }
       const data = await res.json();
-      showShareModal(data.share_url, data.expires_at, title, source);
+      const modalSource = source ? {
+        ...source,
+        decisionCouncilDocumentStatus: data.decision_council_document_status || '',
+        decisionCouncilDocumentStatusTone: data.decision_council_document_status_tone || '',
+        decisionCouncilDocumentStatusCopy: data.decision_council_document_status_copy || '',
+        decisionCouncilDocumentStatusSummary: data.decision_council_document_status_summary || '',
+        procurementReviewDocumentStatus: data.procurement_review_document_status || '',
+        procurementReviewDocumentStatusTone: data.procurement_review_document_status_tone || '',
+        procurementReviewDocumentStatusCopy: data.procurement_review_document_status_copy || '',
+        procurementReviewDocumentStatusSummary: data.procurement_review_document_status_summary || '',
+      } : source;
+      showShareModal(data.share_url, data.expires_at, title, modalSource);
     } catch(e) {
       showNotification('공유 링크 생성 실패: ' + e.message, 'error');
     }

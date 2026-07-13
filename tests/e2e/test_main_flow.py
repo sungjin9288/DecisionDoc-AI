@@ -1130,20 +1130,14 @@ def test_project_detail_marks_stale_decision_council_and_blocks_generate(page, l
     page.locator(".approval-modal-overlay button", has_text="취소").click()
     page.wait_for_selector(".approval-modal-overlay", state="hidden", timeout=5000)
     stale_doc.locator("button", has_text="공유").click()
-    page.wait_for_selector('[data-share-decision-council-warning="stale_procurement"]', timeout=5000)
-    assert page.locator('[data-share-decision-council-warning="stale_procurement"]', has_text="현재 procurement 대비 이전 council 기준").count() == 1
-    assert page.locator('[data-share-decision-council-followup="stale_procurement"]', has_text="Council 다시 실행").count() == 1
-    shared_path = page.locator("#share-url-input").input_value()
-    page.locator('[data-share-decision-council-followup="stale_procurement"]').click()
-    page.wait_for_selector(".modal-overlay", state="hidden", timeout=5000)
-    assert page.locator("#project-decision-council-run-submit").evaluate("el => document.activeElement === el")
-    stale_doc.locator("button", has_text="공유").click()
-    page.wait_for_selector('[data-share-decision-council-warning="stale_procurement"]', timeout=5000)
+    page.wait_for_selector("#share-url-input", timeout=5000)
+    # This fixture mutates only the browser-side project object. The share
+    # response must use the unchanged server-side project document as authority.
+    assert page.locator('[data-share-decision-council-warning="stale_procurement"]').count() == 0
     shared_path = page.locator("#share-url-input").input_value()
     page.goto(f"{live_server['base_url']}{shared_path}")
-    page.wait_for_selector('[data-shared-decision-council-warning="stale_procurement"]', timeout=5000)
-    assert page.locator('[data-shared-decision-council-warning="stale_procurement"]', has_text="현재 procurement 대비 이전 council 기준").count() == 1
-    assert page.locator('[data-shared-decision-council-warning="stale_procurement"]', has_text="현재 procurement recommendation 또는 checklist가 바뀌어").count() == 1
+    page.wait_for_selector(".share-header", timeout=5000)
+    assert page.locator('[data-shared-decision-council-warning="stale_procurement"]').count() == 0
 
 
 def test_project_detail_decision_council_run_posts_goal_and_refreshes(page, live_server):
