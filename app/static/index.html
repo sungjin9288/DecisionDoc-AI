@@ -7567,6 +7567,7 @@
   let _reportWorkflowCurrent = null;
   let _reportWorkflowLastDevelopPreview = null;
   let _reportWorkflowLastQualityPreview = null;
+  const _reportWorkflowQualityPilotSelection = new Set();
 
   const REPORT_WORKFLOW_QUALITY_DIMENSIONS = [
     ['logic', '논리'],
@@ -7655,20 +7656,40 @@
     const el = $id('rw-quality-artifact-summary');
     if (!el) return;
     const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
-    const latestRows = artifacts.slice(0, 4).map(item => `
-      <div style="border:1px solid var(--border);border-radius:12px;padding:.55rem;background:rgba(255,255,255,.5);">
-        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start;">
-          <strong style="font-size:.78rem;color:#1f2a44;">${escapeHtml(item.workflow_title || item.report_workflow_id || 'artifact')}</strong>
-          <span style="font-size:.68rem;font-weight:850;color:${item.ready_for_learning ? '#166534' : '#92400e'};background:${item.ready_for_learning ? '#dcfce7' : '#fef3c7'};border-radius:999px;padding:.12rem .45rem;">${item.ready_for_learning ? 'ready' : 'blocked'}</span>
+    const visibleArtifacts = artifacts.slice(0, 5);
+    const selectableIds = new Set(
+      visibleArtifacts
+        .filter(item => item.ready_for_learning === true)
+        .map(item => String(item.artifact_id || item.store_artifact_id || ''))
+        .filter(Boolean),
+    );
+    for (const artifactId of _reportWorkflowQualityPilotSelection) {
+      if (!selectableIds.has(artifactId)) _reportWorkflowQualityPilotSelection.delete(artifactId);
+    }
+    const selectedCount = _reportWorkflowQualityPilotSelection.size;
+    const latestRows = visibleArtifacts.map(item => {
+      const artifactId = String(item.artifact_id || item.store_artifact_id || '');
+      const isReady = item.ready_for_learning === true;
+      const isSelected = _reportWorkflowQualityPilotSelection.has(artifactId);
+      return `
+        <div style="border:1px solid var(--border);border-radius:12px;padding:.55rem;background:rgba(255,255,255,.5);">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start;">
+            <strong style="font-size:.78rem;color:#1f2a44;">${escapeHtml(item.workflow_title || item.report_workflow_id || 'artifact')}</strong>
+            <span style="font-size:.68rem;font-weight:850;color:${isReady ? '#166534' : '#92400e'};background:${isReady ? '#dcfce7' : '#fef3c7'};border-radius:999px;padding:.12rem .45rem;">${isReady ? 'ready' : 'blocked'}</span>
+          </div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(artifactId)}</div>
+          <div style="font-size:.72rem;color:#334155;margin-top:.25rem;">score=${escapeHtml(String(item.overall_score ?? 'n/a'))} · reviewer=${escapeHtml(item.reviewer || item.actor || 'n/a')} · ${escapeHtml(item.domain || item.client || '')}</div>
+          <div style="display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-top:.45rem;">
+            <label style="display:inline-flex;align-items:center;gap:.28rem;font-size:.7rem;font-weight:800;color:${isReady ? '#1f2a44' : '#94a3b8'};">
+              <input type="checkbox" data-rw-quality-artifact-select value="${escapeHtml(artifactId)}" ${isSelected ? 'checked' : ''} ${isReady ? '' : 'disabled'}>
+              Pilot 선택
+            </label>
+            <button type="button" class="action-btn" data-rw-quality-artifacts-action="inspect" data-rw-quality-artifact-id="${escapeHtml(artifactId)}">🔍 검토</button>
+            <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-one" data-rw-quality-artifact-id="${escapeHtml(artifactId)}">⬇️ JSON</button>
+          </div>
         </div>
-        <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(item.artifact_id || item.store_artifact_id || '')}</div>
-        <div style="font-size:.72rem;color:#334155;margin-top:.25rem;">score=${escapeHtml(String(item.overall_score ?? 'n/a'))} · reviewer=${escapeHtml(item.reviewer || item.actor || 'n/a')} · ${escapeHtml(item.domain || item.client || '')}</div>
-        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.45rem;">
-          <button type="button" class="action-btn" data-rw-quality-artifacts-action="inspect" data-rw-quality-artifact-id="${escapeHtml(item.artifact_id || item.store_artifact_id || '')}">🔍 검토</button>
-          <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-one" data-rw-quality-artifact-id="${escapeHtml(item.artifact_id || item.store_artifact_id || '')}">⬇️ JSON</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
         <div>
@@ -7677,6 +7698,7 @@
         </div>
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;">
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="load">🔄 Artifact 새로고침</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-pilot" ${selectedCount >= 3 ? '' : 'disabled'}>⬇️ Pilot JSONL (${selectedCount}/5)</button>
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="download" ${Number(data?.ready_artifacts || 0) ? '' : 'disabled'}>⬇️ Ready JSONL</button>
         </div>
       </div>
@@ -7695,6 +7717,7 @@
   const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {
     load: loadReportWorkflowQualityArtifacts,
     download: downloadReportWorkflowQualityArtifacts,
+    'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
     inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
     'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
     close: () => {
@@ -7710,6 +7733,28 @@
         if (action) action(btn);
       });
     });
+    container.querySelectorAll('[data-rw-quality-artifact-select]').forEach(input => {
+      input.addEventListener('change', () => updateReportWorkflowQualityPilotSelection(input, container));
+    });
+  }
+
+  function updateReportWorkflowQualityPilotSelection(input, container) {
+    const artifactId = String(input.value || '').trim();
+    if (!artifactId) return;
+    if (input.checked && _reportWorkflowQualityPilotSelection.size >= 5) {
+      input.checked = false;
+      showNotification('Pilot batch에는 최대 5개 artifact만 선택할 수 있습니다.', 'error');
+      return;
+    }
+    if (input.checked) _reportWorkflowQualityPilotSelection.add(artifactId);
+    else _reportWorkflowQualityPilotSelection.delete(artifactId);
+
+    const count = _reportWorkflowQualityPilotSelection.size;
+    const button = container.querySelector('[data-rw-quality-artifacts-action="download-pilot"]');
+    if (button) {
+      button.disabled = count < 3;
+      button.textContent = `⬇️ Pilot JSONL (${count}/5)`;
+    }
   }
 
   async function fetchReportWorkflowQualityArtifact(artifactId) {
@@ -7786,6 +7831,34 @@
       showNotification('Correction artifact JSON 다운로드를 시작했습니다.', 'success');
     } catch (err) {
       showNotification('Correction artifact JSON 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function downloadReportWorkflowQualityPilotArtifacts() {
+    const artifactIds = Array.from(_reportWorkflowQualityPilotSelection);
+    if (artifactIds.length < 3 || artifactIds.length > 5) {
+      showNotification('Pilot JSONL은 ready artifact 3~5개를 선택해야 합니다.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/report-workflows/learning/correction-artifacts/pilot-export', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_ids: artifactIds }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'report_quality_pilot_artifacts.jsonl';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showNotification(`선택한 ${artifactIds.length}개 correction artifact JSONL 다운로드를 시작했습니다.`, 'success');
+    } catch (err) {
+      showNotification('Pilot correction artifact JSONL 다운로드 실패: ' + (err.message || err), 'error');
     }
   }
 

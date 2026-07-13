@@ -151,6 +151,28 @@ def _preview_bound_quality_payload(
     }
 
 
+def _create_ready_quality_artifact(client: TestClient, *, title: str) -> dict:
+    created = _create_workflow(
+        client,
+        title=title,
+        slide_count=2,
+        learning_opt_in=True,
+    )
+    workflow_id = created["report_workflow_id"]
+    _final_approve_workflow(client, workflow_id)
+    _, save_payload = _preview_bound_quality_payload(
+        client,
+        workflow_id,
+        _accepted_quality_correction_payload(),
+    )
+    saved = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact",
+        json=save_payload,
+    )
+    assert saved.status_code == 200
+    return saved.json()
+
+
 def test_report_workflow_crud_and_tenant_boundary(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client)
@@ -529,6 +551,58 @@ def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, m
     assert lines[0]["workflow_reference"]["report_workflow_id"] == workflow_id
     assert lines[0]["workflow_reference"]["source_material_policy"] == "metadata_only"
     assert lines[0]["training_boundary"]["training_execution_authorized"] is False
+
+
+def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifacts(
+    tmp_path,
+    monkeypatch,
+):
+    client = _create_client(tmp_path, monkeypatch)
+    saved_artifacts = [
+        _create_ready_quality_artifact(client, title=f"파일럿 품질 검토 {index}")
+        for index in range(1, 4)
+    ]
+    artifact_ids = [item["artifact"]["artifact_id"] for item in saved_artifacts]
+
+    too_small = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": artifact_ids[:2]},
+    )
+    assert too_small.status_code == 422
+
+    duplicate = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": [artifact_ids[0], artifact_ids[0], artifact_ids[1]]},
+    )
+    assert duplicate.status_code == 422
+
+    exported = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": list(reversed(artifact_ids))},
+    )
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/x-ndjson")
+    assert exported.headers["x-decisiondoc-pilot-artifact-count"] == "3"
+    assert exported.headers["x-decisiondoc-training-authorized"] == "false"
+    lines = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
+    assert [item["artifact_id"] for item in lines] == list(reversed(artifact_ids))
+    assert all(item["training_boundary"]["training_execution_authorized"] is False for item in lines)
+    assert all(_contains_key(item, "content_base64") is False for item in lines)
+
+    first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
+    alias_duplicate = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": [artifact_ids[0], first_wrapper_id, artifact_ids[1]]},
+    )
+    assert alias_duplicate.status_code == 400
+    assert "resolve to unique artifacts" in alias_duplicate.json()["detail"]
+
+    missing = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": [artifact_ids[0], artifact_ids[1], "rqa_missing"]},
+    )
+    assert missing.status_code == 404
+    assert "quality correction artifact not found" in missing.json()["detail"]
 
 
 def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_path, monkeypatch):

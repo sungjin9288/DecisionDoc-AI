@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CreateReportWorkflowRequest(BaseModel):
@@ -151,6 +151,24 @@ class ReportQualityCorrectionArtifactRequest(BaseModel):
     privacy_security_scan: str = "not_run"
     human_review_status: str = "pending"
     preview_fingerprint: str = Field(default="", pattern=r"^(?:|[0-9a-f]{64})$")
+
+
+class ReportQualityPilotExportRequest(BaseModel):
+    """Select three to five saved artifacts for a local pilot JSONL batch."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    artifact_ids: list[str] = Field(..., min_length=3, max_length=5)
+
+    @field_validator("artifact_ids")
+    @classmethod
+    def validate_artifact_ids(cls, value: list[str]) -> list[str]:
+        normalized = [artifact_id.strip() for artifact_id in value]
+        if any(not artifact_id for artifact_id in normalized):
+            raise ValueError("artifact_ids must not contain empty values")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("artifact_ids must be unique")
+        return normalized
 
 
 class ReportWorkflowDevelopQualityPreviewRequest(BaseModel):

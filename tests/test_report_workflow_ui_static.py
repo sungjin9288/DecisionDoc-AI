@@ -114,6 +114,10 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "/report-workflows/learning/correction-artifacts/${encodeURIComponent(normalizedId)}" in html
     assert 'data-rw-quality-artifacts-action="inspect"' in html
     assert 'data-rw-quality-artifacts-action="download-one"' in html
+    assert 'data-rw-quality-artifacts-action="download-pilot"' in html
+    assert "data-rw-quality-artifact-select" in html
+    assert "/report-workflows/learning/correction-artifacts/pilot-export" in html
+    assert "artifactIds.length < 3 || artifactIds.length > 5" in html
     assert "report_quality_correction_artifact_${safeId}.json" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html

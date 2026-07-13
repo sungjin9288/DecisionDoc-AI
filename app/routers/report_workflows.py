@@ -18,6 +18,7 @@ from app.schemas import (
     GenerateReportSlidesRequest,
     PromoteReportWorkflowRequest,
     ReportQualityCorrectionArtifactRequest,
+    ReportQualityPilotExportRequest,
     ReportWorkflowActionRequest,
     ReportWorkflowDevelopQualityPreviewRequest,
     SelectReportSlideVisualAssetRequest,
@@ -142,6 +143,36 @@ def export_report_quality_correction_artifacts(
                 'attachment; filename="report_quality_correction_artifacts.jsonl"; '
                 "filename*=UTF-8''report_quality_correction_artifacts.jsonl"
             )
+        },
+    )
+
+
+@router.post(
+    "/report-workflows/learning/correction-artifacts/pilot-export",
+    dependencies=[Depends(require_api_key)],
+)
+def export_report_quality_correction_pilot(
+    payload: ReportQualityPilotExportRequest,
+    request: Request,
+) -> Response:
+    tenant_id = get_tenant_id(request)
+    try:
+        body = _get_service(request).export_quality_correction_pilot_jsonl(
+            payload.artifact_ids,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    return Response(
+        content=body,
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="report_quality_pilot_artifacts.jsonl"; '
+                "filename*=UTF-8''report_quality_pilot_artifacts.jsonl"
+            ),
+            "X-DecisionDoc-Pilot-Artifact-Count": str(len(payload.artifact_ids)),
+            "X-DecisionDoc-Training-Authorized": "false",
         },
     )
 

@@ -394,6 +394,41 @@ class ReportWorkflowQualityMixin:
 
         raise KeyError(f"quality correction artifact not found: {requested_id}")
 
+    def export_quality_correction_pilot_jsonl(
+        self,
+        artifact_ids: list[str],
+        *,
+        tenant_id: str,
+    ) -> str:
+        """Export an ordered, ready-only pilot batch without external side effects."""
+        requested_ids = [str(artifact_id or "").strip() for artifact_id in artifact_ids]
+        if not 3 <= len(requested_ids) <= 5:
+            raise ValueError("pilot export requires between 3 and 5 artifact_ids")
+        if any(not artifact_id for artifact_id in requested_ids):
+            raise ValueError("artifact_ids must not contain empty values")
+        if len(set(requested_ids)) != len(requested_ids):
+            raise ValueError("artifact_ids must be unique")
+
+        artifacts: list[dict[str, Any]] = []
+        resolved_ids: set[str] = set()
+        for requested_id in requested_ids:
+            detail = self.get_quality_correction_artifact(requested_id, tenant_id=tenant_id)
+            resolved_id = str(detail.get("artifact_id") or detail.get("store_artifact_id") or "")
+            if resolved_id in resolved_ids:
+                raise ValueError("artifact_ids must resolve to unique artifacts")
+            if detail.get("ready_for_learning") is not True:
+                raise ValueError(f"quality correction artifact is not ready for pilot export: {requested_id}")
+            artifact = detail.get("artifact")
+            if not isinstance(artifact, dict) or not artifact:
+                raise ValueError(f"quality correction artifact payload is missing: {requested_id}")
+            resolved_ids.add(resolved_id)
+            artifacts.append(artifact)
+
+        return "".join(
+            json.dumps(artifact, ensure_ascii=False, sort_keys=True) + "\n"
+            for artifact in artifacts
+        )
+
     def export_quality_correction_artifacts_jsonl(
         self,
         *,
