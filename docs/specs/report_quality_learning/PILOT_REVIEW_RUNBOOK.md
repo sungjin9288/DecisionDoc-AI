@@ -72,7 +72,7 @@ python3 scripts/create_report_quality_review_sheet.py \
 - `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
 - `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
 
-worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 로컬 검수 문서다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 로컬 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 JSON을 직접 수정하는 대신 decision template을 만들어 검수 결정을 반영할 수 있다.
 
@@ -82,7 +82,7 @@ python3 scripts/apply_report_quality_review_decisions.py \
   --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
 ```
 
-검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. 승인할 artifact만 `decision=accepted`로 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다.
+검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. Template은 현재 review 상태를 그대로 시작값으로 사용하고, `pack_binding`에 source manifest와 draft SHA-256을 기록한다. 승인할 artifact만 `decision=accepted`로 유지하거나 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다.
 
 결정 파일을 draft artifact에 반영할 때:
 
@@ -93,7 +93,7 @@ python3 scripts/apply_report_quality_review_decisions.py \
   --require-ready
 ```
 
-`--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 draft 저장을 차단한다. 이 helper도 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+Source import pack은 `--create-template`로 만든 binding이 없는 decision 파일을 거부한다. Template 생성 뒤 source manifest나 draft가 바뀌면 stale binding으로 판단해 쓰기 전에 중단한다. Decision batch 안에 잘못된 항목이 하나라도 있으면 유효한 다른 항목도 저장하지 않는다. `--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 전체 batch 저장을 차단한다. 이 helper도 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 ```bash
 python3 scripts/sync_report_quality_pilot_pack.py \

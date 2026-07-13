@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -27,6 +28,39 @@ def _create_pack(tmp_path: Path) -> Path:
         reviewer="pm-reviewer",
     )
     return Path(result["output_dir"])
+
+
+def _write_source_manifest(pack_dir: Path, artifact_ids: list[str]) -> None:
+    manifest = {
+        "report_type": "report_quality_pilot_source_manifest",
+        "schema_version": "decisiondoc_report_quality_pilot_source_manifest.v1",
+        "batch_id": pack_dir.name,
+        "source": {
+            "artifact_count": len(artifact_ids),
+            "artifact_ids": artifact_ids,
+            "format": "jsonl",
+            "order_preserved": True,
+            "sha256": "a" * 64,
+            "tenant_id": "system",
+        },
+        "validation": {
+            "all_valid": True,
+            "all_ready_for_learning": True,
+            "unique_artifact_ids": True,
+            "single_tenant": True,
+        },
+        "side_effect_boundary": {
+            "external_dataset_upload_started": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "training_execution_started": False,
+            "model_promotion_started": False,
+        },
+    }
+    (pack_dir / "SOURCE_MANIFEST.json").write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _make_first_draft_ready(pack_dir: Path) -> None:
@@ -118,6 +152,29 @@ def test_create_report_quality_review_sheet_counts_ready_artifact(tmp_path):
     first = manifest["artifacts"][0]
     assert first["ready_for_learning"] is True
     assert first["required_actions"] == []
+
+
+def test_create_report_quality_review_sheet_preserves_source_order_and_binding(tmp_path):
+    review_script = _load_module(REVIEW_SHEET_SCRIPT_PATH, "create_report_quality_review_sheet_source")
+    pack_dir = _create_pack(tmp_path)
+    artifact_ids = [
+        "pilot-rqc-review_sample_003",
+        "pilot-rqc-review_sample_001",
+        "pilot-rqc-review_sample_002",
+    ]
+    _write_source_manifest(pack_dir, artifact_ids)
+
+    manifest = review_script.create_report_quality_review_sheet(pack_dir=pack_dir)
+
+    assert [row["artifact_id"] for row in manifest["artifacts"]] == artifact_ids
+    source_binding = manifest["pack_binding"]["source_manifest"]
+    assert source_binding["source_jsonl_sha256"] == "a" * 64
+    assert source_binding["tenant_id"] == "system"
+    first_path = pack_dir / "drafts" / f"{artifact_ids[0]}.json"
+    assert manifest["artifacts"][0]["draft_sha256"] == hashlib.sha256(first_path.read_bytes()).hexdigest()
+    worksheet = Path(manifest["output_path"]).read_text(encoding="utf-8")
+    assert "source_bound: `yes`" in worksheet
+    assert source_binding["sha256"] in worksheet
 
 
 def test_create_report_quality_review_sheet_cli_outputs_json(tmp_path, capsys):

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +19,10 @@ if str(REPO_ROOT) not in sys.path:
 from app.services.report_quality_learning import (  # noqa: E402
     REQUIRED_DIMENSIONS,
     validate_correction_artifact,
+)
+from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    load_pilot_pack,
+    require_current_pack_binding,
 )
 
 
@@ -30,9 +36,12 @@ def _now_iso() -> str:
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -58,24 +67,6 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: JSON root must be an object")
     return payload
-
-
-def _load_draft_map(pack_dir: Path) -> dict[str, dict[str, Any]]:
-    drafts_dir = pack_dir / "drafts"
-    if not drafts_dir.is_dir():
-        raise ValueError(f"drafts directory not found: {drafts_dir}")
-    result: dict[str, dict[str, Any]] = {}
-    for path in sorted(drafts_dir.glob("*.json")):
-        payload = _load_json(path)
-        artifact_id = str(payload.get("artifact_id") or "").strip()
-        if not artifact_id:
-            raise ValueError(f"{path}: artifact_id must be non-empty")
-        if artifact_id in result:
-            raise ValueError(f"duplicate artifact_id found: {artifact_id}")
-        result[artifact_id] = {"path": path, "payload": payload}
-    if not result:
-        raise ValueError(f"no draft JSON files found: {drafts_dir}")
-    return result
 
 
 def _decision_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -192,28 +183,38 @@ def _apply_decision(payload: dict[str, Any], decision: dict[str, Any]) -> dict[s
 def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
     resolved_output_path = output_path.expanduser().resolve()
-    draft_map = _load_draft_map(resolved_pack_dir)
+    snapshot = load_pilot_pack(resolved_pack_dir)
     decisions: list[dict[str, Any]] = []
-    for artifact_id, item in draft_map.items():
-        payload = _as_dict(item["payload"])
+    for draft in snapshot.drafts:
+        payload = draft.payload
         workflow = _as_dict(payload.get("workflow_reference"))
         profile = _as_dict(payload.get("document_profile"))
+        quality = _as_dict(payload.get("quality_baseline"))
         correction = _as_dict(payload.get("correction"))
+        labels = _as_dict(payload.get("learning_labels"))
+        current_decision = str(labels.get("human_review_status") or "pending").strip()
+        if current_decision not in ALLOWED_DECISIONS:
+            current_decision = "pending"
+        current_scores = _as_dict(quality.get("dimension_scores"))
         decisions.append({
-            "artifact_id": artifact_id,
+            "artifact_id": draft.artifact_id,
             "report_workflow_id": workflow.get("report_workflow_id", ""),
             "domain": profile.get("domain", ""),
-            "decision": "pending",
+            "decision": current_decision,
             "reviewer": correction.get("reviewer", ""),
-            "reviewed_at": "",
-            "overall_score": None,
-            "dimension_scores": {dimension: None for dimension in REQUIRED_DIMENSIONS},
-            "hard_failures": [],
-            "forbidden_terms_scan": "not_run",
-            "privacy_security_scan": "not_run",
-            "confirmed_claims": [],
-            "assumed_claims": [],
-            "todo_claims": list(_as_dict(payload.get("learning_labels")).get("todo_claims") or []),
+            "reviewed_at": correction.get("reviewed_at", ""),
+            "overall_score": quality.get("overall_score"),
+            "dimension_scores": {
+                dimension: current_scores.get(dimension)
+                for dimension in REQUIRED_DIMENSIONS
+            },
+            "hard_failures": list(_as_list(quality.get("hard_failures"))),
+            "forbidden_terms_scan": labels.get("forbidden_terms_scan", "not_run"),
+            "privacy_security_scan": labels.get("privacy_security_scan", "not_run"),
+            "confirmed_claims": list(_as_list(labels.get("confirmed_claims"))),
+            "assumed_claims": list(_as_list(labels.get("assumed_claims"))),
+            "todo_claims": list(_as_list(labels.get("todo_claims"))),
+            "change_requests": list(_as_list(correction.get("change_requests"))),
             "rationale_by_dimension": {
                 dimension: _as_dict(correction.get("rationale_by_dimension")).get(dimension, "")
                 for dimension in REQUIRED_DIMENSIONS
@@ -224,12 +225,14 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
         "schema_version": "decisiondoc_report_quality_human_review_decisions.v1",
         "created_at": _now_iso(),
         "pack_dir": str(resolved_pack_dir),
+        "pack_binding": snapshot.binding(),
         "training_authorized": False,
         "instructions": [
             "accepted로 변경할 때만 accepted_for_learning=true가 적용됩니다.",
             "accepted decision은 reviewer, reviewed_at, overall_score, 모든 dimension_scores, scan pass가 필요합니다.",
             "changes_requested/rejected/pending은 accepted_for_learning=false를 유지합니다.",
             "training_boundary 값은 이 helper가 변경하지 않습니다.",
+            "pack_binding이 현재 source manifest와 draft SHA-256에 맞아야 적용됩니다.",
         ],
         "decisions": decisions,
     }
@@ -243,6 +246,7 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
         "pack_dir": str(resolved_pack_dir),
         "output_path": str(resolved_output_path),
         "artifact_count": len(decisions),
+        "source_bound": snapshot.source_order_applied,
         "side_effect_boundary": {
             "reads_local_draft_json": True,
             "writes_decision_template": True,
@@ -264,16 +268,27 @@ def apply_review_decisions(
 ) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
     resolved_decisions_path = decisions_path.expanduser().resolve()
-    draft_map = _load_draft_map(resolved_pack_dir)
-    raw_decisions = _decision_items(_load_json(resolved_decisions_path))
+    snapshot = load_pilot_pack(resolved_pack_dir)
+    draft_map = {draft.artifact_id: draft for draft in snapshot.drafts}
+    decision_file = _load_json(resolved_decisions_path)
+    pack_binding = decision_file.get("pack_binding")
+    if snapshot.source_order_applied or pack_binding is not None:
+        require_current_pack_binding(snapshot, pack_binding)
+    raw_decisions = _decision_items(decision_file)
 
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
+    prepared: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
+    seen_artifact_ids: set[str] = set()
     for index, decision in enumerate(raw_decisions):
         artifact_id = str(decision.get("artifact_id") or "").strip()
         decision_errors = _validate_decision(decision)
         if artifact_id and artifact_id not in draft_map:
             decision_errors.append(f"artifact_id not found in drafts: {artifact_id}")
+        if artifact_id in seen_artifact_ids:
+            decision_errors.append(f"duplicate artifact_id in decisions: {artifact_id}")
+        if artifact_id:
+            seen_artifact_ids.add(artifact_id)
         if decision_errors:
             errors.extend(f"decisions[{index}] {error}" for error in decision_errors)
             rows.append({
@@ -285,7 +300,7 @@ def apply_review_decisions(
             continue
 
         item = draft_map[artifact_id]
-        next_payload = json.loads(json.dumps(item["payload"], ensure_ascii=False))
+        next_payload = json.loads(json.dumps(item.payload, ensure_ascii=False))
         _apply_decision(next_payload, decision)
         validation = validate_correction_artifact(next_payload)
         validation_errors = list(validation.get("errors") or [])
@@ -293,28 +308,35 @@ def apply_review_decisions(
             errors.extend(f"{artifact_id}: {error}" for error in validation_errors)
         if require_ready and not validation.get("ready_for_learning"):
             errors.append(f"{artifact_id}: not ready_for_learning")
-        should_write = not dry_run and not validation_errors and (not require_ready or validation.get("ready_for_learning"))
-        if should_write:
-            path = Path(item["path"])
-            _write_text_atomic(
-                path,
-                json.dumps(next_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            )
-        rows.append({
+        row = {
             "artifact_id": artifact_id,
             "decision": decision["decision"],
-            "path": str(item["path"]),
-            "applied": should_write,
+            "path": str(item.path),
+            "applied": False,
             "dry_run": dry_run,
             "validation_ok": bool(validation.get("ok")),
             "ready_for_learning": bool(validation.get("ready_for_learning")),
             "validation_errors": validation_errors,
             "validation_warnings": list(validation.get("warnings") or []),
-        })
+        }
+        rows.append(row)
+        if not validation_errors and (not require_ready or validation.get("ready_for_learning")):
+            prepared.append((row, item.path, next_payload))
+
+    ok = not errors
+    if ok and not dry_run:
+        if snapshot.source_order_applied or pack_binding is not None:
+            current_snapshot = load_pilot_pack(resolved_pack_dir)
+            require_current_pack_binding(current_snapshot, pack_binding)
+        for row, path, next_payload in prepared:
+            _write_text_atomic(
+                path,
+                json.dumps(next_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            )
+            row["applied"] = True
 
     applied_count = sum(1 for row in rows if row.get("applied"))
     ready_count = sum(1 for row in rows if row.get("ready_for_learning"))
-    ok = not errors
     return {
         "report_type": "report_quality_review_decisions_applied",
         "ok": ok,
@@ -322,6 +344,7 @@ def apply_review_decisions(
         "decisions_path": str(resolved_decisions_path),
         "dry_run": dry_run,
         "require_ready": require_ready,
+        "pack_binding_verified": snapshot.source_order_applied or pack_binding is not None,
         "decision_count": len(rows),
         "applied_count": applied_count,
         "ready_decisions": ready_count,

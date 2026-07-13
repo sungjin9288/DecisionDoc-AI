@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -17,10 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.services.report_quality_learning import validate_correction_artifact  # noqa: E402
-
-
-SOURCE_MANIFEST_NAME = "SOURCE_MANIFEST.json"
-ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+from scripts.report_quality_pilot_pack_provenance import load_pilot_pack  # noqa: E402
 
 
 def _write_text_atomic(path: Path, text: str) -> None:
@@ -33,47 +29,11 @@ def _write_text_atomic(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path}: artifact root must be an object")
-    return payload
-
-
 def _default_output_path(pack_dir: Path) -> Path:
     existing = sorted(pack_dir.glob("*-drafts.jsonl"))
     if existing:
         return existing[0]
     return pack_dir / f"{pack_dir.name}-drafts.jsonl"
-
-
-def _ordered_draft_paths(pack_dir: Path, drafts_dir: Path) -> tuple[list[Path], bool]:
-    draft_paths = sorted(drafts_dir.glob("*.json"))
-    manifest_path = pack_dir / SOURCE_MANIFEST_NAME
-    if not manifest_path.is_file():
-        return draft_paths, False
-
-    manifest = _load_json(manifest_path)
-    source = manifest.get("source")
-    artifact_ids = source.get("artifact_ids") if isinstance(source, dict) else None
-    if not isinstance(artifact_ids, list) or not artifact_ids:
-        raise ValueError(f"{manifest_path}: source.artifact_ids must be a non-empty list")
-    if any(not isinstance(value, str) or not ARTIFACT_ID_PATTERN.fullmatch(value) for value in artifact_ids):
-        raise ValueError(f"{manifest_path}: source.artifact_ids contains an unsafe artifact_id")
-    if len(set(artifact_ids)) != len(artifact_ids):
-        raise ValueError(f"{manifest_path}: source.artifact_ids must be unique")
-
-    ordered_paths = [drafts_dir / f"{artifact_id}.json" for artifact_id in artifact_ids]
-    missing = [path.name for path in ordered_paths if not path.is_file()]
-    extra = sorted(path.name for path in set(draft_paths) - set(ordered_paths))
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"missing drafts: {', '.join(missing)}")
-        if extra:
-            details.append(f"untracked drafts: {', '.join(extra)}")
-        raise ValueError(f"{manifest_path}: source order does not match drafts ({'; '.join(details)})")
-    return ordered_paths, True
 
 
 def sync_report_quality_pilot_pack(
@@ -84,9 +44,8 @@ def sync_report_quality_pilot_pack(
     require_ready: bool = False,
 ) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
+    snapshot = load_pilot_pack(resolved_pack_dir)
     drafts_dir = resolved_pack_dir / "drafts"
-    if not drafts_dir.is_dir():
-        raise ValueError(f"drafts directory not found: {drafts_dir}")
     min_records = max(1, int(min_records or 1))
     resolved_output_path = (
         output_path.expanduser().resolve()
@@ -94,20 +53,13 @@ def sync_report_quality_pilot_pack(
         else _default_output_path(resolved_pack_dir).resolve()
     )
 
-    draft_paths, source_order_applied = _ordered_draft_paths(resolved_pack_dir, drafts_dir)
-    if not draft_paths:
-        raise ValueError(f"no draft JSON files found: {drafts_dir}")
-
     payloads: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
     warnings: list[str] = []
-    for path in draft_paths:
-        try:
-            payload = _load_json(path)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            errors.append(str(exc))
-            continue
+    for draft in snapshot.drafts:
+        path = draft.path
+        payload = draft.payload
         validation = validate_correction_artifact(payload)
         payloads.append(payload)
         row = {
@@ -149,7 +101,7 @@ def sync_report_quality_pilot_pack(
         "pack_dir": str(resolved_pack_dir),
         "drafts_dir": str(drafts_dir),
         "output_path": str(resolved_output_path),
-        "source_order_applied": source_order_applied,
+        "source_order_applied": snapshot.source_order_applied,
         "min_records": min_records,
         "require_ready": require_ready,
         "artifact_count": artifact_count,

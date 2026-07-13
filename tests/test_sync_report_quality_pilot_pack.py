@@ -71,16 +71,52 @@ def test_sync_report_quality_pilot_pack_rejects_source_manifest_drift(tmp_path):
     sync_script = _load_module(SYNC_SCRIPT_PATH, "sync_report_quality_pilot_pack_manifest_drift")
     pack_dir = _create_pack(tmp_path)
     manifest = {
+        "report_type": "report_quality_pilot_source_manifest",
+        "schema_version": "decisiondoc_report_quality_pilot_source_manifest.v1",
+        "batch_id": "pilot-rqc-sync",
         "source": {
+            "artifact_count": 2,
             "artifact_ids": [
                 "pilot-rqc-sync_sample_001",
                 "pilot-rqc-sync_sample_002",
-            ]
-        }
+            ],
+            "format": "jsonl",
+            "order_preserved": True,
+            "sha256": "a" * 64,
+            "tenant_id": "system",
+        },
+        "validation": {
+            "all_valid": True,
+            "all_ready_for_learning": True,
+            "unique_artifact_ids": True,
+            "single_tenant": True,
+        },
+        "side_effect_boundary": {
+            "external_dataset_upload_started": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "training_execution_started": False,
+            "model_promotion_started": False,
+        },
     }
     (pack_dir / "SOURCE_MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="source order does not match drafts"):
+        sync_script.sync_report_quality_pilot_pack(pack_dir=pack_dir, min_records=3)
+
+    manifest["source"]["artifact_count"] = 3
+    manifest["source"]["artifact_ids"].append("pilot-rqc-sync_sample_003")
+    manifest["side_effect_boundary"]["training_execution_started"] = True
+    (pack_dir / "SOURCE_MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="no-training side-effect boundary is invalid"):
+        sync_script.sync_report_quality_pilot_pack(pack_dir=pack_dir, min_records=3)
+
+    external_manifest = tmp_path / "external-source-manifest.json"
+    external_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+    source_manifest_path = pack_dir / "SOURCE_MANIFEST.json"
+    source_manifest_path.unlink()
+    source_manifest_path.symlink_to(external_manifest)
+    with pytest.raises(ValueError, match="symlink source manifests are not allowed"):
         sync_script.sync_report_quality_pilot_pack(pack_dir=pack_dir, min_records=3)
 
 

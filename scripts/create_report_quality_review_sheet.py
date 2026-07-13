@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,7 @@ from app.services.report_quality_learning import (  # noqa: E402
     REQUIRED_DIMENSIONS,
     validate_correction_artifact,
 )
+from scripts.report_quality_pilot_pack_provenance import load_pilot_pack  # noqa: E402
 
 
 def _now_iso() -> str:
@@ -30,9 +33,12 @@ def _now_iso() -> str:
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -67,21 +73,6 @@ def _default_output_path(pack_dir: Path) -> Path:
 
 def _default_manifest_path(pack_dir: Path) -> Path:
     return pack_dir / "human_review_manifest.json"
-
-
-def _load_draft_artifacts(pack_dir: Path) -> list[dict[str, Any]]:
-    drafts_dir = pack_dir / "drafts"
-    if not drafts_dir.is_dir():
-        raise ValueError(f"drafts directory not found: {drafts_dir}")
-    artifacts: list[dict[str, Any]] = []
-    for path in sorted(drafts_dir.glob("*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError(f"{path}: artifact root must be an object")
-        artifacts.append({"path": path, "payload": payload})
-    if not artifacts:
-        raise ValueError(f"no draft JSON files found: {drafts_dir}")
-    return artifacts
 
 
 def _contains_placeholder(value: Any) -> bool:
@@ -135,7 +126,13 @@ def _artifact_required_actions(payload: dict[str, Any], validation: dict[str, An
     return sorted(dict.fromkeys(actions))
 
 
-def _artifact_row(path: Path, payload: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+def _artifact_row(
+    path: Path,
+    payload: dict[str, Any],
+    validation: dict[str, Any],
+    *,
+    draft_sha256: str,
+) -> dict[str, Any]:
     workflow = _as_dict(payload.get("workflow_reference"))
     profile = _as_dict(payload.get("document_profile"))
     quality = _as_dict(payload.get("quality_baseline"))
@@ -144,6 +141,7 @@ def _artifact_row(path: Path, payload: dict[str, Any], validation: dict[str, Any
     actions = _artifact_required_actions(payload, validation)
     return {
         "path": str(path),
+        "draft_sha256": draft_sha256,
         "artifact_id": str(payload.get("artifact_id") or ""),
         "report_workflow_id": str(workflow.get("report_workflow_id") or ""),
         "workflow_status": str(workflow.get("workflow_status") or ""),
@@ -181,12 +179,19 @@ def create_report_quality_review_sheet(
         if manifest_path is not None
         else _default_manifest_path(resolved_pack_dir).resolve()
     )
-    loaded = _load_draft_artifacts(resolved_pack_dir)
+    snapshot = load_pilot_pack(resolved_pack_dir)
     rows: list[dict[str, Any]] = []
-    for item in loaded:
-        payload = _as_dict(item["payload"])
+    for draft in snapshot.drafts:
+        payload = draft.payload
         validation = validate_correction_artifact(payload)
-        rows.append(_artifact_row(Path(item["path"]), payload, validation))
+        rows.append(
+            _artifact_row(
+                draft.path,
+                payload,
+                validation,
+                draft_sha256=draft.sha256,
+            )
+        )
 
     artifact_count = len(rows)
     ready_artifacts = sum(1 for row in rows if row["ready_for_learning"])
@@ -203,6 +208,7 @@ def create_report_quality_review_sheet(
         "pack_dir": str(resolved_pack_dir),
         "output_path": str(resolved_output_path),
         "manifest_path": str(resolved_manifest_path),
+        "pack_binding": snapshot.binding(),
         "counts": {
             "artifact_count": artifact_count,
             "validation_ok_artifacts": artifact_count - invalid_artifacts,
@@ -216,6 +222,7 @@ def create_report_quality_review_sheet(
         "artifacts": rows,
         "side_effect_boundary": {
             "reads_local_draft_json": True,
+            "reads_source_manifest": snapshot.source_order_applied,
             "writes_review_sheet": True,
             "writes_manifest": True,
             "external_dataset_upload_started": False,
@@ -241,6 +248,8 @@ def _action_text(actions: list[str]) -> str:
 
 def render_review_sheet_markdown(manifest: dict[str, Any]) -> str:
     counts = _as_dict(manifest.get("counts"))
+    pack_binding = _as_dict(manifest.get("pack_binding"))
+    source_manifest = _as_dict(pack_binding.get("source_manifest"))
     rows = [row for row in _as_list(manifest.get("artifacts")) if isinstance(row, dict)]
     table = "\n".join(
         "| {artifact_id} | {workflow_id} | {domain} | {score} | {status} | {ready} | {actions} |".format(
@@ -297,6 +306,8 @@ def render_review_sheet_markdown(manifest: dict[str, Any]) -> str:
 - generated_at: `{manifest.get('generated_at', '-')}`
 - pack_dir: `{manifest.get('pack_dir', '-')}`
 - manifest_path: `{manifest.get('manifest_path', '-')}`
+- source_bound: `{'yes' if source_manifest else 'no'}`
+- source_manifest_sha256: `{source_manifest.get('sha256', '-')}`
 - training_authorized: `false`
 - artifact_count: `{counts.get('artifact_count', 0)}`
 - ready_artifacts: `{counts.get('ready_artifacts', 0)}`

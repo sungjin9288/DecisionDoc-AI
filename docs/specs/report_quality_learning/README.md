@@ -299,9 +299,10 @@
   - source manifest가 있으면 UI 선택 순서를 보존하고, manifest와 draft 구성이 다르면 실패한다. `--require-ready`를 붙이면 모든 artifact가 학습 후보 gate를 통과하는지 확인한다.
 - `scripts/create_report_quality_review_sheet.py`
   - `drafts/*.json` 기준으로 사람이 채워야 할 reviewer, score, scan, approval 필드를 markdown worksheet로 만든다.
-  - worksheet와 manifest만 생성하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
+  - Source import pack에서는 source manifest SHA-256, tenant, artifact 순서, 각 draft SHA-256을 `human_review_manifest.json`에 함께 결속한다. Worksheet와 manifest만 생성하며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
 - `scripts/apply_report_quality_review_decisions.py`
   - 사람이 작성한 decision JSON을 draft artifact에 반영한다.
+  - Decision template은 현재 review 상태와 pack binding을 snapshot으로 남긴다. Source-bound pack은 binding 없는 파일, stale source manifest, 변경된 draft SHA-256을 거부하며, batch 검증이 모두 통과한 경우에만 draft를 저장한다.
   - `accepted` decision은 reviewer, reviewed_at, score, scan pass, validator ready gate를 충족해야 저장된다.
 
 ## Backend Integration
@@ -413,18 +414,18 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
      --output-root reports/report-quality
    ```
 6. `SOURCE_MANIFEST.json`의 SHA-256, tenant, artifact 순서를 원본 export와 대조한다.
-7. worksheet로 교정 내용과 승인 필드를 다시 확인한다.
+7. worksheet로 교정 내용과 승인 필드를 다시 확인한다. Source import pack에서는 `human_review_manifest.json`의 source/draft SHA-256 binding도 함께 확인한다.
    ```bash
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
    ```
-8. 변경이 필요하면 decision template을 만들고 `changes_requested` 또는 `rejected`를 기록한다.
+8. 변경이 필요하면 현재 pack에 결속된 decision template을 만들고 `changes_requested` 또는 `rejected`를 기록한다.
    ```bash
    python3 scripts/apply_report_quality_review_decisions.py \
      reports/report-quality/pilot-rqc-001 \
      --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
    ```
-9. decision JSON을 작성했다면 draft artifact에 반영한다.
+9. decision JSON을 작성했다면 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 새 template을 만들고 다시 검토한다.
    ```bash
    python3 scripts/apply_report_quality_review_decisions.py \
      reports/report-quality/pilot-rqc-001 \
