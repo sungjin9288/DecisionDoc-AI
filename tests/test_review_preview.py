@@ -115,6 +115,7 @@ def test_build_review_dashboard_includes_pdf_iframe_and_preview_text() -> None:
     assert "수치 근거 확인" in html
     assert "사실 근거 검토" in html
     assert "사람의 시각 검토" in html
+    assert "통합 검토 작업공간" in html
     assert "발주처 입력 근거" in html
     assert "# 사업 이해" in html
     assert "&lt;script&gt;alert(&#x27;unsafe&#x27;)&lt;/script&gt;" in html

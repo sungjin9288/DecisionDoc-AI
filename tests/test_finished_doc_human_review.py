@@ -12,7 +12,7 @@ from app.eval.human_review_receipt import (
     record_bundle_review,
     validate_human_review_receipt,
 )
-from scripts.manage_finished_doc_human_review import main
+from scripts.manage_finished_doc_human_review import _load_bundle_documents, main
 
 
 MANIFEST_SHA256 = "a" * 64
@@ -24,8 +24,8 @@ def _manifest() -> dict:
         "schema_version": "decisiondoc.finished_document_review.v3",
         "generated_at": CREATED_AT,
         "bundles": {
-            "proposal_kr": {},
-            "performance_plan_kr": {},
+            "proposal_kr": {"markdown_docs": {}},
+            "performance_plan_kr": {"markdown_docs": {}},
         },
         "external_actions": {
             "provider_api_execution": False,
@@ -240,3 +240,10 @@ def test_cli_initializes_records_and_validates_receipt(
     manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["evidence"]["manifest_sha256"] == manifest_hash
+
+    escaped_manifest = _manifest()
+    escaped_manifest["bundles"]["proposal_kr"]["markdown_docs"] = {
+        "proposal": "../outside.md",
+    }
+    with pytest.raises(ValueError, match="stay inside the evidence directory"):
+        _load_bundle_documents(tmp_path, escaped_manifest)

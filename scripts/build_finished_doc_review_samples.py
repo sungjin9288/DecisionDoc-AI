@@ -514,6 +514,7 @@ def run(
             manifest=manifest,
             receipt=human_review_receipt,
             validation=receipt_validation,
+            bundle_documents=bundle_documents,
         ),
     )
 

@@ -65,8 +65,11 @@ def _assert_pending_human_review_receipt(root: Path, manifest: dict) -> dict:
     assert result["reviewed_count"] == 0
     assert all(value is False for value in receipt["external_actions_authorized"].values())
     summary = (root / "human_review.html").read_text(encoding="utf-8")
-    assert "사람 검토 기록" in summary
+    assert "문서 검토 작업공간" in summary
     assert "검토 대기" in summary
+    assert "요청 근거" in summary
+    assert "자동 검증" in summary
+    assert "# 사업 이해" in summary
     assert receipt["evidence"]["manifest_sha256"] in summary
     assert "human_review_receipt" not in manifest["artifacts"]
     assert "human_review_summary" not in manifest["artifacts"]

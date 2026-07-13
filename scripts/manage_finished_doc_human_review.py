@@ -8,7 +8,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Sequence
 from uuid import uuid4
 
@@ -95,6 +95,42 @@ def _print_json(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
+def _load_bundle_documents(
+    evidence_dir: Path,
+    manifest: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    root = evidence_dir.resolve()
+    bundles = manifest.get("bundles")
+    if not isinstance(bundles, dict):
+        raise ValueError("evidence manifest bundles must be an object")
+
+    documents: dict[str, dict[str, str]] = {}
+    for bundle_type, bundle in bundles.items():
+        if not isinstance(bundle, dict):
+            raise ValueError("evidence manifest bundle records must be objects")
+        markdown_files = bundle.get("markdown_docs")
+        if not isinstance(markdown_files, dict):
+            raise ValueError("bundle markdown_docs must be an object")
+
+        bundle_documents: dict[str, str] = {}
+        for document_type, value in markdown_files.items():
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("Markdown document path must be a non-empty string")
+            relative_path = PurePosixPath(value)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise ValueError(f"Markdown document path must stay inside the evidence directory: {value}")
+            path = root / relative_path.as_posix()
+            try:
+                resolved = path.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise ValueError(f"Markdown document is missing: {value}") from exc
+            if path.is_symlink() or not resolved.is_relative_to(root) or not resolved.is_file():
+                raise ValueError(f"Markdown document must be a regular evidence file: {value}")
+            bundle_documents[str(document_type)] = resolved.read_text(encoding="utf-8")
+        documents[str(bundle_type)] = bundle_documents
+    return documents
+
+
 def _summary_path(receipt_path: Path, requested_output: Path | None = None) -> Path:
     requested_output = requested_output or Path(SUMMARY_FILENAME)
     output_path = (
@@ -122,6 +158,7 @@ def _write_summary(
         manifest=manifest,
         receipt=receipt,
         validation=validation,
+        bundle_documents=_load_bundle_documents(receipt_path.parent, manifest),
         receipt_path=receipt_path.name,
     )
     _write_text_atomic(output_path, summary)

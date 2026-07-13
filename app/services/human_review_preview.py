@@ -43,9 +43,66 @@ def _href(path: str) -> str:
     return html.escape(quote(path, safe="/._-"))
 
 
+def _request_rows(request: Any) -> str:
+    request = request if isinstance(request, Mapping) else {}
+    fields = (
+        ("goal", "목표"),
+        ("context", "입력 근거"),
+        ("constraints", "제약 조건"),
+        ("audience", "검토 대상"),
+    )
+    return "".join(
+        f"<dt>{label}</dt><dd>{html.escape(str(request.get(field) or '기록 없음'))}</dd>"
+        for field, label in fields
+    )
+
+
+def _quality_rows(quality: Any) -> str:
+    quality = quality if isinstance(quality, Mapping) else {}
+    numeric_review = quality.get("numeric_grounding_review")
+    numeric_review = numeric_review if isinstance(numeric_review, Mapping) else {}
+    checks = (
+        ("Schema validator", "passed" if quality.get("validator_pass") else "needs_revision"),
+        ("Bundle lint", "passed" if quality.get("lint_pass") else "needs_revision"),
+        ("수치 근거", numeric_review.get("status") or "pending"),
+    )
+    return "".join(
+        f"<div><dt>{label}</dt><dd>{_status(status)}</dd></div>"
+        for label, status in checks
+    )
+
+
+def _document_rows(
+    bundle: Mapping[str, Any],
+    documents: Mapping[str, str],
+) -> str:
+    markdown_files = bundle.get("markdown_docs")
+    if not isinstance(markdown_files, Mapping):
+        return ""
+
+    rows: list[str] = []
+    for index, (document_type, path) in enumerate(markdown_files.items()):
+        markdown = documents.get(str(document_type), "")
+        open_attribute = " open" if index == 0 else ""
+        rows.append(
+            f"<details class='document'{open_attribute}>"
+            "<summary>"
+            f"<strong>{html.escape(str(document_type))}</strong>"
+            f"<span>{len(markdown.splitlines())} lines</span>"
+            "</summary>"
+            "<div class='document-body'>"
+            f"<a class='file-link' href='{_href(str(path))}'>Markdown 원문</a>"
+            f"<pre>{html.escape(markdown)}</pre>"
+            "</div>"
+            "</details>"
+        )
+    return "".join(rows)
+
+
 def _bundle_review_rows(
     manifest: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    bundle_documents: Mapping[str, Mapping[str, str]],
 ) -> str:
     manifest_bundles = manifest.get("bundles")
     bundle_reviews = receipt.get("bundle_reviews")
@@ -61,6 +118,7 @@ def _bundle_review_rows(
         reviewer = str(review.get("reviewer") or "미지정")
         reviewed_at = str(review.get("reviewed_at") or "미검토")
         notes = str(review.get("notes") or "기록 없음")
+        documents = bundle_documents.get(str(bundle_type), {})
         rows.append(
             "<section class='review-row'>"
             "<header class='review-row-header'>"
@@ -70,6 +128,16 @@ def _bundle_review_rows(
             "</div>"
             f"{_status(review.get('decision'))}"
             "</header>"
+            "<div class='review-context'>"
+            "<section class='context-section'>"
+            "<h3>요청 근거</h3>"
+            f"<dl class='request-data'>{_request_rows(bundle.get('request'))}</dl>"
+            "</section>"
+            "<section class='context-section'>"
+            "<h3>자동 검증</h3>"
+            f"<dl class='check-list'>{_quality_rows(bundle.get('quality'))}</dl>"
+            "</section>"
+            "</div>"
             "<dl class='review-states'>"
             "<div><dt>사실 근거</dt>"
             f"<dd>{_status(review.get('factual_grounding'))}</dd></div>"
@@ -84,6 +152,10 @@ def _bundle_review_rows(
             "<h3>검토 메모</h3>"
             f"<p>{html.escape(notes)}</p>"
             "</div>"
+            "<section class='documents'>"
+            "<h3>생성 문서</h3>"
+            f"{_document_rows(bundle, documents)}"
+            "</section>"
             "</section>"
         )
     return "".join(rows)
@@ -107,6 +179,7 @@ def build_human_review_summary(
     manifest: Mapping[str, Any],
     receipt: Mapping[str, Any],
     validation: Mapping[str, Any],
+    bundle_documents: Mapping[str, Mapping[str, str]] | None = None,
     receipt_path: str = "human_review_receipt.json",
     review_dashboard_path: str = "review.html",
 ) -> str:
@@ -116,12 +189,13 @@ def build_human_review_summary(
     overall_status = receipt_status if valid else "needs_revision"
     evidence = receipt.get("evidence")
     evidence = evidence if isinstance(evidence, Mapping) else {}
+    bundle_documents = bundle_documents or {}
 
     return f"""<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>사람 검토 기록</title>
+  <title>문서 검토 작업공간</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
   <style>
@@ -197,6 +271,16 @@ def build_human_review_summary(
     .review-row {{ padding: 28px 0; border-bottom: 1px solid var(--border-strong); }}
     .review-row-header {{ display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }}
     .bundle-id {{ margin: 0 0 5px; color: var(--accent-strong); font-size: 12px; font-weight: 800; }}
+    .review-context {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin-top: 22px; }}
+    .context-section {{ min-width: 0; }}
+    .request-data {{ display: grid; grid-template-columns: 92px 1fr; margin: 0; border-top: 1px solid var(--border); }}
+    .request-data dt, .request-data dd {{ margin: 0; padding: 9px 0; border-bottom: 1px solid var(--border); line-height: 1.55; }}
+    .request-data dt {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
+    .request-data dd {{ font-size: 13px; }}
+    .check-list {{ margin: 0; border-top: 1px solid var(--border); }}
+    .check-list > div {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; min-height: 46px; border-bottom: 1px solid var(--border); }}
+    .check-list dt {{ color: var(--muted); font-size: 13px; }}
+    .check-list dd {{ margin: 0; }}
     .review-states {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0 0; border-top: 1px solid var(--border); }}
     .review-states > div {{ min-width: 0; padding: 12px 16px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }}
     .review-states > div:first-child {{ padding-left: 0; }}
@@ -205,6 +289,17 @@ def build_human_review_summary(
     .review-states dd {{ margin: 0; min-height: 28px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }}
     .notes {{ padding: 16px 0 0; }}
     .notes p {{ margin: 0; padding: 13px 15px; border-left: 3px solid var(--border-strong); background: var(--surface-muted); font-size: 13px; white-space: pre-wrap; }}
+    .documents {{ margin-top: 24px; }}
+    .document {{ border-top: 1px solid var(--border); background: var(--surface); }}
+    .document:last-child {{ border-bottom: 1px solid var(--border); }}
+    .document summary {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; min-height: 48px; padding: 10px 12px; cursor: pointer; list-style: none; }}
+    .document summary::-webkit-details-marker {{ display: none; }}
+    .document summary::after {{ content: "+"; color: var(--accent-strong); font-size: 18px; font-weight: 700; }}
+    .document[open] summary::after {{ content: "−"; }}
+    .document summary strong {{ flex: 1; }}
+    .document summary span {{ color: var(--muted); font-size: 12px; }}
+    .document-body {{ padding: 0 12px 14px; }}
+    pre {{ max-height: 520px; overflow: auto; margin: 10px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); color: #243236; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }}
     .boundary {{ padding: 28px 0; }}
     .boundary h2 {{ margin-bottom: 14px; }}
     .boundary ul {{ margin: 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }}
@@ -214,6 +309,7 @@ def build_human_review_summary(
       .metric:nth-child(2), .review-states > div:nth-child(2) {{ border-right: 0; }}
       .metric:nth-child(-n+2) {{ border-bottom: 1px solid var(--border); }}
       .review-states > div:nth-child(3) {{ padding-left: 0; }}
+      .review-context {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 560px) {{
       .shell {{ width: min(100vw - 24px, 1080px); }}
@@ -226,6 +322,9 @@ def build_human_review_summary(
       .evidence dl {{ grid-template-columns: 1fr; }}
       .evidence dt {{ padding-bottom: 0; border-bottom: 0; }}
       .evidence dd {{ padding-top: 4px; }}
+      .request-data {{ grid-template-columns: 1fr; }}
+      .request-data dt {{ padding-bottom: 0; border-bottom: 0; }}
+      .request-data dd {{ padding-top: 4px; }}
       .boundary li {{ align-items: flex-start; padding: 10px 0; }}
     }}
   </style>
@@ -234,17 +333,17 @@ def build_human_review_summary(
   <main class="shell">
     <header class="page-header">
       <div>
-        <p class="eyebrow">Manifest-bound review</p>
-        <h1>사람 검토 기록</h1>
+        <p class="eyebrow">Manifest-bound review workspace</p>
+        <h1>문서 검토 작업공간</h1>
         <p>최근 기록 {html.escape(str(receipt.get('updated_at') or '기록 없음'))}</p>
       </div>
       <div class="header-actions">
-        <a class="file-link" href="{_href(review_dashboard_path)}">문서 검토</a>
+        <a class="file-link" href="{_href(review_dashboard_path)}">자동 검증 원본</a>
         <a class="file-link" href="{_href(receipt_path)}">Receipt JSON</a>
         {_status(overall_status)}
       </div>
     </header>
-    <section class="summary" aria-label="사람 검토 요약">
+    <section class="summary" aria-label="통합 검토 요약">
       <div class="metric"><span>Bundle</span><strong>{validation.get('bundle_count', 0)}</strong></div>
       <div class="metric"><span>검토 기록</span><strong>{validation.get('reviewed_count', 0)}</strong></div>
       <div class="metric"><span>수락</span><strong>{validation.get('accepted_count', 0)}</strong></div>
@@ -259,7 +358,7 @@ def build_human_review_summary(
         <dt>생성 시각</dt><dd>{html.escape(str(evidence.get('manifest_generated_at') or '기록 없음'))}</dd>
       </dl>
     </section>
-    {_bundle_review_rows(manifest, receipt)}
+    {_bundle_review_rows(manifest, receipt, bundle_documents)}
     <section class="boundary">
       <h2>외부 실행 권한</h2>
       <ul>{_external_action_rows(receipt)}</ul>

@@ -1,7 +1,7 @@
 {
   "schema_version": "decisiondoc.finished_document_review.v3",
   "status": "passed",
-  "generated_at": "2026-07-13T07:02:05.923752+00:00",
+  "generated_at": "2026-07-13T12:35:32.824390+00:00",
   "execution_mode": {
     "provider": "mock",
     "storage": "temporary_local",
@@ -164,13 +164,13 @@
   "artifacts": {
     "quality_report": {
       "path": "quality_report.md",
-      "sha256": "f477f441e0546c269f58fb31c5592654167201597f9c1c11a54f5d78dfd9246e",
+      "sha256": "7cfe23aef1167a7cf68b13f70964e78ac604a93a74e6b6f48b32bdbb08c40617",
       "size_bytes": 1200
     },
     "review_dashboard": {
       "path": "review.html",
-      "sha256": "fc6f7a3b6177743247259836e8d31ad1a9aa2c8201a50dddb18bf9c9ebd786b7",
-      "size_bytes": 66042
+      "sha256": "010c428ec03078e25d7f483a444463454bc6a40fc83c4554faa80858be588791",
+      "size_bytes": 66048
     }
   },
   "external_actions": {

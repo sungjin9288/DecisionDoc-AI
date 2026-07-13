@@ -13,12 +13,33 @@ MANIFEST = {
     "schema_version": "decisiondoc.finished_document_review.v3",
     "generated_at": "2026-07-13T10:00:00+00:00",
     "bundles": {
-        "proposal_kr": {"title": "공공 서비스 제안서"},
+        "proposal_kr": {
+            "title": "공공 서비스 제안서",
+            "request": {
+                "goal": "검토 가능한 제안서 작성",
+                "context": "발주처 입력 근거",
+                "constraints": "개인정보 보호",
+                "audience": "평가위원",
+            },
+            "quality": {
+                "validator_pass": True,
+                "lint_pass": True,
+                "numeric_grounding_review": {"status": "passed"},
+            },
+            "markdown_docs": {
+                "proposal": "proposal_kr/markdown/proposal.md",
+            },
+        },
     },
     "external_actions": {
         "provider_api_execution": False,
         "production_service_resume": False,
     },
+}
+DOCUMENTS = {
+    "proposal_kr": {
+        "proposal": "# 제안서\n\n<script>alert('document')</script>",
+    }
 }
 
 
@@ -32,6 +53,7 @@ def _render(receipt: dict) -> str:
         manifest=MANIFEST,
         receipt=receipt,
         validation=validation,
+        bundle_documents=DOCUMENTS,
     )
 
 
@@ -43,14 +65,19 @@ def test_human_review_summary_shows_pending_state_and_evidence_boundary() -> Non
 
     summary = _render(receipt)
 
-    assert "사람 검토 기록" in summary
+    assert "문서 검토 작업공간" in summary
     assert "검토 대기" in summary
     assert "공공 서비스 제안서" in summary
+    assert "발주처 입력 근거" in summary
+    assert "Schema validator" in summary
+    assert "# 제안서" in summary
+    assert "&lt;script&gt;alert(&#x27;document&#x27;)&lt;/script&gt;" in summary
     assert MANIFEST_SHA256 in summary
     assert summary.count("승인 안 됨") == 2
     assert 'href="review.html"' in summary
     assert 'href="human_review_receipt.json"' in summary
     assert "<script" not in summary
+    assert summary.count("<div") == summary.count("</div>")
 
 
 def test_human_review_summary_escapes_reviewer_content_and_shows_completion() -> None:

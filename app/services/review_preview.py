@@ -235,7 +235,7 @@ def build_review_dashboard(
     overall_status = "자동 검증 통과" if overall_passed else "추가 검토 필요"
     overall_tone = "pass" if overall_passed else "pending"
     human_review_link = (
-        f'<a class="file-link" href="{html.escape(human_review_summary_path)}">사람 검토 기록</a>'
+        f'<a class="file-link" href="{html.escape(human_review_summary_path)}">통합 검토 작업공간</a>'
         if human_review_summary_path
         else ""
     )
