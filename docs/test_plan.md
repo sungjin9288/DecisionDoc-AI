@@ -80,6 +80,8 @@ pytest -q tests/test_build_finished_doc_review_samples.py tests/test_eval_runner
 
 첫 번째 명령은 mock provider의 fictional fixture를 생성하고 schema validator, bundle-aware lint, request 대비 단위 수치 literal coverage, canonical golden hash를 manifest에 기록한다. 미근거 단위 수치가 있으면 package status는 `review_required`가 된다. 이 검사는 수치의 사실성·최신성·문맥 적합성을 증명하지 않으므로 factual grounding과 human visual review는 자동 통과로 간주하지 않는다. 두 번째 명령은 기본 10개 offline eval fixture의 validator/lint report를 갱신한다. 두 경로 모두 live provider API를 호출하지 않는다.
 
+생성된 `review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
+
 ### E2E 시험 (Playwright)
 ```bash
 .venv/bin/pytest tests/e2e/ --headed

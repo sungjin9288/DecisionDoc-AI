@@ -190,7 +190,7 @@ python3 scripts/build_finished_doc_review_samples.py \
 python3 -m app.eval --out-dir reports/eval/v1
 ```
 
-2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)이며, [offline eval report](./reports/eval/v1/eval_report.md) 기준 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. factual grounding, human visual review, live provider 품질도 증명하지 않습니다.
+2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)이며, [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)에서 request 근거, 검증 상태, 생성 Markdown 본문을 함께 확인할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. dashboard 노출도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
 
 ```bash
 pytest tests/                 # 전체

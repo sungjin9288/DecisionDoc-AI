@@ -4,7 +4,6 @@ from io import BytesIO
 
 from docx import Document
 from pptx import Presentation
-from pptx.util import Inches
 
 from app.services.hwp_service import build_hwp
 from app.services.review_preview import (
@@ -63,10 +62,29 @@ def test_build_review_dashboard_includes_pdf_iframe_and_preview_text() -> None:
         generated_at="20260416-101010",
         manifest={
             "generated_at": "20260416-101010",
+            "status": "passed",
+            "summary": {
+                "bundle_count": 1,
+                "document_count": 2,
+                "validator_pass_count": 1,
+                "lint_pass_count": 1,
+                "unsupported_numeric_claim_count": 0,
+            },
             "bundles": {
                 "proposal_kr": {
                     "title": "제안서",
                     "doc_count": 2,
+                    "request": {
+                        "goal": "검토 가능한 제안서 작성",
+                        "context": "발주처 입력 근거",
+                    },
+                    "quality": {
+                        "validator_pass": True,
+                        "lint_pass": True,
+                        "numeric_grounding_review": {"status": "passed"},
+                        "factual_grounding_verified": False,
+                        "human_visual_review_completed": False,
+                    },
                     "exports": {
                         "docx": "proposal_kr/exports/proposal_kr.docx",
                         "pdf": "proposal_kr/exports/proposal_kr.pdf",
@@ -85,8 +103,21 @@ def test_build_review_dashboard_includes_pdf_iframe_and_preview_text() -> None:
                 "docx": ["제안서 요약", "핵심 메시지"],
             }
         },
+        bundle_documents={
+            "proposal_kr": {
+                "business_understanding": "# 사업 이해\n\n<script>alert('unsafe')</script>",
+            }
+        },
     )
-    assert "Finished Document Review" in html
+    assert "완성 문서 검토" in html
+    assert "자동 검증 통과" in html
+    assert "수치 근거 확인" in html
+    assert "사실 근거 검토" in html
+    assert "사람의 시각 검토" in html
+    assert "발주처 입력 근거" in html
+    assert "# 사업 이해" in html
+    assert "&lt;script&gt;alert(&#x27;unsafe&#x27;)&lt;/script&gt;" in html
+    assert "<script>alert('unsafe')</script>" not in html
     assert "iframe" in html
     assert "proposal_kr/exports/proposal_kr.pdf" in html
     assert "제안서 요약" in html

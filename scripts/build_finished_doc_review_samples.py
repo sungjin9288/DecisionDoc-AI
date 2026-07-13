@@ -376,6 +376,7 @@ def run(
         "external_actions": {action: False for action in EXCLUDED_EXTERNAL_ACTIONS},
     }
     bundle_previews: dict[str, dict[str, list[str]]] = {}
+    bundle_documents: dict[str, dict[str, str]] = {}
 
     with tempfile.TemporaryDirectory(prefix="decisiondoc-finished-doc-review-") as temporary_dir:
         with _local_mock_environment(Path(temporary_dir)):
@@ -415,6 +416,10 @@ def run(
                         raise RuntimeError(f"{bundle_type} bundle lint failed: {quality['lint_errors']}")
 
                     bundle_previews[bundle_type] = previews
+                    bundle_documents[bundle_type] = {
+                        str(doc["doc_type"]): str(doc["markdown"])
+                        for doc in docs
+                    }
                     manifest["bundles"][bundle_type] = {
                         "title": payload["title"],
                         "request": payload,
@@ -456,6 +461,7 @@ def run(
             generated_at=manifest["generated_at"],
             manifest=manifest,
             bundle_previews=bundle_previews,
+            bundle_documents=bundle_documents,
         ),
     )
     manifest["artifacts"] = {

@@ -89,6 +89,12 @@ def test_review_sample_builder_writes_mock_quality_evidence(tmp_path: Path, monk
     quality_report = (run_dir / "quality_report.md").read_text(encoding="utf-8")
     assert "Numeric coverage does not prove factual truth" in quality_report
     assert "Factual grounding and human visual review are not marked complete" in quality_report
+    review_dashboard = (run_dir / "review.html").read_text(encoding="utf-8")
+    assert "완성 문서 검토" in review_dashboard
+    assert "수치 근거 확인" in review_dashboard
+    assert "사람의 시각 검토" in review_dashboard
+    assert "# 사업 이해" in review_dashboard
+    assert "# 사업수행계획서" in review_dashboard
     assert not (tmp_path / "latest").exists()
     assert os.environ["DECISIONDOC_PROVIDER"] == "openai"
     assert os.environ["DECISIONDOC_PROVIDER_GENERATION"] == "gemini"
