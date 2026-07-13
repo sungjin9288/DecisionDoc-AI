@@ -20,9 +20,12 @@ Covers:
 """
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import threading
 import time
+import zipfile
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -35,9 +38,12 @@ from app.main import create_app
 from app.schemas import (
     GenerateRequest,
     NormalizedProcurementOpportunity,
+    ProcurementChecklistItem,
     ProcurementDecisionUpsert,
+    ProcurementHardFilterResult,
     ProcurementRecommendation,
     ProcurementRecommendationValue,
+    ProcurementScoreBreakdownItem,
 )
 from app.storage.project_store import Project, ProjectDocument, ProjectStore
 
@@ -666,6 +672,60 @@ class TestProjectProcurementApi:
     def _pid(self, client) -> str:
         return client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
 
+    def _ready_decision(self, client, project_id: str, *, tenant_id: str = "system"):
+        return client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=project_id,
+                tenant_id=tenant_id,
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-PACKET-001",
+                    title="검토 패킷 연결 테스트",
+                    issuer="행정안전부",
+                    budget="4억원",
+                    deadline="2026-08-31 18:00",
+                ),
+                hard_filters=[
+                    ProcurementHardFilterResult(
+                        code="security_plan",
+                        label="보안 계획",
+                        status="unknown",
+                        blocking=True,
+                        reason="보안 계획 담당자 확인이 필요합니다.",
+                    )
+                ],
+                score_breakdown=[
+                    ProcurementScoreBreakdownItem(
+                        key="security_readiness",
+                        label="보안 준비도",
+                        score=62.0,
+                        weight=0.2,
+                        weighted_score=12.4,
+                        summary="담당자 지정 후 보완 가능합니다.",
+                    )
+                ],
+                soft_fit_score=72.0,
+                soft_fit_status="scored",
+                missing_data=["보안 계획 담당자"],
+                checklist_items=[
+                    ProcurementChecklistItem(
+                        category="security_plan",
+                        title="보안 계획 담당자 지정",
+                        status="action_needed",
+                        severity="high",
+                        remediation_note="proposal drafting 전에 담당자를 지정합니다.",
+                    )
+                ],
+                recommendation=ProcurementRecommendation(
+                    value="CONDITIONAL_GO",
+                    summary="보안 계획 담당자를 지정한 뒤 검토를 진행합니다.",
+                    evidence=["Soft-fit score 72.0"],
+                    missing_data=["보안 계획 담당자"],
+                    remediation_notes=["보안 계획 담당자를 지정합니다."],
+                ),
+            )
+        )
+
     def test_get_procurement_returns_none_before_attachment(self, client):
         pid = self._pid(client)
         res = client.get(f"/projects/{pid}/procurement", headers=HEADERS)
@@ -948,6 +1008,92 @@ class TestProjectProcurementApi:
         assert retrieval.json()["decision"]["recommendation"]["value"] == data["recommendation"]["value"]
         assert retrieval.json()["decision"]["checklist_items"]
 
+    def test_review_packet_export_returns_verified_local_zip(self, client):
+        from app.services.procurement_decision_package_service import (
+            REVIEWER_HANDOFF_NAME,
+            verify_procurement_review_packet,
+        )
+
+        pid = self._pid(client)
+        record = self._ready_decision(client, pid)
+
+        response = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "  proposal-review-owner  "},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-decisiondoc-operational-approval"] == "false"
+        assert response.headers["x-decisiondoc-packet-sha256"] == hashlib.sha256(
+            response.content
+        ).hexdigest()
+        assert response.headers["x-decisiondoc-package-id"] == f"{record.decision_id}-package"
+        verification = verify_procurement_review_packet(response.content)
+        assert verification["packet_verified"] is True
+        assert verification["operational_approval"] is False
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            reviewer_handoff = json.loads(archive.read(REVIEWER_HANDOFF_NAME))
+        assert reviewer_handoff["requested_reviewer"] == "proposal-review-owner"
+
+    def test_review_packet_export_requires_recommendation(self, client):
+        pid = self._pid(client)
+        client.app.state.procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=pid,
+                tenant_id="system",
+                opportunity=NormalizedProcurementOpportunity(
+                    source_kind="g2b",
+                    source_id="R26-PACKET-NOT-READY",
+                    title="추천 전 검토 패킷 테스트",
+                    issuer="조달청",
+                ),
+            )
+        )
+
+        response = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "review-owner"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == "procurement_review_packet_context_required"
+        assert detail["required_steps"] == [
+            "imports/g2b-opportunity",
+            "procurement/evaluate",
+            "procurement/recommend",
+        ]
+
+    def test_review_packet_export_rejects_blank_reviewer(self, client):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+
+        response = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "   "},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 422
+
+    def test_review_packet_export_does_not_read_another_tenant_record(self, client):
+        pid = self._pid(client)
+        self._ready_decision(client, pid, tenant_id="tenant-b")
+
+        response = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "system-review-owner"},
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "procurement_review_packet_context_required"
+
     def test_decision_council_run_requires_procurement_recommendation(self, client):
         pid = self._pid(client)
         client.app.state.procurement_store.upsert(
@@ -1103,6 +1249,11 @@ class TestProjectProcurementFeatureFlag:
             ),
             client.post(f"/projects/{pid}/procurement/evaluate", headers=HEADERS),
             client.post(f"/projects/{pid}/procurement/recommend", headers=HEADERS),
+            client.post(
+                f"/projects/{pid}/procurement/review-packet",
+                json={"reviewer": "review-owner"},
+                headers=HEADERS,
+            ),
         ]
 
         for response in responses:

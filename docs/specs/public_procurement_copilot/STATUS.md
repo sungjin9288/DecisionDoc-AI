@@ -3,6 +3,19 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project review packet integration
+
+- Added `POST /projects/{project_id}/procurement/review-packet` behind the existing procurement feature flag and API-key dependency.
+- The endpoint resolves the project and procurement decision from the current tenant's injected stores. It does not instantiate a second local store or cross the configured state-backend boundary.
+- A strict reviewer payload drives the existing Decision Package adapter; artifacts are written only to a temporary directory, wrapped in the deterministic review packet, independently verified, and returned as ZIP bytes.
+- Response evidence includes packet SHA256, package ID, artifact count, `X-Content-Type-Options: nosniff`, and `X-DecisionDoc-Operational-Approval: false`.
+- Project detail UI now exposes reviewer input and review-packet download only after opportunity and recommendation state exist. The visible boundary states that export does not perform operational approval, bid submission, or provider calls.
+- Audit history maps the successful route to `procurement.review_packet_export`.
+- Relevant API, packet, tenant-boundary, feature-flag, audit, observability, and static UI gate passes locally: 366 tests. Focused `py_compile` and Ruff E/F/W checks also pass.
+- Mock/local Playwright proof downloaded a 12-artifact, 13-entry packet and independently verified SHA256 `5e3c42a32f3b0e2252ca62caa60678e17f7db93610798f40c17c9d07491f69d1`, `CONDITIONAL_GO`, explicit authorization boundary, and `operational_approval: false`. Desktop 1440px and mobile 390px viewports had no horizontal overflow.
+- Full no-cost regression gate passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,904 passed, 2 skipped, and 4 deselected in 209.98 seconds.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred or excluded.
+
 ---
 
 ## Initiative summary

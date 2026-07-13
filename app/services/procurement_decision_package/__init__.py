@@ -384,6 +384,7 @@ from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_NAME,
     PACKET_SCHEMA_VERSION,
     PACKET_STATUS,
+    ProjectProcurementReviewPacket,
     ZIP_ENTRY_TIMESTAMP,
     _artifact_record,
     _build_packet_manifest,
@@ -396,6 +397,7 @@ from app.services.procurement_decision_package.review_packet import (
     _validate_packet_manifest,
     _write_zip_entry,
     build_procurement_review_packet,
+    build_project_procurement_review_packet,
     verify_procurement_review_packet,
     write_bytes_atomic,
 )

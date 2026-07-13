@@ -200,6 +200,7 @@ Focus on a narrow, demonstrable workflow:
 
 ### Current reviewer foundation
 
+- The project procurement surface connects a tenant-resolved recommendation directly to a verified review packet download. The server reuses the local package contract, returns packet identity and SHA256 evidence, and keeps operational approval false.
 - `procurement_review.html` provides one script-free view for package, evidence, gaps, and sign-off state.
 - The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.
 - Packet status stays `review_ready`; `operational_approval` remains false and independent verification rejects path, fingerprint, membership, and semantic drift.
@@ -287,6 +288,8 @@ Connect the public procurement copilot into the package workflow:
 - bid-readiness checklist,
 - go / conditional go / no-go recommendation,
 - proposal handoff.
+
+Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, and deterministic review packet export are connected in the project detail UI. Review receipt application and any explicitly approved external evaluation lane remain separate follow-up workflows.
 
 ## 11. Decision Checklist For Future Work
 

@@ -40,6 +40,7 @@ ACTION_TYPES: dict[str, str] = {
     "procurement.import": "조달 공고 연결",
     "procurement.evaluate": "조달 적합도 평가",
     "procurement.recommend": "조달 권고안 생성",
+    "procurement.review_packet_export": "조달 검토 패킷 내보내기",
     "procurement.override_reason": "조달 override 사유 기록",
     "procurement.remediation_link_copied": "조달 remediation 링크 공유",
     "procurement.remediation_link_opened": "조달 remediation 링크 열람",

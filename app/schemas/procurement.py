@@ -31,6 +31,22 @@ class ImportProjectProcurementOpportunityRequest(BaseModel):
     notes: str = ""
 
 
+class ExportProjectProcurementReviewPacketRequest(BaseModel):
+    """Payload for exporting a project decision as a local review packet."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    reviewer: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("reviewer")
+    @classmethod
+    def normalize_reviewer(cls, value: str) -> str:
+        reviewer = value.strip()
+        if not reviewer:
+            raise ValueError("reviewer must not be blank")
+        return reviewer
+
+
 class UpdateProjectProcurementOverrideReasonRequest(BaseModel):
     """Payload for project-scoped override / disagreement note capture."""
 

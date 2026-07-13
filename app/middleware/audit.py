@@ -26,6 +26,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/imports/g2b-opportunity"): "procurement.import",
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
+    ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
     ("POST", "/projects/{id}/decision-council/run"): "decision_council.run",
     ("POST", "/projects/{id}/procurement/override-reason"): "procurement.override_reason",
     ("POST", "/projects/{id}/procurement/remediation-link-copy"): "procurement.remediation_link_copied",

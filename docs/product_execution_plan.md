@@ -119,6 +119,7 @@ The surface must answer:
 
 Current local evidence slice:
 
+- Project detail now exposes `POST /projects/{project_id}/procurement/review-packet` and a reviewer-owned ZIP download control. The route reads the current tenant's injected procurement store, builds the existing 12-artifact package in a temporary directory, verifies the packet before responding, and returns SHA256 plus `operational_approval: false` metadata without provider or external runtime execution.
 - `procurement_review.html` gives non-engineering reviewers one read-only procurement package surface and remains part of the same 12-artifact audit, export, fingerprint, and tamper-check contract. It does not create a second approval workflow.
 - `manage_procurement_decision_review_packet.py` wraps those 12 validated artifacts in a deterministic ZIP with an embedded SHA256 manifest. The packet remains `review_ready`, keeps `operational_approval: false`, and can be independently reverified after handoff.
 - `manage_procurement_review_receipt.py` creates `procurement_review_receipt.json` outside the packet, binds it to `packet_sha256`, and moves `review_status` once from `pending` to `completed` for the requested reviewer. Completion records review evidence only and keeps operational approval false.
@@ -139,6 +140,7 @@ Current local evidence slice:
 ### Acceptance Criteria
 
 - One procurement opportunity can move from source data to reviewable decision package.
+- A project reviewer can download that package from the existing procurement UI without switching to a separate CLI workflow.
 - Hard filters and unknown data are visible.
 - Reviewer sign-off remains separate from operational approval.
 - A local reviewer decision can be recorded once and revalidated against the exact packet bytes.

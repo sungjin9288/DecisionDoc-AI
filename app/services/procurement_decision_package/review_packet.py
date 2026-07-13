@@ -7,10 +7,12 @@ import json
 import os
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 from uuid import uuid4
 
+from app.schemas import ProcurementDecisionRecord
 from app.services.procurement_decision_package.artifact_evidence import (
     validate_local_package_artifacts,
 )
@@ -19,6 +21,10 @@ from app.services.procurement_decision_package.constants import (
     EXCLUDED_ACTION_ORDER,
     EXPLICIT_AUTHORIZATION_BOUNDARY,
     INCLUDED_ARTIFACT_ORDER,
+)
+from app.services.procurement_decision_package.package_builder import (
+    build_decision_package_from_record,
+    write_package_artifacts,
 )
 
 
@@ -41,6 +47,14 @@ PACKET_ARTIFACT_FIELD_ORDER = ("path", "size_bytes", "sha256")
 ZIP_ENTRY_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 MAX_PACKET_SIZE_BYTES = 64 * 1024 * 1024
 MAX_ARTIFACT_SIZE_BYTES = 16 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ProjectProcurementReviewPacket:
+    content: bytes
+    manifest: dict[str, Any]
+    verification: dict[str, Any]
+    sha256: str
 
 
 def _sha256(content: bytes) -> str:
@@ -154,6 +168,36 @@ def build_procurement_review_packet(
             content=packet_manifest_content,
         )
     return output.getvalue(), packet_manifest
+
+
+def build_project_procurement_review_packet(
+    record: ProcurementDecisionRecord,
+    *,
+    reviewer_owner: str,
+) -> ProjectProcurementReviewPacket:
+    """Build and verify a portable packet from a tenant-resolved project record."""
+    reviewer = reviewer_owner.strip()
+    if not reviewer:
+        raise ValueError("reviewer_owner must not be blank")
+
+    package_doc = build_decision_package_from_record(
+        record,
+        reviewer_owner=reviewer,
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="decisiondoc-project-procurement-packet-",
+    ) as temp_dir:
+        source_dir = Path(temp_dir)
+        write_package_artifacts(package_doc, source_dir)
+        content, manifest = build_procurement_review_packet(source_dir)
+
+    verification = verify_procurement_review_packet(content)
+    return ProjectProcurementReviewPacket(
+        content=content,
+        manifest=manifest,
+        verification=verification,
+        sha256=_sha256(content),
+    )
 
 
 def _require_packet_entry_names(archive: zipfile.ZipFile) -> list[str]:

@@ -1361,6 +1361,47 @@
       opacity: 0.55;
       cursor: not-allowed;
     }
+    .procurement-review-export {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 8px 12px;
+      align-items: end;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border, #e5e7eb);
+    }
+    .procurement-review-export label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .procurement-review-export input { width: 100%; }
+    .procurement-review-export button {
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border, #e5e7eb);
+      background: var(--surface, #fff);
+      color: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .procurement-review-export button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .procurement-review-export-note {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--muted, #6b7280);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
     .procurement-summary-list {
       margin: 10px 0 0;
       padding-left: 18px;
@@ -2620,6 +2661,8 @@
       .results-actions .action-btn { font-size: 0.75rem; padding: 6px 10px; }
       .project-import-form { grid-template-columns: 1fr; }
       .project-import-submit { width: 100%; }
+      .procurement-review-export { grid-template-columns: 1fr; }
+      .procurement-review-export button { width: 100%; }
       .decision-council-form { grid-template-columns: 1fr; }
       .decision-council-actions button { width: 100%; }
       .procurement-handoff-track { grid-template-columns: 1fr; }
@@ -17899,6 +17942,10 @@
         return '먼저 공고를 프로젝트에 연결한 뒤 판단을 갱신하세요.';
       case 'procurement_override_reason_required':
         return fallbackMessage || 'NO_GO recommendation 상태에서 downstream 문서를 진행하려면 override 사유를 먼저 저장하세요.';
+      case 'procurement_review_packet_context_required':
+        return '공고 연결과 recommendation 생성 후에만 검토 패킷을 내보낼 수 있습니다.';
+      case 'procurement_review_packet_not_ready':
+        return fallbackMessage || '현재 procurement decision을 검토 패킷으로 검증할 수 없습니다.';
       default:
         return defaultMessage;
     }
@@ -19817,6 +19864,58 @@
     }
   }
 
+  async function downloadProjectProcurementReviewPacket(projectId) {
+    const reviewerInput = document.getElementById('project-procurement-reviewer-input');
+    const downloadButton = document.getElementById('project-procurement-review-packet-submit');
+    if (!reviewerInput || !downloadButton) return;
+
+    const reviewer = reviewerInput.value.trim();
+    if (!reviewer) {
+      setProcurementActionStatus('검토 담당자를 입력해주세요.', 'error');
+      reviewerInput.focus();
+      return;
+    }
+
+    downloadButton.disabled = true;
+    setProcurementActionStatus('검토 패킷을 로컬에서 조립하고 검증하는 중입니다...', 'loading');
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/procurement/review-packet`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ reviewer }),
+        },
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const blob = await res.blob();
+      const fallback = `procurement_review_packet_${projectId}.zip`;
+      const filename = _filenameFromContentDisposition(
+        res.headers.get('Content-Disposition'),
+        fallback,
+      );
+      const packetSha256 = res.headers.get('X-DecisionDoc-Packet-SHA256') || '';
+      _triggerBrowserDownload(blob, filename, 'Procurement 검토 패킷 ZIP', {
+        fallbackContainerId: 'project-procurement-download-fallback',
+      });
+      setProcurementActionStatus('검토 패킷 ZIP을 검증하고 다운로드했습니다.', 'success');
+      showNotification(
+        `검토 패킷 다운로드 시작: ${filename}${packetSha256 ? ` · SHA256 ${packetSha256.slice(0, 12)}` : ''}. 운영 승인이나 입찰 제출은 실행되지 않았습니다.`,
+        'success',
+      );
+    } catch (error) {
+      const message = getProcurementErrorMessage(error.code, error.message);
+      setProcurementActionStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      downloadButton.disabled = false;
+    }
+  }
+
   async function saveProjectProcurementOverrideReason(projectId) {
     const input = document.getElementById('project-procurement-override-reason');
     const button = document.getElementById('project-procurement-override-submit');
@@ -20235,6 +20334,9 @@
     const canLaunchDownstream = canLaunchProcurementDownstream(procurementDecision);
     const canAttemptDownstream = canAttemptProcurementDownstream(procurementDecision);
     const canGenerateDecisionBundle = Boolean(procurementDecision?.recommendation);
+    const canExportReviewPacket = Boolean(
+      procurementDecision?.opportunity && procurementDecision?.recommendation,
+    );
     if (_projectProcurementRemediationContext?.projectId && _projectProcurementRemediationContext.projectId !== p.project_id) {
       _projectProcurementRemediationContext = null;
     }
@@ -20339,7 +20441,22 @@
 	          <button data-project-detail-action="procurement-generate" data-project-id="${escapeHtml(p.project_id)}" data-procurement-bundle="rfp_analysis_kr" data-bundle-id="rfp_analysis_kr" ${canAttemptDownstream ? '' : 'disabled'}>RFP 분석</button>
 	          <button data-project-detail-action="procurement-generate" data-project-id="${escapeHtml(p.project_id)}" data-procurement-bundle="proposal_kr" data-bundle-id="proposal_kr" ${canAttemptDownstream ? '' : 'disabled'}>제안서</button>
 	          <button data-project-detail-action="procurement-generate" data-project-id="${escapeHtml(p.project_id)}" data-procurement-bundle="performance_plan_kr" data-bundle-id="performance_plan_kr" ${canAttemptDownstream ? '' : 'disabled'}>수행계획</button>
+	        </div>
+        <div class="procurement-review-export">
+          <label>
+            검토 담당자
+            <input id="project-procurement-reviewer-input" type="text" maxlength="120" autocomplete="name" placeholder="예: proposal-review-owner">
+          </label>
+          <button
+            id="project-procurement-review-packet-submit"
+            type="button"
+            data-project-detail-action="procurement-review-packet"
+            data-project-id="${escapeHtml(p.project_id)}"
+            ${canExportReviewPacket ? '' : 'disabled'}
+          >검토 패킷 ZIP</button>
+          <p class="procurement-review-export-note">현재 project decision과 evidence를 portable ZIP으로 묶습니다. 이 내보내기는 운영 승인, 입찰 제출, provider 호출을 수행하지 않습니다.</p>
         </div>
+        <div id="project-procurement-download-fallback" style="display:none;"></div>
         <div id="project-procurement-status" class="project-import-status" aria-live="polite"></div>
         ${renderProjectProcurementRemediationStrip(p, procurementDecision)}
         ${renderProcurementSummary(procurementDecision)}
@@ -20433,6 +20550,10 @@
 	    }
 	    if (action === 'procurement-refresh') {
 	      refreshProjectProcurementDecision(projectId);
+	      return;
+	    }
+	    if (action === 'procurement-review-packet') {
+	      downloadProjectProcurementReviewPacket(projectId);
 	      return;
 	    }
 	    if (action === 'procurement-generate') {

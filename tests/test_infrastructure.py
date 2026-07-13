@@ -1383,6 +1383,7 @@ def test_index_html_project_detail_actions_use_event_listeners():
     for marker in (
         'data-project-detail-action="decision-council-run"',
         'data-project-detail-action="procurement-generate"',
+        'data-project-detail-action="procurement-review-packet"',
         "procurement-remediation-retry",
         "procurement-remediation-review",
         'data-project-detail-action="procurement-override-focus"',
@@ -1408,6 +1409,7 @@ def test_index_html_project_detail_action_wiring_exists():
         "downloadYearlyArchive(Number(btn.dataset.fiscalYear || 0))",
         "submitVoiceBriefImport(projectId)",
         "submitProjectProcurementImport(projectId)",
+        "downloadProjectProcurementReviewPacket(projectId)",
         "runProjectDecisionCouncil(projectId)",
         "retryProjectProcurementRemediation(projectId)",
         "dismissProjectProcurementRemediationContext(projectId)",

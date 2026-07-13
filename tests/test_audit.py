@@ -413,6 +413,14 @@ def test_resolve_action_procurement_recommend():
     assert _resolve_action("POST", "/projects/proj-1/procurement/recommend", 200) == "procurement.recommend"
 
 
+def test_resolve_action_procurement_review_packet_export():
+    from app.middleware.audit import _resolve_action
+    assert (
+        _resolve_action("POST", "/projects/proj-1/procurement/review-packet", 200)
+        == "procurement.review_packet_export"
+    )
+
+
 def test_resolve_action_decision_council_run():
     from app.middleware.audit import _resolve_action
     assert _resolve_action("POST", "/projects/proj-1/decision-council/run", 200) == "decision_council.run"
