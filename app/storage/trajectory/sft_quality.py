@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from app.storage.trajectory.redaction import _string_list
@@ -75,9 +76,26 @@ def _build_sft_quality_report(
         "records_with_source_references": 0,
         "unsupported_confirmed_records": 0,
     }
+    provenance = {
+        "records_with_trajectory_id": 0,
+        "records_with_skill_version": 0,
+        "records_with_reviewer": 0,
+        "records_with_review_version": 0,
+        "records_with_reviewed_at": 0,
+        "records_with_accepted_review": 0,
+        "records_with_quality_score": 0,
+        "complete_records": 0,
+    }
     sample_records: list[dict[str, Any]] = []
 
     for index, record in enumerate(sft_records):
+        provenance_flags = _provenance_flags(record.get("metadata"))
+        for key, present in provenance_flags.items():
+            if present:
+                provenance[key] += 1
+        if all(provenance_flags.values()):
+            provenance["complete_records"] += 1
+
         validation = _validate_sft_record(record)
         role_key = ",".join(validation["roles"]) if validation["roles"] else "missing"
         role_sequences[role_key] = role_sequences.get(role_key, 0) + 1
@@ -93,6 +111,7 @@ def _build_sft_quality_report(
             continue
 
         valid_count += 1
+        metadata = record["metadata"]
         assistant_payload = validation["assistant_payload"]
         qa = assistant_payload.get("qa") if isinstance(assistant_payload.get("qa"), dict) else {}
         if qa.get("hard_gate_pass") is False:
@@ -103,7 +122,7 @@ def _build_sft_quality_report(
         gate_issues = qa.get("gate_issues")
         if isinstance(gate_issues, list):
             qa_gate_issue_count += len(gate_issues)
-        score = _metadata_quality_score(record.get("metadata"))
+        score = _metadata_quality_score(metadata)
         if score is not None:
             quality_scores.append(score)
 
@@ -127,8 +146,10 @@ def _build_sft_quality_report(
             sample_records.append(
                 {
                     "index": index,
-                    "trajectory_id": (record.get("metadata") or {}).get("trajectory_id") if isinstance(record.get("metadata"), dict) else None,
-                    "task_type": (record.get("metadata") or {}).get("task_type") if isinstance(record.get("metadata"), dict) else None,
+                    "trajectory_id": metadata.get("trajectory_id"),
+                    "task_type": metadata.get("task_type"),
+                    "reviewer": metadata.get("reviewer"),
+                    "review_version": metadata.get("review_version"),
                     "roles": validation["roles"],
                     "assistant_keys": sorted(assistant_payload.keys()),
                     "has_source_references": bool(sources),
@@ -154,6 +175,10 @@ def _build_sft_quality_report(
             "source_reference_coverage": _coverage_ratio(evidence["records_with_source_references"], valid_count),
             "confirmed_coverage": _coverage_ratio(evidence["records_with_confirmed"], valid_count),
         },
+        "provenance_coverage": {
+            **provenance,
+            "complete_rate": _coverage_ratio(provenance["complete_records"], len(sft_records)),
+        },
         "invalid_samples": invalid_samples,
         "blocked_samples": blocked_samples[: max(0, sample_limit)],
         "sample_records": sample_records,
@@ -164,9 +189,15 @@ def _validate_sft_record(record: dict[str, Any]) -> dict[str, Any]:
     issues: list[str] = []
     messages = record.get("messages")
     roles: list[str] = []
+    user_payload: dict[str, Any] = {}
     assistant_payload: dict[str, Any] = {}
     if not isinstance(messages, list):
-        return {"issues": ["missing_messages"], "roles": roles, "assistant_payload": assistant_payload}
+        return {
+            "issues": ["missing_messages"],
+            "roles": roles,
+            "user_payload": user_payload,
+            "assistant_payload": assistant_payload,
+        }
     for message in messages:
         role = message.get("role") if isinstance(message, dict) else None
         roles.append(str(role or "missing"))
@@ -180,6 +211,24 @@ def _validate_sft_record(record: dict[str, Any]) -> dict[str, Any]:
             continue
         if not str(message.get("content") or "").strip():
             issues.append(f"message_{index}_missing_content")
+
+    user = messages[1] if len(messages) >= 2 and isinstance(messages[1], dict) else {}
+    try:
+        parsed_user = json.loads(str(user.get("content") or ""))
+    except json.JSONDecodeError:
+        issues.append("user_content_not_json")
+        parsed_user = {}
+    if isinstance(parsed_user, dict):
+        user_payload = parsed_user
+    else:
+        issues.append("user_content_not_object")
+    if not str(user_payload.get("task_type") or "").strip():
+        issues.append("user_missing_task_type")
+    if not isinstance(user_payload.get("input"), dict):
+        issues.append("user_missing_input")
+    if not isinstance(user_payload.get("source_references"), list):
+        issues.append("user_missing_source_references")
+
     assistant = messages[2] if len(messages) >= 3 and isinstance(messages[2], dict) else {}
     try:
         parsed = json.loads(str(assistant.get("content") or ""))
@@ -198,14 +247,45 @@ def _validate_sft_record(record: dict[str, Any]) -> dict[str, Any]:
         issues.append("assistant_missing_evidence_status")
     if not isinstance(assistant_payload.get("qa"), dict):
         issues.append("assistant_missing_qa")
-    return {"issues": issues, "roles": roles, "assistant_payload": assistant_payload}
+    elif assistant_payload["qa"].get("hard_gate_pass") is not True:
+        issues.append("assistant_qa_hard_gate_not_passed")
+
+    metadata = record.get("metadata")
+    if not isinstance(metadata, dict):
+        issues.append("missing_metadata")
+    else:
+        if not str(metadata.get("trajectory_id") or "").strip():
+            issues.append("metadata_missing_trajectory_id")
+        if not str(metadata.get("skill_version") or "").strip() or metadata.get("skill_version") == "unknown":
+            issues.append("metadata_missing_skill_version")
+        reviewer = str(metadata.get("reviewer") or "").strip()
+        if not reviewer or reviewer.casefold() == "anonymous":
+            issues.append("metadata_missing_reviewer")
+        review_version = metadata.get("review_version")
+        if isinstance(review_version, bool) or not isinstance(review_version, int) or review_version < 1:
+            issues.append("metadata_invalid_review_version")
+        if not _is_iso_datetime(metadata.get("reviewed_at")):
+            issues.append("metadata_invalid_reviewed_at")
+        if metadata.get("human_review_status") not in {"accepted", "approved"}:
+            issues.append("metadata_review_not_accepted")
+        if str(metadata.get("task_type") or "") != str(user_payload.get("task_type") or ""):
+            issues.append("metadata_task_type_mismatch")
+        quality_score = _metadata_quality_score(metadata)
+        if quality_score is None or not 0.0 <= quality_score <= 1.0:
+            issues.append("metadata_invalid_quality_score")
+    return {
+        "issues": issues,
+        "roles": roles,
+        "user_payload": user_payload,
+        "assistant_payload": assistant_payload,
+    }
 
 
 def _metadata_quality_score(metadata: Any) -> float | None:
     if not isinstance(metadata, dict):
         return None
     raw = metadata.get("quality_score")
-    if raw is None:
+    if raw is None or isinstance(raw, bool):
         return None
     try:
         return float(raw)
@@ -237,9 +317,44 @@ def _quality_recommendations(report: dict[str, Any]) -> list[str]:
     evidence = report.get("evidence_coverage") if isinstance(report.get("evidence_coverage"), dict) else {}
     if evidence.get("unsupported_confirmed_records"):
         recommendations.append("add_source_references_for_confirmed_claims")
+    provenance = report.get("provenance_coverage") if isinstance(report.get("provenance_coverage"), dict) else {}
+    if provenance.get("complete_records", 0) < report.get("jsonl_record_count", 0):
+        recommendations.append("restore_review_provenance_before_training")
+    if report.get("content_sha256_matches_metadata") is False:
+        recommendations.append("regenerate_export_after_integrity_check")
     if report.get("eligible_count") == 0 or report.get("jsonl_record_count") == 0:
         recommendations.append("collect_reviewed_accepted_trajectories")
     return recommendations
+
+
+def _provenance_flags(metadata: Any) -> dict[str, bool]:
+    metadata = metadata if isinstance(metadata, dict) else {}
+    reviewer = str(metadata.get("reviewer") or "").strip()
+    review_version = metadata.get("review_version")
+    quality_score = _metadata_quality_score(metadata)
+    return {
+        "records_with_trajectory_id": bool(str(metadata.get("trajectory_id") or "").strip()),
+        "records_with_skill_version": bool(
+            str(metadata.get("skill_version") or "").strip() and metadata.get("skill_version") != "unknown"
+        ),
+        "records_with_reviewer": bool(reviewer and reviewer.casefold() != "anonymous"),
+        "records_with_review_version": bool(
+            not isinstance(review_version, bool) and isinstance(review_version, int) and review_version >= 1
+        ),
+        "records_with_reviewed_at": _is_iso_datetime(metadata.get("reviewed_at")),
+        "records_with_accepted_review": metadata.get("human_review_status") in {"accepted", "approved"},
+        "records_with_quality_score": bool(quality_score is not None and 0.0 <= quality_score <= 1.0),
+    }
+
+
+def _is_iso_datetime(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
 
 
 def _source_references(record: dict[str, Any]) -> list[Any]:

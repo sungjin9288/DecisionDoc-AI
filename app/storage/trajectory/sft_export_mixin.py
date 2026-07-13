@@ -45,6 +45,7 @@ class TrajectorySftExportMixin:
 
         Returns the export path, or None when fewer than ``min_records`` match.
         """
+        _require_reviewed_export_metadata(accepted_only=accepted_only, include_metadata=include_metadata)
         records = self._select_sft_export_records(
             tenant_id=tenant_id,
             task_type=task_type,
@@ -216,6 +217,7 @@ class TrajectorySftExportMixin:
         sample_limit: int = 5,
     ) -> dict[str, Any]:
         """Dry-run SFT export selection without writing files."""
+        _require_reviewed_export_metadata(accepted_only=accepted_only, include_metadata=include_metadata)
         all_records = self.get_records(
             tenant_id=tenant_id,
             task_type=task_type,
@@ -285,6 +287,7 @@ class TrajectorySftExportMixin:
         sample_limit: int = 5,
     ) -> dict[str, Any]:
         """Build an offline quality report for the next reviewed SFT export."""
+        _require_reviewed_export_metadata(accepted_only=accepted_only, include_metadata=include_metadata)
         all_records = self.get_records(
             tenant_id=tenant_id,
             task_type=task_type,
@@ -344,6 +347,10 @@ class TrajectorySftExportMixin:
         path = self.get_sft_export_path(filename, tenant_id=tenant_id)
         if path is None:
             return None
+        export_metadata = self._get_export_metadata(tenant_id, filename)
+        expected_sha256 = str(export_metadata.get("content_sha256") or "")
+        actual_sha256 = _file_sha256(path)
+        checksum_matches = bool(expected_sha256) and actual_sha256 == expected_sha256
         records: list[dict[str, Any]] = []
         parse_errors: list[dict[str, Any]] = []
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -383,13 +390,32 @@ class TrajectorySftExportMixin:
                 "tenant_id": tenant_id,
                 "filename": path.name,
                 "size_bytes": path.stat().st_size,
+                "content_sha256": actual_sha256,
+                "expected_content_sha256": expected_sha256 or None,
+                "content_sha256_matches_metadata": checksum_matches,
+                "export_fingerprint": export_metadata.get("export_fingerprint"),
+                "source_trajectory_ids": export_metadata.get("source_trajectory_ids") or [],
                 "jsonl_line_count": len(records) + len(parse_errors),
-                "ready_for_training": report["schema_invalid_count"] == 0 and bool(records),
+                "ready_for_training": (
+                    report["schema_invalid_count"] == 0
+                    and bool(records)
+                    and checksum_matches
+                    and report["provenance_coverage"]["complete_records"] == len(records)
+                ),
                 "rejection_reason_summary": {},
             }
         )
         report["recommendations"] = _quality_recommendations(report)
         return report
+
+    def _get_export_metadata(self, tenant_id: str, filename: str) -> dict[str, Any]:
+        with self._lock:
+            meta = self._load_meta_unlocked(tenant_id)
+        exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        for item in reversed(exports):
+            if isinstance(item, dict) and item.get("filename") == filename:
+                return item
+        return {}
 
     def _resolve_export_path(self, tenant_id: str, filename: str) -> Path | None:
         if not _is_safe_export_filename(filename):
@@ -449,3 +475,8 @@ class TrajectorySftExportMixin:
             meta["export_count"] = int(meta.get("export_count") or 0) + 1
             atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
             return str(export_path)
+
+
+def _require_reviewed_export_metadata(*, accepted_only: bool, include_metadata: bool) -> None:
+    if accepted_only and not include_metadata:
+        raise ValueError("Reviewed SFT exports require provenance metadata.")

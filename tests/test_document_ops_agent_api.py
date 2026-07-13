@@ -222,6 +222,14 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     )
     assert blocked_quality_report.status_code == 401
 
+    provenance_less_export = client.post(
+        "/api/agent/document-ops/trajectories/export",
+        headers=_ops_headers(),
+        json={"min_records": 1, "include_metadata": False},
+    )
+    assert provenance_less_export.status_code == 400
+    assert provenance_less_export.json()["detail"] == "Reviewed SFT exports require provenance metadata."
+
     preview = client.post(
         "/api/agent/document-ops/trajectories/export/preview",
         headers=_ops_headers(),
@@ -334,6 +342,9 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert file_quality_body["filename"] == filename
     assert file_quality_body["schema_valid_count"] == 1
     assert file_quality_body["schema_invalid_count"] == 0
+    assert file_quality_body["provenance_coverage"]["complete_records"] == 1
+    assert file_quality_body["content_sha256_matches_metadata"] is True
+    assert file_quality_body["source_trajectory_ids"] == [created["trajectory_id"]]
     assert file_quality_body["ready_for_training"] is True
 
     blocked_freeze_list = client.get(

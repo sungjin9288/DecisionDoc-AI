@@ -426,14 +426,17 @@ def preview_document_ops_trajectory_export(
     payload: DocumentOpsTrajectoryExportPreviewRequest,
     request: Request,
 ) -> dict:
-    return _service(request).preview_sft_export(
-        tenant_id=get_tenant_id(request),
-        task_type=payload.task_type,
-        min_records=payload.min_records,
-        accepted_only=payload.accepted_only,
-        include_metadata=payload.include_metadata,
-        sample_limit=payload.sample_limit,
-    )
+    try:
+        return _service(request).preview_sft_export(
+            tenant_id=get_tenant_id(request),
+            task_type=payload.task_type,
+            min_records=payload.min_records,
+            accepted_only=payload.accepted_only,
+            include_metadata=payload.include_metadata,
+            sample_limit=payload.sample_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/trajectories/export/quality-report", dependencies=[Depends(require_ops_key)])
@@ -441,14 +444,17 @@ def report_document_ops_trajectory_export_quality(
     payload: DocumentOpsTrajectoryExportPreviewRequest,
     request: Request,
 ) -> dict:
-    return _service(request).report_sft_export_quality(
-        tenant_id=get_tenant_id(request),
-        task_type=payload.task_type,
-        min_records=payload.min_records,
-        accepted_only=payload.accepted_only,
-        include_metadata=payload.include_metadata,
-        sample_limit=payload.sample_limit,
-    )
+    try:
+        return _service(request).report_sft_export_quality(
+            tenant_id=get_tenant_id(request),
+            task_type=payload.task_type,
+            min_records=payload.min_records,
+            accepted_only=payload.accepted_only,
+            include_metadata=payload.include_metadata,
+            sample_limit=payload.sample_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/trajectories/export", dependencies=[Depends(require_ops_key)])
@@ -457,13 +463,16 @@ def export_document_ops_trajectories(
     request: Request,
 ) -> dict:
     tenant_id = get_tenant_id(request)
-    export_path = _service(request).export_sft_messages(
-        tenant_id=tenant_id,
-        task_type=payload.task_type,
-        min_records=payload.min_records,
-        accepted_only=payload.accepted_only,
-        include_metadata=payload.include_metadata,
-    )
+    try:
+        export_path = _service(request).export_sft_messages(
+            tenant_id=tenant_id,
+            task_type=payload.task_type,
+            min_records=payload.min_records,
+            accepted_only=payload.accepted_only,
+            include_metadata=payload.include_metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     filename = os.path.basename(export_path) if export_path else None
     return {
         "exported": export_path is not None,

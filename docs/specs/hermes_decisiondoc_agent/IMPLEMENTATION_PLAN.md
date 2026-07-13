@@ -79,6 +79,10 @@ Acceptance:
 
 Goal: strengthen local dataset inspection before any upload decision.
 
+Status: implemented. Candidate and file reports validate message roles, user/assistant JSON shape,
+accepted review provenance, source trajectory IDs, and file checksum integrity. Reviewed exports
+cannot omit provenance metadata, and checksum mismatches block dataset freeze.
+
 Work:
 
 - verify role/content shape for every exported message record

@@ -49,7 +49,7 @@ The local workflow supports:
 1. Capture a redacted trajectory from a DocumentOps run.
 2. Record a named human review with bounded notes, quality score, redacted metadata, version, and history.
 3. Preview or export accepted trajectories as SFT JSONL; rejected, pending, and reviewer-less records stay blocked.
-4. Inspect export quality and create a reviewed export artifact.
+4. Inspect role/content schema, evidence and provenance coverage, source trajectory IDs, and SHA-256 integrity.
 5. Reuse an identical export by fingerprint, or freeze a new export with checksum, source trajectory IDs, and reviewer metadata.
 6. Record dry-run training approval and readiness evidence.
 7. Create a two-person execution request record without starting execution.
@@ -110,7 +110,7 @@ pytest -q \
   tests/storage/test_trajectory_store.py
 ```
 
-The five files currently define 52 test functions. Reproduce the source count with:
+The five files currently define 54 test functions. Reproduce the source count with:
 
 ```bash
 python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
@@ -126,9 +126,9 @@ source count is not a pass claim.
 
 Last local verification on 2026-07-14:
 
-- focused DocumentOps suite: 52 passed
+- focused DocumentOps suite: 54 passed
 - report-workflow and infrastructure integration: 140 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2892 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2894 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

@@ -204,7 +204,15 @@ def test_export_sft_messages_reuses_identical_dataset_fingerprint(tmp_path: Path
     assert store.get_stats(tenant_id="system")["export_count"] == 1
     assert len(store.list_sft_exports(tenant_id="system")) == 1
 
-    without_metadata = store.export_sft_messages(tenant_id="system", min_records=1, include_metadata=False)
+    with pytest.raises(ValueError, match="require provenance metadata"):
+        store.export_sft_messages(tenant_id="system", min_records=1, include_metadata=False)
+
+    without_metadata = store.export_sft_messages(
+        tenant_id="system",
+        min_records=1,
+        accepted_only=False,
+        include_metadata=False,
+    )
     assert without_metadata is not None
     assert without_metadata != first
     assert store.get_stats(tenant_id="system")["export_count"] == 2
@@ -286,6 +294,10 @@ def test_sft_quality_report_summarizes_schema_roles_evidence_and_blockers(tmp_pa
     assert report["qa_summary"]["quality_score_summary"]["avg"] == 0.95
     assert report["evidence_coverage"]["records_with_source_references"] == 1
     assert report["evidence_coverage"]["source_reference_coverage"] == 1.0
+    assert report["provenance_coverage"]["complete_records"] == 1
+    assert report["provenance_coverage"]["complete_rate"] == 1.0
+    assert report["provenance_coverage"]["records_with_accepted_review"] == 1
+    assert report["provenance_coverage"]["records_with_quality_score"] == 1
     assert report["ready_for_export"] is True
     assert report["ready_for_training"] is False
     assert "review_or_reject_blocked_trajectories_before_dataset_freeze" in report["recommendations"]
@@ -309,7 +321,70 @@ def test_sft_export_file_quality_report_validates_jsonl(tmp_path: Path) -> None:
     assert report["schema_invalid_count"] == 0
     assert report["role_sequence_summary"]["system,user,assistant"] == 1
     assert report["evidence_coverage"]["records_with_source_references"] == 1
+    assert report["provenance_coverage"]["complete_records"] == 1
+    assert report["content_sha256_matches_metadata"] is True
+    assert report["content_sha256"] == report["expected_content_sha256"]
+    assert report["source_trajectory_ids"] == ["trj_accept"]
     assert report["ready_for_training"] is True
+
+
+def test_sft_export_quality_rejects_malformed_user_payload_and_review_provenance(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_invalid_sft"), tenant_id="system")
+    store.mark_reviewed(
+        "trj_invalid_sft",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        quality_score=0.95,
+    )
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    path = Path(export_path)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["messages"][1]["content"] = "not-json"
+    record["metadata"].pop("reviewer")
+    record["metadata"]["reviewed_at"] = "2026-07-14"
+    record["metadata"]["quality_score"] = True
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    report = store.inspect_sft_export_quality(path.name, tenant_id="system")
+
+    assert report is not None
+    assert report["schema_invalid_count"] == 1
+    issues = report["invalid_samples"][0]["issues"]
+    assert "user_content_not_json" in issues
+    assert "metadata_missing_reviewer" in issues
+    assert "metadata_invalid_reviewed_at" in issues
+    assert "metadata_invalid_quality_score" in issues
+    assert report["provenance_coverage"]["complete_records"] == 0
+    assert report["ready_for_training"] is False
+
+
+def test_sft_export_quality_detects_checksum_mismatch_before_freeze(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_tampered_export"), tenant_id="system")
+    store.mark_reviewed(
+        "trj_tampered_export",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        quality_score=0.95,
+    )
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    path = Path(export_path)
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    report = store.inspect_sft_export_quality(path.name, tenant_id="system")
+
+    assert report is not None
+    assert report["schema_invalid_count"] == 0
+    assert report["content_sha256_matches_metadata"] is False
+    assert report["ready_for_training"] is False
+    assert "regenerate_export_after_integrity_check" in report["recommendations"]
+    with pytest.raises(ValueError, match="not ready for dataset freeze"):
+        store.freeze_sft_export(path.name, tenant_id="system", reviewer="dataset-owner")
 
 
 def test_freeze_sft_export_writes_manifest_and_metadata_without_training(tmp_path: Path) -> None:

@@ -94,6 +94,12 @@ changing a review increments `review_version` and moves the prior feedback into
 `human_review_history`. Export metadata records a dataset fingerprint, content SHA-256, and source
 trajectory IDs so the same dataset request reuses one artifact and changed inputs create a new one.
 
+Before dataset freeze, the file quality report must confirm the exact
+`system,user,assistant` role sequence, JSON object shape for user and assistant content, accepted
+review identity/version/timestamp/score, source trajectory provenance, and a SHA-256 match against
+the export metadata. A missing provenance field or checksum mismatch keeps
+`ready_for_training=false` and blocks freeze.
+
 ## Data Sources
 
 Use only approved project data:
