@@ -9,6 +9,7 @@ from typing import Any
 
 from app.storage.base import atomic_write_text
 from app.storage.trajectory.redaction import (
+    _file_sha256,
     _is_safe_manifest_id,
     _is_safe_training_approval_filename,
     _now_iso,
@@ -42,16 +43,28 @@ class TrajectoryTrainingApprovalMixin:
             if approval_file in seen_files:
                 continue
             approval_path = self._resolve_training_approval_path(tenant_id, approval_file)
+            approval_sha256 = str(item.get("approval_sha256") or "")
             approvals.append(
                 {
                     "approval_id": item.get("approval_id"),
                     "approval_file": approval_file,
                     "manifest_id": item.get("manifest_id"),
                     "export_filename": item.get("export_filename"),
+                    "export_sha256": item.get("export_sha256"),
+                    "quality_report_sha256": item.get("quality_report_sha256"),
                     "approver": item.get("approver"),
                     "dry_run": bool(item.get("dry_run", True)),
+                    "training_execution_allowed": bool(item.get("training_execution_allowed", False)),
+                    "external_upload_started": bool(item.get("external_upload_started", False)),
+                    "provider_api_calls_allowed": bool(item.get("provider_api_calls_allowed", False)),
                     "provider_job_started": bool(item.get("provider_job_started", False)),
                     "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
+                    "approval_sha256": approval_sha256 or None,
+                    "integrity_verified": bool(
+                        approval_path
+                        and approval_sha256
+                        and _file_sha256(approval_path) == approval_sha256
+                    ),
                     "created_at": item.get("created_at"),
                     "exists": approval_path is not None,
                     "size_bytes": approval_path.stat().st_size if approval_path else 0,
@@ -88,13 +101,37 @@ class TrajectoryTrainingApprovalMixin:
         manifest = self._load_freeze_manifest_by_id(manifest_id, tenant_id=tenant_id)
         if manifest is None:
             return None
+        freeze_meta = next(
+            (
+                item
+                for item in self.list_dataset_freezes(tenant_id=tenant_id, limit=10_000)
+                if item.get("manifest_id") == manifest_id
+            ),
+            None,
+        )
+        if freeze_meta is None or freeze_meta.get("integrity_verified") is not True:
+            raise ValueError("dataset freeze manifest integrity check failed.")
         freeze_reviewer = str((manifest.get("review_gate") or {}).get("reviewer") or "").strip()
         if freeze_reviewer and freeze_reviewer == approver:
             raise ValueError("training approver must be different from dataset freeze reviewer.")
-        if (manifest.get("training_guard") or {}).get("training_started") is True:
-            raise ValueError("dataset manifest already has training_started=true.")
+        training_guard = manifest.get("training_guard") if isinstance(manifest.get("training_guard"), dict) else {}
+        if training_guard.get("training_allowed") is not False:
+            raise ValueError("dataset manifest must keep training_allowed=false.")
+        if training_guard.get("training_started") is not False:
+            raise ValueError("dataset manifest must keep training_started=false.")
         if (manifest.get("quality_report") or {}).get("ready_for_training") is not True:
             raise ValueError("dataset manifest quality report is not ready for training approval.")
+        export = manifest.get("export") if isinstance(manifest.get("export"), dict) else {}
+        export_filename = str(export.get("filename") or "")
+        current_quality = self.inspect_sft_export_quality(
+            export_filename,
+            tenant_id=tenant_id,
+            sample_limit=0,
+        )
+        if current_quality is None or current_quality.get("ready_for_training") is not True:
+            raise ValueError("dataset export integrity or quality check failed.")
+        if current_quality.get("content_sha256") != export.get("sha256"):
+            raise ValueError("dataset export checksum does not match the freeze manifest.")
 
         now = datetime.now(timezone.utc)
         created_at = now.isoformat()
@@ -122,7 +159,10 @@ class TrajectoryTrainingApprovalMixin:
             "eval_plan": _redact_input(eval_plan),
             "execution_guard": {
                 "dry_run": True,
+                "training_execution_allowed": False,
                 "start_training_requested": False,
+                "external_upload_started": False,
+                "provider_api_calls_allowed": False,
                 "provider_job_started": False,
                 "model_promotion_allowed": False,
                 "reason": "Training approval recorded only. Provider job execution and model promotion require a separate explicit workflow.",
@@ -131,7 +171,12 @@ class TrajectoryTrainingApprovalMixin:
         approval_file = f"training_approval_{manifest_id}_{approval_ts}_{approval_id[-8:]}.json"
         approval_path = self._training_approval_dir(tenant_id) / approval_file
         atomic_write_text(approval_path, json.dumps(approval, ensure_ascii=False, indent=2, sort_keys=True))
-        self._append_training_approval_meta(tenant_id, approval_file, approval)
+        self._append_training_approval_meta(
+            tenant_id,
+            approval_file,
+            approval,
+            approval_sha256=_file_sha256(approval_path),
+        )
         return approval
 
     def training_readiness_summary(
@@ -148,6 +193,12 @@ class TrajectoryTrainingApprovalMixin:
         latest_export = reviewed_exports[0] if reviewed_exports else None
         latest_freeze = freezes[0] if freezes else None
         latest_approval = approvals[0] if approvals else None
+        artifact_chain = self._training_artifact_chain_summary(
+            tenant_id=tenant_id,
+            latest_export=latest_export,
+            latest_freeze=latest_freeze,
+            latest_approval=latest_approval,
+        )
 
         latest_quality_report: dict[str, Any] | None = None
         if latest_export and latest_export.get("exists") is True:
@@ -167,6 +218,15 @@ class TrajectoryTrainingApprovalMixin:
 
         provider_job_started_count = sum(1 for item in approvals if item.get("provider_job_started") is True)
         model_promotion_allowed_count = sum(1 for item in approvals if item.get("model_promotion_allowed") is True)
+        training_execution_allowed_count = sum(
+            1 for item in approvals if item.get("training_execution_allowed") is True
+        )
+        external_upload_started_count = sum(
+            1 for item in approvals if item.get("external_upload_started") is True
+        )
+        provider_api_calls_allowed_count = sum(
+            1 for item in approvals if item.get("provider_api_calls_allowed") is True
+        )
         training_allowed_count = sum(1 for item in freezes if item.get("training_allowed") is True)
         training_started_count = sum(1 for item in freezes if item.get("training_started") is True)
 
@@ -183,10 +243,20 @@ class TrajectoryTrainingApprovalMixin:
             blockers.append("no_dataset_freeze_manifest")
         elif latest_freeze.get("exists") is not True:
             blockers.append("latest_dataset_freeze_manifest_missing")
+        elif artifact_chain["freeze_integrity_verified"] is not True:
+            blockers.append("latest_dataset_freeze_integrity_failed")
         if latest_approval is None:
             blockers.append("no_dry_run_training_approval")
         elif latest_approval.get("exists") is not True:
             blockers.append("latest_training_approval_file_missing")
+        elif artifact_chain["approval_integrity_verified"] is not True:
+            blockers.append("latest_training_approval_integrity_failed")
+        if artifact_chain["freeze_matches_latest_export"] is False:
+            blockers.append("latest_dataset_freeze_does_not_match_latest_export")
+        if artifact_chain["approval_matches_latest_freeze"] is False:
+            blockers.append("latest_training_approval_does_not_match_latest_freeze")
+        if artifact_chain["approval_guard_clean"] is False:
+            blockers.append("latest_training_approval_guard_not_clean")
         if latest_eval_summary is None or latest_eval_summary["has_eval_plan"] is not True:
             blockers.append("latest_training_approval_missing_eval_plan")
         elif latest_eval_summary["has_required_metrics"] is not True:
@@ -195,6 +265,12 @@ class TrajectoryTrainingApprovalMixin:
             blockers.append("provider_job_started_detected")
         if model_promotion_allowed_count:
             blockers.append("model_promotion_allowed_detected")
+        if training_execution_allowed_count:
+            blockers.append("training_execution_allowed_detected")
+        if external_upload_started_count:
+            blockers.append("external_upload_started_detected")
+        if provider_api_calls_allowed_count:
+            blockers.append("provider_api_calls_allowed_detected")
         if training_allowed_count:
             blockers.append("dataset_training_allowed_flag_detected")
         if training_started_count:
@@ -221,6 +297,7 @@ class TrajectoryTrainingApprovalMixin:
             "latest_reviewed_export": latest_export,
             "latest_dataset_freeze": latest_freeze,
             "latest_training_approval": latest_approval,
+            "artifact_chain": artifact_chain,
             "latest_export_quality": {
                 "ready_for_training": bool((latest_quality_report or {}).get("ready_for_training")),
                 "schema_valid_count": int((latest_quality_report or {}).get("schema_valid_count") or 0),
@@ -241,9 +318,15 @@ class TrajectoryTrainingApprovalMixin:
                 "training_allowed_count": training_allowed_count,
                 "provider_job_started_count": provider_job_started_count,
                 "model_promotion_allowed_count": model_promotion_allowed_count,
-                "external_upload_started": False,
+                "training_execution_allowed_count": training_execution_allowed_count,
+                "external_upload_started_count": external_upload_started_count,
+                "external_upload_started": external_upload_started_count > 0,
+                "provider_api_calls_allowed_count": provider_api_calls_allowed_count,
                 "no_training_started": (
                     training_started_count == 0
+                    and training_execution_allowed_count == 0
+                    and external_upload_started_count == 0
+                    and provider_api_calls_allowed_count == 0
                     and provider_job_started_count == 0
                     and model_promotion_allowed_count == 0
                 ),
@@ -342,6 +425,8 @@ class TrajectoryTrainingApprovalMixin:
         tenant_id: str,
         approval_file: str,
         approval: dict[str, Any],
+        *,
+        approval_sha256: str,
     ) -> None:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
@@ -353,16 +438,109 @@ class TrajectoryTrainingApprovalMixin:
                 {
                     "approval_id": approval.get("approval_id"),
                     "approval_file": approval_file,
+                    "approval_sha256": approval_sha256,
                     "manifest_id": manifest.get("manifest_id"),
                     "export_filename": manifest.get("export_filename"),
+                    "export_sha256": manifest.get("export_sha256"),
+                    "quality_report_sha256": manifest.get("quality_report_sha256"),
                     "approver": gate.get("approver"),
                     "dry_run": guard.get("dry_run", True),
+                    "training_execution_allowed": guard.get("training_execution_allowed", False),
+                    "external_upload_started": guard.get("external_upload_started", False),
+                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
                     "provider_job_started": guard.get("provider_job_started", False),
                     "model_promotion_allowed": guard.get("model_promotion_allowed", False),
                     "created_at": approval.get("created_at"),
                 }
             )
             atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+
+    def _training_artifact_chain_summary(
+        self,
+        *,
+        tenant_id: str,
+        latest_export: dict[str, Any] | None,
+        latest_freeze: dict[str, Any] | None,
+        latest_approval: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        manifest_id = str((latest_freeze or {}).get("manifest_id") or "")
+        manifest = self._load_freeze_manifest_by_id(manifest_id, tenant_id=tenant_id) if manifest_id else None
+        approval = self._load_training_approval_by_file(
+            tenant_id,
+            str((latest_approval or {}).get("approval_file") or ""),
+        )
+        export = manifest.get("export") if isinstance((manifest or {}).get("export"), dict) else {}
+        quality_report = (
+            manifest.get("quality_report")
+            if isinstance((manifest or {}).get("quality_report"), dict)
+            else {}
+        )
+        approval_manifest = (
+            approval.get("manifest")
+            if isinstance((approval or {}).get("manifest"), dict)
+            else {}
+        )
+        approval_guard = (
+            approval.get("execution_guard")
+            if isinstance((approval or {}).get("execution_guard"), dict)
+            else {}
+        )
+
+        freeze_matches_latest_export: bool | None = None
+        if latest_export is not None and latest_freeze is not None:
+            freeze_matches_latest_export = bool(
+                manifest
+                and export.get("filename") == latest_export.get("filename")
+                and export.get("sha256") == latest_export.get("content_sha256")
+                and int(export.get("record_count") or 0) == int(latest_export.get("record_count") or 0)
+            )
+
+        approval_matches_latest_freeze: bool | None = None
+        approval_guard_clean: bool | None = None
+        if latest_freeze is not None and latest_approval is not None:
+            approval_matches_latest_freeze = bool(
+                manifest
+                and approval
+                and approval_manifest.get("manifest_id") == manifest.get("manifest_id")
+                and approval_manifest.get("export_filename") == export.get("filename")
+                and approval_manifest.get("export_sha256") == export.get("sha256")
+                and approval_manifest.get("quality_report_sha256") == quality_report.get("sha256")
+                and int(approval_manifest.get("record_count") or 0) == int(export.get("record_count") or 0)
+            )
+            approval_guard_clean = bool(
+                approval
+                and approval_guard.get("dry_run") is True
+                and approval_guard.get("training_execution_allowed", False) is False
+                and approval_guard.get("start_training_requested", False) is False
+                and approval_guard.get("external_upload_started", False) is False
+                and approval_guard.get("provider_api_calls_allowed", False) is False
+                and approval_guard.get("provider_job_started", False) is False
+                and approval_guard.get("model_promotion_allowed", False) is False
+            )
+
+        freeze_integrity_verified = bool(
+            latest_freeze and latest_freeze.get("integrity_verified") is True
+        )
+        approval_integrity_verified = bool(
+            latest_approval and latest_approval.get("integrity_verified") is True
+        )
+        return {
+            "latest_export_filename": (latest_export or {}).get("filename"),
+            "freeze_manifest_id": (latest_freeze or {}).get("manifest_id"),
+            "approval_id": (latest_approval or {}).get("approval_id"),
+            "freeze_integrity_verified": freeze_integrity_verified,
+            "approval_integrity_verified": approval_integrity_verified,
+            "freeze_matches_latest_export": freeze_matches_latest_export,
+            "approval_matches_latest_freeze": approval_matches_latest_freeze,
+            "approval_guard_clean": approval_guard_clean,
+            "consistent": bool(
+                freeze_integrity_verified
+                and approval_integrity_verified
+                and freeze_matches_latest_export is True
+                and approval_matches_latest_freeze is True
+                and approval_guard_clean is True
+            ),
+        }
 
     def _resolve_training_approval_path(self, tenant_id: str, filename: str) -> Path | None:
         if not _is_safe_training_approval_filename(filename):

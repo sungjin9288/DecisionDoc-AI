@@ -29,6 +29,39 @@ def _sample_trajectory(trajectory_id: str = "trj_001") -> dict:
     }
 
 
+def _create_training_approval_chain(
+    store: TrajectoryStore,
+    trajectory_id: str,
+) -> tuple[Path, dict, dict]:
+    store.save(_sample_trajectory(trajectory_id), tenant_id="system")
+    store.mark_reviewed(
+        trajectory_id,
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        quality_score=0.95,
+    )
+    export_path = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert export_path is not None
+    manifest = store.freeze_sft_export(
+        Path(export_path).name,
+        tenant_id="system",
+        reviewer="dataset-owner",
+    )
+    assert manifest is not None
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={
+            "suite": "document_ops_offline_eval",
+            "required_metrics": {"schema_valid_rate": 1.0},
+        },
+    )
+    assert approval is not None
+    return Path(export_path), manifest, approval
+
+
 def test_save_stores_tenant_scoped_redacted_jsonl(tmp_path: Path) -> None:
     store = TrajectoryStore(tmp_path)
 
@@ -418,6 +451,9 @@ def test_freeze_sft_export_writes_manifest_and_metadata_without_training(tmp_pat
     assert len(freezes) == 1
     assert freezes[0]["manifest_id"] == manifest["manifest_id"]
     assert freezes[0]["export_filename"] == Path(export_path).name
+    assert freezes[0]["export_sha256"] == manifest["export"]["sha256"]
+    assert len(freezes[0]["manifest_sha256"]) == 64
+    assert freezes[0]["integrity_verified"] is True
     assert freezes[0]["training_allowed"] is False
     assert freezes[0]["exists"] is True
     assert freezes[0]["size_bytes"] > 0
@@ -478,6 +514,10 @@ def test_approve_training_from_freeze_records_dry_run_gate_without_provider_job(
     assert len(approvals) == 1
     assert approvals[0]["approval_id"] == approval["approval_id"]
     assert approvals[0]["manifest_id"] == manifest["manifest_id"]
+    assert approvals[0]["export_sha256"] == manifest["export"]["sha256"]
+    assert approvals[0]["quality_report_sha256"] == manifest["quality_report"]["sha256"]
+    assert len(approvals[0]["approval_sha256"]) == 64
+    assert approvals[0]["integrity_verified"] is True
     assert approvals[0]["dry_run"] is True
     assert approvals[0]["provider_job_started"] is False
     assert approvals[0]["exists"] is True
@@ -519,6 +559,9 @@ def test_training_readiness_summary_combines_freezes_approvals_and_eval_plan_wit
     assert summary["latest_reviewed_export"]["filename"] == Path(export_path).name
     assert summary["latest_dataset_freeze"]["manifest_id"] == manifest["manifest_id"]
     assert summary["latest_training_approval"]["approval_id"] == approval["approval_id"]
+    assert summary["artifact_chain"]["consistent"] is True
+    assert summary["artifact_chain"]["freeze_matches_latest_export"] is True
+    assert summary["artifact_chain"]["approval_matches_latest_freeze"] is True
     assert summary["latest_export_quality"]["ready_for_training"] is True
     assert summary["eval_plan_coverage"]["approvals_with_eval_plan"] == 1
     assert summary["eval_plan_coverage"]["approvals_with_required_metrics"] == 1
@@ -529,6 +572,76 @@ def test_training_readiness_summary_combines_freezes_approvals_and_eval_plan_wit
     assert summary["training_guard"]["external_upload_started"] is False
     assert summary["blockers"] == []
     assert summary["recommendations"] == ["review_latest_freeze_and_approval_before_explicit_training_execution"]
+
+
+def test_training_readiness_requires_latest_export_freeze_and_approval_to_match(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    _create_training_approval_chain(store, "trj_chain_1")
+
+    store.save(_sample_trajectory("trj_chain_2"), tenant_id="system")
+    store.mark_reviewed(
+        "trj_chain_2",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        quality_score=0.96,
+    )
+    latest_export = store.export_sft_messages(tenant_id="system", min_records=1)
+    assert latest_export is not None
+
+    export_mismatch = store.training_readiness_summary(tenant_id="system")
+
+    assert export_mismatch["ready_for_training_execution"] is False
+    assert export_mismatch["artifact_chain"]["freeze_matches_latest_export"] is False
+    assert "latest_dataset_freeze_does_not_match_latest_export" in export_mismatch["blockers"]
+
+    latest_manifest = store.freeze_sft_export(
+        Path(latest_export).name,
+        tenant_id="system",
+        reviewer="dataset-owner",
+    )
+    assert latest_manifest is not None
+    approval_mismatch = store.training_readiness_summary(tenant_id="system")
+
+    assert approval_mismatch["artifact_chain"]["freeze_matches_latest_export"] is True
+    assert approval_mismatch["artifact_chain"]["approval_matches_latest_freeze"] is False
+    assert "latest_training_approval_does_not_match_latest_freeze" in approval_mismatch["blockers"]
+
+    latest_approval = store.approve_training_from_freeze(
+        latest_manifest["manifest_id"],
+        tenant_id="system",
+        approver="ml-owner",
+        eval_plan={
+            "suite": "document_ops_offline_eval",
+            "required_metrics": {"schema_valid_rate": 1.0},
+        },
+    )
+    assert latest_approval is not None
+    ready = store.training_readiness_summary(tenant_id="system")
+
+    assert ready["ready_for_training_execution"] is True
+    assert ready["artifact_chain"]["consistent"] is True
+    assert ready["blockers"] == []
+
+
+def test_training_readiness_rejects_tampered_approval_artifact(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    _, _, approval = _create_training_approval_chain(store, "trj_tampered_approval")
+    approval_meta = store.list_training_approvals(tenant_id="system")[0]
+    approval_path = store._resolve_training_approval_path("system", approval_meta["approval_file"])
+    assert approval_path is not None
+    approval_path.write_text(
+        approval_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    summary = store.training_readiness_summary(tenant_id="system")
+
+    assert summary["latest_training_approval"]["approval_id"] == approval["approval_id"]
+    assert summary["latest_training_approval"]["integrity_verified"] is False
+    assert summary["artifact_chain"]["approval_integrity_verified"] is False
+    assert summary["ready_for_training_execution"] is False
+    assert "latest_training_approval_integrity_failed" in summary["blockers"]
 
 
 def test_training_execution_plan_preview_builds_provider_agnostic_dry_run_spec(tmp_path: Path) -> None:
@@ -634,6 +747,10 @@ def test_training_execution_request_records_two_person_guard_without_side_effect
     assert requests[0]["training_execution_allowed"] is False
     assert requests[0]["provider_job_started"] is False
     assert requests[0]["external_upload_started"] is False
+    assert requests[0]["provider_api_calls_allowed"] is False
+    assert requests[0]["model_promotion_allowed"] is False
+    assert len(requests[0]["request_sha256"]) == 64
+    assert requests[0]["integrity_verified"] is True
     assert requests[0]["exists"] is True
 
     with pytest.raises(ValueError, match="different from dry-run training approver"):
@@ -644,6 +761,35 @@ def test_training_execution_request_records_two_person_guard_without_side_effect
         store.request_training_execution_from_plan(tenant_id="system", requester="ops-owner", upload_dataset=True)
     with pytest.raises(ValueError, match="provider APIs"):
         store.request_training_execution_from_plan(tenant_id="system", requester="ops-owner", call_provider_api=True)
+
+
+def test_pre_execution_audit_rejects_request_from_previous_artifact_chain(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    _, first_manifest, _ = _create_training_approval_chain(store, "trj_request_chain_1")
+    request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+    _, latest_manifest, latest_approval = _create_training_approval_chain(store, "trj_request_chain_2")
+
+    checklist = store.training_pre_execution_audit_checklist(
+        tenant_id="system",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    chain_item = next(item for item in checklist["checklist"] if item["id"] == "artifact_chain_consistent")
+    assert request["plan_preview"]["dataset"]["freeze_manifest_id"] == first_manifest["manifest_id"]
+    assert checklist["readiness_summary"]["artifact_chain"]["consistent"] is True
+    assert chain_item["passed"] is False
+    assert chain_item["evidence"]["request_integrity_verified"] is True
+    assert chain_item["evidence"]["request_manifest_id"] == first_manifest["manifest_id"]
+    assert chain_item["evidence"]["current_manifest_id"] == latest_manifest["manifest_id"]
+    assert chain_item["evidence"]["current_approval_id"] == latest_approval["approval_id"]
+    assert checklist["status"] == "blocked"
+    assert "artifact_chain_consistent" in checklist["blockers"]
 
 
 def test_training_pre_execution_audit_exports_human_review_packet_without_side_effects(tmp_path: Path) -> None:
@@ -713,6 +859,10 @@ def test_training_pre_execution_audit_exports_human_review_packet_without_side_e
     assert audits[0]["training_execution_allowed"] is False
     assert audits[0]["provider_job_started"] is False
     assert audits[0]["external_upload_started"] is False
+    assert audits[0]["provider_api_calls_allowed"] is False
+    assert audits[0]["model_promotion_allowed"] is False
+    assert len(audits[0]["audit_sha256"]) == 64
+    assert audits[0]["integrity_verified"] is True
     assert audits[0]["exists"] is True
     assert store.get_training_pre_execution_audit_path(audits[0]["audit_file"], tenant_id="system") is not None
 
@@ -788,6 +938,47 @@ def test_training_governance_dashboard_summary_aggregates_all_gates_without_side
     assert summary["readiness_status"] == "ready_for_training_decision"
     assert summary["plan_preview_status"] == "ready_for_manual_execution_planning"
     assert summary["audit_checklist_status"] == "ready_for_human_pre_execution_review"
+    assert summary["audit_chain"]["matches_current_chain"] is True
+
+
+def test_governance_dashboard_rejects_audit_from_previous_artifact_chain(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    _create_training_approval_chain(store, "trj_audit_chain_1")
+    first_request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+    first_audit = store.export_training_pre_execution_audit(
+        tenant_id="system",
+        auditor="compliance-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+    _, latest_manifest, _ = _create_training_approval_chain(store, "trj_audit_chain_2")
+    latest_request = store.request_training_execution_from_plan(
+        tenant_id="system",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    summary = store.training_governance_dashboard_summary(
+        tenant_id="system",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    assert first_request["request_id"] != latest_request["request_id"]
+    assert summary["latest"]["pre_execution_audit"]["audit_id"] == first_audit["audit_id"]
+    assert summary["audit_chain"]["integrity_verified"] is True
+    assert summary["audit_chain"]["audit_request_id"] == first_request["request_id"]
+    assert summary["audit_chain"]["current_request_id"] == latest_request["request_id"]
+    assert summary["audit_chain"]["current_manifest_id"] == latest_manifest["manifest_id"]
+    assert summary["audit_chain"]["matches_current_chain"] is False
+    assert summary["status"] == "needs_attention"
+    assert "latest_training_audit_does_not_match_current_chain" in summary["blockers"]
 
 
 def test_approve_training_from_freeze_enforces_separate_approver_and_no_job(tmp_path: Path) -> None:

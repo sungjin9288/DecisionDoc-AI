@@ -100,6 +100,24 @@ review identity/version/timestamp/score, source trajectory provenance, and a SHA
 the export metadata. A missing provenance field or checksum mismatch keeps
 `ready_for_training=false` and blocks freeze.
 
+## Local Governance Artifact Chain
+
+Local readiness is valid only when the newest artifacts form one traceable chain:
+
+```text
+reviewed export -> dataset freeze -> dry-run approval -> execution request -> pre-execution audit
+```
+
+The freeze, approval, request, and audit files each retain a SHA-256 in tenant-scoped metadata.
+Readiness compares export filename, content checksum, record count, freeze manifest ID, approval ID,
+quality-report checksum, provider, and base model across the relevant payloads. A changed export,
+tampered file, old request, or old audit blocks the governance summary until a new downstream
+artifact is created from the current chain.
+
+Every local guard remains false for training execution, external upload, provider API calls,
+provider job creation, and model promotion. Passing this chain proves local consistency only; it
+does not authorize or perform an external side effect.
+
 ## Data Sources
 
 Use only approved project data:
@@ -175,6 +193,7 @@ Positive scoring:
 - Add trajectory capture for reviewed document work.
 - Keep existing model/provider behavior unchanged.
 - Export examples for inspection only.
+- Preserve the checksum-bound local governance chain through freeze, approval, request, and audit.
 
 ### Phase 2: Small SFT Experiment
 

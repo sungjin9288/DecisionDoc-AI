@@ -51,9 +51,9 @@ The local workflow supports:
 3. Preview or export accepted trajectories as SFT JSONL; rejected, pending, and reviewer-less records stay blocked.
 4. Inspect role/content schema, evidence and provenance coverage, source trajectory IDs, and SHA-256 integrity.
 5. Reuse an identical export by fingerprint, or freeze a new export with checksum, source trajectory IDs, and reviewer metadata.
-6. Record dry-run training approval and readiness evidence.
-7. Create a two-person execution request record without starting execution.
-8. Export a pre-execution audit and read governance/sign-off summaries.
+6. Record a checksum-bound dry-run training approval and verify that it references the latest freeze and export.
+7. Create a two-person execution request only from the current approval chain, without starting execution.
+8. Export a pre-execution audit and reject stale or tampered request/audit references in governance summaries.
 9. Rehearse the provider adapter contract with no external side effects.
 
 These records are approval evidence. They are not authorization to upload a dataset, call a
@@ -110,7 +110,7 @@ pytest -q \
   tests/storage/test_trajectory_store.py
 ```
 
-The five files currently define 54 test functions. Reproduce the source count with:
+The five files currently define 58 test functions. Reproduce the source count with:
 
 ```bash
 python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
@@ -128,7 +128,7 @@ Last local verification on 2026-07-14:
 
 - focused DocumentOps suite: 54 passed
 - report-workflow and infrastructure integration: 140 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2894 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2898 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof
@@ -160,9 +160,9 @@ the status surface misleading.
 
 No-cost development should focus on runtime value rather than adding another evidence wrapper:
 
-1. Improve task-specific QA rules and failure diagnostics with deterministic fixtures.
-2. Strengthen trajectory review and export quality checks where tests identify a real gap.
-3. Keep approval, tenant isolation, and audit behavior covered as API surfaces evolve.
+1. Keep the local browser flow aligned with the implemented review, export, freeze, and governance states.
+2. Extend task-specific QA diagnostics only when a new deterministic failure mode is identified.
+3. Preserve trajectory, tenant, artifact-integrity, and audit coverage as API surfaces evolve.
 4. Run live-provider proof only in a separately approved, budget-capped task.
 
 ## Source Documents

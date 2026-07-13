@@ -33,13 +33,21 @@ class TrajectoryFreezeMixin:
             if manifest_file in seen_manifest_files:
                 continue
             manifest_path = self._resolve_freeze_path(tenant_id, manifest_file)
+            manifest_sha256 = str(item.get("manifest_sha256") or "")
             freezes.append(
                 {
                     "manifest_id": item.get("manifest_id"),
                     "manifest_file": manifest_file,
                     "export_filename": item.get("export_filename"),
+                    "export_sha256": item.get("export_sha256"),
                     "record_count": int(item.get("record_count") or 0),
                     "quality_report_sha256": item.get("quality_report_sha256"),
+                    "manifest_sha256": manifest_sha256 or None,
+                    "integrity_verified": bool(
+                        manifest_path
+                        and manifest_sha256
+                        and _file_sha256(manifest_path) == manifest_sha256
+                    ),
                     "training_allowed": bool(item.get("training_allowed", False)),
                     "training_started": bool(item.get("training_started", False)),
                     "reviewer": item.get("reviewer"),
@@ -122,6 +130,7 @@ class TrajectoryFreezeMixin:
             tenant_id,
             manifest_file,
             manifest,
+            manifest_sha256=_file_sha256(manifest_path),
         )
         return manifest
 
@@ -130,6 +139,8 @@ class TrajectoryFreezeMixin:
         tenant_id: str,
         manifest_file: str,
         manifest: dict[str, Any],
+        *,
+        manifest_sha256: str,
     ) -> None:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
@@ -138,7 +149,9 @@ class TrajectoryFreezeMixin:
                 {
                     "manifest_id": manifest.get("manifest_id"),
                     "manifest_file": manifest_file,
+                    "manifest_sha256": manifest_sha256,
                     "export_filename": (manifest.get("export") or {}).get("filename"),
+                    "export_sha256": (manifest.get("export") or {}).get("sha256"),
                     "record_count": (manifest.get("export") or {}).get("record_count"),
                     "quality_report_sha256": (manifest.get("quality_report") or {}).get("sha256"),
                     "training_allowed": (manifest.get("training_guard") or {}).get("training_allowed", False),

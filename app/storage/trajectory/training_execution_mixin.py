@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _is_safe_training_execution_request_filename
+from app.storage.trajectory.redaction import _file_sha256, _is_safe_training_execution_request_filename
 
 
 class TrajectoryTrainingExecutionMixin:
@@ -33,6 +33,7 @@ class TrajectoryTrainingExecutionMixin:
             if request_file in seen_files:
                 continue
             request_path = self._resolve_training_execution_request_path(tenant_id, request_file)
+            request_sha256 = str(item.get("request_sha256") or "")
             requests.append(
                 {
                     "request_id": item.get("request_id"),
@@ -47,6 +48,14 @@ class TrajectoryTrainingExecutionMixin:
                     "training_execution_allowed": bool(item.get("training_execution_allowed", False)),
                     "provider_job_started": bool(item.get("provider_job_started", False)),
                     "external_upload_started": bool(item.get("external_upload_started", False)),
+                    "provider_api_calls_allowed": bool(item.get("provider_api_calls_allowed", False)),
+                    "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
+                    "request_sha256": request_sha256 or None,
+                    "integrity_verified": bool(
+                        request_path
+                        and request_sha256
+                        and _file_sha256(request_path) == request_sha256
+                    ),
                     "created_at": item.get("created_at"),
                     "exists": request_path is not None,
                     "size_bytes": request_path.stat().st_size if request_path else 0,
@@ -144,7 +153,12 @@ class TrajectoryTrainingExecutionMixin:
         request_file = f"training_execution_request_{request_id}_{request_ts}.json"
         request_path = self._training_execution_request_dir(tenant_id) / request_file
         atomic_write_text(request_path, json.dumps(request_record, ensure_ascii=False, indent=2, sort_keys=True))
-        self._append_training_execution_request_meta(tenant_id, request_file, request_record)
+        self._append_training_execution_request_meta(
+            tenant_id,
+            request_file,
+            request_record,
+            request_sha256=_file_sha256(request_path),
+        )
         return request_record
 
     def _append_training_execution_request_meta(
@@ -152,6 +166,8 @@ class TrajectoryTrainingExecutionMixin:
         tenant_id: str,
         request_file: str,
         request_record: dict[str, Any],
+        *,
+        request_sha256: str,
     ) -> None:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
@@ -165,6 +181,7 @@ class TrajectoryTrainingExecutionMixin:
                 {
                     "request_id": request_record.get("request_id"),
                     "request_file": request_file,
+                    "request_sha256": request_sha256,
                     "manifest_id": dataset.get("freeze_manifest_id"),
                     "approval_id": gate.get("prior_training_approval_id"),
                     "provider": plan.get("provider"),
@@ -175,6 +192,8 @@ class TrajectoryTrainingExecutionMixin:
                     "training_execution_allowed": guard.get("training_execution_allowed", False),
                     "provider_job_started": guard.get("provider_job_started", False),
                     "external_upload_started": guard.get("external_upload_started", False),
+                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
+                    "model_promotion_allowed": guard.get("model_promotion_allowed", False),
                     "created_at": request_record.get("created_at"),
                 }
             )
@@ -193,3 +212,17 @@ class TrajectoryTrainingExecutionMixin:
         if not resolved.is_file() or not resolved.is_relative_to(base):
             return None
         return resolved
+
+    def _load_training_execution_request_by_file(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> dict[str, Any] | None:
+        request_path = self._resolve_training_execution_request_path(tenant_id, filename)
+        if request_path is None:
+            return None
+        try:
+            data = json.loads(request_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return data if isinstance(data, dict) else None

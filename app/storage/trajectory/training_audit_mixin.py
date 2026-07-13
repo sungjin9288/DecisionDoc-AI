@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _dedupe, _is_safe_training_audit_filename, _now_iso
+from app.storage.trajectory.redaction import _dedupe, _file_sha256, _is_safe_training_audit_filename, _now_iso
 
 
 class TrajectoryTrainingAuditMixin:
@@ -32,15 +32,51 @@ class TrajectoryTrainingAuditMixin:
         )
         requests = self.list_training_execution_requests(tenant_id=tenant_id, limit=limit)
         latest_request = requests[0] if requests else None
+        request_record = self._load_training_execution_request_by_file(
+            tenant_id,
+            str((latest_request or {}).get("request_file") or ""),
+        )
+        request_plan = (
+            request_record.get("plan_preview")
+            if isinstance((request_record or {}).get("plan_preview"), dict)
+            else {}
+        )
+        request_dataset = (
+            request_plan.get("dataset")
+            if isinstance(request_plan.get("dataset"), dict)
+            else {}
+        )
+        request_gate = (
+            request_record.get("request_gate")
+            if isinstance((request_record or {}).get("request_gate"), dict)
+            else {}
+        )
+        request_guard = (
+            request_record.get("execution_guard")
+            if isinstance((request_record or {}).get("execution_guard"), dict)
+            else {}
+        )
+        request_two_person = (
+            request_record.get("two_person_guard")
+            if isinstance((request_record or {}).get("two_person_guard"), dict)
+            else {}
+        )
         request_guard_clean = bool(
-            latest_request
-            and latest_request.get("training_execution_allowed") is False
-            and latest_request.get("provider_job_started") is False
-            and latest_request.get("external_upload_started") is False
+            request_record
+            and request_guard.get("training_execution_allowed", False) is False
+            and request_guard.get("start_training_requested", False) is False
+            and request_guard.get("provider_job_started", False) is False
+            and request_guard.get("external_upload_started", False) is False
+            and request_guard.get("provider_api_calls_allowed", False) is False
+            and request_guard.get("model_promotion_allowed", False) is False
         )
         readiness_ready = readiness.get("ready_for_training_execution") is True
         plan_ready = plan_preview.get("status") == "ready_for_manual_execution_planning"
-        two_person_ready = bool(latest_request and latest_request.get("two_person_guard_satisfied") is True)
+        two_person_ready = bool(
+            request_record
+            and request_two_person.get("satisfied") is True
+            and request_two_person.get("required") is True
+        )
         no_side_effects = bool(
             plan_preview.get("training_execution_allowed") is False
             and plan_preview.get("provider_api_calls_allowed") is False
@@ -52,6 +88,23 @@ class TrajectoryTrainingAuditMixin:
         job_spec = plan_preview.get("job_spec") if isinstance(plan_preview.get("job_spec"), dict) else {}
         dataset = job_spec.get("dataset") if isinstance(job_spec.get("dataset"), dict) else {}
         evaluation = job_spec.get("evaluation") if isinstance(job_spec.get("evaluation"), dict) else {}
+        artifact_chain = readiness.get("artifact_chain") if isinstance(readiness.get("artifact_chain"), dict) else {}
+        latest_approval = (
+            readiness.get("latest_training_approval")
+            if isinstance(readiness.get("latest_training_approval"), dict)
+            else {}
+        )
+        request_chain_consistent = bool(
+            latest_request
+            and latest_request.get("integrity_verified") is True
+            and request_record
+            and request_record.get("request_id") == latest_request.get("request_id")
+            and artifact_chain.get("consistent") is True
+            and request_dataset.get("freeze_manifest_id") == dataset.get("freeze_manifest_id")
+            and request_gate.get("prior_training_approval_id") == latest_approval.get("approval_id")
+            and request_plan.get("provider") == job_spec.get("provider")
+            and request_plan.get("base_model") == job_spec.get("base_model")
+        )
         checklist = [
             {
                 "id": "readiness_summary_ready",
@@ -76,10 +129,26 @@ class TrajectoryTrainingAuditMixin:
             {
                 "id": "execution_request_recorded",
                 "severity": "required",
-                "passed": latest_request is not None,
+                "passed": bool(latest_request and latest_request.get("exists") is True),
                 "evidence": {
                     "request_id": (latest_request or {}).get("request_id"),
                     "exists": (latest_request or {}).get("exists", False),
+                },
+            },
+            {
+                "id": "artifact_chain_consistent",
+                "severity": "required",
+                "passed": request_chain_consistent,
+                "evidence": {
+                    "request_integrity_verified": (latest_request or {}).get("integrity_verified", False),
+                    "current_manifest_id": dataset.get("freeze_manifest_id"),
+                    "request_manifest_id": request_dataset.get("freeze_manifest_id"),
+                    "current_approval_id": latest_approval.get("approval_id"),
+                    "request_approval_id": request_gate.get("prior_training_approval_id"),
+                    "current_provider": job_spec.get("provider"),
+                    "request_provider": request_plan.get("provider"),
+                    "current_base_model": job_spec.get("base_model"),
+                    "request_base_model": request_plan.get("base_model"),
                 },
             },
             {
@@ -87,8 +156,8 @@ class TrajectoryTrainingAuditMixin:
                 "severity": "required",
                 "passed": two_person_ready,
                 "evidence": {
-                    "requester": (latest_request or {}).get("requester"),
-                    "prior_training_approver": (latest_request or {}).get("prior_training_approver"),
+                    "requester": request_two_person.get("execution_requester"),
+                    "prior_training_approver": request_two_person.get("prior_training_approver"),
                 },
             },
             {
@@ -100,6 +169,8 @@ class TrajectoryTrainingAuditMixin:
                     "provider_api_calls_allowed": plan_preview.get("provider_api_calls_allowed"),
                     "external_upload_allowed": plan_preview.get("external_upload_allowed"),
                     "request_guard_clean": request_guard_clean,
+                    "request_provider_api_calls_allowed": request_guard.get("provider_api_calls_allowed"),
+                    "request_model_promotion_allowed": request_guard.get("model_promotion_allowed"),
                 },
             },
             {
@@ -159,6 +230,7 @@ class TrajectoryTrainingAuditMixin:
             "human_review_packet": {
                 "dataset": dataset,
                 "evaluation": evaluation,
+                "artifact_chain": artifact_chain,
                 "latest_request_id": (latest_request or {}).get("request_id"),
                 "request_count": len(requests),
             },
@@ -183,6 +255,7 @@ class TrajectoryTrainingAuditMixin:
             if audit_file in seen_files:
                 continue
             audit_path = self._resolve_training_audit_path(tenant_id, audit_file)
+            audit_sha256 = str(item.get("audit_sha256") or "")
             audits.append(
                 {
                     "audit_id": item.get("audit_id"),
@@ -196,6 +269,14 @@ class TrajectoryTrainingAuditMixin:
                     "training_execution_allowed": bool(item.get("training_execution_allowed", False)),
                     "provider_job_started": bool(item.get("provider_job_started", False)),
                     "external_upload_started": bool(item.get("external_upload_started", False)),
+                    "provider_api_calls_allowed": bool(item.get("provider_api_calls_allowed", False)),
+                    "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
+                    "audit_sha256": audit_sha256 or None,
+                    "integrity_verified": bool(
+                        audit_path
+                        and audit_sha256
+                        and _file_sha256(audit_path) == audit_sha256
+                    ),
                     "created_at": item.get("created_at"),
                     "exists": audit_path is not None,
                     "size_bytes": audit_path.stat().st_size if audit_path else 0,
@@ -236,8 +317,6 @@ class TrajectoryTrainingAuditMixin:
             base_model=base_model,
             limit=limit,
         )
-        if checklist.get("status") != "ready_for_human_pre_execution_review":
-            raise ValueError("Pre-execution audit export requires a ready checklist.")
         latest_request = (
             checklist.get("latest_training_execution_request")
             if isinstance(checklist.get("latest_training_execution_request"), dict)
@@ -249,6 +328,8 @@ class TrajectoryTrainingAuditMixin:
             raise ValueError("auditor must be different from training execution requester.")
         if prior_approver and auditor == prior_approver:
             raise ValueError("auditor must be different from dry-run training approver.")
+        if checklist.get("status") != "ready_for_human_pre_execution_review":
+            raise ValueError("Pre-execution audit export requires a ready checklist.")
 
         now = datetime.now(timezone.utc)
         created_at = now.isoformat()
@@ -285,7 +366,12 @@ class TrajectoryTrainingAuditMixin:
         audit_path = self._training_audit_dir(tenant_id) / audit_file
         audit_record["audit_file"] = audit_file
         atomic_write_text(audit_path, json.dumps(audit_record, ensure_ascii=False, indent=2, sort_keys=True))
-        self._append_training_pre_execution_audit_meta(tenant_id, audit_file, audit_record)
+        self._append_training_pre_execution_audit_meta(
+            tenant_id,
+            audit_file,
+            audit_record,
+            audit_sha256=_file_sha256(audit_path),
+        )
         return audit_record
 
     def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str = "system") -> Path | None:
@@ -319,17 +405,30 @@ class TrajectoryTrainingAuditMixin:
             base_model=base_model,
             limit=limit,
         )
+        latest_audit = audits[0] if audits else None
+        audit_chain = self._training_audit_chain_summary(
+            tenant_id=tenant_id,
+            latest_audit=latest_audit,
+            current_checklist=audit_checklist,
+        )
         guard_counts = {
             "training_allowed_count": sum(1 for item in freezes if item.get("training_allowed") is True),
             "training_started_count": sum(1 for item in freezes if item.get("training_started") is True),
             "approval_provider_job_started_count": sum(1 for item in approvals if item.get("provider_job_started") is True),
             "approval_model_promotion_allowed_count": sum(1 for item in approvals if item.get("model_promotion_allowed") is True),
+            "approval_training_execution_allowed_count": sum(1 for item in approvals if item.get("training_execution_allowed") is True),
+            "approval_external_upload_started_count": sum(1 for item in approvals if item.get("external_upload_started") is True),
+            "approval_provider_api_calls_allowed_count": sum(1 for item in approvals if item.get("provider_api_calls_allowed") is True),
             "request_training_execution_allowed_count": sum(1 for item in execution_requests if item.get("training_execution_allowed") is True),
             "request_provider_job_started_count": sum(1 for item in execution_requests if item.get("provider_job_started") is True),
             "request_external_upload_started_count": sum(1 for item in execution_requests if item.get("external_upload_started") is True),
+            "request_provider_api_calls_allowed_count": sum(1 for item in execution_requests if item.get("provider_api_calls_allowed") is True),
+            "request_model_promotion_allowed_count": sum(1 for item in execution_requests if item.get("model_promotion_allowed") is True),
             "audit_training_execution_allowed_count": sum(1 for item in audits if item.get("training_execution_allowed") is True),
             "audit_provider_job_started_count": sum(1 for item in audits if item.get("provider_job_started") is True),
             "audit_external_upload_started_count": sum(1 for item in audits if item.get("external_upload_started") is True),
+            "audit_provider_api_calls_allowed_count": sum(1 for item in audits if item.get("provider_api_calls_allowed") is True),
+            "audit_model_promotion_allowed_count": sum(1 for item in audits if item.get("model_promotion_allowed") is True),
         }
         no_side_effects = all(value == 0 for value in guard_counts.values())
         required_audit_failures = [
@@ -346,6 +445,16 @@ class TrajectoryTrainingAuditMixin:
                 *[str(item) for item in audit_checklist.get("blockers") or []],
                 *required_audit_failures,
                 *(["training_side_effect_detected"] if not no_side_effects else []),
+                *(
+                    ["latest_training_audit_integrity_failed"]
+                    if latest_audit and latest_audit.get("integrity_verified") is not True
+                    else []
+                ),
+                *(
+                    ["latest_training_audit_does_not_match_current_chain"]
+                    if latest_audit and audit_chain.get("matches_current_chain") is not True
+                    else []
+                ),
             ]
         )
         status = "governance_ready_for_human_review" if not blockers and audits else "needs_attention"
@@ -380,6 +489,8 @@ class TrajectoryTrainingAuditMixin:
             "readiness_status": readiness.get("status"),
             "plan_preview_status": plan_preview.get("status"),
             "audit_checklist_status": audit_checklist.get("status"),
+            "artifact_chain": readiness.get("artifact_chain") or {},
+            "audit_chain": audit_chain,
             "readiness_summary": readiness,
             "training_plan_preview": plan_preview,
             "audit_checklist": audit_checklist,
@@ -390,6 +501,8 @@ class TrajectoryTrainingAuditMixin:
         tenant_id: str,
         audit_file: str,
         audit_record: dict[str, Any],
+        *,
+        audit_sha256: str,
     ) -> None:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
@@ -417,6 +530,7 @@ class TrajectoryTrainingAuditMixin:
                 {
                     "audit_id": audit_record.get("audit_id"),
                     "audit_file": audit_file,
+                    "audit_sha256": audit_sha256,
                     "status": gate.get("status"),
                     "auditor": gate.get("auditor"),
                     "request_id": packet.get("latest_request_id"),
@@ -426,10 +540,90 @@ class TrajectoryTrainingAuditMixin:
                     "training_execution_allowed": guard.get("training_execution_allowed", False),
                     "provider_job_started": guard.get("provider_job_started", False),
                     "external_upload_started": guard.get("external_upload_started", False),
+                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
+                    "model_promotion_allowed": guard.get("model_promotion_allowed", False),
                     "created_at": audit_record.get("created_at"),
                 }
             )
             atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+
+    def _training_audit_chain_summary(
+        self,
+        *,
+        tenant_id: str,
+        latest_audit: dict[str, Any] | None,
+        current_checklist: dict[str, Any],
+    ) -> dict[str, Any]:
+        audit_record = self._load_training_audit_by_file(
+            tenant_id,
+            str((latest_audit or {}).get("audit_file") or ""),
+        )
+        audit_snapshot = (
+            audit_record.get("checklist_snapshot")
+            if isinstance((audit_record or {}).get("checklist_snapshot"), dict)
+            else {}
+        )
+        audit_packet = (
+            audit_snapshot.get("human_review_packet")
+            if isinstance(audit_snapshot.get("human_review_packet"), dict)
+            else {}
+        )
+        audit_dataset = (
+            audit_packet.get("dataset")
+            if isinstance(audit_packet.get("dataset"), dict)
+            else {}
+        )
+        audit_plan = (
+            audit_snapshot.get("training_plan_preview")
+            if isinstance(audit_snapshot.get("training_plan_preview"), dict)
+            else {}
+        )
+        audit_job_spec = (
+            audit_plan.get("job_spec")
+            if isinstance(audit_plan.get("job_spec"), dict)
+            else {}
+        )
+        current_packet = (
+            current_checklist.get("human_review_packet")
+            if isinstance(current_checklist.get("human_review_packet"), dict)
+            else {}
+        )
+        current_dataset = (
+            current_packet.get("dataset")
+            if isinstance(current_packet.get("dataset"), dict)
+            else {}
+        )
+        current_plan = (
+            current_checklist.get("training_plan_preview")
+            if isinstance(current_checklist.get("training_plan_preview"), dict)
+            else {}
+        )
+        current_job_spec = (
+            current_plan.get("job_spec")
+            if isinstance(current_plan.get("job_spec"), dict)
+            else {}
+        )
+        matches_current_chain = bool(
+            latest_audit
+            and latest_audit.get("integrity_verified") is True
+            and audit_record
+            and audit_record.get("audit_id") == latest_audit.get("audit_id")
+            and audit_packet.get("latest_request_id") == current_packet.get("latest_request_id")
+            and audit_dataset.get("freeze_manifest_id") == current_dataset.get("freeze_manifest_id")
+            and audit_job_spec.get("provider") == current_job_spec.get("provider")
+            and audit_job_spec.get("base_model") == current_job_spec.get("base_model")
+        )
+        return {
+            "audit_id": (latest_audit or {}).get("audit_id"),
+            "audit_request_id": audit_packet.get("latest_request_id"),
+            "current_request_id": current_packet.get("latest_request_id"),
+            "audit_manifest_id": audit_dataset.get("freeze_manifest_id"),
+            "current_manifest_id": current_dataset.get("freeze_manifest_id"),
+            "integrity_verified": bool(
+                latest_audit and latest_audit.get("integrity_verified") is True
+            ),
+            "matches_current_chain": matches_current_chain,
+        }
 
     def _resolve_training_audit_path(self, tenant_id: str, filename: str) -> Path | None:
         if not _is_safe_training_audit_filename(filename):
@@ -444,3 +638,13 @@ class TrajectoryTrainingAuditMixin:
         if not resolved.is_file() or not resolved.is_relative_to(base):
             return None
         return resolved
+
+    def _load_training_audit_by_file(self, tenant_id: str, filename: str) -> dict[str, Any] | None:
+        audit_path = self._resolve_training_audit_path(tenant_id, filename)
+        if audit_path is None:
+            return None
+        try:
+            data = json.loads(audit_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return data if isinstance(data, dict) else None

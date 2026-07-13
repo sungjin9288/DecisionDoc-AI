@@ -100,9 +100,14 @@ Acceptance:
 
 Goal: keep approval records useful while preventing them from becoming execution authority.
 
+Status: implemented for the local governance chain. Freeze, approval, execution-request, and audit
+artifacts retain their own SHA-256 in metadata. Readiness and audit summaries reject a missing,
+tampered, or stale `export -> freeze -> approval -> request -> audit` reference.
+
 Work:
 
 - keep two-person request, freeze, audit, and sign-off references internally consistent
+- verify artifact checksums and cross-artifact IDs before reporting a ready state
 - reject `start_training`, `upload_dataset`, and `call_provider_api` in local workflows
 - keep provider adapter contract and rehearsal read-only
 - expose config errors when an execution flag is enabled against the stub
