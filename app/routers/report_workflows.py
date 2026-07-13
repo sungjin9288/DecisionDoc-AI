@@ -1,6 +1,7 @@
 """Report workflow endpoints for staged report production."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import urllib.parse
@@ -163,15 +164,18 @@ def export_report_quality_correction_pilot(
         )
     except (KeyError, ValueError) as exc:
         _handle_store_error(exc)
+    body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    filename = f"report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl"
     return Response(
         content=body,
         media_type="application/x-ndjson; charset=utf-8",
         headers={
             "Content-Disposition": (
-                'attachment; filename="report_quality_pilot_artifacts.jsonl"; '
-                "filename*=UTF-8''report_quality_pilot_artifacts.jsonl"
+                f'attachment; filename="{filename}"; '
+                f"filename*=UTF-8''{filename}"
             ),
             "X-DecisionDoc-Pilot-Artifact-Count": str(len(payload.artifact_ids)),
+            "X-DecisionDoc-Pilot-SHA256": body_sha256,
             "X-DecisionDoc-Training-Authorized": "false",
         },
     )

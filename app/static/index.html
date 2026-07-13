@@ -7847,16 +7847,23 @@
         body: JSON.stringify({ artifact_ids: artifactIds }),
       });
       if (!res.ok) throw new Error(await res.text());
+      const exportSha256 = String(res.headers.get('X-DecisionDoc-Pilot-SHA256') || '').trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(exportSha256)) {
+        throw new Error('Pilot export SHA-256 응답이 없거나 올바르지 않습니다.');
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'report_quality_pilot_artifacts.jsonl';
+      a.download = `report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1500);
-      showNotification(`선택한 ${artifactIds.length}개 correction artifact JSONL 다운로드를 시작했습니다.`, 'success');
+      showNotification(
+        `선택한 ${artifactIds.length}개 correction artifact JSONL 다운로드를 시작했습니다. SHA-256 ${exportSha256.slice(0, 12)}...`,
+        'success',
+      );
     } catch (err) {
       showNotification('Pilot correction artifact JSONL 다운로드 실패: ' + (err.message || err), 'error');
     }

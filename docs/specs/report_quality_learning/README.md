@@ -411,14 +411,15 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
 2. AI가 기획안과 장표 초안을 생성한다.
 3. 사람이 결과, 수정 이유, 점수, scan 결과를 검토하고 ready correction artifact로 저장한다.
 4. UI에서 서로 다른 ready artifact 3~5개를 선택해 `report_quality_pilot_artifacts.jsonl`로 내려받는다.
+   - 실제 파일명에는 응답 본문 SHA-256 앞 12자가 붙고, 전체 hash는 `X-DecisionDoc-Pilot-SHA256` 응답 헤더로도 제공된다.
 5. export를 source-bound 파일럿 review pack으로 가져온다.
    ```bash
    python3 scripts/create_report_quality_pilot_pack.py \
      --batch-id pilot-rqc-001 \
-     --source-jsonl ~/Downloads/report_quality_pilot_artifacts.jsonl \
+     --source-jsonl ~/Downloads/report_quality_pilot_artifacts_<sha12>.jsonl \
      --output-root reports/report-quality
    ```
-6. `SOURCE_MANIFEST.json`의 SHA-256, tenant, artifact 순서를 원본 export와 대조한다.
+6. `SOURCE_MANIFEST.json`의 SHA-256을 export 응답의 전체 `X-DecisionDoc-Pilot-SHA256` 값과 대조하고 tenant, artifact 순서도 확인한다.
 7. worksheet로 교정 내용과 승인 필드를 다시 확인한다. Source import pack에서는 `human_review_manifest.json`의 source/draft SHA-256 binding도 함께 확인한다.
    ```bash
    python3 scripts/create_report_quality_review_sheet.py \

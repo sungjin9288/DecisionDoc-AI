@@ -23,12 +23,12 @@ Report Workflow 생성 시:
 - 민감 원문은 요약/metadata/reference만 사용
 - 최종 승인 전까지 학습 후보로 보지 않음
 
-Report Workflow UI에서 ready artifact 3~5개를 선택하고 `report_quality_pilot_artifacts.jsonl`로 내려받은 뒤, 로컬 review pack으로 가져온다.
+Report Workflow UI에서 ready artifact 3~5개를 선택하면 응답 본문의 SHA-256 앞 12자가 포함된 `report_quality_pilot_artifacts_<sha12>.jsonl`을 내려받는다. 서버는 전체 SHA-256을 `X-DecisionDoc-Pilot-SHA256` 응답 헤더에도 기록한다. 파일을 로컬 review pack으로 가져온 뒤 `SOURCE_MANIFEST.json`의 `source_sha256`이 이 전체 hash와 일치하는지 확인한다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \
   --batch-id pilot-rqc-001 \
-  --source-jsonl ~/Downloads/report_quality_pilot_artifacts.jsonl \
+  --source-jsonl ~/Downloads/report_quality_pilot_artifacts_<sha12>.jsonl \
   --output-root reports/report-quality
 ```
 

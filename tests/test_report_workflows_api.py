@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from unittest.mock import patch
 
@@ -584,6 +585,12 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert exported.headers["content-type"].startswith("application/x-ndjson")
     assert exported.headers["x-decisiondoc-pilot-artifact-count"] == "3"
     assert exported.headers["x-decisiondoc-training-authorized"] == "false"
+    body_sha256 = hashlib.sha256(exported.content).hexdigest()
+    assert exported.headers["x-decisiondoc-pilot-sha256"] == body_sha256
+    assert (
+        f'report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl'
+        in exported.headers["content-disposition"]
+    )
     lines = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
     assert [item["artifact_id"] for item in lines] == list(reversed(artifact_ids))
     assert all(item["training_boundary"]["training_execution_authorized"] is False for item in lines)
