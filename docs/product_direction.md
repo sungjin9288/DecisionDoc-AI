@@ -202,6 +202,7 @@ Focus on a narrow, demonstrable workflow:
 
 - The project procurement surface connects a tenant-resolved recommendation directly to a verified review packet download. The server reuses the local package contract, returns packet identity and SHA256 evidence, and keeps operational approval false.
 - The same project surface now persists the original packet and pending receipt under the tenant, project, and packet SHA256 boundary; it exposes pending and completed review history without creating a second approval workflow.
+- A tenant-scoped review inbox now gathers pending and completed records across projects, supports project or reviewer lookup, opens the existing project detail workflow, and reuses verified completed-package downloads without exposing tenant identifiers or receipt internals.
 - A reviewer can record `accepted`, `changes_requested`, or `rejected` exactly once. Completion rebuilds the current decision packet to reject stale source state, creates and independently verifies the deterministic reviewed package, and keeps it available for verified re-download.
 - `procurement_review.html` provides one script-free view for package, evidence, gaps, and sign-off state.
 - The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.

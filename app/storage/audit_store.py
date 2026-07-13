@@ -42,6 +42,7 @@ ACTION_TYPES: dict[str, str] = {
     "procurement.recommend": "조달 권고안 생성",
     "procurement.review_packet_export": "조달 검토 패킷 내보내기",
     "procurement.review_started": "조달 패킷 검토 시작",
+    "procurement.review_inbox_view": "조달 검토함 조회",
     "procurement.review_completed": "조달 패킷 검토 완료",
     "procurement.reviewed_package_download": "조달 완료 패키지 다운로드",
     "procurement.override_reason": "조달 override 사유 기록",

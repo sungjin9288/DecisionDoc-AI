@@ -224,6 +224,8 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
         },
     )
     assert completed_review.status_code == 200
+    review_inbox = client.get("/procurement/reviews")
+    assert review_inbox.status_code == 200
 
     events = _captured_events(caplog, capsys)
     import_events = [
@@ -260,6 +262,19 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
     assert review_events[-1]["procurement_packet_sha256"] == packet_sha256
     assert review_events[-1]["procurement_review_status"] == "completed"
     assert review_events[-1]["procurement_review_decision"] == "accepted"
+
+    inbox_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path") == "/procurement/reviews"
+    ]
+    assert inbox_events
+    assert inbox_events[-1]["procurement_action"] == "review_inbox"
+    assert "procurement_project_id" not in inbox_events[-1]
+    assert inbox_events[-1]["procurement_review_status"] == "all"
+    assert inbox_events[-1]["procurement_review_total"] == 1
+    assert inbox_events[-1]["procurement_review_pending_count"] == 0
+    assert inbox_events[-1]["procurement_review_completed_count"] == 1
 
 
 def test_generate_logs_procurement_handoff_usage(tmp_path, monkeypatch, caplog, capsys):

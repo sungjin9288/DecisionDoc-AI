@@ -70,6 +70,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 packet 밖의 `procurement_review_receipt.json`을 `packet_sha256`에 결속하고 요청 reviewer의 결정을 `pending`에서 `completed`로 한 번만 기록하는 receipt 경로를 추가했다. `render/apply-draft`는 packet과 pending receipt hash에 결속된 browser draft를 atomic update로 연결하며, 기존 script-free packet과 외부 실행 권한 경계는 바꾸지 않는다.
   - 2026-07-13 완료 receipt와 변경하지 않은 review packet을 `reviewed_package_manifest.json`과 함께 세 entry deterministic ZIP으로 묶는 `manage_procurement_reviewed_package.py create/verify` 경로를 추가했다. `review_completed`는 accepted, changes-requested, rejected 결과를 모두 보존하며 operational approval을 의미하지 않는다.
   - 2026-07-14 project procurement 상세 화면에서 reviewer를 지정하고 현재 tenant의 recommendation을 검증된 12-artifact review packet ZIP으로 내려받는 API/UI를 연결했다. Server는 injected procurement store를 재사용하고 packet SHA-256, package ID, artifact count, `operational_approval: false`를 응답 evidence로 제공하며 provider API, G2B live 수집, 입찰 제출은 실행하지 않는다.
+  - 2026-07-14 tenant 전체의 pending/completed procurement review를 프로젝트 화면의 검토함에 모았다. 상태·reviewer 필터, 프로젝트 상세 이동, 검증된 completed package 재다운로드를 기존 lifecycle에 연결하고 검토함 조회 audit와 queue count observability를 남긴다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

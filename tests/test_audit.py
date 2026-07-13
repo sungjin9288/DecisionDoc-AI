@@ -421,6 +421,30 @@ def test_resolve_action_procurement_review_packet_export():
     )
 
 
+def test_resolve_action_procurement_review_inbox_view():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action("GET", "/procurement/reviews", 200) == "procurement.review_inbox_view"
+
+
+def test_procurement_review_inbox_view_is_audited_with_queue_counts(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client, username="review-auditor")
+
+    response = client.get("/procurement/reviews", headers=_auth(login))
+
+    assert response.status_code == 200
+    from app.storage.audit_store import AuditStore
+    entries = AuditStore("system").query(
+        "system",
+        filters={"action": "procurement.review_inbox_view"},
+    )
+    assert len(entries) == 1
+    assert entries[0]["detail"]["review_total"] == 0
+    assert entries[0]["detail"]["review_pending_count"] == 0
+    assert entries[0]["detail"]["review_completed_count"] == 0
+
+
 def test_resolve_action_procurement_review_completed():
     from app.middleware.audit import _resolve_action
     assert _resolve_action(

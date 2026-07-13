@@ -3,6 +3,16 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone tenant review inbox integration
+
+- Added `GET /procurement/reviews` behind the existing procurement feature flag and API-key dependency. It reads only the current tenant's review prefix, supports strict `all`/`pending`/`completed` status, exact reviewer, bounded limit, and non-negative offset filters, and omits tenant identifiers and raw receipts.
+- Review items include lightweight current-tenant project context. Evidence remains visible when scanning the review store, while unavailable projects are not presented as actionable UI targets.
+- The existing project page now loads a review inbox with pending, completed, and all segmented views, local project/reviewer search, project-detail navigation, and verified completed-package re-download. Review completion remains in the existing project detail workspace so the one-time transition is not duplicated.
+- `procurement.review_inbox_view` audit entries record tenant queue counts. Request observability records the selected status and total, pending, and completed counts without emitting an empty project identity.
+- Focused compile, Ruff E/F/W, Bandit medium/high, inline JavaScript parsing, and the five-file API/storage/audit/observability/infrastructure gate pass locally; the gate returned 336 passed.
+- Mock/local Playwright proof showed one pending and one completed item, switched status views, opened the completed project, and downloaded `procurement_reviewed_package_a399c6c37769.zip`. The downloaded SHA256 was `95652ea22dff1d91cce45e1a4beafbaec1e5c177a8b710cfc9a0b7508345588e`, matching the server response. Desktop `1440/1440` and mobile `390/390` viewport/body widths had no horizontal overflow.
+- Full no-cost regression gate passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,918 passed, 2 skipped, and 4 deselected. Paid provider tests, AWS runtime, live G2B collection, upload, training, promotion, service resume, bid submission, legal approval, and contractual commitment were not run.
+
 ## Post-milestone project review completion integration
 
 - Added tenant-scoped `ProcurementReviewStore` records under `tenants/{tenant_id}/procurement_reviews/{project_id}/{packet_sha256}/`. The store preserves the exact source packet, review record, and completed reviewed-package through the configured local or S3 state backend.

@@ -27,6 +27,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
+    ("GET", "/procurement/reviews"): "procurement.review_inbox_view",
     ("POST", "/projects/{id}/procurement/reviews/{id}/complete"): "procurement.review_completed",
     ("GET", "/projects/{id}/procurement/reviews/{id}/reviewed-package"): "procurement.reviewed_package_download",
     ("POST", "/projects/{id}/decision-council/run"): "decision_council.run",
@@ -273,6 +274,13 @@ def _append_audit_entries(
         procurement_review_decision = getattr(
             request.state, "procurement_review_decision", ""
         ) or ""
+        procurement_review_total = getattr(request.state, "procurement_review_total", None)
+        procurement_review_pending_count = getattr(
+            request.state, "procurement_review_pending_count", None
+        )
+        procurement_review_completed_count = getattr(
+            request.state, "procurement_review_completed_count", None
+        )
         decision_council_session_id = getattr(request.state, "decision_council_session_id", "") or ""
         decision_council_session_revision = getattr(
             request.state, "decision_council_session_revision", None
@@ -325,6 +333,12 @@ def _append_audit_entries(
             detail["review_status"] = procurement_review_status
         if procurement_review_decision:
             detail["review_decision"] = procurement_review_decision
+        if procurement_review_total is not None:
+            detail["review_total"] = procurement_review_total
+        if procurement_review_pending_count is not None:
+            detail["review_pending_count"] = procurement_review_pending_count
+        if procurement_review_completed_count is not None:
+            detail["review_completed_count"] = procurement_review_completed_count
         if decision_council_project_id:
             detail["project_id"] = decision_council_project_id
         if decision_council_session_id:

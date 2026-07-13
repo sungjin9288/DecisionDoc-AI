@@ -27,7 +27,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
 | 감사·프라이버시 | `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 등 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
-| 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 1회 완료 receipt, 검증된 reviewed-package 이력까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
+| 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, 1회 완료 receipt, 검증된 reviewed-package 이력까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | UI에서 선택한 ready artifact 3~5개를 source SHA-256·tenant·순서가 기록된 local review pack으로 연결하고, worksheet·decision을 draft SHA-256에 결속 |
@@ -60,7 +60,7 @@ Client (Web UI / CLI / API)
 FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
-  ├─ Routers (20 top-level files, 라우트 260): generate / approvals / projects / knowledge
+  ├─ Routers (20 top-level files, 라우트 261): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -138,10 +138,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 91
 
 ## API / Usage
 
-FastAPI 라우트는 **260개**입니다.
+FastAPI 라우트는 **261개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 260
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 261
 ```
 
 대표 도메인:
@@ -156,7 +156,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 260
 | Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/export` |
-| Public procurement | `/projects/{id}/procurement/evaluate`, `/procurement/review-packet`, `/procurement/reviews`, `/procurement/reviews/{sha}/complete`, `/procurement/reviews/{sha}/reviewed-package`, `/decision-council/run` |
+| Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 
 UI에서 내려받은 품질 교정 파일럿 JSONL을 local review pack으로 가져옵니다.
 
@@ -214,10 +214,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,665개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,670개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2665
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2670
 python3 scripts/count_readme_metrics.py --field test_files      # → 220
 ```
 
@@ -236,7 +236,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,913 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,918 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -272,7 +272,7 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
-- 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. 완료 receipt와 reviewed-package도 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
+- 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결하지만, 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
 ---
@@ -286,4 +286,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 260 · 테스트 2,665 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,670 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

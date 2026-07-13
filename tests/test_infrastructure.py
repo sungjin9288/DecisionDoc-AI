@@ -1440,6 +1440,31 @@ def test_index_html_procurement_review_workspace_contract_is_connected():
         assert marker in content
 
 
+def test_index_html_procurement_review_inbox_contract_is_connected():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        'id="procurement-review-inbox"',
+        'data-procurement-review-inbox-status="pending"',
+        "function loadProcurementReviewInbox()",
+        "function renderProcurementReviewInbox()",
+        "function wireProcurementReviewInboxActions(section)",
+        "loadId !== _procurementReviewInboxLoadId",
+        "button.setAttribute('aria-pressed'",
+        "fetch(`/procurement/reviews?${params}`",
+        "openProjectDetailFromList(",
+        "downloadProjectProcurementReviewedPackage(",
+        "운영 승인이나 입찰 제출 권한을 부여하지 않습니다.",
+    ):
+        assert marker in content
+
+    inbox_start = content.index('<section id="procurement-review-inbox"')
+    inbox_end = content.index('<!-- Project list / detail -->', inbox_start)
+    inbox_markup = content[inbox_start:inbox_end]
+    assert "운영 승인이나 입찰 제출 권한을 부여하지 않습니다." in inbox_markup
+    assert not re.search(r"\son[a-zA-Z]+\s*=", inbox_markup)
+
+
 def test_index_html_project_search_and_dashboard_retry_use_event_listeners():
     content = open("app/static/index.html", encoding="utf-8").read()
     blocks = []

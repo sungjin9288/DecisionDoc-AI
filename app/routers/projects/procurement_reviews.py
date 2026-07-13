@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.auth.api_key import require_api_key
 from app.dependencies import get_tenant_id
@@ -47,6 +48,79 @@ def _ensure_project_exists(request: Request, *, project_id: str, tenant_id: str)
     project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+
+@router.get(
+    "/procurement/reviews",
+    dependencies=[Depends(require_api_key)],
+)
+def list_procurement_review_inbox_endpoint(
+    request: Request,
+    review_status: Literal["all", "pending", "completed"] = "all",
+    reviewer: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """List the current tenant's review queue with lightweight project context."""
+    _ensure_procurement_copilot_enabled(request)
+    request.state.procurement_action = "review_inbox"
+    tenant_id = get_tenant_id(request)
+
+    records = request.app.state.procurement_review_store.list_by_tenant(
+        tenant_id=tenant_id,
+    )
+    summary = {
+        "total": len(records),
+        "pending": sum(record.review_status == "pending" for record in records),
+        "completed": sum(record.review_status == "completed" for record in records),
+    }
+    filtered = records
+    if review_status != "all":
+        filtered = [record for record in filtered if record.review_status == review_status]
+    normalized_reviewer = (reviewer or "").strip().casefold()
+    if normalized_reviewer:
+        filtered = [
+            record
+            for record in filtered
+            if record.reviewer.casefold() == normalized_reviewer
+        ]
+
+    project_by_id = {
+        project.project_id: project
+        for project in request.app.state.project_store.list_by_tenant(tenant_id)
+    }
+    total = len(filtered)
+    page = filtered[offset: offset + limit]
+    reviews = []
+    for record in page:
+        project = project_by_id.get(record.project_id)
+        item = record.to_public_dict()
+        item["project"] = (
+            {
+                "project_id": project.project_id,
+                "name": project.name,
+                "client": project.client,
+                "fiscal_year": project.fiscal_year,
+                "status": project.status,
+            }
+            if project is not None
+            else None
+        )
+        reviews.append(item)
+
+    request.state.procurement_review_status = review_status
+    request.state.procurement_review_total = summary["total"]
+    request.state.procurement_review_pending_count = summary["pending"]
+    request.state.procurement_review_completed_count = summary["completed"]
+    return {
+        "reviews": reviews,
+        "summary": summary,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total,
+        "operational_approval": False,
+    }
 
 
 @router.post(

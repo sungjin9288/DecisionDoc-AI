@@ -1471,6 +1471,131 @@
       padding-top: 10px;
       border-top: 1px solid var(--border, #e5e7eb);
     }
+    .procurement-review-inbox {
+      display: grid;
+      gap: 12px;
+      margin: 4px 0 18px;
+      padding: 16px 0;
+      border-top: 1px solid var(--border, #e5e7eb);
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .procurement-review-inbox-header,
+    .procurement-review-inbox-controls,
+    .procurement-review-inbox-summary,
+    .procurement-review-inbox-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .procurement-review-inbox-header {
+      justify-content: space-between;
+    }
+    .procurement-review-inbox-header h2 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+    .procurement-review-inbox-summary span {
+      font-size: 0.78rem;
+      color: var(--muted, #6b7280);
+    }
+    .procurement-review-inbox-summary strong { color: inherit; }
+    .procurement-review-inbox-controls {
+      justify-content: space-between;
+    }
+    .procurement-review-inbox-segments {
+      display: inline-grid;
+      grid-template-columns: repeat(3, minmax(72px, 1fr));
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .procurement-review-inbox-segments button {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 0;
+      border-right: 1px solid var(--border, #e5e7eb);
+      background: var(--surface, #fff);
+      color: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .procurement-review-inbox-segments button:last-child { border-right: 0; }
+    .procurement-review-inbox-segments button.active {
+      background: var(--p1, #4f46e5);
+      color: #fff;
+    }
+    .procurement-review-inbox-search {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: min(100%, 280px);
+    }
+    .procurement-review-inbox-search input {
+      width: 100%;
+      min-height: 34px;
+    }
+    .procurement-review-inbox-search button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+      cursor: pointer;
+    }
+    .procurement-review-inbox-list {
+      display: grid;
+    }
+    .procurement-review-inbox-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(160px, 0.55fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--border, #e5e7eb);
+    }
+    .procurement-review-inbox-row:first-child { border-top: 0; }
+    .procurement-review-inbox-project,
+    .procurement-review-inbox-meta {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .procurement-review-inbox-project strong,
+    .procurement-review-inbox-project span,
+    .procurement-review-inbox-meta span {
+      overflow-wrap: anywhere;
+    }
+    .procurement-review-inbox-project span,
+    .procurement-review-inbox-meta span,
+    .procurement-review-inbox-empty {
+      color: var(--muted, #6b7280);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .procurement-review-inbox-actions {
+      justify-content: flex-end;
+    }
+    .procurement-review-inbox-actions button {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .procurement-review-inbox-actions button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .procurement-summary-list {
       margin: 10px 0 0;
       padding-left: 18px;
@@ -2734,6 +2859,11 @@
       .procurement-review-export button { width: 100%; }
       .procurement-review-complete-form { grid-template-columns: 1fr; }
       .procurement-review-history-row { grid-template-columns: 1fr; }
+      .procurement-review-inbox-controls { align-items: stretch; }
+      .procurement-review-inbox-segments,
+      .procurement-review-inbox-search { width: 100%; }
+      .procurement-review-inbox-row { grid-template-columns: 1fr; }
+      .procurement-review-inbox-actions { justify-content: flex-start; }
       .decision-council-form { grid-template-columns: 1fr; }
       .decision-council-actions button { width: 100%; }
       .procurement-handoff-track { grid-template-columns: 1fr; }
@@ -5429,6 +5559,25 @@
   </div>
   <!-- Stats row -->
   <div id="project-stats-row" class="stats-row"></div>
+  <section id="procurement-review-inbox" class="procurement-review-inbox" aria-labelledby="procurement-review-inbox-title" style="display:none;">
+    <div class="procurement-review-inbox-header">
+      <h2 id="procurement-review-inbox-title">조달 검토함</h2>
+      <div id="procurement-review-inbox-summary" class="procurement-review-inbox-summary"></div>
+    </div>
+    <div class="procurement-review-inbox-controls">
+      <div class="procurement-review-inbox-segments" role="group" aria-label="검토 상태 필터">
+        <button type="button" data-procurement-review-inbox-status="pending">대기</button>
+        <button type="button" data-procurement-review-inbox-status="completed">완료</button>
+        <button type="button" data-procurement-review-inbox-status="all">전체</button>
+      </div>
+      <div class="procurement-review-inbox-search">
+        <input id="procurement-review-inbox-query" type="search" placeholder="프로젝트 또는 reviewer 검색" aria-label="조달 검토함 검색">
+        <button type="button" data-procurement-review-inbox-refresh title="검토함 새로고침" aria-label="검토함 새로고침">↻</button>
+      </div>
+    </div>
+    <p class="procurement-review-inbox-empty">검토 상태와 evidence package를 조회하는 화면입니다. 운영 승인이나 입찰 제출 권한을 부여하지 않습니다.</p>
+    <div id="procurement-review-inbox-list" class="procurement-review-inbox-list" aria-live="polite"></div>
+  </section>
   <!-- Project list / detail -->
   <div id="project-list"></div>
   <div id="project-detail" style="display:none"></div>
@@ -6627,6 +6776,10 @@
   let _locationProcurementCandidateStatusFilters = [];
   let _locationProcurementActivityActionFilters = [];
   let _activeProcurementRoleBrief = 'proposal_bd';
+  let _procurementReviewInboxStatus = 'pending';
+  let _procurementReviewInboxQuery = '';
+  let _procurementReviewInboxPayload = null;
+  let _procurementReviewInboxLoadId = 0;
   let _approvalRequestSource = null;
   let _knowledgePromotionTarget = null;
   let _serverVersionInfo = {
@@ -17683,7 +17836,160 @@
     }
   }
 
+  function getProcurementReviewInboxStatusLabel(status) {
+    return status === 'completed' ? '완료' : '검토 대기';
+  }
+
+  function getVisibleProcurementReviewInboxItems() {
+    const reviews = Array.isArray(_procurementReviewInboxPayload?.reviews)
+      ? _procurementReviewInboxPayload.reviews
+      : [];
+    const query = _procurementReviewInboxQuery.trim().toLocaleLowerCase();
+    if (!query) return reviews;
+    return reviews.filter(review => {
+      const project = review?.project || {};
+      return [project.name, project.client, review?.reviewer, review?.package_id]
+        .some(value => String(value || '').toLocaleLowerCase().includes(query));
+    });
+  }
+
+  function renderProcurementReviewInbox() {
+    const section = document.getElementById('procurement-review-inbox');
+    const summaryEl = document.getElementById('procurement-review-inbox-summary');
+    const listEl = document.getElementById('procurement-review-inbox-list');
+    if (!section || !summaryEl || !listEl) return;
+
+    if (!isProcurementCopilotEnabled()) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'grid';
+    section.querySelectorAll('[data-procurement-review-inbox-status]').forEach(button => {
+      const active = button.dataset.procurementReviewInboxStatus === _procurementReviewInboxStatus;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+
+    const summary = _procurementReviewInboxPayload?.summary || {};
+    summaryEl.innerHTML = `
+      <span>대기 <strong>${Number(summary.pending || 0)}</strong></span>
+      <span>완료 <strong>${Number(summary.completed || 0)}</strong></span>
+      <span>전체 <strong>${Number(summary.total || 0)}</strong></span>`;
+
+    const reviews = getVisibleProcurementReviewInboxItems();
+    if (!reviews.length) {
+      const copy = _procurementReviewInboxQuery
+        ? '검색 조건에 맞는 검토가 없습니다.'
+        : _procurementReviewInboxStatus === 'pending'
+          ? '대기 중인 조달 검토가 없습니다.'
+          : '이 상태의 조달 검토가 없습니다.';
+      listEl.innerHTML = `<p class="procurement-review-inbox-empty">${escapeHtml(copy)}</p>`;
+      wireProcurementReviewInboxActions(section);
+      return;
+    }
+
+    listEl.innerHTML = reviews.map(review => {
+      const project = review?.project;
+      const projectId = String(review?.project_id || '');
+      const packetSha256 = String(review?.packet_sha256 || '');
+      const completed = review?.review_status === 'completed';
+      const projectName = project?.name || '삭제되었거나 접근할 수 없는 프로젝트';
+      const projectMeta = [project?.client, project?.fiscal_year ? `${project.fiscal_year}년` : '']
+        .filter(Boolean)
+        .join(' · ');
+      return `
+        <article class="procurement-review-inbox-row" data-procurement-review-inbox-record="${escapeHtml(packetSha256)}">
+          <div class="procurement-review-inbox-project">
+            <strong>${escapeHtml(projectName)}</strong>
+            <span>${escapeHtml(projectMeta || `package ${String(review?.package_id || '').slice(0, 24)}`)}</span>
+          </div>
+          <div class="procurement-review-inbox-meta">
+            <span><span class="procurement-review-status ${completed ? 'completed' : ''}">${escapeHtml(getProcurementReviewInboxStatusLabel(review?.review_status))}</span></span>
+            <span>${escapeHtml(String(review?.reviewer || 'reviewer 미지정'))}${completed ? ` · ${escapeHtml(getProcurementReviewDecisionLabel(review?.decision))}` : ''}</span>
+            <span>${escapeHtml(String((review?.reviewed_at || review?.prepared_at || '')).replace('T', ' ').slice(0, 16))}</span>
+          </div>
+          <div class="procurement-review-inbox-actions">
+            <button type="button" data-procurement-review-inbox-open="${escapeHtml(projectId)}" ${project ? '' : 'disabled'}>프로젝트 열기</button>
+            ${completed ? `<button type="button" data-procurement-review-inbox-download="${escapeHtml(packetSha256)}" data-project-id="${escapeHtml(projectId)}" ${project ? '' : 'disabled'}>완료 패키지</button>` : ''}
+          </div>
+        </article>`;
+    }).join('');
+    if (_procurementReviewInboxPayload?.has_more) {
+      listEl.insertAdjacentHTML(
+        'beforeend',
+        '<p class="procurement-review-inbox-empty">최근 200건을 표시합니다. 상태 필터를 좁혀 확인하세요.</p>',
+      );
+    }
+    wireProcurementReviewInboxActions(section);
+  }
+
+  async function loadProcurementReviewInbox() {
+    const section = document.getElementById('procurement-review-inbox');
+    const listEl = document.getElementById('procurement-review-inbox-list');
+    if (!section || !listEl) return;
+    if (!isProcurementCopilotEnabled()) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'grid';
+    listEl.innerHTML = '<p class="procurement-review-inbox-empty">검토함을 불러오는 중입니다.</p>';
+    const loadId = ++_procurementReviewInboxLoadId;
+    const params = new URLSearchParams({
+      review_status: _procurementReviewInboxStatus,
+      limit: '200',
+    });
+    try {
+      const response = await fetch(`/procurement/reviews?${params}`, { headers: getAuthHeaders() });
+      if (!response.ok) {
+        const error = await parseApiErrorResponse(response);
+        throw new Error(error.message);
+      }
+      const payload = await response.json();
+      if (loadId !== _procurementReviewInboxLoadId) return;
+      _procurementReviewInboxPayload = payload;
+      renderProcurementReviewInbox();
+    } catch (error) {
+      if (loadId !== _procurementReviewInboxLoadId) return;
+      _procurementReviewInboxPayload = null;
+      listEl.innerHTML = `<p class="procurement-review-inbox-empty">${escapeHtml(error.message || '검토함을 불러오지 못했습니다.')}</p>`;
+      wireProcurementReviewInboxActions(section);
+    }
+  }
+
+  function wireProcurementReviewInboxActions(section) {
+    section?.querySelectorAll('[data-procurement-review-inbox-open]').forEach(button => {
+      button.addEventListener('click', () => openProjectDetailFromList(
+        button.dataset.procurementReviewInboxOpen || '',
+      ));
+    });
+    section?.querySelectorAll('[data-procurement-review-inbox-download]').forEach(button => {
+      button.addEventListener('click', () => downloadProjectProcurementReviewedPackage(
+        button.dataset.projectId || '',
+        button.dataset.procurementReviewInboxDownload || '',
+      ));
+    });
+  }
+
+  $id('procurement-review-inbox-query')?.addEventListener('input', event => {
+    _procurementReviewInboxQuery = event.target.value || '';
+    renderProcurementReviewInbox();
+  });
+  document.querySelectorAll('[data-procurement-review-inbox-status]').forEach(button => {
+    button.addEventListener('click', () => {
+      const status = button.dataset.procurementReviewInboxStatus || 'pending';
+      if (status === _procurementReviewInboxStatus) return;
+      _procurementReviewInboxStatus = status;
+      loadProcurementReviewInbox();
+    });
+  });
+  document.querySelector('[data-procurement-review-inbox-refresh]')?.addEventListener(
+    'click',
+    loadProcurementReviewInbox,
+  );
+
   async function loadProjects() {
+    await loadServerVersionInfo();
     const year = document.getElementById('project-year-filter')?.value;
     const status = document.getElementById('project-status-filter')?.value;
     const params = new URLSearchParams();
@@ -17692,7 +17998,8 @@
     try {
       const [listRes, statsRes] = await Promise.all([
         fetch(`/projects?${params}`, { headers: getAuthHeaders()}),
-        fetch('/projects/stats', { headers: getAuthHeaders()})
+        fetch('/projects/stats', { headers: getAuthHeaders()}),
+        loadProcurementReviewInbox(),
       ]);
       if (!listRes.ok || !statsRes.ok) throw new Error('로드 실패');
       const { projects } = await listRes.json();

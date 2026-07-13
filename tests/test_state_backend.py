@@ -245,7 +245,9 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
         "unit-bucket",
         f"decisiondoc-ai/state/tenants/alpha/procurement_reviews/proj-1/{packet_sha256}/record.json",
     ) in client.objects
+    assert store.list_by_tenant(tenant_id="alpha") == [completed]
     assert store.list_by_project(tenant_id="beta", project_id="proj-1") == []
+    assert store.list_by_tenant(tenant_id="beta") == []
 
 
 def test_share_store_persists_to_s3_state_backend():

@@ -76,12 +76,15 @@ class ProcurementReviewStore:
         project_id: str,
         packet_sha256: str | None = None,
     ) -> Path:
-        tenant = self._safe_segment(tenant_id, field="tenant_id")
         project = self._safe_segment(project_id, field="project_id")
-        prefix = Path("tenants") / tenant / "procurement_reviews" / project
+        prefix = self._tenant_review_prefix(tenant_id=tenant_id) / project
         if packet_sha256 is not None:
             prefix /= self._require_sha256(packet_sha256)
         return prefix
+
+    def _tenant_review_prefix(self, *, tenant_id: str) -> Path:
+        tenant = self._safe_segment(tenant_id, field="tenant_id")
+        return Path("tenants") / tenant / "procurement_reviews"
 
     def _relative_path(
         self,
@@ -295,7 +298,35 @@ class ProcurementReviewStore:
             )
             if record is not None:
                 records.append(record)
-        return sorted(records, key=lambda item: item.prepared_at, reverse=True)
+        return sorted(
+            records,
+            key=lambda item: (item.prepared_at, item.packet_sha256),
+            reverse=True,
+        )
+
+    def list_by_tenant(self, *, tenant_id: str) -> list[ProcurementReviewRecord]:
+        """List every packet-bound review owned by one tenant."""
+        prefix = self._tenant_review_prefix(tenant_id=tenant_id)
+        records: list[ProcurementReviewRecord] = []
+        for path in self._backend.list_prefix(str(prefix)):
+            try:
+                project_id, packet_sha256, filename = Path(path).relative_to(prefix).parts
+            except (ValueError, TypeError):
+                continue
+            if filename != "record.json" or not _SHA256_PATTERN.fullmatch(packet_sha256):
+                continue
+            record = self.get(
+                tenant_id=tenant_id,
+                project_id=project_id,
+                packet_sha256=packet_sha256,
+            )
+            if record is not None:
+                records.append(record)
+        return sorted(
+            records,
+            key=lambda item: (item.prepared_at, item.packet_sha256),
+            reverse=True,
+        )
 
     def read_packet(self, record: ProcurementReviewRecord) -> bytes:
         content = self._backend.read_bytes(

@@ -1134,6 +1134,102 @@ class TestProjectProcurementApi:
         assert repeated.status_code == 409
         assert repeated.json()["detail"]["code"] == "procurement_review_already_completed"
 
+    def test_review_inbox_filters_tenant_queue_and_includes_project_context(self, client):
+        pending_project_id = self._pid(client)
+        completed_project = client.post(
+            "/projects",
+            json={"name": "완료 검토 프로젝트", "client": "조달청", "fiscal_year": 2026},
+            headers=HEADERS,
+        ).json()
+        completed_project_id = completed_project["project_id"]
+
+        self._ready_decision(client, pending_project_id)
+        self._ready_decision(client, completed_project_id)
+        pending_packet = client.post(
+            f"/projects/{pending_project_id}/procurement/review-packet",
+            json={"reviewer": "pending-owner"},
+            headers=HEADERS,
+        )
+        completed_packet = client.post(
+            f"/projects/{completed_project_id}/procurement/review-packet",
+            json={"reviewer": "completed-owner"},
+            headers=HEADERS,
+        )
+        completed_sha256 = completed_packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{completed_project_id}/procurement/reviews/{completed_sha256}/complete",
+            json={
+                "reviewer": "completed-owner",
+                "decision": "accepted",
+                "rationale": "검토함 완료 상태를 확인합니다.",
+            },
+            headers=HEADERS,
+        )
+        assert pending_packet.status_code == 200
+        assert completed.status_code == 200
+
+        inbox = client.get("/procurement/reviews", headers=HEADERS)
+
+        assert inbox.status_code == 200
+        payload = inbox.json()
+        assert payload["summary"] == {"total": 2, "pending": 1, "completed": 1}
+        assert payload["total"] == 2
+        assert payload["operational_approval"] is False
+        assert {review["project_id"] for review in payload["reviews"]} == {
+            pending_project_id,
+            completed_project_id,
+        }
+        completed_review = next(
+            review for review in payload["reviews"] if review["project_id"] == completed_project_id
+        )
+        assert completed_review["project"] == {
+            "project_id": completed_project_id,
+            "name": "완료 검토 프로젝트",
+            "client": "조달청",
+            "fiscal_year": 2026,
+            "status": "active",
+        }
+        assert "tenant_id" not in completed_review
+        assert "receipt" not in completed_review
+
+        pending = client.get(
+            "/procurement/reviews?review_status=pending&reviewer=PENDING-OWNER",
+            headers=HEADERS,
+        )
+        assert pending.status_code == 200
+        assert pending.json()["total"] == 1
+        assert pending.json()["reviews"][0]["review_status"] == "pending"
+
+        completed_only = client.get(
+            "/procurement/reviews?review_status=completed&limit=1&offset=0",
+            headers=HEADERS,
+        )
+        assert completed_only.status_code == 200
+        assert completed_only.json()["total"] == 1
+        assert completed_only.json()["reviews"][0]["decision"] == "accepted"
+
+        first_page = client.get(
+            "/procurement/reviews?review_status=all&limit=1",
+            headers=HEADERS,
+        )
+        assert first_page.status_code == 200
+        assert first_page.json()["total"] == 2
+        assert len(first_page.json()["reviews"]) == 1
+        assert first_page.json()["has_more"] is True
+
+    def test_review_inbox_rejects_invalid_filters(self, client):
+        invalid_status = client.get(
+            "/procurement/reviews?review_status=unknown",
+            headers=HEADERS,
+        )
+        invalid_limit = client.get(
+            "/procurement/reviews?limit=201",
+            headers=HEADERS,
+        )
+
+        assert invalid_status.status_code == 422
+        assert invalid_limit.status_code == 422
+
     def test_review_completion_rejects_reviewer_mismatch_and_keeps_pending(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
@@ -1417,6 +1513,7 @@ class TestProjectProcurementFeatureFlag:
         pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
 
         responses = [
+            client.get("/procurement/reviews", headers=HEADERS),
             client.get(f"/projects/{pid}/procurement", headers=HEADERS),
             client.post(
                 f"/projects/{pid}/imports/g2b-opportunity",

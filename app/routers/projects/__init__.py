@@ -24,8 +24,8 @@ Sub-modules:
 - procurement: Public Procurement Go/No-Go Copilot + Decision Council v1
   endpoints (`/projects/{id}/imports/g2b-opportunity`,
   `/projects/{id}/procurement*`, `/projects/{id}/decision-council*`).
-- procurement_reviews: packet export, packet-bound review history, one-time
-  receipt completion, and reviewed-package download endpoints.
+- procurement_reviews: tenant review inbox, packet export, packet-bound review
+  history, one-time receipt completion, and reviewed-package download endpoints.
 
 Re-exports:
   Internal helpers are re-exported here for backward compatibility with any
