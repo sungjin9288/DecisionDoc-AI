@@ -58,6 +58,10 @@ Acceptance:
 
 Goal: ensure only traceable human-reviewed records become training candidates.
 
+Status: implemented. Reviewer identity and JSON-compatible metadata are validated at the storage
+boundary. Identical reviews and exports are reused, while changed reviews retain prior feedback in
+versioned history.
+
 Work:
 
 - validate reviewer identity and review metadata at the storage boundary

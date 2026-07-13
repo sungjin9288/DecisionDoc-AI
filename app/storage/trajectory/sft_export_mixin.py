@@ -1,13 +1,20 @@
 """SFT JSONL export generation, listing, path resolution, and quality checks."""
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _is_safe_export_filename, _safe_label
+from app.storage.trajectory.redaction import (
+    _file_sha256,
+    _is_safe_export_filename,
+    _json_sha256,
+    _now_iso,
+    _safe_label,
+)
 from app.storage.trajectory.sft_quality import (
     _blocker_summary,
     _build_sft_quality_report,
@@ -46,16 +53,29 @@ class TrajectorySftExportMixin:
         if len(records) < min_records:
             return None
         export_records = [self._to_sft_record(record, include_metadata=include_metadata) for record in records]
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        suffix = f"_{_safe_label(task_type)}" if task_type else ""
-        export_dir = self._tenant_dir(tenant_id) / "trajectory_exports"
-        export_path = export_dir / f"sft{suffix}_{ts}.jsonl"
-        atomic_write_text(
-            export_path,
-            "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in export_records) + "\n",
+        content = "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in export_records) + "\n"
+        content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        source_trajectory_ids = [str(record.get("trajectory_id") or "") for record in records]
+        export_fingerprint = _json_sha256(
+            {
+                "accepted_only": accepted_only,
+                "content_sha256": content_sha256,
+                "include_metadata": include_metadata,
+                "source_trajectory_ids": source_trajectory_ids,
+                "task_type": task_type,
+            }
         )
-        self._append_export_meta(tenant_id, export_path.name, records, task_type=task_type, accepted_only=accepted_only)
-        return str(export_path)
+        return self._reuse_or_write_sft_export(
+            tenant_id=tenant_id,
+            task_type=task_type,
+            accepted_only=accepted_only,
+            include_metadata=include_metadata,
+            records=records,
+            content=content,
+            content_sha256=content_sha256,
+            export_fingerprint=export_fingerprint,
+            source_trajectory_ids=source_trajectory_ids,
+        )
 
     def list_sft_exports(
         self,
@@ -89,7 +109,11 @@ class TrajectorySftExportMixin:
                     "record_count": int(item.get("record_count") or 0),
                     "task_type": item.get("task_type"),
                     "accepted_only": bool(item.get("accepted_only", True)),
+                    "include_metadata": bool(item.get("include_metadata", True)),
                     "exported_at": item.get("exported_at"),
+                    "export_fingerprint": item.get("export_fingerprint"),
+                    "content_sha256": item.get("content_sha256"),
+                    "source_trajectory_ids": item.get("source_trajectory_ids") or [],
                     "exists": path is not None,
                     "size_bytes": path.stat().st_size if path else 0,
                 }
@@ -135,7 +159,11 @@ class TrajectorySftExportMixin:
                     "record_count": int(item.get("record_count") or 0),
                     "task_type": item.get("task_type"),
                     "accepted_only": True,
+                    "include_metadata": bool(item.get("include_metadata", True)),
                     "exported_at": item.get("exported_at"),
+                    "export_fingerprint": item.get("export_fingerprint"),
+                    "content_sha256": item.get("content_sha256"),
+                    "source_trajectory_ids": item.get("source_trajectory_ids") or [],
                     "exists": path is not None,
                     "size_bytes": path.stat().st_size if path else 0,
                 }
@@ -376,3 +404,48 @@ class TrajectorySftExportMixin:
         if not resolved.is_file() or not resolved.is_relative_to(base):
             return None
         return resolved
+
+    def _reuse_or_write_sft_export(
+        self,
+        *,
+        tenant_id: str,
+        task_type: str | None,
+        accepted_only: bool,
+        include_metadata: bool,
+        records: list[dict[str, Any]],
+        content: str,
+        content_sha256: str,
+        export_fingerprint: str,
+        source_trajectory_ids: list[str],
+    ) -> str:
+        with self._lock:
+            meta = self._load_meta_unlocked(tenant_id)
+            exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+            for item in reversed(exports):
+                if not isinstance(item, dict) or item.get("export_fingerprint") != export_fingerprint:
+                    continue
+                existing = self._resolve_export_path(tenant_id, str(item.get("filename") or ""))
+                if existing is not None and _file_sha256(existing) == content_sha256:
+                    return str(existing)
+
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            suffix = f"_{_safe_label(task_type)}" if task_type else ""
+            export_path = self._export_dir(tenant_id) / f"sft{suffix}_{timestamp}_{export_fingerprint[:8]}.jsonl"
+            atomic_write_text(export_path, content)
+            exports.append(
+                {
+                    "filename": export_path.name,
+                    "record_count": len(records),
+                    "task_type": task_type,
+                    "accepted_only": accepted_only,
+                    "include_metadata": include_metadata,
+                    "exported_at": _now_iso(),
+                    "export_fingerprint": export_fingerprint,
+                    "content_sha256": content_sha256,
+                    "source_trajectory_ids": source_trajectory_ids,
+                }
+            )
+            meta["exports"] = exports
+            meta["export_count"] = int(meta.get("export_count") or 0) + 1
+            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            return str(export_path)

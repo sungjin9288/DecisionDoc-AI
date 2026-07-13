@@ -78,11 +78,21 @@ Recommended shape:
   },
   "human_feedback": {
     "accepted": true,
-    "notes": "..."
+    "reviewer": "pm-owner",
+    "notes": "...",
+    "quality_score": 0.92,
+    "review_version": 1,
+    "reviewed_at": "2026-07-14T00:00:00+00:00"
   },
+  "human_review_history": [],
   "safety_flags": []
 }
 ```
+
+Accepted-only export requires a named reviewer. Repeating the same review preserves its timestamp;
+changing a review increments `review_version` and moves the prior feedback into
+`human_review_history`. Export metadata records a dataset fingerprint, content SHA-256, and source
+trajectory IDs so the same dataset request reuses one artifact and changed inputs create a new one.
 
 ## Data Sources
 

@@ -129,6 +129,31 @@ def test_document_ops_run_returns_actionable_gate_issues(tmp_path, monkeypatch) 
     assert "공식 출처" in evidence_issue["remediation_hint"]
 
 
+def test_document_ops_review_requires_traceable_reviewer_identity(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    created = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "decision_brief",
+            "requirements": {"title": "검토자 식별 검증"},
+            "source_references": [{"id": "review-source"}],
+            "capture_trajectory": True,
+        },
+    ).json()
+
+    response = client.post(
+        f"/api/agent/document-ops/trajectories/{created['trajectory_id']}/review",
+        headers=_api_headers(),
+        json={"accepted": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "reviewer identity is required."
+    listed = client.get("/api/agent/document-ops/trajectories", headers=_api_headers()).json()
+    assert listed["trajectories"][0]["human_review_status"] == "pending"
+
+
 def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     created = client.post(
@@ -158,6 +183,19 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["human_review_status"] == "accepted"
+    first_feedback = reviewed.json()["human_feedback"]
+    repeated_review = client.post(
+        f"/api/agent/document-ops/trajectories/{created['trajectory_id']}/review",
+        headers=_api_headers(),
+        json={
+            "accepted": True,
+            "reviewer": "pm",
+            "notes": "학습용 승인",
+            "quality_score": 0.91,
+        },
+    )
+    assert repeated_review.status_code == 200
+    assert repeated_review.json()["human_feedback"] == first_feedback
 
     stats = client.get("/api/agent/document-ops/trajectories/stats", headers=_api_headers())
     assert stats.status_code == 200
@@ -222,6 +260,14 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     filename = exported.json()["filename"]
     assert filename.endswith(".jsonl")
 
+    repeated_export = client.post(
+        "/api/agent/document-ops/trajectories/export",
+        headers=_ops_headers(),
+        json={"min_records": 1, "task_type": "decision_brief"},
+    )
+    assert repeated_export.status_code == 200
+    assert repeated_export.json()["filename"] == filename
+
     blocked_list = client.get(
         "/api/agent/document-ops/trajectories/exports",
         headers=_api_headers(),
@@ -239,6 +285,8 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert exports_body["exports"][0]["record_count"] == 1
     assert exports_body["exports"][0]["exists"] is True
     assert exports_body["exports"][0]["size_bytes"] > 0
+    assert len(exports_body["exports"][0]["export_fingerprint"]) == 64
+    assert exports_body["exports"][0]["source_trajectory_ids"] == [created["trajectory_id"]]
 
     blocked_reviewed_list = client.get(
         "/api/agent/document-ops/trajectories/reviewed-sft-exports",

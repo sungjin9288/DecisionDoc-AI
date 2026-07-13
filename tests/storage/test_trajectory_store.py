@@ -66,17 +66,87 @@ def test_mark_reviewed_updates_human_feedback_and_stats(tmp_path: Path) -> None:
     assert updated is not None
     assert updated["human_review_status"] == "accepted"
     assert updated["human_feedback"]["quality_score"] == 0.92
+    assert updated["human_feedback"]["review_version"] == 1
     stats = store.get_stats(tenant_id="system")
     assert stats["accepted_records"] == 1
     assert stats["pending_records"] == 0
     assert stats["per_task_count"]["policy_planning_brief"] == 1
 
 
+def test_mark_reviewed_is_idempotent_and_preserves_changed_review_history(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_review_history"), tenant_id="system")
+
+    first = store.mark_reviewed(
+        "trj_review_history",
+        tenant_id="system",
+        accepted=True,
+        reviewer=" pm ",
+        notes=" 승인 ",
+        quality_score=0.92,
+        metadata={"source_document": "sensitive", "review_round": 1},
+    )
+    repeated = store.mark_reviewed(
+        "trj_review_history",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        notes="승인",
+        quality_score=0.92,
+        metadata={"source_document": "sensitive", "review_round": 1},
+    )
+
+    assert first is not None
+    assert repeated is not None
+    assert repeated["human_feedback"] == first["human_feedback"]
+    assert "human_review_history" not in repeated
+    assert repeated["human_feedback"]["metadata"]["source_document"] == "[redacted]"
+
+    changed = store.mark_reviewed(
+        "trj_review_history",
+        tenant_id="system",
+        accepted=False,
+        reviewer="qa-owner",
+        notes="근거 보강 필요",
+        quality_score=0.61,
+    )
+
+    assert changed is not None
+    assert changed["human_review_status"] == "rejected"
+    assert changed["human_feedback"]["review_version"] == 2
+    assert changed["human_review_history"] == [first["human_feedback"]]
+
+
+def test_mark_reviewed_rejects_untraceable_input_without_mutating_record(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_invalid_review"), tenant_id="alpha")
+
+    with pytest.raises(ValueError, match="reviewer identity is required"):
+        store.mark_reviewed("trj_invalid_review", tenant_id="alpha", accepted=True, reviewer="anonymous")
+    with pytest.raises(ValueError, match="quality_score must be between 0 and 1"):
+        store.mark_reviewed("trj_invalid_review", tenant_id="alpha", accepted=True, reviewer="pm", quality_score=1.1)
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        store.mark_reviewed(
+            "trj_invalid_review",
+            tenant_id="alpha",
+            accepted=True,
+            reviewer="pm",
+            metadata={"labels": {"not-json"}},
+        )
+
+    assert store.mark_reviewed("trj_invalid_review", tenant_id="beta", accepted=True, reviewer="pm") is None
+    record = store.get_records(tenant_id="alpha")[0]
+    assert record["human_review_status"] == "pending"
+    assert record["human_feedback"] == {"accepted": False}
+
+
 def test_export_sft_messages_writes_only_accepted_records(tmp_path: Path) -> None:
     store = TrajectoryStore(tmp_path)
     store.save(_sample_trajectory("trj_accept"), tenant_id="system")
     store.save(_sample_trajectory("trj_pending"), tenant_id="system")
+    store.save(_sample_trajectory("trj_rejected"), tenant_id="system")
     store.mark_reviewed("trj_accept", tenant_id="system", accepted=True, reviewer="pm", quality_score=0.95)
+    store.mark_reviewed("trj_rejected", tenant_id="system", accepted=False, reviewer="pm", quality_score=0.4)
 
     export_path = store.export_sft_messages(tenant_id="system", min_records=1)
 
@@ -87,6 +157,9 @@ def test_export_sft_messages_writes_only_accepted_records(tmp_path: Path) -> Non
     record = json.loads(lines[0])
     assert [message["role"] for message in record["messages"]] == ["system", "user", "assistant"]
     assert record["metadata"]["trajectory_id"] == "trj_accept"
+    assert record["metadata"]["reviewer"] == "pm"
+    assert record["metadata"]["review_version"] == 1
+    assert record["metadata"]["reviewed_at"]
     assistant_payload = json.loads(record["messages"][2]["content"])
     assert assistant_payload["draft"] == "정책 기획 초안"
     assert assistant_payload["critique"] == ["승인 질문이 앞부분에 더 명확해야 함"]
@@ -106,7 +179,48 @@ def test_export_sft_messages_writes_only_accepted_records(tmp_path: Path) -> Non
     assert len(reviewed_exports) == 1
     assert reviewed_exports[0]["filename"] == path.name
     assert reviewed_exports[0]["accepted_only"] is True
+    assert len(reviewed_exports[0]["export_fingerprint"]) == 64
+    assert len(reviewed_exports[0]["content_sha256"]) == 64
+    assert reviewed_exports[0]["source_trajectory_ids"] == ["trj_accept"]
     assert store.get_reviewed_sft_export_path(path.name, tenant_id="system") == path.resolve()
+
+
+def test_export_sft_messages_reuses_identical_dataset_fingerprint(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_idempotent_export"), tenant_id="system")
+    store.mark_reviewed(
+        "trj_idempotent_export",
+        tenant_id="system",
+        accepted=True,
+        reviewer="pm",
+        quality_score=0.95,
+    )
+
+    first = store.export_sft_messages(tenant_id="system", min_records=1)
+    repeated = store.export_sft_messages(tenant_id="system", min_records=1)
+
+    assert first is not None
+    assert repeated == first
+    assert store.get_stats(tenant_id="system")["export_count"] == 1
+    assert len(store.list_sft_exports(tenant_id="system")) == 1
+
+    without_metadata = store.export_sft_messages(tenant_id="system", min_records=1, include_metadata=False)
+    assert without_metadata is not None
+    assert without_metadata != first
+    assert store.get_stats(tenant_id="system")["export_count"] == 2
+
+
+def test_accepted_export_blocks_legacy_review_without_reviewer_identity(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    trajectory = _sample_trajectory("trj_missing_reviewer")
+    trajectory["human_review_status"] = "accepted"
+    trajectory["human_feedback"] = {"accepted": True, "reviewer": "anonymous", "quality_score": 0.9}
+    store.save(trajectory, tenant_id="system")
+
+    preview = store.preview_sft_export(tenant_id="system", min_records=1)
+
+    assert preview["would_export"] is False
+    assert preview["blocker_summary"]["missing_reviewer"] == 1
 
 
 def test_reviewed_sft_exports_exclude_unreviewed_export_metadata(tmp_path: Path) -> None:

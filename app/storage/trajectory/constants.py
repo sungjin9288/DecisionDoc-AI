@@ -53,8 +53,10 @@ _SENSITIVE_KEY_PARTS = (
 )
 
 
-_EXPORT_FILENAME_RE = re.compile(r"^sft(?:_[A-Za-z0-9_-]+)?_[0-9]{8}T[0-9]{6}\.jsonl$")
-_FREEZE_FILENAME_RE = re.compile(r"^freeze_sft(?:_[A-Za-z0-9_-]+)?_[0-9]{8}T[0-9]{6}_[0-9]{8}T[0-9]{6}_[a-f0-9]{8}\.json$")
+_EXPORT_FILENAME_RE = re.compile(r"^sft(?:_[A-Za-z0-9_-]+)?_[0-9]{8}T[0-9]{6}(?:_[a-f0-9]{8})?\.jsonl$")
+_FREEZE_FILENAME_RE = re.compile(
+    r"^freeze_sft(?:_[A-Za-z0-9_-]+)?_[0-9]{8}T[0-9]{6}(?:_[a-f0-9]{8})?_[0-9]{8}T[0-9]{6}_[a-f0-9]{8}\.json$"
+)
 _MANIFEST_ID_RE = re.compile(r"^dsf_[a-f0-9]{32}$")
 _TRAINING_APPROVAL_FILENAME_RE = re.compile(r"^training_approval_dsf_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}_[a-f0-9]{8}\.json$")
 _TRAINING_EXECUTION_REQUEST_FILENAME_RE = re.compile(r"^training_execution_request_ter_[a-f0-9]{32}_[0-9]{8}T[0-9]{6}\.json$")

@@ -16,6 +16,10 @@ def _sft_export_blockers(record: dict[str, Any], *, accepted_only: bool) -> list
     blockers: list[str] = []
     if accepted_only and not _is_accepted(record):
         blockers.append("not_accepted")
+    feedback = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
+    reviewer = str(feedback.get("reviewer") or "").strip()
+    if accepted_only and _is_accepted(record) and (not reviewer or reviewer.casefold() == "anonymous"):
+        blockers.append("missing_reviewer")
     if not str(record.get("task_type") or "").strip():
         blockers.append("missing_task_type")
     skill = record.get("skill") if isinstance(record.get("skill"), dict) else {}

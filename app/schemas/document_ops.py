@@ -21,8 +21,8 @@ class DocumentOpsTrajectoryReviewRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     accepted: bool
-    reviewer: str = ""
-    notes: str = ""
+    reviewer: str = Field(default="", max_length=120)
+    notes: str = Field(default="", max_length=2000)
     quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

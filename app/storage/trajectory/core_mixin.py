@@ -73,22 +73,53 @@ class TrajectoryCoreMixin:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Attach human review metadata to an existing trajectory."""
+        reviewer = reviewer.strip()
+        if not reviewer or reviewer.casefold() == "anonymous":
+            raise ValueError("reviewer identity is required.")
+        if len(reviewer) > 120:
+            raise ValueError("reviewer identity must be 120 characters or fewer.")
+
+        notes = notes.strip()
+        if len(notes) > 2000:
+            raise ValueError("review notes must be 2000 characters or fewer.")
+
+        score: float | None = None
+        if quality_score is not None:
+            if isinstance(quality_score, bool) or not isinstance(quality_score, (int, float)):
+                raise ValueError("quality_score must be a number between 0 and 1.")
+            score = float(quality_score)
+            if not 0.0 <= score <= 1.0:
+                raise ValueError("quality_score must be between 0 and 1.")
+
+        review_metadata = _validate_review_metadata(metadata)
+        review_content: dict[str, Any] = {
+            "accepted": bool(accepted),
+            "reviewer": reviewer,
+            "notes": notes,
+        }
+        if score is not None:
+            review_content["quality_score"] = score
+        if review_metadata:
+            review_content["metadata"] = review_metadata
+
         with self._lock:
             records = self._read_records_unlocked(tenant_id)
             updated: dict[str, Any] | None = None
             for record in records:
                 if str(record.get("trajectory_id")) != trajectory_id:
                     continue
-                feedback = {
-                    "accepted": bool(accepted),
-                    "reviewer": reviewer,
-                    "notes": notes,
-                    "reviewed_at": _now_iso(),
-                }
-                if quality_score is not None:
-                    feedback["quality_score"] = float(quality_score)
-                if metadata:
-                    feedback["metadata"] = _redact_input(metadata)
+                current = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
+                if record.get("human_review_status") in {"accepted", "rejected"} and _review_content(current) == review_content:
+                    return record
+
+                version = int(current.get("review_version") or 0) + 1
+                feedback = {**review_content, "review_version": version, "reviewed_at": _now_iso()}
+                if record.get("human_review_status") in {"accepted", "rejected"}:
+                    history = record.get("human_review_history")
+                    if not isinstance(history, list):
+                        history = []
+                    history.append(current)
+                    record["human_review_history"] = history
                 record["human_feedback"] = feedback
                 record["human_review_status"] = "accepted" if accepted else "rejected"
                 updated = record
@@ -168,6 +199,7 @@ class TrajectoryCoreMixin:
     def _to_sft_record(self, record: dict[str, Any], *, include_metadata: bool) -> dict[str, Any]:
         task_type = str(record.get("task_type") or "document_ops")
         skill = record.get("skill") if isinstance(record.get("skill"), dict) else {}
+        feedback = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
         skill_name = str(skill.get("name") or "unknown")
         skill_version = str(skill.get("version") or "unknown")
         assistant_payload = {
@@ -213,32 +245,12 @@ class TrajectoryCoreMixin:
                 "skill": skill_name,
                 "skill_version": skill_version,
                 "human_review_status": record.get("human_review_status"),
-                "quality_score": (record.get("human_feedback") or {}).get("quality_score"),
+                "reviewer": feedback.get("reviewer"),
+                "review_version": feedback.get("review_version"),
+                "reviewed_at": feedback.get("reviewed_at"),
+                "quality_score": feedback.get("quality_score"),
             }
         return sft
-
-    def _append_export_meta(
-        self,
-        tenant_id: str,
-        filename: str,
-        records: list[dict[str, Any]],
-        *,
-        task_type: str | None,
-        accepted_only: bool,
-    ) -> None:
-        with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
-            meta["export_count"] = int(meta.get("export_count") or 0) + 1
-            meta.setdefault("exports", []).append(
-                {
-                    "filename": filename,
-                    "record_count": len(records),
-                    "task_type": task_type,
-                    "accepted_only": accepted_only,
-                    "exported_at": _now_iso(),
-                }
-            )
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
 
     def _read_records_unlocked(self, tenant_id: str) -> list[dict[str, Any]]:
         path = self._jsonl_path(tenant_id)
@@ -302,3 +314,35 @@ class TrajectoryCoreMixin:
 
     def _reviewer_signoff_dir(self, tenant_id: str) -> Path:
         return self._tenant_dir(tenant_id) / "trajectory_reviewer_signoffs"
+
+
+def _review_content(feedback: dict[str, Any]) -> dict[str, Any]:
+    content: dict[str, Any] = {
+        "accepted": bool(feedback.get("accepted")),
+        "reviewer": str(feedback.get("reviewer") or "").strip(),
+        "notes": str(feedback.get("notes") or "").strip(),
+    }
+    if feedback.get("quality_score") is not None:
+        content["quality_score"] = float(feedback["quality_score"])
+    metadata = feedback.get("metadata")
+    if isinstance(metadata, dict) and metadata:
+        content["metadata"] = metadata
+    return content
+
+
+def _validate_review_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    if metadata is None:
+        return {}
+    if not isinstance(metadata, dict):
+        raise ValueError("review metadata must be an object.")
+    if any(not isinstance(key, str) or not key.strip() for key in metadata):
+        raise ValueError("review metadata keys must be non-empty strings.")
+
+    redacted = _redact_input(metadata)
+    try:
+        encoded = json.dumps(redacted, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("review metadata must contain JSON-compatible values.") from exc
+    if len(encoded) > 16 * 1024:
+        raise ValueError("review metadata must be 16 KiB or smaller.")
+    return redacted

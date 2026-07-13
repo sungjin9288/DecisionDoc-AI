@@ -480,15 +480,18 @@ def review_document_ops_trajectory(
     request: Request,
 ) -> dict:
     reviewer = payload.reviewer.strip() or get_username(request)
-    updated = _service(request).review_trajectory(
-        trajectory_id,
-        tenant_id=get_tenant_id(request),
-        accepted=payload.accepted,
-        reviewer=reviewer,
-        notes=payload.notes,
-        quality_score=payload.quality_score,
-        metadata=payload.metadata,
-    )
+    try:
+        updated = _service(request).review_trajectory(
+            trajectory_id,
+            tenant_id=get_tenant_id(request),
+            accepted=payload.accepted,
+            reviewer=reviewer,
+            notes=payload.notes,
+            quality_score=payload.quality_score,
+            metadata=payload.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="trajectory not found")
     return updated
