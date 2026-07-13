@@ -165,7 +165,7 @@ python3 scripts/create_report_quality_pilot_pack.py \
   --output-root reports/report-quality
 ```
 
-입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하고, 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하고, 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
 
 스모크 검증 (문서화된 대표 시나리오):
 
@@ -212,11 +212,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,629개**, **219개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,632개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2629
-python3 scripts/count_readme_metrics.py --field test_files      # → 219
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2632
+python3 scripts/count_readme_metrics.py --field test_files      # → 220
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -234,7 +234,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,877 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest tests/ -m "not live" -q` → 2,880 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -283,4 +283,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,629 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 256 · 테스트 2,632 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -90,10 +90,20 @@ python3 scripts/apply_report_quality_review_decisions.py \
 python3 scripts/apply_report_quality_review_decisions.py \
   reports/report-quality/pilot-rqc-001 \
   --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
-  --require-ready
+  --require-ready \
+  --receipt reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
 ```
 
-Source import pack은 `--create-template`로 만든 binding이 없는 decision 파일을 거부한다. Template 생성 뒤 source manifest나 draft가 바뀌면 stale binding으로 판단해 쓰기 전에 중단한다. Decision batch 안에 잘못된 항목이 하나라도 있으면 유효한 다른 항목도 저장하지 않는다. `--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 전체 batch 저장을 차단한다. 이 helper도 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+Source import pack은 `--create-template`로 만든 binding이 없는 decision 파일을 거부한다. Template 생성 뒤 source manifest나 draft가 바뀌면 stale binding으로 판단해 쓰기 전에 중단한다. Decision batch 안에 잘못된 항목이 하나라도 있으면 유효한 다른 항목도 저장하지 않는다. `--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 전체 batch 저장을 차단한다.
+
+`--receipt`를 사용하면 같은 pack 안의 decision 파일 SHA-256, 적용 전/후 pack binding, artifact별 draft hash 전이를 receipt로 남긴다. 기존 receipt는 덮어쓰지 않으며 dry-run이나 실패 batch에서는 생성하지 않는다. 적용 직후 다음 명령으로 receipt와 현재 파일을 다시 대조한다.
+
+```bash
+python3 scripts/validate_report_quality_review_decision_receipt.py \
+  reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
+```
+
+Validator는 decision file, source manifest, 현재 draft SHA-256, `ready_for_learning`, no-training boundary를 read-only로 재검증한다. 두 helper 모두 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 ```bash
 python3 scripts/sync_report_quality_pilot_pack.py \

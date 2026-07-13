@@ -291,7 +291,8 @@ def test_apply_review_decisions_does_not_partially_write_invalid_batch(tmp_path)
     original_first = first_path.read_bytes()
     invalid_accepted = _ready_decision(second_artifact_id)
     invalid_accepted["reviewed_at"] = ""
-    decisions_path = tmp_path / "mixed_decisions.json"
+    decisions_path = pack_dir / "mixed_decisions.json"
+    receipt_path = pack_dir / "mixed_decisions_receipt.json"
     decisions_path.write_text(
         json.dumps({
             "decisions": [
@@ -305,8 +306,11 @@ def test_apply_review_decisions_does_not_partially_write_invalid_batch(tmp_path)
     result = apply_script.apply_review_decisions(
         pack_dir=pack_dir,
         decisions_path=decisions_path,
+        receipt_path=receipt_path,
     )
 
     assert result["ok"] is False
     assert result["applied_count"] == 0
+    assert result["receipt_path"] is None
     assert first_path.read_bytes() == original_first
+    assert not receipt_path.exists()

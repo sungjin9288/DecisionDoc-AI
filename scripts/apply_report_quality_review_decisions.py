@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -28,6 +29,7 @@ from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
 
 ALLOWED_DECISIONS = {"pending", "accepted", "changes_requested", "rejected"}
 ALLOWED_SCAN_VALUES = {"not_run", "pass", "fail"}
+APPLICATION_RECEIPT_SCHEMA = "decisiondoc_report_quality_review_decision_application_receipt.v1"
 
 
 def _now_iso() -> str:
@@ -62,11 +64,26 @@ def _score(value: Any) -> float | None:
     return None
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def _load_json_snapshot(path: Path) -> tuple[dict[str, Any], str]:
+    content = path.read_bytes()
+    payload = json.loads(content.decode("utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: JSON root must be an object")
-    return payload
+    return payload, hashlib.sha256(content).hexdigest()
+
+
+def _resolve_receipt_path(pack_dir: Path, receipt_path: Path | None) -> Path | None:
+    if receipt_path is None:
+        return None
+    expanded = receipt_path.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("symlink receipt files are not allowed")
+    resolved = expanded.resolve()
+    if resolved.parent != pack_dir:
+        raise ValueError("receipt must be written directly inside the pilot pack directory")
+    if resolved.exists() or resolved.is_symlink():
+        raise ValueError(f"refusing to overwrite existing receipt: {resolved}")
+    return resolved
 
 
 def _decision_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -259,18 +276,103 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
     }
 
 
+def _write_application_receipt(
+    *,
+    receipt_path: Path,
+    decisions_path: Path,
+    decisions_sha256: str,
+    decision_file: dict[str, Any],
+    before_binding: dict[str, Any],
+    after_binding: dict[str, Any],
+    rows: list[dict[str, Any]],
+    require_ready: bool,
+) -> str:
+    if receipt_path.exists() or receipt_path.is_symlink():
+        raise ValueError(f"refusing to overwrite existing receipt: {receipt_path}")
+    before_hashes = {
+        item["artifact_id"]: item["draft_sha256"]
+        for item in before_binding["artifacts"]
+    }
+    after_hashes = {
+        item["artifact_id"]: item["draft_sha256"]
+        for item in after_binding["artifacts"]
+    }
+    transitions = [
+        {
+            "artifact_id": row["artifact_id"],
+            "decision": row["decision"],
+            "ready_for_learning": row["ready_for_learning"],
+            "before_draft_sha256": before_hashes[row["artifact_id"]],
+            "after_draft_sha256": after_hashes[row["artifact_id"]],
+            "changed": before_hashes[row["artifact_id"]] != after_hashes[row["artifact_id"]],
+        }
+        for row in rows
+    ]
+    receipt = {
+        "report_type": "report_quality_review_decision_application_receipt",
+        "schema_version": APPLICATION_RECEIPT_SCHEMA,
+        "created_at": _now_iso(),
+        "receipt_path": receipt_path.name,
+        "pack_dir": str(receipt_path.parent),
+        "decision_file": {
+            "path": decisions_path.name,
+            "sha256": decisions_sha256,
+            "pack_binding_present": isinstance(decision_file.get("pack_binding"), dict),
+        },
+        "operation": {
+            "ok": True,
+            "dry_run": False,
+            "require_ready": require_ready,
+            "decision_count": len(rows),
+            "applied_count": len(rows),
+        },
+        "pack_binding_before": before_binding,
+        "pack_binding_after": after_binding,
+        "artifacts": transitions,
+        "side_effect_boundary": {
+            "reads_local_draft_json": True,
+            "reads_local_decision_json": True,
+            "writes_local_draft_json": True,
+            "writes_local_application_receipt": True,
+            "external_dataset_upload_started": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "training_execution_started": False,
+            "model_promotion_started": False,
+        },
+    }
+    _write_text_atomic(
+        receipt_path,
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    )
+    return hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+
+
 def apply_review_decisions(
     *,
     pack_dir: Path,
     decisions_path: Path,
     dry_run: bool = False,
     require_ready: bool = False,
+    receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
-    resolved_decisions_path = decisions_path.expanduser().resolve()
+    expanded_decisions_path = decisions_path.expanduser()
+    if expanded_decisions_path.is_symlink():
+        raise ValueError("symlink decision files are not allowed")
+    resolved_decisions_path = expanded_decisions_path.resolve()
+    resolved_receipt_path = _resolve_receipt_path(resolved_pack_dir, receipt_path)
+    if resolved_receipt_path is not None:
+        if dry_run:
+            raise ValueError("receipt cannot be written during dry-run")
+        if resolved_decisions_path.parent != resolved_pack_dir:
+            raise ValueError("receipt-backed decision file must be inside the pilot pack directory")
+        if resolved_decisions_path == resolved_receipt_path:
+            raise ValueError("decision file and receipt path must be different")
     snapshot = load_pilot_pack(resolved_pack_dir)
+    before_binding = snapshot.binding()
     draft_map = {draft.artifact_id: draft for draft in snapshot.drafts}
-    decision_file = _load_json(resolved_decisions_path)
+    decision_file, decisions_sha256 = _load_json_snapshot(resolved_decisions_path)
     pack_binding = decision_file.get("pack_binding")
     if snapshot.source_order_applied or pack_binding is not None:
         require_current_pack_binding(snapshot, pack_binding)
@@ -325,6 +427,9 @@ def apply_review_decisions(
 
     ok = not errors
     if ok and not dry_run:
+        _, current_decisions_sha256 = _load_json_snapshot(resolved_decisions_path)
+        if current_decisions_sha256 != decisions_sha256:
+            raise ValueError("decision file changed during validation")
         if snapshot.source_order_applied or pack_binding is not None:
             current_snapshot = load_pilot_pack(resolved_pack_dir)
             require_current_pack_binding(current_snapshot, pack_binding)
@@ -337,6 +442,19 @@ def apply_review_decisions(
 
     applied_count = sum(1 for row in rows if row.get("applied"))
     ready_count = sum(1 for row in rows if row.get("ready_for_learning"))
+    receipt_sha256: str | None = None
+    if ok and not dry_run and resolved_receipt_path is not None:
+        after_snapshot = load_pilot_pack(resolved_pack_dir)
+        receipt_sha256 = _write_application_receipt(
+            receipt_path=resolved_receipt_path,
+            decisions_path=resolved_decisions_path,
+            decisions_sha256=decisions_sha256,
+            decision_file=decision_file,
+            before_binding=before_binding,
+            after_binding=after_snapshot.binding(),
+            rows=rows,
+            require_ready=require_ready,
+        )
     return {
         "report_type": "report_quality_review_decisions_applied",
         "ok": ok,
@@ -345,6 +463,8 @@ def apply_review_decisions(
         "dry_run": dry_run,
         "require_ready": require_ready,
         "pack_binding_verified": snapshot.source_order_applied or pack_binding is not None,
+        "receipt_path": str(resolved_receipt_path) if receipt_sha256 is not None else None,
+        "receipt_sha256": receipt_sha256,
         "decision_count": len(rows),
         "applied_count": applied_count,
         "ready_decisions": ready_count,
@@ -355,6 +475,7 @@ def apply_review_decisions(
             "reads_local_draft_json": True,
             "reads_local_decision_json": True,
             "writes_local_draft_json": not dry_run and applied_count > 0,
+            "writes_local_application_receipt": receipt_sha256 is not None,
             "external_dataset_upload_started": False,
             "provider_fine_tune_api_called": False,
             "provider_job_created": False,
@@ -374,6 +495,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     mode.add_argument("--decisions", type=Path, help="Apply decisions from this JSON file.")
     parser.add_argument("--dry-run", action="store_true", help="Validate decisions without writing drafts.")
     parser.add_argument("--require-ready", action="store_true", help="Fail unless applied decisions become ready.")
+    parser.add_argument("--receipt", type=Path, default=None, help="Write a pack-local application receipt JSON.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable result.")
     return parser
 
@@ -382,6 +504,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
     try:
         if args.create_template is not None:
+            if args.receipt is not None:
+                raise ValueError("--receipt can only be used with --decisions")
             result = create_review_decision_template(pack_dir=args.pack_dir, output_path=args.create_template)
         else:
             result = apply_review_decisions(
@@ -389,6 +513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 decisions_path=args.decisions,
                 dry_run=args.dry_run,
                 require_ready=args.require_ready,
+                receipt_path=args.receipt,
             )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR {exc}", file=sys.stderr)
@@ -408,6 +533,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"applied_count={result['applied_count']}")
         print(f"ready_decisions={result['ready_decisions']}")
         print(f"dry_run={result['dry_run']}")
+        if result["receipt_path"]:
+            print(f"receipt_path={result['receipt_path']}")
+            print(f"receipt_sha256={result['receipt_sha256']}")
         print("training_boundary=not_authorized")
         for error in result["errors"]:
             print(f"ERROR {error}")

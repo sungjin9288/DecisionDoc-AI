@@ -304,6 +304,10 @@
   - 사람이 작성한 decision JSON을 draft artifact에 반영한다.
   - Decision template은 현재 review 상태와 pack binding을 snapshot으로 남긴다. Source-bound pack은 binding 없는 파일, stale source manifest, 변경된 draft SHA-256을 거부하며, batch 검증이 모두 통과한 경우에만 draft를 저장한다.
   - `accepted` decision은 reviewer, reviewed_at, score, scan pass, validator ready gate를 충족해야 저장된다.
+  - `--receipt`는 pack-local decision SHA-256, before/after binding, artifact별 draft hash 전이를 저장한다. 기존 receipt를 덮어쓰지 않고 실패/dry-run에서는 생성하지 않는다.
+- `scripts/validate_report_quality_review_decision_receipt.py`
+  - 적용 receipt를 현재 decision file, source manifest, ordered drafts와 대조하고 각 artifact의 ready gate를 domain validator로 다시 계산한다.
+  - read-only validator이며 provider fine-tune, dataset upload, training execution, model promotion은 실행하지 않는다.
 
 ## Backend Integration
 
@@ -430,9 +434,15 @@ manifest는 reviewer, document type, score distribution, blocker, no-training bo
    python3 scripts/apply_report_quality_review_decisions.py \
      reports/report-quality/pilot-rqc-001 \
      --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
-     --require-ready
+     --require-ready \
+     --receipt reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
    ```
-10. `sync_report_quality_pilot_pack.py --require-ready`와 `validate_correction_artifact.py`로 source 순서, shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
+10. 적용 receipt를 현재 pack과 다시 대조한다.
+    ```bash
+    python3 scripts/validate_report_quality_review_decision_receipt.py \
+      reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
+    ```
+11. `sync_report_quality_pilot_pack.py --require-ready`와 `validate_correction_artifact.py`로 source 순서, shape, 품질 gate, placeholder 제거, no-training boundary를 검증한다.
    - 단일 artifact는 `.json`으로 검증한다.
    - UI/API export 결과는 `.jsonl`로 검증하고, 학습 후보 batch로 볼 때는 `--require-ready`를 붙인다.
     - UI의 `Review packet JSON` 결과는 서버 저장 전 evidence packet이므로 아래처럼 별도 validator를 사용한다.
