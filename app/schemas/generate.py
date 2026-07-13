@@ -96,6 +96,7 @@ class GenerateResponse(BaseModel):
     procurement_review_packet_sha256: str | None = None
     procurement_review_decision: str | None = None
     procurement_reviewed_at: str | None = None
+    procurement_review_source_updated_at: str | None = None
     procurement_review_operational_approval: bool = False
     docs: list[GeneratedDoc]
 

@@ -131,6 +131,9 @@ class GenerationCoreMixin:
         procurement_reviewed_at = (
             str(payload.get("_procurement_reviewed_at") or "").strip() or None
         )
+        procurement_review_source_updated_at = (
+            str(payload.get("_procurement_review_source_updated_at") or "").strip() or None
+        )
         decision_council_handoff_used = bool(payload.get("_decision_council_context"))
         decision_council_handoff_skipped_reason = (
             str(payload.get("_decision_council_handoff_skipped_reason") or "").strip() or None
@@ -308,6 +311,7 @@ class GenerationCoreMixin:
                 "procurement_review_packet_sha256": procurement_review_packet_sha256,
                 "procurement_review_decision": procurement_review_decision,
                 "procurement_reviewed_at": procurement_reviewed_at,
+                "procurement_review_source_updated_at": procurement_review_source_updated_at,
                 "procurement_review_operational_approval": False,
                 "decision_council_handoff_used": decision_council_handoff_used,
                 "decision_council_handoff_skipped_reason": decision_council_handoff_skipped_reason,

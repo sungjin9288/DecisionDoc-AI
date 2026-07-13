@@ -17,8 +17,10 @@ from app.services.decision_council_service import (
 )
 from app.services.generation.context_store import (
     _DECISION_COUNCIL_APPLIED_BUNDLE_IDS,
-    _PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
     _log,
+)
+from app.services.procurement_review_handoff import (
+    PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
 )
 from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_NAME,
@@ -122,7 +124,7 @@ class GenerationContextInjectionMixin:
 
         if (
             self._procurement_copilot_enabled
-            and bundle_type in _PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS
+            and bundle_type in PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS
             and self._procurement_store is not None
             and self._procurement_review_store is not None
         ):
@@ -269,6 +271,7 @@ class GenerationContextInjectionMixin:
                 "_procurement_review_packet_sha256": review.packet_sha256,
                 "_procurement_review_decision": review.decision,
                 "_procurement_reviewed_at": review.reviewed_at,
+                "_procurement_review_source_updated_at": source_updated_at,
                 "_procurement_review_operational_approval": False,
             }, None
 

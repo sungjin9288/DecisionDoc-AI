@@ -47,6 +47,7 @@ class ProjectDocument:
     source_procurement_review_packet_sha256: str | None = None
     source_procurement_review_decision: str | None = None
     source_procurement_reviewed_at: str | None = None
+    source_procurement_review_source_updated_at: str | None = None
     source_procurement_review_operational_approval: bool | None = None
 
 
@@ -131,6 +132,9 @@ class ProjectStore(BaseJsonStore):
             ),
             source_procurement_review_decision=d.get("source_procurement_review_decision"),
             source_procurement_reviewed_at=d.get("source_procurement_reviewed_at"),
+            source_procurement_review_source_updated_at=d.get(
+                "source_procurement_review_source_updated_at"
+            ),
             source_procurement_review_operational_approval=d.get(
                 "source_procurement_review_operational_approval"
             ),
@@ -294,6 +298,7 @@ class ProjectStore(BaseJsonStore):
         source_procurement_review_packet_sha256: str | None = None,
         source_procurement_review_decision: str | None = None,
         source_procurement_reviewed_at: str | None = None,
+        source_procurement_review_source_updated_at: str | None = None,
         source_procurement_review_operational_approval: bool | None = None,
     ) -> ProjectDocument:
         docs_json = json.dumps(docs, ensure_ascii=False)
@@ -323,6 +328,9 @@ class ProjectStore(BaseJsonStore):
             source_procurement_review_packet_sha256=source_procurement_review_packet_sha256,
             source_procurement_review_decision=source_procurement_review_decision,
             source_procurement_reviewed_at=source_procurement_reviewed_at,
+            source_procurement_review_source_updated_at=(
+                source_procurement_review_source_updated_at
+            ),
             source_procurement_review_operational_approval=(
                 source_procurement_review_operational_approval
             ),

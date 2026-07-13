@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,9 @@ from fastapi.testclient import TestClient
 from app.bundle_catalog.registry import BUNDLE_REGISTRY
 from app.domain.schema import SCHEMA_VERSION, build_bundle_prompt
 from app.main import create_app
+from app.services.procurement_review_handoff import (
+    describe_procurement_review_document_status,
+)
 from app.schemas import (
     CapabilityProfileReference,
     NormalizedProcurementOpportunity,
@@ -212,6 +216,44 @@ def _complete_procurement_review(client: TestClient, project_id: str) -> str:
     return packet_sha256
 
 
+def test_review_bound_document_reports_missing_tenant_evidence():
+    status = describe_procurement_review_document_status(
+        bundle_id="proposal_kr",
+        packet_sha256="a" * 64,
+        source_updated_at="2026-07-14T10:00:00+00:00",
+        source_decision="accepted",
+        review_record=None,
+        procurement_record=SimpleNamespace(updated_at="2026-07-14T10:00:00+00:00"),
+    )
+
+    assert status == {
+        "status": "review_evidence_missing",
+        "tone": "danger",
+        "copy": "검토 증빙 없음",
+        "summary": "이 문서가 참조한 procurement review packet을 현재 tenant에서 찾을 수 없습니다.",
+    }
+
+
+def test_review_bound_document_rejects_mismatched_review_evidence():
+    status = describe_procurement_review_document_status(
+        bundle_id="proposal_kr",
+        packet_sha256="a" * 64,
+        source_updated_at="2026-07-14T10:00:00+00:00",
+        source_decision="accepted",
+        review_record=SimpleNamespace(
+            packet_sha256="a" * 64,
+            review_status="completed",
+            decision="changes_requested",
+            operational_approval=False,
+        ),
+        procurement_record=SimpleNamespace(updated_at="2026-07-14T10:00:00+00:00"),
+    )
+
+    assert status is not None
+    assert status["status"] == "review_evidence_invalid"
+    assert status["tone"] == "danger"
+
+
 def test_bid_decision_bundle_is_registered():
     assert "bid_decision_kr" in BUNDLE_REGISTRY
     assert BUNDLE_REGISTRY["bid_decision_kr"].doc_keys == [
@@ -387,6 +429,7 @@ def test_downstream_bundles_receive_current_completed_review_evidence(client, bu
     assert body["procurement_review_packet_sha256"] == packet_sha256
     assert body["procurement_review_decision"] == "changes_requested"
     assert body["procurement_reviewed_at"]
+    assert body["procurement_review_source_updated_at"]
     assert body["procurement_review_operational_approval"] is False
 
     payload = {

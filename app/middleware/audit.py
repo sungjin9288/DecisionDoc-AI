@@ -326,6 +326,18 @@ def _append_audit_entries(
         share_decision_council_document_status_summary = (
             getattr(request.state, "share_decision_council_document_status_summary", "") or ""
         )
+        share_procurement_review_document_status = (
+            getattr(request.state, "share_procurement_review_document_status", "") or ""
+        )
+        share_procurement_review_document_status_tone = (
+            getattr(request.state, "share_procurement_review_document_status_tone", "") or ""
+        )
+        share_procurement_review_document_status_copy = (
+            getattr(request.state, "share_procurement_review_document_status_copy", "") or ""
+        )
+        share_procurement_review_document_status_summary = (
+            getattr(request.state, "share_procurement_review_document_status_summary", "") or ""
+        )
         share_project_document_id = getattr(request.state, "share_project_document_id", "") or ""
         detail = {
             "method": request.method,
@@ -397,6 +409,14 @@ def _append_audit_entries(
             detail["share_decision_council_document_status_copy"] = share_decision_council_document_status_copy
         if share_decision_council_document_status_summary:
             detail["share_decision_council_document_status_summary"] = share_decision_council_document_status_summary
+        if share_procurement_review_document_status:
+            detail["share_procurement_review_document_status"] = share_procurement_review_document_status
+        if share_procurement_review_document_status_tone:
+            detail["share_procurement_review_document_status_tone"] = share_procurement_review_document_status_tone
+        if share_procurement_review_document_status_copy:
+            detail["share_procurement_review_document_status_copy"] = share_procurement_review_document_status_copy
+        if share_procurement_review_document_status_summary:
+            detail["share_procurement_review_document_status_summary"] = share_procurement_review_document_status_summary
         if share_project_document_id:
             detail["share_project_document_id"] = share_project_document_id
 

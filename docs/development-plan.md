@@ -41,7 +41,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 20 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 38 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 39 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 37 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 261 (라우트)

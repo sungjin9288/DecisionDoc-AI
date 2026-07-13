@@ -15295,6 +15295,12 @@
       payload.decision_council_document_status_copy = String(source.decisionCouncilDocumentStatusCopy || '').trim();
       payload.decision_council_document_status_summary = String(source.decisionCouncilDocumentStatusSummary || '').trim();
     }
+    if (source?.procurementReviewDocumentStatus) {
+      payload.procurement_review_document_status = String(source.procurementReviewDocumentStatus || '').trim();
+      payload.procurement_review_document_status_tone = String(source.procurementReviewDocumentStatusTone || '').trim();
+      payload.procurement_review_document_status_copy = String(source.procurementReviewDocumentStatusCopy || '').trim();
+      payload.procurement_review_document_status_summary = String(source.procurementReviewDocumentStatusSummary || '').trim();
+    }
     try {
       const res = await fetch('/share', {
         method: 'POST',
@@ -15314,6 +15320,7 @@
 
   function showShareModal(shareUrl, expiresAt, title, source = null) {
     const decisionCouncilStatus = String(source?.decisionCouncilDocumentStatus || '').trim();
+    const procurementReviewStatus = String(source?.procurementReviewDocumentStatus || '').trim();
     const decisionCouncilFollowUpLabel = getProjectDocumentDecisionCouncilFollowUpLabel(
       decisionCouncilStatus
         ? {
@@ -15321,6 +15328,16 @@
             tone: source?.decisionCouncilDocumentStatusTone || '',
             copy: source?.decisionCouncilDocumentStatusCopy || '',
             summary: source?.decisionCouncilDocumentStatusSummary || '',
+          }
+        : null
+    );
+    const procurementReviewFollowUpLabel = getProjectDocumentProcurementReviewFollowUpLabel(
+      procurementReviewStatus
+        ? {
+            status: procurementReviewStatus,
+            tone: source?.procurementReviewDocumentStatusTone || '',
+            copy: source?.procurementReviewDocumentStatusCopy || '',
+            summary: source?.procurementReviewDocumentStatusSummary || '',
           }
         : null
     );
@@ -15342,6 +15359,19 @@
                 class="action-btn"
                 data-share-decision-council-followup="${escapeHtml(decisionCouncilStatus)}"
               >${escapeHtml(decisionCouncilFollowUpLabel)}</button>
+            ` : ''}
+          </div>
+        ` : ''}
+        ${procurementReviewStatus && procurementReviewStatus !== 'current' ? `
+          <div class="approval-modal-alert" data-share-procurement-review-warning="${escapeHtml(procurementReviewStatus)}">
+            <strong>${escapeHtml(source?.procurementReviewDocumentStatusCopy || '검토 기준 확인 필요')}</strong>
+            <span>${escapeHtml(source?.procurementReviewDocumentStatusSummary || '현재 procurement review 기준을 확인해야 하는 문서입니다.')}</span>
+            ${procurementReviewFollowUpLabel && source?.projectId && source?.docId ? `
+              <button
+                type="button"
+                class="action-btn"
+                data-share-procurement-review-followup="${escapeHtml(procurementReviewStatus)}"
+              >${escapeHtml(procurementReviewFollowUpLabel)}</button>
             ` : ''}
           </div>
         ` : ''}
@@ -15371,6 +15401,10 @@
     modal.querySelector('[data-share-decision-council-followup]')?.addEventListener('click', () => {
       modal.remove();
       handleProjectDocumentDecisionCouncilFollowUp(source?.projectId || '', source?.docId || '');
+    });
+    modal.querySelector('[data-share-procurement-review-followup]')?.addEventListener('click', () => {
+      modal.remove();
+      handleProjectDocumentProcurementReviewFollowUp(source?.projectId || '', source?.docId || '');
     });
   }
 
@@ -17455,6 +17489,7 @@
       doc,
       _currentProjectDetail?.decisionCouncilSession
     );
+    const procurementReviewStatusMeta = getProcurementReviewDocumentStatusMeta(doc);
     let docs = [];
     try {
       const parsed = JSON.parse(doc?.doc_snapshot || '[]');
@@ -17480,6 +17515,10 @@
       decisionCouncilDocumentStatusTone: decisionCouncilStatusMeta?.tone || '',
       decisionCouncilDocumentStatusCopy: decisionCouncilStatusMeta?.copy || '',
       decisionCouncilDocumentStatusSummary: decisionCouncilStatusMeta?.summary || '',
+      procurementReviewDocumentStatus: procurementReviewStatusMeta?.status || '',
+      procurementReviewDocumentStatusTone: procurementReviewStatusMeta?.tone || '',
+      procurementReviewDocumentStatusCopy: procurementReviewStatusMeta?.copy || '',
+      procurementReviewDocumentStatusSummary: procurementReviewStatusMeta?.summary || '',
     };
   }
 
@@ -17488,6 +17527,7 @@
       doc,
       _currentProjectDetail?.decisionCouncilSession
     );
+    const procurementReviewStatusMeta = getProcurementReviewDocumentStatusMeta(doc);
     return {
       kind: 'project_document_share',
       projectId,
@@ -17497,6 +17537,10 @@
       decisionCouncilDocumentStatusTone: decisionCouncilStatusMeta?.tone || '',
       decisionCouncilDocumentStatusCopy: decisionCouncilStatusMeta?.copy || '',
       decisionCouncilDocumentStatusSummary: decisionCouncilStatusMeta?.summary || '',
+      procurementReviewDocumentStatus: procurementReviewStatusMeta?.status || '',
+      procurementReviewDocumentStatusTone: procurementReviewStatusMeta?.tone || '',
+      procurementReviewDocumentStatusCopy: procurementReviewStatusMeta?.copy || '',
+      procurementReviewDocumentStatusSummary: procurementReviewStatusMeta?.summary || '',
     };
   }
 
@@ -17531,6 +17575,24 @@
     );
     if (!message) return true;
     return confirm(message);
+  }
+
+  function getProjectDocumentProcurementReviewStatusMeta(projectId, docId) {
+    return getProcurementReviewDocumentStatusMeta(getProjectDocumentById(projectId, docId));
+  }
+
+  function buildProjectDocumentProcurementReviewGuardMessage(statusMeta, actionLabel) {
+    if (!statusMeta || statusMeta.status === 'current') return '';
+    if (statusMeta.status === 'stale_procurement_review') {
+      return `이 문서는 ${statusMeta.copy} 상태입니다. 그대로 ${actionLabel}하시겠습니까?\n\n새 review를 완료한 뒤 문서를 다시 생성해야 현재 procurement 기준이 반영됩니다.`;
+    }
+    return `이 문서는 ${statusMeta.copy} 상태입니다. 그대로 ${actionLabel}하시겠습니까?\n\nprocurement review 증빙을 확인한 뒤 문서를 다시 생성하는 편이 안전합니다.`;
+  }
+
+  function confirmProjectDocumentProcurementReviewAction(projectId, docId, actionLabel) {
+    const statusMeta = getProjectDocumentProcurementReviewStatusMeta(projectId, docId);
+    const message = buildProjectDocumentProcurementReviewGuardMessage(statusMeta, actionLabel);
+    return !message || confirm(message);
   }
 
   function focusProjectDecisionCouncilPanel(projectId) {
@@ -17576,6 +17638,24 @@
     showNotification('현재 프로젝트의 latest council 기준을 확인한 뒤 문서를 다시 생성하세요.', 'info');
   }
 
+  function getProjectDocumentProcurementReviewFollowUpLabel(statusMeta) {
+    if (!statusMeta || statusMeta.status === 'current') return '';
+    return statusMeta.status === 'stale_procurement_review' ? '새 review 준비' : 'review 확인';
+  }
+
+  function handleProjectDocumentProcurementReviewFollowUp(projectId, docId) {
+    const statusMeta = getProjectDocumentProcurementReviewStatusMeta(projectId, docId);
+    if (!statusMeta || statusMeta.status === 'current') return;
+    if (_currentProjectDetail?.project?.project_id !== projectId) return;
+    const reviewPanel = document.querySelector('.procurement-review-export');
+    reviewPanel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('project-procurement-reviewer-input')?.focus();
+    const message = statusMeta.status === 'stale_procurement_review'
+      ? '현재 procurement 기준으로 새 packet review를 완료한 뒤 문서를 다시 생성하세요.'
+      : 'procurement review 증빙 상태를 확인한 뒤 문서를 다시 생성하세요.';
+    showNotification(message, statusMeta.tone === 'danger' ? 'warn' : 'info');
+  }
+
   function shareProjectDocument(projectId, docId) {
     const doc = getProjectDocumentById(projectId, docId);
     if (!doc) {
@@ -17587,6 +17667,9 @@
       return;
     }
     if (!confirmProjectDocumentDecisionCouncilAction(projectId, docId, '공유')) {
+      return;
+    }
+    if (!confirmProjectDocumentProcurementReviewAction(projectId, docId, '공유')) {
       return;
     }
     shareDocument(
@@ -17611,6 +17694,9 @@
     if (!confirmProjectDocumentDecisionCouncilAction(projectId, docId, '결재 요청')) {
       return;
     }
+    if (!confirmProjectDocumentProcurementReviewAction(projectId, docId, '결재 요청')) {
+      return;
+    }
     showApprovalRequestModal(buildProjectDocumentApprovalSource(projectId, doc));
   }
 
@@ -17624,6 +17710,7 @@
     }
     _approvalRequestSource = resolvedSource;
     const decisionCouncilStatus = String(resolvedSource.decisionCouncilDocumentStatus || '').trim();
+    const procurementReviewStatus = String(resolvedSource.procurementReviewDocumentStatus || '').trim();
     const decisionCouncilFollowUpLabel = getProjectDocumentDecisionCouncilFollowUpLabel(
       decisionCouncilStatus
         ? {
@@ -17631,6 +17718,16 @@
             tone: resolvedSource.decisionCouncilDocumentStatusTone || '',
             copy: resolvedSource.decisionCouncilDocumentStatusCopy || '',
             summary: resolvedSource.decisionCouncilDocumentStatusSummary || '',
+          }
+        : null
+    );
+    const procurementReviewFollowUpLabel = getProjectDocumentProcurementReviewFollowUpLabel(
+      procurementReviewStatus
+        ? {
+            status: procurementReviewStatus,
+            tone: resolvedSource.procurementReviewDocumentStatusTone || '',
+            copy: resolvedSource.procurementReviewDocumentStatusCopy || '',
+            summary: resolvedSource.procurementReviewDocumentStatusSummary || '',
           }
         : null
     );
@@ -17652,6 +17749,19 @@
                 class="action-btn"
                 data-approval-decision-council-followup="${escapeHtml(decisionCouncilStatus)}"
               >${escapeHtml(decisionCouncilFollowUpLabel)}</button>
+            ` : ''}
+          </div>
+        ` : ''}
+        ${procurementReviewStatus && procurementReviewStatus !== 'current' ? `
+          <div class="approval-modal-alert" data-approval-procurement-review-warning="${escapeHtml(procurementReviewStatus)}">
+            <strong>${escapeHtml(resolvedSource.procurementReviewDocumentStatusCopy || '검토 기준 확인 필요')}</strong>
+            <span>${escapeHtml(resolvedSource.procurementReviewDocumentStatusSummary || '현재 procurement review 기준을 확인해야 하는 문서입니다.')}</span>
+            ${procurementReviewFollowUpLabel && resolvedSource.projectId && resolvedSource.docId ? `
+              <button
+                type="button"
+                class="action-btn"
+                data-approval-procurement-review-followup="${escapeHtml(procurementReviewStatus)}"
+              >${escapeHtml(procurementReviewFollowUpLabel)}</button>
             ` : ''}
           </div>
         ` : ''}
@@ -17685,6 +17795,10 @@
     overlay.querySelector('[data-approval-decision-council-followup]')?.addEventListener('click', () => {
       close();
       handleProjectDocumentDecisionCouncilFollowUp(source?.projectId || '', source?.docId || '');
+    });
+    overlay.querySelector('[data-approval-procurement-review-followup]')?.addEventListener('click', () => {
+      close();
+      handleProjectDocumentProcurementReviewFollowUp(source?.projectId || '', source?.docId || '');
     });
   }
 
@@ -18554,6 +18668,17 @@
       default:
         return null;
     }
+  }
+
+  function getProcurementReviewDocumentStatusMeta(doc) {
+    const status = String(doc?.procurement_review_document_status || '').trim();
+    if (!status) return null;
+    return {
+      status,
+      tone: String(doc?.procurement_review_document_status_tone || 'muted').trim() || 'muted',
+      copy: String(doc?.procurement_review_document_status_copy || '').trim() || status,
+      summary: String(doc?.procurement_review_document_status_summary || '').trim() || '',
+    };
   }
 
   function canLaunchProcurementDownstream(decision) {
@@ -21065,6 +21190,10 @@
           const procurementReviewMeta = getProcurementReviewDecisionMeta(
             d.source_procurement_review_decision
           );
+          const procurementReviewDocStatus = getProcurementReviewDocumentStatusMeta(d);
+          const procurementReviewFollowUpLabel = getProjectDocumentProcurementReviewFollowUpLabel(
+            procurementReviewDocStatus
+          );
           return `
           <div class="doc-item" data-project-doc-id="${escapeHtml(d.doc_id || '')}">
             <div class="doc-item-left">
@@ -21079,6 +21208,13 @@
                   data-procurement-review-doc-decision="${escapeHtml(d.source_procurement_review_decision || '')}"
                   title="Review packet ${escapeHtml(d.source_procurement_review_packet_sha256.slice(0, 12))} 기준이며 운영 승인이나 입찰 제출 권한이 아닙니다."
                 >${escapeHtml(procurementReviewMeta.copy)} · 운영 승인 아님</span>
+              ` : ''}
+              ${procurementReviewDocStatus ? `
+                <span
+                  class="tag ${escapeHtml(procurementReviewDocStatus.tone)}"
+                  data-procurement-review-doc-status="${escapeHtml(procurementReviewDocStatus.status)}"
+                  title="${escapeHtml(procurementReviewDocStatus.summary)}"
+                >${escapeHtml(procurementReviewDocStatus.copy)}</span>
               ` : ''}
               ${councilDocStatus ? `
                 <span
@@ -21101,6 +21237,15 @@
 	                    data-project-id="${escapeHtml(p.project_id)}"
 	                    data-doc-id="${escapeHtml(d.doc_id)}"
 	                  >${escapeHtml(councilFollowUpLabel)}</button>
+	                ` : ''}
+	                ${procurementReviewFollowUpLabel ? `
+	                  <button
+	                    type="button"
+	                    data-procurement-review-doc-followup="${escapeHtml(procurementReviewDocStatus?.status || '')}"
+	                    data-project-detail-action="doc-review-followup"
+	                    data-project-id="${escapeHtml(p.project_id)}"
+	                    data-doc-id="${escapeHtml(d.doc_id)}"
+	                  >${escapeHtml(procurementReviewFollowUpLabel)}</button>
 	                ` : ''}
 	                <button type="button" data-project-detail-action="doc-approval" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">${d.approval_id ? '결재 보기' : '결재 요청'}</button>
 	                <button type="button" data-project-detail-action="doc-share" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">공유</button>
@@ -21208,6 +21353,10 @@
 	    }
 	    if (action === 'doc-followup') {
 	      handleProjectDocumentDecisionCouncilFollowUp(projectId, docId);
+	      return;
+	    }
+	    if (action === 'doc-review-followup') {
+	      handleProjectDocumentProcurementReviewFollowUp(projectId, docId);
 	      return;
 	    }
 	    if (action === 'doc-approval') {

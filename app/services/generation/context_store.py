@@ -16,13 +16,6 @@ _DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {
     "bid_decision_kr",
     "proposal_kr",
 }
-_PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS = {
-    "rfp_analysis_kr",
-    "proposal_kr",
-    "performance_plan_kr",
-}
-
-
 def _record_usage_sync(
     tenant_id: str,
     user_id: str,

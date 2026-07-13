@@ -316,6 +316,9 @@ async def generate_stream(
                     ),
                     procurement_review_decision=metadata.get("procurement_review_decision"),
                     procurement_reviewed_at=metadata.get("procurement_reviewed_at"),
+                    procurement_review_source_updated_at=metadata.get(
+                        "procurement_review_source_updated_at"
+                    ),
                     procurement_review_operational_approval=metadata.get(
                         "procurement_review_operational_approval", False
                     ),
@@ -344,6 +347,9 @@ async def generate_stream(
                             ),
                             source_procurement_reviewed_at=metadata.get(
                                 "procurement_reviewed_at"
+                            ),
+                            source_procurement_review_source_updated_at=metadata.get(
+                                "procurement_review_source_updated_at"
                             ),
                             source_procurement_review_operational_approval=metadata.get(
                                 "procurement_review_operational_approval"

@@ -32,6 +32,10 @@ class ShareLink:
     decision_council_document_status_tone: str = ""
     decision_council_document_status_copy: str = ""
     decision_council_document_status_summary: str = ""
+    procurement_review_document_status: str = ""
+    procurement_review_document_status_tone: str = ""
+    procurement_review_document_status_copy: str = ""
+    procurement_review_document_status_summary: str = ""
 
 
 class ShareStore(BaseJsonStore):
@@ -81,6 +85,10 @@ class ShareStore(BaseJsonStore):
         decision_council_document_status_tone: str = "",
         decision_council_document_status_copy: str = "",
         decision_council_document_status_summary: str = "",
+        procurement_review_document_status: str = "",
+        procurement_review_document_status_tone: str = "",
+        procurement_review_document_status_copy: str = "",
+        procurement_review_document_status_summary: str = "",
     ) -> ShareLink:
         share_id = secrets.token_urlsafe(16)
         expires_at = (
@@ -100,6 +108,10 @@ class ShareStore(BaseJsonStore):
             decision_council_document_status_tone=decision_council_document_status_tone,
             decision_council_document_status_copy=decision_council_document_status_copy,
             decision_council_document_status_summary=decision_council_document_status_summary,
+            procurement_review_document_status=procurement_review_document_status,
+            procurement_review_document_status_tone=procurement_review_document_status_tone,
+            procurement_review_document_status_copy=procurement_review_document_status_copy,
+            procurement_review_document_status_summary=procurement_review_document_status_summary,
         )
 
         with self._lock:
@@ -120,6 +132,10 @@ class ShareStore(BaseJsonStore):
                 "decision_council_document_status_tone": decision_council_document_status_tone,
                 "decision_council_document_status_copy": decision_council_document_status_copy,
                 "decision_council_document_status_summary": decision_council_document_status_summary,
+                "procurement_review_document_status": procurement_review_document_status,
+                "procurement_review_document_status_tone": procurement_review_document_status_tone,
+                "procurement_review_document_status_copy": procurement_review_document_status_copy,
+                "procurement_review_document_status_summary": procurement_review_document_status_summary,
             }
             self._save(data)
 

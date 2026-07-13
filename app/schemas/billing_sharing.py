@@ -28,6 +28,10 @@ class CreateShareRequest(BaseModel):
     decision_council_document_status_tone: str = ""
     decision_council_document_status_copy: str = ""
     decision_council_document_status_summary: str = ""
+    procurement_review_document_status: str = ""
+    procurement_review_document_status_tone: str = ""
+    procurement_review_document_status_copy: str = ""
+    procurement_review_document_status_summary: str = ""
 
 
 class InviteUserRequest(BaseModel):

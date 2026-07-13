@@ -419,6 +419,9 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.procurement_review_packet_sha256 = metadata.get("procurement_review_packet_sha256")
     request.state.procurement_review_decision = metadata.get("procurement_review_decision")
     request.state.procurement_reviewed_at = metadata.get("procurement_reviewed_at")
+    request.state.procurement_review_source_updated_at = metadata.get(
+        "procurement_review_source_updated_at"
+    )
     request.state.procurement_review_operational_approval = metadata.get(
         "procurement_review_operational_approval"
     )
@@ -714,6 +717,9 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         procurement_review_packet_sha256=metadata.get("procurement_review_packet_sha256"),
         procurement_review_decision=metadata.get("procurement_review_decision"),
         procurement_reviewed_at=metadata.get("procurement_reviewed_at"),
+        procurement_review_source_updated_at=metadata.get(
+            "procurement_review_source_updated_at"
+        ),
         procurement_review_operational_approval=metadata.get(
             "procurement_review_operational_approval", False
         ),

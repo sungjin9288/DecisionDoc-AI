@@ -1176,7 +1176,11 @@ class TestProjectProcurementApi:
         assert proposal["source_procurement_review_packet_sha256"] == packet_sha256
         assert proposal["source_procurement_review_decision"] == "accepted"
         assert proposal["source_procurement_reviewed_at"]
+        assert proposal["source_procurement_review_source_updated_at"]
         assert proposal["source_procurement_review_operational_approval"] is False
+        assert proposal["procurement_review_document_status"] == "current"
+        assert proposal["procurement_review_document_status_tone"] == "success"
+        assert proposal["procurement_review_document_status_copy"] == "현재 review 기준"
 
         from app.storage.audit_store import AuditStore
 
@@ -1192,6 +1196,21 @@ class TestProjectProcurementApi:
         assert audit_detail["review_decision"] == "accepted"
         assert audit_detail["procurement_review_handoff_used"] is True
         assert audit_detail["procurement_review_operational_approval"] is False
+
+        self._ready_decision(client, pid)
+        refreshed = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        stale_proposal = next(
+            doc
+            for doc in reversed(refreshed["documents"])
+            if doc["doc_id"] == proposal["doc_id"]
+        )
+        assert stale_proposal["procurement_review_document_status"] == (
+            "stale_procurement_review"
+        )
+        assert stale_proposal["procurement_review_document_status_tone"] == "danger"
+        assert stale_proposal["procurement_review_document_status_copy"] == (
+            "현재 procurement 대비 이전 review 기준"
+        )
 
     def test_review_inbox_filters_tenant_queue_and_includes_project_context(self, client):
         pending_project_id = self._pid(client)

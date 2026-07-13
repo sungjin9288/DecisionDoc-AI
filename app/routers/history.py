@@ -204,6 +204,18 @@ def create_share_link(payload: CreateShareRequest, request: Request):
     request.state.share_decision_council_document_status_summary = (
         payload.decision_council_document_status_summary or ""
     )
+    request.state.share_procurement_review_document_status = (
+        payload.procurement_review_document_status or ""
+    )
+    request.state.share_procurement_review_document_status_tone = (
+        payload.procurement_review_document_status_tone or ""
+    )
+    request.state.share_procurement_review_document_status_copy = (
+        payload.procurement_review_document_status_copy or ""
+    )
+    request.state.share_procurement_review_document_status_summary = (
+        payload.procurement_review_document_status_summary or ""
+    )
     from app.storage.share_store import ShareStore
     store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
     link = store.create(
@@ -217,6 +229,10 @@ def create_share_link(payload: CreateShareRequest, request: Request):
         decision_council_document_status_tone=payload.decision_council_document_status_tone,
         decision_council_document_status_copy=payload.decision_council_document_status_copy,
         decision_council_document_status_summary=payload.decision_council_document_status_summary,
+        procurement_review_document_status=payload.procurement_review_document_status,
+        procurement_review_document_status_tone=payload.procurement_review_document_status_tone,
+        procurement_review_document_status_copy=payload.procurement_review_document_status_copy,
+        procurement_review_document_status_summary=payload.procurement_review_document_status_summary,
     )
     return {
         "share_id": link.share_id,
@@ -263,6 +279,7 @@ def view_shared_document(share_id: str, request: Request):
                     title,
                     doc_html,
                     decision_council_warning=_render_shared_decision_council_warning(link),
+                    procurement_review_warning=_render_shared_procurement_review_warning(link),
                 )
             )
     raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
@@ -320,7 +337,34 @@ def _render_shared_decision_council_warning(link: dict) -> str:
     )
 
 
-def _render_shared_page(title: str, doc_html: str, *, decision_council_warning: str = "") -> str:
+def _render_shared_procurement_review_warning(link: dict) -> str:
+    import html as _html
+
+    status = str(link.get("procurement_review_document_status") or "").strip()
+    if not status or status == "current":
+        return ""
+    tone = str(link.get("procurement_review_document_status_tone") or "").strip() or "warning"
+    title = str(link.get("procurement_review_document_status_copy") or "").strip() or "검토 기준 확인 필요"
+    summary = (
+        str(link.get("procurement_review_document_status_summary") or "").strip()
+        or "이 공유 문서는 현재 procurement review 기준과 다를 수 있습니다."
+    )
+    return (
+        f'<div class="share-warning {_html.escape(tone)}" '
+        f'data-shared-procurement-review-warning="{_html.escape(status)}">'
+        f'<strong>{_html.escape(title)}</strong>'
+        f'<span>{_html.escape(summary)}</span>'
+        f"</div>"
+    )
+
+
+def _render_shared_page(
+    title: str,
+    doc_html: str,
+    *,
+    decision_council_warning: str = "",
+    procurement_review_warning: str = "",
+) -> str:
     import html as _html
     safe_title = _html.escape(title)
     return f"""<!DOCTYPE html>
@@ -361,6 +405,7 @@ def _render_shared_page(title: str, doc_html: str, *, decision_council_warning: 
   <div class="share-meta">DecisionDoc AI로 생성된 문서입니다.</div>
 </div>
 {decision_council_warning}
+{procurement_review_warning}
 {doc_html}
 </body>
 </html>"""

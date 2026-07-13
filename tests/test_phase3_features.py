@@ -94,6 +94,30 @@ def test_shared_view_renders_decision_council_warning_when_present():
     assert "최신 procurement recommendation을 반영하지 않았습니다." in view_res.text
 
 
+def test_shared_view_renders_procurement_review_warning_when_present():
+    token = _token()
+    create_res = client.post(
+        "/share",
+        json={
+            "request_id": "req-shared-review-warning",
+            "title": "Stale Review 공유 테스트",
+            "procurement_review_document_status": "stale_procurement_review",
+            "procurement_review_document_status_tone": "danger",
+            "procurement_review_document_status_copy": "현재 procurement 대비 이전 review 기준",
+            "procurement_review_document_status_summary": "새 review를 완료한 뒤 문서를 다시 생성해야 합니다.",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert create_res.status_code == 200
+    share_id = create_res.json()["share_id"]
+
+    view_res = client.get(f"/shared/{share_id}")
+    assert view_res.status_code == 200
+    assert 'data-shared-procurement-review-warning="stale_procurement_review"' in view_res.text
+    assert "현재 procurement 대비 이전 review 기준" in view_res.text
+    assert "새 review를 완료한 뒤 문서를 다시 생성해야 합니다." in view_res.text
+
+
 def test_revoke_share_link():
     token = _token()
     create_res = client.post(

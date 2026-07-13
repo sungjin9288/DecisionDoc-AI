@@ -3,6 +3,16 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone review-bound document freshness
+
+- Review-bound `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` documents now persist the source procurement timestamp alongside packet SHA256, review decision, reviewed time, and the false operational-approval boundary.
+- Project detail recalculates `current`, `stale_procurement_review`, missing, invalid, and unverifiable evidence from the current tenant's review store and procurement record. Another tenant's packet cannot satisfy the document check.
+- The project UI shows the calculated status, offers a direct return to the review workspace, and asks for explicit confirmation before a non-current document is sent to approval or sharing.
+- Share creation preserves the review status in audit detail and the public shared page, so a stale warning remains visible outside the authenticated project screen. This is warning evidence, not operational approval or bid-submission authority.
+- Focused compile, inline JavaScript parsing, and freshness/share/audit/UI contract verification passes with 22 tests. The broader project, procurement handoff, sharing, audit, infrastructure, and generation gate passes with 377 tests. Ruff and Bandit medium/high checks pass for the changed application files.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,927 passed, 1 skipped, and 4 deselected in 217.18 seconds.
+- Paid provider tests, AWS runtime, live G2B collection, upload, training, promotion, service resume, bid submission, legal approval, and contractual commitment remain deferred.
+
 ## Post-milestone completed review downstream provenance
 
 - `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` generation now resolves completed review evidence from the injected tenant-scoped `ProcurementReviewStore`.

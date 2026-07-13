@@ -663,6 +663,10 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
             "decision_council_document_status_tone": "danger",
             "decision_council_document_status_copy": "현재 procurement 대비 이전 council 기준",
             "decision_council_document_status_summary": "현재 procurement recommendation 또는 checklist가 바뀌어 이 공유 문서는 최신 council/procurement 기준과 일치하지 않습니다.",
+            "procurement_review_document_status": "stale_procurement_review",
+            "procurement_review_document_status_tone": "danger",
+            "procurement_review_document_status_copy": "현재 procurement 대비 이전 review 기준",
+            "procurement_review_document_status_summary": "새 review를 완료한 뒤 문서를 다시 생성해야 합니다.",
         },
     )
     assert created.status_code == 200
@@ -682,6 +686,9 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
     assert latest_create["detail"]["share_decision_council_document_status"] == "stale_procurement"
     assert latest_create["detail"]["share_decision_council_document_status_tone"] == "danger"
     assert latest_create["detail"]["share_decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
+    assert latest_create["detail"]["share_procurement_review_document_status"] == "stale_procurement_review"
+    assert latest_create["detail"]["share_procurement_review_document_status_tone"] == "danger"
+    assert latest_create["detail"]["share_procurement_review_document_status_copy"] == "현재 procurement 대비 이전 review 기준"
     assert len(store.query("system", filters={"action": "share.revoke"})) >= 1
 
 

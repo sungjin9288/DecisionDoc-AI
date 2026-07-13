@@ -95,7 +95,7 @@ def _clean_requirements_for_prompt(requirements: dict[str, Any]) -> dict[str, An
     SKIP_KEYS = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
                  "_knowledge_context", "_style_context", "_procurement_context", "_procurement_review_context",
                  "_procurement_review_handoff_skipped_reason", "_procurement_review_packet_sha256",
-                 "_procurement_review_decision", "_procurement_reviewed_at",
+                 "_procurement_review_decision", "_procurement_reviewed_at", "_procurement_review_source_updated_at",
                  "_procurement_review_operational_approval", "_decision_council_context", "project_id",
                  "pdf_source", "pdf_sections"}
     return {
@@ -422,7 +422,7 @@ def build_sketch_prompt(
     SKETCH_SKIP = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
                    "_knowledge_context", "_style_context", "_procurement_context", "_procurement_review_context",
                    "_procurement_review_handoff_skipped_reason", "_procurement_review_packet_sha256",
-                   "_procurement_review_decision", "_procurement_reviewed_at",
+                   "_procurement_review_decision", "_procurement_reviewed_at", "_procurement_review_source_updated_at",
                    "_procurement_review_operational_approval", "_decision_council_context", "project_id",
                    "pdf_source", "pdf_sections"}
     clean_req = {k: v for k, v in requirements.items() if k not in SKETCH_SKIP and v not in ("", [], None)}
