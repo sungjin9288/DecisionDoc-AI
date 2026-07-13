@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.api_key import require_api_key
 from app.config import get_g2b_api_key
@@ -15,7 +15,6 @@ from app.dependencies import get_tenant_id
 from app.schemas import (
     DecisionCouncilRunRequest,
     DecisionCouncilSessionResponse,
-    ExportProjectProcurementReviewPacketRequest,
     ImportProjectProcurementOpportunityRequest,
     NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
@@ -98,12 +97,18 @@ def _apply_procurement_observability(
     source_id: str | None = None,
     record=None,
     hard_failures: list[dict] | None = None,
+    packet_sha256: str | None = None,
+    review_status: str | None = None,
+    review_decision: str | None = None,
 ) -> None:
     request.state.procurement_action = action
     request.state.procurement_project_id = project_id
     request.state.procurement_operation = operation
     request.state.procurement_source_kind = source_kind
     request.state.procurement_source_id = source_id
+    request.state.procurement_packet_sha256 = packet_sha256
+    request.state.procurement_review_status = review_status
+    request.state.procurement_review_decision = review_decision
 
     if record is None:
         return
@@ -438,89 +443,6 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
         "recommendation": record.recommendation.model_dump(mode="json") if record.recommendation else None,
         "checklist_items": [item.model_dump(mode="json") for item in record.checklist_items],
     }
-
-
-@router.post(
-    "/projects/{project_id}/procurement/review-packet",
-    dependencies=[Depends(require_api_key)],
-)
-def export_project_procurement_review_packet_endpoint(
-    project_id: str,
-    payload: ExportProjectProcurementReviewPacketRequest,
-    request: Request,
-) -> Response:
-    """Export a verified local-only review packet for the current decision."""
-    from app.services.procurement_decision_package.review_packet import (
-        build_project_procurement_review_packet,
-    )
-
-    _ensure_procurement_copilot_enabled(request)
-    _apply_procurement_observability(
-        request,
-        action="review_packet_export",
-        project_id=project_id,
-    )
-    tenant_id = get_tenant_id(request)
-    project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
-
-    record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
-    if record is None or record.opportunity is None or record.recommendation is None:
-        request.state.error_code = "procurement_review_packet_context_required"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "procurement_review_packet_context_required",
-                "message": (
-                    "검토 패킷은 procurement opportunity 연결과 recommendation 생성이 완료된 "
-                    "project에서만 내보낼 수 있습니다."
-                ),
-                "project_id": project_id,
-                "required_steps": [
-                    "imports/g2b-opportunity",
-                    "procurement/evaluate",
-                    "procurement/recommend",
-                ],
-            },
-        )
-
-    try:
-        packet = build_project_procurement_review_packet(
-            record,
-            reviewer_owner=payload.reviewer,
-        )
-    except ValueError as exc:
-        request.state.error_code = "procurement_review_packet_not_ready"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "procurement_review_packet_not_ready",
-                "message": "현재 procurement decision을 검토 패킷으로 검증할 수 없습니다.",
-                "project_id": project_id,
-            },
-        ) from exc
-
-    _apply_procurement_observability(
-        request,
-        action="review_packet_export",
-        project_id=project_id,
-        operation="exported",
-        record=record,
-    )
-    filename = f"procurement_review_packet_{packet.sha256[:12]}.zip"
-    return Response(
-        content=packet.content,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "X-DecisionDoc-Packet-SHA256": packet.sha256,
-            "X-DecisionDoc-Package-Id": packet.verification["package_id"],
-            "X-DecisionDoc-Artifact-Count": str(packet.verification["artifact_count"]),
-            "X-DecisionDoc-Operational-Approval": "false",
-        },
-    )
 
 
 @router.post(

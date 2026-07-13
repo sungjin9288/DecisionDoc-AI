@@ -209,6 +209,21 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
 
     recommended = client.post(f"/projects/{project_id}/procurement/recommend")
     assert recommended.status_code == 200
+    packet = client.post(
+        f"/projects/{project_id}/procurement/review-packet",
+        json={"reviewer": "observability-reviewer"},
+    )
+    assert packet.status_code == 200
+    packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+    completed_review = client.post(
+        f"/projects/{project_id}/procurement/reviews/{packet_sha256}/complete",
+        json={
+            "reviewer": "observability-reviewer",
+            "decision": "accepted",
+            "rationale": "observability contract proof",
+        },
+    )
+    assert completed_review.status_code == 200
 
     events = _captured_events(caplog, capsys)
     import_events = [
@@ -233,6 +248,18 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
     assert recommend_events[-1]["procurement_project_id"] == project_id
     assert recommend_events[-1]["procurement_recommendation"] in {"GO", "CONDITIONAL_GO", "NO_GO"}
     assert recommend_events[-1]["procurement_checklist_action_count"] >= 0
+
+    review_events = [
+        event for event in events
+        if event.get("event") == "request.completed"
+        and event.get("path")
+        == f"/projects/{project_id}/procurement/reviews/{packet_sha256}/complete"
+    ]
+    assert review_events
+    assert review_events[-1]["procurement_action"] == "review_completed"
+    assert review_events[-1]["procurement_packet_sha256"] == packet_sha256
+    assert review_events[-1]["procurement_review_status"] == "completed"
+    assert review_events[-1]["procurement_review_decision"] == "accepted"
 
 
 def test_generate_logs_procurement_handoff_usage(tmp_path, monkeypatch, caplog, capsys):

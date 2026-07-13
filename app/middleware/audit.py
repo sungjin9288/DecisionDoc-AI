@@ -27,6 +27,8 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
+    ("POST", "/projects/{id}/procurement/reviews/{id}/complete"): "procurement.review_completed",
+    ("GET", "/projects/{id}/procurement/reviews/{id}/reviewed-package"): "procurement.reviewed_package_download",
     ("POST", "/projects/{id}/decision-council/run"): "decision_council.run",
     ("POST", "/projects/{id}/procurement/override-reason"): "procurement.override_reason",
     ("POST", "/projects/{id}/procurement/remediation-link-copy"): "procurement.remediation_link_copied",
@@ -185,15 +187,20 @@ def _resolve_supplemental_actions(
     status_code: int,
     *,
     procurement_action: str | None = None,
+    procurement_review_started: bool = False,
     decision_council_handoff_used: bool = False,
 ) -> list[str]:
-    if method != "POST" or status_code >= 400 or not path.startswith("/generate"):
+    if status_code >= 400:
         return []
     actions: list[str] = []
-    if procurement_action == "downstream_resolved":
-        actions.append("procurement.downstream_resolved")
-    if decision_council_handoff_used:
-        actions.append("decision_council.handoff_used")
+    if method == "POST" and path.endswith("/procurement/review-packet"):
+        if procurement_review_started:
+            actions.append("procurement.review_started")
+    if method == "POST" and path.startswith("/generate"):
+        if procurement_action == "downstream_resolved":
+            actions.append("procurement.downstream_resolved")
+        if decision_council_handoff_used:
+            actions.append("decision_council.handoff_used")
     return actions
 
 
@@ -224,6 +231,9 @@ def _append_audit_entries(
     error_code = getattr(request.state, "error_code", "")
     procurement_error_code = getattr(request.state, "procurement_error_code", "") or error_code
     procurement_action = getattr(request.state, "procurement_action", "")
+    procurement_review_started = bool(
+        getattr(request.state, "procurement_review_started", False)
+    )
     decision_council_handoff_used = bool(
         getattr(request.state, "decision_council_handoff_used", False)
     )
@@ -254,6 +264,15 @@ def _append_audit_entries(
         procurement_operation = getattr(request.state, "procurement_operation", "") or ""
         procurement_context_kind = getattr(request.state, "procurement_context_kind", "") or ""
         procurement_recommendation = getattr(request.state, "procurement_recommendation", "") or ""
+        procurement_packet_sha256 = getattr(
+            request.state, "procurement_packet_sha256", ""
+        ) or ""
+        procurement_review_status = getattr(
+            request.state, "procurement_review_status", ""
+        ) or ""
+        procurement_review_decision = getattr(
+            request.state, "procurement_review_decision", ""
+        ) or ""
         decision_council_session_id = getattr(request.state, "decision_council_session_id", "") or ""
         decision_council_session_revision = getattr(
             request.state, "decision_council_session_revision", None
@@ -300,6 +319,12 @@ def _append_audit_entries(
             detail["procurement_context_kind"] = procurement_context_kind
         if procurement_recommendation:
             detail["recommendation"] = procurement_recommendation
+        if procurement_packet_sha256:
+            detail["packet_sha256"] = procurement_packet_sha256
+        if procurement_review_status:
+            detail["review_status"] = procurement_review_status
+        if procurement_review_decision:
+            detail["review_decision"] = procurement_review_decision
         if decision_council_project_id:
             detail["project_id"] = decision_council_project_id
         if decision_council_session_id:
@@ -353,6 +378,7 @@ def _append_audit_entries(
             path,
             status_code,
             procurement_action=procurement_action,
+            procurement_review_started=procurement_review_started,
             decision_council_handoff_used=decision_council_handoff_used,
         ):
             store.append(

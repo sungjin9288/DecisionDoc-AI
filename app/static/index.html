@@ -1402,6 +1402,75 @@
       font-size: 0.78rem;
       line-height: 1.5;
     }
+    .procurement-review-workspace {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .procurement-review-record {
+      display: grid;
+      gap: 10px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border, #e5e7eb);
+    }
+    .procurement-review-record-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      font-size: 0.78rem;
+    }
+    .procurement-review-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-weight: 700;
+    }
+    .procurement-review-status.completed {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .procurement-review-record-meta {
+      color: var(--muted, #6b7280);
+      overflow-wrap: anywhere;
+    }
+    .procurement-review-complete-form {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.45fr) minmax(260px, 1fr) auto;
+      gap: 8px 12px;
+      align-items: end;
+    }
+    .procurement-review-complete-form label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .procurement-review-complete-form select,
+    .procurement-review-complete-form textarea {
+      width: 100%;
+      min-width: 0;
+    }
+    .procurement-review-complete-form textarea {
+      min-height: 64px;
+      resize: vertical;
+    }
+    .procurement-review-history {
+      display: grid;
+      gap: 8px;
+    }
+    .procurement-review-history-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border, #e5e7eb);
+    }
     .procurement-summary-list {
       margin: 10px 0 0;
       padding-left: 18px;
@@ -2663,6 +2732,8 @@
       .project-import-submit { width: 100%; }
       .procurement-review-export { grid-template-columns: 1fr; }
       .procurement-review-export button { width: 100%; }
+      .procurement-review-complete-form { grid-template-columns: 1fr; }
+      .procurement-review-history-row { grid-template-columns: 1fr; }
       .decision-council-form { grid-template-columns: 1fr; }
       .decision-council-actions button { width: 100%; }
       .procurement-handoff-track { grid-template-columns: 1fr; }
@@ -17946,6 +18017,14 @@
         return '공고 연결과 recommendation 생성 후에만 검토 패킷을 내보낼 수 있습니다.';
       case 'procurement_review_packet_not_ready':
         return fallbackMessage || '현재 procurement decision을 검토 패킷으로 검증할 수 없습니다.';
+      case 'procurement_review_source_changed':
+        return '검토 패킷 생성 후 판단 근거가 변경되었습니다. 새 패킷을 내려받아 다시 검토하세요.';
+      case 'procurement_review_already_completed':
+        return '이미 완료된 검토 기록은 다시 변경할 수 없습니다.';
+      case 'procurement_review_completion_rejected':
+        return fallbackMessage || '검토 담당자와 패킷 상태를 확인해주세요.';
+      case 'procurement_reviewed_package_invalid':
+        return '저장된 완료 패키지의 무결성을 확인할 수 없습니다.';
       default:
         return defaultMessage;
     }
@@ -19864,6 +19943,83 @@
     }
   }
 
+  function getProcurementReviewDecisionLabel(decision) {
+    return {
+      accepted: '검토 수락',
+      changes_requested: '수정 요청',
+      rejected: '검토 반려',
+    }[decision] || '미기록';
+  }
+
+  function renderProjectProcurementReviewWorkspace(projectId, reviews = []) {
+    const pendingReviews = reviews.filter(review => review?.review_status === 'pending');
+    const completedReviews = reviews.filter(review => review?.review_status === 'completed');
+    if (!pendingReviews.length && !completedReviews.length) return '';
+
+    const pendingHtml = pendingReviews.map(review => {
+      const packetSha256 = String(review.packet_sha256 || '');
+      const reviewer = String(review.reviewer || '');
+      const decisionId = `procurement-review-decision-${packetSha256}`;
+      const rationaleId = `procurement-review-rationale-${packetSha256}`;
+      return `
+        <section class="procurement-review-record" data-procurement-review-status="pending" data-packet-sha256="${escapeHtml(packetSha256)}">
+          <div class="procurement-review-record-header">
+            <span class="procurement-review-status">검토 대기</span>
+            <strong>${escapeHtml(reviewer)}</strong>
+            <span class="procurement-review-record-meta">${escapeHtml(formatProcurementActivityTime(review.prepared_at, '준비됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+          </div>
+          <div class="procurement-review-complete-form">
+            <label for="${escapeHtml(decisionId)}">
+              검토 결과
+              <select id="${escapeHtml(decisionId)}">
+                <option value="accepted">수락</option>
+                <option value="changes_requested">수정 요청</option>
+                <option value="rejected">반려</option>
+              </select>
+            </label>
+            <label for="${escapeHtml(rationaleId)}">
+              검토 근거
+              <textarea id="${escapeHtml(rationaleId)}" maxlength="4000" placeholder="확인한 근거와 필요한 후속 조치를 기록하세요."></textarea>
+            </label>
+            <button
+              type="button"
+              data-project-detail-action="procurement-review-complete"
+              data-project-id="${escapeHtml(projectId)}"
+              data-packet-sha256="${escapeHtml(packetSha256)}"
+              data-reviewer="${escapeHtml(reviewer)}"
+            >검토 완료 ZIP</button>
+          </div>
+          <p class="procurement-review-export-note">완료 기록은 한 번만 저장되며 원본 packet SHA256에 묶입니다. 이 검토 증빙은 운영 승인이나 입찰 제출 권한을 부여하지 않습니다.</p>
+        </section>
+      `;
+    }).join('');
+
+    const completedHtml = completedReviews.length ? `
+      <div class="procurement-review-history" aria-label="완료된 조달 검토 이력">
+        ${completedReviews.map(review => {
+          const packetSha256 = String(review.packet_sha256 || '');
+          return `
+            <div class="procurement-review-history-row" data-procurement-review-status="completed" data-packet-sha256="${escapeHtml(packetSha256)}">
+              <div class="procurement-review-record-header">
+                <span class="procurement-review-status completed">검토 완료</span>
+                <strong>${escapeHtml(getProcurementReviewDecisionLabel(review.decision))}</strong>
+                <span class="procurement-review-record-meta">${escapeHtml(review.reviewer || '')} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+              </div>
+              <button
+                type="button"
+                data-project-detail-action="procurement-reviewed-package-download"
+                data-project-id="${escapeHtml(projectId)}"
+                data-packet-sha256="${escapeHtml(packetSha256)}"
+              >완료 패키지 ZIP</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : '';
+
+    return `<div class="procurement-review-workspace">${pendingHtml}${completedHtml}</div>`;
+  }
+
   async function downloadProjectProcurementReviewPacket(projectId) {
     const reviewerInput = document.getElementById('project-procurement-reviewer-input');
     const downloadButton = document.getElementById('project-procurement-review-packet-submit');
@@ -19902,6 +20058,7 @@
       _triggerBrowserDownload(blob, filename, 'Procurement 검토 패킷 ZIP', {
         fallbackContainerId: 'project-procurement-download-fallback',
       });
+      await loadProjectDetail(projectId);
       setProcurementActionStatus('검토 패킷 ZIP을 검증하고 다운로드했습니다.', 'success');
       showNotification(
         `검토 패킷 다운로드 시작: ${filename}${packetSha256 ? ` · SHA256 ${packetSha256.slice(0, 12)}` : ''}. 운영 승인이나 입찰 제출은 실행되지 않았습니다.`,
@@ -19913,6 +20070,105 @@
       showNotification(message, 'error');
     } finally {
       downloadButton.disabled = false;
+    }
+  }
+
+  async function completeProjectProcurementReview(projectId, packetSha256, reviewer) {
+    const decisionInput = document.getElementById(`procurement-review-decision-${packetSha256}`);
+    const rationaleInput = document.getElementById(`procurement-review-rationale-${packetSha256}`);
+    const button = document.querySelector(
+      `[data-project-detail-action="procurement-review-complete"][data-packet-sha256="${packetSha256}"]`,
+    );
+    if (!decisionInput || !rationaleInput || !button) return;
+
+    const rationale = rationaleInput.value.trim();
+    if (!rationale) {
+      setProcurementActionStatus('검토 근거를 입력해주세요.', 'error');
+      rationaleInput.focus();
+      return;
+    }
+    const confirmed = window.confirm(
+      '이 검토 결과는 원본 packet SHA256에 묶여 한 번만 기록됩니다. 검토 증빙을 완료할까요?',
+    );
+    if (!confirmed) return;
+
+    button.disabled = true;
+    setProcurementActionStatus('검토 결과와 완료 패키지를 검증하는 중입니다...', 'loading');
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/procurement/reviews/${encodeURIComponent(packetSha256)}/complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            reviewer,
+            decision: decisionInput.value,
+            rationale,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const blob = await res.blob();
+      const fallback = `procurement_reviewed_package_${packetSha256.slice(0, 12)}.zip`;
+      const filename = _filenameFromContentDisposition(
+        res.headers.get('Content-Disposition'),
+        fallback,
+      );
+      const packageSha256 = res.headers.get('X-DecisionDoc-Reviewed-Package-SHA256') || '';
+      _triggerBrowserDownload(blob, filename, 'Procurement 검토 완료 패키지 ZIP', {
+        fallbackContainerId: 'project-procurement-download-fallback',
+      });
+      await loadProjectDetail(projectId);
+      setProcurementActionStatus('검토 결과를 기록하고 완료 패키지를 다운로드했습니다.', 'success');
+      showNotification(
+        `검토 완료 패키지 다운로드 시작: ${filename}${packageSha256 ? ` · SHA256 ${packageSha256.slice(0, 12)}` : ''}. 운영 승인은 부여되지 않았습니다.`,
+        'success',
+      );
+    } catch (error) {
+      const message = getProcurementErrorMessage(error.code, error.message);
+      setProcurementActionStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function downloadProjectProcurementReviewedPackage(projectId, packetSha256) {
+    const button = document.querySelector(
+      `[data-project-detail-action="procurement-reviewed-package-download"][data-packet-sha256="${packetSha256}"]`,
+    );
+    if (button) button.disabled = true;
+    setProcurementActionStatus('저장된 완료 패키지를 다시 검증하는 중입니다...', 'loading');
+    try {
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/procurement/reviews/${encodeURIComponent(packetSha256)}/reviewed-package`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) {
+        const err = await parseApiErrorResponse(res);
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const blob = await res.blob();
+      const fallback = `procurement_reviewed_package_${packetSha256.slice(0, 12)}.zip`;
+      const filename = _filenameFromContentDisposition(
+        res.headers.get('Content-Disposition'),
+        fallback,
+      );
+      _triggerBrowserDownload(blob, filename, 'Procurement 검토 완료 패키지 ZIP', {
+        fallbackContainerId: 'project-procurement-download-fallback',
+      });
+      setProcurementActionStatus('완료 패키지를 재검증하고 다운로드했습니다.', 'success');
+    } catch (error) {
+      const message = getProcurementErrorMessage(error.code, error.message);
+      setProcurementActionStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (button) button.disabled = false;
     }
   }
 
@@ -20262,6 +20518,7 @@
       if (!res.ok) throw new Error(await res.text());
       const project = await res.json();
       let procurementDecision = null;
+      let procurementReviews = [];
       let decisionCouncilSession = null;
       if (isProcurementCopilotEnabled()) {
         const procurementRes = await fetch(`/projects/${projectId}/procurement`, { headers: getAuthHeaders() });
@@ -20271,6 +20528,14 @@
         } else {
           const err = await parseApiErrorResponse(procurementRes);
           showNotification('조달 의사결정 상태 로드 실패: ' + err.message, 'error');
+        }
+        const reviewsRes = await fetch(`/projects/${projectId}/procurement/reviews`, { headers: getAuthHeaders() });
+        if (reviewsRes.ok) {
+          const reviewsPayload = await reviewsRes.json();
+          procurementReviews = Array.isArray(reviewsPayload?.reviews) ? reviewsPayload.reviews : [];
+        } else {
+          const err = await parseApiErrorResponse(reviewsRes);
+          showNotification('조달 검토 이력 로드 실패: ' + err.message, 'error');
         }
         if (procurementDecision?.opportunity && procurementDecision?.recommendation?.value) {
           const councilRes = await fetch(`/projects/${projectId}/decision-council`, { headers: getAuthHeaders() });
@@ -20286,6 +20551,7 @@
       }
       renderProjectDetail(project, procurementDecision, {
         procurementEnabled: isProcurementCopilotEnabled(),
+        procurementReviews,
         decisionCouncilSession,
       });
       const listEl = document.getElementById('project-list');
@@ -20316,6 +20582,7 @@
     const recordings = p.meeting_recordings || [];
     const previousProjectId = _currentProjectDetail?.project?.project_id;
     const procurementEnabled = Boolean(options.procurementEnabled);
+    const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
     const decisionCouncilSession = options.decisionCouncilSession || null;
     const docsById = Object.fromEntries(docs.map(doc => [doc.doc_id, doc]));
     const defaultProcurementRoleBrief = getProcurementOwnerState(p, procurementDecision, docs).currentOwner;
@@ -20325,6 +20592,7 @@
     _currentProjectDetail = {
       project: p,
       procurementDecision,
+      procurementReviews,
       decisionCouncilSession,
       procurementEnabled,
       docsById,
@@ -20455,6 +20723,7 @@
             ${canExportReviewPacket ? '' : 'disabled'}
           >검토 패킷 ZIP</button>
           <p class="procurement-review-export-note">현재 project decision과 evidence를 portable ZIP으로 묶습니다. 이 내보내기는 운영 승인, 입찰 제출, provider 호출을 수행하지 않습니다.</p>
+          ${renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)}
         </div>
         <div id="project-procurement-download-fallback" style="display:none;"></div>
         <div id="project-procurement-status" class="project-import-status" aria-live="polite"></div>
@@ -20554,6 +20823,21 @@
 	    }
 	    if (action === 'procurement-review-packet') {
 	      downloadProjectProcurementReviewPacket(projectId);
+	      return;
+	    }
+	    if (action === 'procurement-review-complete') {
+	      completeProjectProcurementReview(
+	        projectId,
+	        btn.dataset.packetSha256 || '',
+	        btn.dataset.reviewer || '',
+	      );
+	      return;
+	    }
+	    if (action === 'procurement-reviewed-package-download') {
+	      downloadProjectProcurementReviewedPackage(
+	        projectId,
+	        btn.dataset.packetSha256 || '',
+	      );
 	      return;
 	    }
 	    if (action === 'procurement-generate') {

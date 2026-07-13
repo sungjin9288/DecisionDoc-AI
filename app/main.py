@@ -35,6 +35,7 @@ from app.storage.factory import get_storage
 from app.storage.approval_store import ApprovalStore
 from app.storage.decision_council_store import DecisionCouncilStore
 from app.storage.meeting_recording_store import MeetingRecordingStore
+from app.storage.procurement_review_store import ProcurementReviewStore
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.report_workflow_store import ReportWorkflowStore
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
     _finetune_store = _FineTuneStore(data_dir)
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
+    procurement_review_store = ProcurementReviewStore(base_dir=str(data_dir), backend=state_backend)
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
 
@@ -250,6 +252,7 @@ def create_app() -> FastAPI:
     app.state.trajectory_store = trajectory_store
     app.state.document_ops_service = document_ops_service
     app.state.procurement_store = procurement_store
+    app.state.procurement_review_store = procurement_review_store
     app.state.decision_council_store = decision_council_store
     app.state.decision_council_service = decision_council_service
     app.state.procurement_copilot_enabled = procurement_copilot_enabled

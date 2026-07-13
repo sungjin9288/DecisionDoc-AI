@@ -1410,6 +1410,8 @@ def test_index_html_project_detail_action_wiring_exists():
         "submitVoiceBriefImport(projectId)",
         "submitProjectProcurementImport(projectId)",
         "downloadProjectProcurementReviewPacket(projectId)",
+        "completeProjectProcurementReview(",
+        "downloadProjectProcurementReviewedPackage(",
         "runProjectDecisionCouncil(projectId)",
         "retryProjectProcurementRemediation(projectId)",
         "dismissProjectProcurementRemediationContext(projectId)",
@@ -1419,6 +1421,21 @@ def test_index_html_project_detail_action_wiring_exists():
         "function wireProjectDetailActions(container, projectId)",
         "container.querySelectorAll('[data-project-detail-action]').forEach",
         "wireProjectDetailActions(container, p.project_id);",
+    ):
+        assert marker in content
+
+
+def test_index_html_procurement_review_workspace_contract_is_connected():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function renderProjectProcurementReviewWorkspace(projectId, reviews = [])",
+        'data-project-detail-action="procurement-review-complete"',
+        'data-project-detail-action="procurement-reviewed-package-download"',
+        "procurement_review_source_changed",
+        "procurementReviews = Array.isArray(reviewsPayload?.reviews)",
+        "renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)",
+        "운영 승인이나 입찰 제출 권한을 부여하지 않습니다.",
     ):
         assert marker in content
 

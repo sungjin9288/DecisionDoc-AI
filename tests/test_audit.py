@@ -421,6 +421,24 @@ def test_resolve_action_procurement_review_packet_export():
     )
 
 
+def test_resolve_action_procurement_review_completed():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "POST",
+        "/projects/proj-1/procurement/reviews/abc123/complete",
+        200,
+    ) == "procurement.review_completed"
+
+
+def test_resolve_action_procurement_reviewed_package_download():
+    from app.middleware.audit import _resolve_action
+    assert _resolve_action(
+        "GET",
+        "/projects/proj-1/procurement/reviews/abc123/reviewed-package",
+        200,
+    ) == "procurement.reviewed_package_download"
+
+
 def test_resolve_action_decision_council_run():
     from app.middleware.audit import _resolve_action
     assert _resolve_action("POST", "/projects/proj-1/decision-council/run", 200) == "decision_council.run"
@@ -488,6 +506,16 @@ def test_resolve_supplemental_actions_for_generate_success():
         procurement_action="downstream_resolved",
         decision_council_handoff_used=True,
     ) == ["procurement.downstream_resolved", "decision_council.handoff_used"]
+
+
+def test_resolve_supplemental_action_for_new_procurement_review():
+    from app.middleware.audit import _resolve_supplemental_actions
+    assert _resolve_supplemental_actions(
+        "POST",
+        "/projects/proj-1/procurement/review-packet",
+        200,
+        procurement_review_started=True,
+    ) == ["procurement.review_started"]
 
 
 def test_resolve_action_share_create():

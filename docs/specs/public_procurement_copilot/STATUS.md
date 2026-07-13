@@ -3,6 +3,18 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project review completion integration
+
+- Added tenant-scoped `ProcurementReviewStore` records under `tenants/{tenant_id}/procurement_reviews/{project_id}/{packet_sha256}/`. The store preserves the exact source packet, review record, and completed reviewed-package through the configured local or S3 state backend.
+- Existing `POST /projects/{project_id}/procurement/review-packet` now creates an idempotent pending receipt for a newly verified packet and returns the persisted review status without reopening an already completed packet.
+- Added project review history, one-time completion, and verified package re-download routes. Completion requires the packet-requested reviewer, non-empty rationale, and an allowed decision, then rebuilds the current project packet and rejects stale source state before writing completion evidence.
+- The project UI shows pending review inputs and completed history, confirms the irreversible receipt transition, downloads the verified reviewed-package after completion, and supports independent re-download.
+- Audit history records review start, completion, and reviewed-package download. Request observability carries packet SHA256, review status, and review decision.
+- Every response and stored record preserves `operational_approval: false`; no provider call, AWS runtime, G2B live collection, upload, training, promotion, service resume, bid submission, legal approval, or contractual commitment is part of this flow.
+- API, storage, audit, observability, packet/receipt/package, and static UI relevant gate passes locally: 359 tests. Focused `py_compile`, Ruff E/F/W, Bandit medium/high, inline JavaScript parsing, README metric count, and `git diff --check` also pass.
+- A mock/local Playwright run completed packet download, pending receipt, one-time accepted review, completed history, and package re-download. The packet SHA256 was `e6736b1d603531a7cd40be98e0c053b0a6dbd77e7248d17ed7334507bdc0867f`; the downloaded reviewed-package independently verified with SHA256 `f7d1ecb904bc59b37ee588d4399915f4dc77bcf0bc52352d50ab49910feefc68`, status `review_completed`, three entries, and `operational_approval: false`. Desktop 1440px and mobile 390px viewports had no horizontal overflow.
+- Full no-cost regression gate passes: `pytest -q tests/ -m "not live" --tb=short` returned 2,913 passed, 2 skipped, and 4 deselected in 208.42 seconds.
+
 ## Post-milestone project review packet integration
 
 - Added `POST /projects/{project_id}/procurement/review-packet` behind the existing procurement feature flag and API-key dependency.

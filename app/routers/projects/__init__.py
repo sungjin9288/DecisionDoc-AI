@@ -24,6 +24,8 @@ Sub-modules:
 - procurement: Public Procurement Go/No-Go Copilot + Decision Council v1
   endpoints (`/projects/{id}/imports/g2b-opportunity`,
   `/projects/{id}/procurement*`, `/projects/{id}/decision-council*`).
+- procurement_reviews: packet export, packet-bound review history, one-time
+  receipt completion, and reviewed-package download endpoints.
 
 Re-exports:
   Internal helpers are re-exported here for backward compatibility with any
@@ -65,9 +67,11 @@ from app.routers.projects.procurement import (
 from app.routers.projects.core import router as _core_router
 from app.routers.projects.meeting_recordings import router as _meeting_recordings_router
 from app.routers.projects.procurement import router as _procurement_router
+from app.routers.projects.procurement_reviews import router as _procurement_reviews_router
 
 router = APIRouter(tags=["projects"])
 
 router.include_router(_core_router)
 router.include_router(_meeting_recordings_router)
 router.include_router(_procurement_router)
+router.include_router(_procurement_reviews_router)

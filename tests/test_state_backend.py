@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from app.schemas import (
@@ -12,6 +13,7 @@ from app.storage.history_store import HistoryEntry, HistoryStore
 from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.notification_store import NotificationStore
 from app.storage.procurement_store import ProcurementDecisionStore
+from app.storage.procurement_review_store import ProcurementReviewStore
 from app.storage.project_store import ProjectStore
 from app.storage.share_store import ShareStore
 from app.storage.state_backend import S3StateBackend
@@ -184,6 +186,66 @@ def test_procurement_store_persists_record_and_snapshot_to_s3_state_backend():
         project_id="proj-1",
         snapshot_id=snapshot.snapshot_id,
     ) == {"bid_number": "2026-0001"}
+
+
+def test_procurement_review_store_preserves_packet_and_completed_package_on_s3():
+    backend, client = _backend()
+    store = ProcurementReviewStore(base_dir="/virtual/data", backend=backend)
+    packet_content = b"verified procurement packet"
+    packet_sha256 = hashlib.sha256(packet_content).hexdigest()
+    pending_receipt = {
+        "status": "pending",
+        "packet_sha256": packet_sha256,
+        "packet_size_bytes": len(packet_content),
+        "package_id": "pkg-1",
+        "recommendation": "CONDITIONAL_GO",
+        "reviewer": "review-owner",
+        "decision": None,
+        "reviewed_at": None,
+        "operational_approval": False,
+    }
+
+    pending, created = store.prepare(
+        tenant_id="alpha",
+        project_id="proj-1",
+        packet_content=packet_content,
+        receipt=pending_receipt,
+        prepared_at="2026-07-14T00:00:00Z",
+    )
+    repeated, repeated_created = store.prepare(
+        tenant_id="alpha",
+        project_id="proj-1",
+        packet_content=packet_content,
+        receipt=pending_receipt,
+        prepared_at="2026-07-14T00:01:00Z",
+    )
+
+    assert created is True
+    assert repeated_created is False
+    assert repeated == pending
+    assert store.read_packet(pending) == packet_content
+
+    completed_receipt = {
+        **pending_receipt,
+        "status": "completed",
+        "decision": "accepted",
+        "reviewed_at": "2026-07-14T00:02:00Z",
+    }
+    reviewed_package = b"verified reviewed package"
+    completed = store.complete(
+        current=pending,
+        completed_receipt=completed_receipt,
+        reviewed_package_content=reviewed_package,
+    )
+
+    assert completed.review_status == "completed"
+    assert completed.decision == "accepted"
+    assert store.read_reviewed_package(completed) == reviewed_package
+    assert (
+        "unit-bucket",
+        f"decisiondoc-ai/state/tenants/alpha/procurement_reviews/proj-1/{packet_sha256}/record.json",
+    ) in client.objects
+    assert store.list_by_project(tenant_id="beta", project_id="proj-1") == []
 
 
 def test_share_store_persists_to_s3_state_backend():

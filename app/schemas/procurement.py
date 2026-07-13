@@ -47,6 +47,24 @@ class ExportProjectProcurementReviewPacketRequest(BaseModel):
         return reviewer
 
 
+class CompleteProjectProcurementReviewRequest(BaseModel):
+    """Payload for completing one packet-bound procurement review."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    reviewer: str = Field(..., min_length=1, max_length=120)
+    decision: Literal["accepted", "changes_requested", "rejected"]
+    rationale: str = Field(..., min_length=1, max_length=4000)
+
+    @field_validator("reviewer", "rationale")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
 class UpdateProjectProcurementOverrideReasonRequest(BaseModel):
     """Payload for project-scoped override / disagreement note capture."""
 

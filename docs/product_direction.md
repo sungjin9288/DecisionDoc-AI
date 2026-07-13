@@ -201,6 +201,8 @@ Focus on a narrow, demonstrable workflow:
 ### Current reviewer foundation
 
 - The project procurement surface connects a tenant-resolved recommendation directly to a verified review packet download. The server reuses the local package contract, returns packet identity and SHA256 evidence, and keeps operational approval false.
+- The same project surface now persists the original packet and pending receipt under the tenant, project, and packet SHA256 boundary; it exposes pending and completed review history without creating a second approval workflow.
+- A reviewer can record `accepted`, `changes_requested`, or `rejected` exactly once. Completion rebuilds the current decision packet to reject stale source state, creates and independently verifies the deterministic reviewed package, and keeps it available for verified re-download.
 - `procurement_review.html` provides one script-free view for package, evidence, gaps, and sign-off state.
 - The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.
 - Packet status stays `review_ready`; `operational_approval` remains false and independent verification rejects path, fingerprint, membership, and semantic drift.
@@ -289,7 +291,7 @@ Connect the public procurement copilot into the package workflow:
 - go / conditional go / no-go recommendation,
 - proposal handoff.
 
-Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, and deterministic review packet export are connected in the project detail UI. Review receipt application and any explicitly approved external evaluation lane remain separate follow-up workflows.
+Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, and verified reviewed-package re-download are connected in the project detail UI. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
 
 ## 11. Decision Checklist For Future Work
 
