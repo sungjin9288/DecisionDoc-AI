@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone completed review downstream provenance
+
+- `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` generation now resolves completed review evidence from the injected tenant-scoped `ProcurementReviewStore`.
+- The resolver independently verifies stored packet bytes and compares the packet `source_updated_at` with the current procurement record. Current evidence contributes review decision and rationale to drafting context; stale or invalid evidence is skipped without blocking the existing generation path.
+- Generate responses expose whether review evidence was used or skipped plus packet SHA256, review decision, reviewed time, and the unchanged `procurement_review_operational_approval: false` boundary.
+- Auto-linked project documents persist the same non-sensitive provenance and the project UI labels review-bound documents without presenting reviewer acceptance as approval or bid-submission authority. Successful reuse also writes a tenant-scoped `procurement.review_handoff_used` audit entry with project, packet, decision, reviewed time, and false operational-approval evidence.
+- Focused mock/local compile and API/service/project/UI contract verification passes: 18 tests. The broader procurement, project, generate, tenant, observability, and infrastructure gate passes with 357 tests. The full no-cost regression gate returned 2,924 passed, 1 skipped, and 4 deselected. Paid provider tests, AWS runtime, live G2B collection, upload, training, promotion, service resume, bid submission, legal approval, and contractual commitment were not run.
+
 ## Post-milestone tenant review inbox integration
 
 - Added `GET /procurement/reviews` behind the existing procurement feature flag and API-key dependency. It reads only the current tenant's review prefix, supports strict `all`/`pending`/`completed` status, exact reviewer, bounded limit, and non-negative offset filters, and omits tenant identifiers and raw receipts.

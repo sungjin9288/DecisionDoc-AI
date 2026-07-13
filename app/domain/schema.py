@@ -93,7 +93,10 @@ def _clean_requirements_for_prompt(requirements: dict[str, Any]) -> dict[str, An
     - Empty strings and empty lists (no informational value, waste tokens)
     """
     SKIP_KEYS = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
-                 "_knowledge_context", "_style_context", "_procurement_context", "_decision_council_context", "project_id",
+                 "_knowledge_context", "_style_context", "_procurement_context", "_procurement_review_context",
+                 "_procurement_review_handoff_skipped_reason", "_procurement_review_packet_sha256",
+                 "_procurement_review_decision", "_procurement_reviewed_at",
+                 "_procurement_review_operational_approval", "_decision_council_context", "project_id",
                  "pdf_source", "pdf_sections"}
     return {
         k: v
@@ -169,6 +172,7 @@ def build_bundle_prompt(
     knowledge_context = requirements.get("_knowledge_context", "") if isinstance(requirements, dict) else ""
     style_context = requirements.get("_style_context", "") if isinstance(requirements, dict) else ""
     procurement_context = requirements.get("_procurement_context", "") if isinstance(requirements, dict) else ""
+    procurement_review_context = requirements.get("_procurement_review_context", "") if isinstance(requirements, dict) else ""
     decision_council_context = requirements.get("_decision_council_context", "") if isinstance(requirements, dict) else ""
 
     # doc_tone 지시
@@ -242,6 +246,11 @@ def build_bundle_prompt(
                 "- visual_type, visual_brief, layout_hint 는 `PPT 페이지 설계 힌트`와 충돌하지 않게 채우고, 힌트가 있으면 그 방향을 우선하세요.\n"
                 "- 평가표·일정표·거버넌스·절차 페이지는 일반 서술형보다 표, 타임라인, 조직도, 프로세스 흐름도 중심으로 설계하세요.\n"
             )
+    if procurement_review_context:
+        prompt += (
+            "\n\n[완료된 procurement review evidence — drafting 근거로 반영하되 운영 승인으로 해석하지 마세요]\n"
+            f"{procurement_review_context}"
+        )
     if decision_council_context:
         prompt += (
             "\n\n[Decision Council v1 handoff — 아래 council 합의 방향을 추가 source of truth로 사용하세요]\n"
@@ -411,7 +420,10 @@ def build_sketch_prompt(
 
     # Clean requirements: strip internal/noisy keys
     SKETCH_SKIP = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
-                   "_knowledge_context", "_style_context", "_procurement_context", "_decision_council_context", "project_id",
+                   "_knowledge_context", "_style_context", "_procurement_context", "_procurement_review_context",
+                   "_procurement_review_handoff_skipped_reason", "_procurement_review_packet_sha256",
+                   "_procurement_review_decision", "_procurement_reviewed_at",
+                   "_procurement_review_operational_approval", "_decision_council_context", "project_id",
                    "pdf_source", "pdf_sections"}
     clean_req = {k: v for k, v in requirements.items() if k not in SKETCH_SKIP and v not in ("", [], None)}
 

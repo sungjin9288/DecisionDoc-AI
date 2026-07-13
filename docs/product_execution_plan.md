@@ -121,6 +121,7 @@ Current local evidence slice:
 
 - Project detail now exposes `POST /projects/{project_id}/procurement/review-packet` and a reviewer-owned ZIP download control. The route reads the current tenant's injected procurement store, builds the existing 12-artifact package in a temporary directory, verifies the packet before responding, and returns SHA256 plus `operational_approval: false` metadata without provider or external runtime execution.
 - The project page now includes a tenant-scoped procurement review inbox backed by `GET /procurement/reviews`. It filters pending, completed, and all review records, carries lightweight project context, opens the existing project review workspace, and reuses the verified reviewed-package download route instead of creating another completion path.
+- Downstream `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` generation now reuses a completed review only while its packet source matches the current procurement record. Applied evidence carries packet SHA256, decision, and reviewed time into generation metadata and the saved project document; stale evidence is skipped, and every path keeps `operational_approval: false`.
 - `procurement_review.html` gives non-engineering reviewers one read-only procurement package surface and remains part of the same 12-artifact audit, export, fingerprint, and tamper-check contract. It does not create a second approval workflow.
 - `manage_procurement_decision_review_packet.py` wraps those 12 validated artifacts in a deterministic ZIP with an embedded SHA256 manifest. The packet remains `review_ready`, keeps `operational_approval: false`, and can be independently reverified after handoff.
 - `manage_procurement_review_receipt.py` creates `procurement_review_receipt.json` outside the packet, binds it to `packet_sha256`, and moves `review_status` once from `pending` to `completed` for the requested reviewer. Completion records review evidence only and keeps operational approval false.
@@ -146,6 +147,7 @@ Current local evidence slice:
 - Reviewer sign-off remains separate from operational approval.
 - A local reviewer decision can be recorded once and revalidated against the exact packet bytes.
 - A completed review can be exported and independently reverified without modifying its source packet or receipt.
+- A completed review can inform downstream drafting without granting operational approval, and a procurement update prevents stale review evidence from being reused.
 - The demo does not depend on live provider or AWS availability.
 
 ## 5. 90-Day Plan

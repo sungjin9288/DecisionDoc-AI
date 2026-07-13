@@ -528,8 +528,13 @@ def test_resolve_supplemental_actions_for_generate_success():
         "/generate/stream",
         200,
         procurement_action="downstream_resolved",
+        procurement_review_handoff_used=True,
         decision_council_handoff_used=True,
-    ) == ["procurement.downstream_resolved", "decision_council.handoff_used"]
+    ) == [
+        "procurement.downstream_resolved",
+        "procurement.review_handoff_used",
+        "decision_council.handoff_used",
+    ]
 
 
 def test_resolve_supplemental_action_for_new_procurement_review():

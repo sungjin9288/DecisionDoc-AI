@@ -1134,6 +1134,65 @@ class TestProjectProcurementApi:
         assert repeated.status_code == 409
         assert repeated.json()["detail"]["code"] == "procurement_review_already_completed"
 
+    def test_completed_review_provenance_is_saved_on_downstream_project_document(self, client):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "제안서 drafting에 사용할 검토 근거를 확인했습니다.",
+            },
+            headers=HEADERS,
+        )
+        assert completed.status_code == 200
+
+        generated = client.post(
+            "/generate/stream",
+            json={
+                "title": "검토 완료 제안서",
+                "goal": "완료된 검토 근거를 보존한 제안서 초안을 만든다",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        )
+        assert generated.status_code == 200
+        assert "event: complete" in generated.text
+
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        proposal = next(
+            doc
+            for doc in reversed(project["documents"])
+            if doc["bundle_id"] == "proposal_kr"
+        )
+        assert proposal["source_procurement_review_packet_sha256"] == packet_sha256
+        assert proposal["source_procurement_review_decision"] == "accepted"
+        assert proposal["source_procurement_reviewed_at"]
+        assert proposal["source_procurement_review_operational_approval"] is False
+
+        from app.storage.audit_store import AuditStore
+
+        audit_entries = AuditStore("system").query(
+            "system",
+            filters={"action": "procurement.review_handoff_used"},
+        )
+        assert audit_entries
+        audit_detail = audit_entries[0]["detail"]
+        assert audit_entries[0]["resource_id"] == pid
+        assert audit_detail["project_id"] == pid
+        assert audit_detail["procurement_review_packet_sha256"] == packet_sha256
+        assert audit_detail["review_decision"] == "accepted"
+        assert audit_detail["procurement_review_handoff_used"] is True
+        assert audit_detail["procurement_review_operational_approval"] is False
+
     def test_review_inbox_filters_tenant_queue_and_includes_project_context(self, client):
         pending_project_id = self._pid(client)
         completed_project = client.post(

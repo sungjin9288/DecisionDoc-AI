@@ -402,6 +402,7 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.cache_hit = metadata["cache_hit"]
     request.state.bundle_type = metadata.get("bundle_type")
     request.state.decision_council_project_id = metadata.get("project_id")
+    request.state.procurement_project_id = metadata.get("project_id")
     request.state.doc_count = metadata.get("doc_count")
     request.state.llm_prompt_tokens = metadata.get("llm_prompt_tokens")
     request.state.llm_output_tokens = metadata.get("llm_output_tokens")
@@ -411,6 +412,16 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.lints_ms = timings.get("lints_ms")
     request.state.validator_ms = timings.get("validator_ms")
     request.state.procurement_handoff_used = metadata.get("procurement_handoff_used")
+    request.state.procurement_review_handoff_used = metadata.get("procurement_review_handoff_used")
+    request.state.procurement_review_handoff_skipped_reason = metadata.get(
+        "procurement_review_handoff_skipped_reason"
+    )
+    request.state.procurement_review_packet_sha256 = metadata.get("procurement_review_packet_sha256")
+    request.state.procurement_review_decision = metadata.get("procurement_review_decision")
+    request.state.procurement_reviewed_at = metadata.get("procurement_reviewed_at")
+    request.state.procurement_review_operational_approval = metadata.get(
+        "procurement_review_operational_approval"
+    )
     request.state.decision_council_handoff_used = metadata.get("decision_council_handoff_used")
     request.state.decision_council_handoff_skipped_reason = metadata.get("decision_council_handoff_skipped_reason")
     request.state.decision_council_session_id = metadata.get("decision_council_session_id")
@@ -445,6 +456,11 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
         "lints_ms": request.state.lints_ms,
         "validator_ms": request.state.validator_ms,
         "procurement_handoff_used": request.state.procurement_handoff_used,
+        "procurement_review_handoff_used": request.state.procurement_review_handoff_used,
+        "procurement_review_handoff_skipped_reason": request.state.procurement_review_handoff_skipped_reason,
+        "procurement_review_packet_sha256": request.state.procurement_review_packet_sha256,
+        "procurement_review_decision": request.state.procurement_review_decision,
+        "procurement_review_operational_approval": request.state.procurement_review_operational_approval,
         "decision_council_handoff_used": request.state.decision_council_handoff_used,
         "decision_council_handoff_skipped_reason": request.state.decision_council_handoff_skipped_reason,
         "decision_council_session_id": request.state.decision_council_session_id,
@@ -691,5 +707,15 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         cache_hit=metadata["cache_hit"],
         llm_total_tokens=metadata.get("llm_total_tokens"),
         applied_references=metadata.get("applied_references", []),
+        procurement_review_handoff_used=metadata.get("procurement_review_handoff_used", False),
+        procurement_review_handoff_skipped_reason=metadata.get(
+            "procurement_review_handoff_skipped_reason"
+        ),
+        procurement_review_packet_sha256=metadata.get("procurement_review_packet_sha256"),
+        procurement_review_decision=metadata.get("procurement_review_decision"),
+        procurement_reviewed_at=metadata.get("procurement_reviewed_at"),
+        procurement_review_operational_approval=metadata.get(
+            "procurement_review_operational_approval", False
+        ),
         docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )

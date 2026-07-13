@@ -305,6 +305,20 @@ async def generate_stream(
                     cache_hit=metadata["cache_hit"],
                     llm_total_tokens=metadata.get("llm_total_tokens"),
                     applied_references=metadata.get("applied_references", []),
+                    procurement_review_handoff_used=metadata.get(
+                        "procurement_review_handoff_used", False
+                    ),
+                    procurement_review_handoff_skipped_reason=metadata.get(
+                        "procurement_review_handoff_skipped_reason"
+                    ),
+                    procurement_review_packet_sha256=metadata.get(
+                        "procurement_review_packet_sha256"
+                    ),
+                    procurement_review_decision=metadata.get("procurement_review_decision"),
+                    procurement_reviewed_at=metadata.get("procurement_reviewed_at"),
+                    procurement_review_operational_approval=metadata.get(
+                        "procurement_review_operational_approval", False
+                    ),
                     docs=result["docs"],
                 )
                 yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
@@ -322,6 +336,18 @@ async def generate_stream(
                             source_decision_council_session_id=metadata.get("decision_council_session_id"),
                             source_decision_council_session_revision=metadata.get("decision_council_session_revision"),
                             source_decision_council_direction=metadata.get("decision_council_direction"),
+                            source_procurement_review_packet_sha256=metadata.get(
+                                "procurement_review_packet_sha256"
+                            ),
+                            source_procurement_review_decision=metadata.get(
+                                "procurement_review_decision"
+                            ),
+                            source_procurement_reviewed_at=metadata.get(
+                                "procurement_reviewed_at"
+                            ),
+                            source_procurement_review_operational_approval=metadata.get(
+                                "procurement_review_operational_approval"
+                            ),
                         )
                     except Exception:
                         pass  # project link is non-critical

@@ -189,6 +189,7 @@ def _resolve_supplemental_actions(
     *,
     procurement_action: str | None = None,
     procurement_review_started: bool = False,
+    procurement_review_handoff_used: bool = False,
     decision_council_handoff_used: bool = False,
 ) -> list[str]:
     if status_code >= 400:
@@ -200,6 +201,8 @@ def _resolve_supplemental_actions(
     if method == "POST" and path.startswith("/generate"):
         if procurement_action == "downstream_resolved":
             actions.append("procurement.downstream_resolved")
+        if procurement_review_handoff_used:
+            actions.append("procurement.review_handoff_used")
         if decision_council_handoff_used:
             actions.append("decision_council.handoff_used")
     return actions
@@ -234,6 +237,9 @@ def _append_audit_entries(
     procurement_action = getattr(request.state, "procurement_action", "")
     procurement_review_started = bool(
         getattr(request.state, "procurement_review_started", False)
+    )
+    procurement_review_handoff_used = bool(
+        getattr(request.state, "procurement_review_handoff_used", False)
     )
     decision_council_handoff_used = bool(
         getattr(request.state, "decision_council_handoff_used", False)
@@ -274,6 +280,18 @@ def _append_audit_entries(
         procurement_review_decision = getattr(
             request.state, "procurement_review_decision", ""
         ) or ""
+        procurement_review_handoff_skipped_reason = getattr(
+            request.state, "procurement_review_handoff_skipped_reason", ""
+        ) or ""
+        procurement_review_packet_sha256 = getattr(
+            request.state, "procurement_review_packet_sha256", ""
+        ) or ""
+        procurement_reviewed_at = getattr(
+            request.state, "procurement_reviewed_at", ""
+        ) or ""
+        procurement_review_operational_approval = getattr(
+            request.state, "procurement_review_operational_approval", None
+        )
         procurement_review_total = getattr(request.state, "procurement_review_total", None)
         procurement_review_pending_count = getattr(
             request.state, "procurement_review_pending_count", None
@@ -333,6 +351,20 @@ def _append_audit_entries(
             detail["review_status"] = procurement_review_status
         if procurement_review_decision:
             detail["review_decision"] = procurement_review_decision
+        if procurement_review_handoff_used:
+            detail["procurement_review_handoff_used"] = True
+        if procurement_review_handoff_skipped_reason:
+            detail["procurement_review_handoff_skipped_reason"] = (
+                procurement_review_handoff_skipped_reason
+            )
+        if procurement_review_packet_sha256:
+            detail["procurement_review_packet_sha256"] = procurement_review_packet_sha256
+        if procurement_reviewed_at:
+            detail["procurement_reviewed_at"] = procurement_reviewed_at
+        if procurement_review_operational_approval is not None:
+            detail["procurement_review_operational_approval"] = (
+                procurement_review_operational_approval
+            )
         if procurement_review_total is not None:
             detail["review_total"] = procurement_review_total
         if procurement_review_pending_count is not None:
@@ -393,6 +425,7 @@ def _append_audit_entries(
             status_code,
             procurement_action=procurement_action,
             procurement_review_started=procurement_review_started,
+            procurement_review_handoff_used=procurement_review_handoff_used,
             decision_council_handoff_used=decision_council_handoff_used,
         ):
             store.append(

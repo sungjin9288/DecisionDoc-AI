@@ -6,7 +6,9 @@ consensus context, and few-shot feedback hints.
 """
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from typing import Any
 
 from app.services.decision_council_service import (
@@ -15,7 +17,12 @@ from app.services.decision_council_service import (
 )
 from app.services.generation.context_store import (
     _DECISION_COUNCIL_APPLIED_BUNDLE_IDS,
+    _PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
     _log,
+)
+from app.services.procurement_decision_package.review_packet import (
+    PACKET_MANIFEST_NAME,
+    verify_procurement_review_packet,
 )
 
 
@@ -114,6 +121,36 @@ class GenerationContextInjectionMixin:
                 )
 
         if (
+            self._procurement_copilot_enabled
+            and bundle_type in _PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS
+            and self._procurement_store is not None
+            and self._procurement_review_store is not None
+        ):
+            review_context, review_metadata, skipped_reason = self._resolve_procurement_review_handoff(
+                project_id=project_id,
+                tenant_id=tenant_id,
+            )
+            if review_context:
+                payload["_procurement_review_context"] = review_context
+                payload.update(review_metadata)
+                _log.info(
+                    "[ProcurementReview] Injected completed review handoff project=%s bundle=%s packet=%s request_id=%s",
+                    project_id,
+                    bundle_type,
+                    review_metadata["_procurement_review_packet_sha256"],
+                    request_id,
+                )
+            elif skipped_reason:
+                payload["_procurement_review_handoff_skipped_reason"] = skipped_reason
+                _log.info(
+                    "[ProcurementReview] Skipped review handoff project=%s bundle=%s reason=%s request_id=%s",
+                    project_id,
+                    bundle_type,
+                    skipped_reason,
+                    request_id,
+                )
+
+        if (
             not self._procurement_copilot_enabled
             or bundle_type not in _DECISION_COUNCIL_APPLIED_BUNDLE_IDS
             or self._decision_council_store is None
@@ -165,6 +202,78 @@ class GenerationContextInjectionMixin:
             council_session.session_revision,
             request_id,
         )
+
+    def _resolve_procurement_review_handoff(
+        self,
+        *,
+        project_id: str,
+        tenant_id: str,
+    ) -> tuple[str, dict[str, Any], str | None]:
+        procurement_record = self._procurement_store.get(project_id, tenant_id=tenant_id)
+        if procurement_record is None:
+            return "", {}, "procurement_context_missing"
+
+        try:
+            reviews = self._procurement_review_store.list_by_project(
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
+        except (KeyError, TypeError, ValueError):
+            return "", {}, "invalid_review_evidence"
+
+        completed_reviews = sorted(
+            (
+                review
+                for review in reviews
+                if review.review_status == "completed"
+            ),
+            key=lambda review: (
+                str(review.reviewed_at or ""),
+                review.prepared_at,
+                review.packet_sha256,
+            ),
+            reverse=True,
+        )
+        if not completed_reviews:
+            return "", {}, "no_completed_review"
+
+        valid_review_found = False
+        for review in completed_reviews:
+            try:
+                packet_content = self._procurement_review_store.read_packet(review)
+                verify_procurement_review_packet(packet_content)
+                with zipfile.ZipFile(io.BytesIO(packet_content)) as archive:
+                    packet_manifest = json.loads(archive.read(PACKET_MANIFEST_NAME))
+                source_updated_at = str(packet_manifest.get("source_updated_at") or "").strip()
+            except (KeyError, OSError, TypeError, ValueError, zipfile.BadZipFile, json.JSONDecodeError):
+                continue
+
+            valid_review_found = True
+            if source_updated_at != procurement_record.updated_at:
+                continue
+
+            rationale = str(review.receipt.get("rationale") or "").strip()
+            context = "\n".join(
+                [
+                    "완료된 procurement review evidence입니다. 이 결과는 drafting 근거이며 운영 승인이나 입찰 제출 권한이 아닙니다.",
+                    f"- packet_sha256: {review.packet_sha256}",
+                    f"- reviewer: {review.reviewer}",
+                    f"- review_decision: {review.decision}",
+                    f"- review_rationale: {rationale}",
+                    f"- reviewed_at: {review.reviewed_at}",
+                    "- operational_approval: false",
+                    "accepted는 검토 증빙만 뜻합니다. changes_requested 또는 rejected는 수정 요구와 남은 위험으로 명시하세요.",
+                ]
+            )
+            return context, {
+                "_procurement_review_packet_sha256": review.packet_sha256,
+                "_procurement_review_decision": review.decision,
+                "_procurement_reviewed_at": review.reviewed_at,
+                "_procurement_review_operational_approval": False,
+            }, None
+
+        reason = "stale_procurement_review" if valid_review_found else "invalid_review_evidence"
+        return "", {}, reason
 
     def _build_procurement_context(self, *, project_id: str, tenant_id: str) -> str:
         record = self._procurement_store.get(project_id, tenant_id=tenant_id)

@@ -18543,6 +18543,19 @@
     };
   }
 
+  function getProcurementReviewDecisionMeta(decision) {
+    switch (String(decision || '').trim()) {
+      case 'accepted':
+        return { tone: 'success', copy: '검토 수락' };
+      case 'changes_requested':
+        return { tone: 'warning', copy: '수정 요청' };
+      case 'rejected':
+        return { tone: 'danger', copy: '검토 반려' };
+      default:
+        return null;
+    }
+  }
+
   function canLaunchProcurementDownstream(decision) {
     const recommendation = decision?.recommendation?.value || '';
     if (recommendation === 'GO' || recommendation === 'CONDITIONAL_GO') return true;
@@ -21049,6 +21062,9 @@
         ${docs.map(d => {
           const councilDocStatus = getDecisionCouncilDocumentStatusMeta(d, decisionCouncilSession);
           const councilFollowUpLabel = getProjectDocumentDecisionCouncilFollowUpLabel(councilDocStatus);
+          const procurementReviewMeta = getProcurementReviewDecisionMeta(
+            d.source_procurement_review_decision
+          );
           return `
           <div class="doc-item" data-project-doc-id="${escapeHtml(d.doc_id || '')}">
             <div class="doc-item-left">
@@ -21057,6 +21073,13 @@
               ${d.source_kind === 'voice_brief' ? `<span class="tag">Voice Brief</span>` : ''}
               ${d.source_decision_council_session_id ? `<span class="tag">Council v1 r${escapeHtml(String(d.source_decision_council_session_revision || 1))}</span>` : ''}
               ${d.source_decision_council_direction ? `<span class="tag">${escapeHtml(getDecisionCouncilDirectionMeta(d.source_decision_council_direction).copy)}</span>` : ''}
+              ${d.source_procurement_review_packet_sha256 && procurementReviewMeta ? `
+                <span
+                  class="tag ${escapeHtml(procurementReviewMeta.tone)}"
+                  data-procurement-review-doc-decision="${escapeHtml(d.source_procurement_review_decision || '')}"
+                  title="Review packet ${escapeHtml(d.source_procurement_review_packet_sha256.slice(0, 12))} 기준이며 운영 승인이나 입찰 제출 권한이 아닙니다."
+                >${escapeHtml(procurementReviewMeta.copy)} · 운영 승인 아님</span>
+              ` : ''}
               ${councilDocStatus ? `
                 <span
                   class="tag ${escapeHtml(councilDocStatus.tone)}"

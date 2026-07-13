@@ -47,6 +47,7 @@ class GenerationCoreMixin:
         data_dir: Path,
         storage: Storage | None = None,
         procurement_store: Any | None = None,
+        procurement_review_store: Any | None = None,
         decision_council_store: Any | None = None,
         procurement_copilot_enabled: bool = False,
         feedback_store: FeedbackStore | None = None,
@@ -59,6 +60,7 @@ class GenerationCoreMixin:
         self._eval_store = eval_store
         self._search_service = search_service
         self._procurement_store = procurement_store
+        self._procurement_review_store = procurement_review_store
         self._decision_council_store = decision_council_store
         self._procurement_copilot_enabled = procurement_copilot_enabled
         self._finetune_store = finetune_store
@@ -116,6 +118,19 @@ class GenerationCoreMixin:
             request_id=request_id,
         )
         procurement_handoff_used = bool(payload.get("_procurement_context"))
+        procurement_review_handoff_used = bool(payload.get("_procurement_review_context"))
+        procurement_review_handoff_skipped_reason = (
+            str(payload.get("_procurement_review_handoff_skipped_reason") or "").strip() or None
+        )
+        procurement_review_packet_sha256 = (
+            str(payload.get("_procurement_review_packet_sha256") or "").strip() or None
+        )
+        procurement_review_decision = (
+            str(payload.get("_procurement_review_decision") or "").strip() or None
+        )
+        procurement_reviewed_at = (
+            str(payload.get("_procurement_reviewed_at") or "").strip() or None
+        )
         decision_council_handoff_used = bool(payload.get("_decision_council_context"))
         decision_council_handoff_skipped_reason = (
             str(payload.get("_decision_council_handoff_skipped_reason") or "").strip() or None
@@ -288,6 +303,12 @@ class GenerationCoreMixin:
                 "project_id": payload.get("project_id"),
                 "doc_count": len(docs),
                 "procurement_handoff_used": procurement_handoff_used,
+                "procurement_review_handoff_used": procurement_review_handoff_used,
+                "procurement_review_handoff_skipped_reason": procurement_review_handoff_skipped_reason,
+                "procurement_review_packet_sha256": procurement_review_packet_sha256,
+                "procurement_review_decision": procurement_review_decision,
+                "procurement_reviewed_at": procurement_reviewed_at,
+                "procurement_review_operational_approval": False,
                 "decision_council_handoff_used": decision_council_handoff_used,
                 "decision_council_handoff_skipped_reason": decision_council_handoff_skipped_reason,
                 "decision_council_session_id": decision_council_session_id,

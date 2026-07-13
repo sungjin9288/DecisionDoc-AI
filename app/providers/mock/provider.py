@@ -126,6 +126,7 @@ class MockProvider(Provider):
         ctx_parts = [
             str(requirements.get("context") or "").strip(),
             str(requirements.get("_procurement_context") or "").strip(),
+            str(requirements.get("_procurement_review_context") or "").strip(),
             str(requirements.get("_decision_council_context") or "").strip(),
         ]
         ctx = "\n\n".join(part for part in ctx_parts if part)

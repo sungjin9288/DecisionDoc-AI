@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.bundle_catalog.registry import BUNDLE_REGISTRY
+from app.domain.schema import SCHEMA_VERSION, build_bundle_prompt
 from app.main import create_app
 from app.schemas import (
     CapabilityProfileReference,
@@ -189,6 +190,28 @@ def _seed_procurement_decision(client: TestClient, project_id: str) -> None:
     )
 
 
+def _complete_procurement_review(client: TestClient, project_id: str) -> str:
+    packet = client.post(
+        f"/projects/{project_id}/procurement/review-packet",
+        json={"reviewer": "proposal-review-owner"},
+        headers=HEADERS,
+    )
+    assert packet.status_code == 200
+    packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+    completed = client.post(
+        f"/projects/{project_id}/procurement/reviews/{packet_sha256}/complete",
+        json={
+            "reviewer": "proposal-review-owner",
+            "decision": "changes_requested",
+            "rationale": "파트너 확약서 갱신 내용을 제안서 위험과 다음 조치에 반영하세요.",
+        },
+        headers=HEADERS,
+    )
+    assert completed.status_code == 200
+    assert completed.headers["x-decisiondoc-operational-approval"] == "false"
+    return packet_sha256
+
+
 def test_bid_decision_bundle_is_registered():
     assert "bid_decision_kr" in BUNDLE_REGISTRY
     assert BUNDLE_REGISTRY["bid_decision_kr"].doc_keys == [
@@ -338,6 +361,81 @@ def test_downstream_bundles_receive_procurement_handoff_context(client, bundle_t
     combined = "\n".join(doc["markdown"] for doc in response.json()["docs"])
     assert "행정안전부" in combined
     assert "CONDITIONAL_GO" in combined
+
+
+@pytest.mark.parametrize("bundle_type", ["rfp_analysis_kr", "proposal_kr", "performance_plan_kr"])
+def test_downstream_bundles_receive_current_completed_review_evidence(client, bundle_type):
+    project_id = _create_project(client)
+    _seed_procurement_decision(client, project_id)
+    packet_sha256 = _complete_procurement_review(client, project_id)
+
+    response = client.post(
+        "/generate",
+        json={
+            "title": "AI 기반 민원 서비스 고도화 사업",
+            "goal": "완료된 검토 근거를 반영해 후속 문서를 준비한다",
+            "bundle_type": bundle_type,
+            "project_id": project_id,
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["procurement_review_handoff_used"] is True
+    assert body["procurement_review_handoff_skipped_reason"] is None
+    assert body["procurement_review_packet_sha256"] == packet_sha256
+    assert body["procurement_review_decision"] == "changes_requested"
+    assert body["procurement_reviewed_at"]
+    assert body["procurement_review_operational_approval"] is False
+
+    payload = {
+        "title": "검토 문맥 확인",
+        "goal": "검토 근거 연결",
+        "project_id": project_id,
+    }
+    client.app.state.service._inject_project_contexts(
+        payload,
+        bundle_type=bundle_type,
+        tenant_id="system",
+        request_id="review-context-test",
+    )
+    review_context = payload["_procurement_review_context"]
+    assert "파트너 확약서 갱신 내용을" in review_context
+    assert "operational_approval: false" in review_context
+    prompt = build_bundle_prompt(
+        payload,
+        SCHEMA_VERSION,
+        BUNDLE_REGISTRY[bundle_type],
+    )
+    assert "완료된 procurement review evidence" in prompt
+    assert "proposal-review-owner" in prompt
+
+
+def test_downstream_handoff_skips_completed_review_after_procurement_state_changes(client):
+    project_id = _create_project(client)
+    _seed_procurement_decision(client, project_id)
+    _complete_procurement_review(client, project_id)
+    _seed_procurement_decision(client, project_id)
+
+    response = client.post(
+        "/generate",
+        json={
+            "title": "AI 기반 민원 서비스 고도화 사업",
+            "goal": "최신 procurement state로 제안서를 준비한다",
+            "bundle_type": "proposal_kr",
+            "project_id": project_id,
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["procurement_review_handoff_used"] is False
+    assert body["procurement_review_handoff_skipped_reason"] == "stale_procurement_review"
+    assert body["procurement_review_packet_sha256"] is None
+    assert body["procurement_review_decision"] is None
+    assert body["procurement_review_operational_approval"] is False
 
 
 @pytest.mark.parametrize("bundle_type", ["rfp_analysis_kr", "proposal_kr", "performance_plan_kr"])

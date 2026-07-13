@@ -204,6 +204,7 @@ Focus on a narrow, demonstrable workflow:
 - The same project surface now persists the original packet and pending receipt under the tenant, project, and packet SHA256 boundary; it exposes pending and completed review history without creating a second approval workflow.
 - A tenant-scoped review inbox now gathers pending and completed records across projects, supports project or reviewer lookup, opens the existing project detail workflow, and reuses verified completed-package downloads without exposing tenant identifiers or receipt internals.
 - A reviewer can record `accepted`, `changes_requested`, or `rejected` exactly once. Completion rebuilds the current decision packet to reject stale source state, creates and independently verifies the deterministic reviewed package, and keeps it available for verified re-download.
+- Current completed review evidence now follows `rfp_analysis_kr`, `proposal_kr`, and `performance_plan_kr` generation without becoming a new gate. The service compares the review packet source timestamp with the current procurement record, skips stale evidence, and preserves packet SHA256, review decision, reviewed time, and `operational_approval: false` on generated project documents.
 - `procurement_review.html` provides one script-free view for package, evidence, gaps, and sign-off state.
 - The procurement review packet packages the validated 12-artifact directory as a deterministic ZIP with embedded `packet_manifest.json`.
 - Packet status stays `review_ready`; `operational_approval` remains false and independent verification rejects path, fingerprint, membership, and semantic drift.
@@ -292,7 +293,7 @@ Connect the public procurement copilot into the package workflow:
 - go / conditional go / no-go recommendation,
 - proposal handoff.
 
-Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, and verified reviewed-package re-download are connected in the project detail UI. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
+Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, verified reviewed-package re-download, and current-review downstream provenance are connected in the project detail UI. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
 
 ## 11. Decision Checklist For Future Work
 

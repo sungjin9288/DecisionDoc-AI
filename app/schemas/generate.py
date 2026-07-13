@@ -91,6 +91,12 @@ class GenerateResponse(BaseModel):
     cache_hit: bool | None = None
     llm_total_tokens: int | None = None
     applied_references: list[dict[str, Any]] = Field(default_factory=list)
+    procurement_review_handoff_used: bool = False
+    procurement_review_handoff_skipped_reason: str | None = None
+    procurement_review_packet_sha256: str | None = None
+    procurement_review_decision: str | None = None
+    procurement_reviewed_at: str | None = None
+    procurement_review_operational_approval: bool = False
     docs: list[GeneratedDoc]
 
 

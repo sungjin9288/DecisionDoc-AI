@@ -1435,6 +1435,11 @@ def test_index_html_procurement_review_workspace_contract_is_connected():
         "procurement_review_source_changed",
         "procurementReviews = Array.isArray(reviewsPayload?.reviews)",
         "renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)",
+        "function getProcurementReviewDecisionMeta(decision)",
+        'data-procurement-review-doc-decision=',
+        "검토 수락",
+        "수정 요청",
+        "검토 반려",
         "운영 승인이나 입찰 제출 권한을 부여하지 않습니다.",
     ):
         assert marker in content

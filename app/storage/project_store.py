@@ -44,6 +44,10 @@ class ProjectDocument:
     source_decision_council_session_id: str | None = None
     source_decision_council_session_revision: int | None = None
     source_decision_council_direction: str | None = None
+    source_procurement_review_packet_sha256: str | None = None
+    source_procurement_review_decision: str | None = None
+    source_procurement_reviewed_at: str | None = None
+    source_procurement_review_operational_approval: bool | None = None
 
 
 @dataclass
@@ -122,6 +126,14 @@ class ProjectStore(BaseJsonStore):
             source_decision_council_session_id=d.get("source_decision_council_session_id"),
             source_decision_council_session_revision=d.get("source_decision_council_session_revision"),
             source_decision_council_direction=d.get("source_decision_council_direction"),
+            source_procurement_review_packet_sha256=d.get(
+                "source_procurement_review_packet_sha256"
+            ),
+            source_procurement_review_decision=d.get("source_procurement_review_decision"),
+            source_procurement_reviewed_at=d.get("source_procurement_reviewed_at"),
+            source_procurement_review_operational_approval=d.get(
+                "source_procurement_review_operational_approval"
+            ),
         )
 
     @staticmethod
@@ -279,6 +291,10 @@ class ProjectStore(BaseJsonStore):
         source_decision_council_session_id: str | None = None,
         source_decision_council_session_revision: int | None = None,
         source_decision_council_direction: str | None = None,
+        source_procurement_review_packet_sha256: str | None = None,
+        source_procurement_review_decision: str | None = None,
+        source_procurement_reviewed_at: str | None = None,
+        source_procurement_review_operational_approval: bool | None = None,
     ) -> ProjectDocument:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
@@ -304,6 +320,12 @@ class ProjectStore(BaseJsonStore):
             source_decision_council_session_id=source_decision_council_session_id,
             source_decision_council_session_revision=source_decision_council_session_revision,
             source_decision_council_direction=source_decision_council_direction,
+            source_procurement_review_packet_sha256=source_procurement_review_packet_sha256,
+            source_procurement_review_decision=source_procurement_review_decision,
+            source_procurement_reviewed_at=source_procurement_reviewed_at,
+            source_procurement_review_operational_approval=(
+                source_procurement_review_operational_approval
+            ),
         )
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)

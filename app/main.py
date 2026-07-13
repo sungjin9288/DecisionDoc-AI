@@ -149,6 +149,7 @@ def create_app() -> FastAPI:
         data_dir=data_dir,
         storage=storage,
         procurement_store=procurement_store,
+        procurement_review_store=procurement_review_store,
         decision_council_store=decision_council_store,
         procurement_copilot_enabled=procurement_copilot_enabled,
         feedback_store=feedback_store,
