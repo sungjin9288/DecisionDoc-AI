@@ -61,16 +61,28 @@ SAMPLE_README_LOCAL_EVIDENCE_COMMANDS = [
         "/tmp/procurement_review_receipt.json"
     ),
     (
-        "python3 scripts/manage_procurement_review_receipt.py record "
+        "python3 scripts/manage_procurement_review_receipt.py render "
         "/tmp/decisiondoc-procurement-review.zip --receipt "
-        "/tmp/procurement_review_receipt.json --reviewer executive-reviewer "
-        "--decision accepted --rationale \"Reviewed against package evidence.\" "
-        "--reviewed-at 2026-07-13T14:30:00Z"
+        "/tmp/procurement_review_receipt.json --output "
+        "procurement_review_receipt.html"
+    ),
+    (
+        "python3 scripts/manage_procurement_review_receipt.py apply-draft "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json --draft "
+        "/tmp/procurement_review_draft.json"
     ),
     (
         "python3 scripts/manage_procurement_review_receipt.py validate "
         "/tmp/decisiondoc-procurement-review.zip --receipt "
         "/tmp/procurement_review_receipt.json"
+    ),
+    (
+        "python3 scripts/manage_procurement_review_receipt.py record "
+        "/tmp/decisiondoc-procurement-review.zip --receipt "
+        "/tmp/procurement_review_receipt.json --reviewer executive-reviewer "
+        "--decision accepted --rationale \"Reviewed against package evidence.\" "
+        "--reviewed-at 2026-07-13T14:30:00Z"
     ),
     "python3 scripts/validate_procurement_decision_package_sample.py",
     (
@@ -166,6 +178,16 @@ FIELD_CONTRACT_MARKERS = [
     "procurement_review_receipt.json",
     "packet_sha256",
     "review_status",
+]
+REVIEW_DRAFT_DOCS = [
+    "docs/product_local_demo_runbook.md",
+    "docs/samples/procurement_decision_package_local_demo/README.md",
+]
+REVIEW_DRAFT_MARKERS = [
+    "procurement_review_receipt.html",
+    "procurement_review_draft.json",
+    "apply-draft",
+    "packet and pending-receipt SHA256/size",
 ]
 LOCAL_MACHINE_PATH_FRAGMENTS = [
     "/Users/",
@@ -338,6 +360,7 @@ def test_procurement_decision_package_docs_reference_versioned_cli_contract() ->
 
     _assert_docs_contain_markers(CONTRACT_DOCS, REQUIRED_MARKERS)
     _assert_docs_contain_markers(FIELD_CONTRACT_DOCS, FIELD_CONTRACT_MARKERS)
+    _assert_docs_contain_markers(REVIEW_DRAFT_DOCS, REVIEW_DRAFT_MARKERS)
 
 
 def test_procurement_decision_package_sample_artifacts_are_portable() -> None:

@@ -11514,3 +11514,16 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 top-level service files, 2,609 test functions, and 218 test files
   - this companion receipt does not introduce a second application approval workflow and does not authorize any external action
   - OpenAI, Gemini, and Claude paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed
+
+- local procurement browser review draft completion
+  - added `review_receipt_workspace.py` and `manage_procurement_review_receipt.py render/apply-draft` so a non-engineering reviewer can record a packet-bound decision without translating browser input into CLI flags
+  - kept the existing packet-owned `procurement_review.html` script-free and read-only; the interactive `procurement_review_receipt.html` and downloaded `procurement_review_draft.json` remain companion files outside the deterministic ZIP
+  - draft validation requires fixed root/source/review field order, exact packet and pending-receipt SHA256/size, the packet-requested reviewer, accepted/changes-requested/rejected decision, non-empty rationale, canonical UTC review time, explicit authorization boundary, and boolean `operational_approval: false`
+  - `apply-draft` reuses the existing one-time receipt transition, checks that the pending receipt bytes did not change before atomic write, and rejects stale source, reviewer drift, authority elevation, or a second application with JSON-only failure output
+  - manual local browser proof rendered the sample packet and pending receipt, downloaded a valid accepted draft, completed the receipt, retained packet SHA256 `e71c2978c7b3b8033579f937fa32a485d252667c4a9cc7cf6c05bbeab893bd6c`, and rejected reapplication
+  - Playwright desktop `1440x1000` and mobile `390x844` checks showed no final console error; mobile measured `documentElement.scrollWidth == innerWidth == 390`, and the form width remained 366px inside the viewport
+  - focused receipt/docs/CLI/workspace gate passed: 29 passed in 3.31s
+  - full relevant 18-file procurement/README gate passed: 316 passed in 12.67s
+  - full procurement package and changed tests passed `py_compile`; focused `ruff --select=E,F,W --ignore=E501` reported `All checks passed!`
+  - `python3 scripts/count_readme_metrics.py` reports 2,614 test functions across 218 test files
+  - paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed

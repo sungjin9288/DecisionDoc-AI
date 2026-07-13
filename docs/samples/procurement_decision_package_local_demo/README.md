@@ -55,15 +55,22 @@ python3 scripts/manage_procurement_decision_review_packet.py verify /tmp/decisio
 
 The packet is a deterministic ZIP containing the 12 validated package artifacts plus embedded `packet_manifest.json`. Its status is `review_ready`, not approved: the verifier rechecks exact entry order, SHA256 and byte-size fingerprints, package semantics, path boundaries, excluded actions, and `operational_approval: false`. Rebuilding unchanged source artifacts produces the same ZIP bytes.
 
-Create the companion `procurement_review_receipt.json`, record the requested reviewer's decision, and validate it against the same packet:
+Create the companion `procurement_review_receipt.json`, render the packet-bound browser form, apply its downloaded draft, and validate the completed receipt:
 
 ```bash
 python3 scripts/manage_procurement_review_receipt.py init /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json
-python3 scripts/manage_procurement_review_receipt.py record /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --reviewer executive-reviewer --decision accepted --rationale "Reviewed against package evidence." --reviewed-at 2026-07-13T14:30:00Z
+python3 scripts/manage_procurement_review_receipt.py render /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --output procurement_review_receipt.html
+python3 scripts/manage_procurement_review_receipt.py apply-draft /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --draft /tmp/procurement_review_draft.json
 python3 scripts/manage_procurement_review_receipt.py validate /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json
 ```
 
-The receipt remains outside the ZIP to avoid a circular hash. Its `packet_sha256` binds it to the reviewed bytes, `review_status` moves from `pending` to `completed` exactly once, and `operational_approval` remains false for every accepted, changes-requested, or rejected review decision.
+Open `/tmp/procurement_review_receipt.html`, choose a decision, enter the rationale, and download `/tmp/procurement_review_draft.json`. The HTML and draft remain outside the ZIP. The receipt keeps `packet_sha256`; its `review_status` moves from `pending` to `completed` once. `apply-draft` requires exact packet and pending-receipt SHA256/size values, the requested reviewer, canonical UTC review time, the explicit authorization boundary, and boolean `operational_approval: false` before that atomic transition.
+
+For a terminal-only review, `record` remains available as an alternative to `render` and `apply-draft`:
+
+```bash
+python3 scripts/manage_procurement_review_receipt.py record /tmp/decisiondoc-procurement-review.zip --receipt /tmp/procurement_review_receipt.json --reviewer executive-reviewer --decision accepted --rationale "Reviewed against package evidence." --reviewed-at 2026-07-13T14:30:00Z
+```
 
 Run the local sample validator:
 

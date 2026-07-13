@@ -88,7 +88,7 @@ Completed review packet 테스트는 pending receipt 거부, manifest-declared a
 
 Procurement review packet 테스트는 검증된 12-artifact directory의 deterministic ZIP 생성, embedded `packet_manifest.json`, source symlink 차단, exact entry order와 path boundary, SHA256/size tamper detection, fingerprint를 다시 맞춘 semantic drift 거부, `review_ready`, `operational_approval: false`, create/verify CLI의 machine-readable success/failure 출력을 검증한다.
 
-Procurement review receipt 테스트는 packet 밖 companion JSON의 deterministic pending state, `packet_sha256` binding, requested reviewer 일치, accepted/changes-requested/rejected 결정, non-empty rationale, canonical UTC timestamp, one-time `review_status` transition, stale packet과 field-order drift, false가 아닌 operational approval, CLI JSON success/failure를 검증한다.
+Procurement review receipt 테스트는 packet 밖 companion JSON의 deterministic pending state, `packet_sha256` binding, requested reviewer 일치, accepted/changes-requested/rejected 결정, non-empty rationale, canonical UTC timestamp, one-time `review_status` transition을 검증한다. Browser draft 경로는 packet/receipt SHA256·size, ordered schema, reviewer, authority boundary를 검사하고 stale source, 권한 상승, 재적용을 거부한 뒤 receipt를 atomic update하는지 확인한다.
 
 Report quality correction 테스트는 server preview와 save artifact의 exact equality, SHA-256 fingerprint binding, fingerprint 누락과 stale input 거부, 동일 artifact 중복 저장 차단, review packet embedded artifact fingerprint 재검증을 포함한다. Local demo는 mock provider와 임시 storage만 사용하고 저장된 artifact와 preview가 동일한지 확인한다.
 
