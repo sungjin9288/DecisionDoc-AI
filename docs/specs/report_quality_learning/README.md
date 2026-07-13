@@ -289,6 +289,9 @@
 - `scripts/create_report_quality_pilot_pack.py`
   - 파일럿 리뷰용 non-ready draft artifact 3~5개와 `REVIEW_INDEX.md`를 생성한다.
   - 기본 출력은 `accepted_for_learning=false`, `human_review_status=pending` 이므로 학습 후보가 아니다.
+- `scripts/run_report_quality_learning_demo.py`
+  - mock provider와 임시 local storage로 Report Workflow 생성, 기획·장표·최종 승인, correction artifact preview·저장·목록·JSONL export를 연결한다.
+  - exported artifact를 같은 validator로 다시 검사하고 compact JSON receipt를 남긴다. provider API, dataset upload, training execution, model promotion은 호출하지 않는다.
 - `scripts/sync_report_quality_pilot_pack.py`
   - 사람이 수정한 `drafts/*.json`을 batch JSONL로 다시 동기화한다.
   - `--require-ready`를 붙이면 모든 artifact가 학습 후보 gate를 통과하는지 확인한다.
@@ -325,6 +328,15 @@ python3 docs/specs/report_quality_learning/validate_correction_artifact.py \
   --require-ready \
   --min-records 3
 ```
+
+로컬 API 전체 흐름을 mock provider로 재현하고 단일 ready artifact receipt를 남길 때는:
+
+```bash
+python3 scripts/run_report_quality_learning_demo.py \
+  --output /tmp/decisiondoc-report-quality-learning-demo.json
+```
+
+이 데모는 임시 local storage에서 workflow 생성부터 최종 승인, correction preview·저장·목록·JSONL export validation까지 실행한 뒤 임시 데이터를 삭제한다. receipt는 provider API와 학습 관련 외부 action이 모두 실행되지 않았음을 함께 기록한다.
 
 운영 API에서 summary 조회, ready JSONL 다운로드, local validation까지 한 번에 확인할 때는:
 

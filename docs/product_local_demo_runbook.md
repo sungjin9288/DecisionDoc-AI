@@ -62,6 +62,21 @@ Check a persisted manifest validation result with:
 python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py "$CONTRACT_RESULT"
 ```
 
+## Report Quality Learning Local Demo
+
+Report Workflow 생성부터 최종 승인, 사람 검수 correction artifact preview와 저장, ready 목록 조회, JSONL export 재검증까지 한 번에 실행한다.
+
+```bash
+python3 scripts/run_report_quality_learning_demo.py \
+  --output /tmp/decisiondoc-report-quality-learning-demo.json
+
+python3 -m json.tool /tmp/decisiondoc-report-quality-learning-demo.json
+```
+
+이 명령은 실행 중 provider를 `mock`, storage를 임시 local directory로 강제한다. 현재 shell이나 `.env.prod`에 OpenAI, Gemini, Claude 키가 있어도 provider API를 호출하지 않으며, 임시 workflow 데이터는 실행 종료와 함께 삭제한다.
+
+receipt의 `status`는 모든 단계와 exported JSONL validator가 통과한 경우에만 `passed`가 된다. `external_actions`의 provider API, AWS runtime, dataset upload, provider job, training execution, model promotion, production service resume 값은 모두 `false`로 유지된다. 이 결과는 사람이 승인한 learning candidate의 로컬 생성·검증 증거이며 fine-tuning 실행이나 운영 재개 승인이 아니다.
+
 ## 3. Build The Local Package
 
 Use a temporary output directory:

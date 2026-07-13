@@ -186,7 +186,7 @@ pytest tests/ -m live         # live 마커 테스트
 테스트 함수는 **2,569개**, **209개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2569
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2571
 python3 scripts/count_readme_metrics.py --field test_files      # → 209
 ```
 

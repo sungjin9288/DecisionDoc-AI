@@ -67,10 +67,10 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
+  - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
 - 남은 작업:
   - bundle별 대표 golden examples 정리
   - eval/lint 결과를 README와 case study에 반영
-  - feedback/report quality correction artifact 흐름을 하나의 데모로 연결
   - M1 live provider chain을 승인된 키로 검증
 - 완료 기준:
   - 최소 2개 bundle에 대해 생성 결과 샘플과 품질 검증 결과 확보
