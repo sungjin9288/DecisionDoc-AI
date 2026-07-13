@@ -1790,6 +1790,18 @@ def test_completed_artifact_requires_quality_thresholds():
     assert "logic >= 0.75" in "\n".join(result["errors"])
 
 
+def test_completed_artifact_requires_non_empty_dimension_rationale():
+    validator = _load_validator()
+    payload = _accepted_payload()
+    payload["correction"]["rationale_by_dimension"]["evidence"] = "  "
+
+    result = validator.validate_correction_artifact(payload)
+
+    assert result["ok"] is False
+    assert result["ready_for_learning"] is False
+    assert "rationale_by_dimension.evidence must be non-empty" in "\n".join(result["errors"])
+
+
 def test_completed_artifact_rejects_todo_placeholders():
     validator = _load_validator()
     payload = _accepted_payload()

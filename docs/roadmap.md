@@ -66,6 +66,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 - 현재 상태:
   - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
+  - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
 - 남은 작업:
   - bundle별 대표 golden examples 정리
   - eval/lint 결과를 README와 case study에 반영

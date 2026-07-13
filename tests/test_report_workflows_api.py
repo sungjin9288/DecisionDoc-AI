@@ -318,6 +318,26 @@ def test_report_quality_correction_artifact_preview_and_save(tmp_path, monkeypat
     assert _contains_key(stored_artifact, "content_base64") is False
 
 
+def test_report_quality_correction_preview_rejects_empty_dimension_rationale(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    created = _create_workflow(client, slide_count=2, learning_opt_in=True)
+    workflow_id = created["report_workflow_id"]
+    _final_approve_workflow(client, workflow_id)
+    payload = _accepted_quality_correction_payload()
+    payload["rationale_by_dimension"]["visual_design"] = ""
+
+    response = client.post(
+        f"/report-workflows/{workflow_id}/learning/correction-artifact/preview",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    validation = response.json()["validation"]
+    assert validation["ok"] is False
+    assert validation["ready_for_learning"] is False
+    assert "rationale_by_dimension.visual_design must be non-empty" in "\n".join(validation["errors"])
+
+
 def test_report_workflow_develop_quality_preview_runs_document_ops_agent(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     created = _create_workflow(client, slide_count=2, source_refs=["source-report"])

@@ -22,6 +22,14 @@
 - fine-tuned model promotion
 - 원본 첨부파일 자체 저장
 
+## Explicit Human Review Gate
+
+- UI는 overall/dimension score와 rationale에 통과값을 미리 채우지 않는다.
+- Reviewer가 score와 dimension 평가 근거를 직접 입력해야 한다.
+- `accepted_for_learning=true`인 artifact는 모든 required dimension의 rationale가 비어 있지 않아야 한다.
+- Preview와 save는 같은 server validator를 사용하며, 미입력 score/rationale는 blocker로 반환한다.
+- 이 gate는 correction artifact 품질만 검증하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
+
 ## Artifacts
 
 - [QUALITY_RUBRIC.md](./QUALITY_RUBRIC.md)

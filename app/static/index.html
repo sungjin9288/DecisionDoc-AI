@@ -8241,7 +8241,7 @@
   function renderReportWorkflowQualityScoreInputs(disabledAttr = '') {
     return REPORT_WORKFLOW_QUALITY_DIMENSIONS.map(([key, label]) => `
       <label style="font-size:.72rem;font-weight:800;color:#1f2a44;">${escapeHtml(label)}
-        <input id="rw-quality-score-${escapeHtml(key)}" class="gov-input" type="number" min="0" max="1" step="0.01" value="0.86" style="width:100%;margin-top:.2rem;" ${disabledAttr}>
+        <input id="rw-quality-score-${escapeHtml(key)}" class="gov-input" type="number" min="0" max="1" step="0.01" placeholder="0.00 - 1.00" style="width:100%;margin-top:.2rem;" ${disabledAttr}>
       </label>
     `).join('');
   }
@@ -8283,7 +8283,7 @@
           <input id="rw-quality-domain" class="gov-input" value="${escapeHtml(item?.client || 'public_sector_ai')}" style="width:100%;margin-top:.25rem;" ${disabledAttr}>
         </label>
         <label style="font-size:.74rem;font-weight:800;color:#1f2a44;">Overall score
-          <input id="rw-quality-overall" class="gov-input" type="number" min="0" max="1" step="0.01" value="0.86" style="width:100%;margin-top:.25rem;" ${disabledAttr}>
+          <input id="rw-quality-overall" class="gov-input" type="number" min="0" max="1" step="0.01" placeholder="0.00 - 1.00" style="width:100%;margin-top:.25rem;" ${disabledAttr}>
         </label>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:.45rem;margin-top:.65rem;">
@@ -8380,9 +8380,9 @@
   function buildReportWorkflowQualityCorrectionPayload() {
     const dimensionScores = {};
     const rationaleByDimension = {};
-    const rationale = ($id('rw-quality-rationale')?.value || '').trim() || '사람 검수로 논리, 근거, 장표 구조, 디자인 품질을 보강함';
+    const rationale = ($id('rw-quality-rationale')?.value || '').trim();
     REPORT_WORKFLOW_QUALITY_DIMENSIONS.forEach(([key]) => {
-      dimensionScores[key] = reportWorkflowReadScore(`rw-quality-score-${key}`, 0.86);
+      dimensionScores[key] = reportWorkflowReadScore(`rw-quality-score-${key}`);
       rationaleByDimension[key] = rationale;
     });
     const issue = ($id('rw-quality-change-issue')?.value || '').trim();
@@ -8398,7 +8398,7 @@
       reviewed_at: ($id('rw-quality-reviewed-at')?.value || '').trim(),
       domain: ($id('rw-quality-domain')?.value || '').trim(),
       language: 'ko',
-      overall_score: reportWorkflowReadScore('rw-quality-overall', 0.86),
+      overall_score: reportWorkflowReadScore('rw-quality-overall'),
       dimension_scores: dimensionScores,
       hard_failures: reportWorkflowSplitLines($id('rw-quality-hard-failures')?.value || ''),
       change_requests: changeRequests,
@@ -8551,6 +8551,9 @@
     const validationErrors = Array.isArray(validation?.errors) ? validation.errors : [];
     const scoreGate = reportWorkflowQualityScoreGateStatus(payload);
     const placeholderFindings = reportWorkflowQualityPlaceholderFindings(payload);
+    const hasDimensionRationale = REPORT_WORKFLOW_QUALITY_DIMENSIONS.every(([key]) => (
+      Boolean(String(payload.rationale_by_dimension?.[key] || '').trim())
+    ));
     const hasCorrection = payload.change_requests.length > 0
       && payload.change_requests.every(item => item.target && item.issue && item.correction && item.rationale)
       && Boolean(payload.after_planning_summary);
@@ -8567,6 +8570,12 @@
         pass: hasCorrection,
         detail: hasCorrection ? 'issue/correction/rationale/after summary 입력됨' : 'Develop 반영 후 사람이 issue/correction/rationale/after summary를 확인해야 함',
         focusTargetId: hasCorrection ? '' : 'rw-quality-change-issue',
+      },
+      {
+        label: 'Dimension rationale',
+        pass: hasDimensionRationale,
+        detail: hasDimensionRationale ? '모든 품질 dimension의 평가 근거 입력됨' : '사람이 확인한 품질 dimension 평가 근거가 필요함',
+        focusTargetId: hasDimensionRationale ? '' : 'rw-quality-rationale',
       },
       {
         label: 'Reviewer metadata',

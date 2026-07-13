@@ -201,6 +201,9 @@ def validate_correction_artifact(payload: dict[str, Any]) -> dict[str, Any]:
             errors.append("accepted artifacts require correction.reviewer")
         if not _non_empty_string(correction.get("reviewed_at")):
             errors.append("accepted artifacts require correction.reviewed_at")
+        for dimension in REQUIRED_DIMENSIONS:
+            if not _non_empty_string(rationale_by_dimension.get(dimension)):
+                errors.append(f"correction.rationale_by_dimension.{dimension} must be non-empty")
         if labels.get("human_review_status") != "accepted":
             errors.append("accepted artifacts require learning_labels.human_review_status=accepted")
         if labels.get("forbidden_terms_scan") != "pass":

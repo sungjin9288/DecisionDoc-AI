@@ -4,6 +4,8 @@
 
 점수는 `0.0`부터 `1.0`까지 기록한다. 학습 후보로 인정하려면 `overall_score >= 0.80`이고, 핵심 dimension은 모두 `0.75` 이상이어야 한다.
 
+점수와 dimension별 rationale는 reviewer가 검수 후 직접 입력한다. UI와 validator는 통과 점수나 공통 근거를 자동으로 채우지 않으며, rationale가 비어 있는 dimension이 하나라도 있으면 학습 후보로 인정하지 않는다.
+
 ## Hard Fail
 
 아래 항목 중 하나라도 있으면 학습 후보에서 제외한다.

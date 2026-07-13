@@ -81,6 +81,15 @@ def test_report_workflow_tab_and_stepper_present():
     assert "renderReportWorkflowQualityArtifactSummary" in html
     assert "loadReportWorkflowQualityArtifacts" in html
     assert "downloadReportWorkflowQualityArtifacts" in html
+    quality_review_markup = html[
+        html.index("function renderReportWorkflowQualityScoreInputs"):
+        html.index("function reportWorkflowSplitLines")
+    ]
+    assert 'id="rw-quality-overall"' in html
+    assert 'placeholder="0.00 - 1.00"' in html
+    assert 'value="0.86"' not in quality_review_markup
+    assert "Dimension rationale" in html
+    assert "사람 검수로 논리, 근거, 장표 구조, 디자인 품질을 보강함" not in html
 
 
 def test_report_workflow_ui_calls_expected_api_endpoints():

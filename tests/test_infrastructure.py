@@ -491,6 +491,8 @@ def test_index_html_report_workflow_exposes_develop_quality_preview():
     assert "REPORT_WORKFLOW_QUALITY_GATE_MINIMUMS" in content
     assert "REPORT_WORKFLOW_QUALITY_PLACEHOLDER_MARKERS" in content
     assert "Placeholder scan" in content
+    assert "Dimension rationale" in content
+    assert 'placeholder="0.00 - 1.00"' in content
     assert "focusReportWorkflowQualityField" in content
     assert "reportWorkflowQualityFieldIdFromValidationError" in content
     assert "reportWorkflowQualityFocusedField" in content
