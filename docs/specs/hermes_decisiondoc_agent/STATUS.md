@@ -189,7 +189,7 @@ Last local verification on 2026-07-14:
 - focused DocumentOps suite: 60 passed
 - focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
 - DocumentOps trajectory browser E2E: 2 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2973 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2975 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

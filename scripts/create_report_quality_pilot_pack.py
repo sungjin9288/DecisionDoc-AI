@@ -30,6 +30,10 @@ from app.services.report_quality_pilot_receipt import (  # noqa: E402
     pilot_export_receipt_sha256,
     validate_pilot_export_receipt,
 )
+from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    SOURCE_MANIFEST_SCHEMA,
+    SOURCE_PACKAGE_MANIFEST_NAME,
+)
 
 
 TEMPLATE_PATH = REPO_ROOT / "docs/specs/report_quality_learning/correction_artifact_template.json"
@@ -86,6 +90,16 @@ def _write_text_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     with tmp.open("w", encoding="utf-8") as handle:
         handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("wb") as handle:
+        handle.write(content)
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
@@ -168,6 +182,7 @@ def _parse_ready_source_jsonl(
     return artifacts, {
         "path": source_path,
         "sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "size_bytes": len(source_bytes),
         "artifact_ids": artifact_ids,
         "tenant_id": next(iter(tenant_ids)),
     }
@@ -207,6 +222,7 @@ def _parse_source_receipt(
         "source_path": source_label,
         "path": SOURCE_RECEIPT_NAME,
         "sha256": pilot_export_receipt_sha256(receipt_bytes),
+        "size_bytes": len(receipt_bytes),
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "request_id": receipt["request_id"],
         "issued_at": receipt["issued_at"],
@@ -216,7 +232,7 @@ def _parse_source_receipt(
 
 def _load_source_package(
     source_package: Path,
-) -> tuple[list[dict[str, Any]], dict[str, Any], bytes, dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any], bytes, dict[str, Any], bytes]:
     expanded_path = source_package.expanduser()
     if expanded_path.is_symlink():
         raise ValueError(f"source package must not be a symlink: {expanded_path}")
@@ -243,11 +259,12 @@ def _load_source_package(
         "sha256": hashlib.sha256(package_bytes).hexdigest(),
         "schema_version": PACKAGE_SCHEMA_VERSION,
         "manifest_sha256": hashlib.sha256(package["manifest_bytes"]).hexdigest(),
+        "manifest_path": SOURCE_PACKAGE_MANIFEST_NAME,
         "jsonl_entry": package["jsonl_name"],
         "receipt_entry": package["receipt_name"],
         "request_id": manifest["request_id"],
     }
-    return artifacts, source_info, receipt_bytes, receipt_info
+    return artifacts, source_info, receipt_bytes, receipt_info, package["manifest_bytes"]
 
 
 def _load_template() -> dict[str, Any]:
@@ -399,6 +416,7 @@ def _render_index(
         if isinstance(package_info, dict):
             package_details = f"""
 - source_package_sha256: `{package_info['sha256']}`
+- source_package_manifest: `{package_info['manifest_path']}`
 - source_package_manifest_sha256: `{package_info['manifest_sha256']}`
 - source_package_jsonl_entry: `{package_info['jsonl_entry']}`"""
         source_details = f"""
@@ -490,10 +508,15 @@ def create_report_quality_pilot_pack(
     source_info: dict[str, Any] | None = None
     receipt_bytes: bytes | None = None
     receipt_info: dict[str, Any] | None = None
+    package_manifest_bytes: bytes | None = None
     if source_package is not None:
-        artifacts, source_info, receipt_bytes, receipt_info = _load_source_package(
-            source_package
-        )
+        (
+            artifacts,
+            source_info,
+            receipt_bytes,
+            receipt_info,
+            package_manifest_bytes,
+        ) = _load_source_package(source_package)
         sample_count = len(artifacts)
         source_mode = "exported_ready_package"
         if output_dir.exists() and any(output_dir.iterdir()):
@@ -545,11 +568,16 @@ def create_report_quality_pilot_pack(
     if source_info is not None:
         assert receipt_bytes is not None and receipt_info is not None
         source_receipt_path = output_dir / SOURCE_RECEIPT_NAME
-        _write_text_atomic(source_receipt_path, receipt_bytes.decode("utf-8"))
+        _write_bytes_atomic(source_receipt_path, receipt_bytes)
+        if package_manifest_bytes is not None:
+            _write_bytes_atomic(
+                output_dir / SOURCE_PACKAGE_MANIFEST_NAME,
+                package_manifest_bytes,
+            )
         source_manifest_path = output_dir / "SOURCE_MANIFEST.json"
         source_manifest = {
             "report_type": "report_quality_pilot_source_manifest",
-            "schema_version": "decisiondoc_report_quality_pilot_source_manifest.v2",
+            "schema_version": SOURCE_MANIFEST_SCHEMA,
             "generated_at": _now_iso(),
             "batch_id": batch_id,
             "source": {
@@ -604,6 +632,11 @@ def create_report_quality_pilot_pack(
         "source_manifest_path": str(source_manifest_path) if source_manifest_path else None,
         "source_receipt_path": (
             str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
+        ),
+        "source_package_manifest_path": (
+            str(output_dir / SOURCE_PACKAGE_MANIFEST_NAME)
+            if package_manifest_bytes is not None
+            else None
         ),
         "source_package_path": (
             source_info["package"]["path"]
@@ -680,6 +713,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"source_manifest_path={result['source_manifest_path']}")
         if result["source_receipt_path"]:
             print(f"source_receipt_path={result['source_receipt_path']}")
+        if result["source_package_manifest_path"]:
+            print(
+                "source_package_manifest_path="
+                f"{result['source_package_manifest_path']}"
+            )
         print("training_boundary=not_authorized")
     return 0
 

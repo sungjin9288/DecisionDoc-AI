@@ -45,12 +45,13 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl`
 - `reports/report-quality/pilot-rqc-001/SOURCE_MANIFEST.json`
 - `reports/report-quality/pilot-rqc-001/SOURCE_EXPORT_RECEIPT.json`
+- `reports/report-quality/pilot-rqc-001/SOURCE_PACKAGE_MANIFEST.json` (`--source-package` 사용 시)
 
 주의:
 
 - import는 검증된 package 또는 서로 짝이 맞는 UTF-8 JSONL·server receipt, ready artifact 3~5개, 중복 없는 artifact ID, 단일 tenant를 요구한다.
 - 같은 batch ID의 출력 디렉터리에 기존 파일이 있으면 stale artifact가 섞이지 않도록 import를 거부한다.
-- `SOURCE_MANIFEST.json` v2는 원본 package 및 embedded JSONL·receipt의 SHA-256, request ID, tenant, 선택 순서를 기록한다. 이후 sync도 receipt, package provenance, source binding을 다시 확인하고 같은 순서를 적용하며, manifest·receipt·draft 구성이 다르면 실패한다. 기존 v1 manifest와 JSONL+receipt 입력은 계속 읽을 수 있다.
+- `SOURCE_MANIFEST.json` v3는 원본 package와 embedded JSONL·receipt·package manifest의 SHA-256, size, request ID, tenant, 선택 순서를 기록한다. Embedded manifest 원문은 `SOURCE_PACKAGE_MANIFEST.json`에 보존하므로 원본 ZIP이 이동되거나 삭제되어도 이후 sync가 hash, entry metadata, tenant, request ID, artifact 순서, no-training boundary를 다시 확인할 수 있다. Manifest·receipt·draft 구성이 다르면 실패하며 기존 v1/v2 manifest와 JSONL+receipt 입력은 계속 읽을 수 있다.
 - 가져온 artifact는 이미 ready gate를 통과했더라도 사람이 교정 내용과 점수, scan 결과를 다시 검토한다.
 - 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 

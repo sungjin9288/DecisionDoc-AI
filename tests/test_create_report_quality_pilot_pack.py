@@ -185,7 +185,7 @@ def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
     assert [Path(path).stem for path in result["draft_paths"]] == artifact_ids
 
     source_manifest = json.loads(Path(result["source_manifest_path"]).read_text(encoding="utf-8"))
-    assert source_manifest["schema_version"] == "decisiondoc_report_quality_pilot_source_manifest.v2"
+    assert source_manifest["schema_version"] == "decisiondoc_report_quality_pilot_source_manifest.v3"
     assert source_manifest["source"]["artifact_ids"] == artifact_ids
     assert source_manifest["source"]["tenant_id"] == "tenant-a"
     assert source_manifest["source"]["sha256"] == hashlib.sha256(source_path.read_bytes()).hexdigest()
@@ -299,6 +299,11 @@ def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
     assert source_manifest["side_effect_boundary"]["reads_local_package"] is True
     package = read_pilot_review_package(package_path.read_bytes())
     assert Path(result["source_receipt_path"]).read_bytes() == package["receipt_bytes"]
+    package_manifest_path = Path(result["source_package_manifest_path"])
+    assert package_info["manifest_path"] == package_manifest_path.name
+    assert package_manifest_path.read_bytes() == package["manifest_bytes"]
+
+    package_path.unlink()
 
     synced = sync_script.sync_report_quality_pilot_pack(
         pack_dir=Path(result["output_dir"]),
@@ -390,6 +395,89 @@ def test_create_report_quality_pilot_pack_rejects_tampered_or_ambiguous_package(
             source_package=package_path,
             source_jsonl=source_path,
         )
+
+
+def test_create_report_quality_pilot_pack_rejects_preserved_package_manifest_drift(tmp_path):
+    script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_manifest_drift")
+    sync_script = _load_module(SYNC_PATH, "sync_report_quality_pilot_pack_manifest_drift")
+    source_path = tmp_path / "report_quality_pilot_artifacts.jsonl"
+    package_path = tmp_path / "report_quality_pilot_review_package.zip"
+    artifacts = [_ready_artifact(f"rqa_package_{index}") for index in range(1, 4)]
+    _write_jsonl(source_path, artifacts)
+    _write_source_package(package_path, source_path, artifacts)
+
+    result = script.create_report_quality_pilot_pack(
+        batch_id="pilot-rqc-package-manifest-drift",
+        output_root=tmp_path / "packs",
+        source_package=package_path,
+    )
+    pack_dir = Path(result["output_dir"])
+    manifest_path = Path(result["source_package_manifest_path"])
+    original_bytes = manifest_path.read_bytes()
+    manifest_path.write_bytes(original_bytes + b" ")
+
+    with pytest.raises(ValueError, match="SHA-256 does not match source manifest"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            min_records=3,
+            require_ready=True,
+        )
+
+    package_manifest = json.loads(original_bytes)
+    package_manifest["tenant_id"] = "tenant-b"
+    tampered_bytes = json.dumps(package_manifest).encode("utf-8")
+    manifest_path.write_bytes(tampered_bytes)
+    source_manifest_path = Path(result["source_manifest_path"])
+    source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    source_manifest["source"]["package"]["manifest_sha256"] = hashlib.sha256(
+        tampered_bytes
+    ).hexdigest()
+    source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="tenant_id does not match source provenance"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            min_records=3,
+            require_ready=True,
+        )
+
+    manifest_path.unlink()
+    manifest_path.symlink_to(package_path)
+    with pytest.raises(ValueError, match="source package manifest must be a regular file"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            min_records=3,
+            require_ready=True,
+        )
+
+
+def test_create_report_quality_pilot_pack_reads_previous_v2_package_provenance(tmp_path):
+    script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_v2_compat")
+    sync_script = _load_module(SYNC_PATH, "sync_report_quality_pilot_pack_v2_compat")
+    source_path = tmp_path / "report_quality_pilot_artifacts.jsonl"
+    package_path = tmp_path / "report_quality_pilot_review_package.zip"
+    artifacts = [_ready_artifact(f"rqa_package_{index}") for index in range(1, 4)]
+    _write_jsonl(source_path, artifacts)
+    _write_source_package(package_path, source_path, artifacts)
+
+    result = script.create_report_quality_pilot_pack(
+        batch_id="pilot-rqc-package-v2",
+        output_root=tmp_path / "packs",
+        source_package=package_path,
+    )
+    source_manifest_path = Path(result["source_manifest_path"])
+    source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    source_manifest["schema_version"] = "decisiondoc_report_quality_pilot_source_manifest.v2"
+    source_manifest["source"]["package"].pop("manifest_path")
+    source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+    Path(result["source_package_manifest_path"]).unlink()
+
+    synced = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=Path(result["output_dir"]),
+        min_records=3,
+        require_ready=True,
+    )
+    assert synced["ok"] is True
+    assert synced["source_order_applied"] is True
 
 
 def test_create_report_quality_pilot_pack_rejects_invalid_source_batches(tmp_path):

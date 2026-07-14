@@ -20,13 +20,19 @@ from app.services.report_quality_pilot_receipt import (  # noqa: E402
     pilot_export_receipt_sha256,
     validate_pilot_export_receipt,
 )
-from app.services.report_quality_pilot_package import PACKAGE_SCHEMA_VERSION  # noqa: E402
+from app.services.report_quality_pilot_package import (  # noqa: E402
+    NO_EXTERNAL_ACTION_KEYS as PACKAGE_NO_EXTERNAL_ACTION_KEYS,
+    PACKAGE_REPORT_TYPE,
+    PACKAGE_SCHEMA_VERSION,
+)
 
 
 SOURCE_MANIFEST_NAME = "SOURCE_MANIFEST.json"
 SOURCE_RECEIPT_NAME = "SOURCE_EXPORT_RECEIPT.json"
+SOURCE_PACKAGE_MANIFEST_NAME = "SOURCE_PACKAGE_MANIFEST.json"
 SOURCE_MANIFEST_REPORT_TYPE = "report_quality_pilot_source_manifest"
-SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v2"
+SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v3"
+PREVIOUS_SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v2"
 LEGACY_SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v1"
 PACK_BINDING_SCHEMA = "decisiondoc_report_quality_pilot_pack_binding.v1"
 ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -136,7 +142,12 @@ def _source_artifact_ids(
     if manifest.get("report_type") != SOURCE_MANIFEST_REPORT_TYPE:
         raise ValueError(f"{manifest_path}: unsupported report_type")
     schema_version = manifest.get("schema_version")
-    if schema_version not in {SOURCE_MANIFEST_SCHEMA, LEGACY_SOURCE_MANIFEST_SCHEMA}:
+    supported_schemas = {
+        SOURCE_MANIFEST_SCHEMA,
+        PREVIOUS_SOURCE_MANIFEST_SCHEMA,
+        LEGACY_SOURCE_MANIFEST_SCHEMA,
+    }
+    if schema_version not in supported_schemas:
         raise ValueError(f"{manifest_path}: unsupported source manifest schema_version")
     if manifest.get("batch_id") != pack_dir.name:
         raise ValueError(f"{manifest_path}: batch_id does not match the pilot pack directory")
@@ -152,6 +163,9 @@ def _source_artifact_ids(
         raise ValueError(f"{manifest_path}: source.artifact_ids must be unique")
     if source.get("artifact_count") != len(artifact_ids):
         raise ValueError(f"{manifest_path}: source.artifact_count does not match artifact_ids")
+    if schema_version == SOURCE_MANIFEST_SCHEMA:
+        if not isinstance(source.get("size_bytes"), int) or source["size_bytes"] < 1:
+            raise ValueError(f"{manifest_path}: source.size_bytes must be a positive integer")
     if source.get("format") != "jsonl" or source.get("order_preserved") is not True:
         raise ValueError(f"{manifest_path}: source format and order_preserved contract are invalid")
     package = source.get("package")
@@ -178,14 +192,14 @@ def _source_artifact_ids(
         "unique_artifact_ids",
         "single_tenant",
     ]
-    if schema_version == SOURCE_MANIFEST_SCHEMA:
+    if schema_version in {SOURCE_MANIFEST_SCHEMA, PREVIOUS_SOURCE_MANIFEST_SCHEMA}:
         required_validation.append("server_preview_verified")
     if not isinstance(validation, dict) or any(validation.get(key) is not True for key in required_validation):
         raise ValueError(f"{manifest_path}: source validation contract is incomplete")
     boundary = manifest.get("side_effect_boundary")
     if not isinstance(boundary, dict) or any(boundary.get(key) is not False for key in NO_EXTERNAL_ACTION_KEYS):
         raise ValueError(f"{manifest_path}: no-training side-effect boundary is invalid")
-    if schema_version == SOURCE_MANIFEST_SCHEMA:
+    if schema_version in {SOURCE_MANIFEST_SCHEMA, PREVIOUS_SOURCE_MANIFEST_SCHEMA}:
         receipt = manifest.get("receipt")
         if not isinstance(receipt, dict):
             raise ValueError(f"{manifest_path}: receipt must be an object")
@@ -197,9 +211,82 @@ def _source_artifact_ids(
             raise ValueError(f"{manifest_path}: receipt must prove server preview verification")
         if not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("sha256") or "")):
             raise ValueError(f"{manifest_path}: receipt.sha256 must be a lowercase SHA-256 digest")
+        if schema_version == SOURCE_MANIFEST_SCHEMA and (
+            not isinstance(receipt.get("size_bytes"), int) or receipt["size_bytes"] < 1
+        ):
+            raise ValueError(f"{manifest_path}: receipt.size_bytes must be a positive integer")
         if isinstance(package, dict) and package.get("request_id") != receipt.get("request_id"):
             raise ValueError(f"{manifest_path}: source.package.request_id must match receipt.request_id")
+        if schema_version == SOURCE_MANIFEST_SCHEMA and isinstance(package, dict):
+            if package.get("manifest_path") != SOURCE_PACKAGE_MANIFEST_NAME:
+                raise ValueError(
+                    f"{manifest_path}: source.package.manifest_path must be "
+                    f"{SOURCE_PACKAGE_MANIFEST_NAME}"
+                )
     return artifact_ids
+
+
+def _validate_source_package_manifest(
+    *,
+    pack_dir: Path,
+    source_manifest: dict[str, Any],
+    receipt_size_bytes: int,
+) -> None:
+    if source_manifest.get("schema_version") != SOURCE_MANIFEST_SCHEMA:
+        return
+    source = source_manifest["source"]
+    package = source.get("package")
+    if not isinstance(package, dict):
+        return
+
+    package_manifest_path = pack_dir / SOURCE_PACKAGE_MANIFEST_NAME
+    if package_manifest_path.is_symlink() or not package_manifest_path.is_file():
+        raise ValueError(
+            f"{package_manifest_path}: source package manifest must be a regular file"
+        )
+    package_manifest, manifest_sha256 = _read_json_snapshot(package_manifest_path)
+    if manifest_sha256 != package["manifest_sha256"]:
+        raise ValueError(
+            f"{package_manifest_path}: SHA-256 does not match source manifest"
+        )
+
+    receipt = source_manifest["receipt"]
+    expected_fields = {
+        "report_type": PACKAGE_REPORT_TYPE,
+        "schema_version": PACKAGE_SCHEMA_VERSION,
+        "tenant_id": source["tenant_id"],
+        "request_id": receipt["request_id"],
+        "artifact_count": source["artifact_count"],
+        "ordered_artifact_ids": source["artifact_ids"],
+        "export_sha256": source["sha256"],
+        "external_action_boundary": {
+            key: False for key in PACKAGE_NO_EXTERNAL_ACTION_KEYS
+        },
+    }
+    for field, expected in expected_fields.items():
+        if package_manifest.get(field) != expected:
+            raise ValueError(
+                f"{package_manifest_path}: {field} does not match source provenance"
+            )
+
+    expected_entries = [
+        {
+            "path": package["jsonl_entry"],
+            "sha256": source["sha256"],
+            "size_bytes": source["size_bytes"],
+            "media_type": "application/x-ndjson",
+        },
+        {
+            "path": package["receipt_entry"],
+            "sha256": receipt["sha256"],
+            "size_bytes": receipt_size_bytes,
+            "media_type": "application/json",
+        },
+    ]
+    if package_manifest.get("entries") != expected_entries:
+        raise ValueError(
+            f"{package_manifest_path}: entries do not match source provenance"
+        )
 
 
 def _ordered_source_drafts(
@@ -257,7 +344,10 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
         raise ValueError(f"{manifest_path}: source.tenant_id must be non-empty")
     if not re.fullmatch(r"[0-9a-f]{64}", source_jsonl_sha256):
         raise ValueError(f"{manifest_path}: source.sha256 must be a lowercase SHA-256 digest")
-    if manifest.get("schema_version") == SOURCE_MANIFEST_SCHEMA:
+    if manifest.get("schema_version") in {
+        SOURCE_MANIFEST_SCHEMA,
+        PREVIOUS_SOURCE_MANIFEST_SCHEMA,
+    }:
         receipt_info = manifest["receipt"]
         receipt_path = resolved_pack_dir / SOURCE_RECEIPT_NAME
         if receipt_path.is_symlink() or not receipt_path.is_file():
@@ -265,6 +355,11 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
         receipt_bytes = receipt_path.read_bytes()
         if pilot_export_receipt_sha256(receipt_bytes) != receipt_info["sha256"]:
             raise ValueError(f"{receipt_path}: SHA-256 does not match source manifest")
+        if (
+            manifest.get("schema_version") == SOURCE_MANIFEST_SCHEMA
+            and len(receipt_bytes) != receipt_info["size_bytes"]
+        ):
+            raise ValueError(f"{receipt_path}: size does not match source manifest")
         receipt = parse_pilot_export_receipt(receipt_bytes)
         validate_pilot_export_receipt(
             receipt,
@@ -276,6 +371,11 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
             raise ValueError(f"{receipt_path}: request_id does not match source manifest")
         if receipt.get("issued_at") != receipt_info.get("issued_at"):
             raise ValueError(f"{receipt_path}: issued_at does not match source manifest")
+        _validate_source_package_manifest(
+            pack_dir=resolved_pack_dir,
+            source_manifest=manifest,
+            receipt_size_bytes=len(receipt_bytes),
+        )
     for draft in ordered_drafts:
         workflow = draft.payload.get("workflow_reference")
         draft_tenant_id = str(workflow.get("tenant_id") or "").strip() if isinstance(workflow, dict) else ""
