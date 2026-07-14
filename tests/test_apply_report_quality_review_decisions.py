@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.local_write_once import write_bytes_once
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CREATE_PACK_SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_pilot_pack.py"
@@ -191,6 +193,29 @@ def test_create_review_decision_template_writes_non_training_template(tmp_path):
             pack_dir=pack_dir,
             output_path=linked_path,
         )
+
+
+def test_create_review_decision_template_preserves_a_competing_file(
+    tmp_path,
+    monkeypatch,
+):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "decision_template_write_race")
+    pack_dir = _create_pack(tmp_path)
+    output_path = tmp_path / "review_decisions.json"
+
+    def publish_competing_template(path: Path, content: bytes, *, label: str) -> None:
+        path.write_bytes(b"competing template")
+        write_bytes_once(path, content, label=label)
+
+    monkeypatch.setattr(apply_script, "write_bytes_once", publish_competing_template)
+
+    with pytest.raises(ValueError, match="refusing to overwrite existing decision template"):
+        apply_script.create_review_decision_template(
+            pack_dir=pack_dir,
+            output_path=output_path,
+        )
+
+    assert output_path.read_bytes() == b"competing template"
 
 
 def test_apply_review_decisions_accepts_ready_decision(tmp_path):
@@ -481,6 +506,46 @@ def test_import_browser_review_draft_rejects_symlink_review_evidence_before_appl
     }
     assert manifest_target.read_bytes() == manifest_path.read_bytes()
     assert not list(pack_dir.glob("review_decisions.browser-draft.*.json"))
+    assert not list(pack_dir.glob("review_decision_application_receipt.*.json"))
+
+
+def test_import_browser_review_draft_preserves_a_competing_archive_before_apply(
+    tmp_path,
+    monkeypatch,
+):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "browser_draft_archive_write_race")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    browser_draft_path = tmp_path / "downloads" / "review_decisions.browser-draft.json"
+    source_bytes = _write_browser_draft(
+        pack_dir,
+        browser_draft_path,
+        first_decision="changes_requested",
+    )
+    archive_path = pack_dir / (
+        f"review_decisions.browser-draft.{hashlib.sha256(source_bytes).hexdigest()[:12]}.json"
+    )
+    original_drafts = {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
+
+    def publish_competing_archive(path: Path, content: bytes, *, label: str) -> None:
+        path.write_bytes(b"competing archive")
+        write_bytes_once(path, content, label=label)
+
+    monkeypatch.setattr(apply_script, "write_bytes_once", publish_competing_archive)
+
+    with pytest.raises(ValueError, match="refusing to overwrite existing archived browser draft"):
+        apply_script.import_browser_review_draft(
+            pack_dir=pack_dir,
+            browser_draft_path=browser_draft_path,
+        )
+
+    assert archive_path.read_bytes() == b"competing archive"
+    assert original_drafts == {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
     assert not list(pack_dir.glob("review_decision_application_receipt.*.json"))
 
 

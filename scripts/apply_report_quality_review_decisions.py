@@ -25,6 +25,7 @@ from scripts.create_report_quality_review_sheet import (  # noqa: E402
     create_report_quality_review_sheet,
     resolve_report_quality_review_sheet_paths,
 )
+from scripts.local_write_once import write_bytes_once  # noqa: E402
 from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
     load_pilot_pack,
     require_current_pack_binding,
@@ -47,16 +48,6 @@ def _write_text_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     with tmp.open("w", encoding="utf-8") as handle:
         handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, path)
-
-
-def _write_bytes_atomic(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
-    with tmp.open("wb") as handle:
-        handle.write(content)
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
@@ -281,9 +272,13 @@ def create_review_decision_template(
         ],
         "decisions": decisions,
     }
-    _write_text_atomic(
+    template_bytes = (
+        json.dumps(template, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    write_bytes_once(
         resolved_output_path,
-        json.dumps(template, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        template_bytes,
+        label="decision template",
     )
     return {
         "report_type": "report_quality_review_decision_template_created",
@@ -616,7 +611,11 @@ def import_browser_review_draft(
         raise ValueError(f"refusing to overwrite archived browser draft: {archived_path}")
     _resolve_receipt_path(resolved_pack_dir, receipt_path)
 
-    _write_bytes_atomic(archived_path, source_bytes)
+    write_bytes_once(
+        archived_path,
+        source_bytes,
+        label="archived browser draft",
+    )
     try:
         application = apply_review_decisions(
             pack_dir=resolved_pack_dir,
