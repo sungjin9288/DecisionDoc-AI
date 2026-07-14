@@ -3,6 +3,15 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone M5 module-size guard restoration
+
+- A no-cost architecture audit found that `app/services/procurement_decision_package/constants.py` had grown to 829 lines after the original M5 cleanup, so the documented zero-oversized-module claim had drifted.
+- Package schema, artifact, demo-path, and authorization-boundary constants now live in `package_constants.py`. The existing `constants.py` import path remains a 604-line compatibility facade plus CLI contract definitions, while the new foundation module is 314 lines.
+- Compatibility checks confirmed the same 126 exported names and runtime values as the committed source. Infrastructure tests now fail if any app Python module exceeds 800 lines or if the facade stops re-exporting the foundation contract by identity.
+- The procurement package and infrastructure regression gate passes with 443 tests. The repository source metrics report 2,688 test functions across 220 test files.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,938 passed, 2 skipped, and 4 deselected on 2026-07-14.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone stale-share resolution evidence
 
 - Share revocation now preserves the first revocation time, actor ID, and actor name in the share record. The existing `share.revoke` audit entry carries the same evidence plus the linked procurement project, project document, and bundle when available.

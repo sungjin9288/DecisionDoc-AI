@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2937 passed, 1 skipped, 4 deselected
+# 2026-07-14 실측: 2938 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -35,7 +35,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 | M2 G2B 실데이터 end-to-end | 미착수. `G2B_API_KEY` 없이 live 수집 불가 | stage URL/API key/G2B key 확보 후 `scripts/run_stage_procurement_smoke.py` 증적화 |
 | M3 Export 5종 대칭성 | 완료 | README와 샘플 산출물의 수치가 코드와 계속 일치하는지 유지 |
 | M4 CSP nonce | 완료. inline `on*=` handler 0개, nonce 기본 on | 새 UI 이벤트 추가 시 inline handler 금지 guard 유지 |
-| M5 800줄 초과 모듈 분할 | 완료. 2026-07-02 기준 800줄 초과 0개 | 큰 모듈 추가 시 분할 기준 유지 |
+| M5 800줄 초과 모듈 분할 | 완료. 2026-07-14 상수 모듈 drift를 604줄 facade + 314줄 foundation으로 재분할하고 자동 guard 추가, 초과 0개 | infrastructure guard와 facade re-export 계약 유지 |
 | M6 배포/post-deploy smoke | 미착수. `.env.prod`와 runtime 증거 필요 | 배포 환경 확보 후 `scripts/run_deployed_smoke.py`와 ops smoke 증적화 |
 
 ## 3. Phase 1 - MVP 완성

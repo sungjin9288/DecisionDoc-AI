@@ -2459,3 +2459,28 @@ def test_procurement_demo_defaults_use_system_temp_dir():
     assert DEFAULT_DEMO_DATA_DIR == temp_dir / "decisiondoc-procurement-package-demo-data"
     assert DEFAULT_DEMO_OUT_DIR == temp_dir / "decisiondoc-procurement-package-demo-output"
     assert DEFAULT_DECISION_PACKAGE_OUTPUT_BASE == temp_dir / "decisiondoc-procurement-decision-packages"
+
+
+def test_app_python_modules_stay_within_800_line_guide():
+    root = Path(__file__).resolve().parents[1]
+    oversized_modules: dict[str, int] = {}
+    for path in (root / "app").rglob("*.py"):
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > 800:
+            oversized_modules[path.relative_to(root).as_posix()] = line_count
+
+    assert oversized_modules == {}
+
+
+def test_procurement_package_constants_facade_reexports_foundation_contract():
+    from app.services.procurement_decision_package import constants, package_constants
+
+    foundation_names = {
+        name
+        for name in vars(package_constants)
+        if name.isupper() or (name.startswith("_") and not name.startswith("__"))
+    }
+
+    assert foundation_names
+    for name in foundation_names:
+        assert getattr(constants, name) is getattr(package_constants, name)

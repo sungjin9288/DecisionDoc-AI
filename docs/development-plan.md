@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,937 passed, 1 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
-| **아키텍처 위생** | ✅ 달성 (2026-07-02: 800줄 초과 15개 전부 분할 → 0개). 2026-07-09 기준 CI advisory `ruff check app/ --select=E,F,W --ignore=E501` 통과, `bandit -ll` medium/high 0건 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
+| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,938 passed, 2 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2937 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2938 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -98,7 +98,7 @@ Providers (5)    Storage (37 스토어)    Ops
 |---|-----|------------|--------|--------------------|
 | G1 | **Live provider 부분 실증** — OpenAI 1회 통과, Gemini/Claude/fallback 성공 proof 잔여 | 2026-07-13 M1 blocked receipt | HIGH | 진행 중 (Gemini quota, Anthropic credits 필요) |
 | G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
-| G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' \| xargs wc -l \| awk '$1>800'` | MED | **✅ 완전 해소** (2026-07-02, 15개 전부 분할 → 초과 0개) |
+| G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' -print0 \| xargs -0 wc -l \| awk '$2 != "total" && $1 > 800 {print}'` | MED | **✅ 해소 및 guard 적용** (2026-07-14, 상수 모듈 drift 재분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
 | G6 | **배포 접근성 미검증** — 최근 확인한 GitHub Actions CD는 성공했지만 staging deploy/smoke는 설정 부재로 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `29027088935` success, staging deploy/smoke skipped | MED | 미착수 |
@@ -145,7 +145,7 @@ print(len(re.findall(r'\son[a-zA-Z]+\s*=', html)))  # → 0
 PY
 ```
 
-### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 800줄 초과 0개)
+### M5 — 코드 위생: 800줄 초과 모듈 분할 (G3) · 외부 의존 없음 · ✅ 완료 및 guard 적용 (2026-07-14, 800줄 초과 0개)
 
 `procurement_decision_package_service.py`(4,883줄) 분할 패턴(순수 코드 이동 + facade re-export + AST 동일성 검증)을 재사용한다.
 
@@ -174,7 +174,8 @@ PY
 | `app/services/attachment_service.py` | 881 | 5모듈 (최대 312줄) | 4ecaa97 |
 | `app/services/decision_council_service.py` | 805 | 4모듈 (최대 415줄) | 683457c |
 
-- DoD 달성: `find app -name '*.py' | xargs wc -l | awk '$1>800'` → **0개**. 전 분할이 순수 코드 이동(AST 동일성 검증) + facade(import 경로 무변경).
+- 2026-07-14 후속 점검에서 `app/services/procurement_decision_package/constants.py`가 829줄로 다시 커진 drift를 확인했다. package foundation 상수를 `package_constants.py`로 이동해 기존 import facade 604줄과 foundation 314줄로 분리했고, 126개 기존 export의 AST 이름 및 runtime 값 동일성을 확인했다.
+- DoD 달성: `find app -name '*.py' -print0 | xargs -0 wc -l | awk '$2 != "total" && $1 > 800 {print}'` → **0개**. `tests/test_infrastructure.py`가 app 모듈 상한과 foundation re-export identity를 계속 검증한다.
 
 ### M6 — 운영 준비성 (G6) · 외부 의존: 배포 환경
 
