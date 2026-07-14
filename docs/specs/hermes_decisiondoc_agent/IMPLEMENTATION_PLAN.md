@@ -125,7 +125,8 @@ Goal: keep the browser flow aligned with the tested API contract.
 Status: implemented for the local review and governance workbench. The browser now exposes the
 named-actor review, export, freeze, dry-run approval, execution-request, audit, and integrity
 summary paths already supported by the API. Tenant-scoped trajectory history reports the actual
-filtered total and supports newest-first page traversal without exposing an execution path.
+filtered total and supports task/review filters with newest-first page traversal without exposing
+an execution path.
 
 Work:
 
@@ -135,6 +136,8 @@ Work:
 - add browser QA only when the UI behavior changes
 - keep desktop and mobile controls readable without unrelated fixed navigation covering inputs
 - keep trajectory history pagination aligned across storage, API, and browser state
+- ignore stale trajectory responses when operators change filters before an earlier request completes
+- return to the first or last valid page when filters or reviews change the visible result set
 
 Acceptance:
 

@@ -97,6 +97,14 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
         assert response.status_code == 200
         created_ids.append(response.json()["trajectory_id"])
 
+    for trajectory_id in (created_ids[0], created_ids[-1]):
+        reviewed = client.post(
+            f"/api/agent/document-ops/trajectories/{trajectory_id}/review",
+            headers=_api_headers(),
+            json={"accepted": True, "reviewer": "pagination-reviewer"},
+        )
+        assert reviewed.status_code == 200
+
     first = client.get(
         "/api/agent/document-ops/trajectories",
         headers=_api_headers(),
@@ -122,6 +130,21 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
         headers=_api_headers(),
         params={"task_type": "decision_brief", "offset": 0, "limit": 2},
     )
+    accepted = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"human_review_status": "accepted", "offset": 0, "limit": 2},
+    )
+    accepted_evidence = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={
+            "task_type": "evidence_gap_review",
+            "human_review_status": "accepted",
+            "offset": 0,
+            "limit": 2,
+        },
+    )
 
     assert first.status_code == 200
     first_body = first.json()
@@ -142,6 +165,10 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
     assert past_end.json()["has_more"] is False
     assert filtered.json()["total"] == 4
     assert [item["trajectory_id"] for item in filtered.json()["trajectories"]] == created_ids[2:4]
+    assert accepted.json()["total"] == 2
+    assert [item["trajectory_id"] for item in accepted.json()["trajectories"]] == [created_ids[0], created_ids[-1]]
+    assert accepted_evidence.json()["total"] == 1
+    assert accepted_evidence.json()["trajectories"][0]["trajectory_id"] == created_ids[-1]
 
     invalid = client.get(
         "/api/agent/document-ops/trajectories",

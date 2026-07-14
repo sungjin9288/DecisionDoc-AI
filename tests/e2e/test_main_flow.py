@@ -375,7 +375,7 @@ def test_bundle_selection_enables_generate_button(page):
     assert not page.locator("#generate-btn").is_disabled()
 
 
-def test_document_ops_trajectory_history_paginates_without_mobile_overflow(page, tmp_path):
+def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_overflow(page, tmp_path):
     console_errors: list[str] = []
     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
     created_ids = page.evaluate(
@@ -386,12 +386,12 @@ def test_document_ops_trajectory_history_paginates_without_mobile_overflow(page,
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           };
           const ids = [];
-          for (let index = 1; index <= 12; index += 1) {
+          for (let index = 1; index <= 13; index += 1) {
             const response = await fetch('/api/agent/document-ops/run', {
               method: 'POST',
               headers,
               body: JSON.stringify({
-                task_type: 'decision_brief',
+                task_type: index <= 9 ? 'decision_brief' : 'evidence_gap_review',
                 requirements: { title: `브라우저 이력 ${index}` },
                 capture_trajectory: true,
               }),
@@ -399,26 +399,93 @@ def test_document_ops_trajectory_history_paginates_without_mobile_overflow(page,
             if (!response.ok) throw new Error(`trajectory create failed: ${response.status}`);
             ids.push((await response.json()).trajectory_id);
           }
+          for (const index of [9, 11]) {
+            const response = await fetch(`/api/agent/document-ops/trajectories/${ids[index]}/review`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ accepted: true, reviewer: 'e2e-reviewer' }),
+            });
+            if (!response.ok) throw new Error(`trajectory review failed: ${response.status}`);
+          }
           return ids;
         }"""
     )
 
     page.locator('[data-page="document-ops-page"]').click()
-    _wait_until_text_contains(page, "#document-ops-trajectories", "12건 중 1-10", timeout_ms=10000)
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 1-10", timeout_ms=10000)
     cards = page.locator("#document-ops-trajectories [data-docops-trajectory-card]")
     assert cards.count() == 10
-    assert "브라우저 이력 12" in cards.first.inner_text()
+    assert "브라우저 이력 13" in cards.first.inner_text()
     assert created_ids[-1] in cards.first.inner_text()
     assert page.get_by_role("button", name="이전 trajectory 페이지").is_disabled()
     assert not page.get_by_role("button", name="다음 trajectory 페이지").is_disabled()
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-desktop.png"), full_page=True)
 
     page.get_by_role("button", name="다음 trajectory 페이지").click()
-    _wait_until_text_contains(page, "#document-ops-trajectories", "12건 중 11-12", timeout_ms=10000)
-    assert cards.count() == 2
-    assert "브라우저 이력 2" in cards.first.inner_text()
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 11-13", timeout_ms=10000)
+    assert cards.count() == 3
+    assert "브라우저 이력 3" in cards.first.inner_text()
     assert not page.get_by_role("button", name="이전 trajectory 페이지").is_disabled()
     assert page.get_by_role("button", name="다음 trajectory 페이지").is_disabled()
+
+    page.evaluate(
+        """() => {
+          window.__documentOpsNativeFetch = window.fetch;
+          window.fetch = async (...args) => {
+            const response = await window.__documentOpsNativeFetch(...args);
+            const url = String(args[0] || '');
+            if (url.includes('task_type=evidence_gap_review') && !url.includes('human_review_status=accepted')) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            return response;
+          };
+        }"""
+    )
+    page.select_option("#docops-trajectory-task-filter", "evidence_gap_review")
+    page.select_option("#docops-trajectory-review-filter", "accepted")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "2건 중 1-2", timeout_ms=10000)
+    page.wait_for_timeout(500)
+    assert cards.count() == 2
+    assert "브라우저 이력 12" in cards.first.inner_text()
+    page.evaluate(
+        """() => {
+          window.fetch = window.__documentOpsNativeFetch;
+          delete window.__documentOpsNativeFetch;
+        }"""
+    )
+
+    page.evaluate(
+        """async () => {
+          document.querySelector('#docops-trajectory-task-filter').value = '';
+          document.querySelector('#docops-trajectory-review-filter').value = 'pending';
+          _documentOpsTrajectoryOffset = 0;
+          await loadDocumentOpsTrajectoryList(0);
+        }"""
+    )
+    _wait_until_text_contains(page, "#document-ops-trajectories", "11건 중 1-10", timeout_ms=10000)
+    page.get_by_role("button", name="다음 trajectory 페이지").click()
+    _wait_until_text_contains(page, "#document-ops-trajectories", "11건 중 11-11", timeout_ms=10000)
+    assert cards.count() == 1
+    assert "브라우저 이력 1" in cards.first.inner_text()
+
+    page.evaluate(
+        """async trajectoryId => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch(`/api/agent/document-ops/trajectories/${trajectoryId}/review`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ accepted: true, reviewer: 'e2e-page-reviewer' }),
+          });
+          if (!response.ok) throw new Error(`trajectory review failed: ${response.status}`);
+          await loadDocumentOpsTrajectoryList();
+        }""",
+        created_ids[0],
+    )
+    _wait_until_text_contains(page, "#document-ops-trajectories", "10건 중 1-10", timeout_ms=10000)
+    assert cards.count() == 10
 
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-mobile.png"), full_page=True)
@@ -1808,7 +1875,7 @@ def test_location_procurement_summary_opens_project_override_flow(page):
           _locationProcurementActivityActionFilters = ['procurement.downstream_resolved'];
         }"""
     )
-    page.locator(f'[data-project-procurement-return="system"]').click()
+    page.locator('[data-project-procurement-return="system"]').click()
     page.wait_for_selector("#location-procurement-modal", state="visible", timeout=10000)
     _wait_until_text_contains(
         page,

@@ -2088,12 +2088,18 @@ def test_index_html_document_ops_action_wiring_exists():
     assert "if (action) action();" in content
 
 
-def test_index_html_document_ops_trajectory_history_supports_pagination():
+def test_index_html_document_ops_trajectory_history_supports_filters_and_pagination():
     content = open("app/static/index.html", encoding="utf-8").read()
 
     for marker in (
         "const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;",
         "offset: String(Math.max(0, offset))",
+        "id=\"docops-trajectory-task-filter\"",
+        "id=\"docops-trajectory-review-filter\"",
+        "params.set('task_type', taskType)",
+        "params.set('human_review_status', reviewStatus)",
+        "requestVersion !== _documentOpsTrajectoryRequestVersion",
+        "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-page=\"previous\"",
         "data-docops-trajectory-page=\"next\"",
         "wireDocumentOpsTrajectoryPageActions(el);",

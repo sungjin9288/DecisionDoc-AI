@@ -67,8 +67,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   explicitly instead of falling back to a generic operator identity
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
-- trajectory history uses tenant/filter-aware totals and 10-record newest-first browser pages so
-  older review evidence remains reachable
+- trajectory history uses tenant/filter-aware totals, task/review filters, and 10-record
+  newest-first browser pages so older review evidence remains reachable
 - readiness and governance panels show checksum and current-chain consistency for freeze,
   approval, execution-request, and audit artifacts
 - provider and base-model values remain planning metadata; every request keeps training, upload,
@@ -77,10 +77,12 @@ The static DocumentOps workbench now follows the same local governance chain as 
   controls while active so they do not cover mobile inputs
 
 Desktop and 390-pixel mobile browser checks used a mock provider and temporary local storage. A
-12-record trajectory history showed the newest 10 records on the first page and the remaining two
-on the next page, with correct disabled controls, no horizontal overflow, and no browser console
-error. This check did not create a dataset upload, provider API call, training job, promotion, or
-production action.
+13-record trajectory history showed the newest 10 records on the first page and the remaining
+three on the next page. Task/review filters returned the expected evidence and accepted/pending
+sets, reset pagination, ignored an intentionally delayed stale response during rapid filter changes,
+and returned to the last valid page after a filtered record changed state.
+Controls remained correct with no horizontal overflow or browser console error. This check did not
+create a dataset upload, provider API call, training job, promotion, or production action.
 
 ## Access Boundaries
 

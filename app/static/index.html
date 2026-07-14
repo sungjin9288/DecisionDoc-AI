@@ -6109,6 +6109,25 @@
       <div id="document-ops-result" style="background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;min-height:220px;">
         <div style="text-align:center;color:var(--muted);padding:3rem 1rem;">Agent를 실행하면 plan, draft, QA gate 결과가 표시됩니다.</div>
       </div>
+      <div id="document-ops-trajectory-filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.65rem;">
+        <label class="docops-field">작업 유형
+          <select id="docops-trajectory-task-filter" class="gov-input">
+            <option value="">전체 작업</option>
+            <option value="policy_planning_brief">기획안 생성</option>
+            <option value="evidence_gap_review">근거 gap 검수</option>
+            <option value="decision_brief">최종 승인 브리프</option>
+            <option value="develop_quality_improvement">Develop 품질 개선</option>
+          </select>
+        </label>
+        <label class="docops-field">검토 상태
+          <select id="docops-trajectory-review-filter" class="gov-input">
+            <option value="">전체 상태</option>
+            <option value="pending">대기</option>
+            <option value="accepted">승인</option>
+            <option value="rejected">반려</option>
+          </select>
+        </label>
+      </div>
       <div id="document-ops-trajectories" style="display:flex;flex-direction:column;gap:.7rem;"></div>
     </div>
   </div>
@@ -6940,6 +6959,7 @@
   const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;
   let _documentOpsLastResult = null;
   let _documentOpsTrajectoryOffset = 0;
+  let _documentOpsTrajectoryRequestVersion = 0;
 
   function documentOpsLines(value) {
     return String(value || '')
@@ -7051,7 +7071,7 @@
       const data = await res.json();
       _documentOpsLastResult = data;
       renderDocumentOpsResult(data);
-      await loadDocumentOpsTrajectories({ resetPage: true });
+      await loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
       showNotification(data.trajectory_saved ? 'DocumentOps 결과와 trajectory를 저장했습니다.' : 'DocumentOps 결과를 생성했습니다.', 'success');
     } catch (err) {
       if (resultEl) resultEl.innerHTML = `<div style="color:#ef4444;">Agent 실행 실패: ${escapeHtml(err.message || String(err))}</div>`;
@@ -7134,7 +7154,15 @@
     </div>`;
   }
 
-  async function loadDocumentOpsTrajectories({ resetPage = false } = {}) {
+  function resetDocumentOpsTrajectoryFilters() {
+    const taskFilter = $id('docops-trajectory-task-filter');
+    const reviewFilter = $id('docops-trajectory-review-filter');
+    if (taskFilter) taskFilter.value = '';
+    if (reviewFilter) reviewFilter.value = '';
+  }
+
+  async function loadDocumentOpsTrajectories({ resetPage = false, resetFilters = false } = {}) {
+    if (resetFilters) resetDocumentOpsTrajectoryFilters();
     if (resetPage) _documentOpsTrajectoryOffset = 0;
     await Promise.all([loadDocumentOpsStats(), loadDocumentOpsTrajectoryList()]);
   }
@@ -7161,18 +7189,30 @@
   async function loadDocumentOpsTrajectoryList(offset = _documentOpsTrajectoryOffset) {
     const el = $id('document-ops-trajectories');
     if (!el) return;
+    const requestVersion = ++_documentOpsTrajectoryRequestVersion;
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">trajectory 목록 로드 중...</div>';
     try {
       const params = new URLSearchParams({
         offset: String(Math.max(0, offset)),
         limit: String(DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE),
       });
+      const taskType = String($id('docops-trajectory-task-filter')?.value || '').trim();
+      const reviewStatus = String($id('docops-trajectory-review-filter')?.value || '').trim();
+      if (taskType) params.set('task_type', taskType);
+      if (reviewStatus) params.set('human_review_status', reviewStatus);
       const res = await fetch(`/api/agent/document-ops/trajectories?${params}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+      if (requestVersion !== _documentOpsTrajectoryRequestVersion) return;
       const items = Array.isArray(data.trajectories) ? data.trajectories : [];
       const total = Number(data.total || 0);
-      _documentOpsTrajectoryOffset = Number(data.offset || 0);
+      const responseOffset = Number(data.offset || 0);
+      if (!items.length && total > 0 && responseOffset > 0) {
+        const lastPageOffset = Math.floor((total - 1) / DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE)
+          * DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE;
+        return loadDocumentOpsTrajectoryList(lastPageOffset);
+      }
+      _documentOpsTrajectoryOffset = responseOffset;
       const rangeStart = items.length ? _documentOpsTrajectoryOffset + 1 : 0;
       const rangeEnd = _documentOpsTrajectoryOffset + items.length;
       const pager = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;">
@@ -7189,6 +7229,7 @@
       wireDocumentOpsTrajectoryReviewActions(el);
       wireDocumentOpsTrajectoryPageActions(el);
     } catch (err) {
+      if (requestVersion !== _documentOpsTrajectoryRequestVersion) return;
       el.innerHTML = `<div style="color:#ef4444;font-size:.84rem;">trajectory 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
     }
   }
@@ -8219,6 +8260,13 @@
     btn.addEventListener('click', () => {
       const action = DOCUMENT_OPS_ACTIONS[btn.dataset.docopsAction || ''];
       if (action) action();
+    });
+  });
+
+  ['docops-trajectory-task-filter', 'docops-trajectory-review-filter'].forEach(id => {
+    $id(id)?.addEventListener('change', () => {
+      _documentOpsTrajectoryOffset = 0;
+      loadDocumentOpsTrajectoryList(0);
     });
   });
 
