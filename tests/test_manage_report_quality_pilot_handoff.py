@@ -282,13 +282,19 @@ def test_reviewed_pilot_handoff_verifier_accepts_previous_v1_package(tmp_path):
         output_path=package_path,
     )
 
-    result = handoff.verify_report_quality_pilot_handoff(
-        _downgrade_to_v1(package_path.read_bytes())
-    )
+    v1_package = _downgrade_to_v1(package_path.read_bytes())
+    result = handoff.verify_report_quality_pilot_handoff(v1_package)
 
     assert result["ok"] is True
     assert result["browser_summary_path"] is None
     assert result["browser_summary_sha256"] is None
+    browser_output = tmp_path / "v1-summary.html"
+    with pytest.raises(ValueError, match="does not contain a browser summary"):
+        handoff.write_verified_handoff_browser_summary(
+            v1_package,
+            output_path=browser_output,
+        )
+    assert not browser_output.exists()
 
 
 def test_reviewed_pilot_handoff_preserves_source_bound_evidence(tmp_path):
@@ -535,6 +541,61 @@ def test_reviewed_pilot_handoff_writes_only_a_verified_summary(tmp_path):
     assert not tampered_output.exists()
 
 
+def test_reviewed_pilot_handoff_writes_only_a_verified_browser_summary(tmp_path):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_browser_summary_output")
+    pack_dir, jsonl_path = _reviewed_pack(tmp_path)
+    package_path = tmp_path / "handoff.zip"
+    handoff.create_report_quality_pilot_handoff(
+        pack_dir=pack_dir,
+        jsonl_path=jsonl_path,
+        output_path=package_path,
+    )
+    package_bytes = package_path.read_bytes()
+    browser_summary_path = tmp_path / "handoff-summary.html"
+
+    result = handoff.write_verified_handoff_browser_summary(
+        package_bytes,
+        output_path=browser_summary_path,
+    )
+
+    with zipfile.ZipFile(package_path) as archive:
+        expected_summary = archive.read("HANDOFF_SUMMARY.html")
+    assert browser_summary_path.read_bytes() == expected_summary
+    assert result["browser_summary_output_path"] == str(browser_summary_path)
+    assert result["browser_summary_sha256"] == hashlib.sha256(expected_summary).hexdigest()
+
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        handoff.write_verified_handoff_browser_summary(
+            package_bytes,
+            output_path=browser_summary_path,
+        )
+    with pytest.raises(ValueError, match="must use the .html extension"):
+        handoff.write_verified_handoff_browser_summary(
+            package_bytes,
+            output_path=tmp_path / "summary.txt",
+        )
+
+    summary_link = tmp_path / "summary-link.html"
+    summary_link.symlink_to(tmp_path / "summary-target.html")
+    with pytest.raises(ValueError, match="symlink handoff browser summary outputs"):
+        handoff.write_verified_handoff_browser_summary(
+            package_bytes,
+            output_path=summary_link,
+        )
+
+    tampered_package = _rewrite_zip(
+        package_bytes,
+        {"HANDOFF_SUMMARY.html": b"tampered\n"},
+    )
+    tampered_output = tmp_path / "tampered-summary.html"
+    with pytest.raises(ValueError, match="entry SHA-256 mismatch"):
+        handoff.write_verified_handoff_browser_summary(
+            tampered_package,
+            output_path=tampered_output,
+        )
+    assert not tampered_output.exists()
+
+
 def test_reviewed_pilot_handoff_finalize_needs_no_standalone_jsonl(tmp_path, monkeypatch):
     handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_finalize")
     pack_dir, jsonl_path = _reviewed_pack(tmp_path)
@@ -638,16 +699,37 @@ def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
         "--json",
     ])
     verified = json.loads(capsys.readouterr().out)
+    browser_summary_output = tmp_path / "cli-summary.html"
+    browser_verify_exit = handoff.main([
+        "verify",
+        str(package_path),
+        "--browser-summary-output",
+        str(browser_summary_output),
+        "--json",
+    ])
+    browser_verified = json.loads(capsys.readouterr().out)
     human_verify_exit = handoff.main(["verify", str(package_path)])
     human_output = capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        handoff.main([
+            "verify",
+            str(package_path),
+            "--summary-output",
+            str(tmp_path / "both.md"),
+            "--browser-summary-output",
+            str(tmp_path / "both.html"),
+        ])
 
     assert create_exit == 0
     assert verify_exit == 0
+    assert browser_verify_exit == 0
     assert human_verify_exit == 0
     assert created["package_sha256"] == verified["package_sha256"]
     assert verified["artifact_count"] == 3
     assert verified["training_authorized"] is False
     assert verified["summary_output_path"] == str(summary_output)
     assert summary_output.is_file()
+    assert browser_verified["browser_summary_output_path"] == str(browser_summary_output)
+    assert browser_summary_output.is_file()
     assert "summary_path=HANDOFF_SUMMARY.md" in human_output
     assert f"summary_sha256={verified['summary_sha256']}" in human_output

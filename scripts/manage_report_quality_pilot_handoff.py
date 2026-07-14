@@ -773,19 +773,51 @@ def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
     return result
 
 
-def write_verified_handoff_summary(content: bytes, *, output_path: Path) -> dict[str, Any]:
-    result, entries = _validate_report_quality_pilot_handoff(content)
+def _resolve_summary_output_path(
+    output_path: Path,
+    *,
+    extension: str,
+    label: str,
+) -> Path:
     expanded = output_path.expanduser()
     if expanded.is_symlink():
-        raise ValueError("symlink handoff summary outputs are not allowed")
+        raise ValueError(f"symlink {label} outputs are not allowed")
     resolved = expanded.resolve()
-    if resolved.suffix.lower() != ".md":
-        raise ValueError("handoff summary output must use the .md extension")
+    if resolved.suffix.lower() != extension:
+        raise ValueError(f"{label} output must use the {extension} extension")
     if resolved.exists():
-        raise ValueError(f"refusing to overwrite existing handoff summary: {resolved}")
+        raise ValueError(f"refusing to overwrite existing {label}: {resolved}")
+    return resolved
+
+
+def write_verified_handoff_summary(content: bytes, *, output_path: Path) -> dict[str, Any]:
+    result, entries = _validate_report_quality_pilot_handoff(content)
+    resolved = _resolve_summary_output_path(
+        output_path,
+        extension=".md",
+        label="handoff summary",
+    )
     summary_bytes = entries[SUMMARY_NAME]
     write_bytes_once(resolved, summary_bytes, label="handoff summary")
     return {**result, "summary_output_path": str(resolved)}
+
+
+def write_verified_handoff_browser_summary(
+    content: bytes,
+    *,
+    output_path: Path,
+) -> dict[str, Any]:
+    result, entries = _validate_report_quality_pilot_handoff(content)
+    if result["browser_summary_path"] is None:
+        raise ValueError("handoff package does not contain a browser summary")
+    resolved = _resolve_summary_output_path(
+        output_path,
+        extension=".html",
+        label="handoff browser summary",
+    )
+    summary_bytes = entries[HTML_SUMMARY_NAME]
+    write_bytes_once(resolved, summary_bytes, label="handoff browser summary")
+    return {**result, "browser_summary_output_path": str(resolved)}
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -808,7 +840,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     verify_parser = subparsers.add_parser("verify", help="Verify one reviewed pilot handoff ZIP.")
     verify_parser.add_argument("package", type=Path)
-    verify_parser.add_argument("--summary-output", type=Path, default=None)
+    summary_outputs = verify_parser.add_mutually_exclusive_group()
+    summary_outputs.add_argument("--summary-output", type=Path, default=None)
+    summary_outputs.add_argument("--browser-summary-output", type=Path, default=None)
     verify_parser.add_argument("--json", action="store_true")
     return parser
 
@@ -830,14 +864,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             package_path = args.package.expanduser()
             package_bytes = _regular_file(package_path, label="reviewed pilot handoff")
-            verification = (
-                write_verified_handoff_summary(
+            if args.summary_output is not None:
+                verification = write_verified_handoff_summary(
                     package_bytes,
                     output_path=args.summary_output,
                 )
-                if args.summary_output is not None
-                else verify_report_quality_pilot_handoff(package_bytes)
-            )
+            elif args.browser_summary_output is not None:
+                verification = write_verified_handoff_browser_summary(
+                    package_bytes,
+                    output_path=args.browser_summary_output,
+                )
+            else:
+                verification = verify_report_quality_pilot_handoff(package_bytes)
             result = {
                 "package_path": str(package_path.resolve()),
                 "package_sha256": _sha256(package_bytes),
@@ -872,6 +910,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"output_path={result['output_path']}")
         if result.get("summary_output_path"):
             print(f"summary_output_path={result['summary_output_path']}")
+        if result.get("browser_summary_output_path"):
+            print(f"browser_summary_output_path={result['browser_summary_output_path']}")
         print("training_boundary=not_authorized")
     return 0
 

@@ -162,10 +162,10 @@ python3 scripts/manage_report_quality_pilot_handoff.py finalize \
 
 python3 scripts/manage_report_quality_pilot_handoff.py verify \
   reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip \
-  --summary-output reports/report-quality/pilot-rqc-001-handoff-summary.md
+  --browser-summary-output reports/report-quality/pilot-rqc-001-handoff-summary.html
 ```
 
-Finalize는 private temporary directory에서 `--require-ready` sync를 실행하고, 생성된 exact JSONL이 현재 draft 순서와 내용에 일치하는지 다시 확인한다. 이어서 current `human_review_manifest.json`, accepted decision receipt와 decision file, 최종 draft 3~5개, source-bound pack의 provenance sidecar를 `handoff_manifest.json`과 함께 deterministic ZIP으로 기록한 뒤 임시 JSONL을 삭제한다. Standalone JSONL이 필요한 분석 경로에서는 기존 `sync --require-ready`와 `create --jsonl`을 사용한다. Handoff v2는 원문 전달용 `HANDOFF_SUMMARY.md`와 별도 runtime 없이 여는 script-free `HANDOFF_SUMMARY.html`을 함께 담고 각각의 SHA-256을 manifest에 기록한다. Verify는 원래 pack에 접근하지 않고 두 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고, membership, size/SHA-256, JSONL과 draft의 semantic identity, accepted review 전이, source binding, no-training boundary를 재검증한다. 기존 v1 archive는 Markdown summary 계약으로 계속 검증한다. `--summary-output`은 검증이 모두 끝난 뒤 exact Markdown만 별도 파일로 write-once 발행하고 summary SHA-256을 결과에 남긴다. Package와 summary는 사전 검사 직후 다른 프로세스가 같은 경로를 만들어도 기존 증거를 덮어쓰지 않는다. 기존 파일과 symlink output은 거부하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
+Finalize는 private temporary directory에서 `--require-ready` sync를 실행하고, 생성된 exact JSONL이 현재 draft 순서와 내용에 일치하는지 다시 확인한다. 이어서 current `human_review_manifest.json`, accepted decision receipt와 decision file, 최종 draft 3~5개, source-bound pack의 provenance sidecar를 `handoff_manifest.json`과 함께 deterministic ZIP으로 기록한 뒤 임시 JSONL을 삭제한다. Standalone JSONL이 필요한 분석 경로에서는 기존 `sync --require-ready`와 `create --jsonl`을 사용한다. Handoff v2는 원문 전달용 `HANDOFF_SUMMARY.md`와 별도 runtime 없이 여는 script-free `HANDOFF_SUMMARY.html`을 함께 담고 각각의 SHA-256을 manifest에 기록한다. Verify는 원래 pack에 접근하지 않고 두 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고, membership, size/SHA-256, JSONL과 draft의 semantic identity, accepted review 전이, source binding, no-training boundary를 재검증한다. 기존 v1 archive는 Markdown summary 계약으로 계속 검증한다. `--browser-summary-output`과 `--summary-output`은 상호 배타적이며, 검증이 모두 끝난 뒤 선택한 exact HTML 또는 Markdown 하나만 별도 파일로 write-once 발행한다. Package와 summary는 사전 검사 직후 다른 프로세스가 같은 경로를 만들어도 기존 증거를 덮어쓰지 않는다. 기존 파일과 symlink output은 거부하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 ## 3. 생성과 교정
 

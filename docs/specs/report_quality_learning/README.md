@@ -253,11 +253,11 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
 
    python3 scripts/manage_report_quality_pilot_handoff.py verify \
      reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip \
-     --summary-output reports/report-quality/pilot-rqc-001-handoff-summary.md
+     --browser-summary-output reports/report-quality/pilot-rqc-001-handoff-summary.html
    ```
    - Finalize는 private temporary directory에서 `--require-ready` sync를 통과한 exact JSONL을 만들고 current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar와 함께 embedded `handoff_manifest.json`에 결속한다. 임시 JSONL은 package 발행 뒤 삭제하며 standalone JSONL이 필요한 경우에만 기존 `sync`와 `create --jsonl`을 사용한다.
    - Handoff v2는 원문 전달용 `HANDOFF_SUMMARY.md`와 별도 runtime 없이 브라우저에서 여는 script-free `HANDOFF_SUMMARY.html`을 함께 담는다. 두 파일 모두 artifact별 reviewer, reviewed time, score, decision state와 evidence hash, no-training boundary를 보여준다.
-   - Verifier는 Markdown과 HTML을 같은 evidence에서 다시 생성해 exact bytes를 대조하고 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다. 기존 v1 archive는 Markdown 계약으로 계속 검증한다. `--summary-output`은 검증을 통과한 exact Markdown만 별도 파일로 write-once 발행하고 summary SHA-256을 함께 반환한다. Package와 summary는 동시 생성된 기존 증거도 보존하며 기존 파일·symlink·비 Markdown output을 거부한다.
+   - Verifier는 Markdown과 HTML을 같은 evidence에서 다시 생성해 exact bytes를 대조하고 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다. 기존 v1 archive는 Markdown 계약으로 계속 검증한다. `--browser-summary-output` 또는 `--summary-output` 중 하나를 선택하면 검증을 통과한 exact HTML 또는 Markdown만 별도 파일로 write-once 발행한다. 두 옵션은 동시에 사용할 수 없고 기존 파일·symlink·잘못된 확장자를 거부한다.
 13. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
 14. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
 15. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
