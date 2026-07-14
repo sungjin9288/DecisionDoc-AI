@@ -197,9 +197,19 @@ def _apply_decision(payload: dict[str, Any], decision: dict[str, Any]) -> dict[s
     return payload
 
 
-def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dict[str, Any]:
+def create_review_decision_template(
+    *,
+    pack_dir: Path,
+    output_path: Path,
+    start_pending: bool = False,
+) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
-    resolved_output_path = output_path.expanduser().resolve()
+    expanded_output_path = output_path.expanduser()
+    if expanded_output_path.is_symlink():
+        raise ValueError("symlink decision template files are not allowed")
+    resolved_output_path = expanded_output_path.resolve()
+    if resolved_output_path.exists():
+        raise ValueError(f"refusing to overwrite existing decision template: {resolved_output_path}")
     snapshot = load_pilot_pack(resolved_pack_dir)
     decisions: list[dict[str, Any]] = []
     for draft in snapshot.drafts:
@@ -217,7 +227,8 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
             "artifact_id": draft.artifact_id,
             "report_workflow_id": workflow.get("report_workflow_id", ""),
             "domain": profile.get("domain", ""),
-            "decision": current_decision,
+            "previous_decision": current_decision,
+            "decision": "pending" if start_pending else current_decision,
             "reviewer": correction.get("reviewer", ""),
             "reviewed_at": correction.get("reviewed_at", ""),
             "overall_score": quality.get("overall_score"),
@@ -244,6 +255,7 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
         "pack_dir": str(resolved_pack_dir),
         "pack_binding": snapshot.binding(),
         "training_authorized": False,
+        "review_started_pending": start_pending,
         "instructions": [
             "accepted로 변경할 때만 accepted_for_learning=true가 적용됩니다.",
             "accepted decision은 reviewer, reviewed_at, overall_score, 모든 dimension_scores, scan pass가 필요합니다.",
@@ -264,6 +276,7 @@ def create_review_decision_template(*, pack_dir: Path, output_path: Path) -> dic
         "output_path": str(resolved_output_path),
         "artifact_count": len(decisions),
         "source_bound": snapshot.source_order_applied,
+        "review_started_pending": start_pending,
         "side_effect_boundary": {
             "reads_local_draft_json": True,
             "writes_decision_template": True,

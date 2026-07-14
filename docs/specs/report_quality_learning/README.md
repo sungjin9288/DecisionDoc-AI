@@ -190,13 +190,8 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
    ```
-8. 변경이 필요하면 현재 pack에 결속된 decision template을 만들고 `changes_requested` 또는 `rejected`를 기록한다.
-   ```bash
-   python3 scripts/apply_report_quality_review_decisions.py \
-     reports/report-quality/pilot-rqc-001 \
-     --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
-   ```
-9. decision JSON을 작성했다면 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 새 template을 만들고 다시 검토한다.
+8. Import와 함께 자동 생성된 `review_decisions.json`에 `accepted`, `changes_requested`, `rejected` 중 사람의 결정을 기록한다. 원래 상태는 `previous_decision`에 남고 새 파일럿 판단은 `pending`에서 시작한다. 기존 pack에 template이 없다면 `--create-template`로 한 번만 추가한다. 기존 파일과 symlink는 덮어쓰지 않는다.
+9. decision JSON을 작성했다면 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 기존 파일을 보존하고 새 이름으로 template을 만든 뒤 다시 검토한다.
    ```bash
    python3 scripts/apply_report_quality_review_decisions.py \
      reports/report-quality/pilot-rqc-001 \

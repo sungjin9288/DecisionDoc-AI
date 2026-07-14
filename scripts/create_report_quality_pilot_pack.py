@@ -30,12 +30,15 @@ from app.services.report_quality_pilot_receipt import (  # noqa: E402
     pilot_export_receipt_sha256,
     validate_pilot_export_receipt,
 )
-from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
-    SOURCE_MANIFEST_SCHEMA,
-    SOURCE_PACKAGE_MANIFEST_NAME,
+from scripts.apply_report_quality_review_decisions import (  # noqa: E402
+    create_review_decision_template,
 )
 from scripts.create_report_quality_review_sheet import (  # noqa: E402
     create_report_quality_review_sheet,
+)
+from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    SOURCE_MANIFEST_SCHEMA,
+    SOURCE_PACKAGE_MANIFEST_NAME,
 )
 
 
@@ -44,6 +47,7 @@ DEFAULT_OUTPUT_ROOT = Path("reports/report-quality")
 BATCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SOURCE_RECEIPT_NAME = "SOURCE_EXPORT_RECEIPT.json"
+REVIEW_DECISIONS_NAME = "review_decisions.json"
 
 DEFAULT_SAMPLE_PROFILES: tuple[dict[str, Any], ...] = (
     {
@@ -115,6 +119,15 @@ def _validate_batch_id(batch_id: str) -> str:
     if not BATCH_ID_PATTERN.fullmatch(normalized):
         raise ValueError("batch_id must use only letters, numbers, '.', '_', or '-' and must not contain paths")
     return normalized
+
+
+def _require_empty_output_directory(output_dir: Path) -> None:
+    if output_dir.is_symlink():
+        raise ValueError(f"pilot pack output directory must not be a symlink: {output_dir}")
+    if not output_dir.exists():
+        return
+    if not output_dir.is_dir() or any(output_dir.iterdir()):
+        raise ValueError(f"pilot pack output directory must be empty: {output_dir}")
 
 
 def _load_ready_source_jsonl(source_jsonl: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -440,6 +453,7 @@ def _render_index(
 - draft_jsonl: `{jsonl_path}`
 - review_sheet: `{output_dir / 'HUMAN_REVIEW_WORKSHEET.md'}`
 - review_manifest: `{output_dir / 'human_review_manifest.json'}`
+- review_decisions: `{output_dir / REVIEW_DECISIONS_NAME}`
 - training_authorized: `false`
 {source_details}
 
@@ -509,6 +523,7 @@ def create_report_quality_pilot_pack(
         raise ValueError("source_package cannot be combined with source_jsonl or source_receipt")
 
     output_dir = output_root / batch_id
+    _require_empty_output_directory(output_dir)
     drafts_dir = output_dir / "drafts"
     source_info: dict[str, Any] | None = None
     receipt_bytes: bytes | None = None
@@ -524,8 +539,6 @@ def create_report_quality_pilot_pack(
         ) = _load_source_package(source_package)
         sample_count = len(artifacts)
         source_mode = "exported_ready_package"
-        if output_dir.exists() and any(output_dir.iterdir()):
-            raise ValueError(f"source import output directory must be empty: {output_dir}")
     elif source_jsonl is not None:
         artifacts, source_info = _load_ready_source_jsonl(source_jsonl)
         if source_receipt is None:
@@ -536,8 +549,6 @@ def create_report_quality_pilot_pack(
         )
         sample_count = len(artifacts)
         source_mode = "exported_ready_jsonl"
-        if output_dir.exists() and any(output_dir.iterdir()):
-            raise ValueError(f"source import output directory must be empty: {output_dir}")
     else:
         if source_receipt is not None:
             raise ValueError("source_receipt requires source_jsonl")
@@ -628,6 +639,12 @@ def create_report_quality_pilot_pack(
         ),
     )
     review_manifest = create_report_quality_review_sheet(pack_dir=output_dir)
+    decisions_path = output_dir / REVIEW_DECISIONS_NAME
+    decision_template = create_review_decision_template(
+        pack_dir=output_dir,
+        output_path=decisions_path,
+        start_pending=True,
+    )
 
     return {
         "batch_id": batch_id,
@@ -637,6 +654,7 @@ def create_report_quality_pilot_pack(
         "jsonl_path": str(jsonl_path),
         "review_sheet_path": review_manifest["output_path"],
         "review_manifest_path": review_manifest["manifest_path"],
+        "review_decisions_path": decision_template["output_path"],
         "source_manifest_path": str(source_manifest_path) if source_manifest_path else None,
         "source_receipt_path": (
             str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
@@ -719,6 +737,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"jsonl_path={result['jsonl_path']}")
         print(f"review_sheet_path={result['review_sheet_path']}")
         print(f"review_manifest_path={result['review_manifest_path']}")
+        print(f"review_decisions_path={result['review_decisions_path']}")
         if result["source_manifest_path"]:
             print(f"source_manifest_path={result['source_manifest_path']}")
         if result["source_receipt_path"]:

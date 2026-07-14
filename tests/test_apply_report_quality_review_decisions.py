@@ -155,8 +155,26 @@ def test_create_review_decision_template_writes_non_training_template(tmp_path):
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["training_authorized"] is False
     assert payload["pack_binding"]["schema_version"] == "decisiondoc_report_quality_pilot_pack_binding.v1"
+    assert payload["review_started_pending"] is False
     assert len(payload["decisions"]) == 3
+    assert payload["decisions"][0]["previous_decision"] == "pending"
     assert payload["decisions"][0]["decision"] == "pending"
+
+    original_bytes = output_path.read_bytes()
+    with pytest.raises(ValueError, match="refusing to overwrite existing decision template"):
+        apply_script.create_review_decision_template(
+            pack_dir=pack_dir,
+            output_path=output_path,
+        )
+    assert output_path.read_bytes() == original_bytes
+
+    linked_path = tmp_path / "linked-review-decisions.json"
+    linked_path.symlink_to(output_path)
+    with pytest.raises(ValueError, match="symlink decision template files are not allowed"):
+        apply_script.create_review_decision_template(
+            pack_dir=pack_dir,
+            output_path=linked_path,
+        )
 
 
 def test_apply_review_decisions_accepts_ready_decision(tmp_path):

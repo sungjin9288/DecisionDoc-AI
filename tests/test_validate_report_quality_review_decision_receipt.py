@@ -86,9 +86,12 @@ def _apply_with_receipt(tmp_path: Path) -> tuple[Path, Path]:
     pack_dir = _create_source_pack(tmp_path)
     decisions_path = pack_dir / "review_decisions.json"
     receipt_path = pack_dir / "review_decision_application_receipt.json"
-    apply_script.create_review_decision_template(
-        pack_dir=pack_dir,
-        output_path=decisions_path,
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    for decision in decisions["decisions"]:
+        decision["decision"] = "accepted"
+    decisions_path.write_text(
+        json.dumps(decisions, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     result = apply_script.apply_review_decisions(
         pack_dir=pack_dir,
@@ -148,6 +151,7 @@ def test_review_decision_application_rejects_symlink_inputs(tmp_path):
         pack_dir=decision_pack,
         output_path=decision_target,
     )
+    decision_link.unlink()
     decision_link.symlink_to(decision_target.name)
     with pytest.raises(ValueError, match="symlink decision files are not allowed"):
         apply_script.apply_review_decisions(
@@ -161,10 +165,6 @@ def test_review_decision_application_rejects_symlink_inputs(tmp_path):
     receipt_pack = _create_source_pack(receipt_case)
     decisions_path = receipt_pack / "review_decisions.json"
     receipt_link = receipt_pack / "receipt.json"
-    apply_script.create_review_decision_template(
-        pack_dir=receipt_pack,
-        output_path=decisions_path,
-    )
     receipt_link.symlink_to("receipt_target.json")
     with pytest.raises(ValueError, match="symlink receipt files are not allowed"):
         apply_script.apply_review_decisions(

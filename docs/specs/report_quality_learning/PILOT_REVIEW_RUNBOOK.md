@@ -48,11 +48,12 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/SOURCE_PACKAGE_MANIFEST.json` (`--source-package` 사용 시)
 - `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
 - `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
+- `reports/report-quality/pilot-rqc-001/review_decisions.json`
 
 주의:
 
 - import는 검증된 package 또는 서로 짝이 맞는 UTF-8 JSONL·server receipt, ready artifact 3~5개, 중복 없는 artifact ID, 단일 tenant를 요구한다.
-- 같은 batch ID의 출력 디렉터리에 기존 파일이 있으면 stale artifact가 섞이지 않도록 import를 거부한다.
+- 모든 pack mode는 같은 batch ID의 출력 디렉터리에 기존 파일이 있거나 해당 경로가 symlink이면 사람의 수정과 stale artifact를 덮어쓰지 않도록 생성을 거부한다.
 - `SOURCE_MANIFEST.json` v3는 원본 package와 embedded JSONL·receipt·package manifest의 SHA-256, size, request ID, tenant, 선택 순서를 기록한다. Embedded manifest 원문은 `SOURCE_PACKAGE_MANIFEST.json`에 보존하므로 원본 ZIP이 이동되거나 삭제되어도 이후 sync가 hash, entry metadata, tenant, request ID, artifact 순서, no-training boundary를 다시 확인할 수 있다. Manifest·receipt·draft 구성이 다르면 실패하며 기존 v1/v2 manifest와 JSONL+receipt 입력은 계속 읽을 수 있다.
 - 가져온 artifact는 이미 ready gate를 통과했더라도 사람이 교정 내용과 점수, scan 결과를 다시 검토한다.
 - 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
@@ -82,9 +83,9 @@ python3 scripts/create_report_quality_review_sheet.py \
 - `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
 - `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
 
-worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 파생 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 사람이 채우는 decision template은 자동 생성하지 않으므로 기존 review 입력을 덮어쓰지 않는다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 파생 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
-JSON을 직접 수정하는 대신 decision template을 만들어 검수 결정을 반영할 수 있다.
+새 pack에는 현재 binding에 맞는 `review_decisions.json`도 한 번만 생성된다. 원래 artifact 상태는 `previous_decision`에 보존하지만 새 파일럿 검토의 `decision`은 모두 `pending`에서 시작한다. 기존 pack처럼 파일이 없는 경우에만 아래 명령으로 template을 추가한다.
 
 ```bash
 python3 scripts/apply_report_quality_review_decisions.py \
@@ -92,7 +93,7 @@ python3 scripts/apply_report_quality_review_decisions.py \
   --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
 ```
 
-검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. Template은 현재 review 상태를 그대로 시작값으로 사용하고, `pack_binding`에 source manifest와 draft SHA-256을 기록한다. 승인할 artifact만 `decision=accepted`로 유지하거나 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다.
+검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. Template은 현재 review 상태를 그대로 시작값으로 사용하고, `pack_binding`에 source manifest와 draft SHA-256을 기록한다. 승인할 artifact만 `decision=accepted`로 유지하거나 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다. Generator는 기존 template이나 symlink를 덮어쓰지 않는다. Draft를 직접 바꿔 기존 binding이 stale해졌다면 기존 파일을 보존하고 `review_decisions_refreshed.json`처럼 새 경로에 template을 만든다.
 
 결정 파일을 draft artifact에 반영할 때:
 

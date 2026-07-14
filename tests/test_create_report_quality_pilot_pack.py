@@ -124,6 +124,12 @@ def test_create_report_quality_pilot_pack_writes_non_ready_drafts(tmp_path):
     assert review_manifest["counts"]["pending_artifacts"] == 3
     assert review_manifest["pack_binding"]["source_manifest"] is None
     assert review_manifest["side_effect_boundary"]["training_execution_started"] is False
+    decisions_path = Path(result["review_decisions_path"])
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    assert decisions["training_authorized"] is False
+    assert decisions["review_started_pending"] is True
+    assert len(decisions["decisions"]) == 3
+    assert all(item["decision"] == "pending" for item in decisions["decisions"])
 
     lines = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 3
@@ -163,6 +169,7 @@ def test_create_report_quality_pilot_pack_cli_outputs_json(tmp_path, capsys):
     assert Path(result["jsonl_path"]).exists()
     assert Path(result["review_sheet_path"]).exists()
     assert Path(result["review_manifest_path"]).exists()
+    assert Path(result["review_decisions_path"]).exists()
 
 
 def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
@@ -319,6 +326,11 @@ def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
         source_manifest_path.read_bytes()
     ).hexdigest()
     assert review_manifest["pack_binding"]["source_manifest"]["tenant_id"] == "tenant-a"
+    decisions = json.loads(Path(result["review_decisions_path"]).read_text(encoding="utf-8"))
+    assert [item["artifact_id"] for item in decisions["decisions"]] == artifact_ids
+    assert all(item["previous_decision"] == "accepted" for item in decisions["decisions"])
+    assert all(item["decision"] == "pending" for item in decisions["decisions"])
+    assert decisions["pack_binding"] == review_manifest["pack_binding"]
 
     package_path.unlink()
 
@@ -609,6 +621,26 @@ def test_create_report_quality_pilot_pack_rejects_invalid_source_batches(tmp_pat
             source_receipt=receipt_path,
         )
     assert marker.read_text(encoding="utf-8") == "preserve"
+
+    with pytest.raises(ValueError, match="output directory must be empty"):
+        script.create_report_quality_pilot_pack(
+            batch_id="pilot-existing",
+            output_root=output_root,
+            sample_count=3,
+        )
+    assert marker.read_text(encoding="utf-8") == "preserve"
+
+    external_dir = tmp_path / "external-pack"
+    external_dir.mkdir()
+    linked_pack = output_root / "pilot-linked"
+    linked_pack.symlink_to(external_dir, target_is_directory=True)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        script.create_report_quality_pilot_pack(
+            batch_id="pilot-linked",
+            output_root=output_root,
+            sample_count=3,
+        )
+    assert not any(external_dir.iterdir())
 
 
 def test_create_report_quality_pilot_pack_rejects_path_like_batch_id(tmp_path, capsys):
