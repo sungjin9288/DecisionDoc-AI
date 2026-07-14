@@ -24,12 +24,9 @@ import csv
 import io
 import json
 import os
-import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 TEST_JWT_SECRET_KEY = "test-secret-key-audit-tests-32chars!!"
@@ -164,8 +161,6 @@ def test_audit_store_query_filter_by_result(tmp_path):
 def test_audit_store_query_filter_by_date(tmp_path):
     os.environ["DATA_DIR"] = str(tmp_path)
     from app.storage.audit_store import AuditStore
-    import uuid
-    from app.storage.audit_store import AuditLog
     store = AuditStore("t1")
 
     old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
@@ -520,6 +515,34 @@ def test_resolve_action_report_quality_pilot_preview_and_export():
     assert _resolve_action("POST", base_path, 200) == "report_quality.pilot_export"
     assert ACTION_TYPES["report_quality.pilot_preview"] == "보고서 품질 파일럿 사전 검토"
     assert ACTION_TYPES["report_quality.pilot_export"] == "보고서 품질 파일럿 내보내기"
+
+
+def test_resolve_action_explicit_document_ops_events_preserves_access_failures():
+    from app.middleware.audit import _resolve_action
+    from app.storage.audit_store import ACTION_TYPES
+
+    detail_path = "/api/agent/document-ops/trajectories/trj_123"
+    assert _resolve_action(
+        "GET",
+        detail_path,
+        200,
+        explicit_action="document_ops.trajectory_view",
+    ) == "document_ops.trajectory_view"
+    assert _resolve_action(
+        "POST",
+        f"{detail_path}/review",
+        400,
+        explicit_action="document_ops.trajectory_review",
+    ) == "document_ops.trajectory_review"
+    assert _resolve_action(
+        "GET",
+        detail_path,
+        401,
+        explicit_action="document_ops.trajectory_view",
+    ) == "access.unauthorized"
+    assert _resolve_action("GET", "/api/agent/document-ops/trajectories/stats", 200) == ""
+    assert ACTION_TYPES["document_ops.trajectory_view"] == "DocumentOps 이력 상세 조회"
+    assert ACTION_TYPES["document_ops.trajectory_review"] == "DocumentOps 사람 검토"
 
 
 def test_resolve_action_procurement_review_inbox_view():

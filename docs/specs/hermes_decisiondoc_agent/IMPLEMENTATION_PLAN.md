@@ -140,6 +140,7 @@ Work:
 - keep trajectory history pagination aligned across storage, API, and browser state
 - keep tenant-scoped search and newest/oldest ordering aligned across storage, API, and browser state
 - keep summary lists and lazy-loaded detail on the same tenant and review contract
+- append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - ignore stale trajectory responses when operators change filters before an earlier request completes
 - return to the first or last valid page when filters or reviews change the visible result set
 - require review notes and an explicit human score in the browser before accepting a trajectory

@@ -6806,6 +6806,8 @@
         <option value="system.export">데이터 내보내기</option>
         <option value="report_quality.pilot_preview">품질 Pilot 사전 검토</option>
         <option value="report_quality.pilot_export">품질 Pilot 내보내기</option>
+        <option value="document_ops.trajectory_view">DocumentOps 상세 조회</option>
+        <option value="document_ops.trajectory_review">DocumentOps 사람 검토</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -27256,6 +27258,25 @@ function renderAuditPagination(data) {
   auditPageOffset = offset;
 }
 
+function renderAuditEvidence(log, detail) {
+  if (['report_quality.pilot_preview', 'report_quality.pilot_export'].includes(log?.action)) {
+    return `<div class="audit-evidence">
+      request=${escapeHtml(detail.request_id || '-')}<br>
+      sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>
+      artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}
+    </div>`;
+  }
+  if (['document_ops.trajectory_view', 'document_ops.trajectory_review'].includes(log?.action)) {
+    const evidence = [`status=${detail.review_status || '-'}`];
+    if (detail.review_decision) evidence.push(`decision=${detail.review_decision}`);
+    if (detail.reviewer) evidence.push(`reviewer=${detail.reviewer}`);
+    if (detail.review_version != null) evidence.push(`version=${detail.review_version}`);
+    if (detail.quality_score != null) evidence.push(`score=${detail.quality_score}`);
+    return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
+  }
+  return '';
+}
+
 function renderAuditLogs(logs) {
   const container = document.getElementById('audit-log-table');
   if (!container) return;
@@ -27274,13 +27295,8 @@ function renderAuditLogs(logs) {
       <tbody>
         ${logs.map(log => {
           const detail = log?.detail && typeof log.detail === 'object' ? log.detail : {};
-          const isQualityPilot = ['report_quality.pilot_preview', 'report_quality.pilot_export'].includes(log?.action);
           const resource = `${escapeHtml(log?.resource_type || '')} ${escapeHtml(String(log?.resource_id || '').slice(0, 8))}`.trim();
-          const evidence = isQualityPilot ? `<div class="audit-evidence">
-            request=${escapeHtml(detail.request_id || '-')}<br>
-            sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>
-            artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}
-          </div>` : '';
+          const evidence = renderAuditEvidence(log, detail);
           return `
           <tr class="audit-row ${escapeHtml(log.result || '')}">
             <td class="audit-time">${escapeHtml(String(log.timestamp || '').slice(11,19))}</td>

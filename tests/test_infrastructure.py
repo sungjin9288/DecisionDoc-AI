@@ -1784,6 +1784,14 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content
     assert '<option value="report_quality.pilot_preview">' in content
     assert '<option value="report_quality.pilot_export">' in content
+    assert '<option value="document_ops.trajectory_view">' in content
+    assert '<option value="document_ops.trajectory_review">' in content
+    assert "function renderAuditEvidence(log, detail)" in content
+    assert "status=${detail.review_status || '-'}" in content
+    assert "decision=${detail.review_decision}" in content
+    assert "reviewer=${detail.reviewer}" in content
+    assert "version=${detail.review_version}" in content
+    assert "score=${detail.quality_score}" in content
     assert "request=${escapeHtml(detail.request_id || '-')}" in content
     assert "sha256=${escapeHtml(detail.pilot_sha256 || '-')}" in content
     assert "preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}" in content

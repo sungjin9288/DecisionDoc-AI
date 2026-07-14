@@ -634,6 +634,23 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert reviewed["human_feedback"]["quality_score"] == 0.88
     assert reviewed["human_feedback"]["notes"] == "전체 초안과 근거 상태를 확인하고 승인합니다."
 
+    page.evaluate(
+        """async () => {
+          document.querySelector('#ops-panel').style.display = 'block';
+          document.querySelector('#audit-action-filter').value = 'document_ops.trajectory_review';
+          await loadAuditLogs({ action: 'document_ops.trajectory_review' }, 0);
+        }"""
+    )
+    audit_text = page.locator("#audit-log-table").inner_text()
+    assert "document_ops.trajectory_review" in audit_text
+    assert "status=accepted" in audit_text
+    assert "decision=accepted" in audit_text
+    assert "reviewer=browser-reviewer" in audit_text
+    assert "version=1" in audit_text
+    assert "score=0.88" in audit_text
+    assert "전체 초안과 근거 상태를 확인하고 승인합니다." not in audit_text
+    page.evaluate("document.querySelector('#ops-panel').style.display = 'none'")
+
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-detail-mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")

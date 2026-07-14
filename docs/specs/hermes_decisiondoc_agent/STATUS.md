@@ -71,6 +71,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
 - browser history requests summary records and loads the full tenant-scoped trajectory only when
   a reviewer opens its detail, while existing API callers retain the default full-list response
+- detail views and human review requests append success/failure audit events with trajectory and
+  compact review provenance; inputs, drafts, and review notes are not copied into audit detail
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -88,6 +90,8 @@ and returned to the last valid page after a filtered record changed state.
 The detail check confirmed that source evidence was absent from the summary card, recovered a
 malformed first response through the card retry control, then loaded the full record through the
 tenant-scoped detail endpoint before accepting reviewer input.
+The same browser flow filtered Admin Ops audit logs to the review action and confirmed the accepted
+decision, reviewer, version, and score without rendering the review notes.
 Controls remained correct with no horizontal overflow or browser console error. This check did not
 create a dataset upload, provider API call, training job, promotion, or production action.
 
@@ -166,7 +170,7 @@ Last local verification on 2026-07-14:
 - focused DocumentOps suite: 60 passed
 - focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
 - DocumentOps trajectory browser E2E: 2 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2965 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2966 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

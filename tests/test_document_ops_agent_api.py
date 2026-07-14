@@ -111,6 +111,22 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert stats.status_code == 200
     assert stats.json()["total_records"] == 1
 
+    from app.storage.audit_store import AuditStore
+
+    view_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "document_ops.trajectory_view"},
+    )
+    assert len(view_audits) == 2
+    successful_view = next(item for item in view_audits if item["result"] == "success")
+    missing_view = next(item for item in view_audits if item["result"] == "failure")
+    assert successful_view["resource_type"] == "document_ops_trajectory"
+    assert successful_view["resource_id"] == body["trajectory_id"]
+    assert successful_view["detail"]["review_status"] == "pending"
+    assert not {"input", "draft", "notes", "human_feedback"} & successful_view["detail"].keys()
+    assert missing_view["resource_id"] == "missing"
+    assert missing_view["detail"]["trajectory_id"] == "missing"
+
 
 def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requested_order(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
@@ -336,6 +352,18 @@ def test_document_ops_review_requires_traceable_reviewer_identity(tmp_path, monk
     listed = client.get("/api/agent/document-ops/trajectories", headers=_api_headers()).json()
     assert listed["trajectories"][0]["human_review_status"] == "pending"
 
+    from app.storage.audit_store import AuditStore
+
+    review_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "document_ops.trajectory_review"},
+    )
+    assert len(review_audits) == 1
+    assert review_audits[0]["result"] == "failure"
+    assert review_audits[0]["resource_id"] == created["trajectory_id"]
+    assert review_audits[0]["detail"]["review_decision"] == "accepted"
+    assert "notes" not in review_audits[0]["detail"]
+
 
 def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
@@ -379,6 +407,23 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     )
     assert repeated_review.status_code == 200
     assert repeated_review.json()["human_feedback"] == first_feedback
+
+    from app.storage.audit_store import AuditStore
+
+    review_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "document_ops.trajectory_review"},
+    )
+    assert len(review_audits) == 2
+    for entry in review_audits:
+        assert entry["resource_type"] == "document_ops_trajectory"
+        assert entry["resource_id"] == created["trajectory_id"]
+        assert entry["detail"]["review_status"] == "accepted"
+        assert entry["detail"]["review_decision"] == "accepted"
+        assert entry["detail"]["reviewer"] == "pm"
+        assert entry["detail"]["review_version"] == 1
+        assert entry["detail"]["quality_score"] == 0.91
+        assert "notes" not in entry["detail"]
 
     stats = client.get("/api/agent/document-ops/trajectories/stats", headers=_api_headers())
     assert stats.status_code == 200

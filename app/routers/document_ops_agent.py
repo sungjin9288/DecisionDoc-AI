@@ -37,6 +37,11 @@ def _safe_download_filename_part(value: str, *, fallback: str = "system") -> str
     return (safe or fallback)[:80]
 
 
+def _human_feedback(trajectory: dict) -> dict:
+    feedback = trajectory.get("human_feedback")
+    return feedback if isinstance(feedback, dict) else {}
+
+
 @router.post("/run", dependencies=[Depends(require_not_maintenance), Depends(require_api_key)])
 def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request) -> dict:
     tenant_id = get_tenant_id(request)
@@ -493,12 +498,21 @@ def export_document_ops_trajectories(
 
 @router.get("/trajectories/{trajectory_id}", dependencies=[Depends(require_api_key)])
 def get_document_ops_trajectory(trajectory_id: str, request: Request) -> dict:
+    request.state.audit_action = "document_ops.trajectory_view"
+    request.state.document_ops_trajectory_id = trajectory_id
     trajectory = _service(request).get_trajectory(
         trajectory_id,
         tenant_id=get_tenant_id(request),
     )
     if trajectory is None:
         raise HTTPException(status_code=404, detail="trajectory not found")
+    feedback = _human_feedback(trajectory)
+    request.state.document_ops_review_status = (
+        trajectory.get("human_review_status") or "pending"
+    )
+    request.state.document_ops_reviewer = feedback.get("reviewer") or ""
+    request.state.document_ops_review_version = feedback.get("review_version")
+    request.state.document_ops_quality_score = feedback.get("quality_score")
     return {"trajectory": trajectory}
 
 
@@ -509,6 +523,13 @@ def review_document_ops_trajectory(
     request: Request,
 ) -> dict:
     reviewer = payload.reviewer.strip() or get_username(request)
+    request.state.audit_action = "document_ops.trajectory_review"
+    request.state.document_ops_trajectory_id = trajectory_id
+    request.state.document_ops_review_decision = (
+        "accepted" if payload.accepted else "rejected"
+    )
+    request.state.document_ops_reviewer = reviewer
+    request.state.document_ops_quality_score = payload.quality_score
     try:
         updated = _service(request).review_trajectory(
             trajectory_id,
@@ -523,4 +544,9 @@ def review_document_ops_trajectory(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="trajectory not found")
+    feedback = _human_feedback(updated)
+    request.state.document_ops_review_status = (
+        updated.get("human_review_status") or "pending"
+    )
+    request.state.document_ops_review_version = feedback.get("review_version")
     return updated

@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2965 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2966 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -87,6 +87,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 report-quality correction artifact 목록에 tenant-scoped `offset`/`limit`, filtered total, `has_more`를 추가하고 화면에 전체/ready 탐색과 5개 단위 페이지 이동을 연결했다. 페이지를 넘어가도 현재 tenant의 pilot 선택을 최대 5개까지 보존하며, tenant가 바뀌면 선택을 비우고 preview/export에서 기존 server-side 3~5개 ready 검증을 다시 수행한다.
   - 2026-07-14 DocumentOps trajectory 목록의 `total`을 제한된 응답 길이가 아닌 tenant·filter 기준 실제 건수로 바로잡고, `offset`/`limit`과 `returned`/`has_more` 계약을 추가했다. Browser workbench는 제목·trajectory ID·request ID·검토자 검색, 작업 유형·검토 상태 filter, 최신순/오래된 순 정렬, 10건 단위 이력 이동, 조건 변경과 새 실행 시 첫 페이지 복귀, 리뷰 후 현재 page가 비면 마지막 유효 page 복귀를 지원한다. 각 trajectory는 전체 입력·초안·근거 상태·QA gate·review history를 펼쳐보고 명시적인 검토 메모와 사람 품질 점수를 제출하며, 자동 점수로 승인하지 않는다. Mock/local desktop·390px mobile에서 검색·양방향 정렬·상세 검토·overflow·console error를 검증한다.
   - 2026-07-14 DocumentOps browser 목록을 `include_detail=false` summary-first 계약으로 전환했다. 목록 응답은 title·draft preview·QA·review 상태만 유지하고, 검토자가 펼친 기록만 tenant-scoped `GET /api/agent/document-ops/trajectories/{trajectory_id}`로 전체 입력·초안·근거·QA·review history를 불러온다. 기존 API 호출은 기본 full response를 유지하며 lazy detail 뒤의 명시적 사람 검토 흐름도 그대로 보존한다.
+  - 2026-07-14 DocumentOps 상세 열람과 사람 review 요청을 append-only audit에 연결했다. Route가 명시한 action으로 정적 stats/export 경로와 구분하고, 성공·실패 resource에 tenant-scoped trajectory ID와 review 상태·결정·reviewer·버전·점수만 남긴다. 입력·초안·review notes는 audit detail에서 제외하며 Admin Ops에서 두 action을 필터링해 provenance를 확인한다.
   - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
   - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.

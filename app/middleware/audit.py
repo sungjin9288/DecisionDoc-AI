@@ -88,6 +88,7 @@ async def audit_middleware(request: Request, call_next):
     status_code = response.status_code
     error_code = getattr(request.state, "error_code", "")
     procurement_action = getattr(request.state, "procurement_action", "")
+    explicit_action = getattr(request.state, "audit_action", "")
     decision_council_handoff_used = bool(
         getattr(request.state, "decision_council_handoff_used", False)
     )
@@ -98,6 +99,7 @@ async def audit_middleware(request: Request, call_next):
         error_code=error_code,
         procurement_action=procurement_action,
         decision_council_handoff_used=decision_council_handoff_used,
+        explicit_action=explicit_action,
     )
 
     # Decide whether to audit this request
@@ -158,6 +160,7 @@ def _resolve_action(
     error_code: str | None = None,
     procurement_action: str | None = None,
     decision_council_handoff_used: bool = False,
+    explicit_action: str | None = None,
 ) -> str:
     """Determine the semantic action type for this request."""
     if (
@@ -174,6 +177,8 @@ def _resolve_action(
         return "access.unauthorized"
     if status_code == 403:
         return "access.blocked"
+    if explicit_action:
+        return explicit_action
 
     # Match against rule table
     for (m, pattern), action in AUDIT_RULES.items():
@@ -244,6 +249,7 @@ def _append_audit_entries(
     error_code = getattr(request.state, "error_code", "")
     procurement_error_code = getattr(request.state, "procurement_error_code", "") or error_code
     procurement_action = getattr(request.state, "procurement_action", "")
+    explicit_action = getattr(request.state, "audit_action", "")
     procurement_review_started = bool(
         getattr(request.state, "procurement_review_started", False)
     )
@@ -260,6 +266,7 @@ def _append_audit_entries(
         error_code=error_code,
         procurement_action=procurement_action,
         decision_council_handoff_used=decision_council_handoff_used,
+        explicit_action=explicit_action,
     )
     if not action:
         return
@@ -391,6 +398,24 @@ def _append_audit_entries(
         report_quality_pilot_preview_verified = getattr(
             request.state, "report_quality_pilot_preview_verified", None
         )
+        document_ops_trajectory_id = (
+            getattr(request.state, "document_ops_trajectory_id", "") or ""
+        )
+        document_ops_review_status = (
+            getattr(request.state, "document_ops_review_status", "") or ""
+        )
+        document_ops_review_decision = (
+            getattr(request.state, "document_ops_review_decision", "") or ""
+        )
+        document_ops_reviewer = (
+            getattr(request.state, "document_ops_reviewer", "") or ""
+        )
+        document_ops_review_version = getattr(
+            request.state, "document_ops_review_version", None
+        )
+        document_ops_quality_score = getattr(
+            request.state, "document_ops_quality_score", None
+        )
         detail = {
             "method": request.method,
             "path": path,
@@ -514,6 +539,18 @@ def _append_audit_entries(
             detail["pilot_artifact_count"] = report_quality_pilot_artifact_count
         if report_quality_pilot_preview_verified is not None:
             detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
+        if document_ops_trajectory_id:
+            detail["trajectory_id"] = document_ops_trajectory_id
+        if document_ops_review_status:
+            detail["review_status"] = document_ops_review_status
+        if document_ops_review_decision:
+            detail["review_decision"] = document_ops_review_decision
+        if document_ops_reviewer:
+            detail["reviewer"] = document_ops_reviewer
+        if document_ops_review_version is not None:
+            detail["review_version"] = document_ops_review_version
+        if document_ops_quality_score is not None:
+            detail["quality_score"] = document_ops_quality_score
 
         store = AuditStore(tenant_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -618,6 +655,11 @@ def _build_audit_log(
     if action.startswith("share.") and share_id:
         resource_type = "share"
         resource_id = share_id
+    if action.startswith("document_ops."):
+        resource_type = "document_ops_trajectory"
+        resource_id = str(
+            getattr(request.state, "document_ops_trajectory_id", "") or ""
+        )
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

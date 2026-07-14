@@ -74,6 +74,9 @@ ACTION_TYPES: dict[str, str] = {
     # Report quality
     "report_quality.pilot_preview": "보고서 품질 파일럿 사전 검토",
     "report_quality.pilot_export": "보고서 품질 파일럿 내보내기",
+    # DocumentOps
+    "document_ops.trajectory_view": "DocumentOps 이력 상세 조회",
+    "document_ops.trajectory_review": "DocumentOps 사람 검토",
     # Approval
     "approval.create": "결재 요청",
     "approval.submit": "검토 요청",
