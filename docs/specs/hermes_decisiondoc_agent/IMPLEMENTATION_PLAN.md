@@ -143,10 +143,11 @@ Work:
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
-- capture an unsaved review draft in tenant-and-trajectory keyed page memory as the reviewer types,
-  restore it after ordinary list refreshes or conflict recovery only in that tenant, reload trajectory
-  state when the Ops tenant changes, ignore prior-tenant list and stats responses, and never persist
-  the draft to storage or local browser data
+- capture an unsaved review draft in user-tenant-trajectory keyed page memory as the reviewer types,
+  restore it after ordinary list refreshes or conflict recovery only in that authenticated context,
+  clear it on logout or invalid session, and never persist it to storage or local browser data
+- align browser tenant headers from every access-token login and refresh path, reject unauthorized selector changes
+  without weakening `TENANT_MISMATCH`, and reload the entire app after an authorized tenant change
 - ignore stale trajectory responses when operators change filters before an earlier request completes
 - return to the first or last valid page when filters or reviews change the visible result set
 - require review notes and an explicit human score in the browser before accepting a trajectory
@@ -155,8 +156,10 @@ Acceptance:
 
 - visible labels match runtime state and authorization boundaries
 - stale review conflicts refresh the browser with the latest stored version instead of retrying a write
-- reviewer notes and score survive that refresh only in the same tenant; clearing both inputs or
-  completing a write removes the draft, and the same trajectory ID in another tenant cannot read it
+- reviewer notes and score survive that refresh only for the same user and tenant; clearing both inputs,
+  completing a write, logout, or session invalidation removes the draft, and another auth context cannot read it
+- stale local tenant state is replaced by the authenticated token tenant before tenant-scoped requests,
+  while denied selector changes leave both the active context and persisted selector value unchanged
 - no hidden control can trigger upload, training, or production operations
 - infrastructure and report-workflow integration tests pass
 

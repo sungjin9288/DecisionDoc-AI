@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2967 passed, 1 skipped, 4 deselected
+# 2026-07-14 실측: 2969 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -89,6 +89,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 DocumentOps browser 목록을 `include_detail=false` summary-first 계약으로 전환했다. 목록 응답은 title·draft preview·QA·review 상태만 유지하고, 검토자가 펼친 기록만 tenant-scoped `GET /api/agent/document-ops/trajectories/{trajectory_id}`로 전체 입력·초안·근거·QA·review history를 불러온다. 기존 API 호출은 기본 full response를 유지하며 lazy detail 뒤의 명시적 사람 검토 흐름도 그대로 보존한다.
   - 2026-07-14 DocumentOps 상세 열람과 사람 review 요청을 append-only audit에 연결했다. Route가 명시한 action으로 정적 stats/export 경로와 구분하고, 성공·실패 resource에 tenant-scoped trajectory ID와 review 상태·결정·reviewer·버전·점수만 남긴다. 입력·초안·review notes는 audit detail에서 제외하며 Admin Ops에서 두 action을 필터링해 provenance를 확인한다.
   - 2026-07-14 DocumentOps browser review 초안을 tenant ID와 trajectory ID의 복합 page-memory key로 격리했다. Ops tenant selector가 바뀌면 trajectory 목록과 filter/page 상태를 새 tenant 기준으로 즉시 다시 읽고 이전 tenant의 지연된 목록·stats 응답을 무시해, 동일 trajectory ID가 존재해도 이전 tenant의 메모·점수를 복원하거나 오래된 card에서 제출하지 않는다.
+  - 2026-07-14 browser tenant context를 signed access token의 tenant claim과 로그인·등록·refresh·LDAP login 시점마다 동기화했다. Review draft key에는 사용자 ID를 추가하고 logout/invalid session에서 전체 draft를 폐기한다. Ops tenant selector는 `/bundles` access preflight가 실패하면 선택값과 localStorage를 기존 tenant로 되돌리고, 성공한 전환만 전체 app reload로 반영해 JWT tenant mismatch와 다른 화면의 stale tenant state를 우회하지 않는다.
   - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
   - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.

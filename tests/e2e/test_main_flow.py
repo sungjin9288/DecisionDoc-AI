@@ -80,12 +80,119 @@ def _create_project_with_document(page, name: str = "조달 UI 테스트") -> st
     )
 
 
+def _create_tenant_member_auth(page, *, tenant_id: str, username: str) -> dict[str, str]:
+    return page.evaluate(
+        """async ({ tenantId, username }) => {
+          const token = localStorage.getItem('dd_access_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          };
+          const tenantResponse = await fetch('/admin/tenants', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ tenant_id: tenantId, display_name: `E2E ${tenantId}` }),
+          });
+          if (!tenantResponse.ok) throw new Error(`tenant create failed: ${tenantResponse.status}`);
+
+          const inviteResponse = await fetch('/admin/invite', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              tenant_id: tenantId,
+              email: `${username}@test.local`,
+              role: 'member',
+              send_email: false,
+            }),
+          });
+          if (!inviteResponse.ok) throw new Error(`invite create failed: ${inviteResponse.status}`);
+          const invite = await inviteResponse.json();
+
+          const acceptResponse = await fetch(`/invite/${invite.invite_id}/accept`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username,
+              display_name: 'Tenant E2E Member',
+              password: 'MemberPass1!',
+            }),
+          });
+          if (!acceptResponse.ok) throw new Error(`invite accept failed: ${acceptResponse.status}`);
+          return acceptResponse.json();
+        }""",
+        {"tenantId": tenant_id, "username": username},
+    )
+
+
 # ── 기본 페이지 ──────────────────────────────────────────────────────────────
 
 def test_page_loads(page):
     """Page title must contain 'DecisionDoc' and #bundle-grid must be visible."""
     page.wait_for_selector("#bundle-grid", timeout=5000)
     assert "DecisionDoc" in page.title()
+
+
+def test_tenant_context_follows_authenticated_user_and_rejects_denied_switches(page):
+    suffix = uuid.uuid4().hex[:10]
+    tenant_id = f"e2e-tenant-{suffix}"
+    invited_username = f"tenant_member_{suffix}"
+    auth = _create_tenant_member_auth(
+        page,
+        tenant_id=tenant_id,
+        username=invited_username,
+    )
+
+    base_url = page.url.split("?", 1)[0]
+    page.goto(f"{base_url}?ops=1")
+    page.wait_for_selector(
+        f'#tenant-select option[value="{tenant_id}"]',
+        state="attached",
+        timeout=10000,
+    )
+    page.locator("#tenant-select").select_option(tenant_id)
+    _wait_until_text_contains(
+        page,
+        "#notification-container",
+        "이 계정으로는 선택한 테넌트에 접근할 수 없습니다.",
+        timeout_ms=10000,
+    )
+    assert page.locator("#tenant-select").input_value() == "system"
+    assert page.evaluate("_currentTenantId") == "system"
+    assert page.evaluate("localStorage.getItem('dd_tenant_id')") == "system"
+
+    assert page.evaluate(
+        """() => {
+          _documentOpsReviewDrafts.set(documentOpsReviewDraftKey('same-tenant-review'), {
+            notes: 'logout 전에 작성한 검토 메모',
+            scoreText: '0.8',
+          });
+          logout();
+          return _documentOpsReviewDrafts.size === 0;
+        }"""
+    )
+
+    page.evaluate(
+        """({ accessToken, refreshToken }) => {
+          localStorage.setItem('dd_tenant_id', 'system');
+          localStorage.setItem('dd_access_token', accessToken);
+          localStorage.setItem('dd_refresh_token', refreshToken);
+        }""",
+        {"accessToken": auth["access_token"], "refreshToken": auth["refresh_token"]},
+    )
+    page.goto(base_url)
+    page.wait_for_selector("body.auth-ready", timeout=10000)
+
+    assert page.evaluate("_currentTenantId") == tenant_id
+    assert page.evaluate("localStorage.getItem('dd_tenant_id')") == tenant_id
+    assert page.evaluate("getAuthHeaders()['X-Tenant-ID']") == tenant_id
+    assert page.evaluate(
+        """async () => {
+          const response = await fetch('/api/agent/document-ops/trajectories/stats', {
+            headers: getAuthHeaders(),
+          });
+          return response.status;
+        }"""
+    ) == 200
 
 
 def test_generate_landing_shows_ai_rank_roster(page):

@@ -474,7 +474,28 @@ def test_index_html_ops_tenant_list_preserves_admin_session_auth():
 
     assert "headers: getOpsAccessHeaders()," in block
     assert "headers: { 'X-DecisionDoc-Ops-Key': opsKey }," not in block
-    assert "loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });" in block
+    assert "await changeTenantContext(e.target.value, e.target);" in block
+
+
+def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "function getTenantHeaders(tenantId = _currentTenantId)",
+        "function getAuthHeaders(tenantId = _currentTenantId)",
+        "function syncTenantContextFromAccessToken(accessToken)",
+        "localStorage.setItem('dd_tenant_id', tenantId);",
+        "async function changeTenantContext(nextTenantId, selector)",
+        "fetch('/bundles', { headers: getAuthHeaders(tenantId) })",
+        "if (selector) selector.value = previousTenantId;",
+        "이 계정으로는 선택한 테넌트에 접근할 수 없습니다.",
+        "_documentOpsReviewDrafts.clear();",
+        "window.location.reload();",
+    ):
+        assert marker in content
+
+    assert content.count("syncTenantContextFromAccessToken(") == 6
+    assert content.count("_documentOpsReviewDrafts.clear();") == 3
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
@@ -1827,6 +1848,12 @@ def test_index_html_sso_billing_dynamic_action_wiring_exists():
     content = open("app/static/index.html", encoding="utf-8").read()
 
     assert "container.querySelector('[data-sso-ldap-login]')?.addEventListener('click', submitLDAPLogin)" in content
+    ldap_start = content.index("async function submitLDAPLogin()")
+    ldap_end = content.index("// ── SSO Config", ldap_start)
+    ldap_block = content[ldap_start:ldap_end]
+    assert "_currentUser = JSON.parse(atob(data.access_token.split('.')[1]));" in ldap_block
+    assert "syncTenantContextFromAccessToken(data.access_token);" in ldap_block
+    assert "await initApp();" in ldap_block
     assert "function wireSSOFormActions(container) {" in content
     assert "'test-ldap': testLDAPConnection" in content
     assert "'save-ldap': saveLDAPConfig" in content
@@ -2127,8 +2154,8 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "data-docops-review-notes",
         "data-docops-review-score",
         "const _documentOpsReviewDrafts = new Map();",
-        "function documentOpsReviewDraftKey(trajectoryId, tenantId = _currentTenantId)",
-        "return JSON.stringify([normalizedTenantId, String(trajectoryId || '').trim()]);",
+        "userId = _currentUser?.sub || _currentUser?.user_id || 'anonymous'",
+        "return JSON.stringify([normalizedTenantId, normalizedUserId, String(trajectoryId || '').trim()]);",
         "const reviewDraft = _documentOpsReviewDrafts.get(documentOpsReviewDraftKey(item.trajectory_id));",
         "restoreDocumentOpsReviewDraftAfterConflict(trajectoryId)",
         "function wireDocumentOpsReviewDraftInputs(container)",

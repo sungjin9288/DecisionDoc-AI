@@ -7039,9 +7039,14 @@
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
 
-  function documentOpsReviewDraftKey(trajectoryId, tenantId = _currentTenantId) {
+  function documentOpsReviewDraftKey(
+    trajectoryId,
+    tenantId = _currentTenantId,
+    userId = _currentUser?.sub || _currentUser?.user_id || 'anonymous',
+  ) {
     const normalizedTenantId = String(tenantId || 'system').trim() || 'system';
-    return JSON.stringify([normalizedTenantId, String(trajectoryId || '').trim()]);
+    const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
+    return JSON.stringify([normalizedTenantId, normalizedUserId, String(trajectoryId || '').trim()]);
   }
 
   function documentOpsLines(value) {
@@ -12120,19 +12125,32 @@
   }
 
   /* ── Tenant helpers ────────────────────────────────────────────── */
-  function getTenantHeaders() {
-    return _currentTenantId && _currentTenantId !== 'system'
-      ? { 'X-Tenant-ID': _currentTenantId }
+  function getTenantHeaders(tenantId = _currentTenantId) {
+    return tenantId && tenantId !== 'system'
+      ? { 'X-Tenant-ID': tenantId }
       : {};
   }
 
   /* ── Auth headers (tenant + JWT Bearer token) ────────────────── */
-  function getAuthHeaders() {
+  function getAuthHeaders(tenantId = _currentTenantId) {
     const token = localStorage.getItem('dd_access_token');
     return {
-      ...getTenantHeaders(),
+      ...getTenantHeaders(tenantId),
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     };
+  }
+
+  function syncTenantContextFromAccessToken(accessToken) {
+    try {
+      const claims = JSON.parse(atob(String(accessToken || '').split('.')[1]));
+      const tenantId = String(claims.tenant_id || '').trim();
+      if (!tenantId) return false;
+      _currentTenantId = tenantId;
+      localStorage.setItem('dd_tenant_id', tenantId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function getOpsKeyValue() {
@@ -12171,6 +12189,42 @@
     });
   }
 
+  async function changeTenantContext(nextTenantId, selector) {
+    const previousTenantId = _currentTenantId;
+    const tenantId = String(nextTenantId || '').trim();
+    if (!tenantId || tenantId === previousTenantId) {
+      if (selector) selector.value = previousTenantId;
+      return false;
+    }
+
+    if (selector) selector.disabled = true;
+    try {
+      const accessCheck = await fetch('/bundles', { headers: getAuthHeaders(tenantId) });
+      if (!accessCheck.ok) {
+        if (selector) selector.value = previousTenantId;
+        showNotification(
+          accessCheck.status === 403
+            ? '이 계정으로는 선택한 테넌트에 접근할 수 없습니다.'
+            : '테넌트 전환 권한을 확인하지 못했습니다.',
+          'warn',
+        );
+        return false;
+      }
+
+      _currentTenantId = tenantId;
+      localStorage.setItem('dd_tenant_id', tenantId);
+      _documentOpsReviewDrafts.clear();
+      window.location.reload();
+      return true;
+    } catch {
+      if (selector) selector.value = previousTenantId;
+      showNotification('테넌트 전환 권한을 확인하지 못했습니다.', 'warn');
+      return false;
+    } finally {
+      if (selector?.isConnected) selector.disabled = false;
+    }
+  }
+
   async function loadTenantList() {
     if (!new URLSearchParams(location.search).has('ops')) return;
     try {
@@ -12185,11 +12239,8 @@
         `<option value="${escapeHtml(t.tenant_id)}" ${t.tenant_id === _currentTenantId ? 'selected' : ''}>${escapeHtml(t.display_name || t.tenant_id)}</option>`
       ).join('');
       $id('tenant-selector').style.display = 'flex';
-      sel.addEventListener('change', e => {
-        _currentTenantId = e.target.value;
-        localStorage.setItem('dd_tenant_id', _currentTenantId);
-        loadBundles();
-        loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
+      sel.addEventListener('change', async e => {
+        await changeTenantContext(e.target.value, e.target);
       });
     } catch { /* optional feature */ }
   }
@@ -16755,6 +16806,7 @@
         return;
       }
       _currentUser = payload;
+      syncTenantContextFromAccessToken(token);
       initApp();
     } catch(e) { showLoginScreen(); }
   }
@@ -16864,6 +16916,7 @@
       if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
       const payload = JSON.parse(atob(data.access_token.split('.')[1]));
       _currentUser = payload;
+      syncTenantContextFromAccessToken(data.access_token);
       document.getElementById('login-screen')?.remove();
       await initApp();
       showNotification('관리자 계정이 생성되었습니다!', 'success');
@@ -16891,6 +16944,7 @@
         ...data.user,
         sub: data.user.user_id,
       };
+      syncTenantContextFromAccessToken(data.access_token);
       document.getElementById('login-screen')?.remove();
       await initApp();
       showNotification(`${data.user.display_name}님, 환영합니다!`, 'success');
@@ -16913,6 +16967,7 @@
       const data = await res.json();
       localStorage.setItem('dd_access_token', data.access_token);
       _currentUser = JSON.parse(atob(data.access_token.split('.')[1]));
+      syncTenantContextFromAccessToken(data.access_token);
       return true;
     } catch(e) { return false; }
   }
@@ -16930,6 +16985,7 @@
     stopSSE();
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
+    _documentOpsReviewDrafts.clear();
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();
@@ -16946,6 +17002,7 @@
     stopSSE();
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
+    _documentOpsReviewDrafts.clear();
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();
@@ -28861,8 +28918,10 @@ async function submitLDAPLogin() {
       if (data.access_token) {
         localStorage.setItem('dd_access_token', data.access_token);
         if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
+        _currentUser = JSON.parse(atob(data.access_token.split('.')[1]));
+        syncTenantContextFromAccessToken(data.access_token);
         document.getElementById('login-screen')?.remove();
-        initApp();
+        await initApp();
       }
     } else {
       const err = await res.json();

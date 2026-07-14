@@ -76,10 +76,12 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - review requests carry the version loaded with the detail record; storage compares it while holding
   the tenant write lock, returns an identical retry unchanged, and rejects a different stale decision
   with `409` plus expected/current version evidence
-- review inputs update a tenant-and-trajectory keyed page-memory draft as the reviewer types, so
-  ordinary list refreshes and conflict recovery can restore notes and score only in the same tenant;
-  empty inputs or a successful write clear that draft, and tenant changes reload the workbench while
-  delayed list or stats responses from the previous tenant are ignored
+- review inputs update a user-tenant-trajectory keyed page-memory draft as the reviewer types, so
+  ordinary list refreshes and conflict recovery can restore notes and score only in the same authenticated
+  context; empty inputs, a successful write, logout, or invalid session clear the applicable draft state
+- the browser aligns its tenant header context from the signed access token during login, registration,
+  refresh, and LDAP login; denied selector changes roll back without weakening `TENANT_MISMATCH`, while an allowed
+  change reloads the whole app so prior-tenant page state and delayed responses cannot remain visible
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -111,6 +113,10 @@ without re-entering the note or score, then
 persisted reviewer identity, notes, and score `0.88`
 as version 2 while retaining version 1 in review history.
 The reviewed record remained readable on desktop and 390-pixel mobile without horizontal overflow.
+Another browser check created a local tenant and invited member, confirmed that a system admin's denied
+cross-tenant selector change retained the system context, cleared page-memory review drafts on logout,
+then replaced stale `system` browser state with the invited member's signed tenant claim and read the
+tenant-scoped DocumentOps stats endpoint successfully. No external provider or deployment action ran.
 
 ## Access Boundaries
 
@@ -183,7 +189,7 @@ Last local verification on 2026-07-14:
 - focused DocumentOps suite: 60 passed
 - focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
 - DocumentOps trajectory browser E2E: 2 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2967 passed, 1 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2969 passed, 1 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof
