@@ -1,19 +1,20 @@
 # Project Card
 
-분석 기준: 2026-06-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태를 기준으로 업데이트했다. 애플리케이션 코드는 수정하지 않았다.
+분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review lifecycle과 reproducible portfolio pack까지 반영했다.
 
 ## 1. Snapshot
 
 - 프로젝트명: DecisionDoc AI
 - 프로젝트 유형: 개인 PoC / MVP 확장 프로젝트로 판단
 - 기간: 확인 필요
-- 현재 상태: MVP 구현 후 고도화 중
-- 내 역할: 확인 필요. 저장소 기준으로는 백엔드, API, 문서 생성 파이프라인, 운영 문서화에 기여했다고 설명 가능하나 개인 직접 구현 범위는 별도 확인 필요
-- GitHub 링크: 추가 필요
-- Demo 링크: 문서상 `https://admin.decisiondoc.kr` 운영 기준 URL이 있으나 현재 접근 검증 필요
+- 현재 상태: MVP/PoC 구현 후 외부 실증 대기
+- 내 역할: [contribution-note.md](./contribution-note.md)의 직접 설명 가능 범위를 기준으로 설명한다.
+- GitHub 링크: https://github.com/sungjin9288/DecisionDoc-AI
+- Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77
+- Demo 링크: 현재 README에는 검증된 Demo URL을 싣지 않는다. 최신 로컬 UI screenshot은 `evidence/screenshots/web-ui-home.png`에 있다.
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, OpenAI/Gemini/Claude/Local/Mock provider abstraction, Docker Compose, AWS SAM/Lambda, local/S3 storage, pytest
 - 이력서 반영 가능 여부: 조건부 가능
-- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. 다만 실제 배포 URL, 사용자 사용 실적, 본인 직접 구현 범위, 라이브 provider 동작 여부는 추가 확인이 필요하다.
+- 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. non-live regression, static PWA/CSP, post-login local UI flow, portfolio pack integrity 경로도 있다. 다만 잔여 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
 
 ## 2. One-liner
 
@@ -29,7 +30,7 @@
   - 요구사항 정리: `GenerateRequest`, `BundleSpec`, `DocumentSpec`로 입력과 출력 구조 명확화
   - 사용자 관점: Web UI, `/generate/from-documents`, `/generate/from-pdf`, project/knowledge 흐름 제공
   - 문서화: `docs/architecture.md`, `docs/user_manual.md`, `docs/deployment/*` 운영 문서 존재
-  - 기대효과 정리: 문서 초안 생성, export, approval/share/history로 업무 산출물 관리 흐름 단축 가능
+  - 기대효과 정리: 문서 초안 생성, export, approval/share/history로 업무 산출물 관리 흐름을 구조화
 
 ## 4. Solution
 
@@ -40,6 +41,8 @@
   - provider fallback chain: mock, openai, gemini, claude, local
   - local/S3 storage abstraction
   - project, knowledge, approval, history/share, report workflow, G2B search/fetch, health/metrics/version endpoints
+  - local procurement decision package evidence path with versioned CLI stdout contract and receipt checking
+  - tenant/project-bound procurement review packet, reviewer inbox, downstream freshness and share/approval drift safeguards
   - DOCX, PDF, HWP, XLSX, PPTX 관련 service와 endpoint 테스트 파일
 - 개발 중인 기능:
   - report quality learning, document ops agent, fine-tuning/training artifact workflow
@@ -49,7 +52,7 @@
   - 실제 사용자 성과 수치 제시
   - 모든 provider live 동작 보장
   - 문서상 운영 URL의 현재 접근 가능성 보장
-  - SaaS 과금/SSO/다중 테넌트 운영의 실제 상용 안정성 단정
+  - SaaS 과금/SSO/다중 테넌트의 실제 운영 안정성 단정
 - 사용자 흐름:
   - 사용자 입력 또는 파일 업로드
   - bundle 선택
@@ -98,7 +101,7 @@ User / Team
 -> Knowledge ingestion + generated document workflow
 -> Review / approval / share / audit
 -> Quality learning + curated correction artifacts
--> Multi-tenant production deployment
+-> Tenant-aware deployment path
 -> Operational smoke, post-deploy evidence, provider policy checks
 ```
 
@@ -114,38 +117,45 @@ User / Team
 
 ## 7. My Contribution
 
-- 직접 구현했다고 설명 가능한 기능: 확인 필요. 개인 구현 범위가 분리되어 있지 않다.
-- 설계했다고 설명 가능한 구조: 확인 필요. 단, 코드 설명 시 provider/storage abstraction, bundle catalog, FastAPI router/service 분리, validation pipeline을 본인이 설명할 수 있어야 한다.
-- 문서화 또는 기획 측면 기여: 확인 필요. 포트폴리오에서는 본 문서 세트와 `docs/readme-improvement.md`를 기준으로 기획/문서화 역량을 설명 가능하다.
-- 문제 해결 또는 디버깅 사례: 확인 필요. 최근 git log에는 품질 검수, review gate, evidence summary 관련 commit이 있다.
-- 면접에서 코드 수준으로 설명해야 할 부분: `app/main.py`, `app/services/generation_service.py`, `app/providers/factory.py`, `app/storage/base.py`, `app/bundle_catalog/spec.py`, `app/routers/generate.py`
+- 직접 설명 가능한 기능: [contribution-note.md](./contribution-note.md)의 “직접 설명 가능한 구현 범위” 표를 기준으로 한다.
+- 설계했다고 설명 가능한 구조: provider/storage abstraction, bundle catalog, FastAPI router/service 분리, validation pipeline, procurement evidence freshness, completion readiness chain.
+- 문서화 또는 기획 측면 기여: product direction, execution plan, roadmap, evidence gallery, contribution boundary note를 근거로 설명한다.
+- 문제 해결 또는 디버깅 사례: CSP nonce 적용, stale procurement evidence 차단, readiness receipt/checker, source-backed README metrics와 portfolio pack drift 검출을 중심으로 설명한다.
+- 면접에서 코드 수준으로 설명해야 할 부분: `app/main.py`, `app/services/generation_service/`, `app/providers/factory.py`, `app/storage/base.py`, `app/routers/generate/`, `scripts/check_completion_readiness.py`
 
 ## 8. Current Status
 
 | 구분 | 기능 | 상태 | 근거 파일 | 이력서 반영 가능 여부 |
 |---|---|---|---|---|
 | 구현 완료 | FastAPI 앱 생성과 라우터 등록 | 구현 완료 | `app/main.py` | 가능 |
-| 구현 완료 | 문서 생성 API와 export API | 구현 완료 | `app/routers/generate.py`, `app/services/generation_service.py` | 가능 |
+| 구현 완료 | 문서 생성 API와 export API | 구현 완료 | `app/routers/generate/`, `app/services/generation_service.py` | 가능 |
 | 구현 완료 | provider abstraction/fallback | 구현 완료 | `app/providers/factory.py`, `app/ai/pipeline.py` | 가능 |
 | 구현 완료 | bundle catalog/schema/template 구조 | 구현 완료 | `app/bundle_catalog/spec.py`, `app/bundle_catalog/registry.py`, `app/templates/` | 가능 |
 | 구현 완료 | local/S3 storage abstraction | 구현 완료 | `app/storage/base.py`, `app/storage/factory.py`, `app/storage/local.py`, `app/storage/s3.py` | 가능 |
+| 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
+| 구현 완료 | procurement review/freshness/audit boundary | 구현 완료 | `app/routers/projects/procurement_reviews.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
+| 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |
 | 구현 완료 | health/metrics/version | 구현 완료 | `app/routers/health.py` | 가능 |
 | 개발 중 | report workflow quality learning | 개발 중/고도화 중 | `app/routers/report_workflows.py`, `app/services/report_quality_learning.py` | 조건부 가능 |
 | 개발 중 | document ops agent/training artifacts | 개발 중/고도화 중 | `app/agents/document_ops_agent.py`, `app/routers/document_ops_agent.py` | 조건부 가능 |
 | 미구현 | 실제 사용자 성과 수치 | 현재 없음 | 저장소 내 근거 없음 | 보류 |
-| 검증 필요 | 운영 URL 접근 가능성과 live provider 호출 | 검증 필요 | `docs/v1_completion_snapshot.md`, env 필요 | 조건부 |
-| 문서상 존재, 코드 근거 없음 | 완전한 상용 운영 안정성/고객 성과 | 문서상 일부 운영 계획 존재, 성과 수치 근거 없음 | `docs/deployment/*`, `docs/sales/*` | 보류 |
+| 검증 필요 | 운영 URL 접근 가능성과 live provider 호출 | 검증 필요 | `scripts/check_completion_readiness.py`, env 필요 | 조건부 |
+| 검증 필요 | 운영 안정성/고객 성과 | 현재 성과 수치 근거 없음 | `docs/contribution-note.md` | 보류 |
 
 ## 9. Evidence
 
-- 주요 코드 파일: `app/main.py`, `app/routers/generate.py`, `app/services/generation_service.py`, `app/providers/factory.py`, `app/storage/base.py`
+- 주요 코드 파일: `app/main.py`, `app/routers/generate/`, `app/routers/projects/`, `app/services/generation_service.py`, `app/providers/factory.py`, `app/storage/base.py`
 - 주요 함수/클래스: `create_app()`, `GenerationService`, `GenerateRequest`, `BundleSpec`, `DocumentSpec`, `get_provider()`, `get_provider_for_capability()`, `get_storage()`, `Storage`
 - 주요 API 엔드포인트: `/generate`, `/generate/stream`, `/generate/export`, `/generate/from-documents`, `/generate/from-pdf`, `/bundles`, `/projects`, `/knowledge/{project_id}/documents`, `/approvals`, `/report-workflows`, `/g2b/search`, `/g2b/fetch`, `/health`, `/metrics`
 - 설정 파일: `requirements.txt`, `Dockerfile`, `docker-compose.yml`, `infra/sam/template.yaml`, `.github/workflows/*.yml`
 - 실행 파일: `scripts/smoke.py`, `scripts/ops_smoke.py`, `scripts/report_workflow_smoke.py`, `scripts/run_deployed_smoke.py`
-- 테스트 파일: `tests/test_generate.py`, `tests/test_storage.py`, `tests/test_auth_api_key.py`, `tests/test_report_workflows_api.py`, `tests/test_g2b.py`, `tests/test_pwa.py`
-- README 또는 문서 근거: `README.md`, `docs/README.md`, `docs/architecture.md`, `docs/user_manual.md`, `docs/v1_completion_snapshot.md`
-- 최근 git 상태: `main` 브랜치에서 다수의 기존 수정/미추적 파일이 존재한다. 최근 commit은 품질 검수, review gate, evidence summary 자동화 흐름을 다룬다.
+- 테스트 파일: `tests/test_generate.py`, `tests/test_storage.py`, `tests/test_auth_api_key.py`, `tests/test_report_workflows_api.py`, `tests/test_g2b.py`, `tests/test_pwa.py`, `tests/test_manage_portfolio_pack.py`
+- README 또는 문서 근거: `README.md`, `docs/architecture.md`, `docs/user_manual.md`, `docs/product_local_demo_runbook.md`, `docs/product_demo_scenario.md`, `docs/development-plan.md`, `docs/roadmap.md`, `docs/contribution-note.md`, `docs/completion-readiness-runbook.md`
+- Local evidence contract 근거: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`, `--write-result`, `--result-path`
+- Completion readiness 근거: `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, M2/M6 runner-owned proof receipt, gitignored `reports/completion-readiness/` local receipt.
+- Portfolio pack 근거: `scripts/manage_portfolio_pack.py`, tracked `_portfolio_export/decisiondoc_ai_portfolio_pack/portfolio_manifest.json`, local gitignored ZIP.
+- 최신 UI/CSP evidence: `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/ui_csp_nonce_check.log`, `evidence/cli-logs/playwright_console.log`, `evidence/cli-logs/ui_flow_evidence.json`.
+- 최근 git 상태: `main` 브랜치가 `origin/main`과 동기화되어 있고 최신 확인 시점의 worktree는 clean이다. 후속 작업 전에는 항상 `git status --short --branch`와 최신 CI/CD 상태를 다시 확인한다.
 - 실행 방법이 명확한지: 로컬 `pip install -r requirements.txt`, `python -m uvicorn app.main:app --reload`, Docker `docker compose up -d`가 문서와 설정에 존재한다.
 - 스크린샷/데모가 필요한 부분: Web UI 첫 화면, `/generate` 결과, 문서 upload flow, report workflow, export 결과, admin/ops 화면
 
@@ -155,7 +165,7 @@ User / Team
 |---|---|---|---|
 | bundle catalog | 요구사항 정리 | 문서 유형별 입력/출력 구조를 `BundleSpec`으로 정리해 생성 품질 편차를 줄이려 했다 | `app/bundle_catalog/spec.py` |
 | generation pipeline | 업무 흐름 이해 | 초안 생성 이후 저장, 렌더링, 검증, export까지 후속 업무 흐름을 고려했다 | `app/services/generation_service.py` |
-| project/knowledge flow | 사용자 관점 | 프로젝트 단위로 참고 문서를 재사용하는 흐름을 API에 반영했다 | `app/routers/projects.py`, `app/routers/knowledge.py` |
+| project/knowledge flow | 사용자 관점 | 프로젝트 단위로 참고 문서를 재사용하는 흐름을 API에 반영했다 | `app/routers/projects/`, `app/routers/knowledge.py` |
 | approval/share/history | 문서화와 협업 | 문서 생성 결과를 단발성 출력이 아니라 검토와 공유 대상으로 관리하도록 설계했다 | `app/routers/approvals.py`, `app/routers/history.py` |
 | eval/report quality workflow | 개선안 도출 | 생성 품질을 평가하고 correction artifact로 축적하는 개선 루프를 구성했다 | `app/eval/`, `app/routers/report_workflows.py` |
 
@@ -172,17 +182,17 @@ User / Team
 ### 조건부로 가능한 표현
 
 - 운영 배포 경험: 실제 배포 접근과 본인 수행 여부 확인 후 가능
-- multi-tenant/SaaS 구조 설계: 상용 운영 검증 범위를 명확히 제한하면 가능
+- multi-tenant/SaaS 구조 설계: 실제 운영 검증 범위를 명확히 제한하면 가능
 - 공공조달 문서 지원 기능: 관련 코드와 feature flag 기준으로 설명하면 가능
 - fine-tuning/quality learning workflow: 현재 개발/고도화 중임을 명시하면 가능
 
 ### 쓰면 위험한 표현
 
-- 실제 고객이 사용 중인 상용 서비스
+- 실제 고객이 사용 중인 서비스
 - 사용자 생산성을 특정 수치만큼 개선
 - 모든 기업 문서를 자동 완성하는 플랫폼
 - 완전한 보안/컴플라이언스 인증 완료
-- 모든 LLM provider를 production에서 안정 운영
+- 모든 LLM provider를 실제 운영 환경에서 안정 검증
 
 ### 위험한 이유
 

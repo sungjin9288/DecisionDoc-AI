@@ -1,0 +1,4 @@
+### Result
+2. [GET] http://127.0.0.1:8765/version => [200] OK
+
+Note: 1 static request not shown, run with --static option to see it.

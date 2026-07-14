@@ -214,14 +214,25 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,695개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,701개**, **221개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2695
-python3 scripts/count_readme_metrics.py --field test_files      # → 220
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2701
+python3 scripts/count_readme_metrics.py --field test_files      # → 221
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
+
+포트폴리오 문서와 local evidence는 tracked source allowlist에서 pack으로 동기화하고, 파일별 SHA-256 manifest와 deterministic ZIP으로 재검증할 수 있습니다.
+
+```bash
+python3 scripts/manage_portfolio_pack.py sync --prune
+python3 scripts/manage_portfolio_pack.py check
+python3 scripts/manage_portfolio_pack.py package
+python3 scripts/manage_portfolio_pack.py verify-zip
+```
+
+ZIP은 로컬 전달용으로 생성되어 git에 포함되지 않습니다. Tracked pack과 `portfolio_manifest.json`은 source membership, content hash, 민감정보 제외 경계를 검토할 수 있는 증거입니다.
 
 CI advisory와 동일한 code quality / security scan:
 
@@ -230,13 +241,13 @@ ruff check app/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 ```
 
-2026-07-09 로컬 기준 `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
+2026-07-14 로컬 기준 `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
 
 ---
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,945 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,951 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -250,16 +261,16 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-13) |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-14) |
 |----------|------|-----------|--------------------|
-| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 진행 중 — 2026-07-13 OpenAI 1회 통과; 나머지 blocked |
+| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 보류 — 2026-07-13 OpenAI 1회 통과; 잔여 paid proof는 사용자 요청으로 연기 |
 | **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
 | **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
 | **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
 | **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ✅ 완료 — 2026-07-14 상수 모듈 drift 재분할 및 800줄 guard 추가, 초과 0개 |
 | **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
 
-우선순위는 **M1·M2** — 코드가 아니라 "실증 증거"가 현재 완성의 병목입니다. 각 마일스톤의 완료 정의(DoD)·리스크·실행 순서는 계획 문서 참조.
+M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidence 정합성 개선을 계속합니다. 외부 실증을 재개할 때는 각 마일스톤의 완료 정의(DoD)와 readiness receipt를 먼저 확인합니다.
 
 ---
 
@@ -286,4 +297,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,695 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,701 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

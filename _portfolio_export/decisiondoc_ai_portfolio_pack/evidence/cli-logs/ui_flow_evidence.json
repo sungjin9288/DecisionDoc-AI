@@ -1,0 +1,30 @@
+{
+  "schema_version": "decisiondoc.ui_flow_evidence.v1",
+  "scope": "local mock browser UI flow; no external proof executed",
+  "base_url": "local ephemeral server",
+  "screenshots": {
+    "after_login": "evidence/screenshots/ui-flow-01-after-login.png",
+    "generate_ready": "evidence/screenshots/ui-flow-02-generate-ready.png",
+    "results": "evidence/screenshots/ui-flow-03-results.png",
+    "export_complete": "evidence/screenshots/ui-flow-04-export-complete.png"
+  },
+  "verified_states": [
+    "authenticated browser session reached bundle grid",
+    "bundle selection enabled generate button",
+    "generation result rendered document tabs and document pane",
+    "export button reported completion"
+  ],
+  "browser_http_errors": [],
+  "external_actions_excluded": [
+    "provider API execution",
+    "G2B live API execution",
+    "AWS runtime execution",
+    "dataset upload",
+    "training execution",
+    "model promotion",
+    "production service resume",
+    "bid submission",
+    "legal approval",
+    "contractual commitment"
+  ]
+}

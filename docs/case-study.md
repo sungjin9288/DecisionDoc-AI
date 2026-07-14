@@ -1,6 +1,6 @@
 # Case Study
 
-분석 기준: 2026-07-13 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태를 기준으로 업데이트했다. 구현 완료 표현은 코드 근거가 있는 항목에만 사용했다.
+분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence를 기준으로 업데이트했다. 구현 완료 표현은 코드와 검증 경로가 있는 항목에만 사용했다.
 
 ## 1. 배경
 
@@ -66,9 +66,11 @@
 - Local/S3 storage abstraction
 - project, knowledge, approvals, history/share, health/metrics, G2B, report workflow API
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
+- tenant/project-bound procurement review packet, reviewer inbox, downstream evidence freshness, share/approval drift acknowledgement
 - Dockerfile, Docker Compose, AWS SAM 설정
 - pytest 테스트 suite와 smoke script
 - 대표 bundle의 local mock sample, canonical golden fingerprint, validator/lint 결과를 묶은 tracked quality evidence package
+- tracked portfolio 문서와 local evidence를 SHA-256 manifest와 deterministic ZIP으로 검증하는 packaging workflow
 
 ### 개발 중
 
@@ -114,9 +116,11 @@
 
 - 구현 완료 기능: 문서 생성 API, 파일/PDF 기반 생성, export, provider/storage abstraction, bundle catalog, 프로젝트/지식/승인/이력/report workflow 일부, health/ops 기능
 - 로컬 실행 가능 여부: 설정상 가능. `pip install -r requirements.txt` 후 `python -m uvicorn app.main:app --reload`, 또는 `docker compose up -d`
-- 테스트 여부: pytest 테스트 suite와 smoke script가 존재한다. 현재 local procurement decision package evidence path는 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 stdout JSON success/failure contract를 고정하고, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`와 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`로 manifest와 persisted receipt를 검증한다. 검증 receipt는 `--write-result --result-path <path>`로 repo 밖 경로에 남길 수 있다.
+- 테스트 여부: pytest 테스트 suite와 smoke script가 존재한다. Local procurement package는 versioned CLI contract와 persisted receipt로 검증하고, M2/M6 runner는 외부 호출 전 preflight와 실제 pass/fail proof receipt를 secret 없이 기록한다. 비용이 발생하는 provider proof는 현재 보류했다.
+- Procurement CLI contract: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 `scripts/validate_procurement_decision_package_cli_contract_manifest.py`와 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`를 실행한다. 두 checker는 `--write-result`로 receipt를 남기며, 필요하면 `--result-path`로 repo 밖 경로를 지정한다.
 - 생성 품질 evidence: 2026-07-13 `scripts/build_finished_doc_review_samples.py`를 mock/Markdown-only 모드로 실행해 `proposal_kr`, `performance_plan_kr` 2개 bundle의 6개 생성 문서를 저장했다. `docs/samples/bundle_quality_evidence/current/manifest.json`은 bundle별 validator/lint 통과와 canonical golden SHA256을 기록하며, factual grounding과 human visual review는 미검증으로 남긴다.
 - offline eval evidence: 2026-07-13 `python3 -m app.eval --out-dir reports/eval/v1` 실행 결과 fixture 10건 중 10건이 validator/lint gate를 통과했다. 이 결과는 `reports/eval/v1/eval_report.json`과 `.md`에 있으며 mock provider 결과이지 live provider 품질 증거는 아니다.
+- portfolio evidence: `scripts/manage_portfolio_pack.py`가 tracked allowlist를 pack에 동기화하고 source bytes, membership, generated SHA-256 manifest, deterministic ZIP을 재검증한다. ZIP은 local delivery artifact이며 git에 포함하지 않는다.
 - 배포 여부: 문서상 Docker Compose, AWS SAM, 운영 URL 기준이 존재한다. 현재 접근 가능성은 검증 필요.
 - 사용자 피드백: 현재 없음. 임의 생성 금지.
 - 수치 성과:

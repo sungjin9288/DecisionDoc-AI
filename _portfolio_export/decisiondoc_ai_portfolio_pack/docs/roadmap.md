@@ -1,23 +1,55 @@
 # Development Roadmap
 
-분석 기준: 2026-06-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태를 기준으로 업데이트했다. 로드맵은 포트폴리오 완성보다 먼저 재현 가능한 검증 evidence 확보를 우선한다.
+분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 로드맵은 외부 실증을 과장하지 않고 재현 가능한 검증 evidence 확보를 우선한다.
+
+제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
+
+Local evidence CLI contract 기준: `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 기준으로 stdout JSON success/failure field를 고정하고, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`와 `scripts/check_procurement_decision_package_cli_contract_manifest_result.py`로 manifest와 persisted receipt를 검증한다. 장기 보존이 필요한 검증 결과는 `--write-result --result-path <path>`로 repo 밖 임시 경로에 기록한다.
+
+Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/M2/M6는 `scripts/check_completion_readiness.py`로 실행 준비 조건을 먼저 확인한다. proof 실행 순서와 증적 갱신 순서는 [completion-readiness-runbook.md](./completion-readiness-runbook.md)에 둔다. readiness 스크립트는 readiness만 확인하며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
 ## 1. 현재 상태 요약
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
+- 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
+- 최근 확인한 main 자동화 증적: commit `01b9fbc` 기준 GitHub Actions CI `29027090095` success, CD `29027088935` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
-- 미구현: 실제 사용자 성과 수치, 포트폴리오용 데모 영상/스크린샷, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
-- 검증 필요: live provider chain, production deployment, tenant/SSO/billing 상용 운영성, public demo flow
+- 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
+- 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
-## 2. Phase 1 - MVP 완성
+현재 로컬 기준 검증:
+
+```bash
+pytest tests/ -m "not live" -q
+# 2026-07-14 실측: 2951 passed, 2 skipped, 4 deselected
+
+python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
+python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
+```
+
+## 2. Completion Milestones
+
+| 마일스톤 | 현재 상태 | 다음 조건 |
+|---|---|---|
+| M1 Live provider 실증 | 진행 중. 2026-07-13 OpenAI 1회 통과; Gemini HTTP 429, Claude credit 부족, fallback 성공 미달 | Gemini quota/billing과 Anthropic credits 복구 후 Gemini/Claude/fallback live test 재실행 |
+| M2 G2B 실데이터 end-to-end | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | stage URL/API key/G2B key 확보 후 `--proof-receipt`를 포함한 실제 smoke 실행 |
+| M3 Export 5종 대칭성 | 완료 | README와 샘플 산출물의 수치가 코드와 계속 일치하는지 유지 |
+| M4 CSP nonce | 완료. inline `on*=` handler 0개, nonce 기본 on | 새 UI 이벤트 추가 시 inline handler 금지 guard 유지 |
+| M5 800줄 초과 모듈 분할 | 완료. 2026-07-14 상수 모듈 drift를 604줄 facade + 314줄 foundation으로 재분할하고 자동 guard 추가, 초과 0개 | infrastructure guard와 facade re-export 계약 유지 |
+| M6 배포/post-deploy smoke | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | 배포 환경 확보 후 `--proof-receipt`를 포함한 deployed/ops smoke 실행 |
+
+## 3. Phase 1 - MVP 완성
 
 - 목표: 포트폴리오에서 재현 가능한 핵심 생성 흐름을 안정화한다.
-- 해야 할 작업:
-  - README를 프로젝트 소개 중심으로 재작성
-  - mock provider 기준 로컬 실행 절차와 대표 API 호출 예시 정리
-  - `/generate`, `/generate/export`, `/generate/from-documents` 데모 시나리오 확보
-  - Web UI 스크린샷과 export 결과 샘플 저장
-  - 본인 직접 기여 범위 정리
+- 현재 상태:
+  - README는 제품 소개, 실행, 테스트, 한계 문구를 포함한다.
+  - mock provider 기준 로컬 실행 절차와 대표 API 경로가 정리되어 있다.
+  - 로컬 evidence gallery와 샘플 산출물이 존재한다.
+  - 2026-07-08 기준 최신 static PWA screenshot과 CSP nonce 확인 로그를 갱신했다.
+  - 2026-07-09 기준 main CI/CD 증적을 확인했다.
+  - 직접 구현 범위와 말하면 안 되는 범위를 [contribution-note.md](./contribution-note.md)에 분리했다.
+- 남은 작업:
+  - 포트폴리오용 짧은 데모 영상이 필요하면 별도 캡처한다.
 - 완료 기준:
   - 신규 사용자가 README만 보고 로컬 실행 가능
   - 대표 API smoke 통과
@@ -28,24 +60,53 @@
   - sample request/response
   - smoke log
 
-## 3. Phase 2 - 기능 고도화
+## 4. Phase 2 - 기능 고도화
 
 - 목표: 생성 품질과 프로젝트 지식 재사용 흐름을 강화한다.
-- 해야 할 작업:
-  - bundle별 대표 golden examples 정리
-  - eval/lint 결과를 README와 case study에 반영
-  - feedback/report quality correction artifact 흐름을 하나의 데모로 연결
-  - live provider chain을 선택적으로 검증
+- 현재 상태:
+  - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
+  - 2026-07-13 local procurement package에 script-free `procurement_review.html`을 추가해 recommendation, hard filters, score factors, evidence gaps, bid readiness, handoff, pending sign-off, 실행 권한 경계를 한 화면에서 확인한다. 이 화면은 12개 artifact audit/export/hash inventory에 포함되며 별도 승인 workflow를 만들지 않는다.
+  - 2026-07-13 검증된 12개 procurement artifact를 embedded `packet_manifest.json`과 함께 deterministic ZIP으로 묶는 `manage_procurement_decision_review_packet.py create/verify` 경로를 추가했다. Packet은 `review_ready`와 `operational_approval: false`를 유지하고 path, membership, SHA256/size, semantic drift를 재검증한다.
+  - 2026-07-13 packet 밖의 `procurement_review_receipt.json`을 `packet_sha256`에 결속하고 요청 reviewer의 결정을 `pending`에서 `completed`로 한 번만 기록하는 receipt 경로를 추가했다. `render/apply-draft`는 packet과 pending receipt hash에 결속된 browser draft를 atomic update로 연결하며, 기존 script-free packet과 외부 실행 권한 경계는 바꾸지 않는다.
+  - 2026-07-13 완료 receipt와 변경하지 않은 review packet을 `reviewed_package_manifest.json`과 함께 세 entry deterministic ZIP으로 묶는 `manage_procurement_reviewed_package.py create/verify` 경로를 추가했다. `review_completed`는 accepted, changes-requested, rejected 결과를 모두 보존하며 operational approval을 의미하지 않는다.
+  - 2026-07-14 project procurement 상세 화면에서 reviewer를 지정하고 현재 tenant의 recommendation을 검증된 12-artifact review packet ZIP으로 내려받는 API/UI를 연결했다. Server는 injected procurement store를 재사용하고 packet SHA-256, package ID, artifact count, `operational_approval: false`를 응답 evidence로 제공하며 provider API, G2B live 수집, 입찰 제출은 실행하지 않는다.
+  - 2026-07-14 tenant 전체의 pending/completed procurement review를 프로젝트 화면의 검토함에 모았다. 상태·reviewer 필터, 프로젝트 상세 이동, 검증된 completed package 재다운로드를 기존 lifecycle에 연결하고 검토함 조회 audit와 queue count observability를 남긴다.
+  - 2026-07-14 review-bound downstream 문서에 packet source timestamp를 보존하고, 프로젝트 상세 조회 때 현재 tenant의 review evidence와 procurement decision을 다시 대조한다. `current`, stale, missing, invalid 상태를 문서 badge와 후속 조치에 표시하며, stale 상태로 결재·공유를 계속하면 확인 경고를 거친다. Project-linked share는 생성 시점 source fingerprint를 보존하고 공개 조회마다 현재 tenant 원본을 다시 확인해 post-share drift 경고와 `share.view` audit evidence를 남긴다. Admin procurement summary와 Locations overview는 이 drift audit을 기존 stale-share queue에 연결하고, 반복 조회는 최신 위험 관측만 갱신하며 영향받은 고유 링크 수를 중복 증가시키지 않는다. 이후 current 관측이 들어오면 해당 링크만 queue에서 해소하고 recovered count를 별도로 유지해 audit history와 현재 노출 상태를 분리한다. 링크 취소는 최초 처리자·시각을 보존하고 자연 만료와 구분하며, 같은 문서의 최신 링크가 닫혀도 남아 있는 다른 활성 링크를 대표로 유지해 실제 노출을 숨기지 않는다.
+  - 2026-07-14 project document에서 시작한 approval은 tenant-scoped project/document/request/bundle binding과 요청 시점 freshness snapshot을 저장한다. 결재 상세와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 또는 binding 불일치 상태는 명시적 acknowledgement 없이는 최종 승인되지 않는다. 성공한 acknowledgement는 확인자·시각과 함께 approval record 및 audit에 남는다.
+  - report quality learning과 correction artifact 계열은 계속 개발 중이다.
+  - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
+  - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.
+  - 2026-07-13 correction artifact에 stable content identity와 SHA-256 preview fingerprint를 적용했다. Save는 현재 workflow/input과 일치하는 preview만 허용하고 누락·stale input·중복 artifact를 거부하며, review packet validator도 embedded artifact fingerprint를 재검증한다.
+  - 2026-07-13 저장된 correction artifact를 tenant 범위에서 단건 조회하는 detail API와 UI 검토·개별 JSON 다운로드 동선을 추가했다. 응답은 metadata-only artifact, validation, preview fingerprint를 보존하며 provider call, dataset upload, training execution은 계속 차단한다.
+  - 2026-07-14 ready correction artifact 3~5개를 UI에서 직접 고르고 ordered pilot JSONL로 내려받는 tenant-safe selection flow를 추가했다. 서버는 개수, 중복·alias 중복, 존재 여부, ready gate를 재검증하며 외부 학습 작업은 실행하지 않는다.
+  - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
+  - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
+  - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.
+  - 2026-07-14 pilot JSONL sync를 validate-before-write로 바꿨다. Validation 또는 ready gate가 실패하면 새 출력을 만들거나 기존 출력을 덮어쓰지 않고, 성공한 write만 output SHA-256과 함께 보고하며 symlink·원본 source 경로 overwrite를 거부한다.
+  - 2026-07-14 운영 API quality export checker도 validate-before-write로 정렬하고 summary/export count·tenant 일치, artifact ID uniqueness, single-tenant batch를 강제했다. Batch summary는 duplicate·mixed tenant를 명시적 blocker로 남기며 source JSONL과 symlink input/output overwrite를 거부하고, downstream evidence validator는 실제 JSONL에서 identity를 독립 재계산한다.
+  - 2026-07-14 pilot JSONL 다운로드 응답에 본문 SHA-256을 포함하고 hash prefix를 파일명에 남겨, 로컬 import 뒤 `SOURCE_MANIFEST.json`과 원본 export identity를 직접 대조할 수 있게 했다.
+  - 2026-07-14 final approval record template 뒤에서 같은 미승인 상태를 반복 포장하던 legacy no-cost chain을 제거했다. Evidence, discussion, plan, packet review, pending final approval record의 hash·review·권한 검증은 유지하고, 실제 실행은 별도 change control 없이는 시작할 수 없는 terminal boundary로 정리했다.
+  - 2026-07-13 `proposal_kr`, `performance_plan_kr`의 대표 mock sample 6개 문서와 canonical golden fingerprint, validator/lint, request 대비 단위 수치 literal coverage 결과를 tracked evidence package로 정리했다. numeric coverage는 factual truth 검증과 분리한다.
+  - 2026-07-13 tracked review dashboard에서 request 근거, validator/lint/numeric 상태, factual·human review 미완료 경계, 생성 Markdown 본문을 한 화면에 확인하도록 보강했다.
+  - 2026-07-13 tracked manifest SHA256에 결속된 human review receipt와 `init/record/validate` CLI를 추가했다. 모든 bundle의 factual·visual review가 통과해야만 완료되며 외부 action 승인은 계속 `false`로 유지된다.
+  - 2026-07-13 receipt 상태, reviewer, notes, manifest 결속, 외부 action 경계를 한 화면에서 확인하는 `human_review.html` companion view와 CLI `render` 경로를 추가했다. JSON receipt는 계속 증적 원본으로 유지한다.
+  - 2026-07-13 completed receipt만 허용하는 finished-document review packet과 `package/verify-packet` CLI를 추가했다. Manifest-declared artifact만 포함하고 embedded SHA256 index, path boundary, tamper detection을 검증한다.
+  - 2026-07-13 `human_review.html`을 request 근거, 자동 검증, 생성 문서, 사람 검토, 외부 권한 경계를 한 화면에서 확인하는 unified reviewer workspace로 확장했다. Manifest-owned `review.html`은 자동 검증 원본으로 유지한다.
+  - 2026-07-13 reviewer workspace에서 bundle별 검토 값을 source-bound draft JSON으로 내려받고 `apply-draft` CLI가 manifest/receipt hash와 비승인 경계를 검증한 뒤 receipt를 atomic update하는 local sign-off 입력 흐름을 추가했다.
+  - 2026-07-13 offline eval을 현재 template으로 다시 실행해 fixture 10건의 validator/lint pass evidence를 README와 case study에 연결했다.
+- 남은 작업:
+  - M1 live provider chain의 잔여 Gemini/Claude/fallback proof를 포함한 비용 발생 테스트는 사용자 요청에 따라 추후로 보류한다.
 - 완료 기준:
   - 최소 2개 bundle에 대해 생성 결과 샘플과 품질 검증 결과 확보
   - mock provider와 최소 1개 live provider 검증 기록 존재
   - 사용자 피드백 또는 자체 평가 기준 문서화
 - 산출물:
-  - quality evaluation report
-  - before/after sample
+  - quality evaluation report: `reports/eval/v1/eval_report.{json,md}`
+  - representative bundle sample: `docs/samples/bundle_quality_evidence/current/`
+  - before/after sample: report quality correction artifact 흐름에서 유지
   - provider validation note
 
-## 4. Phase 3 - 서비스화 / 배포
+## 5. Phase 3 - 서비스화 / 배포
 
 - 목표: 로컬 MVP를 외부에서 확인 가능한 배포 상태로 만든다.
 - 해야 할 작업:
@@ -63,31 +124,33 @@
   - post-deploy smoke report
   - demo link or recording
 
-## 5. Phase 4 - 포트폴리오 완성
+## 6. Phase 4 - 포트폴리오 완성
 
 - 목표: 이력서, GitHub, 면접에서 일관되게 설명 가능한 프로젝트로 정리한다.
-- 해야 할 작업:
-  - README 최종 정리
-  - architecture diagram과 주요 코드 설명 추가
-  - issue/PR/commit 기반 개발 과정 정리
-  - 면접 답변에서 위험한 표현 제거
-  - 직접 구현 범위와 검증된 기능만 이력서 bullet로 반영
+- 현재 상태:
+  - README, architecture, case study, contribution note, project card, resume bullets, interview story의 claim boundary를 2026-07-14 코드와 local evidence에 맞췄다.
+  - `scripts/manage_portfolio_pack.py`가 tracked source allowlist를 pack에 atomic sync하고 membership, byte content, generated SHA-256 manifest를 검증한다.
+  - Local delivery ZIP은 고정 timestamp와 정렬된 entry로 재현하며 pack 밖에만 생성하고 git에는 포함하지 않는다.
+  - 과거 source와 달라진 pack 파일, placeholder, historical README 개선안은 `sync --prune`으로 제거한다.
+  - 운영 URL, live provider, G2B 실데이터, 사용자 성과 수치는 검증 전 claim에서 제외한다.
 - 완료 기준:
   - README, case study, resume bullets, interview story가 서로 모순되지 않음
   - 구현 완료/개발 중/검증 필요가 분리되어 있음
   - 면접에서 코드 파일과 함수명을 기준으로 설명 가능
+  - tracked pack과 source가 SHA-256 manifest 기준으로 일치함
 - 산출물:
   - GitHub README
   - portfolio case study
   - resume bullets
   - interview answer sheet
+  - `_portfolio_export/decisiondoc_ai_portfolio_pack/portfolio_manifest.json`
 
-## 6. 우선순위 높은 다음 작업 5개
+## 7. 우선순위 높은 다음 작업 5개
 
 | 우선순위 | 작업 | 이유 | 예상 산출물 |
 |---|---|---|---|
-| 1 | README를 프로젝트 소개용으로 개선 | 현재 README는 운영 규칙 성격이 강해 포트폴리오 첫인상에 부족 | README PR 또는 개선본 |
-| 2 | mock provider 기준 로컬 데모 실행 캡처 | 구현 기능을 눈으로 확인할 evidence 필요 | screenshot, sample output |
-| 3 | 대표 API smoke 재실행 | 이력서와 README의 실행 가능 주장에 검증 근거 필요 | smoke log |
-| 4 | 직접 구현 범위 정리 | 면접에서 본인 기여를 명확히 설명해야 함 | contribution note |
-| 5 | live provider 또는 배포 URL 검증 | 운영/배포 표현을 쓰려면 현재 접근성 evidence 필요 | provider/deploy validation note |
+| 1 | local workflow 품질 개선 | 비용 없이 제품 가치와 검증 강도를 계속 높일 수 있음 | 다음 기능 slice와 focused regression |
+| 2 | portfolio claim/pack 유지 | 코드 변경 뒤 문서와 증거 drift를 조기에 차단 | `manage_portfolio_pack.py check` |
+| 3 | contribution note 유지 | 면접 설명이 실제 코드와 증거 범위를 넘지 않게 유지 | `docs/contribution-note.md` |
+| 4 | 포트폴리오용 짧은 UI recording 선택 캡처 | 최신 screenshot은 갱신됐고, 영상은 제출 방식에 따라 선택 필요 | short recording |
+| 5 | M1/M2/M6 외부 실증 | paid provider, G2B, deployment 증거가 남아 있으나 현재는 사용자 요청으로 보류 | readiness 재확인 후 runner-generated receipts |

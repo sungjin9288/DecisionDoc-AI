@@ -3,6 +3,15 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone reproducible portfolio evidence pack
+
+- `scripts/manage_portfolio_pack.py` now syncs a tracked allowlist of portfolio documents and local evidence into `_portfolio_export/decisiondoc_ai_portfolio_pack/`, prunes stale copies, and verifies exact membership and byte content against source.
+- The pack includes a generated `portfolio_manifest.json` with path, size, and SHA-256 for 61 source files. Packaging uses sorted entries and a fixed ZIP timestamp; two consecutive builds produced byte-identical archives, and the ZIP is gitignored as a local delivery artifact.
+- Portfolio case study, contribution note, resume bullets, interview story, project card, roadmap, links, and evidence boundary now reflect the 2026-07-14 code paths and distinguish local proof from paid provider, G2B, deployment, bid, legal, and production actions.
+- Targeted portfolio, README metric, infrastructure, and procurement documentation contract verification passes with 133 tests. Ruff E/F/W, Bandit medium/high, secret hygiene, Python compile, deterministic ZIP comparison, and `git diff --check` pass.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,951 passed, 2 skipped, and 4 deselected in 213.93 seconds.
+- Paid provider tests, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone M2/M6 no-secret proof receipt automation
 
 - `run_stage_procurement_smoke.py` and `run_deployed_smoke.py` now accept `--proof-receipt` and atomically write the existing validated completion proof receipt contract after preflight or a real smoke attempt.

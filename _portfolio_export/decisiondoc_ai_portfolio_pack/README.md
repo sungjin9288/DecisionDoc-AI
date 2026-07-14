@@ -1,855 +1,300 @@
-# AGENTS.md — DecisionDoc AI
+# DecisionDoc AI
 
-DecisionDoc AI is a FastAPI-based AI document generation and collaboration platform.
-This file defines durable repository-wide engineering rules for Codex and human contributors.
+> 의사결정 문서·제안서·보고서를 **생성 → 검증 → 검토·승인 → 내보내기**까지 하나의 워크플로로 관리하는 FastAPI 기반 AI 문서 생성 플랫폼.
 
-If this file conflicts with the actual repository state, trust the real codebase first.
-For ambiguous or cross-cutting work, inspect the repository, identify the real integration points, and avoid broad implementation until the change surface is clear.
+LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로 다루는 데 초점을 둔 프로젝트입니다. 멀티 LLM provider 추상화, bundle/template/validation 파이프라인, 승인·이력·감사 워크플로, 공공조달(G2B) Go/No-Go 보조 흐름을 포함합니다.
 
----
-
-## 1) Working agreement
-
-- Treat this file as the repository-wide engineering contract.
-- Keep changes additive and backward compatible unless the task explicitly requires a breaking change.
-- Reuse existing product flows before inventing new subsystems.
-- Prefer narrow, verifiable diffs over large speculative rewrites.
-- For difficult tasks, plan first, then implement, then validate.
-- When repository-specific task docs exist under `docs/specs/...`, treat them as the task-level source of truth.
-- If assumptions are wrong, update the relevant task status/spec document before widening the implementation.
+> ⚠️ 상태: **MVP 구현 후 고도화 중**. 운영 플랫폼이 아닌 PoC/MVP이며, 검증되지 않은 성과 수치는 사용하지 않습니다. 아래 수치는 모두 소스 코드에서 직접 카운트한 값이며 측정 커맨드를 함께 표기합니다.
 
 ---
 
-## 2) Product scope
+## Why I Built This
 
-DecisionDoc AI provides:
-- AI-assisted document generation
-- project/workspace management
-- document collaboration, review, approval, sharing, and history
-- public procurement / G2B support
-- knowledge document ingestion and reuse
-- export flows (DOCX, PDF, HWP, XLSX, PPTX, ZIP)
-- evaluation, A/B testing, dataset and operations tooling
-- web UI and API from the same FastAPI application
+컨설팅 현장에서 제안서·평가보고서의 품질이 작성자 숙련도에 따라 들쭉날쭉하고, 같은 문서 구조를 매번 다시 잡는 낭비를 직접 겪었습니다. "문서 품질을 사람의 숙련도가 아니라 시스템으로 보장할 수 없을까"가 출발점입니다. 컨설팅 경험에서 나온 문제 정의를 작동하는 서비스로 옮긴 사례입니다.
 
-This repository is not just a simple generation API.
-When implementing new features, preserve the platform model:
-
-**project + knowledge + generation + approval/share + export + audit + ops**
+핵심 문제는 **LLM 생성 결과를 단순 텍스트가 아니라 검토·승인 가능한 업무 산출물로 관리하는 구조**를 만드는 것입니다.
 
 ---
 
-## 3) Representative repository map
+## Features
 
-> Note:
-> The paths below are a high-level reference, not a guaranteed exhaustive map.
-> If the repository has evolved, prefer the actual code layout over this summary.
-
-Representative areas include:
-- `app/main.py` — application entrypoint / app creation
-- `app/aws_lambda.py` — Lambda handler
-- `app/routers/` or equivalent API route modules
-- `app/services/` — service-layer orchestration
-- `app/providers/` — LLM provider abstractions and implementations
-- `app/storage/` — storage abstractions and implementations
-- `app/templates/` — document templates
-- `app/bundle_catalog/` — bundle registry and bundle metadata
-- `app/domain/` — domain schema / domain rules
-- `app/auth/` — auth and permission helpers
-- `app/middleware/` and `app/observability/` — request tracking, logging, metrics
-- `app/ops/` — operations tooling
-- `app/eval/`, `app/eval_live/` — evaluation pipelines
-- `app/static/` — UI assets when served from the same app
-- `data/` — local storage data
-- `tests/` — automated tests
-- `scripts/` — smoke and operational helper scripts
-- `infra/sam/` — AWS SAM deployment
-- `docs/` — product, deployment, and task-specific specs
-- `.github/workflows/` — CI/CD workflows
-
-Do not assume this summary is complete.
-Inspect the real repository before making cross-cutting changes.
+| Feature | 설명 |
+|---------|------|
+| 문서 생성 API | `/generate` 계열 — 입력/출력을 Pydantic 모델로 표준화 |
+| 참고 문서 기반 생성 | `/generate/from-documents`, `/generate/from-pdf` — 첨부 자료 반영 |
+| Bundle / Template / Validation | BundleSpec·DocumentSpec + Jinja2 + lint 단계로 문서 유형별 품질 편차 축소 |
+| 멀티 LLM Provider | `mock` / `openai` / `gemini` / `claude` / `local` — factory + fallback chain |
+| 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
+| 감사·프라이버시 | `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 등 |
+| 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
+| 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, 1회 완료 receipt, 검증된 reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
+| 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
+| 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
+| 품질 교정 파일럿 | UI에서 선택한 ready artifact 3~5개를 source SHA-256·tenant·순서가 기록된 local review pack으로 연결하고, worksheet·decision을 draft SHA-256에 결속 |
 
 ---
 
-## 4) Runtime, deployment, and environment model
+## Tech Stack
 
-- Primary backend framework: FastAPI
-- Primary language: Python
-- Data validation: Pydantic v2
-- Template engine: Jinja2
-- Deployment modes:
-  - local development
-  - Docker Compose
-  - AWS SAM / Lambda
-- Storage modes:
-  - local filesystem
-  - AWS S3
-- Currently supported provider modes:
-  - `openai`
-  - `gemini`
-  - `local`
-  - `mock`
-
-Important rules:
-- `mock` provider must remain usable and deterministic for development and test flows.
-- `DECISIONDOC_PROVIDER` may be a single provider or a comma-separated fallback chain such as `openai,gemini`.
-- Local filesystem and S3 storage abstractions must both be preserved unless an explicit architecture change is requested.
-- Long-term operating direction and environment hardening roadmap:
-  - `docs/operating_model_roadmap.md`
+| Area | Stack |
+|------|-------|
+| Language | Python 3.12 |
+| Backend | FastAPI, Pydantic v2 |
+| Template | Jinja2 (BundleSpec / DocumentSpec) |
+| AI / LLM | provider abstraction (mock / openai / gemini / claude / local) + fallback chain |
+| Storage | local filesystem / AWS S3 (storage abstraction) |
+| Infra | Docker Compose, AWS SAM / Lambda |
+| Test | pytest (live / not-live 마커 분리), smoke scripts |
+| Ops | request tracking·logging·metrics middleware, secret-hygiene git hook |
 
 ---
 
-## 5) Core commands
+## Architecture
 
-Use the real repository commands if they differ, but these are the default expectations.
+레이어 수치는 실측 기반입니다 (재현 커맨드는 [docs/development-plan.md](./docs/development-plan.md) §2 참조).
 
-### Local setup
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-bash scripts/install_git_hooks.sh
-python -m uvicorn app.main:app --reload
+```text
+Client (Web UI / CLI / API)
+  │
+  ▼
+FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
+  ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
+  │     → rate_limit → auth → tenant → billing → audit → metrics
+  ├─ Routers (20 top-level files, 라우트 261): generate / approvals / projects / knowledge
+  │     / report_workflows / auth / sso / admin / audit / billing / dashboard
+  │     / history / eval / finetune / local_llm / g2b / templates / health ...
+  ▼
+Services (39) — 도메인 오케스트레이션
+  ├─ generation_service ─ 핵심 파이프라인:
+  │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
+  │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
+  ├─ export 계열: docx / pptx / pdf / hwp / excel (5종)
+  ├─ 조달 계열: g2b_collector → procurement_decision_service
+  │     → procurement_decision_package/ (16-모듈 패키지)
+  └─ 품질 계열: report_quality_learning / prompt_optimizer / validator
+  │
+  ├────────────────┬─────────────────────┐
+  ▼                ▼                     ▼
+Providers (5)    Storage (37 스토어)    Ops
+  factory +        factory +             CloudWatch 조사
+  fallback chain   Local / S3            Statuspage 연동
+  mock/openai/     (atomic write 공통)   eval / eval_live
+  gemini/claude/local
 ```
 
-`bash scripts/install_git_hooks.sh` configures a local `pre-commit` hook that runs `python3 scripts/check_secret_hygiene.py` before each commit, so tracked AWS credentials are blocked before they ever reach CI.
+**설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
 
-For `secret hygiene` work, keep the verification boundary proportional to the change:
+배포 모드: 로컬 개발 · Docker Compose · AWS SAM/Lambda. Provider는 `DECISIONDOC_PROVIDER`에 단일 또는 콤마 구분 fallback chain(`openai,gemini`)으로 지정.
 
-- test-only or scanner-only changes: run `python3 scripts/check_secret_hygiene.py` plus `.venv/bin/pytest --noconftest tests/test_check_secret_hygiene.py -q --tb=short`
-- deploy/runtime changes under `app/`, `infra/sam/template.yaml`, [`.github/workflows/deploy.yml`](<repo_root>/.github/workflows/deploy.yml), or [`.github/workflows/deploy-smoke.yml`](<repo_root>/.github/workflows/deploy-smoke.yml): add the relevant smoke or deploy validation path
+---
 
-In other words, do not require `deploy-smoke` for every secret-hygiene regression test PR. Reserve operational smoke for changes that actually modify service or deployment behavior.
+## Key Design Decisions
 
-### Docker
+- **검토·승인 워크플로를 1급 기능으로** — 컨설팅 산출물은 검토 단계가 필수다. 단순 생성기는 실무에서 안 쓰인다고 판단해 approval/history를 생성 흐름의 일부로 설계.
+- **LLM provider abstraction** — 특정 모델 종속은 비용·정책 변화에 취약. Mock/OpenAI/Gemini/Claude/Local을 factory + fallback chain으로 추상화해 교체 가능하게 함. `mock`은 테스트·개발에서 결정론적으로 동작하도록 유지.
+- **schema / template / validation 결합** — 문서 유형별 품질 편차를 사람 숙련도가 아니라 구조로 줄이기 위해 BundleSpec/DocumentSpec + Jinja2 + lint 단계를 결합.
+- **storage abstraction (local/S3)** — 로컬 개발과 클라우드 운영을 같은 코드 경로로 지원.
+- **학습 준비 증적은 실행 권한과 분리** — reviewed export부터 freeze, dry-run approval, execution request, audit까지 ID와 SHA-256을 대조한다. stale 또는 변조 artifact는 로컬 governance ready 상태를 차단하며, 이 흐름은 provider API 호출이나 dataset upload를 허용하지 않는다.
+
+---
+
+## Getting Started
 
 ```bash
+# 1. 설치
+pip install -r requirements.txt
+cp .env.example .env
+bash scripts/install_git_hooks.sh        # commit 전 secret hygiene 검사 hook
+
+# 2. 실행 (로컬)
+python -m uvicorn app.main:app --reload   # http://localhost:8000
+
+# 3. 실행 (Docker)
 docker compose up -d
 curl http://localhost:8000/health
 ```
 
-### Tests
+> `install_git_hooks.sh`는 `scripts/check_secret_hygiene.py`를 pre-commit으로 걸어, AWS 자격증명이 커밋에 들어가는 것을 차단합니다.
+
+### Environment (주요 그룹)
+
+`.env.example`에 **91개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
 
 ```bash
-pytest tests/
-pytest tests/ -m "not live"
-pytest tests/ -m live
+python3 scripts/count_readme_metrics.py --field env_keys  # → 91
 ```
 
-### Targeted example
+| 그룹 | 대표 키 |
+|------|---------|
+| Runtime/Provider | `DECISIONDOC_PROVIDER`, `DECISIONDOC_ENV`, `DECISIONDOC_TEMPLATE_VERSION` |
+| Provider Keys | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `LOCAL_LLM_*` |
+| Auth/Security | `DECISIONDOC_API_KEY(S)`, `DECISIONDOC_OPS_KEY`, `JWT_SECRET_KEY`, `DECISIONDOC_CORS_*` |
+| Storage | `DECISIONDOC_STORAGE`, `DATA_DIR`, `EXPORT_DIR`, `DECISIONDOC_S3_BUCKET`, `AWS_REGION` |
+| Search/Retrieval | `DECISIONDOC_SEARCH_ENABLED`, `SERPER_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY` |
+| 공공조달(G2B) | `G2B_API_KEY`, `G2B_SEARCH_DAYS`, `G2B_MAX_RESULTS` |
+| 부가 기능 | `VOICE_BRIEF_*`, `MEETING_RECORDING_*`, `SMTP_*` |
+
+---
+
+## API / Usage
+
+FastAPI 라우트는 **261개**입니다.
 
 ```bash
-pytest tests/test_voice_brief_import.py -q
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 261
 ```
 
-### Smoke
+대표 도메인:
+
+| Domain | 예시 엔드포인트 |
+|--------|----------------|
+| Generate | `/generate`, `/generate/export`, `/generate/from-documents`, `/generate/from-pdf` |
+| Bundles | `GET /bundles`, `GET /bundles/{bundle_id}` |
+| Auth | `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/me`, `/auth/withdraw` |
+| Approvals | `/approvals`, `/approvals/{id}/submit`, `/review/approve`, `/reject`, `/download/{fmt}` |
+| Admin | `/admin/tenants`, `/admin/models/{id}/promote`, `/admin/audit-logs` |
+| Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
+| Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
+| Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/export` |
+| Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
+
+UI에서 내려받은 품질 교정 파일럿 JSONL을 local review pack으로 가져옵니다.
+
+```bash
+python3 scripts/create_report_quality_pilot_pack.py \
+  --batch-id pilot-rqc-001 \
+  --source-jsonl ~/Downloads/report_quality_pilot_artifacts_<sha12>.jsonl \
+  --output-root reports/report-quality
+```
+
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. 다운로드 파일명에는 응답 본문 SHA-256 앞 12자가 포함되고, 전체 hash는 `X-DecisionDoc-Pilot-SHA256` 응답 헤더로 제공됩니다. 생성되는 `SOURCE_MANIFEST.json`은 원본 SHA-256과 artifact 순서를 기록하고, 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync와 운영 API checker는 validation, summary/export count, unique artifact, single-tenant, ready gate를 모두 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+
+스모크 검증 (문서화된 대표 시나리오):
 
 ```bash
 python scripts/smoke.py
-python scripts/ops_smoke.py
-python scripts/voice_brief_smoke.py
+# 검증: /health, 미인증 /generate 거부, 인증 /generate 성공,
+#       /generate/export 성공, /generate/from-documents 업로드 성공
 ```
 
-The default smoke lane validates:
-
-- `/health`
-- unauthenticated `/generate` rejection
-- authenticated `/generate` success
-- authenticated `/generate/export` success
-- authenticated `/generate/from-documents` upload success
-
-Procurement smoke (optional) uses the same entrypoint:
+로컬 공공조달 decision package evidence 검증:
 
 ```bash
-SMOKE_INCLUDE_PROCUREMENT=1 \
-SMOKE_PROCUREMENT_URL_OR_NUMBER="R26BK01398367" \
-G2B_API_KEY="your-g2b-key" \
-python scripts/smoke.py
+CONTRACT_RESULT=/tmp/decisiondoc-cli-contract-manifest-validation-result.json
+python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py \
+  --write-result \
+  --result-path "$CONTRACT_RESULT"
+python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py "$CONTRACT_RESULT"
 ```
 
-If `SMOKE_PROCUREMENT_URL_OR_NUMBER` is empty, the smoke runner attempts to discover a recent live G2B bid number using `G2B_API_KEY`.
-
-Preflight to confirm deployed smoke inputs and covered routes:
-
-```bash
-python scripts/run_deployed_smoke.py --env-file .env.prod --preflight
-```
-
-### OpenSpace integration
-
-- integration guide: `docs/openspace_integration.md`
-- current expectation: local skill discovery and MCP wiring should pass; end-to-end `execute_task` may still be blocked or time out depending on host-side LLM auth/session exposure
-
-### Eval
-
-```bash
-python -m app.eval
-python -m app.eval_live
-```
-
-### AWS SAM
-
-```bash
-sam local start-api -t infra/sam/template.yaml
-sam deploy --guided --template-file infra/sam/template.yaml
-```
-
-If linting or type-check commands are configured in the repository, run them for touched areas as part of validation.
+이 경로는 `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`의 `contract_version`을 검증하고, local evidence CLI의 stdout JSON success/failure contract를 확인합니다. fixture 기반 검증이며 provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment를 실행하지 않습니다.
 
 ---
 
-## 6) Configuration guidance
+## Testing
 
-Prefer reading configuration once during app startup / dependency wiring rather than inside request handlers.
+대표 bundle sample과 구조 품질 evidence를 local mock provider로 재생성합니다.
 
-Important environment groups include:
+```bash
+python3 scripts/build_finished_doc_review_samples.py \
+  --output-dir docs/samples/bundle_quality_evidence \
+  --run-name current \
+  --no-latest \
+  --bundles proposal_kr,performance_plan_kr \
+  --formats ''
 
-### Runtime / Provider
-- `DECISIONDOC_PROVIDER`
-- `DECISIONDOC_PROVIDER_GENERATION`
-- `DECISIONDOC_PROVIDER_ATTACHMENT`
-- `DECISIONDOC_PROVIDER_VISUAL`
-- `DECISIONDOC_ENV`
-- `ENVIRONMENT`
-- `DECISIONDOC_TEMPLATE_VERSION`
-- `OPENAI_API_BASE_URL`
-- `LOCAL_LLM_*`
+python3 -m app.eval --out-dir reports/eval/v1
+```
 
-### Auth / Security
-- `DECISIONDOC_API_KEY`
-- `DECISIONDOC_API_KEYS`
-- `DECISIONDOC_OPS_KEY`
-- `JWT_SECRET_KEY`
-- `DECISIONDOC_CORS_ENABLED`
-- `ALLOWED_ORIGINS`
+2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)입니다. [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)는 manifest가 hash로 관리하는 자동 검증 원본이며, [reviewer workspace](./docs/samples/bundle_quality_evidence/current/human_review.html)는 request 근거, 자동 검증, 생성 Markdown, bundle별 사람 검토 상태와 외부 action 경계를 한 화면에 보여줍니다. Reviewer가 화면에서 작성한 값은 현재 manifest와 receipt SHA256에 결속된 local draft JSON으로만 내려받으며, `apply-draft` 검증을 통과해야 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)에 atomic update됩니다. Tracked receipt는 현재 `pending` 상태이고 아직 사람 검토 완료를 주장하지 않으므로 final review packet도 생성하지 않았습니다. Completed receipt에서는 manifest-declared artifact와 embedded SHA256 index만 담은 deterministic ZIP을 만들고 다시 검증할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. 화면 노출과 draft 생성도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
 
-### Storage
-- `DECISIONDOC_STORAGE`
-- `DATA_DIR`
-- `EXPORT_DIR`
-- `DECISIONDOC_S3_BUCKET`
-- `DECISIONDOC_S3_PREFIX`
-- `AWS_REGION`
+```bash
+pytest tests/                 # 전체
+pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
+pytest tests/ -m live         # live 마커 테스트
+```
 
-### Search / LLM / Retrieval
-- `OPENAI_API_KEY`
-- `GEMINI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `DECISIONDOC_GEMINI_MODEL`
-- `DECISIONDOC_CLAUDE_MODEL`
-- `DECISIONDOC_CLAUDE_API_VERSION`
-- `DECISIONDOC_SEARCH_ENABLED`
-- `SERPER_API_KEY`
-- `BRAVE_API_KEY`
-- `TAVILY_API_KEY`
+테스트 함수는 **2,701개**, **221개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
-### Enterprise integrations
-- `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`
-- `G2B_API_KEY`
-- `G2B_SEARCH_DAYS`
-- `G2B_MAX_RESULTS`
-- `STRIPE_*`
-- `STATUSPAGE_PAGE_ID`
-- `STATUSPAGE_API_KEY`
-- `SSO_ENCRYPTION_KEY`
+```bash
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2701
+python3 scripts/count_readme_metrics.py --field test_files      # → 221
+```
 
-### Voice Brief
-- `VOICE_BRIEF_API_BASE_URL`
-- `VOICE_BRIEF_API_BEARER_TOKEN`
-- `VOICE_BRIEF_TIMEOUT_SECONDS`
+> 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
 
-### Meeting recording
-- `MEETING_RECORDING_TRANSCRIPTION_MODEL`
-- `MEETING_RECORDING_MAX_UPLOAD_BYTES`
-- `MEETING_RECORDING_CONTEXT_CHAR_LIMIT`
+포트폴리오 문서와 local evidence는 tracked source allowlist에서 pack으로 동기화하고, 파일별 SHA-256 manifest와 deterministic ZIP으로 재검증할 수 있습니다.
 
-Rules:
-- Do not scatter raw `os.getenv(...)` calls through route handlers.
-- Prefer configuration collection and validation at app creation time.
-- Preserve production behavior such as disabling docs/openapi routes when production mode is enabled.
+```bash
+python3 scripts/manage_portfolio_pack.py sync --prune
+python3 scripts/manage_portfolio_pack.py check
+python3 scripts/manage_portfolio_pack.py package
+python3 scripts/manage_portfolio_pack.py verify-zip
+```
+
+ZIP은 로컬 전달용으로 생성되어 git에 포함되지 않습니다. Tracked pack과 `portfolio_manifest.json`은 source membership, content hash, 민감정보 제외 경계를 검토할 수 있는 증거입니다.
+
+CI advisory와 동일한 code quality / security scan:
+
+```bash
+ruff check app/ --select=E,F,W --ignore=E501
+bandit -r app/ -x app/providers/mock_provider.py -ll
+```
+
+2026-07-14 로컬 기준 `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
 
 ---
 
-## 7) Engineering rules
+## Development Plan — 완성까지 남은 것
 
-### 7.1 Pydantic and request/response models
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,951 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
-Use strict validation for external input models.
-
-Preferred pattern:
-
-```python
-class ExampleRequest(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
+```bash
+python3 scripts/check_completion_readiness.py --print-env-template
+python3 scripts/check_completion_readiness.py --print-proof-plan
+python3 scripts/check_completion_readiness.py
+python3 scripts/check_completion_readiness.py --env-file .env.prod
+python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
+python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
+python3 scripts/check_completion_proof_receipt.py --print-template M1
 ```
 
-Rules:
-- New request models should reject unknown fields unless there is a strong reason not to.
-- Preserve clear field constraints and explicit defaults.
-- Prefer stable, explicit schemas over loosely typed payloads.
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
-### 7.2 Provider and storage abstractions
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-14) |
+|----------|------|-----------|--------------------|
+| **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 보류 — 2026-07-13 OpenAI 1회 통과; 잔여 paid proof는 사용자 요청으로 연기 |
+| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
+| **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
+| **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
+| **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ✅ 완료 — 2026-07-14 상수 모듈 drift 재분할 및 800줄 guard 추가, 초과 0개 |
+| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
 
-Provider and storage logic must stay behind clear abstractions.
-
-Rules:
-- Provider implementations should follow the repository’s provider interface / ABC pattern.
-- Storage implementations should follow the repository’s storage interface / ABC pattern.
-- Add or extend provider/storage implementations through the existing factory pattern.
-- Do not bypass factory wiring with ad-hoc instantiation in route handlers.
-
-### 7.3 Function signatures
-
-Prefer keyword-only arguments for important operational parameters.
-
-Preferred style:
-
-```python
-def generate_documents(self, requirements: dict[str, Any], *, request_id: str) -> dict[str, Any]:
-    ...
-```
-
-### 7.4 File writes and persistence
-
-Use safe persistence patterns.
-For local file writes, prefer atomic write patterns such as:
-- write temp file
-- flush
-- fsync
-- replace
-
-Do not introduce fragile partial-write behavior.
-
-### 7.5 Logging and observability
-
-Use structured logging.
-Prefer repository utilities such as `log_event(...)` and request-scoped structured fields.
-
-Rules:
-- Preserve request id propagation.
-- Preserve structured logs for API and ops flows.
-- Prefer explicit operational metadata over free-form print statements.
-
-### 7.6 Dependency wiring
-
-Prefer application-level dependency wiring and `app.state` style dependency access where that is the repository pattern.
-
-Rules:
-- Keep route handlers thin.
-- Put orchestration in services.
-- Put provider/storage selection in factories or startup wiring.
-- Do not hide architectural decisions inside handlers.
-
-### 7.7 Types
-
-Use modern Python typing consistently:
-- `dict[str, Any]`
-- `list[str]`
-- `str | None`
-
-Prefer explicit types for service boundaries and persisted data structures.
+M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidence 정합성 개선을 계속합니다. 외부 실증을 재개할 때는 각 마일스톤의 완료 정의(DoD)와 readiness receipt를 먼저 확인합니다.
 
 ---
 
-## 8) Architecture principles
+## Scope & Limitations
 
-### 8.1 Reuse the existing platform
-
-When adding features:
-- reuse project/workspace concepts
-- reuse document generation flows
-- reuse bundle registry and export flows
-- reuse knowledge document flows
-- reuse approval/share/history/audit mechanisms
-- reuse eval and smoke patterns
-- reuse existing integration points such as G2B and attachment/RFP parsing where applicable
-
-Do not create:
-- a second document system
-- a second project system
-- a second approval workflow
-- a second storage model without explicit need
-- a standalone side-app unless explicitly requested
-
-### 8.2 Keep deterministic logic separate from generated prose
-
-For any decisioning or analysis feature:
-- prefer deterministic validation, normalization, and scoring first
-- use LLM generation to explain, summarize, draft, or transform
-- do not make model prose the sole source of truth when structured logic exists
-
-### 8.3 Preserve provider abstraction
-
-- Keep provider-specific behavior inside provider implementations or provider-facing service layers.
-- Do not spread provider branching across routers.
-- `mock` mode must remain safe for local and CI use.
-
-### 8.4 Preserve storage abstraction
-
-- Keep local and S3 support compatible.
-- Do not couple core product logic tightly to only one storage backend.
-
-### 8.5 Additive rollout
-
-When introducing substantial new capability:
-- prefer feature flags
-- prefer project-scoped rollout before platform-wide redesign
-- prefer backward-compatible schema and API extensions
+- 완전한 문서관리 시스템이 아니라 **AI-assisted documentation MVP/PoC**입니다.
+- 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
+- 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
+- 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
+- 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
+- Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
+- 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
+- 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결합니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. Project-linked share는 서버가 tenant/project/document/request/bundle binding을 검증하고 생성 시점 source fingerprint를 저장합니다. 공개 공유 페이지는 조회할 때마다 현재 원본을 다시 대조해 변경·삭제 상태를 경고하고 `share.view` audit evidence를 남기며, admin Locations의 외부 공유 review queue는 stale `share.create`와 drift `share.view`를 함께 보여주되 반복 조회를 영향받은 고유 링크 수로 중복 집계하지 않습니다. 이후 current 조회가 확인되면 해당 링크만 위험 queue에서 해소하고 복구 건수를 별도로 표시하며 기존 audit은 보존합니다. 공유 취소는 처리자·시각을 남기고 자연 만료와 구분하며, 같은 문서에 여러 링크가 있으면 닫힌 최신 링크보다 아직 활성인 링크를 먼저 보여줍니다. Generic legacy share는 기존 동작을 유지합니다. 연결된 결재는 요청 시점 상태를 보존하고 상세 조회와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 상태의 최종 승인은 명시적 acknowledgement를 approval record와 audit에 남겨야 진행됩니다. 승인 후 원본 source fingerprint가 달라진 경우에도 immutable 승인 스냅샷을 다운로드하기 전에 별도 확인이 필요하고 그 결과가 download audit에 남습니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
+- Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
 ---
 
-## 9) Do-not rules
+## Links
 
-Do NOT:
-- spread provider-selection branches outside the established provider factory path
-- bypass tenant migration or compatibility rails such as `migrate_legacy_data(...)` without explicit instruction
-- duplicate existing config helpers such as enable/disable utility functions when a shared config helper already exists
-- call `os.getenv(...)` directly inside route handlers unless there is a compelling local-only reason
-- top-level import `boto3` in modules where lazy import is the established pattern
-- replace real filesystem tests with excessive mocking when `tmp_path` or equivalent repository testing patterns are available
-- create external-input request models without strict validation unless the task explicitly needs permissive parsing
-- hardcode long prompt strings in multiple places
-- build a parallel templating pipeline when the bundle/template system already exists
-- bypass auth, tenant isolation, audit, or approval expectations
-- broaden scope beyond the current task or milestone
+- GitHub: [sungjin9288/DecisionDoc-AI](https://github.com/sungjin9288/DecisionDoc-AI)
+- Release evidence: [DecisionDoc AI v1.1.77 Production Release](https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77)
+- Demo: (접근 검증 후 추가)
+- 엔지니어링/기여 가이드: [`docs/`](./docs/) 및 `AGENTS.md`
 
 ---
 
-## 10) Validation and definition of done
-
-A change is not done just because the code compiles.
-
-Default completion checklist:
-1. The requested behavior is implemented or the bug is fixed.
-2. Existing platform flows are not broken.
-3. Relevant tests are added or updated.
-4. Targeted tests for changed areas are run.
-5. `pytest tests/ -q` passes unless the repo/task explicitly calls for a narrower validation scope.
-6. If applicable, smoke scripts for touched flows are run.
-7. If applicable, lint/type-check commands already used by the repo are run.
-8. `mock` provider behavior still works for non-live workflows.
-9. Storage abstraction behavior is preserved.
-10. Any task-specific status/spec document is updated.
-
-When a change touches:
-- deployment or infra behavior → run the appropriate deployment/smoke validation
-- storage behavior → validate both logic and persistence paths
-- provider behavior → validate `mock` plus the affected provider path when credentials are available
-- API contracts → verify route behavior and backward compatibility
-- bundle generation → verify generation, export, and any downstream handoff paths
-
-If validation fails, repair first.
-Do not continue expanding scope on top of a broken baseline.
-
----
-
-## 11) Tests
-
-Use the repository’s real testing patterns.
-
-General expectations:
-- prefer targeted tests plus a repository-wide safety pass
-- use fixtures and golden/snapshot patterns where the repo already uses them
-- keep tests deterministic in default/mock mode
-- reserve live/provider tests for explicit cases with credentials configured
-
-When adding a new feature:
-- add tests for structured data contracts
-- add tests for service behavior
-- add tests for route behavior if routes are introduced or changed
-- add smoke coverage when the feature changes a primary user workflow
-
----
-
-## 12) Legacy and hot spots
-
-Be careful around these areas:
-- compatibility rails around legacy flat-data migration
-- duplicated config helpers
-- old architectural seams left for backward compatibility
-- production-mode behavior such as docs/openapi disablement
-- multi-tenant and auth-sensitive endpoints
-- ops and audit paths
-
-If you are unsure whether a path is current or legacy, inspect usage first.
-
----
-
-## 13) Security and operational expectations
-
-- Preserve authentication and tenant isolation.
-- Preserve auditability for sensitive actions.
-- Do not expose secrets in logs or generated artifacts.
-- Keep production-safe behavior intact.
-- Preserve request id and observability metadata for operational troubleshooting.
-- Avoid introducing unaudited external dependencies unless the task clearly justifies them.
-
----
-
-## 14) Active initiative — Public Procurement Go/No-Go Copilot
-
-When a task mentions procurement, G2B, bid decision, go/no-go, bid readiness, RFP analysis handoff, or `bid_decision_kr`, treat the following as the active initiative.
-
-### 14.1 Task-level source of truth
-
-When these files exist, read them before making changes:
-- `docs/specs/public_procurement_copilot/PRD.md`
-- `docs/specs/public_procurement_copilot/PLAN.md`
-- `docs/specs/public_procurement_copilot/IMPLEMENT.md`
-- `docs/specs/public_procurement_copilot/STATUS.md`
-
-Current repository state:
-- the initial milestone plan is complete
-- project-detail procurement UI, structured decision state, `bid_decision_kr`, and downstream handoff are implemented
-- `Decision Council v1` now exists as a project-scoped, procurement-only pre-generation step for `bid_decision_kr` and `proposal_kr`
-- latest closeout and rollout hardening status lives in `docs/specs/public_procurement_copilot/STATUS.md`
-- new procurement work should be treated as follow-up tuning or extension work, not as incomplete baseline implementation
-
-### 14.2 Scope rules
-
-Build this capability **inside DecisionDoc AI**.
-
-Do not create:
-- a standalone procurement app
-- a second document system
-- a second project/workspace concept
-- a parallel approval or export flow
-
-Reuse existing:
-- project/workspace flows
-- document generation and export flows
-- bundle registry
-- knowledge documents
-- G2B integration
-- attachment / RFP parsing
-- approval / share / history / audit
-- evaluation and smoke patterns
-
-### 14.3 Decision policy
-
-Recommendation values must be:
-- `GO`
-- `CONDITIONAL_GO`
-- `NO_GO`
-
-Rules:
-- deterministic hard filters run before model-generated narrative
-- hard-fail conditions may force `NO_GO`
-- `CONDITIONAL_GO` is only valid when the missing items are realistically remediable before the bid deadline
-- human approval remains the final authority
-
-### 14.4 Checklist policy
-
-The bid-readiness checklist must exist in both:
-- structured machine-readable form
-- human-readable document form
-
-### 14.5 Integration expectations
-
-Prefer:
-- project-scoped integration
-- reuse of current bundle and export flows
-- reuse of structured metadata for downstream handoff
-
-Avoid:
-- provider logic in routers
-- prose-only decision logic without structured backing data
-- destructive schema changes
-- broad UI redesign for v1
-
-### 14.6 Rollout and validation
-
-Prefer additive rollout behind:
-- `DECISIONDOC_PROCUREMENT_COPILOT_ENABLED`
-
-When extending this area, work milestone-by-milestone if a plan/status file exists for the follow-up task.
-
-For follow-up milestones or significant changes:
-- run targeted validation
-- run `pytest tests/ -q`
-- update the relevant `STATUS.md`
-- stop if validation fails
-
-### 14.7 Decision Council v1
-
-Current proposal-first slice:
-- procurement/G2B projects only
-- API-first
-- deterministic synthesis only
-- one canonical latest council session per `project_id + use_case + target_bundle_type`
-- the stored canonical council session remains keyed to `target_bundle_type=bid_decision_kr`
-- the same council handoff is reused for both `bid_decision_kr` and `proposal_kr` generation
-- stored council sessions are treated as historical artifacts until they are revalidated against the current procurement record
-- `GET /projects/{project_id}/decision-council` now returns explicit procurement-binding metadata so callers can distinguish:
-  - current council handoff
-  - stale council handoff that must be rerun before `bid_decision_kr` or `proposal_kr`
-  - `supported_bundle_types=["bid_decision_kr","proposal_kr"]`
-- stale council responses now also expose the source council baseline and current procurement drift summary:
-  - source recommendation / missing-data / checklist counts at council run time
-  - current recommendation / missing-data / checklist counts at read time
-  - source council timestamp vs current procurement `updated_at` so callers can see when the council became stale
-- generation metadata now distinguishes:
-  - `decision_council_handoff_used=true` when the latest council handoff was actually injected
-  - `decision_council_handoff_used=false` plus `decision_council_handoff_skipped_reason=stale_procurement_context` when a saved council session exists but was skipped because current procurement state no longer matches it
-  - `decision_council_target_bundle=bid_decision_kr` for the canonical stored session source
-  - `decision_council_applied_bundle` for the actual current generation target (`bid_decision_kr` or `proposal_kr`)
-
-Current routes:
-- `POST /projects/{project_id}/decision-council/run`
-- `GET /projects/{project_id}/decision-council`
-
-Local manual verification:
-- fastest path: run the all-in-one local launcher on a fresh `DATA_DIR`
-
-```bash
-.venv/bin/python scripts/run_procurement_stale_share_demo.py
-```
-
-- default behavior:
-  - starts the app on `http://127.0.0.1:8765`
-  - seeds one deterministic stale-share demo with the same council session linked to `bid_decision_kr` and `proposal_kr`
-  - makes the stale public share target `proposal_kr` so the Decision Council v1 proposal-first path is directly visible
-  - verifies the live app against that seeded state
-  - writes `/tmp/decisiondoc-stale-share-demo/procurement-stale-share-demo.json`
-  - keeps the server running for manual checks until `Ctrl-C`
-- optional browser assist:
-
-```bash
-.venv/bin/python scripts/run_procurement_stale_share_demo.py --open-browser
-```
-
-- this opens:
-  - the focused internal stale-share review URL
-  - the exact public `/shared/{id}` URL
-- optional browser playtest:
-
-```bash
-.venv/bin/python scripts/run_procurement_stale_share_demo.py --playtest-ui --exit-after-verify
-```
-
-- this headless Playwright helper is useful for local debugging and unit-covered flow checks:
-  - logs in with the seeded admin account
-  - opens the stale-share review from the authenticated app shell for a more deterministic browser path
-  - if that flow still loses state, it retries through re-login and modal-visibility fallbacks instead of failing immediately
-  - verifies the stale `proposal_kr` review card, the Decision Council panel, the disabled proposal regenerate CTA, and the public `/shared/{id}` warning
-- current note:
-  - the local live `--playtest-ui` path is now green in this workspace and can be used as the fast browser gate for the seeded stale-share demo
-  - `--open-browser` is still useful when you want to inspect the focused review surface and public share page manually after the automated browser pass
-- visual debug path:
-
-```bash
-.venv/bin/python scripts/run_procurement_stale_share_demo.py --playtest-ui --playtest-headed --open-browser
-```
-
-- CI-style quick check:
-
-```bash
-.venv/bin/python scripts/run_procurement_stale_share_demo.py --port 8876 --data-dir /tmp/decisiondoc-stale-share-demo-ci --exit-after-verify
-```
-
-Local procurement live smoke when G2B env is available:
-
-```bash
-G2B_API_KEY=... \
-JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-.venv/bin/python scripts/run_local_procurement_smoke.py
-```
-
-Env-file path:
-
-```bash
-cp scripts/local_procurement_smoke.env.example /tmp/local_procurement_smoke.env
-$EDITOR /tmp/local_procurement_smoke.env
-JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars \
-.venv/bin/python scripts/run_local_procurement_smoke.py --env-file /tmp/local_procurement_smoke.env
-```
-
-- this helper:
-  - starts a fresh local app with procurement copilot enabled
-  - injects a local API key and ops key for the smoke lane
-  - runs `scripts/smoke.py` with `SMOKE_INCLUDE_PROCUREMENT=1`
-  - uses `SMOKE_PROCUREMENT_URL_OR_NUMBER` when provided, but can auto-discover a recent live G2B opportunity when only `G2B_API_KEY` is configured
-- optional:
-  - add `--keep-running` if you want the local app to stay up after the smoke pass
-  - set `PROCUREMENT_SMOKE_USERNAME` / `PROCUREMENT_SMOKE_PASSWORD` when the target tenant already has users
-  - keep the inline `JWT_SECRET_KEY=test-local-procurement-smoke-secret-32chars` prefix on the file-based path; that is the validated local launch form in this workspace
-  - the runner defaults `JWT_SECRET_KEY` to a validated local secret; override it in the current shell or the env file only when you need a different local auth context
-  - run `./.venv/bin/python scripts/run_local_procurement_smoke.py --preflight` to see which required env is still missing and print the exact suggested command
-  - run `./.venv/bin/python scripts/run_local_procurement_smoke.py --print-env-template` for a copy-paste export block
-  - pass `--env-file /path/to/local_procurement_smoke.env` to the Python runner together with the inline `JWT_SECRET_KEY=...` prefix
-
-Deployed stage procurement live smoke:
-
-```bash
-cp scripts/stage_procurement_smoke.env.example /tmp/stage_procurement_smoke.env
-$EDITOR /tmp/stage_procurement_smoke.env
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env --preflight
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.env
-```
-
-- this helper:
-  - does not boot a local app
-  - runs the existing `scripts/smoke.py` procurement lane against an already deployed `SMOKE_BASE_URL`
-  - keeps the current stage contract explicit: `SMOKE_BASE_URL`, `SMOKE_API_KEY`, and `G2B_API_KEY`
-  - treats `SMOKE_PROCUREMENT_URL_OR_NUMBER` as a preferred stable fixture, not a hard requirement
-- optional:
-  - set `SMOKE_OPS_KEY` if you want the remediation summary path to prefer the ops-key route on the deployed environment
-  - set `SMOKE_TENANT_ID`, `PROCUREMENT_SMOKE_USERNAME`, and `PROCUREMENT_SMOKE_PASSWORD` when the stage tenant is non-`system` or already has users
-  - run `./.venv/bin/python scripts/run_stage_procurement_smoke.py --print-env-template` for a copy-paste export block when you do not want to edit a file first
-
-GitHub Actions env to stage smoke env:
-
-```bash
-.venv/bin/python scripts/export_stage_procurement_smoke_env.py \
-  --stage dev \
-  --env-file .github-actions.env \
-  --base-url https://your-dev-stage.example.com \
-  --output /tmp/stage_procurement_smoke.dev.env
-
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env --preflight
-.venv/bin/python scripts/run_stage_procurement_smoke.py --env-file /tmp/stage_procurement_smoke.dev.env
-```
-
-- this helper maps stage-scoped GitHub Actions values into the exact env names expected by `run_stage_procurement_smoke.py`
-- it reuses:
-  - `DECISIONDOC_API_KEY` -> `SMOKE_API_KEY`
-  - `DECISIONDOC_OPS_KEY` -> `SMOKE_OPS_KEY`
-  - `G2B_API_KEY_<STAGE>` -> `G2B_API_KEY`
-  - `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` -> `SMOKE_PROCUREMENT_URL_OR_NUMBER` when a stable known target is available
-  - `PROCUREMENT_SMOKE_TENANT_ID_<STAGE>` / `PROCUREMENT_SMOKE_USERNAME_<STAGE>` / `PROCUREMENT_SMOKE_PASSWORD_<STAGE>` -> deployed smoke login context
-- `check-github-actions-config.sh --procurement-smoke` and `deploy-smoke` now require `G2B_API_KEY_<STAGE>` but only treat `PROCUREMENT_SMOKE_URL_OR_NUMBER_<STAGE>` as optional stable fixture input
-- only `--base-url` stays explicit because the deployed endpoint is resolved outside the repository env scaffold
-
-If AWS CLI credentials already point at the target account, you can skip manual `base_url` lookup and resolve it from the stage stack output:
-
-```bash
-.venv/bin/python scripts/run_stage_procurement_smoke.py \
-  --github-actions-env-file .github-actions.env \
-  --stage dev \
-  --resolve-base-url-from-stack \
-  --preflight
-
-.venv/bin/python scripts/run_stage_procurement_smoke.py \
-  --github-actions-env-file .github-actions.env \
-  --stage dev \
-  --resolve-base-url-from-stack
-```
-
-- default stack name:
-  - `decisiondoc-ai-dev`
-  - `decisiondoc-ai-prod`
-- optional:
-  - pass `--stack-name decisiondoc-ai-prod-blue` when the deployed stack name differs from the default convention
-  - pass `--aws-region ap-northeast-2` when you do not want to rely on `AWS_REGION` from `.github-actions.env` or the current shell
-- this path internally reuses the exporter logic, so the older `export_stage_procurement_smoke_env.py -> run_stage_procurement_smoke.py` two-step flow is still available when you want a persistent generated env file
-
-- manual path when you want separate control over server, seed, and verify:
-- use a fresh empty `DATA_DIR`; the demo seed script intentionally refuses an existing directory because append-only audit/share state would otherwise make the stale-share counts noisy
-- start the app on the same port already used by `.claude/launch.json`
-
-```bash
-DEMO_DIR=/tmp/decisiondoc-stale-share-demo
-DATA_DIR="$DEMO_DIR" DECISIONDOC_PROCUREMENT_COPILOT_ENABLED=1 .venv/bin/uvicorn app.main:app --port 8765 --reload
-```
-
-- in a second shell, seed one deterministic stale-share demo:
-
-```bash
-DEMO_DIR=/tmp/decisiondoc-stale-share-demo
-DATA_DIR="$DEMO_DIR" .venv/bin/python scripts/seed_procurement_stale_share_demo.py --data-dir "$DEMO_DIR" --base-url http://127.0.0.1:8765
-```
-
-- once seeded, run the narrow verifier:
-
-```bash
-.venv/bin/python scripts/check_procurement_stale_share_demo.py --base-url http://127.0.0.1:8765
-```
-
-- the script prints:
-  - seeded admin credentials
-  - focused internal stale-share review URL
-  - tenant-wide stale-share review URL
-  - exact public `/shared/{id}` URL
-  - shared bundle id and both linked project document ids
-- the verifier checks:
-  - seeded admin login works
-  - locations overview exposes active stale-share risk
-  - focused procurement summary resolves the same stale share
-  - the top stale share is the council-backed `proposal_kr` document
-  - latest Decision Council is marked stale against current procurement
-  - the public `/shared/{id}` page still renders the stale warning
-- manual click-path after login:
-  - open the focused review URL and confirm the procurement summary lands on `share.create` stale-share review with the seeded project focused
-  - switch to locations overview and confirm the top risk card shows stale public exposure plus `공유 링크 열기`, `공유 링크 복사`, `공유 링크 비활성화`, `위험 문서 review`, and review-link actions
-  - open the printed public share URL, then revoke it from the card or modal and confirm the same `/shared/{id}` URL becomes `404`
-
-Current UI expectation:
-- reuse the existing project-detail procurement panel
-- accept a user goal before council-assisted `bid_decision_kr` / `proposal_kr` generation
-- show structured role opinions, risks, disagreements, and recommended direction
-- show when the latest saved council is stale relative to the current procurement recommendation/checklist, and block council-assisted generation until rerun
-- mark council-backed `bid_decision_kr` and `proposal_kr` rows in the existing project document list as:
-  - `현재 council 기준`
-  - `이전 council revision`
-  - `현재 procurement 대비 이전 council 기준`
-- expose the same document freshness contract from `GET /projects/{project_id}` for council-backed `bid_decision_kr` / `proposal_kr` rows:
-  - `decision_council_document_status`
-  - `decision_council_document_status_tone`
-  - `decision_council_document_status_copy`
-  - `decision_council_document_status_summary`
-- stale council-backed `bid_decision_kr` / `proposal_kr` rows now also:
-  - show a follow-up CTA (`Council 다시 실행`, `최신 기준으로 재생성`, or `현재 council 확인`)
-  - warn before `결재 요청` or `공유` continues on an outdated council-backed document
-  - keep the same outdated-state warning visible inside the approval-request modal, with a direct follow-up CTA back to the relevant council action
-  - keep the same outdated-state warning visible inside the share-link modal for stale council-backed project documents
-  - carry the same outdated-state warning into the public shared-document page when a stale council-backed project document is shared
-- `share.create` audit entries now also preserve stale council freshness metadata when a council-backed project document is shared, so operators can trace whether an external share started from a current or outdated council basis
-- admin procurement quality summary now treats stale council-backed `share.create` as a reviewable activity signal, so operators can see outdated external shares in the same recent-events/activity-filter surface instead of digging through raw audit logs
-- admin procurement quality summary now also exposes an `외부 공유 review` preset that jumps straight to stale external share activity using the existing activity-filter state model
-- admin procurement quality summary now also derives an `외부 공유 재확인 queue` from stale council-backed external shares, so operators can review the latest outdated public shares by project/document, latest sharer, and stale-share count without opening raw audit logs
-- the preset label now follows unique queue count, while the queue header keeps raw stale `share.create` event volume as a separate context metric
-- stale external share queue items now also expose live share-link state (`share_id`, public `share_url`, active/inactive, access count, expiry) and a direct `공유 링크 열기` CTA, so operators can inspect the current public link without leaving the existing review loop
-- the same stale external share surfaces now also expose `공유 링크 복사`, which copies the exact public `/shared/{id}` URL for incident follow-up or operator handoff without leaving the queue
-- the stale external share queue now prioritizes still-active public links first and exposes active/inactive/missing-record counts in the queue header, so operators can focus on live external exposure before historical noise
-- stale external share queue items now also show the latest public access timestamp when available, so operators can tell whether a stale public link is merely still active or has been opened recently
-- among active stale links, the queue now lifts `최근 public 열람 있음` items ahead of untouched links and shows accessed-vs-unaccessed counts in the header, so operators can review externally-seen stale documents before dormant exposure
-- when any active stale public link remains, the procurement summary modal now raises a top-level exposure alert with an `외부 공유 review 열기` CTA, so operators can jump into stale-share triage without first finding the preset bar
-- the locations overview card now also pulls a compact procurement stale-share risk snapshot via `/admin/locations?include_procurement=1` and shows a direct `외부 공유 review` CTA when active stale public exposure remains, so operators can jump into stale-share triage before opening the full modal
-- that locations overview snapshot is now built through a dedicated stale-share aggregation path instead of re-running the full tenant procurement summary per card, so the overview keeps the same contract with lower backend work
-- the same locations overview now sorts cards with active stale public exposure ahead of normal tenants, and among risky tenants lifts recently accessed public stale links first so urgent exposure is visible before operators scan the whole grid
-- the same locations overview card now also surfaces the top stale shared document and direct `공유 링크 열기` / `공유 링크 복사` actions, so operators can inspect or hand off the exact public URL without entering the modal first
-- the same card now also shows who last created that stale external share, when it happened, and how many stale-share events accumulated for that document, so incident follow-up does not require opening the modal first
-- the same card now also exposes `외부 공유 review 링크`, which copies the tenant-wide stale-share review URL with the existing `share.create` activity filter preserved for operator handoff
-- active stale public links can now be revoked directly from the locations overview card and the stale-share review modal by reusing the existing `DELETE /share/{share_id}` flow, and admin operators can revoke links even when another user originally created them
-- the same card now also exposes `위험 문서 review`, which opens the procurement summary already focused on that exact stale shared project while keeping the existing `share.create` review filter active
-- the same card now also exposes `위험 문서 review 링크`, which copies the exact internal procurement-summary review URL with tenant, focused project, and stale-share activity filter preserved for operator handoff
-- `scripts/smoke.py` now also validates the proposal-first lane:
-  - `GO` / `CONDITIONAL_GO` recommendation이면 council-backed `proposal_kr` generation과 provenance를 확인
-  - `NO_GO` recommendation이면 override 이후 retry된 `proposal_kr` provenance를 확인
-- preserve provenance through project docs, audit, approval/share/export
-
-Do not extend this into:
-- generic multi-agent chat
-- a separate orchestration shell
-- a new approval or export flow
-
-### 14.8 Downstream handoff target
-
-When implemented, the procurement decision flow should hand off cleanly to existing document workflows such as:
-- `rfp_analysis_kr`
-- `proposal_kr`
-- `performance_plan_kr`
-
-Preserve structured context so users do not have to re-enter the same opportunity, fit, risk, and checklist information multiple times.
-
----
-
-## 15) Final rule
-
-Keep this file practical and durable.
-
-If a rule here repeatedly causes confusion because the repository has changed:
-- update this file
-- keep it shorter, clearer, and closer to reality
-- move task-specific detail into task-specific docs instead of bloating root guidance
+<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,701 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-분석 기준: 2026-07-09 현재 저장소 코드, README, docs, 설정 파일, 최근 git log, worktree 상태, 최근 기능 변경 기준 GitHub Actions CI/CD 결과를 기준으로 업데이트했다. 로드맵은 포트폴리오 완성보다 먼저 재현 가능한 검증 evidence 확보를 우선한다.
+분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 로드맵은 외부 실증을 과장하지 않고 재현 가능한 검증 evidence 확보를 우선한다.
 
 제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
 
@@ -15,13 +15,13 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 최근 확인한 main 자동화 증적: commit `01b9fbc` 기준 GitHub Actions CI `29027090095` success, CD `29027088935` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
-- 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상/스크린샷, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
+- 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
 현재 로컬 기준 검증:
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2945 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2951 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -127,28 +127,30 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 ## 6. Phase 4 - 포트폴리오 완성
 
 - 목표: 이력서, GitHub, 면접에서 일관되게 설명 가능한 프로젝트로 정리한다.
-- 해야 할 작업:
-  - README 최종 정리
-  - architecture diagram과 주요 코드 설명 추가
-  - issue/PR/commit 기반 개발 과정 정리
-  - 면접 답변에서 위험한 표현 제거
-  - 직접 구현 범위와 검증된 기능만 이력서 bullet로 반영
+- 현재 상태:
+  - README, architecture, case study, contribution note, project card, resume bullets, interview story의 claim boundary를 2026-07-14 코드와 local evidence에 맞췄다.
+  - `scripts/manage_portfolio_pack.py`가 tracked source allowlist를 pack에 atomic sync하고 membership, byte content, generated SHA-256 manifest를 검증한다.
+  - Local delivery ZIP은 고정 timestamp와 정렬된 entry로 재현하며 pack 밖에만 생성하고 git에는 포함하지 않는다.
+  - 과거 source와 달라진 pack 파일, placeholder, historical README 개선안은 `sync --prune`으로 제거한다.
+  - 운영 URL, live provider, G2B 실데이터, 사용자 성과 수치는 검증 전 claim에서 제외한다.
 - 완료 기준:
   - README, case study, resume bullets, interview story가 서로 모순되지 않음
   - 구현 완료/개발 중/검증 필요가 분리되어 있음
   - 면접에서 코드 파일과 함수명을 기준으로 설명 가능
+  - tracked pack과 source가 SHA-256 manifest 기준으로 일치함
 - 산출물:
   - GitHub README
   - portfolio case study
   - resume bullets
   - interview answer sheet
+  - `_portfolio_export/decisiondoc_ai_portfolio_pack/portfolio_manifest.json`
 
 ## 7. 우선순위 높은 다음 작업 5개
 
 | 우선순위 | 작업 | 이유 | 예상 산출물 |
 |---|---|---|---|
-| 1 | M1 live provider 실증 완료 | OpenAI proof는 있으나 Gemini/Claude/fallback 성공 증거가 남음 | blocked receipt 갱신 후 live provider validation note 완료 |
-| 2 | M2 G2B 실데이터 smoke 실행 | no-secret receipt 자동화는 완료됐지만 live key 없이는 end-to-end 증거가 없음 | runner-generated G2B smoke receipt |
-| 3 | M6 배포/post-deploy smoke 실행 | receipt 자동화는 완료됐지만 README Demo 링크에는 실제 접근성 evidence가 필요 | runner-generated deployment receipt, ops smoke report |
+| 1 | local workflow 품질 개선 | 비용 없이 제품 가치와 검증 강도를 계속 높일 수 있음 | 다음 기능 slice와 focused regression |
+| 2 | portfolio claim/pack 유지 | 코드 변경 뒤 문서와 증거 drift를 조기에 차단 | `manage_portfolio_pack.py check` |
+| 3 | contribution note 유지 | 면접 설명이 실제 코드와 증거 범위를 넘지 않게 유지 | `docs/contribution-note.md` |
 | 4 | 포트폴리오용 짧은 UI recording 선택 캡처 | 최신 screenshot은 갱신됐고, 영상은 제출 방식에 따라 선택 필요 | short recording |
-| 5 | contribution note 유지 | 면접 설명이 실제 코드와 증거 범위를 넘지 않게 유지 | `docs/contribution-note.md` |
+| 5 | M1/M2/M6 외부 실증 | paid provider, G2B, deployment 증거가 남아 있으나 현재는 사용자 요청으로 보류 | readiness 재확인 후 runner-generated receipts |
