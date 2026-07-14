@@ -8521,6 +8521,29 @@
     }
   }
 
+  function decodeReportWorkflowQualityPilotReceipt(encodedReceipt) {
+    const base64 = String(encodedReceipt || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const binary = atob(padded);
+    return Uint8Array.from(binary, char => char.charCodeAt(0));
+  }
+
+  async function sha256Hex(bytes) {
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function downloadReportWorkflowQualityFile(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
   async function downloadReportWorkflowQualityPilotArtifacts() {
     const artifactIds = Array.from(_reportWorkflowQualityPilotSelection);
     if (artifactIds.length < 3 || artifactIds.length > 5) {
@@ -8539,6 +8562,8 @@
       if (!res.ok) throw new Error(await res.text());
       const exportSha256 = String(res.headers.get('X-DecisionDoc-Pilot-SHA256') || '').trim().toLowerCase();
       const previewVerified = String(res.headers.get('X-DecisionDoc-Pilot-Preview-Verified') || '').trim().toLowerCase();
+      const encodedReceipt = String(res.headers.get('X-DecisionDoc-Pilot-Receipt') || '').trim();
+      const receiptSha256 = String(res.headers.get('X-DecisionDoc-Pilot-Receipt-SHA256') || '').trim().toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(exportSha256)) {
         throw new Error('Pilot export SHA-256 응답이 없거나 올바르지 않습니다.');
       }
@@ -8549,17 +8574,37 @@
       if (!expectedSha256 || expectedSha256 !== exportSha256) {
         throw new Error('Pilot preview 이후 export 내용이 변경되었습니다. 다시 검토하세요.');
       }
+      if (!encodedReceipt || !/^[a-f0-9]{64}$/.test(receiptSha256)) {
+        throw new Error('Pilot export receipt 응답이 없습니다.');
+      }
+      const receiptBytes = decodeReportWorkflowQualityPilotReceipt(encodedReceipt);
+      if (await sha256Hex(receiptBytes) !== receiptSha256) {
+        throw new Error('Pilot export receipt SHA-256이 응답과 다릅니다.');
+      }
+      const receipt = JSON.parse(new TextDecoder().decode(receiptBytes));
+      const receiptArtifactIds = receipt?.export?.ordered_artifact_ids || [];
+      const requestId = String(res.headers.get('X-Request-Id') || '').trim();
+      if (
+        receipt?.schema_version !== 'decisiondoc_report_quality_pilot_export_receipt.v1'
+        || receipt?.export?.sha256 !== exportSha256
+        || receipt?.preview?.verified !== true
+        || JSON.stringify(receiptArtifactIds) !== JSON.stringify(artifactIds)
+        || !requestId
+        || receipt?.request_id !== requestId
+      ) {
+        throw new Error('Pilot export receipt가 현재 다운로드와 일치하지 않습니다.');
+      }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      downloadReportWorkflowQualityFile(
+        blob,
+        `report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl`,
+      );
+      downloadReportWorkflowQualityFile(
+        new Blob([receiptBytes], { type: 'application/json' }),
+        `report_quality_pilot_receipt_${exportSha256.slice(0, 12)}.json`,
+      );
       showNotification(
-        `선택한 ${artifactIds.length}개 correction artifact JSONL 다운로드를 시작했습니다. SHA-256 ${exportSha256.slice(0, 12)}...`,
+        `선택한 ${artifactIds.length}개 correction artifact JSONL과 server receipt 다운로드를 시작했습니다. SHA-256 ${exportSha256.slice(0, 12)}...`,
         'success',
       );
     } catch (err) {

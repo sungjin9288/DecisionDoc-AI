@@ -25,12 +25,13 @@ Report Workflow 생성 시:
 
 Report Workflow UI에서 ready artifact 3~5개를 선택한 뒤 `Pilot 검토`를 실행한다. Preview는 artifact 순서, readiness, 전체 JSONL SHA-256, 외부 학습 비승인 경계를 보여준다. 다운로드 요청은 이 hash를 `preview_sha256`으로 다시 제출하며, 서버가 현재 ordered JSONL과 대조해 일치할 때만 `X-DecisionDoc-Pilot-Preview-Verified: true`와 파일을 반환한다. 누락되거나 stale한 hash는 `400` 또는 schema validation으로 차단된다.
 
-파일명에는 응답 본문의 SHA-256 앞 12자가 포함된다. 서버는 전체 SHA-256을 `X-DecisionDoc-Pilot-SHA256` 응답 헤더와 tenant audit log에도 기록한다. 파일을 로컬 review pack으로 가져온 뒤 `SOURCE_MANIFEST.json`의 `source_sha256`이 이 전체 hash와 일치하는지 확인한다.
+서버는 같은 응답에서 JSONL과 `report_quality_pilot_receipt_<sha12>.json` sidecar를 내려준다. Receipt는 request ID, tenant, artifact 순서, JSONL SHA-256, preview 검증 결과, 외부 실행 비승인 경계를 기록한다. 같은 request ID와 전체 JSONL SHA-256은 응답 헤더와 tenant audit log에도 남는다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \
   --batch-id pilot-rqc-001 \
   --source-jsonl ~/Downloads/report_quality_pilot_artifacts_<sha12>.jsonl \
+  --source-receipt ~/Downloads/report_quality_pilot_receipt_<sha12>.json \
   --output-root reports/report-quality
 ```
 
@@ -40,12 +41,13 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/drafts/*.json`
 - `reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl`
 - `reports/report-quality/pilot-rqc-001/SOURCE_MANIFEST.json`
+- `reports/report-quality/pilot-rqc-001/SOURCE_EXPORT_RECEIPT.json`
 
 주의:
 
-- import는 UTF-8 JSONL, ready artifact 3~5개, 중복 없는 artifact ID, 단일 tenant를 요구한다.
+- import는 UTF-8 JSONL과 짝이 맞는 server receipt, ready artifact 3~5개, 중복 없는 artifact ID, 단일 tenant를 요구한다.
 - 같은 batch ID의 출력 디렉터리에 기존 파일이 있으면 stale artifact가 섞이지 않도록 import를 거부한다.
-- `SOURCE_MANIFEST.json`은 원본 경로와 SHA-256, tenant, 선택 순서를 기록한다. 이후 sync도 이 순서를 그대로 적용하며 manifest와 draft 구성이 다르면 실패한다.
+- `SOURCE_MANIFEST.json` v2는 원본 JSONL과 copied receipt의 SHA-256, request ID, tenant, 선택 순서를 기록한다. 이후 sync도 receipt와 두 hash를 다시 확인하고 같은 순서를 적용하며, manifest·receipt·draft 구성이 다르면 실패한다. 기존 v1 manifest는 읽을 수 있지만 새 import는 v2만 생성한다.
 - 가져온 artifact는 이미 ready gate를 통과했더라도 사람이 교정 내용과 점수, scan 결과를 다시 검토한다.
 - 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 

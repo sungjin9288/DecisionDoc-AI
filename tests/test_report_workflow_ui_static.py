@@ -122,13 +122,17 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "artifactIds.length < 3 || artifactIds.length > 5" in html
     assert "X-DecisionDoc-Pilot-SHA256" in html
     assert "X-DecisionDoc-Pilot-Preview-Verified" in html
+    assert "X-DecisionDoc-Pilot-Receipt" in html
+    assert "X-DecisionDoc-Pilot-Receipt-SHA256" in html
     assert "preview_sha256: _reportWorkflowQualityPilotPreview.export_sha256" in html
     assert "previewReportWorkflowQualityPilotArtifacts" in html
     assert "renderReportWorkflowQualityPilotPreview" in html
     assert "Pilot preview 이후 export 내용이 변경되었습니다" in html
     assert "Pilot export의 server preview 검증 증거가 없습니다" in html
+    assert "Pilot export receipt가 현재 다운로드와 일치하지 않습니다" in html
     assert "#rw-quality-artifact-detail:not(:empty) { padding-bottom: 72px; }" in html
     assert "report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl" in html
+    assert "report_quality_pilot_receipt_${exportSha256.slice(0, 12)}.json" in html
     assert "report_quality_correction_artifact_${safeId}.json" in html
     assert "visual-assets" in html
     assert "method: 'PUT'" in html

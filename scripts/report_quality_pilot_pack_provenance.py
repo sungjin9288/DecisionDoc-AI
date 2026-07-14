@@ -4,14 +4,29 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.services.report_quality_pilot_receipt import (  # noqa: E402
+    RECEIPT_SCHEMA_VERSION,
+    parse_pilot_export_receipt,
+    pilot_export_receipt_sha256,
+    validate_pilot_export_receipt,
+)
+
+
 SOURCE_MANIFEST_NAME = "SOURCE_MANIFEST.json"
+SOURCE_RECEIPT_NAME = "SOURCE_EXPORT_RECEIPT.json"
 SOURCE_MANIFEST_REPORT_TYPE = "report_quality_pilot_source_manifest"
-SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v1"
+SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v2"
+LEGACY_SOURCE_MANIFEST_SCHEMA = "decisiondoc_report_quality_pilot_source_manifest.v1"
 PACK_BINDING_SCHEMA = "decisiondoc_report_quality_pilot_pack_binding.v1"
 ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 NO_EXTERNAL_ACTION_KEYS = (
@@ -119,7 +134,8 @@ def _source_artifact_ids(
 ) -> list[str]:
     if manifest.get("report_type") != SOURCE_MANIFEST_REPORT_TYPE:
         raise ValueError(f"{manifest_path}: unsupported report_type")
-    if manifest.get("schema_version") != SOURCE_MANIFEST_SCHEMA:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {SOURCE_MANIFEST_SCHEMA, LEGACY_SOURCE_MANIFEST_SCHEMA}:
         raise ValueError(f"{manifest_path}: unsupported source manifest schema_version")
     if manifest.get("batch_id") != pack_dir.name:
         raise ValueError(f"{manifest_path}: batch_id does not match the pilot pack directory")
@@ -138,17 +154,31 @@ def _source_artifact_ids(
     if source.get("format") != "jsonl" or source.get("order_preserved") is not True:
         raise ValueError(f"{manifest_path}: source format and order_preserved contract are invalid")
     validation = manifest.get("validation")
-    required_validation = (
+    required_validation = [
         "all_valid",
         "all_ready_for_learning",
         "unique_artifact_ids",
         "single_tenant",
-    )
+    ]
+    if schema_version == SOURCE_MANIFEST_SCHEMA:
+        required_validation.append("server_preview_verified")
     if not isinstance(validation, dict) or any(validation.get(key) is not True for key in required_validation):
         raise ValueError(f"{manifest_path}: source validation contract is incomplete")
     boundary = manifest.get("side_effect_boundary")
     if not isinstance(boundary, dict) or any(boundary.get(key) is not False for key in NO_EXTERNAL_ACTION_KEYS):
         raise ValueError(f"{manifest_path}: no-training side-effect boundary is invalid")
+    if schema_version == SOURCE_MANIFEST_SCHEMA:
+        receipt = manifest.get("receipt")
+        if not isinstance(receipt, dict):
+            raise ValueError(f"{manifest_path}: receipt must be an object")
+        if receipt.get("path") != SOURCE_RECEIPT_NAME:
+            raise ValueError(f"{manifest_path}: receipt.path must be {SOURCE_RECEIPT_NAME}")
+        if receipt.get("schema_version") != RECEIPT_SCHEMA_VERSION:
+            raise ValueError(f"{manifest_path}: receipt.schema_version is unsupported")
+        if receipt.get("preview_verified") is not True:
+            raise ValueError(f"{manifest_path}: receipt must prove server preview verification")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("sha256") or "")):
+            raise ValueError(f"{manifest_path}: receipt.sha256 must be a lowercase SHA-256 digest")
     return artifact_ids
 
 
@@ -207,6 +237,25 @@ def load_pilot_pack(pack_dir: Path) -> PilotPackSnapshot:
         raise ValueError(f"{manifest_path}: source.tenant_id must be non-empty")
     if not re.fullmatch(r"[0-9a-f]{64}", source_jsonl_sha256):
         raise ValueError(f"{manifest_path}: source.sha256 must be a lowercase SHA-256 digest")
+    if manifest.get("schema_version") == SOURCE_MANIFEST_SCHEMA:
+        receipt_info = manifest["receipt"]
+        receipt_path = resolved_pack_dir / SOURCE_RECEIPT_NAME
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise ValueError(f"{receipt_path}: source export receipt must be a regular file")
+        receipt_bytes = receipt_path.read_bytes()
+        if pilot_export_receipt_sha256(receipt_bytes) != receipt_info["sha256"]:
+            raise ValueError(f"{receipt_path}: SHA-256 does not match source manifest")
+        receipt = parse_pilot_export_receipt(receipt_bytes)
+        validate_pilot_export_receipt(
+            receipt,
+            export_sha256=source_jsonl_sha256,
+            artifact_ids=source["artifact_ids"],
+            tenant_id=tenant_id,
+        )
+        if receipt.get("request_id") != receipt_info.get("request_id"):
+            raise ValueError(f"{receipt_path}: request_id does not match source manifest")
+        if receipt.get("issued_at") != receipt_info.get("issued_at"):
+            raise ValueError(f"{receipt_path}: issued_at does not match source manifest")
     for draft in ordered_drafts:
         workflow = draft.payload.get("workflow_reference")
         draft_tenant_id = str(workflow.get("tenant_id") or "").strip() if isinstance(workflow, dict) else ""

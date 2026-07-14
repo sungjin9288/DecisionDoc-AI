@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 
 import pytest
+
+from app.services.report_quality_pilot_receipt import (
+    build_pilot_export_receipt,
+    serialize_pilot_export_receipt,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,10 +57,26 @@ def _create_source_pack(tmp_path: Path) -> Path:
         "\n".join(json.dumps(artifact, ensure_ascii=False) for artifact in artifacts) + "\n",
         encoding="utf-8",
     )
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    receipt_path = tmp_path / "pilot_receipt.json"
+    receipt_path.write_bytes(
+        serialize_pilot_export_receipt(
+            build_pilot_export_receipt(
+                preview={
+                    "filename": f"report_quality_pilot_artifacts_{source_sha256[:12]}.jsonl",
+                    "export_sha256": source_sha256,
+                    "ordered_artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
+                },
+                tenant_id="receipt-tenant",
+                request_id="pilot-receipt-request",
+            )
+        )
+    )
     result = creator.create_report_quality_pilot_pack(
         batch_id="pilot-receipt",
         output_root=tmp_path / "packs",
         source_jsonl=source_path,
+        source_receipt=receipt_path,
     )
     return Path(result["output_dir"])
 

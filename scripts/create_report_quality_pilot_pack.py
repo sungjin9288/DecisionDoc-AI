@@ -20,12 +20,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.services.report_quality_learning import validate_correction_artifact  # noqa: E402
+from app.services.report_quality_pilot_receipt import (  # noqa: E402
+    RECEIPT_SCHEMA_VERSION,
+    parse_pilot_export_receipt,
+    pilot_export_receipt_sha256,
+    validate_pilot_export_receipt,
+)
 
 
 TEMPLATE_PATH = REPO_ROOT / "docs/specs/report_quality_learning/correction_artifact_template.json"
 DEFAULT_OUTPUT_ROOT = Path("reports/report-quality")
 BATCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+SOURCE_RECEIPT_NAME = "SOURCE_EXPORT_RECEIPT.json"
 
 DEFAULT_SAMPLE_PROFILES: tuple[dict[str, Any], ...] = (
     {
@@ -148,6 +155,34 @@ def _load_ready_source_jsonl(source_jsonl: Path) -> tuple[list[dict[str, Any]], 
     }
 
 
+def _load_source_receipt(
+    source_receipt: Path,
+    *,
+    source_info: dict[str, Any],
+) -> tuple[bytes, dict[str, Any]]:
+    receipt_path = source_receipt.expanduser().resolve()
+    if not receipt_path.is_file():
+        raise ValueError(f"source receipt file not found: {receipt_path}")
+
+    receipt_bytes = receipt_path.read_bytes()
+    receipt = parse_pilot_export_receipt(receipt_bytes)
+    validate_pilot_export_receipt(
+        receipt,
+        export_sha256=source_info["sha256"],
+        artifact_ids=source_info["artifact_ids"],
+        tenant_id=source_info["tenant_id"],
+    )
+    return receipt_bytes, {
+        "source_path": str(receipt_path),
+        "path": SOURCE_RECEIPT_NAME,
+        "sha256": pilot_export_receipt_sha256(receipt_bytes),
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "request_id": receipt["request_id"],
+        "issued_at": receipt["issued_at"],
+        "preview_verified": True,
+    }
+
+
 def _load_template() -> dict[str, Any]:
     payload = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -258,6 +293,7 @@ def _render_index(
     jsonl_path: Path,
     source_info: dict[str, Any] | None = None,
     source_manifest_path: Path | None = None,
+    receipt_info: dict[str, Any] | None = None,
 ) -> str:
     rows = "\n".join(
         "| {artifact_id} | {document_type} | {domain} | {status} |".format(
@@ -294,6 +330,9 @@ def _render_index(
 - source_jsonl: `{source_info['path']}`
 - source_sha256: `{source_info['sha256']}`
 - source_manifest: `{source_manifest_path}`
+- source_export_receipt: `{receipt_info['path'] if receipt_info else '-'}`
+- source_export_receipt_sha256: `{receipt_info['sha256'] if receipt_info else '-'}`
+- server_preview_verified: `{str(bool(receipt_info and receipt_info['preview_verified'])).lower()}`
 - source_tenant_id: `{source_info['tenant_id']}`"""
 
     return f"""# Report Quality Pilot Review Pack
@@ -363,19 +402,30 @@ def create_report_quality_pilot_pack(
     tenant_id: str = "system",
     reviewer: str = "TODO_REVIEWER",
     source_jsonl: Path | None = None,
+    source_receipt: Path | None = None,
 ) -> dict[str, Any]:
     batch_id = _validate_batch_id(batch_id)
 
     output_dir = output_root / batch_id
     drafts_dir = output_dir / "drafts"
     source_info: dict[str, Any] | None = None
+    receipt_bytes: bytes | None = None
+    receipt_info: dict[str, Any] | None = None
     if source_jsonl is not None:
         artifacts, source_info = _load_ready_source_jsonl(source_jsonl)
+        if source_receipt is None:
+            raise ValueError("source_receipt is required when importing source_jsonl")
+        receipt_bytes, receipt_info = _load_source_receipt(
+            source_receipt,
+            source_info=source_info,
+        )
         sample_count = len(artifacts)
         source_mode = "exported_ready_jsonl"
         if output_dir.exists() and any(output_dir.iterdir()):
             raise ValueError(f"source import output directory must be empty: {output_dir}")
     else:
+        if source_receipt is not None:
+            raise ValueError("source_receipt requires source_jsonl")
         if sample_count < 1:
             raise ValueError("sample_count must be at least 1")
         if sample_count > 20:
@@ -406,10 +456,13 @@ def create_report_quality_pilot_pack(
     )
     source_manifest_path: Path | None = None
     if source_info is not None:
+        assert receipt_bytes is not None and receipt_info is not None
+        source_receipt_path = output_dir / SOURCE_RECEIPT_NAME
+        _write_text_atomic(source_receipt_path, receipt_bytes.decode("utf-8"))
         source_manifest_path = output_dir / "SOURCE_MANIFEST.json"
         source_manifest = {
             "report_type": "report_quality_pilot_source_manifest",
-            "schema_version": "decisiondoc_report_quality_pilot_source_manifest.v1",
+            "schema_version": "decisiondoc_report_quality_pilot_source_manifest.v2",
             "generated_at": _now_iso(),
             "batch_id": batch_id,
             "source": {
@@ -418,11 +471,13 @@ def create_report_quality_pilot_pack(
                 "artifact_count": len(artifacts),
                 "order_preserved": True,
             },
+            "receipt": receipt_info,
             "validation": {
                 "all_valid": True,
                 "all_ready_for_learning": True,
                 "unique_artifact_ids": True,
                 "single_tenant": True,
+                "server_preview_verified": True,
             },
             "side_effect_boundary": {
                 "reads_local_jsonl": True,
@@ -448,6 +503,7 @@ def create_report_quality_pilot_pack(
             jsonl_path=jsonl_path,
             source_info=source_info,
             source_manifest_path=source_manifest_path,
+            receipt_info=receipt_info,
         ),
     )
 
@@ -458,6 +514,9 @@ def create_report_quality_pilot_pack(
         "index_path": str(index_path),
         "jsonl_path": str(jsonl_path),
         "source_manifest_path": str(source_manifest_path) if source_manifest_path else None,
+        "source_receipt_path": (
+            str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
+        ),
         "draft_paths": [str(path) for path in draft_paths],
         "sample_count": sample_count,
         "ready_artifacts": sample_count if source_info is not None else 0,
@@ -480,6 +539,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Import a UI-exported JSONL containing 3 to 5 ready artifacts.",
     )
+    parser.add_argument(
+        "--source-receipt",
+        type=Path,
+        default=None,
+        help="Verify the server-issued JSON receipt downloaded with --source-jsonl.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     return parser
 
@@ -496,6 +561,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             tenant_id=args.tenant_id,
             reviewer=args.reviewer,
             source_jsonl=args.source_jsonl,
+            source_receipt=args.source_receipt,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR {exc}", file=sys.stderr)
@@ -512,6 +578,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"jsonl_path={result['jsonl_path']}")
         if result["source_manifest_path"]:
             print(f"source_manifest_path={result['source_manifest_path']}")
+        if result["source_receipt_path"]:
+            print(f"source_receipt_path={result['source_receipt_path']}")
         print("training_boundary=not_authorized")
     return 0
 

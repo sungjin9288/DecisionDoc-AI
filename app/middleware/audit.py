@@ -509,6 +509,7 @@ def _append_audit_entries(
             )
         if report_quality_pilot_sha256:
             detail["pilot_sha256"] = report_quality_pilot_sha256
+            detail["request_id"] = str(getattr(request.state, "request_id", "") or "")
         if report_quality_pilot_artifact_count is not None:
             detail["pilot_artifact_count"] = report_quality_pilot_artifact_count
         if report_quality_pilot_preview_verified is not None:

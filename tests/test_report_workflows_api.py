@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from unittest.mock import patch
@@ -631,6 +632,20 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     body_sha256 = hashlib.sha256(exported.content).hexdigest()
     assert exported.headers["x-decisiondoc-pilot-sha256"] == body_sha256
     assert preview_body["export_sha256"] == body_sha256
+    encoded_receipt = exported.headers["x-decisiondoc-pilot-receipt"]
+    encoded_receipt += "=" * (-len(encoded_receipt) % 4)
+    receipt_bytes = base64.urlsafe_b64decode(encoded_receipt)
+    receipt = json.loads(receipt_bytes)
+    assert exported.headers["x-decisiondoc-pilot-receipt-sha256"] == hashlib.sha256(
+        receipt_bytes
+    ).hexdigest()
+    assert receipt["schema_version"] == "decisiondoc_report_quality_pilot_export_receipt.v1"
+    assert receipt["request_id"] == exported.headers["x-request-id"]
+    assert receipt["tenant_id"] == "system"
+    assert receipt["export"]["sha256"] == body_sha256
+    assert receipt["export"]["ordered_artifact_ids"] == requested_order
+    assert receipt["preview"] == {"sha256": body_sha256, "verified": True}
+    assert all(value is False for value in receipt["external_action_boundary"].values())
     assert preview_body["filename"] == f"report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl"
     assert (
         f'report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl'
@@ -658,6 +673,7 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     )
     assert export_audits
     assert export_audits[0]["detail"]["pilot_sha256"] == body_sha256
+    assert export_audits[0]["detail"]["request_id"] == receipt["request_id"]
     assert export_audits[0]["detail"]["pilot_artifact_count"] == 3
     assert export_audits[0]["detail"]["pilot_preview_verified"] is True
 

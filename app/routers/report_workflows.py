@@ -25,6 +25,14 @@ from app.schemas import (
     SelectReportSlideVisualAssetRequest,
     UpdateReportSlideVisualAssetsRequest,
 )
+from app.services.report_quality_pilot_receipt import (
+    RECEIPT_HEADER,
+    RECEIPT_SHA256_HEADER,
+    build_pilot_export_receipt,
+    encode_pilot_export_receipt,
+    pilot_export_receipt_sha256,
+    serialize_pilot_export_receipt,
+)
 
 router = APIRouter(tags=["report-workflows"])
 
@@ -206,6 +214,12 @@ def export_report_quality_correction_pilot(
     preview = prepared["preview"]
     body_sha256 = preview["export_sha256"]
     filename = preview["filename"]
+    receipt = build_pilot_export_receipt(
+        preview=preview,
+        tenant_id=tenant_id,
+        request_id=request.state.request_id,
+    )
+    receipt_bytes = serialize_pilot_export_receipt(receipt)
     _record_quality_pilot_state(request, preview, preview_verified=True)
     return Response(
         content=body,
@@ -219,6 +233,8 @@ def export_report_quality_correction_pilot(
             "X-DecisionDoc-Pilot-SHA256": body_sha256,
             "X-DecisionDoc-Pilot-Preview-Verified": "true",
             "X-DecisionDoc-Training-Authorized": "false",
+            RECEIPT_HEADER: encode_pilot_export_receipt(receipt_bytes),
+            RECEIPT_SHA256_HEADER: pilot_export_receipt_sha256(receipt_bytes),
         },
     )
 
