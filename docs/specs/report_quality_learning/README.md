@@ -246,6 +246,17 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    ```
    - `--require-ready`는 모든 artifact가 ready인지만 보지 않는다. 현재 pack binding과 artifact 상태·count가 일치하는 `human_review_manifest.json`, `require_ready=true`로 기록된 accepted decision application receipt가 모두 있어야 한다. Source import 당시 artifact가 이미 ready여도 새 로컬 decision이 pending이면 차단한다.
    - `output_written=true`, `output_sha256`, `review_manifest.sha256`, `decision_receipt.sha256`이 함께 반환된 실행만 현재 draft와 검수 이력이 결속된 sync 성공으로 본다. 쓰기 직전 binding과 evidence hash를 다시 확인하며 실패 실행은 기존 output을 변경하지 않는다.
-12. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
-13. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
-14. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.
+12. ready JSONL과 현재 human review evidence를 portable handoff ZIP으로 묶고, 원래 pack 없이 다시 검증한다.
+   ```bash
+   python3 scripts/manage_report_quality_pilot_handoff.py create \
+     reports/report-quality/pilot-rqc-001 \
+     --jsonl reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl
+
+   python3 scripts/manage_report_quality_pilot_handoff.py verify \
+     reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip
+   ```
+   - Handoff는 exact JSONL, current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar를 embedded `handoff_manifest.json`에 결속한다.
+   - Verifier는 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다.
+13. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
+14. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
+15. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

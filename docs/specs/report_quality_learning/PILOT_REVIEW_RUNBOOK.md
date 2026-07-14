@@ -154,6 +154,19 @@ Sync는 모든 artifact validation을 통과한 뒤에만 JSONL을 쓴다. `--re
 
 실패 결과의 `output_written=false`는 이번 실행이 파일을 만들거나 덮어쓰지 않았다는 뜻이며, 이전 실행에서 남은 같은 경로의 파일은 변경하지 않는다. 출력은 `.jsonl`만 허용하고 symlink, import 원본 source JSONL, symlink review evidence 경로를 거부한다. `--require-ready`가 없는 중간 sync는 기존 호환 경로대로 검수 receipt 없이도 사용할 수 있지만 학습 후보 완료 증거로 보지 않는다.
 
+승인된 JSONL을 다른 검토자나 보관 경로로 넘길 때는 현재 검수 근거와 함께 하나의 handoff ZIP으로 고정한다.
+
+```bash
+python3 scripts/manage_report_quality_pilot_handoff.py create \
+  reports/report-quality/pilot-rqc-001 \
+  --jsonl reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl
+
+python3 scripts/manage_report_quality_pilot_handoff.py verify \
+  reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip
+```
+
+Create는 JSONL이 현재 draft 순서와 내용에 정확히 일치하는지 다시 확인하고, current `human_review_manifest.json`, `require_ready=true` accepted decision receipt, receipt가 가리키는 decision file, 최종 draft 3~5개, source-bound pack의 provenance sidecar를 `handoff_manifest.json`과 함께 deterministic ZIP으로 기록한다. Verify는 원래 pack에 접근하지 않고 exact membership, size/SHA-256, JSONL과 draft의 semantic identity, accepted review 전이, source binding, no-training boundary를 재검증한다. 기존 ZIP을 덮어쓰거나 symlink input/output을 따라가지 않으며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
+
 ## 3. 생성과 교정
 
 각 샘플마다 아래를 기록한다.

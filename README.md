@@ -30,7 +30,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, 1회 완료 receipt, 검증된 reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
-| 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side hash confirmation을 통과한 JSONL·receipt를 manifest-bound 검토 패키지 ZIP으로 함께 전달 |
+| 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory를 검색·필터·정렬하고 summary 목록에서 선택한 기록만 상세 조회한다. 사람 검토는 메모와 품질 점수를 export/freeze/governance 증적으로 연결하고, expected review version을 storage lock 안에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단한다. 작성 중인 검토 초안은 사용자·tenant·trajectory를 함께 묶은 현재 페이지 메모리에 보존되어 같은 인증 문맥에서만 복원되고 logout 또는 세션 무효화 시 폐기된다. Signed token의 tenant와 browser header context를 동기화하되 JWT tenant mismatch는 우회하지 않으며, 상세 열람, review 결정, version conflict는 본문·메모를 제외한 append-only audit으로 추적한다. |
 
 ---
@@ -209,17 +209,28 @@ python3 -m app.eval --out-dir reports/eval/v1
 
 2026-07-13 위 명령으로 확인한 결과는 [bundle quality manifest](./docs/samples/bundle_quality_evidence/current/manifest.json) 기준 2개 bundle, 생성 문서 6개, validator 2건 통과, bundle lint 2건 통과, request 대비 단위 수치 literal coverage 2건 통과(미근거 수치 0건)입니다. [review dashboard](./docs/samples/bundle_quality_evidence/current/review.html)는 manifest가 hash로 관리하는 자동 검증 원본이며, [reviewer workspace](./docs/samples/bundle_quality_evidence/current/human_review.html)는 request 근거, 자동 검증, 생성 Markdown, bundle별 사람 검토 상태와 외부 action 경계를 한 화면에 보여줍니다. Reviewer가 화면에서 작성한 값은 현재 manifest와 receipt SHA256에 결속된 local draft JSON으로만 내려받으며, `apply-draft` 검증을 통과해야 증적 원본인 [human review receipt](./docs/samples/bundle_quality_evidence/current/human_review_receipt.json)에 atomic update됩니다. Tracked receipt는 현재 `pending` 상태이고 아직 사람 검토 완료를 주장하지 않으므로 final review packet도 생성하지 않았습니다. Completed receipt에서는 manifest-declared artifact와 embedded SHA256 index만 담은 deterministic ZIP을 만들고 다시 검증할 수 있습니다. [offline eval report](./reports/eval/v1/eval_report.md)는 fixture 10건 중 10건 통과입니다. 모두 mock/local 검증 결과이며 numeric coverage는 수치의 사실성·최신성·문맥 적합성을 보증하지 않습니다. 화면 노출과 draft 생성도 factual grounding이나 human visual review 완료를 뜻하지 않으며 live provider 품질을 증명하지 않습니다.
 
+검수가 끝난 Report Quality pilot은 ready sync 결과와 현재 검수 근거를 하나의 deterministic handoff로 묶고, 원래 pack 없이도 membership·hash·artifact readiness·accepted decision·source provenance·외부 실행 비승인 경계를 다시 확인할 수 있습니다.
+
+```bash
+python3 scripts/manage_report_quality_pilot_handoff.py create \
+  reports/report-quality/pilot-rqc-001 \
+  --jsonl reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl
+
+python3 scripts/manage_report_quality_pilot_handoff.py verify \
+  reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip
+```
+
 ```bash
 pytest tests/                 # 전체
 pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,736개**, **223개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,741개**, **224개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2736
-python3 scripts/count_readme_metrics.py --field test_files      # → 223
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2741
+python3 scripts/count_readme_metrics.py --field test_files      # → 224
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -248,7 +259,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,987 passed, 1 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,991 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -298,4 +309,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,736 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,741 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

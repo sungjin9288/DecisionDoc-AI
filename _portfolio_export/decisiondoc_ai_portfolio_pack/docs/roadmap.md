@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `01b9fbc` 기준 GitHub Actions CI `29027090095` success, CD `29027088935` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `a2575cc` 기준 GitHub Actions CI `29334312731` success, CD `29334312781` success. CD의 staging deploy/smoke는 설정 부재로 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2987 passed, 1 skipped, 4 deselected
+# 2026-07-14 실측: 2991 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -91,6 +91,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 `--browser-draft` apply 경로가 내려받은 decision 파일을 이동하지 않고 외부 경로에서 검증한 뒤 정확한 바이트를 SHA 기반 pack-local 이름으로 보존한다. 전체 batch 반영과 같은 suffix의 receipt 생성까지 한 명령으로 수행하며, stale·invalid·training authorization 상승·symlink·기존 hash 충돌은 어떤 artifact도 쓰기 전에 차단한다. Dry-run과 실패는 pack을 변경하지 않고 기존 `--decisions` 호환 경로는 유지한다.
   - 2026-07-14 decision 적용으로 draft hash와 검토 상태가 바뀔 때 `HUMAN_REVIEW_WORKSHEET.md`와 `human_review_manifest.json`을 같은 성공 흐름에서 현재 pack binding으로 갱신한다. Apply 전에 두 evidence target을 preflight해 symlink나 비파일 경로를 거부하고, dry-run·invalid batch·unsafe target에서는 draft와 파생 검수 증거를 모두 보존한다.
   - 2026-07-14 `sync_report_quality_pilot_pack.py --require-ready`가 artifact ready flag만으로 local review를 우회하지 못하도록 현재 manifest와 accepted decision application receipt를 필수 evidence로 검증한다. Manifest artifact hash·status·ready state·count를 현재 draft에서 다시 계산하고 receipt validator와 `require_ready=true`를 확인하며, JSONL 쓰기 직전에 pack binding과 두 evidence hash를 재검증한다. Source artifact가 이미 ready여도 새 local decision이 pending이면 `output_written=false`로 차단한다.
+  - 2026-07-14 ready sync 결과를 현재 human review evidence와 함께 deterministic handoff ZIP으로 고정하는 `manage_report_quality_pilot_handoff.py create/verify` 경로를 추가했다. Exact JSONL, manifest, accepted receipt와 decision file, 최종 draft, source provenance sidecar를 embedded manifest에 결속하고, 원래 pack 없이 membership·hash·artifact readiness·accepted transition·source binding·no-training boundary를 재검증한다.
   - 2026-07-14 Admin Ops audit 화면에 report-quality pilot preview/export 필터와 receipt 대조용 request ID·전체 SHA-256·artifact count·검증 상태를 연결했다. Audit 문자열은 HTML escape하고 모바일에서는 table 내부 스크롤로 화면 overflow를 차단한다. 조회와 CSV export는 같은 action/result/시작일/종료일 filter를 사용하며, 누락·역전 기간은 요청 전에 차단하고 date-only 종료일은 해당 UTC 날짜 전체를 포함한다. 조회 API는 검증된 offset/limit, filtered total, `has_more`를 반환하고 UI는 전체 건수·현재 범위와 이전/다음 이동을 표시하며 페이지 간 filter를 유지한다. CSV는 전체 detail과 pilot 식별자를 보존하고 1,000건 query cap으로 증빙이 빠지지 않도록 별도 full export 경로를 사용한다. Spreadsheet formula로 해석될 수 있는 문자열도 안전한 text cell로 기록한다.
   - 2026-07-14 Ops 화면의 tenant selector가 admin 로그인 세션의 JWT를 유지하도록 tenant 목록 요청을 공통 인증 header 조합으로 정렬했다. `/admin/tenants`는 기존대로 admin JWT 또는 설정된 Ops key를 요구하며 권한 경계를 완화하지 않는다.
   - 2026-07-14 report-quality correction artifact 목록에 tenant-scoped `offset`/`limit`, filtered total, `has_more`를 추가하고 화면에 전체/ready 탐색과 5개 단위 페이지 이동을 연결했다. 페이지를 넘어가도 현재 tenant의 pilot 선택을 최대 5개까지 보존하며, tenant가 바뀌면 선택을 비우고 preview/export에서 기존 server-side 3~5개 ready 검증을 다시 수행한다.
