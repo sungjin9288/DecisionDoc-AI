@@ -55,7 +55,7 @@
 | Training discussion | `create_report_quality_review_packet_training_readiness.py`, discussion handoff/decision creator와 validator | 학습 논의를 시작할 자료가 준비됐는지만 기록하며 실행 권한은 부여하지 않는다. |
 | Experiment planning | experiment plan draft/review creator와 validator | Dataset, eval, parameter 후보와 검토 결과를 planning-only artifact로 남긴다. |
 | Final approval preparation | final approval packet/review/record template creator와 validator | Required approver, source hash, 미승인 상태, `not_started` execution step을 검증한다. |
-| Pilot review | `create_report_quality_pilot_pack.py`, `create_report_quality_review_sheet.py`, `apply_report_quality_review_decisions.py`, receipt validator | UI export부터 사람의 교정 결정과 최종 draft까지 source-bound history를 보존한다. |
+| Pilot review | `create_report_quality_pilot_pack.py`, review sheet/workspace creator, `apply_report_quality_review_decisions.py`, receipt validator | UI export부터 browser draft, 사람의 교정 결정, 최종 draft까지 source-bound history를 보존한다. |
 | Local verification | `run_report_quality_learning_demo.py`, `sync_report_quality_pilot_pack.py`, artifact checker와 summarizer | Mock/local 경로와 운영 API export를 같은 artifact validator로 재검증한다. |
 
 세부 명령과 예상 출력은 [Pilot Review Runbook](./PILOT_REVIEW_RUNBOOK.md)과 [Review Packet Evidence Runbook](./REVIEW_PACKET_EVIDENCE_RUNBOOK.md)에만 둔다. 이 README는 흐름과 권한 경계를 설명하는 진입점이다.
@@ -190,12 +190,12 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
    ```
-8. Import와 함께 자동 생성된 `review_decisions.json`에 `accepted`, `changes_requested`, `rejected` 중 사람의 결정을 기록한다. 원래 상태는 `previous_decision`에 남고 새 파일럿 판단은 `pending`에서 시작한다. 기존 pack에 template이 없다면 `--create-template`로 한 번만 추가한다. 기존 파일과 symlink는 덮어쓰지 않는다.
-9. decision JSON을 작성했다면 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 기존 파일을 보존하고 새 이름으로 template을 만든 뒤 다시 검토한다.
+8. Import와 함께 자동 생성된 `HUMAN_REVIEW_WORKSPACE.html`에서 `accepted`, `changes_requested`, `rejected` 중 사람의 결정과 점수·scan·근거를 입력하고 `review_decisions.browser-draft.json`을 내려받는다. 원래 상태는 `previous_decision`에 남고 새 파일럿 판단은 `pending`에서 시작한다. Browser draft는 `review_decisions.json`의 source/draft binding과 `training_authorized=false`를 보존하며 pack 파일을 직접 수정하거나 외부 요청을 보내지 않는다. 기존 pack에 template 또는 workspace가 없다면 각 creator로 한 번만 추가한다. 기존 파일과 symlink는 덮어쓰지 않는다.
+9. 내려받은 decision JSON을 pack 안의 고유한 파일명으로 둔 뒤 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 기존 파일을 보존하고 새 이름으로 template과 workspace를 만든 뒤 다시 검토한다.
    ```bash
    python3 scripts/apply_report_quality_review_decisions.py \
      reports/report-quality/pilot-rqc-001 \
-     --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
+     --decisions reports/report-quality/pilot-rqc-001/review_decisions.browser-draft.json \
      --require-ready \
      --receipt reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
    ```

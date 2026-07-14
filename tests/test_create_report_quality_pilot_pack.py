@@ -130,6 +130,11 @@ def test_create_report_quality_pilot_pack_writes_non_ready_drafts(tmp_path):
     assert decisions["review_started_pending"] is True
     assert len(decisions["decisions"]) == 3
     assert all(item["decision"] == "pending" for item in decisions["decisions"])
+    review_workspace_path = Path(result["review_workspace_path"])
+    assert review_workspace_path.is_file()
+    review_workspace = review_workspace_path.read_text(encoding="utf-8")
+    assert "review_decisions.browser-draft.json" in review_workspace
+    assert "training authorization 없음" in review_workspace
 
     lines = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 3
@@ -170,6 +175,7 @@ def test_create_report_quality_pilot_pack_cli_outputs_json(tmp_path, capsys):
     assert Path(result["review_sheet_path"]).exists()
     assert Path(result["review_manifest_path"]).exists()
     assert Path(result["review_decisions_path"]).exists()
+    assert Path(result["review_workspace_path"]).exists()
 
 
 def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):

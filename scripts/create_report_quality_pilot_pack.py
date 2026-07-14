@@ -36,6 +36,9 @@ from scripts.apply_report_quality_review_decisions import (  # noqa: E402
 from scripts.create_report_quality_review_sheet import (  # noqa: E402
     create_report_quality_review_sheet,
 )
+from scripts.create_report_quality_review_workspace import (  # noqa: E402
+    create_report_quality_review_workspace,
+)
 from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
     SOURCE_MANIFEST_SCHEMA,
     SOURCE_PACKAGE_MANIFEST_NAME,
@@ -454,6 +457,7 @@ def _render_index(
 - review_sheet: `{output_dir / 'HUMAN_REVIEW_WORKSHEET.md'}`
 - review_manifest: `{output_dir / 'human_review_manifest.json'}`
 - review_decisions: `{output_dir / REVIEW_DECISIONS_NAME}`
+- review_workspace: `{output_dir / 'HUMAN_REVIEW_WORKSPACE.html'}`
 - training_authorized: `false`
 {source_details}
 
@@ -645,6 +649,10 @@ def create_report_quality_pilot_pack(
         output_path=decisions_path,
         start_pending=True,
     )
+    review_workspace = create_report_quality_review_workspace(
+        pack_dir=output_dir,
+        decisions_path=decisions_path,
+    )
 
     return {
         "batch_id": batch_id,
@@ -655,6 +663,7 @@ def create_report_quality_pilot_pack(
         "review_sheet_path": review_manifest["output_path"],
         "review_manifest_path": review_manifest["manifest_path"],
         "review_decisions_path": decision_template["output_path"],
+        "review_workspace_path": review_workspace["output_path"],
         "source_manifest_path": str(source_manifest_path) if source_manifest_path else None,
         "source_receipt_path": (
             str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
@@ -738,6 +747,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"review_sheet_path={result['review_sheet_path']}")
         print(f"review_manifest_path={result['review_manifest_path']}")
         print(f"review_decisions_path={result['review_decisions_path']}")
+        print(f"review_workspace_path={result['review_workspace_path']}")
         if result["source_manifest_path"]:
             print(f"source_manifest_path={result['source_manifest_path']}")
         if result["source_receipt_path"]:

@@ -49,6 +49,7 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
 - `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
 - `reports/report-quality/pilot-rqc-001/review_decisions.json`
+- `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSPACE.html`
 
 주의:
 
@@ -85,22 +86,35 @@ python3 scripts/create_report_quality_review_sheet.py \
 
 worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 파생 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
-새 pack에는 현재 binding에 맞는 `review_decisions.json`도 한 번만 생성된다. 원래 artifact 상태는 `previous_decision`에 보존하지만 새 파일럿 검토의 `decision`은 모두 `pending`에서 시작한다. 기존 pack처럼 파일이 없는 경우에만 아래 명령으로 template을 추가한다.
+새 pack에는 현재 binding에 맞는 `review_decisions.json`과 `HUMAN_REVIEW_WORKSPACE.html`도 한 번만 생성된다. 원래 artifact 상태는 `previous_decision`에 보존하지만 새 파일럿 검토의 `decision`은 모두 `pending`에서 시작한다. 기존 pack처럼 파일이 없는 경우에만 아래 명령으로 template과 browser workspace를 추가한다.
 
 ```bash
 python3 scripts/apply_report_quality_review_decisions.py \
   reports/report-quality/pilot-rqc-001 \
   --create-template reports/report-quality/pilot-rqc-001/review_decisions.json
+
+python3 scripts/create_report_quality_review_workspace.py \
+  reports/report-quality/pilot-rqc-001 \
+  --decisions reports/report-quality/pilot-rqc-001/review_decisions.json
 ```
 
-검수자는 `review_decisions.json`에서 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과를 채운다. Template은 현재 review 상태를 그대로 시작값으로 사용하고, `pack_binding`에 source manifest와 draft SHA-256을 기록한다. 승인할 artifact만 `decision=accepted`로 유지하거나 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다. Generator는 기존 template이나 symlink를 덮어쓰지 않는다. Draft를 직접 바꿔 기존 binding이 stale해졌다면 기존 파일을 보존하고 `review_decisions_refreshed.json`처럼 새 경로에 template을 만든다.
+검수자는 `HUMAN_REVIEW_WORKSPACE.html`을 브라우저에서 열어 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과, 차원별 근거와 보완 요청을 채운다. `검수 Draft 다운로드`는 초기 template의 `pack_binding`, artifact 순서, `previous_decision`, `training_authorized=false`를 보존한 `review_decisions.browser-draft.json`만 만든다. HTML은 pack의 draft나 decision template을 직접 수정하지 않으며 외부 요청도 보내지 않는다.
+
+내려받은 draft는 원본 template과 구분되는 이름으로 pack 안에 둔 뒤 apply한다.
+
+```bash
+mv ~/Downloads/review_decisions.browser-draft.json \
+  reports/report-quality/pilot-rqc-001/review_decisions.browser-draft.json
+```
+
+승인할 artifact만 `decision=accepted`로 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다. Generator는 기존 template, workspace, symlink를 덮어쓰지 않는다. Draft를 직접 바꿔 기존 binding이 stale해졌다면 기존 파일을 보존하고 `review_decisions.refreshed.json`, `HUMAN_REVIEW_WORKSPACE.refreshed.html`처럼 새 경로에 template과 workspace를 다시 만든다.
 
 결정 파일을 draft artifact에 반영할 때:
 
 ```bash
 python3 scripts/apply_report_quality_review_decisions.py \
   reports/report-quality/pilot-rqc-001 \
-  --decisions reports/report-quality/pilot-rqc-001/review_decisions.json \
+  --decisions reports/report-quality/pilot-rqc-001/review_decisions.browser-draft.json \
   --require-ready \
   --receipt reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
 ```
