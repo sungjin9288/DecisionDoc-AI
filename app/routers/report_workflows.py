@@ -6,7 +6,7 @@ import re
 import urllib.parse
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
@@ -138,12 +138,14 @@ def list_report_workflows(request: Request, status: str | None = None) -> dict:
 def list_report_quality_correction_artifacts(
     request: Request,
     ready_only: bool = False,
+    offset: int = Query(0, ge=0),
     limit: int = 50,
 ) -> dict:
     tenant_id = get_tenant_id(request)
     return _get_service(request).list_quality_correction_artifacts(
         tenant_id=tenant_id,
         ready_only=ready_only,
+        offset=offset,
         limit=limit,
     )
 

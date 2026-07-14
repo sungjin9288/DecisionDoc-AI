@@ -8199,6 +8199,10 @@
   let _reportWorkflowLastQualityPreview = null;
   const _reportWorkflowQualityPilotSelection = new Set();
   let _reportWorkflowQualityPilotPreview = null;
+  const REPORT_WORKFLOW_QUALITY_ARTIFACT_PAGE_SIZE = 5;
+  let _reportWorkflowQualityArtifactOffset = 0;
+  let _reportWorkflowQualityArtifactReadyOnly = false;
+  let _reportWorkflowQualityArtifactTenantId = '';
 
   const REPORT_WORKFLOW_QUALITY_DIMENSIONS = [
     ['logic', '논리'],
@@ -8288,18 +8292,22 @@
     if (!el) return;
     _reportWorkflowQualityPilotPreview = null;
     const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
-    const visibleArtifacts = artifacts.slice(0, 5);
-    const selectableIds = new Set(
-      visibleArtifacts
-        .filter(item => item.ready_for_learning === true)
-        .map(item => String(item.artifact_id || item.store_artifact_id || ''))
-        .filter(Boolean),
-    );
-    for (const artifactId of _reportWorkflowQualityPilotSelection) {
-      if (!selectableIds.has(artifactId)) _reportWorkflowQualityPilotSelection.delete(artifactId);
+    const tenantId = String(data?.tenant_id || '');
+    if (_reportWorkflowQualityArtifactTenantId && tenantId !== _reportWorkflowQualityArtifactTenantId) {
+      _reportWorkflowQualityPilotSelection.clear();
     }
+    _reportWorkflowQualityArtifactTenantId = tenantId;
+    artifacts.forEach(item => {
+      const artifactId = String(item?.artifact_id || item?.store_artifact_id || '');
+      if (item?.ready_for_learning !== true) _reportWorkflowQualityPilotSelection.delete(artifactId);
+    });
+
+    const offset = Number(data?.offset || 0);
+    const filteredTotal = Number(data?.filtered_total ?? data?.returned ?? artifacts.length);
+    const first = artifacts.length ? offset + 1 : 0;
+    const last = artifacts.length ? offset + artifacts.length : 0;
     const selectedCount = _reportWorkflowQualityPilotSelection.size;
-    const latestRows = visibleArtifacts.map(item => {
+    const latestRows = artifacts.map(item => {
       const artifactId = String(item.artifact_id || item.store_artifact_id || '');
       const isReady = item.ready_for_learning === true;
       const isSelected = _reportWorkflowQualityPilotSelection.has(artifactId);
@@ -8334,6 +8342,17 @@
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="download" ${Number(data?.ready_artifacts || 0) ? '' : 'disabled'}>⬇️ Ready JSONL</button>
         </div>
       </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;margin-top:.75rem;">
+        <div role="group" aria-label="품질 교정 artifact 표시 범위" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="show-all" aria-pressed="${data?.ready_only !== true}" style="border:0;border-radius:0;background:${data?.ready_only !== true ? 'var(--accent-soft)' : 'transparent'};">전체</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="show-ready" aria-pressed="${data?.ready_only === true}" style="border:0;border-left:1px solid var(--border);border-radius:0;background:${data?.ready_only === true ? 'var(--accent-soft)' : 'transparent'};">Ready</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:.45rem;font-size:.72rem;color:var(--muted);">
+          <span>${filteredTotal}건 중 ${first}-${last}</span>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="previous-page" aria-label="이전 품질 교정 artifact 페이지" title="이전 페이지" ${offset === 0 ? 'disabled' : ''} style="width:32px;height:32px;padding:0;">←</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="next-page" aria-label="다음 품질 교정 artifact 페이지" title="다음 페이지" ${data?.has_more === true ? '' : 'disabled'} style="width:32px;height:32px;padding:0;">→</button>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.55rem;margin-top:.75rem;">
         <div style="border-radius:12px;background:#eef2ff;color:#3730a3;padding:.6rem;"><strong>${Number(data?.total_artifacts || 0)}</strong><br><span style="font-size:.7rem;">total artifacts</span></div>
         <div style="border-radius:12px;background:#dcfce7;color:#166534;padding:.6rem;"><strong>${Number(data?.ready_artifacts || 0)}</strong><br><span style="font-size:.7rem;">ready</span></div>
@@ -8347,7 +8366,15 @@
   }
 
   const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {
-    load: loadReportWorkflowQualityArtifacts,
+    load: () => loadReportWorkflowQualityArtifacts(),
+    'show-all': () => loadReportWorkflowQualityArtifacts({ offset: 0, readyOnly: false }),
+    'show-ready': () => loadReportWorkflowQualityArtifacts({ offset: 0, readyOnly: true }),
+    'previous-page': () => loadReportWorkflowQualityArtifacts({
+      offset: Math.max(0, _reportWorkflowQualityArtifactOffset - REPORT_WORKFLOW_QUALITY_ARTIFACT_PAGE_SIZE),
+    }),
+    'next-page': () => loadReportWorkflowQualityArtifacts({
+      offset: _reportWorkflowQualityArtifactOffset + REPORT_WORKFLOW_QUALITY_ARTIFACT_PAGE_SIZE,
+    }),
     download: downloadReportWorkflowQualityArtifacts,
     'preview-pilot': previewReportWorkflowQualityPilotArtifacts,
     'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
@@ -8632,15 +8659,27 @@
     }
   }
 
-  async function loadReportWorkflowQualityArtifacts() {
+  async function loadReportWorkflowQualityArtifacts({
+    offset = _reportWorkflowQualityArtifactOffset,
+    readyOnly = _reportWorkflowQualityArtifactReadyOnly,
+  } = {}) {
     const el = $id('rw-quality-artifact-summary');
     if (!el) return;
+    _reportWorkflowQualityArtifactOffset = Math.max(0, Number(offset) || 0);
+    _reportWorkflowQualityArtifactReadyOnly = readyOnly === true;
+    const params = new URLSearchParams({
+      ready_only: String(_reportWorkflowQualityArtifactReadyOnly),
+      offset: String(_reportWorkflowQualityArtifactOffset),
+      limit: String(REPORT_WORKFLOW_QUALITY_ARTIFACT_PAGE_SIZE),
+    });
     try {
-      const res = await fetch('/report-workflows/learning/correction-artifacts?ready_only=false&limit=20', {
+      const res = await fetch(`/report-workflows/learning/correction-artifacts?${params}`, {
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(await res.text());
-      renderReportWorkflowQualityArtifactSummary(await res.json());
+      const data = await res.json();
+      _reportWorkflowQualityArtifactOffset = Number(data?.offset || 0);
+      renderReportWorkflowQualityArtifactSummary(data);
     } catch (err) {
       el.innerHTML = `<div style="color:#ef4444;font-size:.82rem;">품질 교정 artifact summary 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
     }

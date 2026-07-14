@@ -1879,7 +1879,9 @@ def test_index_html_report_workflow_list_and_artifacts_wiring_exists():
 
     for marker in (
         "const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {",
-        "load: loadReportWorkflowQualityArtifacts",
+        "load: () => loadReportWorkflowQualityArtifacts()",
+        "'show-all': () => loadReportWorkflowQualityArtifacts({ offset: 0, readyOnly: false })",
+        "'show-ready': () => loadReportWorkflowQualityArtifacts({ offset: 0, readyOnly: true })",
         "download: downloadReportWorkflowQualityArtifacts",
         "'preview-pilot': previewReportWorkflowQualityPilotArtifacts",
         "'download-pilot': downloadReportWorkflowQualityPilotArtifacts",

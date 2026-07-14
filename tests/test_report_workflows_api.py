@@ -555,6 +555,52 @@ def test_report_quality_correction_artifact_summary_and_jsonl_export(tmp_path, m
     assert lines[0]["training_boundary"]["training_execution_authorized"] is False
 
 
+def test_report_quality_correction_artifact_summary_paginates_ready_pool(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    saved_artifacts = [
+        _create_ready_quality_artifact(client, title=f"파일럿 탐색 {index}")
+        for index in range(1, 5)
+    ]
+    saved_ids = {item["artifact"]["artifact_id"] for item in saved_artifacts}
+
+    first_page = client.get(
+        "/report-workflows/learning/correction-artifacts?ready_only=true&offset=0&limit=2"
+    )
+    second_page = client.get(
+        "/report-workflows/learning/correction-artifacts?ready_only=true&offset=2&limit=2"
+    )
+    past_end = client.get(
+        "/report-workflows/learning/correction-artifacts?ready_only=true&offset=4&limit=2"
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert past_end.status_code == 200
+    first_body = first_page.json()
+    second_body = second_page.json()
+    past_end_body = past_end.json()
+    assert first_body["offset"] == 0
+    assert first_body["limit"] == 2
+    assert first_body["filtered_total"] == 4
+    assert first_body["returned"] == 2
+    assert first_body["has_more"] is True
+    assert second_body["offset"] == 2
+    assert second_body["filtered_total"] == 4
+    assert second_body["returned"] == 2
+    assert second_body["has_more"] is False
+    page_ids = {
+        item["artifact_id"]
+        for item in [*first_body["artifacts"], *second_body["artifacts"]]
+    }
+    assert page_ids == saved_ids
+    assert past_end_body["offset"] == 4
+    assert past_end_body["returned"] == 0
+    assert past_end_body["has_more"] is False
+    assert client.get(
+        "/report-workflows/learning/correction-artifacts?offset=-1"
+    ).status_code == 422
+
+
 def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifacts(
     tmp_path,
     monkeypatch,

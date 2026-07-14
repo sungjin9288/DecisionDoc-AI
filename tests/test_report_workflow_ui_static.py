@@ -109,7 +109,7 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "switchPage('knowledge-page')" in html
     assert "/export/pptx" in html
     assert "/export/snapshot" in html
-    assert "/report-workflows/learning/correction-artifacts?ready_only=false&limit=20" in html
+    assert "`/report-workflows/learning/correction-artifacts?${params}`" in html
     assert "/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=200" in html
     assert "/report-workflows/learning/correction-artifacts/${encodeURIComponent(normalizedId)}" in html
     assert 'data-rw-quality-artifacts-action="inspect"' in html
@@ -127,6 +127,13 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "preview_sha256: _reportWorkflowQualityPilotPreview.export_sha256" in html
     assert "previewReportWorkflowQualityPilotArtifacts" in html
     assert "renderReportWorkflowQualityPilotPreview" in html
+    assert "REPORT_WORKFLOW_QUALITY_ARTIFACT_PAGE_SIZE = 5" in html
+    assert "data-rw-quality-artifacts-action=\"show-all\"" in html
+    assert "data-rw-quality-artifacts-action=\"show-ready\"" in html
+    assert "data-rw-quality-artifacts-action=\"previous-page\"" in html
+    assert "data-rw-quality-artifacts-action=\"next-page\"" in html
+    assert "_reportWorkflowQualityPilotSelection.clear()" in html
+    assert "visibleArtifacts" not in html
     assert "Pilot preview 이후 export 내용이 변경되었습니다" in html
     assert "Pilot export의 server preview 검증 증거가 없습니다" in html
     assert "Pilot export receipt가 현재 다운로드와 일치하지 않습니다" in html

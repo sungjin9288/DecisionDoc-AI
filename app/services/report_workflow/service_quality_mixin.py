@@ -340,10 +340,12 @@ class ReportWorkflowQualityMixin:
         *,
         tenant_id: str,
         ready_only: bool = False,
+        offset: int = 0,
         limit: int = 50,
         include_artifact: bool = False,
     ) -> dict[str, Any]:
         """List saved metadata-only quality correction artifacts for review/export."""
+        clamped_offset = max(0, int(offset or 0))
         clamped_limit = max(1, min(int(limit or 50), 200))
         rows: list[dict[str, Any]] = []
         for rec in self.store.list_by_tenant(tenant_id):
@@ -355,17 +357,20 @@ class ReportWorkflowQualityMixin:
         rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
         ready_count = sum(1 for item in rows if item.get("ready_for_learning") is True)
         filtered = [item for item in rows if item.get("ready_for_learning") is True] if ready_only else rows
-        limited = filtered[:clamped_limit]
+        page = filtered[clamped_offset : clamped_offset + clamped_limit]
         return {
             "report_type": "report_quality_correction_artifact_summary",
             "tenant_id": tenant_id,
             "ready_only": bool(ready_only),
+            "offset": clamped_offset,
             "limit": clamped_limit,
             "total_artifacts": len(rows),
             "ready_artifacts": ready_count,
             "not_ready_artifacts": len(rows) - ready_count,
-            "returned": len(limited),
-            "artifacts": limited,
+            "filtered_total": len(filtered),
+            "returned": len(page),
+            "has_more": clamped_offset + len(page) < len(filtered),
+            "artifacts": page,
             "training_boundary": self._quality_training_boundary(),
         }
 
