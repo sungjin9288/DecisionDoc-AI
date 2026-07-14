@@ -466,6 +466,16 @@ def test_index_html_document_ops_downloads_reviewed_sft_jsonl_exports():
     assert "accepted-only" in content
 
 
+def test_index_html_ops_tenant_list_preserves_admin_session_auth():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadTenantList()")
+    end = content.index("/* ── Notification system", start)
+    block = content[start:end]
+
+    assert "headers: getOpsAccessHeaders()," in block
+    assert "headers: { 'X-DecisionDoc-Ops-Key': opsKey }," not in block
+
+
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert "Develop 품질 개선" in content

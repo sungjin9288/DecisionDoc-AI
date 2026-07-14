@@ -352,6 +352,20 @@ def test_admin_create_tenant_with_admin_jwt(tmp_path: Path, monkeypatch) -> None
     assert resp.json()["tenant_id"] == "jwt-corp"
 
 
+def test_admin_list_tenants_with_admin_jwt(tmp_path: Path, monkeypatch) -> None:
+    """GET /admin/tenants — admin JWT로도 목록 조회 가능."""
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+
+    resp = client.get(
+        "/admin/tenants",
+        headers={"Authorization": f"Bearer {admin_login['access_token']}"},
+    )
+
+    assert resp.status_code == 200
+    assert any(tenant["tenant_id"] == "system" for tenant in resp.json())
+
+
 def test_admin_create_tenant_duplicate_returns_409(tmp_path: Path, monkeypatch) -> None:
     """POST /admin/tenants 중복 → 409."""
     client = _make_client(tmp_path, monkeypatch)

@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2958 passed, 1 skipped, 4 deselected
+# 2026-07-14 실측: 2960 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -83,6 +83,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 pilot export가 preview의 `preview_sha256`을 필수 precondition으로 받아 현재 ordered JSONL과 서버에서 다시 대조하도록 강화했다. 누락·stale hash는 다운로드 전에 차단하고, 성공한 preview/export는 SHA-256·artifact count·verification state를 observability와 append-only audit에 남긴다.
   - 2026-07-14 서버 검증형 export가 JSONL과 같은 request에 결속된 portable receipt를 함께 내려주도록 확장했다. Local importer는 receipt의 tenant·artifact 순서·JSONL SHA-256·preview 검증·외부 실행 비승인 경계를 확인한 뒤 원본 receipt를 pack에 보존하고 `SOURCE_MANIFEST.json` v2에 결속한다. 기존 v1 manifest는 read compatibility를 유지한다.
   - 2026-07-14 Admin Ops audit 화면에 report-quality pilot preview/export 필터와 receipt 대조용 request ID·전체 SHA-256·artifact count·검증 상태를 연결했다. Audit 문자열은 HTML escape하고 모바일에서는 table 내부 스크롤로 화면 overflow를 차단한다. 조회와 CSV export는 같은 action/result/시작일/종료일 filter를 사용하며, 누락·역전 기간은 요청 전에 차단하고 date-only 종료일은 해당 UTC 날짜 전체를 포함한다. 조회 API는 검증된 offset/limit, filtered total, `has_more`를 반환하고 UI는 전체 건수·현재 범위와 이전/다음 이동을 표시하며 페이지 간 filter를 유지한다. CSV는 전체 detail과 pilot 식별자를 보존하고 1,000건 query cap으로 증빙이 빠지지 않도록 별도 full export 경로를 사용한다. Spreadsheet formula로 해석될 수 있는 문자열도 안전한 text cell로 기록한다.
+  - 2026-07-14 Ops 화면의 tenant selector가 admin 로그인 세션의 JWT를 유지하도록 tenant 목록 요청을 공통 인증 header 조합으로 정렬했다. `/admin/tenants`는 기존대로 admin JWT 또는 설정된 Ops key를 요구하며 권한 경계를 완화하지 않는다.
   - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
   - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.

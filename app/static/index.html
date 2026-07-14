@@ -11736,9 +11736,8 @@
   async function loadTenantList() {
     if (!new URLSearchParams(location.search).has('ops')) return;
     try {
-      const opsKey = getOpsKeyValue();
       const res = await fetch('/admin/tenants', {
-        headers: { 'X-DecisionDoc-Ops-Key': opsKey },
+        headers: getOpsAccessHeaders(),
       });
       if (!res.ok) return;
       const tenants = await res.json();

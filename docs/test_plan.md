@@ -22,6 +22,7 @@
 |-----------|----------------|------|
 | 문서 생성 | `tests/test_generate.py` | bundle 생성, export, validation |
 | 인증/인가 | `tests/test_auth_*.py` | JWT, API key, tenant/auth 흐름 |
+| Admin 테넌트 인증 | `tests/test_tenant.py`, `tests/test_infrastructure.py` | tenant 목록의 admin JWT/Ops key 경로와 Ops UI JWT header 보존 |
 | 결재 워크플로우 | `tests/test_approval_workflow.py` | submit, approve, reject |
 | 나라장터 연동 | `tests/test_g2b.py` | 검색/수집 흐름 |
 | SSO | `tests/test_sso.py` | LDAP/SAML/GCloud 관련 검증 |

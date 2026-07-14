@@ -36,6 +36,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 런타임 인증 키
   - `DECISIONDOC_API_KEY` / `DECISIONDOC_API_KEYS` (API 인증)
   - `DECISIONDOC_OPS_KEY` (`/ops/*` 보호)
+  - `/admin/tenants`를 포함한 admin endpoint는 인증된 admin JWT 또는 설정된 Ops key 중 하나를 요구한다. Ops UI는 공통 인증 header 조합을 사용해 로그인 세션을 보존하며 두 자격 증명을 동시에 요구하지 않는다.
 - 감사 로그 저장
   - 파일 저장 위치: `data/tenants/<tenant_id>/audit_logs.jsonl`
   - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
