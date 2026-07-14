@@ -7037,6 +7037,7 @@
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
   let _documentOpsTrajectorySearchTimer = null;
+  const _documentOpsReviewDrafts = new Map();
 
   function documentOpsLines(value) {
     return String(value || '')
@@ -7435,7 +7436,10 @@
     const accepted = status === 'accepted' || feedback.accepted === true;
     const rejected = status === 'rejected';
     const issues = Array.isArray(qa.gate_issues) ? qa.gate_issues : [];
-    const qualityScore = typeof feedback.quality_score === 'number' ? String(feedback.quality_score) : '';
+    const reviewDraft = _documentOpsReviewDrafts.get(String(item.trajectory_id || ''));
+    const reviewNotes = reviewDraft?.notes ?? String(feedback.notes || '');
+    const qualityScore = reviewDraft?.scoreText
+      ?? (typeof feedback.quality_score === 'number' ? String(feedback.quality_score) : '');
     const issueMarkup = issues.length
       ? `<ul>${issues.map(issue => `<li><strong>${escapeHtml(issue.code || 'QA issue')}</strong> · ${escapeHtml(issue.affected_field || '영향 필드 미기록')}<br>${escapeHtml(issue.remediation_hint || issue.message || '')}</li>`).join('')}</ul>`
       : '<p>QA gate issue 없음</p>';
@@ -7480,7 +7484,7 @@
     </div>
     <div class="docops-review-fields">
       <label class="docops-field">검토 메모
-        <textarea class="gov-input" data-docops-review-notes required maxlength="2000">${escapeHtml(feedback.notes || '')}</textarea>
+        <textarea class="gov-input" data-docops-review-notes required maxlength="2000">${escapeHtml(reviewNotes)}</textarea>
       </label>
       <label class="docops-field">사람 품질 점수
         <input class="gov-input" data-docops-review-score type="number" min="0" max="1" step="0.01" value="${escapeHtml(qualityScore)}">
@@ -7490,6 +7494,19 @@
         <button class="action-btn" type="button" data-docops-trajectory-review="true" data-review-version="${Number(feedback.review_version || 0)}" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${accepted ? 'disabled' : ''}>승인</button>
         <button class="action-btn" type="button" data-docops-trajectory-review="false" data-review-version="${Number(feedback.review_version || 0)}" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${rejected ? 'disabled' : ''}>반려</button>
     </div>`;
+  }
+
+  async function restoreDocumentOpsReviewDraftAfterConflict(trajectoryId) {
+    await loadDocumentOpsTrajectories();
+    const cards = $id('document-ops-trajectories')?.querySelectorAll('[data-docops-trajectory-card]') || [];
+    const card = Array.from(cards).find(item => item.dataset.trajectoryId === trajectoryId);
+    const details = card?.querySelector('[data-docops-trajectory-detail]');
+    if (!details) return false;
+
+    await loadDocumentOpsTrajectoryDetail(details);
+    details.open = true;
+    card.querySelector('[data-docops-review-notes]')?.focus();
+    return details.dataset.loaded === 'true';
   }
 
   function wireDocumentOpsTrajectoryReviewActions(container) {
@@ -7535,6 +7552,7 @@
       scoreInput?.focus();
       return;
     }
+    _documentOpsReviewDrafts.set(trajectoryId, { notes, scoreText });
     const wasDisabled = !!trigger?.disabled;
     if (trigger) trigger.disabled = true;
     try {
@@ -7550,11 +7568,17 @@
         }),
       });
       if (res.status === 409) {
-        showNotification('다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.', 'warn');
-        await loadDocumentOpsTrajectories();
+        const restored = await restoreDocumentOpsReviewDraftAfterConflict(trajectoryId);
+        showNotification(
+          restored
+            ? '다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔고 입력한 메모와 점수는 보존했습니다.'
+            : '다른 검토가 먼저 저장되었습니다. 입력 내용은 임시 보존했으며 필터를 조정해 기록을 다시 열면 복원됩니다.',
+          'warn',
+        );
         return;
       }
       if (!res.ok) throw new Error(await res.text());
+      _documentOpsReviewDrafts.delete(trajectoryId);
       showNotification(accepted ? 'trajectory를 승인했습니다.' : 'trajectory를 반려했습니다.', 'success');
       await loadDocumentOpsTrajectories();
     } catch (err) {

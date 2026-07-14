@@ -623,25 +623,32 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     _wait_until_text_contains(
         page,
         "#notification-container",
-        "다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.",
+        "다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔고 입력한 메모와 점수는 보존했습니다.",
         timeout_ms=10000,
     )
     assert page.locator(
         "#notification-container .notif-warn",
-        has_text="다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.",
+        has_text="다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔고 입력한 메모와 점수는 보존했습니다.",
     ).is_visible()
     _wait_until_text_contains(page, card_selector, "rejected", timeout_ms=10000)
 
     card = page.locator(card_selector)
-    card.locator("summary", has_text="검토 근거와 전체 초안").click()
     _wait_until_text_contains(
         page,
         f"{card_selector} [data-docops-current-review]",
         "competing-reviewer",
         timeout_ms=10000,
     )
-    card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
-    card.locator("[data-docops-review-score]").fill("0.88")
+    assert card.locator("[data-docops-trajectory-detail]").get_attribute("open") is not None
+    assert card.locator("[data-docops-review-notes]").input_value() == "전체 초안과 근거 상태를 확인하고 승인합니다."
+    assert card.locator("[data-docops-review-score]").input_value() == "0.88"
+    assert page.evaluate(
+        "trajectoryId => _documentOpsReviewDrafts.get(trajectoryId)",
+        created["trajectory_id"],
+    ) == {
+        "notes": "전체 초안과 근거 상태를 확인하고 승인합니다.",
+        "scoreText": "0.88",
+    }
     card.locator('[data-docops-trajectory-review="true"]').click()
     _wait_until_text_contains(page, card_selector, "accepted", timeout_ms=10000)
 
@@ -680,6 +687,10 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert reviewed["human_feedback"]["notes"] == "전체 초안과 근거 상태를 확인하고 승인합니다."
     assert reviewed["human_feedback"]["review_version"] == 2
     assert reviewed["human_review_history"][0]["reviewer"] == "competing-reviewer"
+    assert page.evaluate(
+        "trajectoryId => !_documentOpsReviewDrafts.has(trajectoryId)",
+        created["trajectory_id"],
+    )
 
     page.evaluate(
         """async () => {
