@@ -1482,6 +1482,56 @@ def test_api_audit_logs_filter_by_action(tmp_path, monkeypatch):
     assert all(log["action"] == "user.login" for log in data["logs"])
 
 
+def test_api_audit_logs_paginates_filtered_results(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("system")
+    for index in range(55):
+        store.append(_make_audit_log(
+            tenant_id="system",
+            action="report_quality.pilot_export",
+            user_id=f"quality-owner-{index}",
+        ))
+
+    first = client.get(
+        "/admin/audit-logs",
+        params={"action": "report_quality.pilot_export", "offset": 0, "limit": 50},
+        headers=_auth(login),
+    )
+    second = client.get(
+        "/admin/audit-logs",
+        params={"action": "report_quality.pilot_export", "offset": 50, "limit": 50},
+        headers=_auth(login),
+    )
+
+    assert first.status_code == 200
+    assert first.json()["total"] == 55
+    assert first.json()["offset"] == 0
+    assert first.json()["limit"] == 50
+    assert first.json()["has_more"] is True
+    assert len(first.json()["logs"]) == 50
+
+    assert second.status_code == 200
+    assert second.json()["total"] == 55
+    assert second.json()["offset"] == 50
+    assert second.json()["has_more"] is False
+    assert len(second.json()["logs"]) == 5
+
+    assert client.get(
+        "/admin/audit-logs",
+        params={"offset": -1, "limit": 50},
+        headers=_auth(login),
+    ).status_code == 422
+    assert client.get(
+        "/admin/audit-logs",
+        params={"offset": 0, "limit": 1001},
+        headers=_auth(login),
+    ).status_code == 422
+
+
 def test_api_audit_stats(tmp_path, monkeypatch):
     """GET /admin/audit-logs/stats returns summary dict."""
     client = _make_client(tmp_path, monkeypatch)

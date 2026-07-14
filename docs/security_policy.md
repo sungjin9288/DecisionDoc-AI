@@ -39,7 +39,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 감사 로그 저장
   - 파일 저장 위치: `data/tenants/<tenant_id>/audit_logs.jsonl`
   - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
-  - 조회와 CSV 내보내기는 tenant와 action/result/기간 filter를 공유하고 전체 detail JSON을 보존하며, spreadsheet formula injection이 가능한 문자열을 text cell로 처리
+  - 조회와 CSV 내보내기는 tenant와 action/result/기간 filter를 공유한다. 조회는 검증된 offset/limit과 전체 건수·다음 페이지 여부를 반환하고, CSV는 전체 detail JSON을 보존하며 spreadsheet formula injection이 가능한 문자열을 text cell로 처리
 - 운영 로그
   - 애플리케이션 구조화 로그는 stdout 기준 (Docker는 `docker logs`, AWS는 CloudWatch)
 

@@ -8,7 +8,7 @@ import html as _html
 import os as _os
 from collections import Counter
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 
 router = APIRouter(tags=["audit"])
@@ -28,7 +28,8 @@ async def query_audit_logs(
     result: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    limit: int = 100,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
 ):
     """Query audit logs (admin only)."""
     from app.storage.audit_store import AuditStore
@@ -36,7 +37,7 @@ async def query_audit_logs(
     _require_admin(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     store = AuditStore(tenant_id)
-    logs = store.query(
+    logs = store.query_all(
         tenant_id,
         filters={
             "user_id": user_id,
@@ -47,8 +48,14 @@ async def query_audit_logs(
             "date_to": date_to,
         },
     )
-    capped = logs[: min(limit, 1000)]
-    return {"logs": capped, "total": len(logs)}
+    page = logs[offset : offset + limit]
+    return {
+        "logs": page,
+        "total": len(logs),
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(page) < len(logs),
+    }
 
 
 @router.get("/admin/audit-logs/stats")

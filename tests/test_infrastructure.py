@@ -1749,12 +1749,25 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "result: document.getElementById('audit-result-filter')?.value || ''" in content
     assert 'id="audit-date-from" type="date" aria-label="감사 로그 시작일" required' in content
     assert 'id="audit-date-to" type="date" aria-label="감사 로그 종료일" required' in content
+    assert 'id="audit-log-pagination" class="audit-pagination" hidden' in content
+    assert 'id="audit-log-prev-btn"' in content
+    assert 'id="audit-log-next-btn"' in content
     assert "$id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs)" in content
     assert "function initializeAuditDateFilters()" in content
     assert "function readAuditFilters()" in content
     assert "!filters.date_from || !filters.date_to" in content
     assert "filters.date_from > filters.date_to" in content
-    assert "if (filters) loadAuditLogs(filters);" in content
+    assert "if (filters) loadAuditLogs(filters, 0);" in content
+    assert "function renderAuditPagination(data)" in content
+    assert "summary.textContent = `${total}건 중 ${first}-${last}`;" in content
+    assert (
+        "loadAuditLogs(auditPageFilters, "
+        "Math.max(0, auditPageOffset - AUDIT_PAGE_SIZE));"
+    ) in content
+    assert (
+        "loadAuditLogs(auditPageFilters, auditPageOffset + AUDIT_PAGE_SIZE);"
+        in content
+    )
     assert "Object.entries(filters).forEach(([key, value]) => value && params.set(key, value));" in content
     assert "`/admin/audit-logs/export?${params}`" in content
     assert "$id('sso-refresh-btn')?.addEventListener('click', loadSSOConfig)" in content
