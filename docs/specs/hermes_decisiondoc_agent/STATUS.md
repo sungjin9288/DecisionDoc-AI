@@ -69,6 +69,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
+- browser history requests summary records and loads the full tenant-scoped trajectory only when
+  a reviewer opens its detail, while existing API callers retain the default full-list response
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -83,6 +85,9 @@ Desktop and 390-pixel mobile browser checks used a mock provider and temporary l
 remaining three on the next page. Title/reviewer search and task/review filters returned the expected
 sets, reset pagination, ignored an intentionally delayed stale response during rapid filter changes,
 and returned to the last valid page after a filtered record changed state.
+The detail check confirmed that source evidence was absent from the summary card, recovered a
+malformed first response through the card retry control, then loaded the full record through the
+tenant-scoped detail endpoint before accepting reviewer input.
 Controls remained correct with no horizontal overflow or browser console error. This check did not
 create a dataset upload, provider API call, training job, promotion, or production action.
 

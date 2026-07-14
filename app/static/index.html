@@ -7275,6 +7275,7 @@
       const params = new URLSearchParams({
         offset: String(Math.max(0, offset)),
         limit: String(DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE),
+        include_detail: 'false',
       });
       const taskType = String($id('docops-trajectory-task-filter')?.value || '').trim();
       const reviewStatus = String($id('docops-trajectory-review-filter')?.value || '').trim();
@@ -7313,6 +7314,7 @@
         ? displayedItems.map(renderDocumentOpsTrajectoryCard).join('')
         : `<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">${total ? '현재 페이지에 표시할 trajectory가 없습니다.' : hasActiveFilter ? '검색·필터 조건에 맞는 trajectory가 없습니다.' : '저장된 trajectory가 없습니다.'}</div>`;
       el.innerHTML = `${pager}${list}`;
+      wireDocumentOpsTrajectoryDetailActions(el);
       wireDocumentOpsTrajectoryReviewActions(el);
       wireDocumentOpsTrajectoryPageActions(el);
     } catch (err) {
@@ -7339,7 +7341,12 @@
     const accepted = status === 'accepted' || feedback.accepted === true;
     const rejected = status === 'rejected';
     const qa = item.qa || {};
-    const title = item.input?.requirements?.title || item.task_type || 'trajectory';
+    const title = item.title || item.input?.requirements?.title || item.task_type || 'trajectory';
+    const draftPreview = item.draft_preview || String(item.draft_output || '').slice(0, 220);
+    const detailLoaded = !!(item.input && typeof item.input === 'object');
+    const reviewSummary = feedback.reviewer
+      ? `검토 ${feedback.reviewer}${typeof feedback.quality_score === 'number' ? ` · 품질 ${feedback.quality_score.toFixed(2)}` : ''}`
+      : '';
     return `<div data-docops-trajectory-card data-trajectory-id="${escapeHtml(item.trajectory_id || '')}" style="background:var(--surface-solid);border:1px solid var(--border);border-radius:16px;padding:.85rem;">
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
         <div>
@@ -7348,13 +7355,52 @@
         </div>
         <span style="border-radius:999px;padding:.14rem .5rem;font-size:.68rem;font-weight:850;background:${accepted ? '#dcfce7' : rejected ? '#fee2e2' : '#fef3c7'};color:${accepted ? '#15803d' : rejected ? '#b91c1c' : '#92400e'};">${escapeHtml(status)}</span>
       </div>
-      <div style="font-size:.75rem;color:var(--muted);line-height:1.45;margin-top:.5rem;">${escapeHtml(String(item.draft_output || '').slice(0, 220))}</div>
+      <div style="font-size:.75rem;color:var(--muted);line-height:1.45;margin-top:.5rem;">${escapeHtml(draftPreview)}</div>
       <div style="font-size:.72rem;color:var(--muted);margin-top:.35rem;">QA ${qa.hard_gate_pass ? 'PASS' : 'BLOCK'} · score ${Number(qa.overall_score || 0).toFixed(2)}</div>
-      <details class="docops-trajectory-detail" data-docops-trajectory-detail>
+      ${reviewSummary ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.25rem;">${escapeHtml(reviewSummary)}</div>` : ''}
+      <details class="docops-trajectory-detail" data-docops-trajectory-detail data-trajectory-id="${escapeHtml(item.trajectory_id || '')}" data-loaded="${detailLoaded ? 'true' : 'false'}">
         <summary>검토 근거와 전체 초안</summary>
-        ${renderDocumentOpsTrajectoryDetail(item)}
+        <div data-docops-trajectory-detail-content>${detailLoaded ? renderDocumentOpsTrajectoryDetail(item) : '<div style="padding:.8rem;color:var(--muted);font-size:.78rem;">상세 검토 기록을 불러옵니다.</div>'}</div>
       </details>
     </div>`;
+  }
+
+  function wireDocumentOpsTrajectoryDetailActions(container) {
+    container.querySelectorAll('[data-docops-trajectory-detail]').forEach(details => {
+      details.addEventListener('toggle', () => {
+        if (details.open && details.dataset.loaded !== 'true') loadDocumentOpsTrajectoryDetail(details);
+      });
+    });
+  }
+
+  async function loadDocumentOpsTrajectoryDetail(details) {
+    const trajectoryId = String(details?.dataset.trajectoryId || '').trim();
+    const content = details?.querySelector('[data-docops-trajectory-detail-content]');
+    if (!trajectoryId || !content || details.dataset.loading === 'true') return;
+    details.dataset.loading = 'true';
+    content.innerHTML = '<div style="padding:.8rem;color:var(--muted);font-size:.78rem;">상세 검토 기록 로드 중...</div>';
+    try {
+      const res = await fetch(`/api/agent/document-ops/trajectories/${encodeURIComponent(trajectoryId)}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (!details.isConnected) return;
+      content.innerHTML = renderDocumentOpsTrajectoryDetail(data.trajectory || {});
+      details.dataset.loaded = 'true';
+      wireDocumentOpsTrajectoryReviewActions(details);
+    } catch (err) {
+      if (!details.isConnected) return;
+      content.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;padding:.8rem;color:#ef4444;font-size:.78rem;">
+        <span>상세 로드 실패: ${escapeHtml(err.message || String(err))}</span>
+        <button type="button" class="action-btn" data-docops-trajectory-detail-retry aria-label="상세 다시 불러오기" title="상세 다시 불러오기" style="width:30px;height:30px;padding:0;">↻</button>
+      </div>`;
+      content.querySelector('[data-docops-trajectory-detail-retry]')?.addEventListener('click', () => {
+        loadDocumentOpsTrajectoryDetail(details);
+      });
+    } finally {
+      delete details.dataset.loading;
+    }
   }
 
   function documentOpsTrajectoryListMarkup(values, emptyLabel = '기록 없음') {

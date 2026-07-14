@@ -14,6 +14,37 @@ from app.services.document_ops_training_adapter import (
 from app.storage.trajectory_store import TrajectoryStore
 
 
+def _trajectory_summary(record: dict[str, Any]) -> dict[str, Any]:
+    input_data = record.get("input") if isinstance(record.get("input"), dict) else {}
+    requirements = input_data.get("requirements") if isinstance(input_data.get("requirements"), dict) else {}
+    skill = record.get("skill") if isinstance(record.get("skill"), dict) else {}
+    feedback = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
+    qa = record.get("qa") if isinstance(record.get("qa"), dict) else {}
+    overall_score = qa.get("overall_score")
+    if isinstance(overall_score, bool) or not isinstance(overall_score, (int, float)):
+        overall_score = 0.0
+    feedback_summary: dict[str, Any] = {"accepted": feedback.get("accepted") is True}
+    for field in ("reviewer", "reviewed_at", "review_version", "quality_score"):
+        if feedback.get(field) is not None:
+            feedback_summary[field] = feedback[field]
+    return {
+        "trajectory_id": str(record.get("trajectory_id") or ""),
+        "request_id": str(record.get("request_id") or ""),
+        "task_type": str(record.get("task_type") or ""),
+        "skill": dict(skill),
+        "provider": str(record.get("provider") or ""),
+        "created_at": record.get("created_at"),
+        "human_review_status": str(record.get("human_review_status") or "pending"),
+        "human_feedback": feedback_summary,
+        "title": str(requirements.get("title") or record.get("task_type") or "trajectory"),
+        "draft_preview": str(record.get("draft_output") or "")[:220],
+        "qa": {
+            "hard_gate_pass": qa.get("hard_gate_pass") is True,
+            "overall_score": float(overall_score),
+        },
+    }
+
+
 class DocumentOpsService:
     """Run DocumentOps tasks and optionally persist reviewed trajectory data."""
 
@@ -54,6 +85,7 @@ class DocumentOpsService:
         accepted_only: bool = False,
         query: str | None = None,
         order: str = "newest",
+        include_detail: bool = True,
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, Any]:
@@ -68,16 +100,21 @@ class DocumentOpsService:
             limit=limit,
         )
         returned = len(records)
+        trajectories = records if include_detail else [_trajectory_summary(record) for record in records]
         return {
-            "trajectories": records,
+            "trajectories": trajectories,
             "total": total,
             "offset": offset,
             "limit": limit,
             "query": str(query or "").strip(),
             "order": order,
+            "include_detail": include_detail,
             "returned": returned,
             "has_more": offset + returned < total,
         }
+
+    def get_trajectory(self, trajectory_id: str, *, tenant_id: str) -> dict[str, Any] | None:
+        return self._trajectory_store.get_record(trajectory_id, tenant_id=tenant_id)
 
     def review_trajectory(
         self,

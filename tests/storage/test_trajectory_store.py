@@ -71,6 +71,9 @@ def test_save_stores_tenant_scoped_redacted_jsonl(tmp_path: Path) -> None:
     records = store.get_records(tenant_id="alpha")
     assert len(records) == 1
     assert records[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
+    assert store.get_record("trj_001", tenant_id="alpha") == records[0]
+    assert store.get_record("trj_001", tenant_id="beta") is None
+    assert store.get_record("missing", tenant_id="alpha") is None
     assert store.get_records(tenant_id="beta") == []
 
 

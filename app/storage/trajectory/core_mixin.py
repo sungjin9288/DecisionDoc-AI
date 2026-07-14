@@ -82,6 +82,20 @@ class TrajectoryCoreMixin:
         )
         return records
 
+    def get_record(
+        self,
+        trajectory_id: str,
+        *,
+        tenant_id: str = "system",
+    ) -> dict[str, Any] | None:
+        """Return one trajectory from the requested tenant."""
+        with self._lock:
+            records = self._read_records_unlocked(tenant_id)
+        return next(
+            (record for record in records if str(record.get("trajectory_id")) == trajectory_id),
+            None,
+        )
+
     def get_record_page(
         self,
         *,

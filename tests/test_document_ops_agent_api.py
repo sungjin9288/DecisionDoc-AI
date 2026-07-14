@@ -74,10 +74,42 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
 
     listed = client.get("/api/agent/document-ops/trajectories", headers=_api_headers())
     assert listed.status_code == 200
-    trajectories = listed.json()["trajectories"]
+    listed_body = listed.json()
+    assert listed_body["include_detail"] is True
+    trajectories = listed_body["trajectories"]
     assert len(trajectories) == 1
     assert trajectories[0]["trajectory_id"] == body["trajectory_id"]
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
+
+    summary = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"include_detail": "false"},
+    )
+    assert summary.status_code == 200
+    summary_body = summary.json()
+    assert summary_body["include_detail"] is False
+    summary_item = summary_body["trajectories"][0]
+    assert summary_item["trajectory_id"] == body["trajectory_id"]
+    assert summary_item["title"] == "보행자 안전 정책 기획 사업"
+    assert summary_item["draft_preview"]
+    assert summary_item["human_feedback"] == {"accepted": False}
+    assert "input" not in summary_item
+    assert "draft_output" not in summary_item
+
+    detail = client.get(
+        f"/api/agent/document-ops/trajectories/{body['trajectory_id']}",
+        headers=_api_headers(),
+    )
+    assert detail.status_code == 200
+    assert detail.json()["trajectory"]["input"]["requirements"]["raw_attachment"] == "[redacted]"
+    unauthorized_detail = client.get(f"/api/agent/document-ops/trajectories/{body['trajectory_id']}")
+    assert unauthorized_detail.status_code == 401
+    missing = client.get("/api/agent/document-ops/trajectories/missing", headers=_api_headers())
+    assert missing.status_code == 404
+    stats = client.get("/api/agent/document-ops/trajectories/stats", headers=_api_headers())
+    assert stats.status_code == 200
+    assert stats.json()["total_records"] == 1
 
 
 def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requested_order(tmp_path, monkeypatch) -> None:
@@ -101,7 +133,7 @@ def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requeste
         reviewed = client.post(
             f"/api/agent/document-ops/trajectories/{trajectory_id}/review",
             headers=_api_headers(),
-            json={"accepted": True, "reviewer": "pagination-reviewer"},
+            json={"accepted": True, "reviewer": "pagination-reviewer", "notes": "pagination evidence"},
         )
         assert reviewed.status_code == 200
 
@@ -153,7 +185,7 @@ def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requeste
     reviewer_search = client.get(
         "/api/agent/document-ops/trajectories",
         headers=_api_headers(),
-        params={"query": "PAGINATION-REVIEWER"},
+        params={"query": "PAGINATION-REVIEWER", "include_detail": "false"},
     )
     oldest = client.get(
         "/api/agent/document-ops/trajectories",
@@ -201,6 +233,11 @@ def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requeste
         created_ids[0],
         created_ids[-1],
     ]
+    assert all(
+        item["human_feedback"]["reviewer"] == "pagination-reviewer"
+        and "notes" not in item["human_feedback"]
+        for item in reviewer_search.json()["trajectories"]
+    )
     assert oldest.json()["order"] == "oldest"
     assert [item["trajectory_id"] for item in oldest.json()["trajectories"]] == created_ids[:2]
     assert combined.json()["total"] == 1

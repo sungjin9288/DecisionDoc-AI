@@ -60,6 +60,7 @@ def list_document_ops_trajectories(
     accepted_only: bool = False,
     query: str | None = Query(default=None, max_length=120),
     order: Literal["newest", "oldest"] = Query(default="newest"),
+    include_detail: bool = True,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict:
@@ -70,6 +71,7 @@ def list_document_ops_trajectories(
         accepted_only=accepted_only,
         query=query,
         order=order,
+        include_detail=include_detail,
         offset=offset,
         limit=limit,
     )
@@ -487,6 +489,17 @@ def export_document_ops_trajectories(
         "tenant_id": tenant_id,
         "task_type": payload.task_type,
     }
+
+
+@router.get("/trajectories/{trajectory_id}", dependencies=[Depends(require_api_key)])
+def get_document_ops_trajectory(trajectory_id: str, request: Request) -> dict:
+    trajectory = _service(request).get_trajectory(
+        trajectory_id,
+        tenant_id=get_tenant_id(request),
+    )
+    if trajectory is None:
+        raise HTTPException(status_code=404, detail="trajectory not found")
+    return {"trajectory": trajectory}
 
 
 @router.post("/trajectories/{trajectory_id}/review", dependencies=[Depends(require_api_key)])

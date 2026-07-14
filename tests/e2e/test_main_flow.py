@@ -560,9 +560,31 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     card_selector = f'[data-docops-trajectory-card][data-trajectory-id="{created["trajectory_id"]}"]'
     page.wait_for_selector(card_selector, timeout=10000)
     card = page.locator(card_selector)
+    assert "browser-detail-source" not in card.inner_text()
+    detail_url = f"**/api/agent/document-ops/trajectories/{created['trajectory_id']}"
+    detail_attempts = {"count": 0}
+
+    def handle_detail_request(route):
+        detail_attempts["count"] += 1
+        if detail_attempts["count"] == 1:
+            route.fulfill(status=200, content_type="application/json", body="{")
+        else:
+            route.continue_()
+
+    page.route(detail_url, handle_detail_request)
     card.locator("summary", has_text="검토 근거와 전체 초안").click()
+    _wait_until_text_contains(page, card_selector, "상세 로드 실패", timeout_ms=10000)
+    card.get_by_role("button", name="상세 다시 불러오기").click()
 
     detail = card.locator("[data-docops-trajectory-detail]")
+    _wait_until_text_contains(
+        page,
+        f"{card_selector} [data-docops-trajectory-detail-content]",
+        "browser-detail-source",
+        timeout_ms=10000,
+    )
+    page.unroute(detail_url, handle_detail_request)
+    assert detail_attempts["count"] == 2
     assert "browser-detail-source" in detail.inner_text()
     assert "QA gate" in detail.inner_text()
     assert "전체 초안" in detail.inner_text()
@@ -581,6 +603,12 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
 
     card = page.locator(card_selector)
     card.locator("summary", has_text="검토 근거와 전체 초안").click()
+    _wait_until_text_contains(
+        page,
+        f"{card_selector} [data-docops-current-review]",
+        "browser-reviewer",
+        timeout_ms=10000,
+    )
     review_text = card.locator("[data-docops-current-review]").inner_text()
     assert "browser-reviewer" in review_text
     assert "품질 0.88" in review_text

@@ -2094,6 +2094,7 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
     for marker in (
         "const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;",
         "offset: String(Math.max(0, offset))",
+        "include_detail: 'false'",
         "id=\"docops-trajectory-task-filter\"",
         "id=\"docops-trajectory-review-filter\"",
         "id=\"docops-trajectory-query\"",
@@ -2107,6 +2108,10 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "requestVersion !== _documentOpsTrajectoryRequestVersion",
         "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-detail",
+        "data-docops-trajectory-detail-content",
+        "wireDocumentOpsTrajectoryDetailActions(el);",
+        "loadDocumentOpsTrajectoryDetail(details)",
+        "data-docops-trajectory-detail-retry",
         "data-docops-review-notes",
         "data-docops-review-score",
         "if (accepted && !scoreText)",
