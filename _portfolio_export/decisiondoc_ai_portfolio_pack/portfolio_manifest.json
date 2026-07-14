@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "b121e9e98f926557ac7bf63a49340d97fde44d8cb6322f916161559517644413",
-      "size_bytes": 25117
+      "sha256": "a17c62ce5c7c30e61bfe565fb18b29498704d32d40d038d52b678408286e2c6f",
+      "size_bytes": 25194
     },
     {
       "path": "docs/architecture.md",
@@ -80,8 +80,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "4743a19d0516d30ccb93de61243246fdeabde15e154d6c7b4f1308d0a08c5fe5",
-      "size_bytes": 22251
+      "sha256": "462fb38199ab8202c329b9451b75543d22901505f46015006dc253aa3a662300",
+      "size_bytes": 22330
     },
     {
       "path": "evidence/api-responses/bundles.json",

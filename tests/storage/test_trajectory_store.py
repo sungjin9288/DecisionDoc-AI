@@ -83,12 +83,24 @@ def test_save_deduplicates_by_trajectory_id(tmp_path: Path) -> None:
     assert len(store.get_records(tenant_id="system")) == 1
 
 
-def test_get_record_page_paginates_from_newest_and_reports_filtered_total(tmp_path: Path) -> None:
+def test_get_record_page_searches_filters_and_paginates_in_requested_order(tmp_path: Path) -> None:
     store = TrajectoryStore(tmp_path)
     for index in range(1, 6):
         trajectory = _sample_trajectory(f"trj_{index}")
+        trajectory["request_id"] = f"req-{index}"
+        trajectory["input"]["requirements"]["title"] = f"검토 기록 {index}"
         trajectory["task_type"] = "decision_brief" if index < 5 else "evidence_gap_review"
         store.save(trajectory, tenant_id="system")
+    store.mark_reviewed(
+        "trj_1",
+        tenant_id="system",
+        accepted=True,
+        reviewer="oldest-reviewer",
+        quality_score=0.91,
+    )
+    other_tenant = _sample_trajectory("trj_other_tenant")
+    other_tenant["input"]["requirements"]["title"] = "검토 기록 2"
+    store.save(other_tenant, tenant_id="other")
 
     first_page, total = store.get_record_page(tenant_id="system", offset=0, limit=2)
     second_page, _ = store.get_record_page(tenant_id="system", offset=2, limit=2)
@@ -99,6 +111,15 @@ def test_get_record_page_paginates_from_newest_and_reports_filtered_total(tmp_pa
         offset=0,
         limit=2,
     )
+    oldest_first, _ = store.get_record_page(tenant_id="system", order="oldest", offset=0, limit=2)
+    oldest_second, _ = store.get_record_page(tenant_id="system", order="oldest", offset=2, limit=2)
+    title_match, title_total = store.get_record_page(tenant_id="system", query="검토 기록 2")
+    request_match, _ = store.get_record_page(tenant_id="system", query="REQ-3")
+    reviewer_match, _ = store.get_record_page(tenant_id="system", query="OLDEST-REVIEWER")
+    trajectory_match, _ = store.get_record_page(tenant_id="system", query="TRJ_4")
+    task_match, _ = store.get_record_page(tenant_id="system", query="EVIDENCE_GAP_REVIEW")
+    skill_match, _ = store.get_record_page(tenant_id="system", query="POLICY-PLANNING")
+    provider_match, _ = store.get_record_page(tenant_id="system", query="MOCK")
 
     assert total == 5
     assert [item["trajectory_id"] for item in first_page] == ["trj_4", "trj_5"]
@@ -106,6 +127,18 @@ def test_get_record_page_paginates_from_newest_and_reports_filtered_total(tmp_pa
     assert [item["trajectory_id"] for item in last_page] == ["trj_1"]
     assert filtered_total == 4
     assert [item["trajectory_id"] for item in filtered_page] == ["trj_3", "trj_4"]
+    assert [item["trajectory_id"] for item in oldest_first] == ["trj_1", "trj_2"]
+    assert [item["trajectory_id"] for item in oldest_second] == ["trj_3", "trj_4"]
+    assert title_total == 1
+    assert [item["trajectory_id"] for item in title_match] == ["trj_2"]
+    assert [item["trajectory_id"] for item in request_match] == ["trj_3"]
+    assert [item["trajectory_id"] for item in reviewer_match] == ["trj_1"]
+    assert [item["trajectory_id"] for item in trajectory_match] == ["trj_4"]
+    assert [item["trajectory_id"] for item in task_match] == ["trj_5"]
+    assert len(skill_match) == 5
+    assert len(provider_match) == 5
+    with pytest.raises(ValueError, match="order must be"):
+        store.get_record_page(tenant_id="system", order="unsupported")
 
 
 def test_mark_reviewed_updates_human_feedback_and_stats(tmp_path: Path) -> None:

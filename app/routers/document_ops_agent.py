@@ -5,6 +5,7 @@ import json
 import os
 import re
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
@@ -57,6 +58,8 @@ def list_document_ops_trajectories(
     task_type: str | None = None,
     human_review_status: str | None = None,
     accepted_only: bool = False,
+    query: str | None = Query(default=None, max_length=120),
+    order: Literal["newest", "oldest"] = Query(default="newest"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict:
@@ -65,6 +68,8 @@ def list_document_ops_trajectories(
         task_type=task_type,
         human_review_status=human_review_status,
         accepted_only=accepted_only,
+        query=query,
+        order=order,
         offset=offset,
         limit=limit,
     )

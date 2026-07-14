@@ -2088,7 +2088,7 @@ def test_index_html_document_ops_action_wiring_exists():
     assert "if (action) action();" in content
 
 
-def test_index_html_document_ops_trajectory_history_supports_filters_and_pagination():
+def test_index_html_document_ops_trajectory_history_supports_search_order_filters_and_pagination():
     content = open("app/static/index.html", encoding="utf-8").read()
 
     for marker in (
@@ -2096,8 +2096,14 @@ def test_index_html_document_ops_trajectory_history_supports_filters_and_paginat
         "offset: String(Math.max(0, offset))",
         "id=\"docops-trajectory-task-filter\"",
         "id=\"docops-trajectory-review-filter\"",
+        "id=\"docops-trajectory-query\"",
+        "id=\"docops-trajectory-order\"",
         "params.set('task_type', taskType)",
         "params.set('human_review_status', reviewStatus)",
+        "params.set('query', query)",
+        "params.set('order', order)",
+        "_documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250)",
+        "responseOrder === 'oldest'",
         "requestVersion !== _documentOpsTrajectoryRequestVersion",
         "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-detail",

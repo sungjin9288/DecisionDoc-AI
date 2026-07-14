@@ -16,6 +16,23 @@ from app.storage.trajectory.sft_quality import _is_accepted, _sft_export_blocker
 _log = logging.getLogger("decisiondoc.storage.trajectory")
 
 
+def _trajectory_search_text(record: dict[str, Any]) -> str:
+    input_data = record.get("input") if isinstance(record.get("input"), dict) else {}
+    requirements = input_data.get("requirements") if isinstance(input_data.get("requirements"), dict) else {}
+    skill = record.get("skill") if isinstance(record.get("skill"), dict) else {}
+    feedback = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
+    fields = (
+        record.get("trajectory_id"),
+        record.get("request_id"),
+        requirements.get("title"),
+        feedback.get("reviewer"),
+        record.get("task_type"),
+        skill.get("name"),
+        record.get("provider"),
+    )
+    return "\n".join(str(value) for value in fields if value).casefold()
+
+
 class TrajectoryCoreMixin:
     """Init, save/get/review, stats, and shared tenant file-path plumbing."""
 
@@ -48,14 +65,18 @@ class TrajectoryCoreMixin:
         task_type: str | None = None,
         human_review_status: str | None = None,
         accepted_only: bool = False,
+        query: str | None = None,
+        order: str = "newest",
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Return newest matching records up to ``limit``."""
+        """Return matching records in the requested order up to ``limit``."""
         records, _ = self.get_record_page(
             tenant_id=tenant_id,
             task_type=task_type,
             human_review_status=human_review_status,
             accepted_only=accepted_only,
+            query=query,
+            order=order,
             offset=0,
             limit=limit,
         )
@@ -68,10 +89,14 @@ class TrajectoryCoreMixin:
         task_type: str | None = None,
         human_review_status: str | None = None,
         accepted_only: bool = False,
+        query: str | None = None,
+        order: str = "newest",
         offset: int = 0,
         limit: int = 100,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Return one page measured from the newest match and its filtered total."""
+        """Return one ordered page and its filtered total."""
+        if order not in {"newest", "oldest"}:
+            raise ValueError("order must be 'newest' or 'oldest'.")
         with self._lock:
             records = self._read_records_unlocked(tenant_id)
         if task_type:
@@ -80,10 +105,15 @@ class TrajectoryCoreMixin:
             records = [item for item in records if item.get("human_review_status") == human_review_status]
         if accepted_only:
             records = [item for item in records if _is_accepted(item)]
+        normalized_query = str(query or "").strip().casefold()
+        if normalized_query:
+            records = [item for item in records if normalized_query in _trajectory_search_text(item)]
 
         total = len(records)
         page_offset = max(0, offset)
         page_limit = max(1, limit)
+        if order == "oldest":
+            return records[page_offset : page_offset + page_limit], total
         end = max(0, total - page_offset)
         start = max(0, end - page_limit)
         return records[start:end], total

@@ -80,7 +80,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
 
 
-def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(tmp_path, monkeypatch) -> None:
+def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requested_order(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     created_ids: list[str] = []
     for index in range(5):
@@ -145,12 +145,38 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
             "limit": 2,
         },
     )
+    title_search = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"query": "이력 페이지 검증 3"},
+    )
+    reviewer_search = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"query": "PAGINATION-REVIEWER"},
+    )
+    oldest = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"order": "oldest", "offset": 0, "limit": 2},
+    )
+    combined = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={
+            "query": "이력 페이지 검증 5",
+            "human_review_status": "accepted",
+            "order": "oldest",
+        },
+    )
 
     assert first.status_code == 200
     first_body = first.json()
     assert first_body["total"] == 5
     assert first_body["offset"] == 0
     assert first_body["limit"] == 2
+    assert first_body["query"] == ""
+    assert first_body["order"] == "newest"
     assert first_body["returned"] == 2
     assert first_body["has_more"] is True
     assert [item["trajectory_id"] for item in first_body["trajectories"]] == created_ids[3:]
@@ -169,6 +195,16 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
     assert [item["trajectory_id"] for item in accepted.json()["trajectories"]] == [created_ids[0], created_ids[-1]]
     assert accepted_evidence.json()["total"] == 1
     assert accepted_evidence.json()["trajectories"][0]["trajectory_id"] == created_ids[-1]
+    assert title_search.json()["query"] == "이력 페이지 검증 3"
+    assert [item["trajectory_id"] for item in title_search.json()["trajectories"]] == [created_ids[2]]
+    assert [item["trajectory_id"] for item in reviewer_search.json()["trajectories"]] == [
+        created_ids[0],
+        created_ids[-1],
+    ]
+    assert oldest.json()["order"] == "oldest"
+    assert [item["trajectory_id"] for item in oldest.json()["trajectories"]] == created_ids[:2]
+    assert combined.json()["total"] == 1
+    assert combined.json()["trajectories"][0]["trajectory_id"] == created_ids[-1]
 
     invalid = client.get(
         "/api/agent/document-ops/trajectories",
@@ -176,6 +212,18 @@ def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(
         params={"offset": -1, "limit": 2},
     )
     assert invalid.status_code == 422
+    invalid_order = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"order": "unsupported"},
+    )
+    long_query = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"query": "x" * 121},
+    )
+    assert invalid_order.status_code == 422
+    assert long_query.status_code == 422
 
 
 def test_document_ops_run_supports_develop_quality_improvement(tmp_path, monkeypatch) -> None:

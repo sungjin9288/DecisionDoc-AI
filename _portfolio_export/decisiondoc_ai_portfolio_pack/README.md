@@ -31,7 +31,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side hash confirmation과 append-only audit을 통과한 export만 local review pack으로 연결 |
-| DocumentOps 검토 작업대 | tenant-scoped trajectory를 필터링해 최신순으로 탐색하고, 전체 입력·초안·근거·QA·review history를 확인한 뒤 검토자 메모와 사람 품질 점수를 기록해 로컬 export/freeze/governance 증적으로 연결 |
+| DocumentOps 검토 작업대 | tenant-scoped trajectory를 제목·ID·검토자로 검색하고 작업·상태를 필터링해 최신순 또는 오래된 순으로 탐색하며, 전체 입력·초안·근거·QA·review history를 확인한 뒤 검토자 메모와 사람 품질 점수를 기록해 로컬 export/freeze/governance 증적으로 연결 |
 
 ---
 

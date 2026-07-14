@@ -6192,6 +6192,15 @@
             <option value="rejected">반려</option>
           </select>
         </label>
+        <label class="docops-field">검색
+          <input id="docops-trajectory-query" class="gov-input" type="search" autocomplete="off" maxlength="120" placeholder="제목, trajectory/request ID, 검토자">
+        </label>
+        <label class="docops-field">정렬
+          <select id="docops-trajectory-order" class="gov-input">
+            <option value="newest">최신 기록부터</option>
+            <option value="oldest">오래된 기록부터</option>
+          </select>
+        </label>
       </div>
       <div id="document-ops-trajectories" style="display:flex;flex-direction:column;gap:.7rem;"></div>
     </div>
@@ -7025,6 +7034,7 @@
   let _documentOpsLastResult = null;
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
+  let _documentOpsTrajectorySearchTimer = null;
 
   function documentOpsLines(value) {
     return String(value || '')
@@ -7222,8 +7232,13 @@
   function resetDocumentOpsTrajectoryFilters() {
     const taskFilter = $id('docops-trajectory-task-filter');
     const reviewFilter = $id('docops-trajectory-review-filter');
+    const queryInput = $id('docops-trajectory-query');
+    const orderSelect = $id('docops-trajectory-order');
     if (taskFilter) taskFilter.value = '';
     if (reviewFilter) reviewFilter.value = '';
+    if (queryInput) queryInput.value = '';
+    if (orderSelect) orderSelect.value = 'newest';
+    clearTimeout(_documentOpsTrajectorySearchTimer);
   }
 
   async function loadDocumentOpsTrajectories({ resetPage = false, resetFilters = false } = {}) {
@@ -7263,8 +7278,12 @@
       });
       const taskType = String($id('docops-trajectory-task-filter')?.value || '').trim();
       const reviewStatus = String($id('docops-trajectory-review-filter')?.value || '').trim();
+      const query = String($id('docops-trajectory-query')?.value || '').trim();
+      const order = String($id('docops-trajectory-order')?.value || 'newest').trim();
       if (taskType) params.set('task_type', taskType);
       if (reviewStatus) params.set('human_review_status', reviewStatus);
+      if (query) params.set('query', query);
+      params.set('order', order);
       const res = await fetch(`/api/agent/document-ops/trajectories?${params}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -7272,6 +7291,7 @@
       const items = Array.isArray(data.trajectories) ? data.trajectories : [];
       const total = Number(data.total || 0);
       const responseOffset = Number(data.offset || 0);
+      const responseOrder = data.order === 'oldest' ? 'oldest' : 'newest';
       if (!items.length && total > 0 && responseOffset > 0) {
         const lastPageOffset = Math.floor((total - 1) / DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE)
           * DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE;
@@ -7287,9 +7307,11 @@
           <button type="button" class="action-btn" data-docops-trajectory-page="next" aria-label="다음 trajectory 페이지" title="다음 페이지" ${data.has_more === true ? '' : 'disabled'} style="width:32px;height:32px;padding:0;">→</button>
         </div>
       </div>`;
-      const list = items.length
-        ? items.slice().reverse().map(renderDocumentOpsTrajectoryCard).join('')
-        : `<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">${total ? '현재 페이지에 표시할 trajectory가 없습니다.' : '저장된 trajectory가 없습니다.'}</div>`;
+      const displayedItems = responseOrder === 'oldest' ? items : items.slice().reverse();
+      const hasActiveFilter = Boolean(taskType || reviewStatus || query);
+      const list = displayedItems.length
+        ? displayedItems.map(renderDocumentOpsTrajectoryCard).join('')
+        : `<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">${total ? '현재 페이지에 표시할 trajectory가 없습니다.' : hasActiveFilter ? '검색·필터 조건에 맞는 trajectory가 없습니다.' : '저장된 trajectory가 없습니다.'}</div>`;
       el.innerHTML = `${pager}${list}`;
       wireDocumentOpsTrajectoryReviewActions(el);
       wireDocumentOpsTrajectoryPageActions(el);
@@ -8440,11 +8462,20 @@
     });
   });
 
-  ['docops-trajectory-task-filter', 'docops-trajectory-review-filter'].forEach(id => {
-    $id(id)?.addEventListener('change', () => {
-      _documentOpsTrajectoryOffset = 0;
-      loadDocumentOpsTrajectoryList(0);
-    });
+  function reloadDocumentOpsTrajectoriesFromFirstPage() {
+    clearTimeout(_documentOpsTrajectorySearchTimer);
+    _documentOpsTrajectorySearchTimer = null;
+    _documentOpsTrajectoryOffset = 0;
+    loadDocumentOpsTrajectoryList(0);
+  }
+
+  ['docops-trajectory-task-filter', 'docops-trajectory-review-filter', 'docops-trajectory-order'].forEach(id => {
+    $id(id)?.addEventListener('change', reloadDocumentOpsTrajectoriesFromFirstPage);
+  });
+
+  $id('docops-trajectory-query')?.addEventListener('input', () => {
+    clearTimeout(_documentOpsTrajectorySearchTimer);
+    _documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250);
   });
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */

@@ -375,7 +375,7 @@ def test_bundle_selection_enables_generate_button(page):
     assert not page.locator("#generate-btn").is_disabled()
 
 
-def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_overflow(page, tmp_path):
+def test_document_ops_trajectory_history_searches_filters_and_paginates_without_mobile_overflow(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []
     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
@@ -426,6 +426,29 @@ def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_ov
     assert page.get_by_role("button", name="이전 trajectory 페이지").is_disabled()
     assert not page.get_by_role("button", name="다음 trajectory 페이지").is_disabled()
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-desktop.png"), full_page=True)
+
+    page.fill("#docops-trajectory-query", "브라우저 이력 2")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "1건 중 1-1", timeout_ms=10000)
+    assert cards.count() == 1
+    assert "브라우저 이력 2" in cards.first.inner_text()
+
+    page.fill("#docops-trajectory-query", "E2E-REVIEWER")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "2건 중 1-2", timeout_ms=10000)
+    assert cards.count() == 2
+    assert "브라우저 이력 12" in cards.first.inner_text()
+
+    page.fill("#docops-trajectory-query", "")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 1-10", timeout_ms=10000)
+    page.select_option("#docops-trajectory-order", "oldest")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 1-10", timeout_ms=10000)
+    assert "브라우저 이력 1" in cards.first.inner_text()
+    page.get_by_role("button", name="다음 trajectory 페이지").click()
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 11-13", timeout_ms=10000)
+    assert "브라우저 이력 11" in cards.first.inner_text()
+
+    page.select_option("#docops-trajectory-order", "newest")
+    _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 1-10", timeout_ms=10000)
+    assert "브라우저 이력 13" in cards.first.inner_text()
 
     page.get_by_role("button", name="다음 trajectory 페이지").click()
     _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 11-13", timeout_ms=10000)

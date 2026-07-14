@@ -52,6 +52,8 @@ class DocumentOpsService:
         task_type: str | None = None,
         human_review_status: str | None = None,
         accepted_only: bool = False,
+        query: str | None = None,
+        order: str = "newest",
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, Any]:
@@ -60,6 +62,8 @@ class DocumentOpsService:
             task_type=task_type,
             human_review_status=human_review_status,
             accepted_only=accepted_only,
+            query=query,
+            order=order,
             offset=offset,
             limit=limit,
         )
@@ -69,6 +73,8 @@ class DocumentOpsService:
             "total": total,
             "offset": offset,
             "limit": limit,
+            "query": str(query or "").strip(),
+            "order": order,
             "returned": returned,
             "has_more": offset + returned < total,
         }

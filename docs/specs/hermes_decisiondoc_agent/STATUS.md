@@ -67,8 +67,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   explicitly instead of falling back to a generic operator identity
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
-- trajectory history uses tenant/filter-aware totals, task/review filters, and 10-record
-  newest-first browser pages so older review evidence remains reachable
+- trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
+  task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -79,8 +79,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   controls while active so they do not cover mobile inputs
 
 Desktop and 390-pixel mobile browser checks used a mock provider and temporary local storage. A
-13-record trajectory history showed the newest 10 records on the first page and the remaining
-three on the next page. Task/review filters returned the expected evidence and accepted/pending
+13-record trajectory history showed the newest or oldest 10 records on the first page and the
+remaining three on the next page. Title/reviewer search and task/review filters returned the expected
 sets, reset pagination, ignored an intentionally delayed stale response during rapid filter changes,
 and returned to the last valid page after a filtered record changed state.
 Controls remained correct with no horizontal overflow or browser console error. This check did not
