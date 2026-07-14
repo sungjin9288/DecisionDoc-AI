@@ -27,6 +27,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
+def _inclusive_date_end(value: str) -> str:
+    """Expand a date-only upper bound so that it includes the full UTC day."""
+    if len(value) != 10:
+        return value
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return value
+    return f"{value}T23:59:59.999999+00:00"
+
+
+def _safe_csv_cell(value: Any) -> Any:
+    """Prevent spreadsheet software from evaluating user-controlled cells."""
+    if not isinstance(value, str):
+        return value
+    if value.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{value}"
+    return value
+
+
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 ACTION_TYPES: dict[str, str] = {
@@ -273,21 +293,56 @@ class AuditStore:
             filters={"action": "user.login_fail", "date_from": cutoff},
         )
 
-    def export_csv(self, tenant_id: str, date_from: str, date_to: str) -> str:
-        """Return all log entries in the date range as a CSV string."""
-        entries = self.query(
-            tenant_id, filters={"date_from": date_from, "date_to": date_to}
+    def export_csv(
+        self,
+        tenant_id: str,
+        date_from: str,
+        date_to: str,
+        *,
+        user_id: str | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        result: str | None = None,
+    ) -> str:
+        """Return every matching log entry as an evidence-preserving CSV string."""
+        entries = self.query_all(
+            tenant_id,
+            filters={
+                "user_id": user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "result": result,
+                "date_from": date_from,
+                "date_to": _inclusive_date_end(date_to),
+            },
         )
         output = io.StringIO()
         fieldnames = [
-            "log_id", "timestamp", "user_id", "username", "user_role",
+            "log_id", "tenant_id", "timestamp", "user_id", "username", "user_role",
             "ip_address", "action", "resource_type", "resource_id",
-            "resource_name", "result", "session_id",
+            "resource_name", "result", "session_id", "request_id",
+            "pilot_sha256", "pilot_artifact_count", "pilot_preview_verified",
+            "detail_json",
         ]
         writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for entry in reversed(entries):  # chronological order for CSV
-            writer.writerow(entry)
+            detail = entry.get("detail")
+            detail = detail if isinstance(detail, dict) else {}
+            row = {
+                **entry,
+                "request_id": detail.get("request_id", ""),
+                "pilot_sha256": detail.get("pilot_sha256", ""),
+                "pilot_artifact_count": detail.get("pilot_artifact_count", ""),
+                "pilot_preview_verified": detail.get("pilot_preview_verified", ""),
+                "detail_json": json.dumps(
+                    detail,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            }
+            writer.writerow({key: _safe_csv_cell(value) for key, value in row.items()})
         return output.getvalue()
 
     def get_stats(self, tenant_id: str, days: int = 30) -> dict:

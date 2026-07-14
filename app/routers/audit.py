@@ -62,13 +62,29 @@ async def audit_stats(request: Request, days: int = 30):
 
 
 @router.get("/admin/audit-logs/export")
-async def export_audit_logs(request: Request, date_from: str, date_to: str):
+async def export_audit_logs(
+    request: Request,
+    date_from: str,
+    date_to: str,
+    user_id: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    result: str | None = None,
+):
     """Export audit logs as CSV (admin only)."""
     from app.storage.audit_store import AuditStore
 
     _require_admin(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    csv_content = AuditStore(tenant_id).export_csv(tenant_id, date_from, date_to)
+    csv_content = AuditStore(tenant_id).export_csv(
+        tenant_id,
+        date_from,
+        date_to,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        result=result,
+    )
     return Response(
         content=csv_content,
         media_type="text/csv",

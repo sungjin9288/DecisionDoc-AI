@@ -4233,7 +4233,7 @@
     .audit-evidence { margin-top: 4px; color: #cbd5e1; font-family: monospace; font-size: 0.68rem; line-height: 1.45; overflow-wrap: anywhere; }
     .audit-badge {
       padding: 1px 8px; border-radius: 99px;
-      font-size: 0.7rem; font-weight: 600;
+      font-size: 0.7rem; font-weight: 600; white-space: nowrap;
     }
     .audit-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .audit-filters select {
@@ -26891,9 +26891,14 @@ function renderAuditLogs(logs) {
 async function exportAuditLogs() {
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const params = new URLSearchParams({ date_from: monthAgo, date_to: today });
+  const action = document.getElementById('audit-action-filter')?.value || '';
+  const result = document.getElementById('audit-result-filter')?.value || '';
+  if (action) params.set('action', action);
+  if (result) params.set('result', result);
   try {
     const res = await fetch(
-      `/admin/audit-logs/export?date_from=${monthAgo}&date_to=${today}`,
+      `/admin/audit-logs/export?${params}`,
       { headers: getAuthHeaders() }
     );
     if (!res.ok) { showNotification('내보내기 실패', 'error'); return; }

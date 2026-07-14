@@ -1748,6 +1748,10 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "action: document.getElementById('audit-action-filter')?.value || ''" in content
     assert "result: document.getElementById('audit-result-filter')?.value || ''" in content
     assert "$id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs)" in content
+    assert "const params = new URLSearchParams({ date_from: monthAgo, date_to: today });" in content
+    assert "if (action) params.set('action', action);" in content
+    assert "if (result) params.set('result', result);" in content
+    assert "`/admin/audit-logs/export?${params}`" in content
     assert "$id('sso-refresh-btn')?.addEventListener('click', loadSSOConfig)" in content
     assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content
     assert '<option value="report_quality.pilot_preview">' in content
@@ -1757,6 +1761,7 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}" in content
     assert "#audit-log-table { overflow-x: auto; }" in content
     assert "width: 100%; min-width: 760px;" in content
+    assert "font-size: 0.7rem; font-weight: 600; white-space: nowrap;" in content
     assert 'id="ops-panel" style="display:none;margin:2rem auto;max-width:960px;' in content
 
 

@@ -1,6 +1,6 @@
 """tests/test_audit.py — Tests for the ISMS audit logging system.
 
-Coverage (24 tests):
+Coverage:
   AuditStore unit   : append, query filters (action/user/result/date/ip),
                       get_failed_logins, get_user_activity, get_session_activity,
                       get_stats, export_csv, corrupted-line recovery,
@@ -20,6 +20,8 @@ Coverage (24 tests):
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import time
@@ -63,7 +65,7 @@ def _auth(login_resp):
 
 def _make_audit_log(tenant_id="system", action="doc.generate", result="success",
                     user_id="u1", username="alice", ip="1.2.3.4",
-                    session_id="sess1", **kwargs):
+                    session_id="sess1", detail=None, **kwargs):
     from app.storage.audit_store import AuditLog
     import uuid
     return AuditLog(
@@ -80,7 +82,7 @@ def _make_audit_log(tenant_id="system", action="doc.generate", result="success",
         resource_id="res-1",
         resource_name="테스트 문서",
         result=result,
-        detail={},
+        detail=detail or {},
         session_id=session_id,
         **kwargs,
     )
@@ -256,6 +258,75 @@ def test_audit_store_export_csv(tmp_path):
     assert "log_id" in csv_str  # header present
     assert "user.login" in csv_str
     assert "alice" in csv_str
+
+
+def test_audit_store_export_csv_preserves_full_pilot_evidence(tmp_path):
+    os.environ["DATA_DIR"] = str(tmp_path)
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("t1")
+    store.append(_make_audit_log(
+        tenant_id="t1",
+        action="report_quality.pilot_export",
+        username="=HYPERLINK(\"https://example.invalid\")",
+        detail={
+            "request_id": "pilot-request-1234",
+            "pilot_sha256": "a" * 64,
+            "pilot_artifact_count": 3,
+            "pilot_preview_verified": True,
+            "training_execution_started": False,
+        },
+    ))
+    for index in range(1000):
+        store.append(_make_audit_log(
+            tenant_id="t1",
+            action="doc.view",
+            user_id=f"user-{index}",
+        ))
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rows = list(csv.DictReader(io.StringIO(store.export_csv("t1", today, today))))
+
+    assert len(rows) == 1001
+    pilot = rows[0]
+    assert pilot["tenant_id"] == "t1"
+    assert pilot["username"].startswith("'=")
+    assert pilot["request_id"] == "pilot-request-1234"
+    assert pilot["pilot_sha256"] == "a" * 64
+    assert pilot["pilot_artifact_count"] == "3"
+    assert pilot["pilot_preview_verified"] == "True"
+    assert json.loads(pilot["detail_json"])["training_execution_started"] is False
+
+
+def test_audit_store_export_csv_applies_action_and_result_filters(tmp_path):
+    os.environ["DATA_DIR"] = str(tmp_path)
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("t1")
+    store.append(_make_audit_log(
+        tenant_id="t1",
+        action="report_quality.pilot_export",
+        result="success",
+    ))
+    store.append(_make_audit_log(
+        tenant_id="t1",
+        action="report_quality.pilot_export",
+        result="blocked",
+    ))
+    store.append(_make_audit_log(tenant_id="t1", action="doc.view", result="success"))
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rows = list(csv.DictReader(io.StringIO(store.export_csv(
+        "t1",
+        today,
+        today,
+        action="report_quality.pilot_export",
+        result="success",
+    ))))
+
+    assert [(row["action"], row["result"]) for row in rows] == [
+        ("report_quality.pilot_export", "success"),
+    ]
 
 
 def test_audit_store_corrupted_line_recovery(tmp_path):
@@ -1419,7 +1490,48 @@ def test_api_audit_export_csv(tmp_path, monkeypatch):
     )
     assert res.status_code == 200
     assert "text/csv" in res.headers.get("content-type", "")
-    assert "log_id" in res.text  # CSV header
+    rows = list(csv.DictReader(io.StringIO(res.text)))
+    assert rows
+    assert "detail_json" in rows[0]
+
+
+def test_api_audit_export_csv_filters_pilot_evidence(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    from app.storage.audit_store import AuditStore
+    store = AuditStore("system")
+    store.append(_make_audit_log(
+        tenant_id="system",
+        action="report_quality.pilot_export",
+        result="success",
+        detail={
+            "request_id": "pilot-request-api",
+            "pilot_sha256": "b" * 64,
+            "pilot_artifact_count": 4,
+            "pilot_preview_verified": True,
+        },
+    ))
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    res = client.get(
+        "/admin/audit-logs/export",
+        params={
+            "date_from": today,
+            "date_to": today,
+            "action": "report_quality.pilot_export",
+            "result": "success",
+        },
+        headers=_auth(login),
+    )
+
+    assert res.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(res.text)))
+    assert len(rows) == 1
+    assert rows[0]["request_id"] == "pilot-request-api"
+    assert rows[0]["pilot_sha256"] == "b" * 64
+    assert rows[0]["pilot_artifact_count"] == "4"
+    assert rows[0]["pilot_preview_verified"] == "True"
 
 
 def test_api_audit_failed_logins(tmp_path, monkeypatch):
