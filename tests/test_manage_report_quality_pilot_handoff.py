@@ -180,6 +180,7 @@ def test_reviewed_pilot_handoff_is_deterministic_and_self_verifying(tmp_path):
     assert first["source_bound"] is False
     assert first["training_authorized"] is False
     assert first["summary_path"] == "HANDOFF_SUMMARY.md"
+    assert len(first["summary_sha256"]) == 64
     assert first_path.read_bytes() == second_path.read_bytes()
     assert first["package_sha256"] == second["package_sha256"]
     assert handoff.verify_report_quality_pilot_handoff(first_path.read_bytes())["ok"] is True
@@ -350,6 +351,61 @@ def test_reviewed_pilot_handoff_rejects_stale_or_unsafe_inputs(tmp_path):
         )
 
 
+def test_reviewed_pilot_handoff_writes_only_a_verified_summary(tmp_path):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_summary_output")
+    pack_dir, jsonl_path = _reviewed_pack(tmp_path)
+    package_path = tmp_path / "handoff.zip"
+    handoff.create_report_quality_pilot_handoff(
+        pack_dir=pack_dir,
+        jsonl_path=jsonl_path,
+        output_path=package_path,
+    )
+    package_bytes = package_path.read_bytes()
+    summary_path = tmp_path / "handoff-summary.md"
+
+    result = handoff.write_verified_handoff_summary(
+        package_bytes,
+        output_path=summary_path,
+    )
+
+    with zipfile.ZipFile(package_path) as archive:
+        expected_summary = archive.read("HANDOFF_SUMMARY.md")
+    assert summary_path.read_bytes() == expected_summary
+    assert result["summary_output_path"] == str(summary_path)
+    assert result["summary_sha256"] == hashlib.sha256(expected_summary).hexdigest()
+
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        handoff.write_verified_handoff_summary(
+            package_bytes,
+            output_path=summary_path,
+        )
+    with pytest.raises(ValueError, match="must use the .md extension"):
+        handoff.write_verified_handoff_summary(
+            package_bytes,
+            output_path=tmp_path / "summary.txt",
+        )
+
+    summary_link = tmp_path / "summary-link.md"
+    summary_link.symlink_to(tmp_path / "summary-target.md")
+    with pytest.raises(ValueError, match="symlink handoff summary outputs"):
+        handoff.write_verified_handoff_summary(
+            package_bytes,
+            output_path=summary_link,
+        )
+
+    tampered_package = _rewrite_zip(
+        package_bytes,
+        {"HANDOFF_SUMMARY.md": b"tampered\n"},
+    )
+    tampered_output = tmp_path / "tampered-summary.md"
+    with pytest.raises(ValueError, match="entry SHA-256 mismatch"):
+        handoff.write_verified_handoff_summary(
+            tampered_package,
+            output_path=tampered_output,
+        )
+    assert not tampered_output.exists()
+
+
 def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
     handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_cli")
     pack_dir, jsonl_path = _reviewed_pack(tmp_path)
@@ -365,7 +421,14 @@ def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
         "--json",
     ])
     created = json.loads(capsys.readouterr().out)
-    verify_exit = handoff.main(["verify", str(package_path), "--json"])
+    summary_output = tmp_path / "cli-summary.md"
+    verify_exit = handoff.main([
+        "verify",
+        str(package_path),
+        "--summary-output",
+        str(summary_output),
+        "--json",
+    ])
     verified = json.loads(capsys.readouterr().out)
     human_verify_exit = handoff.main(["verify", str(package_path)])
     human_output = capsys.readouterr().out
@@ -376,4 +439,7 @@ def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
     assert created["package_sha256"] == verified["package_sha256"]
     assert verified["artifact_count"] == 3
     assert verified["training_authorized"] is False
+    assert verified["summary_output_path"] == str(summary_output)
+    assert summary_output.is_file()
     assert "summary_path=HANDOFF_SUMMARY.md" in human_output
+    assert f"summary_sha256={verified['summary_sha256']}" in human_output

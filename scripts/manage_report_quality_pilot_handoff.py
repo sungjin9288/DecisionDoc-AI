@@ -660,7 +660,7 @@ def _verify_source_evidence(
             raise ValueError("source package manifest SHA-256 does not match the source manifest")
 
 
-def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
+def _validate_report_quality_pilot_handoff(content: bytes) -> tuple[dict[str, Any], dict[str, bytes]]:
     entries = _read_archive(content)
     if MANIFEST_NAME not in entries:
         raise ValueError("reviewed pilot handoff manifest is missing")
@@ -686,7 +686,7 @@ def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
     expected_boundary = {key: False for key in NO_EXTERNAL_ACTION_KEYS}
     if manifest.get("external_action_boundary") != expected_boundary:
         raise ValueError("handoff external action boundary is invalid")
-    return {
+    result = {
         "report_type": "report_quality_pilot_review_handoff_validation",
         "ok": True,
         "batch_id": manifest.get("batch_id"),
@@ -696,9 +696,31 @@ def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
         "review_manifest_sha256": manifest["review"]["manifest_sha256"],
         "decision_receipt_sha256": manifest["review"]["decision_receipt_sha256"],
         "summary_path": manifest["summary"]["path"],
+        "summary_sha256": manifest["summary"]["sha256"],
         "source_bound": manifest.get("pack_binding", {}).get("source_manifest") is not None,
         "training_authorized": False,
     }
+    return result, entries
+
+
+def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
+    result, _ = _validate_report_quality_pilot_handoff(content)
+    return result
+
+
+def write_verified_handoff_summary(content: bytes, *, output_path: Path) -> dict[str, Any]:
+    result, entries = _validate_report_quality_pilot_handoff(content)
+    expanded = output_path.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("symlink handoff summary outputs are not allowed")
+    resolved = expanded.resolve()
+    if resolved.suffix.lower() != ".md":
+        raise ValueError("handoff summary output must use the .md extension")
+    if resolved.exists():
+        raise ValueError(f"refusing to overwrite existing handoff summary: {resolved}")
+    summary_bytes = entries[SUMMARY_NAME]
+    _write_bytes_atomic(resolved, summary_bytes)
+    return {**result, "summary_output_path": str(resolved)}
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -713,6 +735,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     verify_parser = subparsers.add_parser("verify", help="Verify one reviewed pilot handoff ZIP.")
     verify_parser.add_argument("package", type=Path)
+    verify_parser.add_argument("--summary-output", type=Path, default=None)
     verify_parser.add_argument("--json", action="store_true")
     return parser
 
@@ -729,11 +752,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             package_path = args.package.expanduser()
             package_bytes = _regular_file(package_path, label="reviewed pilot handoff")
+            verification = (
+                write_verified_handoff_summary(
+                    package_bytes,
+                    output_path=args.summary_output,
+                )
+                if args.summary_output is not None
+                else verify_report_quality_pilot_handoff(package_bytes)
+            )
             result = {
                 "package_path": str(package_path.resolve()),
                 "package_sha256": _sha256(package_bytes),
                 "package_size_bytes": len(package_bytes),
-                **verify_report_quality_pilot_handoff(package_bytes),
+                **verification,
             }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         if getattr(args, "json", False):
@@ -753,10 +784,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("PASS reviewed Report Quality pilot handoff verified")
         print(f"artifact_count={result['artifact_count']}")
         print(f"summary_path={result['summary_path']}")
+        print(f"summary_sha256={result['summary_sha256']}")
         print(f"jsonl_sha256={result['jsonl_sha256']}")
         print(f"package_sha256={result['package_sha256']}")
         if result.get("output_path"):
             print(f"output_path={result['output_path']}")
+        if result.get("summary_output_path"):
+            print(f"summary_output_path={result['summary_output_path']}")
         print("training_boundary=not_authorized")
     return 0
 
