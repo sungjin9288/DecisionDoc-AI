@@ -24,12 +24,15 @@ from app.services.report_quality_learning import (  # noqa: E402
     MIN_REQUIRED_DIMENSION_SCORE,
     MIN_VISUAL_DESIGN_SCORE,
     REQUIRED_DIMENSIONS,
+    validate_correction_artifact,
 )
 from scripts.apply_report_quality_review_decisions import (  # noqa: E402
     ALLOWED_DECISIONS,
     ALLOWED_SCAN_VALUES,
 )
+from scripts.create_report_quality_review_sheet import artifact_required_actions  # noqa: E402
 from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    PilotPackSnapshot,
     load_pilot_pack,
     require_current_pack_binding,
 )
@@ -49,6 +52,21 @@ DIMENSION_LABELS = {
     "public_sector_tone": "공공 문서 톤",
     "export_readiness": "내보내기 준비도",
     "learning_value": "학습 가치",
+}
+
+ACTION_LABELS = {
+    "fix_validation_errors": "검증 오류 수정",
+    "human_decision_pending": "사람 검토 결정 기록",
+    "confirm_final_approval": "최종 승인 상태 확인",
+    "confirm_learning_opt_in": "학습 활용 동의 확인",
+    "fill_reviewer": "검수자 입력",
+    "fill_reviewed_at": "검토 시각 입력",
+    "run_forbidden_terms_scan": "금지어 scan 실행",
+    "run_privacy_security_scan": "개인정보·보안 scan 실행",
+    "score_overall_quality": "종합 품질 점수 입력",
+    "resolve_hard_failures": "Hard failure 해소",
+    "resolve_or_document_todo_claims": "미해결 claim 정리",
+    "remove_placeholders": "TODO placeholder 제거",
 }
 
 
@@ -109,7 +127,10 @@ def _resolve_pack_file(pack_dir: Path, path: Path | None, default_name: str) -> 
     return resolved
 
 
-def _load_decision_template(pack_dir: Path, decisions_path: Path) -> dict[str, Any]:
+def _load_decision_template(
+    pack_dir: Path,
+    decisions_path: Path,
+) -> tuple[dict[str, Any], PilotPackSnapshot]:
     payload = json.loads(decisions_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("review decision template root must be an object")
@@ -137,7 +158,7 @@ def _load_decision_template(pack_dir: Path, decisions_path: Path) -> dict[str, A
         for scan_key in ("forbidden_terms_scan", "privacy_security_scan"):
             if item.get(scan_key) not in ALLOWED_SCAN_VALUES:
                 raise ValueError(f"review decision template decisions[{index}].{scan_key} is invalid")
-    return payload
+    return payload, snapshot
 
 
 def _select(name: str, value: Any, options: Sequence[tuple[str, str]]) -> str:
@@ -194,7 +215,123 @@ def _change_request_rows(value: Any) -> str:
     )
 
 
-def _decision_section(decision: dict[str, Any], index: int) -> str:
+def _action_label(action: str) -> str:
+    if action in ACTION_LABELS:
+        return ACTION_LABELS[action]
+    if action.startswith("score_"):
+        dimension = action.removeprefix("score_")
+        return f"{DIMENSION_LABELS.get(dimension, dimension)} 점수 입력"
+    return action
+
+
+def _notice_list(title: str, values: list[Any], *, tone: str) -> str:
+    if not values:
+        return ""
+    items = "".join(f"<li>{_escape(value)}</li>" for value in values)
+    return f"<section class='notice notice-{tone}'><h4>{_escape(title)}</h4><ul>{items}</ul></section>"
+
+
+def _outline_rows(value: Any, *, corrected: bool) -> str:
+    rows: list[str] = []
+    for index, item in enumerate(_as_list(value)):
+        if not isinstance(item, dict):
+            continue
+        details = []
+        if corrected:
+            if item.get("layout"):
+                details.append(f"레이아웃: {_text(item['layout'])}")
+            if item.get("visual_asset"):
+                details.append(f"시각자료: {_text(item['visual_asset'])}")
+        elif item.get("issue"):
+            details.append(f"이슈: {_text(item['issue'])}")
+        detail_html = "".join(f"<small>{_escape(detail)}</small>" for detail in details)
+        rows.append(
+            "<li>"
+            f"<strong>{_escape(item.get('slide_no') or index + 1)}. "
+            f"{_escape(item.get('title') or '제목 미기록')}</strong>"
+            f"<span>{_escape(item.get('message') or '핵심 메시지 미기록')}</span>"
+            f"{detail_html}</li>"
+        )
+    if not rows:
+        return "<p class='empty-state'>장표 요약이 없습니다.</p>"
+    return f"<ol class='outline-list'>{''.join(rows)}</ol>"
+
+
+def _claim_rows(value: Any) -> str:
+    rows: list[str] = []
+    for item in _as_list(value):
+        if not isinstance(item, dict):
+            continue
+        metadata = " · ".join(
+            part
+            for part in (
+                _text(item.get("status")).strip(),
+                _text(item.get("evidence_reference")).strip(),
+            )
+            if part
+        )
+        rows.append(
+            "<li>"
+            f"<strong>{_escape(item.get('claim') or 'claim 미기록')}</strong>"
+            f"<small>{_escape(metadata or '상태·근거 미기록')}</small>"
+            "</li>"
+        )
+    if not rows:
+        return "<p class='empty-state'>표시할 claim이 없습니다.</p>"
+    return f"<ul class='claim-list'>{''.join(rows)}</ul>"
+
+
+def _review_evidence(payload: dict[str, Any], decision: dict[str, Any]) -> str:
+    workflow = _as_dict(payload.get("workflow_reference"))
+    before = _as_dict(payload.get("before"))
+    after = _as_dict(payload.get("after"))
+    validation = validate_correction_artifact(payload)
+    actions = artifact_required_actions(payload, validation)
+    if decision.get("decision") == "pending" and "human_decision_pending" not in actions:
+        actions = sorted([*actions, "human_decision_pending"])
+    action_items = "".join(f"<li>{_escape(_action_label(action))}</li>" for action in actions)
+    if not action_items:
+        action_items = "<li>추가 조치 없음</li>"
+    validation_errors = list(validation.get("errors") or [])
+    validation_warnings = list(validation.get("warnings") or [])
+    source_status = "ready" if validation.get("ready_for_learning") else "not ready"
+    validation_status = "valid" if validation.get("ok") else "invalid"
+    validation_tone = "pass" if validation.get("ok") else "error"
+    source_tone = "pass" if validation.get("ready_for_learning") else "pending"
+    return f"""<section class="review-evidence" aria-label="검수 판단 근거">
+      <header class="evidence-header">
+        <div><p class="section-label">Review evidence</p><h3>교정 내용과 검증 상태</h3></div>
+        <div class="evidence-status"><span data-tone="{validation_tone}">{_escape(validation_status)}</span><span data-tone="{source_tone}">{_escape(source_status)}</span></div>
+      </header>
+      <dl class="workflow-state">
+        <dt>Workflow 상태</dt><dd>{_escape(workflow.get('workflow_status') or '미기록')}</dd>
+        <dt>Learning opt-in</dt><dd>{'yes' if workflow.get('learning_opt_in') is True else 'no'}</dd>
+        <dt>Final reference</dt><dd>{_escape(after.get('final_output_reference') or '미기록')}</dd>
+      </dl>
+      <section class="required-actions"><h4>필요한 조치</h4><ul>{action_items}</ul></section>
+      {_notice_list('Validation errors', validation_errors, tone='error')}
+      {_notice_list('Validation warnings', validation_warnings, tone='warning')}
+      <div class="evidence-compare">
+        <article>
+          <p class="section-label">Before</p><h4>교정 전</h4>
+          <p class="planning-summary">{_escape(before.get('planning_summary') or '기획 요약이 없습니다.')}</p>
+          <h5>장표 구조</h5>{_outline_rows(before.get('slide_outline_summary'), corrected=False)}
+          <h5>검토 대상 claim</h5>{_claim_rows(before.get('visible_claims'))}
+        </article>
+        <article>
+          <p class="section-label">After</p><h4>교정 후</h4>
+          <p class="planning-summary">{_escape(after.get('planning_summary') or '기획 요약이 없습니다.')}</p>
+          <h5>장표 구조</h5>{_outline_rows(after.get('slide_outline_summary'), corrected=True)}
+        </article>
+      </div>
+    </section>"""
+
+
+def _decision_section(
+    decision: dict[str, Any],
+    payload: dict[str, Any],
+    index: int,
+) -> str:
     artifact_id = _text(decision.get("artifact_id"))
     previous = _text(decision.get("previous_decision")) or "pending"
     decision_options = (
@@ -216,6 +353,8 @@ def _decision_section(decision: dict[str, Any], index: int) -> str:
           <a href="drafts/{quote(artifact_id, safe='')}.json">원본 draft</a>
         </div>
       </header>
+
+      {_review_evidence(payload, decision)}
 
       <div class="primary-fields">
         <label><span>검토 결정</span>{_select('decision', decision.get('decision'), decision_options)}</label>
@@ -348,6 +487,7 @@ WORKSPACE_SCRIPT = """<script>
 def render_report_quality_review_workspace(
     *,
     decision_file: dict[str, Any],
+    draft_payloads: dict[str, dict[str, Any]],
     pack_dir: Path,
 ) -> str:
     decisions = [item for item in _as_list(decision_file.get("decisions")) if isinstance(item, dict)]
@@ -369,7 +509,14 @@ def render_report_quality_review_workspace(
         },
         "required_dimensions": list(REQUIRED_DIMENSIONS),
     }
-    sections = "".join(_decision_section(decision, index) for index, decision in enumerate(decisions))
+    sections = "".join(
+        _decision_section(
+            decision,
+            draft_payloads[_text(decision.get("artifact_id"))],
+            index,
+        )
+        for index, decision in enumerate(decisions)
+    )
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -386,7 +533,7 @@ def render_report_quality_review_workspace(
     .shell {{ width:min(1120px,calc(100vw - 40px)); margin:0 auto 72px; }}
     .page-header {{ display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:36px 0 24px; border-bottom:1px solid var(--strong); }}
     .eyebrow,.artifact-order {{ margin:0 0 6px; color:var(--accent-dark); font-size:12px; font-weight:800; text-transform:uppercase; }}
-    h1 {{ margin:0 0 8px; font-size:30px; line-height:1.25; }} h2 {{ margin:0 0 5px; font-size:20px; overflow-wrap:anywhere; }}
+    h1 {{ margin:0 0 8px; font-size:30px; line-height:1.25; }} h2 {{ margin:0 0 5px; font-size:20px; overflow-wrap:anywhere; }} h3 {{ margin:0; font-size:17px; }} h4 {{ margin:0; font-size:14px; }} h5 {{ margin:18px 0 8px; font-size:12px; }}
     p {{ line-height:1.55; }} .page-header p:not(.eyebrow),.artifact-header p:not(.artifact-order) {{ margin:0; color:var(--muted); font-size:13px; }}
     .header-links,.artifact-links {{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }}
     .binding {{ display:grid; grid-template-columns:160px minmax(0,1fr); margin:0; padding:18px 0; border-bottom:1px solid var(--strong); }}
@@ -395,6 +542,15 @@ def render_report_quality_review_workspace(
     .artifact {{ padding:28px 0; border-bottom:1px solid var(--strong); }}
     .artifact-header {{ display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
     .status {{ padding:5px 9px; border-radius:5px; background:#fff4d6; color:#7a4307; font-size:12px; font-weight:800; }}
+    .review-evidence {{ margin-top:24px; padding:20px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }}
+    .evidence-header {{ display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }} .section-label {{ margin:0 0 5px; color:var(--accent-dark); font-size:11px; font-weight:800; text-transform:uppercase; }}
+    .evidence-status {{ display:flex; gap:8px; flex-wrap:wrap; }} .evidence-status span {{ padding:4px 8px; border-radius:5px; font-size:11px; font-weight:800; }} .evidence-status span[data-tone="pass"] {{ background:#e9f6ef; color:#166534; }} .evidence-status span[data-tone="pending"] {{ background:#fff4d6; color:#7a4307; }} .evidence-status span[data-tone="error"] {{ background:#feecec; color:var(--fail); }}
+    .workflow-state {{ display:grid; grid-template-columns:140px minmax(0,1fr); margin:16px 0 0; }} .workflow-state dt,.workflow-state dd {{ margin:0; padding:7px 0; border-bottom:1px solid var(--line); font-size:12px; }} .workflow-state dt {{ color:var(--muted); font-weight:700; }} .workflow-state dd {{ overflow-wrap:anywhere; }}
+    .required-actions {{ padding:16px 0 0; }} .required-actions ul {{ display:flex; gap:8px 18px; flex-wrap:wrap; margin:8px 0 0; padding:0; list-style:none; }} .required-actions li {{ color:#7a4307; font-size:12px; font-weight:700; }}
+    .notice {{ margin-top:14px; padding:12px 14px; border-left:3px solid var(--strong); background:var(--surface); }} .notice-error {{ border-left-color:var(--fail); }} .notice-warning {{ border-left-color:#a15c00; }} .notice ul {{ margin:7px 0 0; padding-left:18px; }} .notice li {{ margin-top:4px; font-size:12px; line-height:1.5; }}
+    .evidence-compare {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin-top:20px; }} .evidence-compare article {{ min-width:0; padding-top:16px; border-top:1px solid var(--strong); }}
+    .planning-summary {{ min-height:64px; margin:10px 0 0; padding:12px 0; color:#2d3b3e; font-size:13px; line-height:1.6; white-space:pre-wrap; }}
+    .outline-list,.claim-list {{ margin:0; padding:0; list-style:none; }} .outline-list li,.claim-list li {{ display:grid; gap:4px; padding:9px 0; border-bottom:1px solid var(--line); }} .outline-list strong,.claim-list strong {{ font-size:12px; }} .outline-list span {{ font-size:12px; line-height:1.5; }} .outline-list small,.claim-list small {{ color:var(--muted); font-size:11px; line-height:1.45; }} .empty-state {{ margin:0; color:var(--muted); font-size:12px; }}
     .primary-fields {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:22px; }}
     label {{ display:grid; gap:6px; min-width:0; }} label span {{ color:var(--muted); font-size:12px; font-weight:700; }}
     input,select,textarea {{ width:100%; min-height:42px; padding:9px 10px; border:1px solid var(--strong); border-radius:5px; background:var(--surface); color:var(--text); font-size:13px; }}
@@ -406,8 +562,8 @@ def render_report_quality_review_workspace(
     .actions {{ position:sticky; bottom:0; display:flex; justify-content:space-between; gap:20px; align-items:center; padding:16px 0; border-top:1px solid var(--strong); background:color-mix(in srgb,var(--bg) 94%,transparent); backdrop-filter:blur(10px); }}
     .actions p {{ margin:0; color:var(--muted); font-size:13px; }} .actions p[data-tone="pass"] {{ color:var(--pass); }} .actions p[data-tone="fail"] {{ color:var(--fail); }}
     .primary-action {{ min-height:42px; padding:9px 14px; border:1px solid var(--accent); border-radius:5px; background:var(--accent); color:#fff; font-weight:800; cursor:pointer; white-space:nowrap; }} .primary-action:hover {{ background:var(--accent-dark); }}
-    @media (max-width:760px) {{ .primary-fields {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .dimension-row {{ grid-template-columns:140px minmax(0,1fr); }} }}
-    @media (max-width:560px) {{ .shell {{ width:calc(100vw - 24px); }} .page-header,.artifact-header,.actions {{ flex-direction:column; }} .header-links,.artifact-links {{ justify-content:flex-start; }} .binding,.primary-fields,.dimension-row,.list-fields,.change-request-fields {{ grid-template-columns:1fr; }} .binding dt {{ padding-bottom:0; border-bottom:0; }} .binding dd {{ padding-top:4px; }} .actions {{ align-items:stretch; }} .primary-action {{ width:100%; }} h1 {{ font-size:25px; }} }}
+    @media (max-width:760px) {{ .primary-fields {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .dimension-row {{ grid-template-columns:140px minmax(0,1fr); }} .evidence-compare {{ grid-template-columns:1fr; }} }}
+    @media (max-width:560px) {{ .shell {{ width:calc(100vw - 24px); }} .page-header,.artifact-header,.evidence-header,.actions {{ flex-direction:column; }} .header-links,.artifact-links {{ justify-content:flex-start; }} .binding,.workflow-state,.primary-fields,.dimension-row,.list-fields,.change-request-fields {{ grid-template-columns:1fr; }} .binding dt,.workflow-state dt {{ padding-bottom:0; border-bottom:0; }} .binding dd,.workflow-state dd {{ padding-top:4px; }} .actions {{ align-items:stretch; }} .primary-action {{ width:100%; }} h1 {{ font-size:25px; }} }}
   </style>
 </head>
 <body>
@@ -456,9 +612,10 @@ def create_report_quality_review_workspace(
     if resolved_output_path == resolved_decisions_path:
         raise ValueError("review workspace and decision template must be different files")
 
-    decision_file = _load_decision_template(resolved_pack_dir, resolved_decisions_path)
+    decision_file, snapshot = _load_decision_template(resolved_pack_dir, resolved_decisions_path)
     workspace = render_report_quality_review_workspace(
         decision_file=decision_file,
+        draft_payloads={draft.artifact_id: draft.payload for draft in snapshot.drafts},
         pack_dir=resolved_pack_dir,
     )
     _write_text_atomic(resolved_output_path, workspace)

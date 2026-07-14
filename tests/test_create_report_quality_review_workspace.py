@@ -9,6 +9,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CREATE_PACK_SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_pilot_pack.py"
+APPLY_SCRIPT_PATH = REPO_ROOT / "scripts/apply_report_quality_review_decisions.py"
 WORKSPACE_SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_review_workspace.py"
 
 
@@ -50,6 +51,12 @@ def test_pilot_pack_creates_source_bound_browser_workspace(tmp_path):
     assert "Report Quality Pilot 검수" in workspace
     assert "review_decisions.browser-draft.json" in workspace
     assert "training authorization 없음" in workspace
+    assert "교정 전" in workspace
+    assert "교정 후" in workspace
+    assert "검토 대상 claim" in workspace
+    assert "사람 검토 결정 기록" in workspace
+    assert "종합 품질 점수 입력" in workspace
+    assert 'data-tone="pending">not ready' in workspace
     assert embedded["decision_file"] == decisions
     assert embedded["decision_file"]["training_authorized"] is False
     assert embedded["minimum_overall_score"] == 0.8
@@ -61,14 +68,40 @@ def test_pilot_pack_creates_source_bound_browser_workspace(tmp_path):
 
 
 def test_workspace_escapes_html_and_script_content(tmp_path):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "create_evidence_decisions_for_workspace")
+    workspace_script = _load_module(WORKSPACE_SCRIPT_PATH, "create_escaped_report_quality_workspace")
     attack = '</script><img src=x onerror="alert(1)">'
-    _, result = _create_pack(tmp_path, reviewer=attack)
+    pack_dir, _ = _create_pack(tmp_path, reviewer=attack)
+    first_draft_path = pack_dir / "drafts" / "pilot-rqc-workspace_sample_001.json"
+    first_draft = json.loads(first_draft_path.read_text(encoding="utf-8"))
+    first_draft["before"]["planning_summary"] = attack
+    first_draft["quality_baseline"]["dimension_scores"].pop("logic")
+    first_draft_path.write_text(
+        json.dumps(first_draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    decisions_path = pack_dir / "review_decisions.evidence.json"
+    apply_script.create_review_decision_template(
+        pack_dir=pack_dir,
+        output_path=decisions_path,
+        start_pending=True,
+    )
+    workspace_path = pack_dir / "HUMAN_REVIEW_WORKSPACE.evidence.html"
+    workspace_script.create_report_quality_review_workspace(
+        pack_dir=pack_dir,
+        decisions_path=decisions_path,
+        output_path=workspace_path,
+    )
 
-    workspace = Path(result["review_workspace_path"]).read_text(encoding="utf-8")
+    workspace = workspace_path.read_text(encoding="utf-8")
     embedded = _embedded_payload(workspace)
 
     assert attack not in workspace
     assert "\\u003c/script\\u003e" in workspace
+    assert "&lt;/script&gt;&lt;img src=x onerror=\"alert(1)\"&gt;" in workspace
+    assert "Validation errors" in workspace
+    assert "검증 오류 수정" in workspace
+    assert 'data-tone="error">invalid' in workspace
     assert embedded["decision_file"]["decisions"][0]["reviewer"] == attack
 
 

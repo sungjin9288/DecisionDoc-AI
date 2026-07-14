@@ -190,7 +190,7 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
    ```
-8. Import와 함께 자동 생성된 `HUMAN_REVIEW_WORKSPACE.html`에서 `accepted`, `changes_requested`, `rejected` 중 사람의 결정과 점수·scan·근거를 입력하고 `review_decisions.browser-draft.json`을 내려받는다. 원래 상태는 `previous_decision`에 남고 새 파일럿 판단은 `pending`에서 시작한다. Browser draft는 `review_decisions.json`의 source/draft binding과 `training_authorized=false`를 보존하며 pack 파일을 직접 수정하거나 외부 요청을 보내지 않는다. 기존 pack에 template 또는 workspace가 없다면 각 creator로 한 번만 추가한다. 기존 파일과 symlink는 덮어쓰지 않는다.
+8. Import와 함께 자동 생성된 `HUMAN_REVIEW_WORKSPACE.html`에서 교정 전후 planning·slide·claim evidence, validation 상태와 required action을 확인한다. 이어서 `accepted`, `changes_requested`, `rejected` 중 사람의 결정과 점수·scan·근거를 입력하고 `review_decisions.browser-draft.json`을 내려받는다. 원래 상태는 `previous_decision`에 남고 새 파일럿 판단은 `pending`에서 시작한다. Browser draft는 `review_decisions.json`의 source/draft binding과 `training_authorized=false`를 보존하며 pack 파일을 직접 수정하거나 외부 요청을 보내지 않는다. 기존 pack에 template 또는 workspace가 없다면 각 creator로 한 번만 추가한다. 기존 파일과 symlink는 덮어쓰지 않는다.
 9. 내려받은 decision JSON을 pack 안의 고유한 파일명으로 둔 뒤 draft artifact에 반영한다. Template 생성 뒤 source manifest나 draft가 바뀌었다면 기존 파일을 보존하고 새 이름으로 template과 workspace를 만든 뒤 다시 검토한다.
    ```bash
    python3 scripts/apply_report_quality_review_decisions.py \

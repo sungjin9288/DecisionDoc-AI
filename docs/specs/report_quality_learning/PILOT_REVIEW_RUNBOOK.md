@@ -98,7 +98,9 @@ python3 scripts/create_report_quality_review_workspace.py \
   --decisions reports/report-quality/pilot-rqc-001/review_decisions.json
 ```
 
-검수자는 `HUMAN_REVIEW_WORKSPACE.html`을 브라우저에서 열어 각 artifact의 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과, 차원별 근거와 보완 요청을 채운다. `검수 Draft 다운로드`는 초기 template의 `pack_binding`, artifact 순서, `previous_decision`, `training_authorized=false`를 보존한 `review_decisions.browser-draft.json`만 만든다. HTML은 pack의 draft나 decision template을 직접 수정하지 않으며 외부 요청도 보내지 않는다.
+검수자는 `HUMAN_REVIEW_WORKSPACE.html`을 브라우저에서 연다. 각 artifact 영역은 현재 workflow 상태와 final reference, validator의 valid/ready 상태, 필요한 조치, error·warning, 교정 전후 planning summary와 장표 구조, 검토 대상 claim을 현재 source-bound draft에서 읽어 보여준다. 이 근거를 확인한 뒤 `decision`, `reviewer`, `reviewed_at`, `overall_score`, `dimension_scores`, scan 결과, 차원별 근거와 보완 요청을 채운다. 새 파일럿 decision이 `pending`이면 원본 artifact가 이미 ready였어도 `사람 검토 결정 기록`을 필요한 조치로 표시한다.
+
+`검수 Draft 다운로드`는 초기 template의 `pack_binding`, artifact 순서, `previous_decision`, `training_authorized=false`를 보존한 `review_decisions.browser-draft.json`만 만든다. HTML은 pack의 draft나 decision template을 직접 수정하지 않으며 외부 요청도 보내지 않는다.
 
 내려받은 draft는 원본 template과 구분되는 이름으로 pack 안에 둔 뒤 apply한다.
 

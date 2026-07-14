@@ -86,7 +86,7 @@ def _contains_placeholder(value: Any) -> bool:
     return False
 
 
-def _artifact_required_actions(payload: dict[str, Any], validation: dict[str, Any]) -> list[str]:
+def artifact_required_actions(payload: dict[str, Any], validation: dict[str, Any]) -> list[str]:
     workflow = _as_dict(payload.get("workflow_reference"))
     quality = _as_dict(payload.get("quality_baseline"))
     correction = _as_dict(payload.get("correction"))
@@ -138,7 +138,7 @@ def _artifact_row(
     quality = _as_dict(payload.get("quality_baseline"))
     correction = _as_dict(payload.get("correction"))
     labels = _as_dict(payload.get("learning_labels"))
-    actions = _artifact_required_actions(payload, validation)
+    actions = artifact_required_actions(payload, validation)
     return {
         "path": str(path),
         "draft_sha256": draft_sha256,

@@ -337,6 +337,9 @@ def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
     assert all(item["previous_decision"] == "accepted" for item in decisions["decisions"])
     assert all(item["decision"] == "pending" for item in decisions["decisions"])
     assert decisions["pack_binding"] == review_manifest["pack_binding"]
+    review_workspace = Path(result["review_workspace_path"]).read_text(encoding="utf-8")
+    assert "사람 검토 결정 기록" in review_workspace
+    assert "ready" in review_workspace
 
     package_path.unlink()
 
