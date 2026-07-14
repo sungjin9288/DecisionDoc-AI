@@ -244,6 +244,10 @@ def test_apply_review_decisions_dry_run_does_not_write(tmp_path):
         json.dumps({"decisions": [{"artifact_id": artifact_id, "decision": "changes_requested"}]}, ensure_ascii=False),
         encoding="utf-8",
     )
+    worksheet_path = pack_dir / "HUMAN_REVIEW_WORKSHEET.md"
+    manifest_path = pack_dir / "human_review_manifest.json"
+    original_worksheet = worksheet_path.read_bytes()
+    original_manifest = manifest_path.read_bytes()
 
     result = apply_script.apply_review_decisions(pack_dir=pack_dir, decisions_path=decisions_path, dry_run=True)
 
@@ -251,6 +255,9 @@ def test_apply_review_decisions_dry_run_does_not_write(tmp_path):
     assert result["applied_count"] == 0
     unchanged = json.loads((pack_dir / "drafts" / f"{artifact_id}.json").read_text(encoding="utf-8"))
     assert unchanged["learning_labels"]["human_review_status"] == "pending"
+    assert result["review_sheet_refreshed"] is False
+    assert worksheet_path.read_bytes() == original_worksheet
+    assert manifest_path.read_bytes() == original_manifest
 
 
 def test_apply_review_decisions_allows_pending_bound_template_without_writes(tmp_path):
@@ -323,6 +330,10 @@ def test_apply_review_decisions_does_not_partially_write_invalid_batch(tmp_path)
     second_artifact_id = "pilot-rqc-apply_sample_002"
     first_path = pack_dir / "drafts" / f"{first_artifact_id}.json"
     original_first = first_path.read_bytes()
+    worksheet_path = pack_dir / "HUMAN_REVIEW_WORKSHEET.md"
+    manifest_path = pack_dir / "human_review_manifest.json"
+    original_worksheet = worksheet_path.read_bytes()
+    original_manifest = manifest_path.read_bytes()
     invalid_accepted = _ready_decision(second_artifact_id)
     invalid_accepted["reviewed_at"] = ""
     decisions_path = pack_dir / "mixed_decisions.json"
@@ -348,6 +359,9 @@ def test_apply_review_decisions_does_not_partially_write_invalid_batch(tmp_path)
     assert result["receipt_path"] is None
     assert first_path.read_bytes() == original_first
     assert not receipt_path.exists()
+    assert result["review_sheet_refreshed"] is False
+    assert worksheet_path.read_bytes() == original_worksheet
+    assert manifest_path.read_bytes() == original_manifest
 
 
 def test_import_browser_review_draft_dry_run_does_not_archive_or_apply(tmp_path, capsys):
@@ -359,6 +373,10 @@ def test_import_browser_review_draft_dry_run_does_not_archive_or_apply(tmp_path,
         path.name: path.read_bytes()
         for path in (pack_dir / "drafts").glob("*.json")
     }
+    worksheet_path = pack_dir / "HUMAN_REVIEW_WORKSHEET.md"
+    manifest_path = pack_dir / "human_review_manifest.json"
+    original_worksheet = worksheet_path.read_bytes()
+    original_manifest = manifest_path.read_bytes()
 
     result = apply_script.import_browser_review_draft(
         pack_dir=pack_dir,
@@ -371,11 +389,14 @@ def test_import_browser_review_draft_dry_run_does_not_archive_or_apply(tmp_path,
     assert result["applied_count"] == 0
     assert result["archived_decisions_path"] is None
     assert result["receipt_path"] is None
+    assert result["review_sheet_refreshed"] is False
     assert browser_draft_path.read_bytes() == source_bytes
     assert original_drafts == {
         path.name: path.read_bytes()
         for path in (pack_dir / "drafts").glob("*.json")
     }
+    assert worksheet_path.read_bytes() == original_worksheet
+    assert manifest_path.read_bytes() == original_manifest
 
     exit_code = apply_script.main([
         str(pack_dir),
@@ -415,11 +436,84 @@ def test_import_browser_review_draft_archives_exact_bytes_and_writes_receipt(tmp
     assert archived_path.read_bytes() == source_bytes
     assert receipt_path.name == f"review_decision_application_receipt.{expected_sha256[:12]}.json"
     assert receipt_validator.validate_review_decision_receipt(receipt_path)["ok"] is True
+    assert result["review_sheet_refreshed"] is True
+    assert Path(result["review_sheet_path"]) == pack_dir / "HUMAN_REVIEW_WORKSHEET.md"
+    assert Path(result["review_manifest_path"]) == pack_dir / "human_review_manifest.json"
     updated = json.loads(
         (pack_dir / "drafts" / "pilot-rqc-apply_sample_001.json").read_text(encoding="utf-8")
     )
     assert updated["learning_labels"]["human_review_status"] == "changes_requested"
     assert updated["training_boundary"]["training_execution_authorized"] is False
+    manifest = json.loads(Path(result["review_manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["counts"]["changes_requested_artifacts"] == 1
+    assert manifest["artifacts"][0]["human_review_status"] == "changes_requested"
+    assert manifest["artifacts"][0]["draft_sha256"] == hashlib.sha256(
+        pack_dir.joinpath("drafts", "pilot-rqc-apply_sample_001.json").read_bytes()
+    ).hexdigest()
+    worksheet = Path(result["review_sheet_path"]).read_text(encoding="utf-8")
+    assert "| changes_requested |" in worksheet
+
+
+def test_import_browser_review_draft_rejects_symlink_review_evidence_before_apply(tmp_path):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "reject_symlink_review_evidence")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    browser_draft_path = tmp_path / "downloads" / "review_decisions.browser-draft.json"
+    _write_browser_draft(pack_dir, browser_draft_path, first_decision="changes_requested")
+    original_drafts = {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
+    manifest_path = pack_dir / "human_review_manifest.json"
+    manifest_target = tmp_path / "protected-human-review-manifest.json"
+    manifest_target.write_bytes(manifest_path.read_bytes())
+    manifest_path.unlink()
+    manifest_path.symlink_to(manifest_target)
+
+    with pytest.raises(ValueError, match="symlink review manifest files"):
+        apply_script.import_browser_review_draft(
+            pack_dir=pack_dir,
+            browser_draft_path=browser_draft_path,
+        )
+
+    assert original_drafts == {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
+    assert manifest_target.read_bytes() == manifest_path.read_bytes()
+    assert not list(pack_dir.glob("review_decisions.browser-draft.*.json"))
+    assert not list(pack_dir.glob("review_decision_application_receipt.*.json"))
+
+
+def test_import_browser_review_draft_preserves_audit_files_after_late_refresh_error(
+    tmp_path,
+    monkeypatch,
+):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "preserve_audit_files_after_refresh_error")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    browser_draft_path = tmp_path / "downloads" / "review_decisions.browser-draft.json"
+    _write_browser_draft(pack_dir, browser_draft_path, first_decision="changes_requested")
+
+    def fail_after_receipt(**_kwargs):
+        raise ValueError("review evidence refresh failed")
+
+    monkeypatch.setattr(apply_script, "create_report_quality_review_sheet", fail_after_receipt)
+
+    with pytest.raises(ValueError, match="review evidence refresh failed"):
+        apply_script.import_browser_review_draft(
+            pack_dir=pack_dir,
+            browser_draft_path=browser_draft_path,
+        )
+
+    archived_paths = list(pack_dir.glob("review_decisions.browser-draft.*.json"))
+    receipt_paths = list(pack_dir.glob("review_decision_application_receipt.*.json"))
+    assert len(archived_paths) == 1
+    assert len(receipt_paths) == 1
+    receipt = json.loads(receipt_paths[0].read_text(encoding="utf-8"))
+    assert receipt["decision_file"]["path"] == archived_paths[0].name
+    updated = json.loads(
+        (pack_dir / "drafts" / "pilot-rqc-apply_sample_001.json").read_text(encoding="utf-8")
+    )
+    assert updated["learning_labels"]["human_review_status"] == "changes_requested"
 
 
 def test_import_browser_review_draft_rejects_invalid_unsafe_or_duplicate_input(tmp_path):

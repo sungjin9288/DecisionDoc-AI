@@ -75,6 +75,38 @@ def _default_manifest_path(pack_dir: Path) -> Path:
     return pack_dir / "human_review_manifest.json"
 
 
+def _resolve_review_evidence_path(path: Path, *, label: str) -> Path:
+    expanded_path = path.expanduser()
+    if expanded_path.is_symlink():
+        raise ValueError(f"symlink {label} files are not allowed")
+    resolved_path = expanded_path.resolve()
+    if resolved_path.exists() and not resolved_path.is_file():
+        raise ValueError(f"{label} path must be a file: {resolved_path}")
+    return resolved_path
+
+
+def resolve_report_quality_review_sheet_paths(
+    *,
+    pack_dir: Path,
+    output_path: Path | None = None,
+    manifest_path: Path | None = None,
+) -> tuple[Path, Path]:
+    resolved_pack_dir = pack_dir.expanduser().resolve()
+    output_candidate = output_path or _default_output_path(resolved_pack_dir)
+    manifest_candidate = manifest_path or _default_manifest_path(resolved_pack_dir)
+    resolved_output_path = _resolve_review_evidence_path(
+        output_candidate,
+        label="review sheet",
+    )
+    resolved_manifest_path = _resolve_review_evidence_path(
+        manifest_candidate,
+        label="review manifest",
+    )
+    if resolved_output_path == resolved_manifest_path:
+        raise ValueError("review sheet and manifest paths must be different")
+    return resolved_output_path, resolved_manifest_path
+
+
 def _contains_placeholder(value: Any) -> bool:
     if isinstance(value, dict):
         return any(_contains_placeholder(child) for child in value.values())
@@ -169,15 +201,10 @@ def create_report_quality_review_sheet(
     manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     resolved_pack_dir = pack_dir.expanduser().resolve()
-    resolved_output_path = (
-        output_path.expanduser().resolve()
-        if output_path is not None
-        else _default_output_path(resolved_pack_dir).resolve()
-    )
-    resolved_manifest_path = (
-        manifest_path.expanduser().resolve()
-        if manifest_path is not None
-        else _default_manifest_path(resolved_pack_dir).resolve()
+    resolved_output_path, resolved_manifest_path = resolve_report_quality_review_sheet_paths(
+        pack_dir=resolved_pack_dir,
+        output_path=output_path,
+        manifest_path=manifest_path,
     )
     snapshot = load_pilot_pack(resolved_pack_dir)
     rows: list[dict[str, Any]] = []

@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CREATE_PACK_SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_pilot_pack.py"
@@ -197,3 +199,18 @@ def test_create_report_quality_review_sheet_cli_outputs_json(tmp_path, capsys):
     assert payload["counts"]["artifact_count"] == 3
     assert output_path.exists()
     assert manifest_path.exists()
+
+
+def test_create_report_quality_review_sheet_rejects_symlink_targets(tmp_path):
+    review_script = _load_module(REVIEW_SHEET_SCRIPT_PATH, "reject_symlink_review_sheet")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    protected_path = tmp_path / "protected-worksheet.md"
+    protected_path.write_text("keep this evidence\n", encoding="utf-8")
+    worksheet_path = pack_dir / "HUMAN_REVIEW_WORKSHEET.md"
+    worksheet_path.unlink()
+    worksheet_path.symlink_to(protected_path)
+
+    with pytest.raises(ValueError, match="symlink review sheet files"):
+        review_script.create_report_quality_review_sheet(pack_dir=pack_dir)
+
+    assert protected_path.read_text(encoding="utf-8") == "keep this evidence\n"

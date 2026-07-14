@@ -124,9 +124,9 @@ python3 scripts/apply_report_quality_review_decisions.py \
 
 Source import pack은 `--create-template`로 만든 binding이 없는 decision 파일을 거부한다. Template 생성 뒤 source manifest나 draft가 바뀌면 stale binding으로 판단해 쓰기 전에 중단한다. Decision batch 안에 잘못된 항목이 하나라도 있으면 유효한 다른 항목도 저장하지 않는다. `--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 전체 batch 저장을 차단한다.
 
-`--browser-draft`는 report type, schema, `training_authorized=false`, source/draft binding, 전체 decision batch를 쓰기 전에 확인한다. 통과하면 내려받은 파일의 정확한 바이트를 `review_decisions.browser-draft.<sha12>.json`으로 pack에 보존하고, 같은 suffix의 `review_decision_application_receipt.<sha12>.json`을 자동 생성한다. 외부 draft, 보관본, receipt가 symlink이거나 기존 SHA 이름과 충돌하면 덮어쓰지 않는다. Dry-run이나 실패 batch에서는 보관본, draft 변경, receipt를 만들지 않는다.
+`--browser-draft`는 report type, schema, `training_authorized=false`, source/draft binding, 전체 decision batch를 쓰기 전에 확인한다. 통과하면 내려받은 파일의 정확한 바이트를 `review_decisions.browser-draft.<sha12>.json`으로 pack에 보존하고, 같은 suffix의 `review_decision_application_receipt.<sha12>.json`을 자동 생성한다. 적용으로 draft hash나 검토 상태가 바뀌면 `HUMAN_REVIEW_WORKSHEET.md`와 `human_review_manifest.json`도 현재 pack binding으로 즉시 갱신한다. 외부 draft, 보관본, receipt, worksheet, manifest가 symlink이거나 기존 SHA 이름과 충돌하면 덮어쓰지 않는다. Dry-run이나 실패 batch에서는 보관본, draft, receipt, worksheet, manifest를 변경하지 않는다.
 
-기존 pack-local decision 파일을 `--decisions`로 반영하는 호환 경로에서는 `--receipt`를 직접 지정할 수 있다. 두 경로의 receipt는 decision SHA-256, 적용 전/후 pack binding, artifact별 draft hash 전이를 기록한다. 적용 직후 CLI가 출력한 `receipt_path`로 현재 파일을 다시 대조한다.
+기존 pack-local decision 파일을 `--decisions`로 반영하는 호환 경로에서는 `--receipt`를 직접 지정할 수 있다. 이 경로도 성공한 apply 뒤 worksheet와 manifest를 갱신한다. 두 경로의 receipt는 decision SHA-256, 적용 전/후 pack binding, artifact별 draft hash 전이를 기록한다. 적용 직후 CLI가 출력한 `receipt_path`, `review_sheet_path`, `review_manifest_path`를 확인하고 receipt를 현재 파일과 다시 대조한다.
 
 ```bash
 python3 scripts/validate_report_quality_review_decision_receipt.py \

@@ -21,6 +21,10 @@ from app.services.report_quality_learning import (  # noqa: E402
     REQUIRED_DIMENSIONS,
     validate_correction_artifact,
 )
+from scripts.create_report_quality_review_sheet import (  # noqa: E402
+    create_report_quality_review_sheet,
+    resolve_report_quality_review_sheet_paths,
+)
 from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
     load_pilot_pack,
     require_current_pack_binding,
@@ -454,6 +458,7 @@ def apply_review_decisions(
 
     ok = not errors
     if ok and not dry_run:
+        resolve_report_quality_review_sheet_paths(pack_dir=resolved_pack_dir)
         _, current_decisions_sha256 = _load_json_snapshot(resolved_decisions_path)
         if current_decisions_sha256 != decisions_sha256:
             raise ValueError("decision file changed during validation")
@@ -482,6 +487,9 @@ def apply_review_decisions(
             rows=rows,
             require_ready=require_ready,
         )
+    review_manifest: dict[str, Any] | None = None
+    if ok and not dry_run:
+        review_manifest = create_report_quality_review_sheet(pack_dir=resolved_pack_dir)
     return {
         "report_type": "report_quality_review_decisions_applied",
         "ok": ok,
@@ -492,6 +500,9 @@ def apply_review_decisions(
         "pack_binding_verified": snapshot.source_order_applied or pack_binding is not None,
         "receipt_path": str(resolved_receipt_path) if receipt_sha256 is not None else None,
         "receipt_sha256": receipt_sha256,
+        "review_sheet_path": review_manifest["output_path"] if review_manifest is not None else None,
+        "review_manifest_path": review_manifest["manifest_path"] if review_manifest is not None else None,
+        "review_sheet_refreshed": review_manifest is not None,
         "decision_count": len(rows),
         "applied_count": applied_count,
         "ready_decisions": ready_count,
@@ -503,6 +514,8 @@ def apply_review_decisions(
             "reads_local_decision_json": True,
             "writes_local_draft_json": not dry_run and applied_count > 0,
             "writes_local_application_receipt": receipt_sha256 is not None,
+            "writes_review_sheet": review_manifest is not None,
+            "writes_review_manifest": review_manifest is not None,
             "external_dataset_upload_started": False,
             "provider_fine_tune_api_called": False,
             "provider_job_created": False,
@@ -574,12 +587,17 @@ def import_browser_review_draft(
             "archived_decisions_path": None,
             "receipt_path": None,
             "receipt_sha256": None,
+            "review_sheet_path": None,
+            "review_manifest_path": None,
+            "review_sheet_refreshed": False,
             "applied_count": 0,
             "side_effect_boundary": {
                 "reads_external_browser_draft": True,
                 "writes_archived_browser_draft": False,
                 "writes_local_draft_json": False,
                 "writes_local_application_receipt": False,
+                "writes_review_sheet": False,
+                "writes_review_manifest": False,
                 "external_dataset_upload_started": False,
                 "provider_fine_tune_api_called": False,
                 "provider_job_created": False,
@@ -607,7 +625,8 @@ def import_browser_review_draft(
             receipt_path=receipt_path,
         )
     except (ValueError, json.JSONDecodeError):
-        archived_path.unlink(missing_ok=True)
+        if not receipt_path.exists():
+            archived_path.unlink(missing_ok=True)
         raise
     if not application["ok"]:
         archived_path.unlink(missing_ok=True)
@@ -618,12 +637,17 @@ def import_browser_review_draft(
             "archived_decisions_path": None,
             "receipt_path": None,
             "receipt_sha256": None,
+            "review_sheet_path": None,
+            "review_manifest_path": None,
+            "review_sheet_refreshed": False,
             "applied_count": 0,
             "side_effect_boundary": {
                 "reads_external_browser_draft": True,
                 "writes_archived_browser_draft": False,
                 "writes_local_draft_json": False,
                 "writes_local_application_receipt": False,
+                "writes_review_sheet": False,
+                "writes_review_manifest": False,
                 "external_dataset_upload_started": False,
                 "provider_fine_tune_api_called": False,
                 "provider_job_created": False,
@@ -636,12 +660,17 @@ def import_browser_review_draft(
         "archived_decisions_path": str(archived_path),
         "receipt_path": application["receipt_path"],
         "receipt_sha256": application["receipt_sha256"],
+        "review_sheet_path": application["review_sheet_path"],
+        "review_manifest_path": application["review_manifest_path"],
+        "review_sheet_refreshed": application["review_sheet_refreshed"],
         "applied_count": application["applied_count"],
         "side_effect_boundary": {
             "reads_external_browser_draft": True,
             "writes_archived_browser_draft": True,
             "writes_local_draft_json": application["applied_count"] > 0,
             "writes_local_application_receipt": application["receipt_path"] is not None,
+            "writes_review_sheet": application["review_sheet_refreshed"],
+            "writes_review_manifest": application["review_sheet_refreshed"],
             "external_dataset_upload_started": False,
             "provider_fine_tune_api_called": False,
             "provider_job_created": False,
@@ -718,6 +747,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if result["receipt_path"]:
             print(f"receipt_path={result['receipt_path']}")
             print(f"receipt_sha256={result['receipt_sha256']}")
+        if result["review_sheet_refreshed"]:
+            print(f"review_sheet_path={result['review_sheet_path']}")
+            print(f"review_manifest_path={result['review_manifest_path']}")
         print("training_boundary=not_authorized")
         for error in result["errors"]:
             print(f"ERROR {error}")
@@ -731,6 +763,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if result["receipt_path"]:
             print(f"receipt_path={result['receipt_path']}")
             print(f"receipt_sha256={result['receipt_sha256']}")
+        if result["review_sheet_refreshed"]:
+            print(f"review_sheet_path={result['review_sheet_path']}")
+            print(f"review_manifest_path={result['review_manifest_path']}")
         print("training_boundary=not_authorized")
         for error in result["errors"]:
             print(f"ERROR {error}")
