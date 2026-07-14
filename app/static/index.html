@@ -6806,6 +6806,7 @@
         <option value="system.export">데이터 내보내기</option>
         <option value="report_quality.pilot_preview">품질 Pilot 사전 검토</option>
         <option value="report_quality.pilot_export">품질 Pilot 내보내기</option>
+        <option value="report_quality.pilot_package">품질 Pilot 검토 패키지</option>
         <option value="document_ops.trajectory_view">DocumentOps 상세 조회</option>
         <option value="document_ops.trajectory_review">DocumentOps 사람 검토</option>
       </select>
@@ -8782,6 +8783,7 @@
     download: downloadReportWorkflowQualityArtifacts,
     'preview-pilot': previewReportWorkflowQualityPilotArtifacts,
     'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
+    'download-pilot-package': downloadReportWorkflowQualityPilotPackage,
     inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
     'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
     close: () => {
@@ -8860,7 +8862,8 @@
       </div>
       <div style="display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap;margin-top:.7rem;">
         <button type="button" class="action-btn" data-rw-quality-artifacts-action="close">닫기</button>
-        <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-pilot">JSONL 다운로드</button>
+        <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-pilot">JSONL + receipt</button>
+        <button type="button" class="primary-btn" data-rw-quality-artifacts-action="download-pilot-package">검토 패키지 ZIP</button>
       </div>
     </div>`;
     wireReportWorkflowQualityArtifactActions(el);
@@ -9060,6 +9063,56 @@
       );
     } catch (err) {
       showNotification('Pilot correction artifact JSONL 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  async function downloadReportWorkflowQualityPilotPackage() {
+    const artifactIds = Array.from(_reportWorkflowQualityPilotSelection);
+    const previewSha256 = String(_reportWorkflowQualityPilotPreview?.export_sha256 || '').trim().toLowerCase();
+    if (artifactIds.length < 3 || artifactIds.length > 5 || !/^[a-f0-9]{64}$/.test(previewSha256)) {
+      showNotification('Pilot 검토를 다시 실행한 뒤 검토 패키지를 내려받으세요.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/report-workflows/learning/correction-artifacts/pilot-export/package', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifact_ids: artifactIds,
+          preview_sha256: previewSha256,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const exportSha256 = String(res.headers.get('X-DecisionDoc-Pilot-SHA256') || '').trim().toLowerCase();
+      const packageSha256 = String(res.headers.get('X-DecisionDoc-Pilot-Package-SHA256') || '').trim().toLowerCase();
+      const previewVerified = String(res.headers.get('X-DecisionDoc-Pilot-Preview-Verified') || '').trim().toLowerCase();
+      const trainingAuthorized = String(res.headers.get('X-DecisionDoc-Training-Authorized') || '').trim().toLowerCase();
+      const artifactCount = Number(res.headers.get('X-DecisionDoc-Pilot-Artifact-Count'));
+      if (
+        exportSha256 !== previewSha256
+        || previewVerified !== 'true'
+        || trainingAuthorized !== 'false'
+        || artifactCount !== artifactIds.length
+      ) {
+        throw new Error('Pilot package가 현재 검토한 export와 일치하지 않습니다.');
+      }
+      if (!/^[a-f0-9]{64}$/.test(packageSha256)) {
+        throw new Error('Pilot package SHA-256 응답이 없거나 올바르지 않습니다.');
+      }
+      const packageBytes = new Uint8Array(await res.arrayBuffer());
+      if (await sha256Hex(packageBytes) !== packageSha256) {
+        throw new Error('Pilot package SHA-256이 다운로드 내용과 다릅니다.');
+      }
+      downloadReportWorkflowQualityFile(
+        new Blob([packageBytes], { type: 'application/zip' }),
+        `report_quality_pilot_review_package_${exportSha256.slice(0, 12)}.zip`,
+      );
+      showNotification(
+        `검증된 ${artifactIds.length}개 correction artifact 검토 패키지 다운로드를 시작했습니다. SHA-256 ${packageSha256.slice(0, 12)}...`,
+        'success',
+      );
+    } catch (err) {
+      showNotification('Pilot 검토 패키지 다운로드 실패: ' + (err.message || err), 'error');
     }
   }
 
@@ -27382,7 +27435,7 @@ function renderAuditPagination(data) {
 }
 
 function renderAuditEvidence(log, detail) {
-  if (['report_quality.pilot_preview', 'report_quality.pilot_export'].includes(log?.action)) {
+  if (['report_quality.pilot_preview', 'report_quality.pilot_export', 'report_quality.pilot_package'].includes(log?.action)) {
     return `<div class="audit-evidence">
       request=${escapeHtml(detail.request_id || '-')}<br>
       sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>

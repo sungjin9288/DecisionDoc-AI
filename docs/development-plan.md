@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,969 passed, 1 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,970 passed, 2 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2969 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2970 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -41,10 +41,10 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 20 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 40 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 41 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 37 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 263 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 264 (라우트)
 ```
 
 ```text
@@ -56,14 +56,14 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
   │
-  ├─ Routers (20 top-level files, 라우트 263):
+  ├─ Routers (20 top-level files, 라우트 264):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (40) — 도메인 오케스트레이션
+Services (41) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환

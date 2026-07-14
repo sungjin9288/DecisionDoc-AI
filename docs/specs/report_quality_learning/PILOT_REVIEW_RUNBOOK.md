@@ -25,7 +25,9 @@ Report Workflow 생성 시:
 
 Report Workflow UI에서 ready artifact 3~5개를 선택한 뒤 `Pilot 검토`를 실행한다. Preview는 artifact 순서, readiness, 전체 JSONL SHA-256, 외부 학습 비승인 경계를 보여준다. 다운로드 요청은 이 hash를 `preview_sha256`으로 다시 제출하며, 서버가 현재 ordered JSONL과 대조해 일치할 때만 `X-DecisionDoc-Pilot-Preview-Verified: true`와 파일을 반환한다. 누락되거나 stale한 hash는 `400` 또는 schema validation으로 차단된다.
 
-서버는 같은 응답에서 JSONL과 `report_quality_pilot_receipt_<sha12>.json` sidecar를 내려준다. Receipt는 request ID, tenant, artifact 순서, JSONL SHA-256, preview 검증 결과, 외부 실행 비승인 경계를 기록한다. 같은 request ID와 전체 JSONL SHA-256은 응답 헤더와 tenant audit log에도 남는다.
+`검토 패키지 ZIP`은 JSONL과 `report_quality_pilot_receipt_<sha12>.json` sidecar, `pilot_package_manifest.json`을 하나의 archive로 내려준다. Manifest는 exact membership, entry별 size/SHA-256, tenant, artifact 순서, request ID, 외부 실행 비승인 경계를 기록한다. 서버는 ZIP을 응답 전에 다시 검증하고 browser는 `X-DecisionDoc-Pilot-Package-SHA256`과 실제 bytes를 대조한 뒤 저장한다. 기존 `JSONL + receipt` 개별 다운로드도 호환 경로로 유지한다.
+
+`report_quality_pilot_review_package_<sha12>.zip`을 작업 디렉터리에 풀면 아래 import 명령의 두 source file을 함께 얻는다. ZIP을 풀 때 파일명을 바꾸지 않는다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \

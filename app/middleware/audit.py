@@ -55,6 +55,10 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ): "report_quality.pilot_preview",
     (
         "POST",
+        "/report-workflows/learning/correction-artifacts/pilot-export/package",
+    ): "report_quality.pilot_package",
+    (
+        "POST",
         "/report-workflows/learning/correction-artifacts/pilot-export",
     ): "report_quality.pilot_export",
 }

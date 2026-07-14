@@ -398,6 +398,8 @@ def test_root_html_exposes_report_workflow_quality_artifact_ui(client):
     assert "_reportWorkflowLastQualityPreview = null" in res.text
     assert "learning/correction-artifacts/export" in res.text
     assert "Ready JSONL" in res.text
+    assert "검토 패키지 ZIP" in res.text
+    assert "downloadReportWorkflowQualityPilotPackage" in res.text
     assert "metadata-only before/after 교정 데이터" in res.text
     assert "Provider fine-tune이나 dataset upload는 실행하지 않습니다." in res.text
     assert "승인된 기획안/장표 원문을 학습 후보로 저장" not in res.text

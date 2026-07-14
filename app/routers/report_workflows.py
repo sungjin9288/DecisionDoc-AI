@@ -33,6 +33,7 @@ from app.services.report_quality_pilot_receipt import (
     pilot_export_receipt_sha256,
     serialize_pilot_export_receipt,
 )
+from app.services.report_quality_pilot_package import prepare_pilot_review_package_delivery
 
 router = APIRouter(tags=["report-workflows"])
 
@@ -58,8 +59,9 @@ def _record_quality_pilot_state(
     preview: dict,
     *,
     preview_verified: bool,
+    action: str | None = None,
 ) -> None:
-    request.state.report_quality_action = (
+    request.state.report_quality_action = action or (
         "pilot_export" if preview_verified else "pilot_preview"
     )
     request.state.report_quality_pilot_sha256 = str(preview.get("export_sha256") or "")
@@ -237,6 +239,49 @@ def export_report_quality_correction_pilot(
             "X-DecisionDoc-Training-Authorized": "false",
             RECEIPT_HEADER: encode_pilot_export_receipt(receipt_bytes),
             RECEIPT_SHA256_HEADER: pilot_export_receipt_sha256(receipt_bytes),
+        },
+    )
+
+
+@router.post(
+    "/report-workflows/learning/correction-artifacts/pilot-export/package",
+    dependencies=[Depends(require_api_key)],
+)
+def package_report_quality_correction_pilot(
+    payload: ReportQualityPilotExportRequest,
+    request: Request,
+) -> Response:
+    tenant_id = get_tenant_id(request)
+    try:
+        prepared = _get_service(request).confirm_quality_correction_pilot_export(
+            payload.artifact_ids,
+            tenant_id=tenant_id,
+            preview_sha256=payload.preview_sha256,
+        )
+        delivery = prepare_pilot_review_package_delivery(
+            jsonl=prepared["jsonl"],
+            preview=prepared["preview"],
+            tenant_id=tenant_id,
+            request_id=request.state.request_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+
+    _record_quality_pilot_state(
+        request,
+        prepared["preview"],
+        preview_verified=True,
+        action="pilot_package",
+    )
+    return Response(
+        content=delivery["content"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{delivery["filename"]}"; '
+                f"filename*=UTF-8''{delivery['filename']}"
+            ),
+            **delivery["headers"],
         },
     )
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
+import zipfile
 from unittest.mock import patch
 
 import pytest
@@ -702,6 +704,33 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert all(item["training_boundary"]["training_execution_authorized"] is False for item in lines)
     assert all(_contains_key(item, "content_base64") is False for item in lines)
 
+    packaged = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export/package",
+        json={
+            "artifact_ids": requested_order,
+            "preview_sha256": preview_body["export_sha256"],
+        },
+    )
+    assert packaged.status_code == 200
+    assert packaged.headers["content-type"] == "application/zip"
+    assert packaged.headers["x-decisiondoc-pilot-sha256"] == body_sha256
+    assert packaged.headers["x-decisiondoc-pilot-preview-verified"] == "true"
+    assert packaged.headers["x-decisiondoc-training-authorized"] == "false"
+    assert packaged.headers["x-decisiondoc-pilot-package-sha256"] == hashlib.sha256(
+        packaged.content
+    ).hexdigest()
+    with zipfile.ZipFile(io.BytesIO(packaged.content)) as archive:
+        manifest = json.loads(archive.read("pilot_package_manifest.json"))
+        assert manifest["ordered_artifact_ids"] == requested_order
+        assert manifest["export_sha256"] == body_sha256
+        assert manifest["request_id"] == packaged.headers["x-request-id"]
+        assert all(
+            value is False
+            for value in manifest["external_action_boundary"].values()
+        )
+        assert preview_body["filename"] in archive.namelist()
+        assert f"report_quality_pilot_receipt_{body_sha256[:12]}.json" in archive.namelist()
+
     from app.storage.audit_store import AuditStore
 
     preview_audits = AuditStore("system").query(
@@ -722,6 +751,15 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert export_audits[0]["detail"]["request_id"] == receipt["request_id"]
     assert export_audits[0]["detail"]["pilot_artifact_count"] == 3
     assert export_audits[0]["detail"]["pilot_preview_verified"] is True
+
+    package_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "report_quality.pilot_package", "result": "success"},
+    )
+    assert package_audits
+    assert package_audits[0]["detail"]["pilot_sha256"] == body_sha256
+    assert package_audits[0]["detail"]["pilot_artifact_count"] == 3
+    assert package_audits[0]["detail"]["pilot_preview_verified"] is True
 
     first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
     alias_duplicate = client.post(

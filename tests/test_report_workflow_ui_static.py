@@ -116,8 +116,11 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert 'data-rw-quality-artifacts-action="download-one"' in html
     assert 'data-rw-quality-artifacts-action="preview-pilot"' in html
     assert 'data-rw-quality-artifacts-action="download-pilot"' in html
+    assert 'data-rw-quality-artifacts-action="download-pilot-package"' in html
     assert "data-rw-quality-artifact-select" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export/preview" in html
+    assert "/report-workflows/learning/correction-artifacts/pilot-export/package" in html
+    assert "X-DecisionDoc-Pilot-Package-SHA256" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export" in html
     assert "artifactIds.length < 3 || artifactIds.length > 5" in html
     assert "X-DecisionDoc-Pilot-SHA256" in html
