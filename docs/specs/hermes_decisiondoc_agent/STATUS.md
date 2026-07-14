@@ -76,8 +76,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - review requests carry the version loaded with the detail record; storage compares it while holding
   the tenant write lock, returns an identical retry unchanged, and rejects a different stale decision
   with `409` plus expected/current version evidence
-- conflict recovery keeps the unsaved notes and score in page memory, reloads and reopens the latest
-  tenant-scoped detail, and clears that draft after a successful review write
+- review inputs update a page-memory draft as the reviewer types, so ordinary list refreshes and
+  conflict recovery can restore notes and score; empty inputs or a successful write clear that draft
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -103,7 +103,8 @@ create a dataset upload, provider API call, training job, promotion, or producti
 A separate browser review check opened one `develop_quality_improvement` trajectory, matched the
 full displayed draft to the API response, confirmed provenance, source evidence, and QA state,
 blocked approval without a human score, rejected an intentionally stale approval after another reviewer
-stored version 1, reloaded the latest record without re-entering the preserved notes or score, then
+stored version 1, preserved the note through an ordinary list refresh, reloaded the latest record
+without re-entering the note or score, then
 persisted reviewer identity, notes, and score `0.88`
 as version 2 while retaining version 1 in review history.
 The reviewed record remained readable on desktop and 390-pixel mobile without horizontal overflow.

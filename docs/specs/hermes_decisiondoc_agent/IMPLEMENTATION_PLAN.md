@@ -143,8 +143,8 @@ Work:
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
-- keep an unsaved review draft in page memory during conflict recovery, reload the latest detail,
-  and reopen the same record without persisting the draft to storage or local browser data
+- capture an unsaved review draft in page memory as the reviewer types, restore it after ordinary
+  list refreshes or conflict recovery, and never persist it to storage or local browser data
 - ignore stale trajectory responses when operators change filters before an earlier request completes
 - return to the first or last valid page when filters or reviews change the visible result set
 - require review notes and an explicit human score in the browser before accepting a trajectory
@@ -153,7 +153,7 @@ Acceptance:
 
 - visible labels match runtime state and authorization boundaries
 - stale review conflicts refresh the browser with the latest stored version instead of retrying a write
-- reviewer notes and score survive that refresh and are cleared from page memory after a successful write
+- reviewer notes and score survive that refresh; clearing both inputs or completing a write removes the draft
 - no hidden control can trigger upload, training, or production operations
 - infrastructure and report-workflow integration tests pass
 

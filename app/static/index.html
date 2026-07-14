@@ -7509,7 +7509,27 @@
     return details.dataset.loaded === 'true';
   }
 
+  function wireDocumentOpsReviewDraftInputs(container) {
+    const notesInput = container.querySelector('[data-docops-review-notes]');
+    const scoreInput = container.querySelector('[data-docops-review-score]');
+    const trajectoryId = notesInput?.closest('[data-docops-trajectory-card]')?.dataset.trajectoryId || '';
+    if (!trajectoryId || !notesInput || !scoreInput) return;
+
+    const rememberDraft = () => {
+      const notes = notesInput.value;
+      const scoreText = scoreInput.value;
+      if (!notes && !scoreText) {
+        _documentOpsReviewDrafts.delete(trajectoryId);
+        return;
+      }
+      _documentOpsReviewDrafts.set(trajectoryId, { notes, scoreText });
+    };
+    notesInput.addEventListener('input', rememberDraft);
+    scoreInput.addEventListener('input', rememberDraft);
+  }
+
   function wireDocumentOpsTrajectoryReviewActions(container) {
+    wireDocumentOpsReviewDraftInputs(container);
     container.querySelectorAll('[data-docops-trajectory-review]').forEach(btn => {
       btn.addEventListener('click', () => {
         const card = btn.closest('[data-docops-trajectory-card]');

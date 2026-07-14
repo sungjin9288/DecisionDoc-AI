@@ -593,9 +593,35 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
 
     page.fill("#docops-reviewer", "browser-reviewer")
     card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
+    assert page.evaluate(
+        "trajectoryId => _documentOpsReviewDrafts.get(trajectoryId)",
+        created["trajectory_id"],
+    ) == {
+        "notes": "전체 초안과 근거 상태를 확인하고 승인합니다.",
+        "scoreText": "",
+    }
+    card.locator("[data-docops-review-notes]").fill("")
+    assert page.evaluate(
+        "trajectoryId => !_documentOpsReviewDrafts.has(trajectoryId)",
+        created["trajectory_id"],
+    )
+    card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
     card.locator('[data-docops-trajectory-review="true"]').click()
     assert "pending" in card.inner_text()
     assert page.locator("#notification-container .notif-warn", has_text="승인하려면 사람 품질 점수를 입력하세요.").is_visible()
+
+    page.evaluate("async () => loadDocumentOpsTrajectories()")
+    page.wait_for_selector(card_selector, timeout=10000)
+    card = page.locator(card_selector)
+    card.locator("summary", has_text="검토 근거와 전체 초안").click()
+    _wait_until_text_contains(
+        page,
+        f"{card_selector} [data-docops-trajectory-detail-content]",
+        "browser-detail-source",
+        timeout_ms=10000,
+    )
+    assert card.locator("[data-docops-review-notes]").input_value() == "전체 초안과 근거 상태를 확인하고 승인합니다."
+    assert card.locator("[data-docops-review-score]").input_value() == ""
 
     card.locator("[data-docops-review-score]").fill("0.88")
     page.evaluate(
