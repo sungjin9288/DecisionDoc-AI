@@ -46,6 +46,8 @@ python3 scripts/create_report_quality_pilot_pack.py \
 - `reports/report-quality/pilot-rqc-001/SOURCE_MANIFEST.json`
 - `reports/report-quality/pilot-rqc-001/SOURCE_EXPORT_RECEIPT.json`
 - `reports/report-quality/pilot-rqc-001/SOURCE_PACKAGE_MANIFEST.json` (`--source-package` 사용 시)
+- `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
+- `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
 
 주의:
 
@@ -68,19 +70,19 @@ python3 scripts/create_report_quality_pilot_pack.py \
 
 사람이 `drafts/*.json`을 검토하거나 수정한 뒤에는 JSONL을 다시 동기화한다.
 
-검수자가 채워야 할 항목을 한눈에 확인하려면 worksheet를 만든다.
+Pack 생성 시 worksheet와 manifest가 자동으로 만들어진다. 이후 draft를 직접 수정했다면 아래 명령으로 현재 hash와 required action을 다시 계산한다.
 
 ```bash
 python3 scripts/create_report_quality_review_sheet.py \
   reports/report-quality/pilot-rqc-001
 ```
 
-생성물:
+자동 생성 또는 refresh되는 파일:
 
 - `reports/report-quality/pilot-rqc-001/HUMAN_REVIEW_WORKSHEET.md`
 - `reports/report-quality/pilot-rqc-001/human_review_manifest.json`
 
-worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 로컬 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
+worksheet는 reviewer, reviewed_at, quality score, scan 결과, 승인 여부를 정리하기 위한 파생 검수 문서다. Source import pack이면 `human_review_manifest.json`에 source manifest SHA-256, tenant, artifact 순서와 각 draft SHA-256을 함께 기록한다. 사람이 채우는 decision template은 자동 생성하지 않으므로 기존 review 입력을 덮어쓰지 않는다. 이 helper는 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 JSON을 직접 수정하는 대신 decision template을 만들어 검수 결정을 반영할 수 있다.
 

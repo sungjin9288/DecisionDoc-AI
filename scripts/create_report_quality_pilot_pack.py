@@ -34,6 +34,9 @@ from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
     SOURCE_MANIFEST_SCHEMA,
     SOURCE_PACKAGE_MANIFEST_NAME,
 )
+from scripts.create_report_quality_review_sheet import (  # noqa: E402
+    create_report_quality_review_sheet,
+)
 
 
 TEMPLATE_PATH = REPO_ROOT / "docs/specs/report_quality_learning/correction_artifact_template.json"
@@ -435,6 +438,8 @@ def _render_index(
 - generated_at: `{_now_iso()}`
 - output_dir: `{output_dir}`
 - draft_jsonl: `{jsonl_path}`
+- review_sheet: `{output_dir / 'HUMAN_REVIEW_WORKSHEET.md'}`
+- review_manifest: `{output_dir / 'human_review_manifest.json'}`
 - training_authorized: `false`
 {source_details}
 
@@ -622,6 +627,7 @@ def create_report_quality_pilot_pack(
             receipt_info=receipt_info,
         ),
     )
+    review_manifest = create_report_quality_review_sheet(pack_dir=output_dir)
 
     return {
         "batch_id": batch_id,
@@ -629,6 +635,8 @@ def create_report_quality_pilot_pack(
         "output_dir": str(output_dir),
         "index_path": str(index_path),
         "jsonl_path": str(jsonl_path),
+        "review_sheet_path": review_manifest["output_path"],
+        "review_manifest_path": review_manifest["manifest_path"],
         "source_manifest_path": str(source_manifest_path) if source_manifest_path else None,
         "source_receipt_path": (
             str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
@@ -709,6 +717,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"source_mode={result['source_mode']}")
         print(f"index_path={result['index_path']}")
         print(f"jsonl_path={result['jsonl_path']}")
+        print(f"review_sheet_path={result['review_sheet_path']}")
+        print(f"review_manifest_path={result['review_manifest_path']}")
         if result["source_manifest_path"]:
             print(f"source_manifest_path={result['source_manifest_path']}")
         if result["source_receipt_path"]:

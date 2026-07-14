@@ -115,6 +115,15 @@ def test_create_report_quality_pilot_pack_writes_non_ready_drafts(tmp_path):
     assert index_path.exists()
     assert jsonl_path.exists()
     assert "training_authorized: `false`" in index_path.read_text(encoding="utf-8")
+    review_sheet_path = Path(result["review_sheet_path"])
+    review_manifest_path = Path(result["review_manifest_path"])
+    assert review_sheet_path.is_file()
+    assert review_manifest_path.is_file()
+    review_manifest = json.loads(review_manifest_path.read_text(encoding="utf-8"))
+    assert review_manifest["counts"]["artifact_count"] == 3
+    assert review_manifest["counts"]["pending_artifacts"] == 3
+    assert review_manifest["pack_binding"]["source_manifest"] is None
+    assert review_manifest["side_effect_boundary"]["training_execution_started"] is False
 
     lines = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 3
@@ -152,6 +161,8 @@ def test_create_report_quality_pilot_pack_cli_outputs_json(tmp_path, capsys):
     assert result["sample_count"] == 2
     assert Path(result["index_path"]).exists()
     assert Path(result["jsonl_path"]).exists()
+    assert Path(result["review_sheet_path"]).exists()
+    assert Path(result["review_manifest_path"]).exists()
 
 
 def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
@@ -302,6 +313,12 @@ def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
     package_manifest_path = Path(result["source_package_manifest_path"])
     assert package_info["manifest_path"] == package_manifest_path.name
     assert package_manifest_path.read_bytes() == package["manifest_bytes"]
+    review_manifest = json.loads(Path(result["review_manifest_path"]).read_text(encoding="utf-8"))
+    assert [item["artifact_id"] for item in review_manifest["artifacts"]] == artifact_ids
+    assert review_manifest["pack_binding"]["source_manifest"]["sha256"] == hashlib.sha256(
+        source_manifest_path.read_bytes()
+    ).hexdigest()
+    assert review_manifest["pack_binding"]["source_manifest"]["tenant_id"] == "tenant-a"
 
     package_path.unlink()
 

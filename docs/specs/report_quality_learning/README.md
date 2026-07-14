@@ -185,7 +185,7 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
      --output-root reports/report-quality
    ```
 6. `SOURCE_MANIFEST.json` v3, copied `SOURCE_EXPORT_RECEIPT.json`, preserved `SOURCE_PACKAGE_MANIFEST.json`이 원본 package 및 embedded JSONL SHA-256, size, request ID, tenant, artifact 순서를 함께 보존하는지 확인한다.
-7. worksheet로 교정 내용과 승인 필드를 다시 확인한다. Source import pack에서는 `human_review_manifest.json`의 source/draft SHA-256 binding도 함께 확인한다.
+7. Import와 함께 자동 생성된 worksheet로 교정 내용과 승인 필드를 확인한다. Source import pack에서는 `human_review_manifest.json`의 source/draft SHA-256 binding도 함께 확인한다. Draft를 직접 수정한 뒤에는 아래 명령으로 worksheet를 refresh한다.
    ```bash
    python3 scripts/create_report_quality_review_sheet.py \
      reports/report-quality/pilot-rqc-001
