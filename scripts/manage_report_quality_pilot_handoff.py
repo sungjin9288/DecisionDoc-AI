@@ -6,13 +6,11 @@ import argparse
 import hashlib
 import io
 import json
-import os
 import re
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
-from uuid import uuid4
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +22,7 @@ from app.services.report_quality_pilot_receipt import (  # noqa: E402
     parse_pilot_export_receipt,
     validate_pilot_export_receipt,
 )
+from scripts.local_write_once import write_bytes_once  # noqa: E402
 from scripts.create_report_quality_review_sheet import (  # noqa: E402
     REVIEW_MANIFEST_REPORT_TYPE,
     REVIEW_MANIFEST_SCHEMA,
@@ -110,19 +109,6 @@ def _ordered_object_ids(value: Any, *, label: str) -> tuple[list[dict[str, Any]]
     if any(not artifact_id for artifact_id in artifact_ids):
         raise ValueError(f"{label} artifact_id values must be non-empty")
     return items, artifact_ids
-
-
-def _write_bytes_atomic(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
-    try:
-        with temporary_path.open("xb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
 
 
 def _write_zip_entry(archive: zipfile.ZipFile, path: str, content: bytes) -> None:
@@ -332,7 +318,11 @@ def create_report_quality_pilot_handoff(
     }
     if resolved_output_path in protected_paths:
         raise ValueError("handoff package must not overwrite source evidence")
-    _write_bytes_atomic(resolved_output_path, package_bytes)
+    write_bytes_once(
+        resolved_output_path,
+        package_bytes,
+        label="handoff package",
+    )
     return {
         "report_type": "report_quality_pilot_review_handoff_created",
         "ok": True,
@@ -719,7 +709,7 @@ def write_verified_handoff_summary(content: bytes, *, output_path: Path) -> dict
     if resolved.exists():
         raise ValueError(f"refusing to overwrite existing handoff summary: {resolved}")
     summary_bytes = entries[SUMMARY_NAME]
-    _write_bytes_atomic(resolved, summary_bytes)
+    write_bytes_once(resolved, summary_bytes, label="handoff summary")
     return {**result, "summary_output_path": str(resolved)}
 
 
