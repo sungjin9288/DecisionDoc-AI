@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,17 @@ from scripts import run_stage_procurement_smoke as runner
 class _FakeCompleted:
     def __init__(self, returncode: int = 0) -> None:
         self.returncode = returncode
+
+
+def _write_stage_env(path: Path, *, include_target: bool = False) -> None:
+    values = [
+        "SMOKE_BASE_URL=https://stage.example.com",
+        "SMOKE_API_KEY=test-secret-api-key",
+        "G2B_API_KEY=test-secret-g2b-key",
+    ]
+    if include_target:
+        values.append("SMOKE_PROCUREMENT_URL_OR_NUMBER=20260405001-00")
+    path.write_text("\n".join(values) + "\n", encoding="utf-8")
 
 
 def test_run_stage_procurement_smoke_runs_smoke_with_expected_env(monkeypatch) -> None:
@@ -327,3 +339,78 @@ def test_preflight_suggested_command_includes_base_url_for_github_actions_env_pa
     captured = capsys.readouterr().out
     assert result == 0
     assert "--base-url https://manual-base.example.com" in captured
+
+
+def test_preflight_writes_valid_blocked_proof_receipt_without_secrets(tmp_path: Path) -> None:
+    env_file = tmp_path / "stage.env"
+    receipt_path = tmp_path / "m2-preflight.json"
+    _write_stage_env(env_file, include_target=True)
+
+    result = runner.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--preflight",
+            "--proof-receipt",
+            str(receipt_path),
+        ]
+    )
+
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt = json.loads(receipt_text)
+    check = runner.proof_receipts.check_completion_proof_receipt(receipt_path)
+    assert result == 0
+    assert receipt["status"] == "blocked"
+    assert receipt["command"].endswith("--preflight")
+    assert "G2B live API execution" in receipt["excluded_external_actions"]
+    assert "test-secret-api-key" not in receipt_text
+    assert "test-secret-g2b-key" not in receipt_text
+    assert check["ok"] is True
+
+
+def test_stage_smoke_writes_valid_passed_proof_receipt(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / "stage.env"
+    receipt_path = tmp_path / "m2-passed.json"
+    _write_stage_env(env_file)
+    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: _FakeCompleted(0))
+
+    result = runner.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--proof-receipt",
+            str(receipt_path),
+        ]
+    )
+
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt = json.loads(receipt_text)
+    assert result == 0
+    assert receipt["status"] == "passed"
+    assert "G2B live API execution" not in receipt["excluded_external_actions"]
+    assert "test-secret-api-key" not in receipt_text
+    assert "test-secret-g2b-key" not in receipt_text
+    assert runner.proof_receipts.check_completion_proof_receipt(receipt_path)["ok"] is True
+
+
+def test_stage_smoke_writes_failed_proof_receipt_before_returning_error(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / "stage.env"
+    receipt_path = tmp_path / "m2-failed.json"
+    _write_stage_env(env_file)
+    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: _FakeCompleted(7))
+
+    result = runner.main(
+        [
+            "--env-file",
+            str(env_file),
+            "--proof-receipt",
+            str(receipt_path),
+        ]
+    )
+
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert result == 7
+    assert receipt["status"] == "failed"
+    assert "exit code 7" in receipt["evidence_summary"]
+    assert "G2B live API execution" not in receipt["excluded_external_actions"]
+    assert runner.proof_receipts.check_completion_proof_receipt(receipt_path)["ok"] is True

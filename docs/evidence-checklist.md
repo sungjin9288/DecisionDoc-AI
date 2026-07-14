@@ -42,6 +42,7 @@
 | Completion readiness local receipt | 재현 가능 | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` |
 | Completion readiness receipt checker | 재현 가능 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
 | Completion proof receipt template/checker | 재현 가능 | `python3 scripts/check_completion_proof_receipt.py --print-template M1`, `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` |
+| M2/M6 runner-owned proof receipt | 재현 가능 | `run_stage_procurement_smoke.py`와 `run_deployed_smoke.py`의 `--proof-receipt`; preflight blocked, 실제 smoke passed/failed, secret-free checker 계약 |
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 | Local post-login UI flow evidence | 재현 가능 | `python3 scripts/capture_ui_flow_evidence.py` |
 

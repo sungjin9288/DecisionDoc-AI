@@ -5,9 +5,10 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +70,7 @@ SECRET_PATTERNS = (
     re.compile(r"github_pat_[0-9A-Za-z_]{20,}"),
 )
 PLACEHOLDER_VALUES = {"TODO", "TBD", "REPLACE_ME", "your-value", "your-command"}
+SAFE_EVIDENCE_IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
@@ -138,6 +140,58 @@ def excluded_external_actions_for(milestone_id: str, command: str) -> list[str]:
         return list(EXCLUDED_EXTERNAL_ACTIONS)
     executed_action = MILESTONE_EXECUTED_ACTIONS[milestone_id]
     return [action for action in EXCLUDED_EXTERNAL_ACTIONS if action != executed_action]
+
+
+def safe_evidence_host(value: str) -> str:
+    return urlsplit(str(value or "").strip()).hostname or "configured"
+
+
+def safe_evidence_identifier(value: str, *, fallback: str) -> str:
+    normalized = str(value or "").strip()
+    if SAFE_EVIDENCE_IDENTIFIER.fullmatch(normalized):
+        return normalized
+    parsed = urlsplit(normalized)
+    if parsed.hostname:
+        return f"url-host:{parsed.hostname}"
+    return fallback
+
+
+def build_execution_receipt(
+    *,
+    milestone_id: str,
+    status: str,
+    command: str,
+    environment_boundary: str,
+    evidence_summary: str,
+    evidence_refs: Sequence[str],
+    remaining_limitations: Sequence[str],
+    executed_at_utc: str | None = None,
+) -> dict[str, object]:
+    if milestone_id not in MILESTONE_TITLES:
+        raise ValueError(f"unknown milestone_id: {milestone_id}")
+    timestamp = executed_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    receipt = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "scope": EXPECTED_SCOPE,
+        "milestone_id": milestone_id,
+        "title": MILESTONE_TITLES[milestone_id],
+        "status": status,
+        "command": command,
+        "executed_at_utc": timestamp,
+        "environment_boundary": environment_boundary,
+        "evidence_summary": evidence_summary,
+        "evidence_refs": list(evidence_refs),
+        "remaining_limitations": list(remaining_limitations),
+        "secret_values_recorded": False,
+        "excluded_external_actions": excluded_external_actions_for(milestone_id, command),
+    }
+    _validate_receipt(receipt)
+    return receipt
+
+
+def write_completion_proof_receipt(path: Path, receipt: Mapping[str, object]) -> Path:
+    _validate_receipt(receipt)
+    return write_json_artifact(path, receipt)
 
 
 def _validate_receipt(payload: Mapping[str, object]) -> dict[str, object]:

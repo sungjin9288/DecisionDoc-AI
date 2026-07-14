@@ -65,20 +65,14 @@ python3 scripts/check_completion_readiness_result.py \
 
 ## 4. Proof Receipt Contract
 
-M1/M2/M6 proof를 실제로 실행한 뒤에는 secret 없는 JSON receipt를 gitignored `reports/completion-readiness/` 아래에 남긴다. 먼저 안전한 템플릿을 만든다.
+M1/M2/M6 proof는 secret 없는 JSON receipt를 gitignored `reports/completion-readiness/` 아래에 남긴다. M1은 여러 provider command를 묶어 기록하므로 안전한 template을 채우고, M2/M6는 smoke runner가 `--proof-receipt` 경로에 직접 기록한다.
 
 ```bash
 python3 scripts/check_completion_proof_receipt.py --print-template M1 \
   > reports/completion-readiness/m1-live-provider-proof.json
-
-python3 scripts/check_completion_proof_receipt.py --print-template M2 \
-  > reports/completion-readiness/m2-g2b-stage-smoke-proof.json
-
-python3 scripts/check_completion_proof_receipt.py --print-template M6 \
-  > reports/completion-readiness/m6-deployment-smoke-proof.json
 ```
 
-템플릿의 placeholder를 실제 command, timestamp, environment boundary, evidence refs, pass/fail summary로 바꾼 뒤 receipt 계약을 확인한다.
+M1 template의 placeholder를 실제 command, timestamp, environment boundary, evidence refs, pass/fail summary로 바꾼다. M2/M6 runner는 UTC timestamp, canonical command, pass/failed/blocked 상태, 공개 가능한 smoke host와 공고 식별자, 남은 limitation을 지정 경로에 atomic write하며 API key와 password를 기록하지 않는다. Preflight와 실제 proof는 서로 다른 파일명을 사용해 준비 이력과 실행 결과를 함께 보존한다.
 
 ```bash
 python3 scripts/check_completion_proof_receipt.py \
@@ -96,7 +90,7 @@ python3 scripts/check_completion_proof_receipt.py \
 - receipt 문자열에 대표 secret pattern이 포함되지 않음
 - excluded external action boundary가 milestone별 proof 계약과 일치함
 
-M1 live receipt에서는 `provider API execution`, M2 실제 smoke receipt에서는 `G2B live API execution`, M6 실제 smoke receipt에서는 `AWS runtime execution`이 제외 목록에 없어야 한다. M2/M6 preflight receipt는 runtime action을 실행하지 않으므로 전체 제외 목록을 유지한다. 나머지 외부 action은 정해진 순서대로 유지한다.
+M1 live receipt에서는 `provider API execution`, M2 실제 smoke receipt에서는 `G2B live API execution`, M6 실제 smoke receipt에서는 `AWS runtime execution`이 제외 목록에 없어야 한다. M2/M6 preflight receipt는 `status: blocked`로 기록되고 runtime action을 실행하지 않으므로 전체 제외 목록을 유지한다. 실제 smoke 실패도 실행 시도는 있었으므로 해당 runtime action만 제외 목록에서 빠지고 `status: failed`로 남는다. 나머지 외부 action은 정해진 순서대로 유지한다.
 
 proof receipt 검증도 외부 API, G2B live API, AWS runtime을 실행하지 않는다.
 
@@ -160,14 +154,26 @@ gh workflow run live.yml --ref main -f provider='openai,gemini'
 ```bash
 python3 scripts/run_stage_procurement_smoke.py \
   --env-file .env.prod \
-  --preflight
+  --preflight \
+  --proof-receipt reports/completion-readiness/m2-g2b-stage-smoke-preflight.json
 ```
 
 preflight가 통과하면 stage smoke를 실행한다.
 
 ```bash
 python3 scripts/run_stage_procurement_smoke.py \
-  --env-file .env.prod
+  --env-file .env.prod \
+  --proof-receipt reports/completion-readiness/m2-g2b-stage-smoke-proof.json
+```
+
+runner는 성공뿐 아니라 smoke return code 실패도 receipt에 먼저 기록한 뒤 같은 exit code를 반환한다. 기록 후 `check_completion_proof_receipt.py`로 receipt를 독립 검증한다.
+
+```bash
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m2-g2b-stage-smoke-preflight.json
+
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m2-g2b-stage-smoke-proof.json
 ```
 
 증적 기록 기준:
@@ -192,14 +198,26 @@ python3 scripts/run_stage_procurement_smoke.py \
 ```bash
 python3 scripts/run_deployed_smoke.py \
   --env-file .env.prod \
-  --preflight
+  --preflight \
+  --proof-receipt reports/completion-readiness/m6-deployment-smoke-preflight.json
 ```
 
 preflight가 통과하면 deployed smoke를 실행한다.
 
 ```bash
 python3 scripts/run_deployed_smoke.py \
-  --env-file .env.prod
+  --env-file .env.prod \
+  --proof-receipt reports/completion-readiness/m6-deployment-smoke-proof.json
+```
+
+runner는 preflight를 외부 실행 완료로 승격하지 않으며, 실제 smoke 성공·실패만 runtime action이 실행된 receipt로 기록한다.
+
+```bash
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m6-deployment-smoke-preflight.json
+
+python3 scripts/check_completion_proof_receipt.py \
+  reports/completion-readiness/m6-deployment-smoke-proof.json
 ```
 
 증적 기록 기준:

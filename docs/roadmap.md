@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2938 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2945 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -32,11 +32,11 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 | 마일스톤 | 현재 상태 | 다음 조건 |
 |---|---|---|
 | M1 Live provider 실증 | 진행 중. 2026-07-13 OpenAI 1회 통과; Gemini HTTP 429, Claude credit 부족, fallback 성공 미달 | Gemini quota/billing과 Anthropic credits 복구 후 Gemini/Claude/fallback live test 재실행 |
-| M2 G2B 실데이터 end-to-end | 미착수. `G2B_API_KEY` 없이 live 수집 불가 | stage URL/API key/G2B key 확보 후 `scripts/run_stage_procurement_smoke.py` 증적화 |
+| M2 G2B 실데이터 end-to-end | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | stage URL/API key/G2B key 확보 후 `--proof-receipt`를 포함한 실제 smoke 실행 |
 | M3 Export 5종 대칭성 | 완료 | README와 샘플 산출물의 수치가 코드와 계속 일치하는지 유지 |
 | M4 CSP nonce | 완료. inline `on*=` handler 0개, nonce 기본 on | 새 UI 이벤트 추가 시 inline handler 금지 guard 유지 |
 | M5 800줄 초과 모듈 분할 | 완료. 2026-07-14 상수 모듈 drift를 604줄 facade + 314줄 foundation으로 재분할하고 자동 guard 추가, 초과 0개 | infrastructure guard와 facade re-export 계약 유지 |
-| M6 배포/post-deploy smoke | 미착수. `.env.prod`와 runtime 증거 필요 | 배포 환경 확보 후 `scripts/run_deployed_smoke.py`와 ops smoke 증적화 |
+| M6 배포/post-deploy smoke | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | 배포 환경 확보 후 `--proof-receipt`를 포함한 deployed/ops smoke 실행 |
 
 ## 3. Phase 1 - MVP 완성
 
@@ -148,7 +148,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 | 우선순위 | 작업 | 이유 | 예상 산출물 |
 |---|---|---|---|
 | 1 | M1 live provider 실증 완료 | OpenAI proof는 있으나 Gemini/Claude/fallback 성공 증거가 남음 | blocked receipt 갱신 후 live provider validation note 완료 |
-| 2 | M2 G2B 실데이터 smoke 준비 | 공공조달 흐름은 live key 없이는 end-to-end 증거가 없음 | G2B smoke receipt |
-| 3 | M6 배포/post-deploy smoke 준비 | README Demo 링크를 채우려면 접근성 evidence가 필요 | deployment note, smoke report |
+| 2 | M2 G2B 실데이터 smoke 실행 | no-secret receipt 자동화는 완료됐지만 live key 없이는 end-to-end 증거가 없음 | runner-generated G2B smoke receipt |
+| 3 | M6 배포/post-deploy smoke 실행 | receipt 자동화는 완료됐지만 README Demo 링크에는 실제 접근성 evidence가 필요 | runner-generated deployment receipt, ops smoke report |
 | 4 | 포트폴리오용 짧은 UI recording 선택 캡처 | 최신 screenshot은 갱신됐고, 영상은 제출 방식에 따라 선택 필요 | short recording |
 | 5 | contribution note 유지 | 면접 설명이 실제 코드와 증거 범위를 넘지 않게 유지 | `docs/contribution-note.md` |

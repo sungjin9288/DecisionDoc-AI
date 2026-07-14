@@ -44,6 +44,8 @@
 | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` | gitignore된 env file에서 M1/M2/M6 readiness 입력값을 읽고, 실행 준비 조건을 gitignore된 `reports/` 경로에 JSON receipt로 기록. 외부 호출 없음 | 재현 가능 |
 | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` | completion readiness JSON receipt가 현재 schema, milestone order, command list, excluded action contract와 일치하는지 확인 | 재현 가능 |
 | `python3 scripts/check_completion_proof_receipt.py --print-template M1` | 실제 proof 이후 채울 no-secret proof receipt template 출력. placeholder가 남아 있으면 checker가 거부 | 재현 가능 |
+| `python3 scripts/run_stage_procurement_smoke.py --preflight --proof-receipt <path>` | M2 preflight를 외부 미실행 `blocked` receipt로 atomic 기록. 실제 smoke는 같은 옵션으로 pass/fail과 안전한 host/target evidence를 기록 | 재현 가능 |
+| `python3 scripts/run_deployed_smoke.py --preflight --proof-receipt <path>` | M6 preflight를 외부 미실행 `blocked` receipt로 atomic 기록. 실제 smoke는 같은 옵션으로 pass/fail과 안전한 runtime host evidence를 기록 | 재현 가능 |
 | `python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m1-live-provider-proof.json` | v2 proof receipt의 command, timestamp, evidence refs, secret boundary, milestone별 미실행 action 계약 확인. checker 자체는 외부 호출 없음 | 재현 가능 |
 | `docs/completion-readiness-runbook.md` | M1/M2/M6 proof 실행 전후 순서, 중단 기준, 문서 갱신 순서를 고정한 runbook | 재현 가능 |
 

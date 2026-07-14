@@ -214,10 +214,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,688개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,695개**, **220개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2688
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2695
 python3 scripts/count_readme_metrics.py --field test_files      # → 220
 ```
 
@@ -236,7 +236,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,938 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,945 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -248,7 +248,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/check_completion_proof_receipt.py --print-template M1
 ```
 
-위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 secret 없는 proof receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
 | 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-13) |
 |----------|------|-----------|--------------------|
@@ -286,4 +286,4 @@ python3 scripts/check_completion_proof_receipt.py --print-template M1
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,688 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 261 · 테스트 2,695 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

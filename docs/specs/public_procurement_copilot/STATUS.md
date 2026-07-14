@@ -3,6 +3,15 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone M2/M6 no-secret proof receipt automation
+
+- `run_stage_procurement_smoke.py` and `run_deployed_smoke.py` now accept `--proof-receipt` and atomically write the existing validated completion proof receipt contract after preflight or a real smoke attempt.
+- Preflight remains `blocked` proof with every external action excluded. A real smoke attempt records `passed` or `failed`, preserves the subprocess exit code in the summary, and removes only that milestone's attempted runtime action from the exclusion list.
+- Receipts keep the UTC timestamp, canonical command, safe smoke hostname, safe procurement identifier, and remaining limitations. API keys, passwords, URL userinfo, query strings, and raw environment contents are not recorded.
+- A no-external `.env.prod` preflight returned exit 1 for both runners because M2 still lacks `SMOKE_BASE_URL`, `SMOKE_API_KEY`, and `G2B_API_KEY`, while M6 still lacks a base URL and runtime API key. Both generated `blocked` receipts passed the v2 checker and kept every external action excluded.
+- Focused receipt, stage-smoke, and deployed-smoke contract verification passes with 31 tests. No provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production resume, bid submission, legal approval, or contractual commitment was executed.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,945 passed, 2 skipped, and 4 deselected in 218.23 seconds.
+
 ## Post-milestone M5 module-size guard restoration
 
 - A no-cost architecture audit found that `app/services/procurement_decision_package/constants.py` had grown to 829 lines after the original M5 cleanup, so the documented zero-oversized-module claim had drifted.

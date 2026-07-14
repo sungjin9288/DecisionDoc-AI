@@ -307,7 +307,11 @@ def test_completion_readiness_prints_local_proof_plan_without_secret_values() ->
     assert "mkdir -p reports/completion-readiness" in completed.stdout
     assert "python3 scripts/check_completion_readiness.py --env-file .env.prod" in completed.stdout
     assert "python3 scripts/check_completion_proof_receipt.py --print-template M1" in completed.stdout
-    assert "reports/completion-readiness/m2-g2b-stage-smoke-proof.json" in completed.stdout
+    assert "run_stage_procurement_smoke.py --env-file .env.prod --preflight --proof-receipt" in completed.stdout
+    assert "run_deployed_smoke.py --env-file .env.prod --proof-receipt" in completed.stdout
+    assert "m2-g2b-stage-smoke-preflight.json" in completed.stdout
+    assert "m2-g2b-stage-smoke-proof.json" in completed.stdout
+    assert "check_completion_proof_receipt.py reports/completion-readiness/m6-deployment-smoke-preflight.json" in completed.stdout
     assert "python3 scripts/check_completion_proof_receipt.py reports/completion-readiness/m6-deployment-smoke-proof.json" in completed.stdout
     assert "your-openai-api-key" not in completed.stdout
     assert "sk-" not in completed.stdout

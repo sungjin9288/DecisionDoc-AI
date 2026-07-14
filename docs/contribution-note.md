@@ -20,7 +20,7 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | Procurement decision package | local fixture 기반 procurement decision package, CLI contract manifest, persisted receipt checker | `docs/samples/procurement_decision_package_local_demo/`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py` |
 | Review and approval boundary | approval, sign-off, handoff는 운영 실행 승인과 분리한다는 구조 | `app/routers/approvals.py`, `docs/product_direction.md`, `docs/product_execution_plan.md` |
 | CSP and static PWA hardening | inline handler 제거, per-request CSP nonce, static PWA root rendering evidence | `app/middleware/security_headers.py`, `app/static/index.html`, `tests/test_pwa.py`, `evidence/cli-logs/ui_csp_nonce_check.log` |
-| Completion readiness / proof receipt | live provider, G2B live smoke, deployment smoke를 실행 전 readiness와 실행 후 no-secret proof receipt로 분리 | `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, `scripts/check_completion_proof_receipt.py` |
+| Completion readiness / proof receipt | live provider, G2B live smoke, deployment smoke를 실행 전 readiness와 실행 후 no-secret proof receipt로 분리. M2/M6 runner는 preflight와 실제 pass/fail receipt를 직접 atomic 기록 | `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, `scripts/check_completion_proof_receipt.py`, `scripts/run_stage_procurement_smoke.py`, `scripts/run_deployed_smoke.py` |
 | Source-backed README metrics | route/test/env 수치를 AST와 source parser로 재계산해 README drift를 줄이는 검증 경로 | `scripts/count_readme_metrics.py`, `tests/test_count_readme_metrics.py` |
 
 ## 3. 검증된 범위
@@ -35,7 +35,7 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
-| Completion proof receipt contract | `python3 scripts/check_completion_proof_receipt.py --print-template M1` 후 proof 실행 결과로 채운 receipt를 `python3 scripts/check_completion_proof_receipt.py <receipt>`로 검증 |
+| Completion proof receipt contract | M1은 `--print-template M1`을 실제 결과로 채우고, M2/M6는 runner `--proof-receipt`로 생성한 receipt를 `check_completion_proof_receipt.py <receipt>`로 검증 |
 | Completion proof runbook | `docs/completion-readiness-runbook.md` |
 | Static PWA screenshot | `evidence/screenshots/web-ui-home.png` |
 | Static PWA CSP boundary | `evidence/cli-logs/ui_csp_nonce_check.log` |

@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,938 passed, 2 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | mock/local 경로에서 전 기능 테스트 통과 (`pytest -q tests/ -m "not live" --tb=short` → 2,945 passed, 2 skipped, 4 deselected, 2026-07-14) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2938 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-14 실측: 2945 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -125,6 +125,7 @@ Providers (5)    Storage (37 스토어)    Ops
   2. 산출 결과를 fixture로 고정해 회귀 테스트화 (키 없는 CI에서도 재현).
   3. GO / CONDITIONAL_GO / NO_GO 판정 재현성 확인.
 - DoD: 실데이터 1건의 end-to-end 실행 증적 + 해당 케이스의 키-불필요 회귀 테스트. 입찰 제출·법적 승인은 범위 밖(기존 boundary 유지).
+- 2026-07-14 local 준비: `run_stage_procurement_smoke.py --proof-receipt`가 preflight를 미실행 `blocked` 상태로, 실제 smoke를 `passed` 또는 `failed` 상태로 atomic 기록한다. Host와 안전한 공고 식별자만 남기고 API key, password, URL userinfo/query는 receipt에서 제외한다. 실 G2B 호출은 아직 실행하지 않았다.
 
 ### M3 — Export 5종 대칭성 (G4) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 커밋 e9ecabc)
 
@@ -184,6 +185,7 @@ PY
   2. post-deploy smoke(`scripts/smoke.py`, `scripts/ops_smoke.py`) 결과 증적화.
   3. 데모 URL 접근성 확인 후 README Links의 "Demo: (접근 검증 후 추가)" 갱신.
 - DoD: 신규 환경에서 README 절차만으로 배포 재현 + smoke 통과 로그.
+- 2026-07-14 local 준비: `run_deployed_smoke.py --proof-receipt`가 preflight와 실제 deployed smoke의 상태·UTC 시각·runtime host·남은 제한을 validator-compatible receipt로 남긴다. Preflight는 AWS runtime 실행 증거로 취급하지 않으며 실제 runtime은 아직 실행하지 않았다.
 
 ---
 

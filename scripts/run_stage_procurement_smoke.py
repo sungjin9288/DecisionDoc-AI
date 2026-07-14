@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts import check_completion_proof_receipt as proof_receipts  # noqa: E402
+
 DEFAULT_ENV_FILE = REPO_ROOT / "scripts" / "stage_procurement_smoke.env.example"
 DEFAULT_GITHUB_ACTIONS_ENV_FILE = REPO_ROOT / ".github-actions.env"
 
@@ -341,10 +346,62 @@ def run_stage_procurement_smoke(
         print("Procurement target: auto-discover recent live G2B opportunity", flush=True)
     completed = subprocess.run(smoke_command, cwd=REPO_ROOT, env=smoke_env, check=False)
     if completed.returncode != 0:
-        raise SystemExit(completed.returncode)
+        print(f"Stage procurement smoke failed with exit code {completed.returncode}.", flush=True)
+        return int(completed.returncode)
     print("", flush=True)
     print("Stage procurement smoke completed.", flush=True)
     return 0
+
+
+def _write_proof_receipt(
+    path: Path,
+    *,
+    preflight: bool,
+    returncode: int,
+    base_url: str,
+    procurement_target: str,
+) -> Path:
+    if preflight:
+        command = "python3 scripts/run_stage_procurement_smoke.py --preflight"
+        summary = (
+            "M2 stage procurement smoke preflight passed; live G2B smoke was not executed."
+            if returncode == 0
+            else "M2 stage procurement smoke preflight is blocked by missing required inputs."
+        )
+        limitations = ["Live G2B stage smoke was not executed."]
+        status = "blocked"
+    else:
+        command = "python3 scripts/run_stage_procurement_smoke.py"
+        summary = (
+            "M2 G2B live procurement smoke completed successfully."
+            if returncode == 0
+            else f"M2 G2B live procurement smoke failed with exit code {returncode}."
+        )
+        limitations = ["This receipt does not prove live provider quality or deployment smoke."]
+        status = "passed" if returncode == 0 else "failed"
+
+    evidence_refs = ["scripts/smoke.py"]
+    if base_url:
+        evidence_refs.append(f"smoke_host={proof_receipts.safe_evidence_host(base_url)}")
+    evidence_refs.append(
+        "procurement_target="
+        + proof_receipts.safe_evidence_identifier(
+            procurement_target,
+            fallback="auto-discovery" if not procurement_target else "configured",
+        )
+    )
+    receipt = proof_receipts.build_execution_receipt(
+        milestone_id="M2",
+        status=status,
+        command=command,
+        environment_boundary="stage procurement smoke; no secret values recorded",
+        evidence_summary=summary,
+        evidence_refs=evidence_refs,
+        remaining_limitations=limitations,
+    )
+    written_path = proof_receipts.write_completion_proof_receipt(path, receipt)
+    print(f"Completion proof receipt written: {written_path}", flush=True)
+    return written_path
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -377,6 +434,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Print a copy-paste env template and example command without running anything.",
     )
+    parser.add_argument(
+        "--proof-receipt",
+        default="",
+        help="Write a validated no-secret M2 proof receipt for this preflight or smoke attempt.",
+    )
     return parser.parse_args(list(argv))
 
 
@@ -406,7 +468,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_env_template(env_file=env_file or DEFAULT_ENV_FILE)
         return 0
     if bool(args.preflight):
-        return _run_preflight(
+        result = _run_preflight(
             base_url=str(args.base_url).strip(),
             api_key=str(args.api_key).strip(),
             procurement_url_or_number=str(args.procurement_url_or_number).strip(),
@@ -422,6 +484,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             stack_name=str(args.stack_name).strip(),
             aws_region=str(args.aws_region).strip(),
         )
+        if str(args.proof_receipt).strip():
+            _write_proof_receipt(
+                Path(args.proof_receipt).expanduser(),
+                preflight=True,
+                returncode=result,
+                base_url=str(args.base_url).strip() or _lookup_env("SMOKE_BASE_URL", env_overrides),
+                procurement_target=str(args.procurement_url_or_number).strip()
+                or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
+            )
+        return result
     resolved_base_url = _resolve_required_env(
         str(args.base_url).strip(),
         "SMOKE_BASE_URL",
@@ -469,11 +541,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         env_overrides,
         default=str(DEFAULT_TIMEOUT_SEC),
     )
-    return run_stage_procurement_smoke(
+    procurement_target = str(args.procurement_url_or_number).strip() or _lookup_env(
+        "SMOKE_PROCUREMENT_URL_OR_NUMBER",
+        env_overrides,
+    )
+    result = run_stage_procurement_smoke(
         base_url=resolved_base_url,
         api_key=resolved_api_key,
-        procurement_url_or_number=str(args.procurement_url_or_number).strip()
-        or _lookup_env("SMOKE_PROCUREMENT_URL_OR_NUMBER", env_overrides),
+        procurement_url_or_number=procurement_target,
         g2b_api_key=resolved_g2b_api_key,
         provider=resolved_provider,
         timeout_sec=float(resolved_timeout),
@@ -483,6 +558,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         password=resolved_password,
         env_overrides=env_overrides,
     )
+    if str(args.proof_receipt).strip():
+        _write_proof_receipt(
+            Path(args.proof_receipt).expanduser(),
+            preflight=False,
+            returncode=result,
+            base_url=resolved_base_url,
+            procurement_target=procurement_target,
+        )
+    return result
 
 
 if __name__ == "__main__":

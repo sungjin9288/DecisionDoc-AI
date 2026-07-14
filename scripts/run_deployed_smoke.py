@@ -10,6 +10,11 @@ from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts import check_completion_proof_receipt as proof_receipts  # noqa: E402
+
 DEFAULT_ENV_FILE = REPO_ROOT / ".env.prod"
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.prod.yml"
 DEFAULT_SERVICE = "app"
@@ -67,17 +72,24 @@ def _required_value(name: str, value: str) -> str:
     return normalized
 
 
-def _resolve_base_url(base_url: str, env_values: dict[str, str]) -> str:
+def _configured_base_url(base_url: str, env_values: dict[str, str]) -> str:
     normalized = str(base_url or "").strip()
     if normalized:
         return normalized.rstrip("/")
     origins = _split_csv(env_values.get("ALLOWED_ORIGINS", ""))
     if origins:
         return origins[0].rstrip("/")
+    return ""
+
+
+def _resolve_base_url(base_url: str, env_values: dict[str, str]) -> str:
+    configured = _configured_base_url(base_url, env_values)
+    if configured:
+        return configured
     raise SystemExit("Missing deployed smoke base URL. Pass --base-url or set ALLOWED_ORIGINS in the env file.")
 
 
-def _resolve_api_key(api_key: str, env_values: dict[str, str]) -> str:
+def _configured_api_key(api_key: str, env_values: dict[str, str]) -> str:
     normalized = str(api_key or "").strip()
     if normalized:
         return normalized
@@ -87,6 +99,13 @@ def _resolve_api_key(api_key: str, env_values: dict[str, str]) -> str:
     legacy_key = env_values.get("DECISIONDOC_API_KEY", "").strip()
     if legacy_key:
         return legacy_key
+    return ""
+
+
+def _resolve_api_key(api_key: str, env_values: dict[str, str]) -> str:
+    configured = _configured_api_key(api_key, env_values)
+    if configured:
+        return configured
     raise SystemExit("Missing deployed smoke API key. Set DECISIONDOC_API_KEYS or pass --api-key.")
 
 
@@ -189,20 +208,66 @@ def _print_env_template(*, env_file: Path, compose_file: Path, service: str) -> 
 
 def _run_preflight(*, env_file: Path, base_url: str, api_key: str, provider: str, timeout_sec: str | float | int) -> int:
     env_values = _load_env_file(env_file)
-    resolved_base_url = _resolve_base_url(base_url, env_values)
-    resolved_api_key = _resolve_api_key(api_key, env_values)
+    resolved_base_url = _configured_base_url(base_url, env_values)
+    resolved_api_key = _configured_api_key(api_key, env_values)
     resolved_provider = _resolve_provider(provider, env_values)
     resolved_timeout_sec = _resolve_timeout_sec(timeout_sec, env_values)
 
     print("Deployed smoke preflight", flush=True)
     print("", flush=True)
-    print(f"[ok] SMOKE_BASE_URL={resolved_base_url}", flush=True)
-    print(f"[ok] SMOKE_API_KEY={'set' if resolved_api_key else 'missing'}", flush=True)
+    if resolved_base_url:
+        print(f"[ok] SMOKE_BASE_URL host={proof_receipts.safe_evidence_host(resolved_base_url)}", flush=True)
+    else:
+        print("[missing] SMOKE_BASE_URL", flush=True)
+    print(f"[{'ok' if resolved_api_key else 'missing'}] SMOKE_API_KEY", flush=True)
     print(f"[ok] SMOKE_PROVIDER={resolved_provider}", flush=True)
     print(f"[ok] SMOKE_TIMEOUT_SEC={resolved_timeout_sec}", flush=True)
     print("", flush=True)
     _print_smoke_checks()
-    return 0
+    return 0 if resolved_base_url and resolved_api_key else 1
+
+
+def _write_proof_receipt(
+    path: Path,
+    *,
+    preflight: bool,
+    returncode: int,
+    base_url: str,
+) -> Path:
+    if preflight:
+        command = "python3 scripts/run_deployed_smoke.py --preflight"
+        summary = (
+            "M6 deployment smoke preflight passed; deployed runtime smoke was not executed."
+            if returncode == 0
+            else "M6 deployment smoke preflight is blocked by missing required inputs."
+        )
+        limitations = ["Deployment and post-deploy smoke were not executed."]
+        status = "blocked"
+    else:
+        command = "python3 scripts/run_deployed_smoke.py"
+        summary = (
+            "M6 deployment and post-deploy smoke completed successfully."
+            if returncode == 0
+            else f"M6 deployment and post-deploy smoke failed with exit code {returncode}."
+        )
+        limitations = ["This receipt does not prove live G2B collection or live provider quality."]
+        status = "passed" if returncode == 0 else "failed"
+
+    receipt = proof_receipts.build_execution_receipt(
+        milestone_id="M6",
+        status=status,
+        command=command,
+        environment_boundary="deployed runtime smoke; no secret values recorded",
+        evidence_summary=summary,
+        evidence_refs=[
+            "scripts/smoke.py",
+            f"smoke_host={proof_receipts.safe_evidence_host(base_url)}",
+        ],
+        remaining_limitations=limitations,
+    )
+    written_path = proof_receipts.write_completion_proof_receipt(path, receipt)
+    print(f"Completion proof receipt written: {written_path}", flush=True)
+    return written_path
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -254,6 +319,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print a minimal env template and suggested command.",
     )
+    parser.add_argument(
+        "--proof-receipt",
+        default="",
+        help="Write a validated no-secret M6 proof receipt for this preflight or smoke attempt.",
+    )
     return parser
 
 
@@ -265,14 +335,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_env_template(env_file=env_file, compose_file=compose_file, service=args.service)
         return 0
     if args.preflight:
-        return _run_preflight(
+        result = _run_preflight(
             env_file=env_file,
             base_url=args.base_url,
             api_key=args.api_key,
             provider=args.provider,
             timeout_sec=args.timeout_sec,
         )
-    return run_deployed_smoke(
+        if str(args.proof_receipt).strip():
+            env_values = _load_env_file(env_file)
+            _write_proof_receipt(
+                Path(args.proof_receipt).expanduser(),
+                preflight=True,
+                returncode=result,
+                base_url=_configured_base_url(args.base_url, env_values),
+            )
+        return result
+    result = run_deployed_smoke(
         env_file=env_file,
         compose_file=compose_file,
         service=args.service,
@@ -281,6 +360,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider=args.provider,
         timeout_sec=args.timeout_sec,
     )
+    if str(args.proof_receipt).strip():
+        env_values = _load_env_file(env_file)
+        _write_proof_receipt(
+            Path(args.proof_receipt).expanduser(),
+            preflight=False,
+            returncode=result,
+            base_url=_resolve_base_url(args.base_url, env_values),
+        )
+    return result
 
 
 if __name__ == "__main__":

@@ -223,3 +223,11 @@ def test_completion_proof_receipt_writes_check_result(tmp_path: Path) -> None:
     result = json.loads(check_path.read_text(encoding="utf-8"))
     assert result["ok"] is True
     assert result["schema_version"] == "decisiondoc.completion_proof_receipt_check.v2"
+
+
+def test_completion_proof_evidence_helpers_strip_url_credentials_and_query() -> None:
+    sensitive_url = "https://operator:password@stage.example.com/path?serviceKey=secret#fragment"
+
+    assert checker.safe_evidence_host(sensitive_url) == "stage.example.com"
+    assert checker.safe_evidence_identifier(sensitive_url, fallback="configured") == "url-host:stage.example.com"
+    assert checker.safe_evidence_identifier("20260405001-00", fallback="configured") == "20260405001-00"
