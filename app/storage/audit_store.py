@@ -51,6 +51,9 @@ ACTION_TYPES: dict[str, str] = {
     "procurement.downstream_resolved": "조달 override 이후 downstream 완료",
     "decision_council.run": "Decision Council 실행",
     "decision_council.handoff_used": "Decision Council handoff 반영 생성",
+    # Report quality
+    "report_quality.pilot_preview": "보고서 품질 파일럿 사전 검토",
+    "report_quality.pilot_export": "보고서 품질 파일럿 내보내기",
     # Approval
     "approval.create": "결재 요청",
     "approval.submit": "검토 요청",

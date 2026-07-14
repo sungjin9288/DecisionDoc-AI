@@ -1750,6 +1750,14 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "$id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs)" in content
     assert "$id('sso-refresh-btn')?.addEventListener('click', loadSSOConfig)" in content
     assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content
+    assert '<option value="report_quality.pilot_preview">' in content
+    assert '<option value="report_quality.pilot_export">' in content
+    assert "request=${escapeHtml(detail.request_id || '-')}" in content
+    assert "sha256=${escapeHtml(detail.pilot_sha256 || '-')}" in content
+    assert "preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}" in content
+    assert "#audit-log-table { overflow-x: auto; }" in content
+    assert "width: 100%; min-width: 760px;" in content
+    assert 'id="ops-panel" style="display:none;margin:2rem auto;max-width:960px;' in content
 
 
 def test_index_html_sso_billing_dynamic_controls_use_event_listeners():

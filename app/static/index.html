@@ -4215,8 +4215,9 @@
     }
 
     /* ── Audit log table ─────────────────────────────────────────── */
+    #audit-log-table { overflow-x: auto; }
     .audit-table {
-      width: 100%; border-collapse: collapse; font-size: 0.8rem;
+      width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.8rem;
     }
     .audit-table th {
       background: rgba(255,255,255,.08); padding: 8px;
@@ -4228,7 +4229,8 @@
     .audit-row.failure { background: rgba(245,158,11,0.08); }
     .audit-time { font-family: monospace; white-space: nowrap; }
     .audit-ip { font-family: monospace; color: #94a3b8; }
-    .audit-resource { color: #94a3b8; font-size: 0.75rem; }
+    .audit-resource { min-width: 340px; color: #94a3b8; font-size: 0.75rem; }
+    .audit-evidence { margin-top: 4px; color: #cbd5e1; font-family: monospace; font-size: 0.68rem; line-height: 1.45; overflow-wrap: anywhere; }
     .audit-badge {
       padding: 1px 8px; border-radius: 99px;
       font-size: 0.7rem; font-weight: 600;
@@ -6592,7 +6594,7 @@
 </div>
 
 <!-- ── Ops 대시보드 (?ops=1 파라미터로 노출) ──────────────────── -->
-<section id="ops-panel" style="display:none;margin:2rem auto;max-width:760px;padding:2rem;
+<section id="ops-panel" style="display:none;margin:2rem auto;max-width:960px;padding:2rem;
          background:#1e1b4b;color:#fff;border-radius:var(--radius-lg);">
   <h3 style="font-size:1rem;font-weight:800;margin:0 0 1.2rem;">🔧 Ops 대시보드</h3>
   <form id="ops-form">
@@ -6702,6 +6704,8 @@
         <option value="approval.approve">결재 승인</option>
         <option value="user.create">사용자 생성</option>
         <option value="system.export">데이터 내보내기</option>
+        <option value="report_quality.pilot_preview">품질 Pilot 사전 검토</option>
+        <option value="report_quality.pilot_export">품질 Pilot 내보내기</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -26855,21 +26859,31 @@ function renderAuditLogs(logs) {
         </tr>
       </thead>
       <tbody>
-        ${logs.map(log => `
-          <tr class="audit-row ${log.result || ''}">
-            <td class="audit-time">${(log.timestamp || '').slice(11,19)}</td>
-            <td>${log.username || log.user_id || ''}</td>
-            <td><code style="font-size:.75rem;color:#a5b4fc;">${log.action || ''}</code></td>
-            <td class="audit-resource">${log.resource_type || ''} ${(log.resource_id || '').slice(0,8)}</td>
-            <td class="audit-ip">${log.ip_address || ''}</td>
+        ${logs.map(log => {
+          const detail = log?.detail && typeof log.detail === 'object' ? log.detail : {};
+          const isQualityPilot = ['report_quality.pilot_preview', 'report_quality.pilot_export'].includes(log?.action);
+          const resource = `${escapeHtml(log?.resource_type || '')} ${escapeHtml(String(log?.resource_id || '').slice(0, 8))}`.trim();
+          const evidence = isQualityPilot ? `<div class="audit-evidence">
+            request=${escapeHtml(detail.request_id || '-')}<br>
+            sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>
+            artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}
+          </div>` : '';
+          return `
+          <tr class="audit-row ${escapeHtml(log.result || '')}">
+            <td class="audit-time">${escapeHtml(String(log.timestamp || '').slice(11,19))}</td>
+            <td>${escapeHtml(log.username || log.user_id || '')}</td>
+            <td><code style="font-size:.75rem;color:#a5b4fc;">${escapeHtml(log.action || '')}</code></td>
+            <td class="audit-resource">${resource}${evidence}</td>
+            <td class="audit-ip">${escapeHtml(log.ip_address || '')}</td>
             <td>
               <span class="audit-badge" style="
                 background:${(AUDIT_RESULT_COLOR[log.result] || '#64748b') + '25'};
                 color:${AUDIT_RESULT_COLOR[log.result] || '#64748b'}">
-                ${AUDIT_RESULT_LABEL[log.result] || log.result || ''}
+                ${escapeHtml(AUDIT_RESULT_LABEL[log.result] || log.result || '')}
               </span>
             </td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
 }
