@@ -126,7 +126,8 @@ Status: implemented for the local review and governance workbench. The browser n
 named-actor review, export, freeze, dry-run approval, execution-request, audit, and integrity
 summary paths already supported by the API. Tenant-scoped trajectory history reports the actual
 filtered total and supports task/review filters with newest-first page traversal without exposing
-an execution path.
+an execution path. Each trajectory can be expanded into the stored input, full draft, evidence
+status, QA gate, and review history before a reviewer records notes and an explicit human score.
 
 Work:
 
@@ -138,6 +139,7 @@ Work:
 - keep trajectory history pagination aligned across storage, API, and browser state
 - ignore stale trajectory responses when operators change filters before an earlier request completes
 - return to the first or last valid page when filters or reviews change the visible result set
+- require review notes and an explicit human score in the browser before accepting a trajectory
 
 Acceptance:
 

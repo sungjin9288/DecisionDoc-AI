@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2964 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2965 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -85,7 +85,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 Admin Ops audit 화면에 report-quality pilot preview/export 필터와 receipt 대조용 request ID·전체 SHA-256·artifact count·검증 상태를 연결했다. Audit 문자열은 HTML escape하고 모바일에서는 table 내부 스크롤로 화면 overflow를 차단한다. 조회와 CSV export는 같은 action/result/시작일/종료일 filter를 사용하며, 누락·역전 기간은 요청 전에 차단하고 date-only 종료일은 해당 UTC 날짜 전체를 포함한다. 조회 API는 검증된 offset/limit, filtered total, `has_more`를 반환하고 UI는 전체 건수·현재 범위와 이전/다음 이동을 표시하며 페이지 간 filter를 유지한다. CSV는 전체 detail과 pilot 식별자를 보존하고 1,000건 query cap으로 증빙이 빠지지 않도록 별도 full export 경로를 사용한다. Spreadsheet formula로 해석될 수 있는 문자열도 안전한 text cell로 기록한다.
   - 2026-07-14 Ops 화면의 tenant selector가 admin 로그인 세션의 JWT를 유지하도록 tenant 목록 요청을 공통 인증 header 조합으로 정렬했다. `/admin/tenants`는 기존대로 admin JWT 또는 설정된 Ops key를 요구하며 권한 경계를 완화하지 않는다.
   - 2026-07-14 report-quality correction artifact 목록에 tenant-scoped `offset`/`limit`, filtered total, `has_more`를 추가하고 화면에 전체/ready 탐색과 5개 단위 페이지 이동을 연결했다. 페이지를 넘어가도 현재 tenant의 pilot 선택을 최대 5개까지 보존하며, tenant가 바뀌면 선택을 비우고 preview/export에서 기존 server-side 3~5개 ready 검증을 다시 수행한다.
-  - 2026-07-14 DocumentOps trajectory 목록의 `total`을 제한된 응답 길이가 아닌 tenant·filter 기준 실제 건수로 바로잡고, 최신 항목 기준 `offset`/`limit`과 `returned`/`has_more` 계약을 추가했다. Browser workbench는 작업 유형·검토 상태 filter, 10건 단위 이력 이동, filter 변경과 새 실행 시 첫 페이지 복귀, 리뷰 후 현재 page가 비면 마지막 유효 page 복귀를 지원하며 mock/local desktop·390px mobile에서 최신순·overflow·console error를 검증한다.
+  - 2026-07-14 DocumentOps trajectory 목록의 `total`을 제한된 응답 길이가 아닌 tenant·filter 기준 실제 건수로 바로잡고, 최신 항목 기준 `offset`/`limit`과 `returned`/`has_more` 계약을 추가했다. Browser workbench는 작업 유형·검토 상태 filter, 10건 단위 이력 이동, filter 변경과 새 실행 시 첫 페이지 복귀, 리뷰 후 현재 page가 비면 마지막 유효 page 복귀를 지원한다. 각 trajectory는 전체 입력·초안·근거 상태·QA gate·review history를 펼쳐보고 명시적인 검토 메모와 사람 품질 점수를 제출하며, 자동 점수로 승인하지 않는다. Mock/local desktop·390px mobile에서 최신순·상세 검토·overflow·console error를 검증한다.
   - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
   - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.

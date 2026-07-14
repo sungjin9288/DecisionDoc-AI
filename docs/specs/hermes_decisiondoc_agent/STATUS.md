@@ -69,6 +69,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter-aware totals, task/review filters, and 10-record
   newest-first browser pages so older review evidence remains reachable
+- each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
+  history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
   approval, execution-request, and audit artifacts
 - provider and base-model values remain planning metadata; every request keeps training, upload,
@@ -83,6 +85,11 @@ sets, reset pagination, ignored an intentionally delayed stale response during r
 and returned to the last valid page after a filtered record changed state.
 Controls remained correct with no horizontal overflow or browser console error. This check did not
 create a dataset upload, provider API call, training job, promotion, or production action.
+
+A separate browser review check opened one `develop_quality_improvement` trajectory, matched the
+full displayed draft to the API response, confirmed provenance, source evidence, and QA state,
+blocked approval without a human score, then persisted reviewer identity, notes, and score `0.88`.
+The reviewed record remained readable on desktop and 390-pixel mobile without horizontal overflow.
 
 ## Access Boundaries
 
@@ -152,9 +159,9 @@ source count is not a pass claim.
 Last local verification on 2026-07-14:
 
 - focused DocumentOps suite: 60 passed
-- focused DocumentOps plus infrastructure integration: 185 passed
-- DocumentOps trajectory browser E2E: 1 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2964 passed, 2 skipped, 4 deselected
+- focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
+- DocumentOps trajectory browser E2E: 2 passed
+- full `pytest -q tests/ -m "not live" --tb=short`: 2965 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

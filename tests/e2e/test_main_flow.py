@@ -377,7 +377,9 @@ def test_bundle_selection_enables_generate_button(page):
 
 def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_overflow(page, tmp_path):
     console_errors: list[str] = []
+    page_errors: list[str] = []
     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
     created_ids = page.evaluate(
         """async () => {
           const token = localStorage.getItem('dd_access_token');
@@ -412,6 +414,10 @@ def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_ov
     )
 
     page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+    assert page_errors == []
+    trajectory_text = page.locator("#document-ops-trajectories").inner_text()
+    assert "trajectory 로드 실패" not in trajectory_text, trajectory_text
     _wait_until_text_contains(page, "#document-ops-trajectories", "13건 중 1-10", timeout_ms=10000)
     cards = page.locator("#document-ops-trajectories [data-docops-trajectory-card]")
     assert cards.count() == 10
@@ -489,6 +495,96 @@ def test_document_ops_trajectory_history_filters_and_paginates_without_mobile_ov
 
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-mobile.png"), full_page=True)
+    assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
+    assert console_errors == []
+
+
+def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    created = page.evaluate(
+        """async () => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch('/api/agent/document-ops/run', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              task_type: 'develop_quality_improvement',
+              requirements: {
+                title: '브라우저 상세 검토',
+                draft: '근거와 승인 질문이 섞인 초안을 분리하고 마지막 확인 문장까지 검토합니다.',
+                goal: '전체 trajectory 근거를 확인한 뒤 사람이 품질을 판정합니다.',
+              },
+              source_references: [{ id: 'browser-detail-source' }],
+              capture_trajectory: true,
+            }),
+          });
+          if (!response.ok) throw new Error(`trajectory create failed: ${response.status}`);
+          return response.json();
+        }"""
+    )
+
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+    assert page_errors == []
+    trajectory_text = page.locator("#document-ops-trajectories").inner_text()
+    assert "trajectory 로드 실패" not in trajectory_text, trajectory_text
+    card_selector = f'[data-docops-trajectory-card][data-trajectory-id="{created["trajectory_id"]}"]'
+    page.wait_for_selector(card_selector, timeout=10000)
+    card = page.locator(card_selector)
+    card.locator("summary", has_text="검토 근거와 전체 초안").click()
+
+    detail = card.locator("[data-docops-trajectory-detail]")
+    assert "browser-detail-source" in detail.inner_text()
+    assert "QA gate" in detail.inner_text()
+    assert "전체 초안" in detail.inner_text()
+    assert created["trajectory"]["request_id"] in detail.inner_text()
+    assert card.locator("[data-docops-full-draft]").inner_text() == created["draft"]
+
+    page.fill("#docops-reviewer", "browser-reviewer")
+    card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
+    card.locator('[data-docops-trajectory-review="true"]').click()
+    assert "pending" in card.inner_text()
+    assert page.locator("#notification-container .notif-warn", has_text="승인하려면 사람 품질 점수를 입력하세요.").is_visible()
+
+    card.locator("[data-docops-review-score]").fill("0.88")
+    card.locator('[data-docops-trajectory-review="true"]').click()
+    _wait_until_text_contains(page, card_selector, "accepted", timeout_ms=10000)
+
+    card = page.locator(card_selector)
+    card.locator("summary", has_text="검토 근거와 전체 초안").click()
+    review_text = card.locator("[data-docops-current-review]").inner_text()
+    assert "browser-reviewer" in review_text
+    assert "품질 0.88" in review_text
+    assert "전체 초안과 근거 상태를 확인하고 승인합니다." in review_text
+    page.locator("#notification-container .notification button").evaluate_all(
+        "buttons => buttons.forEach(button => button.click())"
+    )
+    page.screenshot(path=str(tmp_path / "document-ops-trajectory-detail-desktop.png"), full_page=True)
+
+    reviewed = page.evaluate(
+        """async trajectoryId => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch('/api/agent/document-ops/trajectories?offset=0&limit=500', {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!response.ok) throw new Error(`trajectory list failed: ${response.status}`);
+          const data = await response.json();
+          return data.trajectories.find(item => item.trajectory_id === trajectoryId);
+        }""",
+        created["trajectory_id"],
+    )
+    assert reviewed["human_feedback"]["reviewer"] == "browser-reviewer"
+    assert reviewed["human_feedback"]["quality_score"] == 0.88
+    assert reviewed["human_feedback"]["notes"] == "전체 초안과 근거 상태를 확인하고 승인합니다."
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-trajectory-detail-mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
     assert console_errors == []
 

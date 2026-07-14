@@ -24,7 +24,7 @@
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
 | 로그인 이후 전체 UI flow | 완료 | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2805 passed, 2 skipped, 4 deselected` |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `2965 passed, 2 skipped, 4 deselected` (2026-07-14 실측) |
 | GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `01b9fbc`, CI `29027090095` success |
 | GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `01b9fbc`, CD `29027088935` success. staging deploy/smoke는 설정 부재로 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
