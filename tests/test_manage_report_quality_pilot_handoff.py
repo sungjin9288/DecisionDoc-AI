@@ -22,6 +22,7 @@ CREATE_SHEET_PATH = REPO_ROOT / "scripts/create_report_quality_review_sheet.py"
 APPLY_PATH = REPO_ROOT / "scripts/apply_report_quality_review_decisions.py"
 SYNC_PATH = REPO_ROOT / "scripts/sync_report_quality_pilot_pack.py"
 HANDOFF_PATH = REPO_ROOT / "scripts/manage_report_quality_pilot_handoff.py"
+SUMMARY_PATH = REPO_ROOT / "scripts/report_quality_pilot_handoff_summary.py"
 ARTIFACT_TEMPLATE_PATH = (
     REPO_ROOT
     / "docs/specs/report_quality_learning/correction_artifact_template.json"
@@ -158,6 +159,31 @@ def _rewrite_zip(content: bytes, replacements: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
+def _downgrade_to_v1(content: bytes) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(content)) as source:
+        manifest = json.loads(source.read("handoff_manifest.json"))
+        manifest["schema_version"] = "decisiondoc_report_quality_pilot_review_handoff.v1"
+        manifest.pop("browser_summary")
+        manifest["entries"] = [
+            entry
+            for entry in manifest["entries"]
+            if entry["path"] != "HANDOFF_SUMMARY.html"
+        ]
+        manifest_bytes = (
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for name in source.namelist():
+                if name == "HANDOFF_SUMMARY.html":
+                    continue
+                target.writestr(
+                    name,
+                    manifest_bytes if name == "handoff_manifest.json" else source.read(name),
+                )
+    return output.getvalue()
+
+
 def test_reviewed_pilot_handoff_is_deterministic_and_self_verifying(tmp_path):
     handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_success")
     pack_dir, jsonl_path = _reviewed_pack(tmp_path)
@@ -180,14 +206,18 @@ def test_reviewed_pilot_handoff_is_deterministic_and_self_verifying(tmp_path):
     assert first["source_bound"] is False
     assert first["training_authorized"] is False
     assert first["summary_path"] == "HANDOFF_SUMMARY.md"
+    assert first["browser_summary_path"] == "HANDOFF_SUMMARY.html"
     assert len(first["summary_sha256"]) == 64
+    assert len(first["browser_summary_sha256"]) == 64
     assert first_path.read_bytes() == second_path.read_bytes()
     assert first["package_sha256"] == second["package_sha256"]
     assert handoff.verify_report_quality_pilot_handoff(first_path.read_bytes())["ok"] is True
     with zipfile.ZipFile(first_path) as archive:
         names = set(archive.namelist())
+        manifest = json.loads(archive.read("handoff_manifest.json"))
         assert "handoff_manifest.json" in names
         assert "HANDOFF_SUMMARY.md" in names
+        assert "HANDOFF_SUMMARY.html" in names
         assert "artifacts/ready_artifacts.jsonl" in names
         assert "review/human_review_manifest.json" in names
         assert len([name for name in names if name.startswith("drafts/")]) == 3
@@ -195,6 +225,70 @@ def test_reviewed_pilot_handoff_is_deterministic_and_self_verifying(tmp_path):
         assert "# Report Quality Pilot Review Handoff" in summary
         assert "pilot-reviewer" in summary
         assert "training execution: `not authorized`" in summary
+        browser_summary = archive.read("HANDOFF_SUMMARY.html").decode("utf-8")
+        assert browser_summary.startswith("<!doctype html>")
+        assert "pilot-reviewer" in browser_summary
+        assert "Training not authorized" in browser_summary
+        assert "<script" not in browser_summary.lower()
+        assert manifest["schema_version"] == "decisiondoc_report_quality_pilot_review_handoff.v2"
+        html_entry = next(
+            entry
+            for entry in manifest["entries"]
+            if entry["path"] == "HANDOFF_SUMMARY.html"
+        )
+        assert html_entry["media_type"] == "text/html; charset=utf-8"
+
+
+def test_reviewed_pilot_handoff_browser_summary_escapes_evidence_values():
+    summary = _load_module(SUMMARY_PATH, "reviewed_pilot_handoff_html_escaping")
+    rendered = summary.render_report_quality_pilot_handoff_html(
+        {
+            "batch_id": '<img src=x onerror="alert(1)">',
+            "artifact_count": 1,
+            "jsonl": {"sha256": "jsonl-sha"},
+            "review": {
+                "manifest_sha256": "manifest-sha",
+                "decision_receipt_sha256": "receipt-sha",
+                "decision_file_sha256": "decision-sha",
+            },
+            "pack_binding": {"source_manifest": None},
+        },
+        {
+            "artifacts": [
+                {
+                    "artifact_id": "artifact-1",
+                    "reviewer": "<script>alert(1)</script>",
+                    "reviewed_at": "2026-07-15T00:00:00+09:00",
+                    "overall_score": 0.9,
+                    "human_review_status": "accepted",
+                    "ready_for_learning": True,
+                }
+            ]
+        },
+    )
+
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "<script" not in rendered.lower()
+
+
+def test_reviewed_pilot_handoff_verifier_accepts_previous_v1_package(tmp_path):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_v1_compatibility")
+    pack_dir, jsonl_path = _reviewed_pack(tmp_path)
+    package_path = tmp_path / "handoff-v2.zip"
+    handoff.create_report_quality_pilot_handoff(
+        pack_dir=pack_dir,
+        jsonl_path=jsonl_path,
+        output_path=package_path,
+    )
+
+    result = handoff.verify_report_quality_pilot_handoff(
+        _downgrade_to_v1(package_path.read_bytes())
+    )
+
+    assert result["ok"] is True
+    assert result["browser_summary_path"] is None
+    assert result["browser_summary_sha256"] is None
 
 
 def test_reviewed_pilot_handoff_preserves_source_bound_evidence(tmp_path):
@@ -261,6 +355,41 @@ def test_reviewed_pilot_handoff_rejects_tamper_and_extra_entries(tmp_path):
     )
     with pytest.raises(ValueError, match="does not match the reviewed evidence"):
         handoff.verify_report_quality_pilot_handoff(semantically_tampered_summary)
+
+    tampered_browser_summary = _rewrite_zip(
+        content,
+        {"HANDOFF_SUMMARY.html": b"<!doctype html><title>tampered</title>\n"},
+    )
+    with pytest.raises(ValueError, match="entry SHA-256 mismatch"):
+        handoff.verify_report_quality_pilot_handoff(tampered_browser_summary)
+
+    false_browser_summary = b"<!doctype html><title>False summary</title>\n"
+    false_browser_manifest = json.loads(json.dumps(manifest))
+    false_browser_sha256 = hashlib.sha256(false_browser_summary).hexdigest()
+    false_browser_manifest["browser_summary"]["sha256"] = false_browser_sha256
+    for entry in false_browser_manifest["entries"]:
+        if entry["path"] == "HANDOFF_SUMMARY.html":
+            entry["sha256"] = false_browser_sha256
+            entry["size_bytes"] = len(false_browser_summary)
+    semantically_tampered_browser_summary = _rewrite_zip(
+        content,
+        {
+            "HANDOFF_SUMMARY.html": false_browser_summary,
+            "handoff_manifest.json": (
+                json.dumps(
+                    false_browser_manifest,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8"),
+        },
+    )
+    with pytest.raises(ValueError, match="browser summary does not match"):
+        handoff.verify_report_quality_pilot_handoff(
+            semantically_tampered_browser_summary
+        )
 
     tampered_draft = _rewrite_zip(content, {draft_name: b"{}\n"})
     with pytest.raises(ValueError, match="entry SHA-256 mismatch"):

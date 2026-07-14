@@ -43,7 +43,9 @@ from scripts.report_quality_pilot_review_evidence import (  # noqa: E402
     load_current_review_manifest,
 )
 from scripts.report_quality_pilot_handoff_summary import (  # noqa: E402
+    HTML_SUMMARY_NAME,
     SUMMARY_NAME,
+    render_report_quality_pilot_handoff_html,
     render_report_quality_pilot_handoff_summary,
     verify_report_quality_pilot_handoff_summary,
 )
@@ -57,7 +59,8 @@ from scripts.validate_report_quality_review_decision_receipt import (  # noqa: E
 
 
 REPORT_TYPE = "report_quality_pilot_review_handoff"
-SCHEMA_VERSION = "decisiondoc_report_quality_pilot_review_handoff.v1"
+SCHEMA_VERSION = "decisiondoc_report_quality_pilot_review_handoff.v2"
+PREVIOUS_SCHEMA_VERSION = "decisiondoc_report_quality_pilot_review_handoff.v1"
 MANIFEST_NAME = "handoff_manifest.json"
 ENTRY_TIMESTAMP = (2020, 1, 1, 0, 0, 0)
 MAX_PACKAGE_SIZE_BYTES = 10 * 1024 * 1024
@@ -131,6 +134,8 @@ def _write_zip_entry(archive: zipfile.ZipFile, path: str, content: bytes) -> Non
 def _media_type(path: str) -> str:
     if path.endswith(".jsonl"):
         return "application/x-ndjson"
+    if path.endswith(".html"):
+        return "text/html; charset=utf-8"
     if path.endswith(".md"):
         return "text/markdown; charset=utf-8"
     return "application/json"
@@ -297,10 +302,19 @@ def create_report_quality_pilot_handoff(
         manifest,
         review_manifest.payload,
     ).encode("utf-8")
+    html_summary_bytes = render_report_quality_pilot_handoff_html(
+        manifest,
+        review_manifest.payload,
+    ).encode("utf-8")
     entries[SUMMARY_NAME] = summary_bytes
+    entries[HTML_SUMMARY_NAME] = html_summary_bytes
     manifest["summary"] = {
         "path": SUMMARY_NAME,
         "sha256": _sha256(summary_bytes),
+    }
+    manifest["browser_summary"] = {
+        "path": HTML_SUMMARY_NAME,
+        "sha256": _sha256(html_summary_bytes),
     }
     manifest["entries"] = [
         _entry_record(path, content)
@@ -706,7 +720,8 @@ def _validate_report_quality_pilot_handoff(content: bytes) -> tuple[dict[str, An
     manifest = _read_json_object(entries[MANIFEST_NAME], label="handoff manifest")
     if manifest.get("report_type") != REPORT_TYPE:
         raise ValueError("handoff manifest report_type is unsupported")
-    if manifest.get("schema_version") != SCHEMA_VERSION:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION}:
         raise ValueError("handoff manifest schema_version is unsupported")
     _verify_entry_inventory(entries, manifest)
     artifact_ids, draft_hashes = _verify_artifacts(entries, manifest)
@@ -720,6 +735,7 @@ def _validate_report_quality_pilot_handoff(content: bytes) -> tuple[dict[str, An
         entries,
         manifest,
         review_manifest,
+        require_html=schema_version == SCHEMA_VERSION,
     )
     _verify_source_evidence(entries, manifest, artifact_ids)
     expected_boundary = {key: False for key in NO_EXTERNAL_ACTION_KEYS}
@@ -736,6 +752,16 @@ def _validate_report_quality_pilot_handoff(content: bytes) -> tuple[dict[str, An
         "decision_receipt_sha256": manifest["review"]["decision_receipt_sha256"],
         "summary_path": manifest["summary"]["path"],
         "summary_sha256": manifest["summary"]["sha256"],
+        "browser_summary_path": (
+            manifest["browser_summary"]["path"]
+            if isinstance(manifest.get("browser_summary"), dict)
+            else None
+        ),
+        "browser_summary_sha256": (
+            manifest["browser_summary"]["sha256"]
+            if isinstance(manifest.get("browser_summary"), dict)
+            else None
+        ),
         "source_bound": manifest.get("pack_binding", {}).get("source_manifest") is not None,
         "training_authorized": False,
     }
@@ -837,6 +863,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"artifact_count={result['artifact_count']}")
         print(f"summary_path={result['summary_path']}")
         print(f"summary_sha256={result['summary_sha256']}")
+        if result.get("browser_summary_path"):
+            print(f"browser_summary_path={result['browser_summary_path']}")
+            print(f"browser_summary_sha256={result['browser_summary_sha256']}")
         print(f"jsonl_sha256={result['jsonl_sha256']}")
         print(f"package_sha256={result['package_sha256']}")
         if result.get("output_path"):
