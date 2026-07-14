@@ -405,7 +405,7 @@ def test_document_ops_trajectory_history_searches_filters_and_paginates_without_
             const response = await fetch(`/api/agent/document-ops/trajectories/${ids[index]}/review`, {
               method: 'POST',
               headers,
-              body: JSON.stringify({ accepted: true, reviewer: 'e2e-reviewer' }),
+              body: JSON.stringify({ accepted: true, expected_review_version: 0, reviewer: 'e2e-reviewer' }),
             });
             if (!response.ok) throw new Error(`trajectory review failed: ${response.status}`);
           }
@@ -506,7 +506,7 @@ def test_document_ops_trajectory_history_searches_filters_and_paginates_without_
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ accepted: true, reviewer: 'e2e-page-reviewer' }),
+            body: JSON.stringify({ accepted: true, expected_review_version: 0, reviewer: 'e2e-page-reviewer' }),
           });
           if (!response.ok) throw new Error(`trajectory review failed: ${response.status}`);
           await loadDocumentOpsTrajectoryList();
@@ -598,6 +598,50 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert page.locator("#notification-container .notif-warn", has_text="승인하려면 사람 품질 점수를 입력하세요.").is_visible()
 
     card.locator("[data-docops-review-score]").fill("0.88")
+    page.evaluate(
+        """async trajectoryId => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch(`/api/agent/document-ops/trajectories/${trajectoryId}/review`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              accepted: false,
+              expected_review_version: 0,
+              reviewer: 'competing-reviewer',
+              notes: '동시 검토에서 먼저 저장된 반려 의견입니다.',
+              quality_score: 0.55,
+            }),
+          });
+          if (!response.ok) throw new Error(`competing review failed: ${response.status}`);
+        }""",
+        created["trajectory_id"],
+    )
+    card.locator('[data-docops-trajectory-review="true"]').click()
+    _wait_until_text_contains(
+        page,
+        "#notification-container",
+        "다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.",
+        timeout_ms=10000,
+    )
+    assert page.locator(
+        "#notification-container .notif-warn",
+        has_text="다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.",
+    ).is_visible()
+    _wait_until_text_contains(page, card_selector, "rejected", timeout_ms=10000)
+
+    card = page.locator(card_selector)
+    card.locator("summary", has_text="검토 근거와 전체 초안").click()
+    _wait_until_text_contains(
+        page,
+        f"{card_selector} [data-docops-current-review]",
+        "competing-reviewer",
+        timeout_ms=10000,
+    )
+    card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
+    card.locator("[data-docops-review-score]").fill("0.88")
     card.locator('[data-docops-trajectory-review="true"]').click()
     _wait_until_text_contains(page, card_selector, "accepted", timeout_ms=10000)
 
@@ -613,6 +657,7 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert "browser-reviewer" in review_text
     assert "품질 0.88" in review_text
     assert "전체 초안과 근거 상태를 확인하고 승인합니다." in review_text
+    assert "competing-reviewer" in card.locator("[data-docops-trajectory-detail]").inner_text()
     page.locator("#notification-container .notification button").evaluate_all(
         "buttons => buttons.forEach(button => button.click())"
     )
@@ -633,6 +678,8 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert reviewed["human_feedback"]["reviewer"] == "browser-reviewer"
     assert reviewed["human_feedback"]["quality_score"] == 0.88
     assert reviewed["human_feedback"]["notes"] == "전체 초안과 근거 상태를 확인하고 승인합니다."
+    assert reviewed["human_feedback"]["review_version"] == 2
+    assert reviewed["human_review_history"][0]["reviewer"] == "competing-reviewer"
 
     page.evaluate(
         """async () => {
@@ -646,7 +693,9 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert "status=accepted" in audit_text
     assert "decision=accepted" in audit_text
     assert "reviewer=browser-reviewer" in audit_text
-    assert "version=1" in audit_text
+    assert "version=2" in audit_text
+    assert "expected=0" in audit_text
+    assert "current=1" in audit_text
     assert "score=0.88" in audit_text
     assert "전체 초안과 근거 상태를 확인하고 승인합니다." not in audit_text
     page.evaluate("document.querySelector('#ops-panel').style.display = 'none'")
@@ -654,7 +703,10 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-detail-mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
-    assert console_errors == []
+    expected_conflicts = [message for message in console_errors if "409 (Conflict)" in message]
+    unexpected_console_errors = [message for message in console_errors if message not in expected_conflicts]
+    assert len(expected_conflicts) == 1
+    assert unexpected_console_errors == []
 
 
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────

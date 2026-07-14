@@ -90,6 +90,6 @@ from app.storage.trajectory.signoff import (
     _validate_reviewer_signoff_record,
 )
 from app.storage.trajectory.core_mixin import _log
-from app.storage.trajectory import TrajectoryStore
+from app.storage.trajectory import TrajectoryReviewConflictError, TrajectoryStore
 
-__all__ = ["TrajectoryStore"]
+__all__ = ["TrajectoryReviewConflictError", "TrajectoryStore"]

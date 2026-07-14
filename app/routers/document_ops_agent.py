@@ -24,6 +24,7 @@ from app.schemas import (
     DocumentOpsTrainingApprovalRequest,
     DocumentOpsTrainingExecutionRequest,
 )
+from app.services.document_ops_service import DocumentOpsReviewConflictError
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
 
@@ -530,16 +531,29 @@ def review_document_ops_trajectory(
     )
     request.state.document_ops_reviewer = reviewer
     request.state.document_ops_quality_score = payload.quality_score
+    request.state.document_ops_expected_review_version = payload.expected_review_version
     try:
         updated = _service(request).review_trajectory(
             trajectory_id,
             tenant_id=get_tenant_id(request),
             accepted=payload.accepted,
+            expected_review_version=payload.expected_review_version,
             reviewer=reviewer,
             notes=payload.notes,
             quality_score=payload.quality_score,
             metadata=payload.metadata,
         )
+    except DocumentOpsReviewConflictError as exc:
+        request.state.document_ops_current_review_version = exc.current_version
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "trajectory_review_version_conflict",
+                "message": str(exc),
+                "expected_review_version": exc.expected_version,
+                "current_review_version": exc.current_version,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if updated is None:

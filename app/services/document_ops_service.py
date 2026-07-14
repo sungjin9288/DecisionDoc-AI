@@ -11,7 +11,18 @@ from app.services.document_ops_training_adapter import (
     training_adapter_contract_summary,
     training_execution_rehearsal_summary,
 )
-from app.storage.trajectory_store import TrajectoryStore
+from app.storage.trajectory_store import TrajectoryReviewConflictError, TrajectoryStore
+
+
+class DocumentOpsReviewConflictError(ValueError):
+    """Raised when a human review is based on an outdated trajectory version."""
+
+    def __init__(self, *, expected_version: int, current_version: int) -> None:
+        self.expected_version = expected_version
+        self.current_version = current_version
+        super().__init__(
+            f"trajectory review changed: expected version {expected_version}, current version {current_version}."
+        )
 
 
 def _trajectory_summary(record: dict[str, Any]) -> dict[str, Any]:
@@ -122,20 +133,28 @@ class DocumentOpsService:
         *,
         tenant_id: str,
         accepted: bool,
+        expected_review_version: int,
         reviewer: str = "",
         notes: str = "",
         quality_score: float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        return self._trajectory_store.mark_reviewed(
-            trajectory_id,
-            tenant_id=tenant_id,
-            accepted=accepted,
-            reviewer=reviewer,
-            notes=notes,
-            quality_score=quality_score,
-            metadata=metadata,
-        )
+        try:
+            return self._trajectory_store.mark_reviewed(
+                trajectory_id,
+                tenant_id=tenant_id,
+                accepted=accepted,
+                expected_review_version=expected_review_version,
+                reviewer=reviewer,
+                notes=notes,
+                quality_score=quality_score,
+                metadata=metadata,
+            )
+        except TrajectoryReviewConflictError as exc:
+            raise DocumentOpsReviewConflictError(
+                expected_version=exc.expected_version,
+                current_version=exc.current_version,
+            ) from exc
 
     def stats(self, *, tenant_id: str) -> dict[str, Any]:
         return self._trajectory_store.get_stats(tenant_id=tenant_id)

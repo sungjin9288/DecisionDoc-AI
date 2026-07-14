@@ -416,6 +416,12 @@ def _append_audit_entries(
         document_ops_quality_score = getattr(
             request.state, "document_ops_quality_score", None
         )
+        document_ops_expected_review_version = getattr(
+            request.state, "document_ops_expected_review_version", None
+        )
+        document_ops_current_review_version = getattr(
+            request.state, "document_ops_current_review_version", None
+        )
         detail = {
             "method": request.method,
             "path": path,
@@ -549,6 +555,10 @@ def _append_audit_entries(
             detail["reviewer"] = document_ops_reviewer
         if document_ops_review_version is not None:
             detail["review_version"] = document_ops_review_version
+        if document_ops_expected_review_version is not None:
+            detail["expected_review_version"] = document_ops_expected_review_version
+        if document_ops_current_review_version is not None:
+            detail["current_review_version"] = document_ops_current_review_version
         if document_ops_quality_score is not None:
             detail["quality_score"] = document_ops_quality_score
 

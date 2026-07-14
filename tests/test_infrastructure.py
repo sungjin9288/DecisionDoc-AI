@@ -1791,6 +1791,8 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "decision=${detail.review_decision}" in content
     assert "reviewer=${detail.reviewer}" in content
     assert "version=${detail.review_version}" in content
+    assert "expected=${detail.expected_review_version}" in content
+    assert "current=${detail.current_review_version}" in content
     assert "score=${detail.quality_score}" in content
     assert "request=${escapeHtml(detail.request_id || '-')}" in content
     assert "sha256=${escapeHtml(detail.pilot_sha256 || '-')}" in content
@@ -2122,6 +2124,10 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "data-docops-trajectory-detail-retry",
         "data-docops-review-notes",
         "data-docops-review-score",
+        "data-review-version=\"${Number(feedback.review_version || 0)}\"",
+        "expected_review_version: expectedReviewVersion",
+        "if (res.status === 409)",
+        "다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.",
         "if (accepted && !scoreText)",
         "quality_score: qualityScore",
         "data-docops-trajectory-page=\"previous\"",

@@ -149,7 +149,12 @@ def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requeste
         reviewed = client.post(
             f"/api/agent/document-ops/trajectories/{trajectory_id}/review",
             headers=_api_headers(),
-            json={"accepted": True, "reviewer": "pagination-reviewer", "notes": "pagination evidence"},
+            json={
+                "accepted": True,
+                "expected_review_version": 0,
+                "reviewer": "pagination-reviewer",
+                "notes": "pagination evidence",
+            },
         )
         assert reviewed.status_code == 200
 
@@ -341,10 +346,17 @@ def test_document_ops_review_requires_traceable_reviewer_identity(tmp_path, monk
         },
     ).json()
 
+    missing_version = client.post(
+        f"/api/agent/document-ops/trajectories/{created['trajectory_id']}/review",
+        headers=_api_headers(),
+        json={"accepted": True, "reviewer": "pm"},
+    )
+    assert missing_version.status_code == 422
+
     response = client.post(
         f"/api/agent/document-ops/trajectories/{created['trajectory_id']}/review",
         headers=_api_headers(),
-        json={"accepted": True},
+        json={"accepted": True, "expected_review_version": 0},
     )
 
     assert response.status_code == 400
@@ -387,6 +399,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
         headers=_api_headers(),
         json={
             "accepted": True,
+            "expected_review_version": 0,
             "reviewer": "pm",
             "notes": "학습용 승인",
             "quality_score": 0.91,
@@ -400,6 +413,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
         headers=_api_headers(),
         json={
             "accepted": True,
+            "expected_review_version": 0,
             "reviewer": "pm",
             "notes": "학습용 승인",
             "quality_score": 0.91,
@@ -408,22 +422,62 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert repeated_review.status_code == 200
     assert repeated_review.json()["human_feedback"] == first_feedback
 
+    conflicted_review = client.post(
+        f"/api/agent/document-ops/trajectories/{created['trajectory_id']}/review",
+        headers=_api_headers(),
+        json={
+            "accepted": False,
+            "expected_review_version": 0,
+            "reviewer": "qa-owner",
+            "notes": "새 근거를 반영해야 합니다.",
+            "quality_score": 0.42,
+        },
+    )
+    assert conflicted_review.status_code == 409
+    assert conflicted_review.json()["detail"] == {
+        "code": "trajectory_review_version_conflict",
+        "message": "trajectory review changed: expected version 0, current version 1.",
+        "expected_review_version": 0,
+        "current_review_version": 1,
+    }
+    current = client.get(
+        f"/api/agent/document-ops/trajectories/{created['trajectory_id']}",
+        headers=_api_headers(),
+    ).json()["trajectory"]
+    assert current["human_review_status"] == "accepted"
+    assert current["human_feedback"] == first_feedback
+    assert "human_review_history" not in current
+
     from app.storage.audit_store import AuditStore
 
     review_audits = AuditStore("system").query(
         "system",
         filters={"action": "document_ops.trajectory_review"},
     )
-    assert len(review_audits) == 2
-    for entry in review_audits:
+    assert len(review_audits) == 3
+    successful_audits = [entry for entry in review_audits if entry["result"] == "success"]
+    assert len(successful_audits) == 2
+    for entry in successful_audits:
         assert entry["resource_type"] == "document_ops_trajectory"
         assert entry["resource_id"] == created["trajectory_id"]
         assert entry["detail"]["review_status"] == "accepted"
         assert entry["detail"]["review_decision"] == "accepted"
         assert entry["detail"]["reviewer"] == "pm"
         assert entry["detail"]["review_version"] == 1
+        assert entry["detail"]["expected_review_version"] == 0
         assert entry["detail"]["quality_score"] == 0.91
         assert "notes" not in entry["detail"]
+
+    conflict_audit = next(entry for entry in review_audits if entry["result"] == "failure")
+    assert conflict_audit["resource_type"] == "document_ops_trajectory"
+    assert conflict_audit["resource_id"] == created["trajectory_id"]
+    assert conflict_audit["detail"]["review_decision"] == "rejected"
+    assert conflict_audit["detail"]["reviewer"] == "qa-owner"
+    assert conflict_audit["detail"]["expected_review_version"] == 0
+    assert conflict_audit["detail"]["current_review_version"] == 1
+    assert conflict_audit["detail"]["quality_score"] == 0.42
+    assert "review_version" not in conflict_audit["detail"]
+    assert "notes" not in conflict_audit["detail"]
 
     stats = client.get("/api/agent/document-ops/trajectories/stats", headers=_api_headers())
     assert stats.status_code == 200

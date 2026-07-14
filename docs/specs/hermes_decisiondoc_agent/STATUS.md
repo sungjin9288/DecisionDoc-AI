@@ -73,6 +73,9 @@ The static DocumentOps workbench now follows the same local governance chain as 
   a reviewer opens its detail, while existing API callers retain the default full-list response
 - detail views and human review requests append success/failure audit events with trajectory and
   compact review provenance; inputs, drafts, and review notes are not copied into audit detail
+- review requests carry the version loaded with the detail record; storage compares it while holding
+  the tenant write lock, returns an identical retry unchanged, and rejects a different stale decision
+  with `409` plus expected/current version evidence
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -91,18 +94,21 @@ The detail check confirmed that source evidence was absent from the summary card
 malformed first response through the card retry control, then loaded the full record through the
 tenant-scoped detail endpoint before accepting reviewer input.
 The same browser flow filtered Admin Ops audit logs to the review action and confirmed the accepted
-decision, reviewer, version, and score without rendering the review notes.
-Controls remained correct with no horizontal overflow or browser console error. This check did not
+decision, reviewer, version, score, and stale expected/current versions without rendering the review notes.
+Controls remained correct with no horizontal overflow or unexpected browser console error. This check did not
 create a dataset upload, provider API call, training job, promotion, or production action.
 
 A separate browser review check opened one `develop_quality_improvement` trajectory, matched the
 full displayed draft to the API response, confirmed provenance, source evidence, and QA state,
-blocked approval without a human score, then persisted reviewer identity, notes, and score `0.88`.
+blocked approval without a human score, rejected an intentionally stale approval after another reviewer
+stored version 1, reloaded the latest record, then persisted reviewer identity, notes, and score `0.88`
+as version 2 while retaining version 1 in review history.
 The reviewed record remained readable on desktop and 390-pixel mobile without horizontal overflow.
 
 ## Access Boundaries
 
-- Agent run, trajectory list/stats, and trajectory review require the DecisionDoc API key.
+- Agent run, trajectory list/stats, and trajectory review require the DecisionDoc API key. Review
+  writes also require the non-negative version returned by the current detail record.
 - Dataset exports, freezes, training approval/readiness/plan, audit, governance, reviewer sign-off,
   and provider adapter endpoints require the ops key.
 - Storage methods receive the current tenant ID; export and download paths are resolved inside the

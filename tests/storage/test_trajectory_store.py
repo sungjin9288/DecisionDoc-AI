@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.storage.trajectory_store import TrajectoryStore
+from app.storage.trajectory_store import TrajectoryReviewConflictError, TrajectoryStore
 
 
 def _sample_trajectory(trajectory_id: str = "trj_001") -> dict:
@@ -175,6 +175,7 @@ def test_mark_reviewed_is_idempotent_and_preserves_changed_review_history(tmp_pa
         "trj_review_history",
         tenant_id="system",
         accepted=True,
+        expected_review_version=0,
         reviewer=" pm ",
         notes=" 승인 ",
         quality_score=0.92,
@@ -184,6 +185,7 @@ def test_mark_reviewed_is_idempotent_and_preserves_changed_review_history(tmp_pa
         "trj_review_history",
         tenant_id="system",
         accepted=True,
+        expected_review_version=0,
         reviewer="pm",
         notes="승인",
         quality_score=0.92,
@@ -196,10 +198,22 @@ def test_mark_reviewed_is_idempotent_and_preserves_changed_review_history(tmp_pa
     assert "human_review_history" not in repeated
     assert repeated["human_feedback"]["metadata"]["source_document"] == "[redacted]"
 
+    with pytest.raises(TrajectoryReviewConflictError, match="expected version 0, current version 1"):
+        store.mark_reviewed(
+            "trj_review_history",
+            tenant_id="system",
+            accepted=False,
+            expected_review_version=0,
+            reviewer="qa-owner",
+            notes="근거 보강 필요",
+            quality_score=0.61,
+        )
+
     changed = store.mark_reviewed(
         "trj_review_history",
         tenant_id="system",
         accepted=False,
+        expected_review_version=1,
         reviewer="qa-owner",
         notes="근거 보강 필요",
         quality_score=0.61,

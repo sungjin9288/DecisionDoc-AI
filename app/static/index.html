@@ -7487,8 +7487,8 @@
       </label>
     </div>
     <div class="docops-review-actions">
-        <button class="action-btn" type="button" data-docops-trajectory-review="true" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${accepted ? 'disabled' : ''}>승인</button>
-        <button class="action-btn" type="button" data-docops-trajectory-review="false" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${rejected ? 'disabled' : ''}>반려</button>
+        <button class="action-btn" type="button" data-docops-trajectory-review="true" data-review-version="${Number(feedback.review_version || 0)}" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${accepted ? 'disabled' : ''}>승인</button>
+        <button class="action-btn" type="button" data-docops-trajectory-review="false" data-review-version="${Number(feedback.review_version || 0)}" data-trajectory-id="${escapeHtml(item.trajectory_id)}" style="font-size:.72rem;padding:.24rem .55rem;" ${rejected ? 'disabled' : ''}>반려</button>
     </div>`;
   }
 
@@ -7508,6 +7508,11 @@
 
   async function reviewDocumentOpsTrajectory(trajectoryId, accepted, card, trigger) {
     if (!trajectoryId) return;
+    const expectedReviewVersion = Number(trigger?.dataset.reviewVersion);
+    if (!Number.isInteger(expectedReviewVersion) || expectedReviewVersion < 0) {
+      showNotification('최신 검토 버전을 확인할 수 없습니다. 상세 기록을 다시 불러오세요.', 'error');
+      return;
+    }
     const reviewer = documentOpsRequiredField('docops-reviewer', 'Trajectory 검토자');
     if (!reviewer) return;
     const notesInput = card?.querySelector('[data-docops-review-notes]');
@@ -7538,11 +7543,17 @@
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accepted: !!accepted,
+          expected_review_version: expectedReviewVersion,
           reviewer,
           notes,
           quality_score: qualityScore,
         }),
       });
+      if (res.status === 409) {
+        showNotification('다른 검토가 먼저 저장되었습니다. 최신 기록을 다시 불러왔습니다.', 'warn');
+        await loadDocumentOpsTrajectories();
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       showNotification(accepted ? 'trajectory를 승인했습니다.' : 'trajectory를 반려했습니다.', 'success');
       await loadDocumentOpsTrajectories();
@@ -27271,6 +27282,8 @@ function renderAuditEvidence(log, detail) {
     if (detail.review_decision) evidence.push(`decision=${detail.review_decision}`);
     if (detail.reviewer) evidence.push(`reviewer=${detail.reviewer}`);
     if (detail.review_version != null) evidence.push(`version=${detail.review_version}`);
+    if (detail.expected_review_version != null) evidence.push(`expected=${detail.expected_review_version}`);
+    if (detail.current_review_version != null) evidence.push(`current=${detail.current_review_version}`);
     if (detail.quality_score != null) evidence.push(`score=${detail.quality_score}`);
     return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
   }

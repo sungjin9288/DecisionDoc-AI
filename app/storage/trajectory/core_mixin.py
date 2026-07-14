@@ -16,6 +16,18 @@ from app.storage.trajectory.sft_quality import _is_accepted, _sft_export_blocker
 _log = logging.getLogger("decisiondoc.storage.trajectory")
 
 
+class TrajectoryReviewConflictError(ValueError):
+    """Raised when a trajectory changed after a reviewer loaded it."""
+
+    def __init__(self, trajectory_id: str, *, expected_version: int, current_version: int) -> None:
+        self.trajectory_id = trajectory_id
+        self.expected_version = expected_version
+        self.current_version = current_version
+        super().__init__(
+            f"trajectory review changed: expected version {expected_version}, current version {current_version}."
+        )
+
+
 def _trajectory_search_text(record: dict[str, Any]) -> str:
     input_data = record.get("input") if isinstance(record.get("input"), dict) else {}
     requirements = input_data.get("requirements") if isinstance(input_data.get("requirements"), dict) else {}
@@ -142,8 +154,16 @@ class TrajectoryCoreMixin:
         notes: str = "",
         quality_score: float | None = None,
         metadata: dict[str, Any] | None = None,
+        expected_review_version: int | None = None,
     ) -> dict[str, Any] | None:
         """Attach human review metadata to an existing trajectory."""
+        if expected_review_version is not None and (
+            isinstance(expected_review_version, bool)
+            or not isinstance(expected_review_version, int)
+            or expected_review_version < 0
+        ):
+            raise ValueError("expected_review_version must be a non-negative integer.")
+
         reviewer = reviewer.strip()
         if not reviewer or reviewer.casefold() == "anonymous":
             raise ValueError("reviewer identity is required.")
@@ -183,7 +203,15 @@ class TrajectoryCoreMixin:
                 if record.get("human_review_status") in {"accepted", "rejected"} and _review_content(current) == review_content:
                     return record
 
-                version = int(current.get("review_version") or 0) + 1
+                current_version = int(current.get("review_version") or 0)
+                if expected_review_version is not None and expected_review_version != current_version:
+                    raise TrajectoryReviewConflictError(
+                        trajectory_id,
+                        expected_version=expected_review_version,
+                        current_version=current_version,
+                    )
+
+                version = current_version + 1
                 feedback = {**review_content, "review_version": version, "reviewed_at": _now_iso()}
                 if record.get("human_review_status") in {"accepted", "rejected"}:
                     history = record.get("human_review_history")
