@@ -29,6 +29,8 @@ from app.services.report_quality_learning import (  # noqa: E402
 from scripts.apply_report_quality_review_decisions import (  # noqa: E402
     ALLOWED_DECISIONS,
     ALLOWED_SCAN_VALUES,
+    DECISION_TEMPLATE_REPORT_TYPE,
+    DECISION_TEMPLATE_SCHEMA,
 )
 from scripts.create_report_quality_review_sheet import artifact_required_actions  # noqa: E402
 from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
@@ -38,7 +40,6 @@ from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
 )
 
 
-DECISION_SCHEMA = "decisiondoc_report_quality_human_review_decisions.v1"
 DEFAULT_DECISIONS_NAME = "review_decisions.json"
 DEFAULT_OUTPUT_NAME = "HUMAN_REVIEW_WORKSPACE.html"
 DOWNLOAD_NAME = "review_decisions.browser-draft.json"
@@ -134,9 +135,9 @@ def _load_decision_template(
     payload = json.loads(decisions_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("review decision template root must be an object")
-    if payload.get("report_type") != "report_quality_human_review_decision_template":
+    if payload.get("report_type") != DECISION_TEMPLATE_REPORT_TYPE:
         raise ValueError("review decision template report_type is invalid")
-    if payload.get("schema_version") != DECISION_SCHEMA:
+    if payload.get("schema_version") != DECISION_TEMPLATE_SCHEMA:
         raise ValueError("review decision template schema_version is invalid")
     if payload.get("training_authorized") is not False:
         raise ValueError("review decision template must keep training_authorized=false")

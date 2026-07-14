@@ -29,6 +29,8 @@ from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
 
 ALLOWED_DECISIONS = {"pending", "accepted", "changes_requested", "rejected"}
 ALLOWED_SCAN_VALUES = {"not_run", "pass", "fail"}
+DECISION_TEMPLATE_REPORT_TYPE = "report_quality_human_review_decision_template"
+DECISION_TEMPLATE_SCHEMA = "decisiondoc_report_quality_human_review_decisions.v1"
 APPLICATION_RECEIPT_SCHEMA = "decisiondoc_report_quality_review_decision_application_receipt.v1"
 
 
@@ -41,6 +43,16 @@ def _write_text_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     with tmp.open("w", encoding="utf-8") as handle:
         handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
+    with tmp.open("wb") as handle:
+        handle.write(content)
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(tmp, path)
@@ -249,8 +261,8 @@ def create_review_decision_template(
             },
         })
     template = {
-        "report_type": "report_quality_human_review_decision_template",
-        "schema_version": "decisiondoc_report_quality_human_review_decisions.v1",
+        "report_type": DECISION_TEMPLATE_REPORT_TYPE,
+        "schema_version": DECISION_TEMPLATE_SCHEMA,
         "created_at": _now_iso(),
         "pack_dir": str(resolved_pack_dir),
         "pack_binding": snapshot.binding(),
@@ -386,6 +398,8 @@ def apply_review_decisions(
     before_binding = snapshot.binding()
     draft_map = {draft.artifact_id: draft for draft in snapshot.drafts}
     decision_file, decisions_sha256 = _load_json_snapshot(resolved_decisions_path)
+    if "training_authorized" in decision_file and decision_file["training_authorized"] is not False:
+        raise ValueError("decision file must keep training_authorized=false")
     pack_binding = decision_file.get("pack_binding")
     if snapshot.source_order_applied or pack_binding is not None:
         require_current_pack_binding(snapshot, pack_binding)
@@ -498,6 +512,145 @@ def apply_review_decisions(
     }
 
 
+def _load_browser_draft(
+    *,
+    pack_dir: Path,
+    browser_draft_path: Path,
+) -> tuple[Path, bytes, str]:
+    expanded_path = browser_draft_path.expanduser()
+    if expanded_path.is_symlink():
+        raise ValueError("symlink browser draft files are not allowed")
+    resolved_path = expanded_path.resolve()
+    if pack_dir == resolved_path.parent or pack_dir in resolved_path.parents:
+        raise ValueError("browser draft must be outside the pilot pack directory")
+    if not resolved_path.is_file():
+        raise ValueError(f"browser draft file does not exist: {resolved_path}")
+    content = resolved_path.read_bytes()
+    payload = json.loads(content.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("browser draft JSON root must be an object")
+    if payload.get("report_type") != DECISION_TEMPLATE_REPORT_TYPE:
+        raise ValueError("browser draft report_type is invalid")
+    if payload.get("schema_version") != DECISION_TEMPLATE_SCHEMA:
+        raise ValueError("browser draft schema_version is invalid")
+    if payload.get("training_authorized") is not False:
+        raise ValueError("browser draft must keep training_authorized=false")
+    return resolved_path, content, hashlib.sha256(content).hexdigest()
+
+
+def import_browser_review_draft(
+    *,
+    pack_dir: Path,
+    browser_draft_path: Path,
+    dry_run: bool = False,
+    require_ready: bool = False,
+) -> dict[str, Any]:
+    resolved_pack_dir = pack_dir.expanduser().resolve()
+    resolved_source_path, source_bytes, source_sha256 = _load_browser_draft(
+        pack_dir=resolved_pack_dir,
+        browser_draft_path=browser_draft_path,
+    )
+    validation = apply_review_decisions(
+        pack_dir=resolved_pack_dir,
+        decisions_path=resolved_source_path,
+        dry_run=True,
+        require_ready=require_ready,
+    )
+    common = {
+        "report_type": "report_quality_browser_review_draft_imported",
+        "ok": validation["ok"],
+        "pack_dir": str(resolved_pack_dir),
+        "browser_draft_path": str(resolved_source_path),
+        "browser_draft_sha256": source_sha256,
+        "dry_run": dry_run,
+        "require_ready": require_ready,
+        "decision_count": validation["decision_count"],
+        "ready_decisions": validation["ready_decisions"],
+        "errors": validation["errors"],
+    }
+    if dry_run or not validation["ok"]:
+        return {
+            **common,
+            "archived_decisions_path": None,
+            "receipt_path": None,
+            "receipt_sha256": None,
+            "applied_count": 0,
+            "side_effect_boundary": {
+                "reads_external_browser_draft": True,
+                "writes_archived_browser_draft": False,
+                "writes_local_draft_json": False,
+                "writes_local_application_receipt": False,
+                "external_dataset_upload_started": False,
+                "provider_fine_tune_api_called": False,
+                "provider_job_created": False,
+                "training_execution_started": False,
+                "model_promotion_started": False,
+            },
+        }
+
+    current_bytes = resolved_source_path.read_bytes()
+    if hashlib.sha256(current_bytes).hexdigest() != source_sha256:
+        raise ValueError("browser draft changed during validation")
+    short_hash = source_sha256[:12]
+    archived_path = resolved_pack_dir / f"review_decisions.browser-draft.{short_hash}.json"
+    receipt_path = resolved_pack_dir / f"review_decision_application_receipt.{short_hash}.json"
+    if archived_path.exists() or archived_path.is_symlink():
+        raise ValueError(f"refusing to overwrite archived browser draft: {archived_path}")
+    _resolve_receipt_path(resolved_pack_dir, receipt_path)
+
+    _write_bytes_atomic(archived_path, source_bytes)
+    try:
+        application = apply_review_decisions(
+            pack_dir=resolved_pack_dir,
+            decisions_path=archived_path,
+            require_ready=require_ready,
+            receipt_path=receipt_path,
+        )
+    except (ValueError, json.JSONDecodeError):
+        archived_path.unlink(missing_ok=True)
+        raise
+    if not application["ok"]:
+        archived_path.unlink(missing_ok=True)
+        return {
+            **common,
+            "ok": False,
+            "errors": application["errors"],
+            "archived_decisions_path": None,
+            "receipt_path": None,
+            "receipt_sha256": None,
+            "applied_count": 0,
+            "side_effect_boundary": {
+                "reads_external_browser_draft": True,
+                "writes_archived_browser_draft": False,
+                "writes_local_draft_json": False,
+                "writes_local_application_receipt": False,
+                "external_dataset_upload_started": False,
+                "provider_fine_tune_api_called": False,
+                "provider_job_created": False,
+                "training_execution_started": False,
+                "model_promotion_started": False,
+            },
+        }
+    return {
+        **common,
+        "archived_decisions_path": str(archived_path),
+        "receipt_path": application["receipt_path"],
+        "receipt_sha256": application["receipt_sha256"],
+        "applied_count": application["applied_count"],
+        "side_effect_boundary": {
+            "reads_external_browser_draft": True,
+            "writes_archived_browser_draft": True,
+            "writes_local_draft_json": application["applied_count"] > 0,
+            "writes_local_application_receipt": application["receipt_path"] is not None,
+            "external_dataset_upload_started": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "training_execution_started": False,
+            "model_promotion_started": False,
+        },
+    }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create or apply human review decisions for Report Quality pilot drafts.",
@@ -506,6 +659,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--create-template", type=Path, help="Write a review decision template JSON.")
     mode.add_argument("--decisions", type=Path, help="Apply decisions from this JSON file.")
+    mode.add_argument(
+        "--browser-draft",
+        type=Path,
+        help="Validate, archive, and apply a browser-downloaded review draft.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate decisions without writing drafts.")
     parser.add_argument("--require-ready", action="store_true", help="Fail unless applied decisions become ready.")
     parser.add_argument("--receipt", type=Path, default=None, help="Write a pack-local application receipt JSON.")
@@ -520,6 +678,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.receipt is not None:
                 raise ValueError("--receipt can only be used with --decisions")
             result = create_review_decision_template(pack_dir=args.pack_dir, output_path=args.create_template)
+        elif args.browser_draft is not None:
+            if args.receipt is not None:
+                raise ValueError("--receipt is generated automatically with --browser-draft")
+            result = import_browser_review_draft(
+                pack_dir=args.pack_dir,
+                browser_draft_path=args.browser_draft,
+                dry_run=args.dry_run,
+                require_ready=args.require_ready,
+            )
         else:
             result = apply_review_decisions(
                 pack_dir=args.pack_dir,
@@ -539,6 +706,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"output_path={result['output_path']}")
         print(f"artifact_count={result['artifact_count']}")
         print("training_boundary=not_authorized")
+    elif result["report_type"] == "report_quality_browser_review_draft_imported":
+        print(f"{'PASS' if result['ok'] else 'FAIL'} report quality browser review draft imported")
+        print(f"browser_draft_path={result['browser_draft_path']}")
+        print(f"browser_draft_sha256={result['browser_draft_sha256']}")
+        print(f"decision_count={result['decision_count']}")
+        print(f"applied_count={result['applied_count']}")
+        print(f"dry_run={result['dry_run']}")
+        if result["archived_decisions_path"]:
+            print(f"archived_decisions_path={result['archived_decisions_path']}")
+        if result["receipt_path"]:
+            print(f"receipt_path={result['receipt_path']}")
+            print(f"receipt_sha256={result['receipt_sha256']}")
+        print("training_boundary=not_authorized")
+        for error in result["errors"]:
+            print(f"ERROR {error}")
     else:
         print(f"{'PASS' if result['ok'] else 'FAIL'} report quality review decisions applied")
         print(f"decisions_path={result['decisions_path']}")

@@ -102,11 +102,13 @@ python3 scripts/create_report_quality_review_workspace.py \
 
 `검수 Draft 다운로드`는 초기 template의 `pack_binding`, artifact 순서, `previous_decision`, `training_authorized=false`를 보존한 `review_decisions.browser-draft.json`만 만든다. HTML은 pack의 draft나 decision template을 직접 수정하지 않으며 외부 요청도 보내지 않는다.
 
-내려받은 draft는 원본 template과 구분되는 이름으로 pack 안에 둔 뒤 apply한다.
+내려받은 draft는 이동하거나 이름을 바꾸지 않고 외부 경로에서 바로 검증·보관·반영한다. 먼저 쓰기 없이 확인하려면 `--dry-run`을 붙인다.
 
 ```bash
-mv ~/Downloads/review_decisions.browser-draft.json \
-  reports/report-quality/pilot-rqc-001/review_decisions.browser-draft.json
+python3 scripts/apply_report_quality_review_decisions.py \
+  reports/report-quality/pilot-rqc-001 \
+  --browser-draft ~/Downloads/review_decisions.browser-draft.json \
+  --dry-run
 ```
 
 승인할 artifact만 `decision=accepted`로 바꾸고, 반려나 보완 요청은 `changes_requested` 또는 `rejected`로 둔다. Generator는 기존 template, workspace, symlink를 덮어쓰지 않는다. Draft를 직접 바꿔 기존 binding이 stale해졌다면 기존 파일을 보존하고 `review_decisions.refreshed.json`, `HUMAN_REVIEW_WORKSPACE.refreshed.html`처럼 새 경로에 template과 workspace를 다시 만든다.
@@ -116,18 +118,19 @@ mv ~/Downloads/review_decisions.browser-draft.json \
 ```bash
 python3 scripts/apply_report_quality_review_decisions.py \
   reports/report-quality/pilot-rqc-001 \
-  --decisions reports/report-quality/pilot-rqc-001/review_decisions.browser-draft.json \
-  --require-ready \
-  --receipt reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
+  --browser-draft ~/Downloads/review_decisions.browser-draft.json \
+  --require-ready
 ```
 
 Source import pack은 `--create-template`로 만든 binding이 없는 decision 파일을 거부한다. Template 생성 뒤 source manifest나 draft가 바뀌면 stale binding으로 판단해 쓰기 전에 중단한다. Decision batch 안에 잘못된 항목이 하나라도 있으면 유효한 다른 항목도 저장하지 않는다. `--require-ready`는 `accepted` decision이 validator의 ready gate를 통과하지 못하면 전체 batch 저장을 차단한다.
 
-`--receipt`를 사용하면 같은 pack 안의 decision 파일 SHA-256, 적용 전/후 pack binding, artifact별 draft hash 전이를 receipt로 남긴다. 기존 receipt는 덮어쓰지 않으며 dry-run이나 실패 batch에서는 생성하지 않는다. 적용 직후 다음 명령으로 receipt와 현재 파일을 다시 대조한다.
+`--browser-draft`는 report type, schema, `training_authorized=false`, source/draft binding, 전체 decision batch를 쓰기 전에 확인한다. 통과하면 내려받은 파일의 정확한 바이트를 `review_decisions.browser-draft.<sha12>.json`으로 pack에 보존하고, 같은 suffix의 `review_decision_application_receipt.<sha12>.json`을 자동 생성한다. 외부 draft, 보관본, receipt가 symlink이거나 기존 SHA 이름과 충돌하면 덮어쓰지 않는다. Dry-run이나 실패 batch에서는 보관본, draft 변경, receipt를 만들지 않는다.
+
+기존 pack-local decision 파일을 `--decisions`로 반영하는 호환 경로에서는 `--receipt`를 직접 지정할 수 있다. 두 경로의 receipt는 decision SHA-256, 적용 전/후 pack binding, artifact별 draft hash 전이를 기록한다. 적용 직후 CLI가 출력한 `receipt_path`로 현재 파일을 다시 대조한다.
 
 ```bash
 python3 scripts/validate_report_quality_review_decision_receipt.py \
-  reports/report-quality/pilot-rqc-001/review_decision_application_receipt.json
+  reports/report-quality/pilot-rqc-001/review_decision_application_receipt.<sha12>.json
 ```
 
 Validator는 decision file, source manifest, 현재 draft SHA-256, `ready_for_learning`, no-training boundary를 read-only로 재검증한다. 두 helper 모두 provider fine-tune API, dataset upload, training execution, model promotion을 실행하지 않는다.

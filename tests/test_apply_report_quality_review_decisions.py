@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CREATE_PACK_SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_pilot_pack.py"
 APPLY_SCRIPT_PATH = REPO_ROOT / "scripts/apply_report_quality_review_decisions.py"
+RECEIPT_VALIDATOR_PATH = REPO_ROOT / "scripts/validate_report_quality_review_decision_receipt.py"
 
 
 def _load_module(path: Path, name: str):
@@ -140,6 +142,20 @@ def _remove_placeholders_for_acceptance(pack_dir: Path, artifact_id: str) -> Non
     ]
     payload["after"]["final_output_reference"] = f"report_workflow_snapshot:workflow-{artifact_id}"
     draft_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_browser_draft(
+    pack_dir: Path,
+    output_path: Path,
+    *,
+    first_decision: str = "pending",
+) -> bytes:
+    payload = json.loads((pack_dir / "review_decisions.json").read_text(encoding="utf-8"))
+    payload["decisions"][0]["decision"] = first_decision
+    content = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(content)
+    return content
 
 
 def test_create_review_decision_template_writes_non_training_template(tmp_path):
@@ -332,3 +348,121 @@ def test_apply_review_decisions_does_not_partially_write_invalid_batch(tmp_path)
     assert result["receipt_path"] is None
     assert first_path.read_bytes() == original_first
     assert not receipt_path.exists()
+
+
+def test_import_browser_review_draft_dry_run_does_not_archive_or_apply(tmp_path, capsys):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "dry_run_browser_review_draft")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    browser_draft_path = tmp_path / "downloads" / "review_decisions.browser-draft.json"
+    source_bytes = _write_browser_draft(pack_dir, browser_draft_path)
+    original_drafts = {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
+
+    result = apply_script.import_browser_review_draft(
+        pack_dir=pack_dir,
+        browser_draft_path=browser_draft_path,
+        dry_run=True,
+    )
+
+    assert result["ok"] is True
+    assert result["dry_run"] is True
+    assert result["applied_count"] == 0
+    assert result["archived_decisions_path"] is None
+    assert result["receipt_path"] is None
+    assert browser_draft_path.read_bytes() == source_bytes
+    assert original_drafts == {
+        path.name: path.read_bytes()
+        for path in (pack_dir / "drafts").glob("*.json")
+    }
+
+    exit_code = apply_script.main([
+        str(pack_dir),
+        "--browser-draft",
+        str(browser_draft_path),
+        "--dry-run",
+        "--json",
+    ])
+    cli_result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert cli_result["browser_draft_sha256"] == hashlib.sha256(source_bytes).hexdigest()
+
+
+def test_import_browser_review_draft_archives_exact_bytes_and_writes_receipt(tmp_path):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "import_browser_review_draft")
+    receipt_validator = _load_module(RECEIPT_VALIDATOR_PATH, "validate_imported_browser_draft_receipt")
+    pack_dir = _create_pack(tmp_path / "pack-root")
+    browser_draft_path = tmp_path / "downloads" / "review_decisions.browser-draft.json"
+    source_bytes = _write_browser_draft(
+        pack_dir,
+        browser_draft_path,
+        first_decision="changes_requested",
+    )
+    expected_sha256 = hashlib.sha256(source_bytes).hexdigest()
+
+    result = apply_script.import_browser_review_draft(
+        pack_dir=pack_dir,
+        browser_draft_path=browser_draft_path,
+    )
+
+    archived_path = Path(result["archived_decisions_path"])
+    receipt_path = Path(result["receipt_path"])
+    assert result["ok"] is True
+    assert result["browser_draft_sha256"] == expected_sha256
+    assert result["applied_count"] == 3
+    assert archived_path.name == f"review_decisions.browser-draft.{expected_sha256[:12]}.json"
+    assert archived_path.read_bytes() == source_bytes
+    assert receipt_path.name == f"review_decision_application_receipt.{expected_sha256[:12]}.json"
+    assert receipt_validator.validate_review_decision_receipt(receipt_path)["ok"] is True
+    updated = json.loads(
+        (pack_dir / "drafts" / "pilot-rqc-apply_sample_001.json").read_text(encoding="utf-8")
+    )
+    assert updated["learning_labels"]["human_review_status"] == "changes_requested"
+    assert updated["training_boundary"]["training_execution_authorized"] is False
+
+
+def test_import_browser_review_draft_rejects_invalid_unsafe_or_duplicate_input(tmp_path):
+    apply_script = _load_module(APPLY_SCRIPT_PATH, "reject_unsafe_browser_review_draft")
+
+    invalid_pack = _create_pack(tmp_path / "invalid-root")
+    invalid_path = tmp_path / "invalid-downloads" / "review_decisions.browser-draft.json"
+    _write_browser_draft(invalid_pack, invalid_path, first_decision="accepted")
+    invalid_result = apply_script.import_browser_review_draft(
+        pack_dir=invalid_pack,
+        browser_draft_path=invalid_path,
+    )
+    assert invalid_result["ok"] is False
+    assert invalid_result["archived_decisions_path"] is None
+    assert not list(invalid_pack.glob("review_decisions.browser-draft.*.json"))
+
+    elevated = json.loads(invalid_path.read_text(encoding="utf-8"))
+    elevated["training_authorized"] = True
+    invalid_path.write_text(json.dumps(elevated), encoding="utf-8")
+    with pytest.raises(ValueError, match="training_authorized=false"):
+        apply_script.import_browser_review_draft(
+            pack_dir=invalid_pack,
+            browser_draft_path=invalid_path,
+        )
+
+    safe_path = tmp_path / "safe-browser-draft.json"
+    safe_bytes = _write_browser_draft(invalid_pack, safe_path)
+    symlink_path = tmp_path / "linked-browser-draft.json"
+    symlink_path.symlink_to(safe_path)
+    with pytest.raises(ValueError, match="symlink browser draft files"):
+        apply_script.import_browser_review_draft(
+            pack_dir=invalid_pack,
+            browser_draft_path=symlink_path,
+        )
+
+    collision_pack = _create_pack(tmp_path / "collision-root")
+    collision_source = tmp_path / "collision-browser-draft.json"
+    collision_bytes = _write_browser_draft(collision_pack, collision_source)
+    collision_sha256 = hashlib.sha256(collision_bytes).hexdigest()
+    collision_path = collision_pack / f"review_decisions.browser-draft.{collision_sha256[:12]}.json"
+    collision_path.write_bytes(safe_bytes)
+    with pytest.raises(ValueError, match="refusing to overwrite archived browser draft"):
+        apply_script.import_browser_review_draft(
+            pack_dir=collision_pack,
+            browser_draft_path=collision_source,
+        )
