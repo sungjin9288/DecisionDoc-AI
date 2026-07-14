@@ -8531,12 +8531,19 @@
       const res = await fetch('/report-workflows/learning/correction-artifacts/pilot-export', {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artifact_ids: artifactIds }),
+        body: JSON.stringify({
+          artifact_ids: artifactIds,
+          preview_sha256: _reportWorkflowQualityPilotPreview.export_sha256,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       const exportSha256 = String(res.headers.get('X-DecisionDoc-Pilot-SHA256') || '').trim().toLowerCase();
+      const previewVerified = String(res.headers.get('X-DecisionDoc-Pilot-Preview-Verified') || '').trim().toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(exportSha256)) {
         throw new Error('Pilot export SHA-256 응답이 없거나 올바르지 않습니다.');
+      }
+      if (previewVerified !== 'true') {
+        throw new Error('Pilot export의 server preview 검증 증거가 없습니다.');
       }
       const expectedSha256 = String(_reportWorkflowQualityPilotPreview?.export_sha256 || '').trim().toLowerCase();
       if (!expectedSha256 || expectedSha256 !== exportSha256) {

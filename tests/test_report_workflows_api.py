@@ -597,17 +597,36 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert all(item["ready_for_learning"] is True for item in preview_body["artifacts"])
     assert all(item["source_material_policy"] == "metadata_only" for item in preview_body["artifacts"])
     assert preview_body["training_boundary"]["external_dataset_upload_authorized"] is False
+    assert preview_body["training_boundary"]["provider_fine_tune_api_call_authorized"] is False
     assert preview_body["training_boundary"]["training_execution_authorized"] is False
     assert preview_body["training_boundary"]["model_promotion_authorized"] is False
     assert _contains_key(preview_body, "content_base64") is False
 
-    exported = client.post(
+    unconfirmed = client.post(
         "/report-workflows/learning/correction-artifacts/pilot-export",
         json={"artifact_ids": requested_order},
+    )
+    assert unconfirmed.status_code == 422
+    assert "preview_sha256" in unconfirmed.text
+
+    stale_preview = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={"artifact_ids": requested_order, "preview_sha256": "0" * 64},
+    )
+    assert stale_preview.status_code == 400
+    assert "preview_sha256 does not match" in stale_preview.json()["detail"]
+
+    exported = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+        json={
+            "artifact_ids": requested_order,
+            "preview_sha256": preview_body["export_sha256"],
+        },
     )
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("application/x-ndjson")
     assert exported.headers["x-decisiondoc-pilot-artifact-count"] == "3"
+    assert exported.headers["x-decisiondoc-pilot-preview-verified"] == "true"
     assert exported.headers["x-decisiondoc-training-authorized"] == "false"
     body_sha256 = hashlib.sha256(exported.content).hexdigest()
     assert exported.headers["x-decisiondoc-pilot-sha256"] == body_sha256
@@ -622,6 +641,26 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert all(item["training_boundary"]["training_execution_authorized"] is False for item in lines)
     assert all(_contains_key(item, "content_base64") is False for item in lines)
 
+    from app.storage.audit_store import AuditStore
+
+    preview_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "report_quality.pilot_preview", "result": "success"},
+    )
+    assert preview_audits
+    assert preview_audits[0]["detail"]["pilot_sha256"] == preview_body["export_sha256"]
+    assert preview_audits[0]["detail"]["pilot_artifact_count"] == 3
+    assert preview_audits[0]["detail"]["pilot_preview_verified"] is False
+
+    export_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "report_quality.pilot_export", "result": "success"},
+    )
+    assert export_audits
+    assert export_audits[0]["detail"]["pilot_sha256"] == body_sha256
+    assert export_audits[0]["detail"]["pilot_artifact_count"] == 3
+    assert export_audits[0]["detail"]["pilot_preview_verified"] is True
+
     first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
     alias_duplicate = client.post(
         "/report-workflows/learning/correction-artifacts/pilot-export/preview",
@@ -631,7 +670,7 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert "resolve to unique artifacts" in alias_duplicate.json()["detail"]
 
     missing = client.post(
-        "/report-workflows/learning/correction-artifacts/pilot-export",
+        "/report-workflows/learning/correction-artifacts/pilot-export/preview",
         json={"artifact_ids": [artifact_ids[0], artifact_ids[1], "rqa_missing"]},
     )
     assert missing.status_code == 404

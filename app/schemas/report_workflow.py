@@ -153,8 +153,8 @@ class ReportQualityCorrectionArtifactRequest(BaseModel):
     preview_fingerprint: str = Field(default="", pattern=r"^(?:|[0-9a-f]{64})$")
 
 
-class ReportQualityPilotExportRequest(BaseModel):
-    """Select three to five saved artifacts for a local pilot JSONL batch."""
+class ReportQualityPilotPreviewRequest(BaseModel):
+    """Select three to five saved artifacts for a local pilot preview."""
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
@@ -169,6 +169,12 @@ class ReportQualityPilotExportRequest(BaseModel):
         if len(set(normalized)) != len(normalized):
             raise ValueError("artifact_ids must be unique")
         return normalized
+
+
+class ReportQualityPilotExportRequest(ReportQualityPilotPreviewRequest):
+    """Confirm the previewed JSONL hash before exporting a local pilot batch."""
+
+    preview_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
 
 
 class ReportWorkflowDevelopQualityPreviewRequest(BaseModel):

@@ -49,6 +49,14 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("PATCH", "/admin/users/{id}"): "user.update",
     ("POST", "/auth/change-password"): "user.password_change",
     ("POST", "/finetune/export"): "system.export",
+    (
+        "POST",
+        "/report-workflows/learning/correction-artifacts/pilot-export/preview",
+    ): "report_quality.pilot_preview",
+    (
+        "POST",
+        "/report-workflows/learning/correction-artifacts/pilot-export",
+    ): "report_quality.pilot_export",
 }
 
 # Paths that must always be audited
@@ -374,6 +382,15 @@ def _append_audit_entries(
         approval_source_change_acknowledged = getattr(
             request.state, "approval_source_change_acknowledged", None
         )
+        report_quality_pilot_sha256 = (
+            getattr(request.state, "report_quality_pilot_sha256", "") or ""
+        )
+        report_quality_pilot_artifact_count = getattr(
+            request.state, "report_quality_pilot_artifact_count", None
+        )
+        report_quality_pilot_preview_verified = getattr(
+            request.state, "report_quality_pilot_preview_verified", None
+        )
         detail = {
             "method": request.method,
             "path": path,
@@ -490,6 +507,12 @@ def _append_audit_entries(
             detail["approval_source_change_acknowledged"] = (
                 approval_source_change_acknowledged
             )
+        if report_quality_pilot_sha256:
+            detail["pilot_sha256"] = report_quality_pilot_sha256
+        if report_quality_pilot_artifact_count is not None:
+            detail["pilot_artifact_count"] = report_quality_pilot_artifact_count
+        if report_quality_pilot_preview_verified is not None:
+            detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
 
         store = AuditStore(tenant_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")

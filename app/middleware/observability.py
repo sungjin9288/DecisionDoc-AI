@@ -54,6 +54,10 @@ OPTIONAL_STATE_KEYS = [
     "meeting_recording_transcript_error",
     "meeting_recording_generated_bundle_count",
     "meeting_recording_generated_bundle_types",
+    "report_quality_action",
+    "report_quality_pilot_sha256",
+    "report_quality_pilot_artifact_count",
+    "report_quality_pilot_preview_verified",
 ]
 
 

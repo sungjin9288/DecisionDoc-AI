@@ -427,6 +427,14 @@ def test_resolve_action_procurement_review_packet_export():
     )
 
 
+def test_resolve_action_report_quality_pilot_preview_and_export():
+    from app.middleware.audit import _resolve_action
+
+    base_path = "/report-workflows/learning/correction-artifacts/pilot-export"
+    assert _resolve_action("POST", f"{base_path}/preview", 200) == "report_quality.pilot_preview"
+    assert _resolve_action("POST", base_path, 200) == "report_quality.pilot_export"
+
+
 def test_resolve_action_procurement_review_inbox_view():
     from app.middleware.audit import _resolve_action
     assert _resolve_action("GET", "/procurement/reviews", 200) == "procurement.review_inbox_view"

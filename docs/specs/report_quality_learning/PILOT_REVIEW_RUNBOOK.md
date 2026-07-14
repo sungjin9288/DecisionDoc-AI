@@ -23,7 +23,9 @@ Report Workflow 생성 시:
 - 민감 원문은 요약/metadata/reference만 사용
 - 최종 승인 전까지 학습 후보로 보지 않음
 
-Report Workflow UI에서 ready artifact 3~5개를 선택하면 응답 본문의 SHA-256 앞 12자가 포함된 `report_quality_pilot_artifacts_<sha12>.jsonl`을 내려받는다. 서버는 전체 SHA-256을 `X-DecisionDoc-Pilot-SHA256` 응답 헤더에도 기록한다. 파일을 로컬 review pack으로 가져온 뒤 `SOURCE_MANIFEST.json`의 `source_sha256`이 이 전체 hash와 일치하는지 확인한다.
+Report Workflow UI에서 ready artifact 3~5개를 선택한 뒤 `Pilot 검토`를 실행한다. Preview는 artifact 순서, readiness, 전체 JSONL SHA-256, 외부 학습 비승인 경계를 보여준다. 다운로드 요청은 이 hash를 `preview_sha256`으로 다시 제출하며, 서버가 현재 ordered JSONL과 대조해 일치할 때만 `X-DecisionDoc-Pilot-Preview-Verified: true`와 파일을 반환한다. 누락되거나 stale한 hash는 `400` 또는 schema validation으로 차단된다.
+
+파일명에는 응답 본문의 SHA-256 앞 12자가 포함된다. 서버는 전체 SHA-256을 `X-DecisionDoc-Pilot-SHA256` 응답 헤더와 tenant audit log에도 기록한다. 파일을 로컬 review pack으로 가져온 뒤 `SOURCE_MANIFEST.json`의 `source_sha256`이 이 전체 hash와 일치하는지 확인한다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \

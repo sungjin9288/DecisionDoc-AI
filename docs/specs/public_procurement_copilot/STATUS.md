@@ -3,6 +3,16 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone report-quality server-bound pilot confirmation
+
+- Pilot export now requires the preview response hash as `preview_sha256`. The service rebuilds the current ordered JSONL and uses a constant-time comparison, so missing or stale review evidence cannot produce a download.
+- Successful export returns `X-DecisionDoc-Pilot-Preview-Verified: true`; the UI requires both that evidence and the matching body SHA-256 before creating a browser download.
+- Preview and export are separate append-only audit actions. Each successful entry records the same JSONL SHA-256, artifact count, and whether server confirmation completed; request observability exposes the same fields.
+- Mock/local Playwright confirmed the reviewed three-artifact download with no browser console errors. The downloaded file SHA-256 matched the preview and both audit entries exactly.
+- Focused report workflow, audit, observability, UI, infrastructure, README metric, and portfolio verification passes with 245 tests. Ruff E/F/W, Bandit medium/high, secret hygiene, Python compile, and `git diff --check` also pass.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,952 passed, 2 skipped, and 4 deselected in 213.80 seconds on the final tree.
+- No provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, or contractual commitment was executed.
+
 ## Post-milestone report-quality pilot export preflight
 
 - `POST /report-workflows/learning/correction-artifacts/pilot-export/preview` now resolves the selected 3-5 tenant-scoped artifacts through the same service path as export, preserves request order, and returns exact JSONL SHA-256, filename, readiness validation, reviewer metadata, and false external-training authorization boundaries.

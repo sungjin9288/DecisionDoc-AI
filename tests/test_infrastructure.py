@@ -1842,6 +1842,7 @@ def test_index_html_report_workflow_list_and_artifacts_wiring_exists():
         "download: downloadReportWorkflowQualityArtifacts",
         "'preview-pilot': previewReportWorkflowQualityPilotArtifacts",
         "'download-pilot': downloadReportWorkflowQualityPilotArtifacts",
+        "preview_sha256: _reportWorkflowQualityPilotPreview.export_sha256",
         "wireReportWorkflowQualityArtifactActions(el);",
         "function wireReportWorkflowQualityArtifactActions(container)",
         "container.querySelectorAll('[data-rw-quality-artifacts-action]').forEach",

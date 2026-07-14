@@ -485,16 +485,37 @@ class ReportWorkflowQualityMixin:
         )
         return prepared["preview"]
 
+    def confirm_quality_correction_pilot_export(
+        self,
+        artifact_ids: list[str],
+        *,
+        tenant_id: str,
+        preview_sha256: str,
+    ) -> dict[str, Any]:
+        """Return a pilot export only when it still matches the reviewed JSONL."""
+        prepared = self.prepare_quality_correction_pilot_export(
+            artifact_ids,
+            tenant_id=tenant_id,
+        )
+        current_sha256 = str(prepared["preview"]["export_sha256"])
+        if not hmac.compare_digest(preview_sha256, current_sha256):
+            raise ValueError(
+                "preview_sha256 does not match the current pilot export; preview again"
+            )
+        return prepared
+
     def export_quality_correction_pilot_jsonl(
         self,
         artifact_ids: list[str],
         *,
         tenant_id: str,
+        preview_sha256: str,
     ) -> str:
-        """Export an ordered, ready-only pilot batch without external side effects."""
-        prepared = self.prepare_quality_correction_pilot_export(
+        """Export a reviewed, ready-only pilot batch without external side effects."""
+        prepared = self.confirm_quality_correction_pilot_export(
             artifact_ids,
             tenant_id=tenant_id,
+            preview_sha256=preview_sha256,
         )
         return prepared["jsonl"]
 

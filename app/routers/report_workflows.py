@@ -19,6 +19,7 @@ from app.schemas import (
     PromoteReportWorkflowRequest,
     ReportQualityCorrectionArtifactRequest,
     ReportQualityPilotExportRequest,
+    ReportQualityPilotPreviewRequest,
     ReportWorkflowActionRequest,
     ReportWorkflowDevelopQualityPreviewRequest,
     SelectReportSlideVisualAssetRequest,
@@ -42,6 +43,22 @@ def _get_service(request: Request):
 
 def _get_document_ops_service(request: Request):
     return request.app.state.document_ops_service
+
+
+def _record_quality_pilot_state(
+    request: Request,
+    preview: dict,
+    *,
+    preview_verified: bool,
+) -> None:
+    request.state.report_quality_action = (
+        "pilot_export" if preview_verified else "pilot_preview"
+    )
+    request.state.report_quality_pilot_sha256 = str(preview.get("export_sha256") or "")
+    request.state.report_quality_pilot_artifact_count = int(
+        preview.get("artifact_count") or 0
+    )
+    request.state.report_quality_pilot_preview_verified = preview_verified
 
 
 def _handle_store_error(exc: Exception) -> None:
@@ -152,15 +169,17 @@ def export_report_quality_correction_artifacts(
     dependencies=[Depends(require_api_key)],
 )
 def preview_report_quality_correction_pilot(
-    payload: ReportQualityPilotExportRequest,
+    payload: ReportQualityPilotPreviewRequest,
     request: Request,
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        return _get_service(request).preview_quality_correction_pilot_export(
+        preview = _get_service(request).preview_quality_correction_pilot_export(
             payload.artifact_ids,
             tenant_id=tenant_id,
         )
+        _record_quality_pilot_state(request, preview, preview_verified=False)
+        return preview
     except (KeyError, ValueError) as exc:
         _handle_store_error(exc)
     raise HTTPException(status_code=500, detail="correction artifact pilot preview failed")
@@ -176,9 +195,10 @@ def export_report_quality_correction_pilot(
 ) -> Response:
     tenant_id = get_tenant_id(request)
     try:
-        prepared = _get_service(request).prepare_quality_correction_pilot_export(
+        prepared = _get_service(request).confirm_quality_correction_pilot_export(
             payload.artifact_ids,
             tenant_id=tenant_id,
+            preview_sha256=payload.preview_sha256,
         )
     except (KeyError, ValueError) as exc:
         _handle_store_error(exc)
@@ -186,6 +206,7 @@ def export_report_quality_correction_pilot(
     preview = prepared["preview"]
     body_sha256 = preview["export_sha256"]
     filename = preview["filename"]
+    _record_quality_pilot_state(request, preview, preview_verified=True)
     return Response(
         content=body,
         media_type="application/x-ndjson; charset=utf-8",
@@ -196,6 +217,7 @@ def export_report_quality_correction_pilot(
             ),
             "X-DecisionDoc-Pilot-Artifact-Count": str(len(payload.artifact_ids)),
             "X-DecisionDoc-Pilot-SHA256": body_sha256,
+            "X-DecisionDoc-Pilot-Preview-Verified": "true",
             "X-DecisionDoc-Training-Authorized": "false",
         },
     )

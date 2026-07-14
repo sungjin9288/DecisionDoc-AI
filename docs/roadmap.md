@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2951 passed, 2 skipped, 4 deselected
+# 2026-07-14 실측: 2952 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -80,6 +80,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 저장된 correction artifact를 tenant 범위에서 단건 조회하는 detail API와 UI 검토·개별 JSON 다운로드 동선을 추가했다. 응답은 metadata-only artifact, validation, preview fingerprint를 보존하며 provider call, dataset upload, training execution은 계속 차단한다.
   - 2026-07-14 ready correction artifact 3~5개를 UI에서 직접 고르고 ordered pilot JSONL로 내려받는 tenant-safe selection flow를 추가했다. 서버는 개수, 중복·alias 중복, 존재 여부, ready gate를 재검증하며 외부 학습 작업은 실행하지 않는다.
   - 2026-07-14 pilot JSONL 다운로드 전에 ordered artifact, resolved/ready count, 전체 SHA-256, 외부 학습 비승인 경계를 확인하는 사전 검토 API/UI를 추가했다. 실제 export hash가 preview와 다르면 브라우저 저장을 중단하며, mock/local desktop·mobile에서 다운로드와 responsive boundary를 확인했다.
+  - 2026-07-14 pilot export가 preview의 `preview_sha256`을 필수 precondition으로 받아 현재 ordered JSONL과 서버에서 다시 대조하도록 강화했다. 누락·stale hash는 다운로드 전에 차단하고, 성공한 preview/export는 SHA-256·artifact count·verification state를 observability와 append-only audit에 남긴다.
   - 2026-07-14 UI pilot export를 local review pack으로 가져오는 `--source-jsonl` 경로를 추가했다. Source SHA-256, tenant, 선택 순서를 manifest에 남기고 sync에서도 순서를 보존하며, membership drift와 외부 학습 실행을 차단한다.
   - 2026-07-14 pilot worksheet와 review decision template을 source manifest·ordered draft SHA-256에 결속했다. Source-bound pack은 unbound/stale decision을 거부하고, batch 검증 오류가 있으면 어떤 draft도 부분 저장하지 않는다.
   - 2026-07-14 review decision 적용 성공 시 decision SHA-256, before/after pack binding, artifact별 draft hash 전이를 pack-local receipt로 남기고 현재 ready gate와 no-training boundary를 read-only validator로 재검증하는 경로를 추가했다.
