@@ -375,6 +375,57 @@ def test_bundle_selection_enables_generate_button(page):
     assert not page.locator("#generate-btn").is_disabled()
 
 
+def test_document_ops_trajectory_history_paginates_without_mobile_overflow(page, tmp_path):
+    console_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    created_ids = page.evaluate(
+        """async () => {
+          const token = localStorage.getItem('dd_access_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
+          const ids = [];
+          for (let index = 1; index <= 12; index += 1) {
+            const response = await fetch('/api/agent/document-ops/run', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                task_type: 'decision_brief',
+                requirements: { title: `브라우저 이력 ${index}` },
+                capture_trajectory: true,
+              }),
+            });
+            if (!response.ok) throw new Error(`trajectory create failed: ${response.status}`);
+            ids.push((await response.json()).trajectory_id);
+          }
+          return ids;
+        }"""
+    )
+
+    page.locator('[data-page="document-ops-page"]').click()
+    _wait_until_text_contains(page, "#document-ops-trajectories", "12건 중 1-10", timeout_ms=10000)
+    cards = page.locator("#document-ops-trajectories [data-docops-trajectory-card]")
+    assert cards.count() == 10
+    assert "브라우저 이력 12" in cards.first.inner_text()
+    assert created_ids[-1] in cards.first.inner_text()
+    assert page.get_by_role("button", name="이전 trajectory 페이지").is_disabled()
+    assert not page.get_by_role("button", name="다음 trajectory 페이지").is_disabled()
+    page.screenshot(path=str(tmp_path / "document-ops-trajectory-desktop.png"), full_page=True)
+
+    page.get_by_role("button", name="다음 trajectory 페이지").click()
+    _wait_until_text_contains(page, "#document-ops-trajectories", "12건 중 11-12", timeout_ms=10000)
+    assert cards.count() == 2
+    assert "브라우저 이력 2" in cards.first.inner_text()
+    assert not page.get_by_role("button", name="이전 trajectory 페이지").is_disabled()
+    assert page.get_by_role("button", name="다음 trajectory 페이지").is_disabled()
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-trajectory-mobile.png"), full_page=True)
+    assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
+    assert console_errors == []
+
+
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────
 
 def test_generate_flow_produces_results(page):

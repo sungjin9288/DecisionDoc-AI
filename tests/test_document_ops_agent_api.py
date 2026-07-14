@@ -80,6 +80,77 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
 
 
+def test_document_ops_trajectory_list_paginates_from_newest_with_filtered_total(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    created_ids: list[str] = []
+    for index in range(5):
+        task_type = "decision_brief" if index < 4 else "evidence_gap_review"
+        response = client.post(
+            "/api/agent/document-ops/run",
+            headers=_api_headers(),
+            json={
+                "task_type": task_type,
+                "requirements": {"title": f"이력 페이지 검증 {index + 1}"},
+                "capture_trajectory": True,
+            },
+        )
+        assert response.status_code == 200
+        created_ids.append(response.json()["trajectory_id"])
+
+    first = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"offset": 0, "limit": 2},
+    )
+    second = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"offset": 2, "limit": 2},
+    )
+    last = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"offset": 4, "limit": 2},
+    )
+    past_end = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"offset": 5, "limit": 2},
+    )
+    filtered = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"task_type": "decision_brief", "offset": 0, "limit": 2},
+    )
+
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["total"] == 5
+    assert first_body["offset"] == 0
+    assert first_body["limit"] == 2
+    assert first_body["returned"] == 2
+    assert first_body["has_more"] is True
+    assert [item["trajectory_id"] for item in first_body["trajectories"]] == created_ids[3:]
+    assert [item["trajectory_id"] for item in second.json()["trajectories"]] == created_ids[1:3]
+    assert second.json()["has_more"] is True
+    assert [item["trajectory_id"] for item in last.json()["trajectories"]] == created_ids[:1]
+    assert last.json()["returned"] == 1
+    assert last.json()["has_more"] is False
+    assert past_end.json()["trajectories"] == []
+    assert past_end.json()["total"] == 5
+    assert past_end.json()["returned"] == 0
+    assert past_end.json()["has_more"] is False
+    assert filtered.json()["total"] == 4
+    assert [item["trajectory_id"] for item in filtered.json()["trajectories"]] == created_ids[2:4]
+
+    invalid = client.get(
+        "/api/agent/document-ops/trajectories",
+        headers=_api_headers(),
+        params={"offset": -1, "limit": 2},
+    )
+    assert invalid.status_code == 422
+
+
 def test_document_ops_run_supports_develop_quality_improvement(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
 

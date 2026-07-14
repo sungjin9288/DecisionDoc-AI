@@ -30,6 +30,7 @@
 | 파일 형식 | `tests/test_pdf_endpoint.py`, `tests/test_excel_endpoint.py` 등 | export 계열 |
 | 프로젝트 관리 | `tests/test_project_management.py`, `tests/test_voice_brief_import.py` | 프로젝트 문서, Voice Brief import |
 | 알림/협업 | `tests/test_notifications.py`, `tests/test_history_favorites.py` | 알림 및 사용자 협업 흐름 |
+| DocumentOps 이력 | `tests/test_document_ops_agent_api.py`, `tests/storage/test_trajectory_store.py`, `tests/e2e/test_main_flow.py` | tenant/filter total, 최신 기준 pagination, desktop/mobile 작업대 |
 
 ### 2.2 보안 시험
 | 시험 항목 | 대표 시험 파일 | 비고 |
@@ -95,6 +96,8 @@ Procurement reviewed package 테스트는 completed receipt만 허용하고 acce
 
 Report quality correction 테스트는 server preview와 save artifact의 exact equality, SHA-256 fingerprint binding, fingerprint 누락과 stale input 거부, 동일 artifact 중복 저장 차단, review packet embedded artifact fingerprint 재검증을 포함한다. Summary 탐색은 tenant-scoped offset/limit, ready filter total, `has_more`, 페이지 경계를 검증하고 UI에서는 페이지 이동·ready 모드 전환 중 pilot 선택을 유지하는지 확인한다. Pilot export 테스트는 선택한 3~5개 artifact의 tenant-scoped resolve, 요청 순서, ready gate, alias 중복 거부, `preview_sha256` 누락·불일치 차단, preview/export JSONL SHA-256 일치, verification header와 append-only audit detail, 외부 학습 비승인 경계를 함께 확인한다. Audit CSV 테스트는 같은 tenant와 action/result/기간 filter, date-only 종료일의 당일 포함, 1,000건 초과 export, 전체 detail과 pilot 식별자, spreadsheet formula injection 방어를 검증한다. Audit 조회 테스트는 검증된 offset/limit, filtered total, `has_more`, 첫·마지막 페이지 경계를 확인한다. UI는 조회와 CSV가 같은 filter를 전송하고 누락·역전 기간을 요청 전에 차단하며, 조회 조건 변경 시 첫 페이지로 돌아가고 페이지 이동 시 같은 filter를 유지하는지 확인한다. Local demo는 mock provider와 임시 storage만 사용하고 저장된 artifact와 preview가 동일한지 확인한다.
 
+DocumentOps trajectory 이력 테스트는 기존 `get_records()` 최신 N건 호환성을 유지하면서 최신 항목 기준 offset pagination이 중복 없이 전체 기록을 순회하는지 확인한다. API는 tenant·task·review filter 기준 실제 `total`, `returned`, `has_more`와 음수 offset 거부를 검증한다. Browser E2E는 mock provider로 12건을 저장한 뒤 첫 페이지 10건과 다음 페이지 2건, 최신순 표시, 버튼 상태, 390px 가로 overflow 없음, console error 0건을 확인한다. Dataset upload, provider API, training, model promotion은 실행하지 않는다.
+
 Training evidence 테스트는 packet evidence와 reviewer sign-off부터 discussion, experiment plan, final approval packet review, pending final approval record template까지의 hash와 권한 경계를 검증한다. 이 template은 `final_training_approval_granted=false`, required approval `pending`, provider job과 execution step `not_started`를 강제하는 terminal local artifact다. 이후 실행은 이 테스트 범위 밖의 별도 change control과 명시적 승인이 필요하다.
 
 생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 입력, review draft 다운로드, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다. 2026-07-14 report workflow UI도 mock/local server에서 pilot 사전 검토, server-confirmed hash-bound JSONL 다운로드, desktop `1280x900`, mobile `390x844`, mobile bottom navigation 비가림, console error 0건, `documentElement.scrollWidth == innerWidth`를 확인했다.
@@ -107,6 +110,8 @@ pytest -q tests/test_procurement_decision_package_reviewed_package.py tests/test
 pytest -q tests/test_report_workflows_api.py -k quality_correction
 pytest -q tests/test_run_report_quality_learning_demo.py
 pytest -q tests/test_report_quality_learning.py -k review_packet_validator
+pytest -q tests/storage/test_trajectory_store.py tests/test_document_ops_agent_api.py
+pytest -q tests/e2e/test_main_flow.py::test_document_ops_trajectory_history_paginates_without_mobile_overflow
 ```
 
 ### E2E 시험 (Playwright)

@@ -6899,7 +6899,7 @@
       if (stylePage) stylePage.style.display = 'none';
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
-      loadDocumentOpsTrajectories();
+      loadDocumentOpsTrajectories({ resetPage: true });
     } else if (page === 'knowledge-page') {
       if (main) main.style.display = 'none';
       if (perfDash) perfDash.style.display = 'none';
@@ -6937,7 +6937,9 @@
   };
 
   /* ── DocumentOps Agent UI ─────────────────────────────────────── */
+  const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;
   let _documentOpsLastResult = null;
+  let _documentOpsTrajectoryOffset = 0;
 
   function documentOpsLines(value) {
     return String(value || '')
@@ -7049,7 +7051,7 @@
       const data = await res.json();
       _documentOpsLastResult = data;
       renderDocumentOpsResult(data);
-      await loadDocumentOpsTrajectories();
+      await loadDocumentOpsTrajectories({ resetPage: true });
       showNotification(data.trajectory_saved ? 'DocumentOps 결과와 trajectory를 저장했습니다.' : 'DocumentOps 결과를 생성했습니다.', 'success');
     } catch (err) {
       if (resultEl) resultEl.innerHTML = `<div style="color:#ef4444;">Agent 실행 실패: ${escapeHtml(err.message || String(err))}</div>`;
@@ -7132,7 +7134,8 @@
     </div>`;
   }
 
-  async function loadDocumentOpsTrajectories() {
+  async function loadDocumentOpsTrajectories({ resetPage = false } = {}) {
+    if (resetPage) _documentOpsTrajectoryOffset = 0;
     await Promise.all([loadDocumentOpsStats(), loadDocumentOpsTrajectoryList()]);
   }
 
@@ -7155,24 +7158,51 @@
     }
   }
 
-  async function loadDocumentOpsTrajectoryList() {
+  async function loadDocumentOpsTrajectoryList(offset = _documentOpsTrajectoryOffset) {
     const el = $id('document-ops-trajectories');
     if (!el) return;
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">trajectory 목록 로드 중...</div>';
     try {
-      const res = await fetch('/api/agent/document-ops/trajectories?limit=20', { headers: getAuthHeaders() });
+      const params = new URLSearchParams({
+        offset: String(Math.max(0, offset)),
+        limit: String(DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE),
+      });
+      const res = await fetch(`/api/agent/document-ops/trajectories?${params}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const items = Array.isArray(data.trajectories) ? data.trajectories : [];
-      if (!items.length) {
-        el.innerHTML = '<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">저장된 trajectory가 없습니다.</div>';
-        return;
-      }
-      el.innerHTML = items.slice().reverse().map(renderDocumentOpsTrajectoryCard).join('');
+      const total = Number(data.total || 0);
+      _documentOpsTrajectoryOffset = Number(data.offset || 0);
+      const rangeStart = items.length ? _documentOpsTrajectoryOffset + 1 : 0;
+      const rangeEnd = _documentOpsTrajectoryOffset + items.length;
+      const pager = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;">
+        <span style="font-size:.78rem;color:var(--muted);">${total}건 중 ${rangeStart}-${rangeEnd}</span>
+        <div style="display:flex;gap:.35rem;">
+          <button type="button" class="action-btn" data-docops-trajectory-page="previous" aria-label="이전 trajectory 페이지" title="이전 페이지" ${_documentOpsTrajectoryOffset === 0 ? 'disabled' : ''} style="width:32px;height:32px;padding:0;">←</button>
+          <button type="button" class="action-btn" data-docops-trajectory-page="next" aria-label="다음 trajectory 페이지" title="다음 페이지" ${data.has_more === true ? '' : 'disabled'} style="width:32px;height:32px;padding:0;">→</button>
+        </div>
+      </div>`;
+      const list = items.length
+        ? items.slice().reverse().map(renderDocumentOpsTrajectoryCard).join('')
+        : `<div style="border:1px dashed var(--border);border-radius:14px;padding:1rem;color:var(--muted);font-size:.84rem;">${total ? '현재 페이지에 표시할 trajectory가 없습니다.' : '저장된 trajectory가 없습니다.'}</div>`;
+      el.innerHTML = `${pager}${list}`;
       wireDocumentOpsTrajectoryReviewActions(el);
+      wireDocumentOpsTrajectoryPageActions(el);
     } catch (err) {
       el.innerHTML = `<div style="color:#ef4444;font-size:.84rem;">trajectory 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
     }
+  }
+
+  function wireDocumentOpsTrajectoryPageActions(container) {
+    container.querySelectorAll('[data-docops-trajectory-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const direction = btn.dataset.docopsTrajectoryPage;
+        const nextOffset = direction === 'previous'
+          ? Math.max(0, _documentOpsTrajectoryOffset - DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE)
+          : _documentOpsTrajectoryOffset + DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE;
+        loadDocumentOpsTrajectoryList(nextOffset);
+      });
+    });
   }
 
   function renderDocumentOpsTrajectoryCard(item) {
@@ -7182,7 +7212,7 @@
     const rejected = status === 'rejected';
     const qa = item.qa || {};
     const title = item.input?.requirements?.title || item.task_type || 'trajectory';
-    return `<div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:16px;padding:.85rem;">
+    return `<div data-docops-trajectory-card style="background:var(--surface-solid);border:1px solid var(--border);border-radius:16px;padding:.85rem;">
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;">
         <div>
           <strong style="font-size:.9rem;">${escapeHtml(title)}</strong>

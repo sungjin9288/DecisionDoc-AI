@@ -52,16 +52,26 @@ class DocumentOpsService:
         task_type: str | None = None,
         human_review_status: str | None = None,
         accepted_only: bool = False,
+        offset: int = 0,
         limit: int = 100,
     ) -> dict[str, Any]:
-        records = self._trajectory_store.get_records(
+        records, total = self._trajectory_store.get_record_page(
             tenant_id=tenant_id,
             task_type=task_type,
             human_review_status=human_review_status,
             accepted_only=accepted_only,
+            offset=offset,
             limit=limit,
         )
-        return {"trajectories": records, "total": len(records)}
+        returned = len(records)
+        return {
+            "trajectories": records,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "returned": returned,
+            "has_more": offset + returned < total,
+        }
 
     def review_trajectory(
         self,

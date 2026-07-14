@@ -83,6 +83,31 @@ def test_save_deduplicates_by_trajectory_id(tmp_path: Path) -> None:
     assert len(store.get_records(tenant_id="system")) == 1
 
 
+def test_get_record_page_paginates_from_newest_and_reports_filtered_total(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    for index in range(1, 6):
+        trajectory = _sample_trajectory(f"trj_{index}")
+        trajectory["task_type"] = "decision_brief" if index < 5 else "evidence_gap_review"
+        store.save(trajectory, tenant_id="system")
+
+    first_page, total = store.get_record_page(tenant_id="system", offset=0, limit=2)
+    second_page, _ = store.get_record_page(tenant_id="system", offset=2, limit=2)
+    last_page, _ = store.get_record_page(tenant_id="system", offset=4, limit=2)
+    filtered_page, filtered_total = store.get_record_page(
+        tenant_id="system",
+        task_type="decision_brief",
+        offset=0,
+        limit=2,
+    )
+
+    assert total == 5
+    assert [item["trajectory_id"] for item in first_page] == ["trj_4", "trj_5"]
+    assert [item["trajectory_id"] for item in second_page] == ["trj_2", "trj_3"]
+    assert [item["trajectory_id"] for item in last_page] == ["trj_1"]
+    assert filtered_total == 4
+    assert [item["trajectory_id"] for item in filtered_page] == ["trj_3", "trj_4"]
+
+
 def test_mark_reviewed_updates_human_feedback_and_stats(tmp_path: Path) -> None:
     store = TrajectoryStore(tmp_path)
     store.save(_sample_trajectory("trj_review"), tenant_id="system")

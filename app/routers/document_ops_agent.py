@@ -57,6 +57,7 @@ def list_document_ops_trajectories(
     task_type: str | None = None,
     human_review_status: str | None = None,
     accepted_only: bool = False,
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict:
     return _service(request).list_trajectories(
@@ -64,6 +65,7 @@ def list_document_ops_trajectories(
         task_type=task_type,
         human_review_status=human_review_status,
         accepted_only=accepted_only,
+        offset=offset,
         limit=limit,
     )
 

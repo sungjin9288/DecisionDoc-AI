@@ -51,6 +51,27 @@ class TrajectoryCoreMixin:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Return newest matching records up to ``limit``."""
+        records, _ = self.get_record_page(
+            tenant_id=tenant_id,
+            task_type=task_type,
+            human_review_status=human_review_status,
+            accepted_only=accepted_only,
+            offset=0,
+            limit=limit,
+        )
+        return records
+
+    def get_record_page(
+        self,
+        *,
+        tenant_id: str = "system",
+        task_type: str | None = None,
+        human_review_status: str | None = None,
+        accepted_only: bool = False,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return one page measured from the newest match and its filtered total."""
         with self._lock:
             records = self._read_records_unlocked(tenant_id)
         if task_type:
@@ -59,7 +80,13 @@ class TrajectoryCoreMixin:
             records = [item for item in records if item.get("human_review_status") == human_review_status]
         if accepted_only:
             records = [item for item in records if _is_accepted(item)]
-        return records[-limit:]
+
+        total = len(records)
+        page_offset = max(0, offset)
+        page_limit = max(1, limit)
+        end = max(0, total - page_offset)
+        start = max(0, end - page_limit)
+        return records[start:end], total
 
     def mark_reviewed(
         self,

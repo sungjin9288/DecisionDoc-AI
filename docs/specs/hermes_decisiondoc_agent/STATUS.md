@@ -67,6 +67,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   explicitly instead of falling back to a generic operator identity
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
+- trajectory history uses tenant/filter-aware totals and 10-record newest-first browser pages so
+  older review evidence remains reachable
 - readiness and governance panels show checksum and current-chain consistency for freeze,
   approval, execution-request, and audit artifacts
 - provider and base-model values remain planning metadata; every request keeps training, upload,
@@ -74,9 +76,11 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - the workbench uses a compact responsive layout and hides unrelated fixed navigation/history
   controls while active so they do not cover mobile inputs
 
-Desktop and 390-pixel mobile browser checks used a mock provider and temporary local storage. The
-readiness request succeeded with an ops key, and no browser console error was reported. This check
-did not create a dataset upload, provider API call, training job, promotion, or production action.
+Desktop and 390-pixel mobile browser checks used a mock provider and temporary local storage. A
+12-record trajectory history showed the newest 10 records on the first page and the remaining two
+on the next page, with correct disabled controls, no horizontal overflow, and no browser console
+error. This check did not create a dataset upload, provider API call, training job, promotion, or
+production action.
 
 ## Access Boundaries
 
@@ -129,7 +133,7 @@ pytest -q \
   tests/storage/test_trajectory_store.py
 ```
 
-The five files currently define 58 test functions. Reproduce the source count with:
+The five files currently define 60 test functions. Reproduce the source count with:
 
 ```bash
 python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
@@ -145,9 +149,10 @@ source count is not a pass claim.
 
 Last local verification on 2026-07-14:
 
-- focused DocumentOps suite: 58 passed
-- report-workflow and infrastructure integration: 141 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2899 passed, 2 skipped, 4 deselected
+- focused DocumentOps suite: 60 passed
+- focused DocumentOps plus infrastructure integration: 185 passed
+- DocumentOps trajectory browser E2E: 1 passed
+- full `pytest -q tests/ -m "not live" --tb=short`: 2964 passed, 2 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

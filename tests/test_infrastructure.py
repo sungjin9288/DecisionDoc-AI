@@ -2088,6 +2088,20 @@ def test_index_html_document_ops_action_wiring_exists():
     assert "if (action) action();" in content
 
 
+def test_index_html_document_ops_trajectory_history_supports_pagination():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;",
+        "offset: String(Math.max(0, offset))",
+        "data-docops-trajectory-page=\"previous\"",
+        "data-docops-trajectory-page=\"next\"",
+        "wireDocumentOpsTrajectoryPageActions(el);",
+        "loadDocumentOpsTrajectories({ resetPage: true });",
+    ):
+        assert marker in content
+
+
 def test_index_html_document_ops_dynamic_actions_use_event_listeners():
     content = open("app/static/index.html", encoding="utf-8").read()
     blocks = []
