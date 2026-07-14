@@ -261,3 +261,23 @@ def verify_pilot_review_package(content: bytes) -> dict[str, Any]:
         raise ValueError("pilot review package external action boundary is invalid")
 
     return manifest
+
+
+def read_pilot_review_package(content: bytes) -> dict[str, Any]:
+    """Return verified package entries without writing them to disk."""
+    manifest = verify_pilot_review_package(content)
+    export_sha256 = str(manifest["export_sha256"])
+    jsonl_name = f"report_quality_pilot_artifacts_{export_sha256[:12]}.jsonl"
+    receipt_name = f"report_quality_pilot_receipt_{export_sha256[:12]}.json"
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        manifest_bytes = archive.read(PACKAGE_MANIFEST_NAME)
+        jsonl_bytes = archive.read(jsonl_name)
+        receipt_bytes = archive.read(receipt_name)
+    return {
+        "manifest": manifest,
+        "manifest_bytes": manifest_bytes,
+        "jsonl_name": jsonl_name,
+        "jsonl_bytes": jsonl_bytes,
+        "receipt_name": receipt_name,
+        "receipt_bytes": receipt_bytes,
+    }

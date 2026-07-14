@@ -159,17 +159,16 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 264
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/export` |
 | Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 
-UI에서 내려받은 품질 교정 파일럿 JSONL을 local review pack으로 가져옵니다.
+UI에서 내려받은 품질 교정 검토 패키지를 local review pack으로 가져옵니다.
 
 ```bash
 python3 scripts/create_report_quality_pilot_pack.py \
   --batch-id pilot-rqc-001 \
-  --source-jsonl ~/Downloads/report_quality_pilot_artifacts_<sha12>.jsonl \
-  --source-receipt ~/Downloads/report_quality_pilot_receipt_<sha12>.json \
+  --source-package ~/Downloads/report_quality_pilot_review_package_<sha12>.zip \
   --output-root reports/report-quality
 ```
 
-입력은 같은 tenant의 ready artifact 3~5개여야 합니다. UI는 export 전에 ordered artifact, resolved/ready count, 전체 JSONL SHA-256, dataset upload·provider fine-tune·training execution·model promotion 비승인 경계를 보여줍니다. Export 요청은 preview의 hash를 `preview_sha256`으로 다시 제출해야 하며, 서버가 현재 ordered JSONL과 일치하지 않으면 `400`으로 차단합니다. 성공 응답은 JSONL과 server-issued receipt를 내려받거나, 두 파일과 entry별 size/SHA-256·tenant·artifact 순서·외부 실행 비승인 경계를 기록한 `pilot_package_manifest.json`을 하나의 검토 패키지 ZIP으로 받을 수 있습니다. 서버와 브라우저는 ZIP 전체 SHA-256을 다시 대조합니다. Preview/export/package audit은 request ID, JSONL SHA-256, artifact count, 검증 상태를 남기고 Admin Ops에서 각각 필터링할 수 있습니다. Importer는 ZIP을 푼 JSONL과 receipt를 함께 검증하고 receipt 원본을 pack 안의 `SOURCE_EXPORT_RECEIPT.json`으로 보존한 뒤 `SOURCE_MANIFEST.json` v2에 두 파일의 hash와 request ID를 결속합니다. 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync와 운영 API checker는 validation, summary/export count, unique artifact, single-tenant, ready gate를 모두 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. UI는 export 전에 ordered artifact, resolved/ready count, 전체 JSONL SHA-256, dataset upload·provider fine-tune·training execution·model promotion 비승인 경계를 보여줍니다. Export 요청은 preview의 hash를 `preview_sha256`으로 다시 제출해야 하며, 서버가 현재 ordered JSONL과 일치하지 않으면 `400`으로 차단합니다. 성공한 검토 패키지는 JSONL, server-issued receipt, entry별 size/SHA-256·tenant·artifact 순서·외부 실행 비승인 경계를 기록한 manifest를 포함합니다. 서버와 브라우저가 ZIP 전체 SHA-256을 대조하고 importer도 package membership, receipt, tenant, 순서, no-training boundary를 다시 검증합니다. 검증된 원본 package provenance와 receipt는 `SOURCE_MANIFEST.json` v2 및 `SOURCE_EXPORT_RECEIPT.json`에 보존됩니다. 기존 JSONL + receipt 개별 입력도 호환 경로로 유지합니다. 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
 
 스모크 검증 (문서화된 대표 시나리오):
 
@@ -216,10 +215,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,720개**, **222개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,723개**, **222개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2720
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2723
 python3 scripts/count_readme_metrics.py --field test_files      # → 222
 ```
 
@@ -249,7 +248,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,970 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,973 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -299,4 +298,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,720 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,723 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -20,6 +20,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.services.report_quality_learning import validate_correction_artifact  # noqa: E402
+from app.services.report_quality_pilot_package import (  # noqa: E402
+    PACKAGE_SCHEMA_VERSION,
+    read_pilot_review_package,
+)
 from app.services.report_quality_pilot_receipt import (  # noqa: E402
     RECEIPT_SCHEMA_VERSION,
     parse_pilot_export_receipt,
@@ -101,11 +105,25 @@ def _load_ready_source_jsonl(source_jsonl: Path) -> tuple[list[dict[str, Any]], 
     if not source_path.is_file():
         raise ValueError(f"source JSONL file not found: {source_path}")
 
-    source_bytes = source_path.read_bytes()
+    return _parse_ready_source_jsonl(
+        source_path.read_bytes(),
+        source_label=str(source_path),
+        source_path=str(source_path),
+    )
+
+
+def _parse_ready_source_jsonl(
+    source_bytes: bytes,
+    *,
+    source_label: str,
+    source_path: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Validate ready artifacts from file or verified package bytes."""
+
     try:
         source_text = source_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ValueError(f"{source_path}: source JSONL must be UTF-8") from exc
+        raise ValueError(f"{source_label}: source JSONL must be UTF-8") from exc
 
     artifacts: list[dict[str, Any]] = []
     artifact_ids: list[str] = []
@@ -116,25 +134,25 @@ def _load_ready_source_jsonl(source_jsonl: Path) -> tuple[list[dict[str, Any]], 
         try:
             payload = json.loads(raw_line)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"{source_path}: line {line_no}: invalid JSON: {exc.msg}") from exc
+            raise ValueError(f"{source_label}: line {line_no}: invalid JSON: {exc.msg}") from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"{source_path}: line {line_no}: artifact root must be an object")
+            raise ValueError(f"{source_label}: line {line_no}: artifact root must be an object")
 
         validation = validate_correction_artifact(payload)
         if not validation["ok"]:
             details = "; ".join(validation["errors"])
-            raise ValueError(f"{source_path}: line {line_no}: invalid correction artifact: {details}")
+            raise ValueError(f"{source_label}: line {line_no}: invalid correction artifact: {details}")
         if not validation["ready_for_learning"]:
-            raise ValueError(f"{source_path}: line {line_no}: artifact must be ready_for_learning")
+            raise ValueError(f"{source_label}: line {line_no}: artifact must be ready_for_learning")
 
         artifact_id = str(payload.get("artifact_id") or "").strip()
         if not ARTIFACT_ID_PATTERN.fullmatch(artifact_id):
             raise ValueError(
-                f"{source_path}: line {line_no}: artifact_id must be safe for a local filename"
+                f"{source_label}: line {line_no}: artifact_id must be safe for a local filename"
             )
         tenant_id = str(payload.get("workflow_reference", {}).get("tenant_id") or "").strip()
         if not tenant_id:
-            raise ValueError(f"{source_path}: line {line_no}: workflow_reference.tenant_id must be non-empty")
+            raise ValueError(f"{source_label}: line {line_no}: workflow_reference.tenant_id must be non-empty")
 
         artifacts.append(payload)
         artifact_ids.append(artifact_id)
@@ -148,7 +166,7 @@ def _load_ready_source_jsonl(source_jsonl: Path) -> tuple[list[dict[str, Any]], 
         raise ValueError("source JSONL artifacts must belong to one tenant")
 
     return artifacts, {
-        "path": str(source_path),
+        "path": source_path,
         "sha256": hashlib.sha256(source_bytes).hexdigest(),
         "artifact_ids": artifact_ids,
         "tenant_id": next(iter(tenant_ids)),
@@ -164,7 +182,20 @@ def _load_source_receipt(
     if not receipt_path.is_file():
         raise ValueError(f"source receipt file not found: {receipt_path}")
 
-    receipt_bytes = receipt_path.read_bytes()
+    return _parse_source_receipt(
+        receipt_path.read_bytes(),
+        source_label=str(receipt_path),
+        source_info=source_info,
+    )
+
+
+def _parse_source_receipt(
+    receipt_bytes: bytes,
+    *,
+    source_label: str,
+    source_info: dict[str, Any],
+) -> tuple[bytes, dict[str, Any]]:
+    """Validate receipt bytes and retain their original source label."""
     receipt = parse_pilot_export_receipt(receipt_bytes)
     validate_pilot_export_receipt(
         receipt,
@@ -173,7 +204,7 @@ def _load_source_receipt(
         tenant_id=source_info["tenant_id"],
     )
     return receipt_bytes, {
-        "source_path": str(receipt_path),
+        "source_path": source_label,
         "path": SOURCE_RECEIPT_NAME,
         "sha256": pilot_export_receipt_sha256(receipt_bytes),
         "schema_version": RECEIPT_SCHEMA_VERSION,
@@ -181,6 +212,42 @@ def _load_source_receipt(
         "issued_at": receipt["issued_at"],
         "preview_verified": True,
     }
+
+
+def _load_source_package(
+    source_package: Path,
+) -> tuple[list[dict[str, Any]], dict[str, Any], bytes, dict[str, Any]]:
+    expanded_path = source_package.expanduser()
+    if expanded_path.is_symlink():
+        raise ValueError(f"source package must not be a symlink: {expanded_path}")
+    package_path = expanded_path.resolve()
+    if not package_path.is_file():
+        raise ValueError(f"source package file not found: {package_path}")
+
+    package_bytes = package_path.read_bytes()
+    package = read_pilot_review_package(package_bytes)
+    jsonl_label = f"{package_path}!{package['jsonl_name']}"
+    artifacts, source_info = _parse_ready_source_jsonl(
+        package["jsonl_bytes"],
+        source_label=jsonl_label,
+        source_path=str(package_path),
+    )
+    receipt_bytes, receipt_info = _parse_source_receipt(
+        package["receipt_bytes"],
+        source_label=f"{package_path}!{package['receipt_name']}",
+        source_info=source_info,
+    )
+    manifest = package["manifest"]
+    source_info["package"] = {
+        "path": str(package_path),
+        "sha256": hashlib.sha256(package_bytes).hexdigest(),
+        "schema_version": PACKAGE_SCHEMA_VERSION,
+        "manifest_sha256": hashlib.sha256(package["manifest_bytes"]).hexdigest(),
+        "jsonl_entry": package["jsonl_name"],
+        "receipt_entry": package["receipt_name"],
+        "request_id": manifest["request_id"],
+    }
+    return artifacts, source_info, receipt_bytes, receipt_info
 
 
 def _load_template() -> dict[str, Any]:
@@ -326,9 +393,18 @@ def _render_index(
 - 추가 보완이 필요하면 review decision을 `changes_requested` 또는 `rejected`로 기록한다.
 - 원본 첨부파일, base64, raw file bytes, secret, API key 값은 추가하지 않는다.
 - training boundary 값은 별도 실행 승인 전까지 모두 `false`로 유지한다."""
+        package_info = source_info.get("package")
+        source_name = "source_package" if package_info else "source_jsonl"
+        package_details = ""
+        if isinstance(package_info, dict):
+            package_details = f"""
+- source_package_sha256: `{package_info['sha256']}`
+- source_package_manifest_sha256: `{package_info['manifest_sha256']}`
+- source_package_jsonl_entry: `{package_info['jsonl_entry']}`"""
         source_details = f"""
-- source_jsonl: `{source_info['path']}`
+- {source_name}: `{source_info['path']}`
 - source_sha256: `{source_info['sha256']}`
+{package_details}
 - source_manifest: `{source_manifest_path}`
 - source_export_receipt: `{receipt_info['path'] if receipt_info else '-'}`
 - source_export_receipt_sha256: `{receipt_info['sha256'] if receipt_info else '-'}`
@@ -403,15 +479,26 @@ def create_report_quality_pilot_pack(
     reviewer: str = "TODO_REVIEWER",
     source_jsonl: Path | None = None,
     source_receipt: Path | None = None,
+    source_package: Path | None = None,
 ) -> dict[str, Any]:
     batch_id = _validate_batch_id(batch_id)
+    if source_package is not None and (source_jsonl is not None or source_receipt is not None):
+        raise ValueError("source_package cannot be combined with source_jsonl or source_receipt")
 
     output_dir = output_root / batch_id
     drafts_dir = output_dir / "drafts"
     source_info: dict[str, Any] | None = None
     receipt_bytes: bytes | None = None
     receipt_info: dict[str, Any] | None = None
-    if source_jsonl is not None:
+    if source_package is not None:
+        artifacts, source_info, receipt_bytes, receipt_info = _load_source_package(
+            source_package
+        )
+        sample_count = len(artifacts)
+        source_mode = "exported_ready_package"
+        if output_dir.exists() and any(output_dir.iterdir()):
+            raise ValueError(f"source import output directory must be empty: {output_dir}")
+    elif source_jsonl is not None:
         artifacts, source_info = _load_ready_source_jsonl(source_jsonl)
         if source_receipt is None:
             raise ValueError("source_receipt is required when importing source_jsonl")
@@ -480,7 +567,8 @@ def create_report_quality_pilot_pack(
                 "server_preview_verified": True,
             },
             "side_effect_boundary": {
-                "reads_local_jsonl": True,
+                "reads_local_jsonl": "package" not in source_info,
+                "reads_local_package": "package" in source_info,
                 "writes_local_review_pack": True,
                 "external_dataset_upload_started": False,
                 "provider_fine_tune_api_called": False,
@@ -517,6 +605,11 @@ def create_report_quality_pilot_pack(
         "source_receipt_path": (
             str(output_dir / SOURCE_RECEIPT_NAME) if receipt_info is not None else None
         ),
+        "source_package_path": (
+            source_info["package"]["path"]
+            if source_info is not None and "package" in source_info
+            else None
+        ),
         "draft_paths": [str(path) for path in draft_paths],
         "sample_count": sample_count,
         "ready_artifacts": sample_count if source_info is not None else 0,
@@ -526,7 +619,7 @@ def create_report_quality_pilot_pack(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Create draft artifacts or import a ready JSONL for a report quality pilot review batch.",
+        description="Create draft artifacts or import a verified pilot export for local review.",
     )
     parser.add_argument("--batch-id", required=True)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -545,6 +638,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Verify the server-issued JSON receipt downloaded with --source-jsonl.",
     )
+    parser.add_argument(
+        "--source-package",
+        type=Path,
+        default=None,
+        help="Import one server-verified pilot review package ZIP.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     return parser
 
@@ -552,8 +651,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(list(argv) if argv is not None else None)
     try:
-        if args.source_jsonl is not None and args.sample_count is not None:
-            raise ValueError("--sample-count cannot be combined with --source-jsonl")
+        if (args.source_jsonl is not None or args.source_package is not None) and args.sample_count is not None:
+            raise ValueError("--sample-count cannot be combined with a source import")
         result = create_report_quality_pilot_pack(
             batch_id=args.batch_id,
             output_root=args.output_root,
@@ -562,6 +661,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             reviewer=args.reviewer,
             source_jsonl=args.source_jsonl,
             source_receipt=args.source_receipt,
+            source_package=args.source_package,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR {exc}", file=sys.stderr)

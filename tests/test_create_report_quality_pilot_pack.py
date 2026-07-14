@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import importlib.util
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,10 @@ import pytest
 from app.services.report_quality_pilot_receipt import (
     build_pilot_export_receipt,
     serialize_pilot_export_receipt,
+)
+from app.services.report_quality_pilot_package import (
+    build_pilot_review_package,
+    read_pilot_review_package,
 )
 
 
@@ -54,7 +60,7 @@ def _write_jsonl(path: Path, artifacts: list[dict]) -> None:
     )
 
 
-def _write_source_receipt(path: Path, source_path: Path, artifacts: list[dict]) -> None:
+def _source_receipt_bytes(source_path: Path, artifacts: list[dict]) -> bytes:
     export_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
     receipt = build_pilot_export_receipt(
         preview={
@@ -65,7 +71,28 @@ def _write_source_receipt(path: Path, source_path: Path, artifacts: list[dict]) 
         tenant_id=artifacts[0]["workflow_reference"]["tenant_id"],
         request_id="pilot-request-0001",
     )
-    path.write_bytes(serialize_pilot_export_receipt(receipt))
+    return serialize_pilot_export_receipt(receipt)
+
+
+def _write_source_receipt(path: Path, source_path: Path, artifacts: list[dict]) -> None:
+    path.write_bytes(_source_receipt_bytes(source_path, artifacts))
+
+
+def _write_source_package(path: Path, source_path: Path, artifacts: list[dict]) -> dict:
+    export_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    preview = {
+        "filename": f"report_quality_pilot_artifacts_{export_sha256[:12]}.jsonl",
+        "export_sha256": export_sha256,
+        "ordered_artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
+    }
+    package, manifest = build_pilot_review_package(
+        jsonl=source_path.read_text(encoding="utf-8"),
+        receipt_bytes=_source_receipt_bytes(source_path, artifacts),
+        preview=preview,
+        tenant_id=artifacts[0]["workflow_reference"]["tenant_id"],
+    )
+    path.write_bytes(package)
+    return manifest
 
 
 def test_create_report_quality_pilot_pack_writes_non_ready_drafts(tmp_path):
@@ -239,6 +266,130 @@ def test_create_report_quality_pilot_pack_cli_imports_source_jsonl(tmp_path, cap
     assert result["sample_count"] == 3
     assert Path(result["source_manifest_path"]).exists()
     assert Path(result["source_receipt_path"]).exists()
+
+
+def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
+    script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_package_import")
+    sync_script = _load_module(SYNC_PATH, "sync_report_quality_pilot_pack_package_import")
+    source_path = tmp_path / "report_quality_pilot_artifacts.jsonl"
+    package_path = tmp_path / "report_quality_pilot_review_package.zip"
+    artifact_ids = ["rqa_package_3", "rqa_package_1", "rqa_package_2"]
+    artifacts = [_ready_artifact(artifact_id) for artifact_id in artifact_ids]
+    _write_jsonl(source_path, artifacts)
+    package_manifest = _write_source_package(package_path, source_path, artifacts)
+
+    result = script.create_report_quality_pilot_pack(
+        batch_id="pilot-rqc-package-import",
+        output_root=tmp_path / "packs",
+        source_package=package_path,
+    )
+
+    assert result["source_mode"] == "exported_ready_package"
+    assert result["source_package_path"] == str(package_path.resolve())
+    assert result["sample_count"] == 3
+    source_manifest_path = Path(result["source_manifest_path"])
+    source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    package_info = source_manifest["source"]["package"]
+    assert source_manifest["source"]["artifact_ids"] == artifact_ids
+    assert source_manifest["source"]["path"] == str(package_path.resolve())
+    assert package_info["sha256"] == hashlib.sha256(package_path.read_bytes()).hexdigest()
+    assert package_info["schema_version"] == package_manifest["schema_version"]
+    assert package_info["request_id"] == source_manifest["receipt"]["request_id"]
+    assert source_manifest["side_effect_boundary"]["reads_local_jsonl"] is False
+    assert source_manifest["side_effect_boundary"]["reads_local_package"] is True
+    package = read_pilot_review_package(package_path.read_bytes())
+    assert Path(result["source_receipt_path"]).read_bytes() == package["receipt_bytes"]
+
+    synced = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=Path(result["output_dir"]),
+        min_records=3,
+        require_ready=True,
+    )
+    assert synced["ok"] is True
+    assert synced["source_order_applied"] is True
+    synced_artifacts = [
+        json.loads(line)
+        for line in Path(synced["output_path"]).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [artifact["artifact_id"] for artifact in synced_artifacts] == artifact_ids
+
+    source_manifest["source"]["package"]["request_id"] = "different-request"
+    source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="must match receipt.request_id"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=Path(result["output_dir"]),
+            min_records=3,
+            require_ready=True,
+        )
+
+
+def test_create_report_quality_pilot_pack_cli_imports_verified_package(tmp_path, capsys):
+    script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_package_cli")
+    source_path = tmp_path / "report_quality_pilot_artifacts.jsonl"
+    package_path = tmp_path / "report_quality_pilot_review_package.zip"
+    artifacts = [_ready_artifact(f"rqa_package_{index}") for index in range(1, 4)]
+    _write_jsonl(source_path, artifacts)
+    _write_source_package(package_path, source_path, artifacts)
+
+    exit_code = script.main([
+        "--batch-id",
+        "pilot-rqc-package-cli",
+        "--output-root",
+        str(tmp_path / "packs"),
+        "--source-package",
+        str(package_path),
+        "--json",
+    ])
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["source_mode"] == "exported_ready_package"
+    assert result["source_package_path"] == str(package_path.resolve())
+
+
+def test_create_report_quality_pilot_pack_rejects_tampered_or_ambiguous_package(tmp_path):
+    script = _load_module(SCRIPT_PATH, "create_report_quality_pilot_pack_package_rejection")
+    source_path = tmp_path / "report_quality_pilot_artifacts.jsonl"
+    package_path = tmp_path / "report_quality_pilot_review_package.zip"
+    artifacts = [_ready_artifact(f"rqa_package_{index}") for index in range(1, 4)]
+    _write_jsonl(source_path, artifacts)
+    _write_source_package(package_path, source_path, artifacts)
+
+    package_link = tmp_path / "package-link.zip"
+    package_link.symlink_to(package_path)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        script.create_report_quality_pilot_pack(
+            batch_id="pilot-rqc-symlink-package",
+            output_root=tmp_path / "packs",
+            source_package=package_link,
+        )
+
+    tampered = io.BytesIO()
+    with zipfile.ZipFile(package_path) as source, zipfile.ZipFile(tampered, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name.endswith(".jsonl"):
+                content += b"{}\n"
+            target.writestr(name, content)
+    package_path.write_bytes(tampered.getvalue())
+
+    output_root = tmp_path / "packs"
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        script.create_report_quality_pilot_pack(
+            batch_id="pilot-rqc-tampered-package",
+            output_root=output_root,
+            source_package=package_path,
+        )
+    assert not output_root.exists()
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        script.create_report_quality_pilot_pack(
+            batch_id="pilot-rqc-ambiguous-package",
+            output_root=output_root,
+            source_package=package_path,
+            source_jsonl=source_path,
+        )
 
 
 def test_create_report_quality_pilot_pack_rejects_invalid_source_batches(tmp_path):

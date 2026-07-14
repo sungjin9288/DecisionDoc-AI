@@ -20,6 +20,7 @@ from app.services.report_quality_pilot_receipt import (  # noqa: E402
     pilot_export_receipt_sha256,
     validate_pilot_export_receipt,
 )
+from app.services.report_quality_pilot_package import PACKAGE_SCHEMA_VERSION  # noqa: E402
 
 
 SOURCE_MANIFEST_NAME = "SOURCE_MANIFEST.json"
@@ -153,6 +154,23 @@ def _source_artifact_ids(
         raise ValueError(f"{manifest_path}: source.artifact_count does not match artifact_ids")
     if source.get("format") != "jsonl" or source.get("order_preserved") is not True:
         raise ValueError(f"{manifest_path}: source format and order_preserved contract are invalid")
+    package = source.get("package")
+    if package is not None:
+        if not isinstance(package, dict):
+            raise ValueError(f"{manifest_path}: source.package must be an object")
+        if package.get("path") != source.get("path"):
+            raise ValueError(f"{manifest_path}: source.package.path must match source.path")
+        if package.get("schema_version") != PACKAGE_SCHEMA_VERSION:
+            raise ValueError(f"{manifest_path}: source.package.schema_version is unsupported")
+        for field in ("sha256", "manifest_sha256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", str(package.get(field) or "")):
+                raise ValueError(f"{manifest_path}: source.package.{field} must be a lowercase SHA-256 digest")
+        source_sha256 = str(source.get("sha256") or "")
+        expected_prefix = source_sha256[:12]
+        if package.get("jsonl_entry") != f"report_quality_pilot_artifacts_{expected_prefix}.jsonl":
+            raise ValueError(f"{manifest_path}: source.package.jsonl_entry is invalid")
+        if package.get("receipt_entry") != f"report_quality_pilot_receipt_{expected_prefix}.json":
+            raise ValueError(f"{manifest_path}: source.package.receipt_entry is invalid")
     validation = manifest.get("validation")
     required_validation = [
         "all_valid",
@@ -179,6 +197,8 @@ def _source_artifact_ids(
             raise ValueError(f"{manifest_path}: receipt must prove server preview verification")
         if not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("sha256") or "")):
             raise ValueError(f"{manifest_path}: receipt.sha256 must be a lowercase SHA-256 digest")
+        if isinstance(package, dict) and package.get("request_id") != receipt.get("request_id"):
+            raise ValueError(f"{manifest_path}: source.package.request_id must match receipt.request_id")
     return artifact_ids
 
 
