@@ -7039,6 +7039,11 @@
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
 
+  function documentOpsReviewDraftKey(trajectoryId, tenantId = _currentTenantId) {
+    const normalizedTenantId = String(tenantId || 'system').trim() || 'system';
+    return JSON.stringify([normalizedTenantId, String(trajectoryId || '').trim()]);
+  }
+
   function documentOpsLines(value) {
     return String(value || '')
       .split(/\r?\n/)
@@ -7253,10 +7258,12 @@
   async function loadDocumentOpsStats() {
     const el = $id('document-ops-stats');
     if (!el) return;
+    const tenantId = _currentTenantId;
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/stats', { headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const stats = await res.json();
+      if (tenantId !== _currentTenantId) return;
       el.innerHTML = `<div style="display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;">
         <strong style="font-size:.85rem;">Trajectory Stats</strong>
         <span>total ${Number(stats.total_records || 0)}</span>
@@ -7265,6 +7272,7 @@
         <span>exports ${Number(stats.export_count || 0)}</span>
       </div>`;
     } catch (err) {
+      if (tenantId !== _currentTenantId) return;
       el.innerHTML = `<span style="color:#ef4444;">stats 로드 실패: ${escapeHtml(err.message || String(err))}</span>`;
     }
   }
@@ -7436,7 +7444,7 @@
     const accepted = status === 'accepted' || feedback.accepted === true;
     const rejected = status === 'rejected';
     const issues = Array.isArray(qa.gate_issues) ? qa.gate_issues : [];
-    const reviewDraft = _documentOpsReviewDrafts.get(String(item.trajectory_id || ''));
+    const reviewDraft = _documentOpsReviewDrafts.get(documentOpsReviewDraftKey(item.trajectory_id));
     const reviewNotes = reviewDraft?.notes ?? String(feedback.notes || '');
     const qualityScore = reviewDraft?.scoreText
       ?? (typeof feedback.quality_score === 'number' ? String(feedback.quality_score) : '');
@@ -7514,15 +7522,16 @@
     const scoreInput = container.querySelector('[data-docops-review-score]');
     const trajectoryId = notesInput?.closest('[data-docops-trajectory-card]')?.dataset.trajectoryId || '';
     if (!trajectoryId || !notesInput || !scoreInput) return;
+    const draftKey = documentOpsReviewDraftKey(trajectoryId);
 
     const rememberDraft = () => {
       const notes = notesInput.value;
       const scoreText = scoreInput.value;
       if (!notes && !scoreText) {
-        _documentOpsReviewDrafts.delete(trajectoryId);
+        _documentOpsReviewDrafts.delete(draftKey);
         return;
       }
-      _documentOpsReviewDrafts.set(trajectoryId, { notes, scoreText });
+      _documentOpsReviewDrafts.set(draftKey, { notes, scoreText });
     };
     notesInput.addEventListener('input', rememberDraft);
     scoreInput.addEventListener('input', rememberDraft);
@@ -7572,7 +7581,8 @@
       scoreInput?.focus();
       return;
     }
-    _documentOpsReviewDrafts.set(trajectoryId, { notes, scoreText });
+    const draftKey = documentOpsReviewDraftKey(trajectoryId);
+    _documentOpsReviewDrafts.set(draftKey, { notes, scoreText });
     const wasDisabled = !!trigger?.disabled;
     if (trigger) trigger.disabled = true;
     try {
@@ -7598,7 +7608,7 @@
         return;
       }
       if (!res.ok) throw new Error(await res.text());
-      _documentOpsReviewDrafts.delete(trajectoryId);
+      _documentOpsReviewDrafts.delete(draftKey);
       showNotification(accepted ? 'trajectory를 승인했습니다.' : 'trajectory를 반려했습니다.', 'success');
       await loadDocumentOpsTrajectories();
     } catch (err) {
@@ -12179,6 +12189,7 @@
         _currentTenantId = e.target.value;
         localStorage.setItem('dd_tenant_id', _currentTenantId);
         loadBundles();
+        loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
       });
     } catch { /* optional feature */ }
   }

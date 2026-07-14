@@ -76,8 +76,10 @@ The static DocumentOps workbench now follows the same local governance chain as 
 - review requests carry the version loaded with the detail record; storage compares it while holding
   the tenant write lock, returns an identical retry unchanged, and rejects a different stale decision
   with `409` plus expected/current version evidence
-- review inputs update a page-memory draft as the reviewer types, so ordinary list refreshes and
-  conflict recovery can restore notes and score; empty inputs or a successful write clear that draft
+- review inputs update a tenant-and-trajectory keyed page-memory draft as the reviewer types, so
+  ordinary list refreshes and conflict recovery can restore notes and score only in the same tenant;
+  empty inputs or a successful write clear that draft, and tenant changes reload the workbench while
+  delayed list or stats responses from the previous tenant are ignored
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -103,7 +105,8 @@ create a dataset upload, provider API call, training job, promotion, or producti
 A separate browser review check opened one `develop_quality_improvement` trajectory, matched the
 full displayed draft to the API response, confirmed provenance, source evidence, and QA state,
 blocked approval without a human score, rejected an intentionally stale approval after another reviewer
-stored version 1, preserved the note through an ordinary list refresh, reloaded the latest record
+stored version 1, preserved the note through an ordinary list refresh, verified that the same trajectory
+ID cannot read the draft under a different tenant, reloaded the latest record
 without re-entering the note or score, then
 persisted reviewer identity, notes, and score `0.88`
 as version 2 while retaining version 1 in review history.
@@ -180,7 +183,7 @@ Last local verification on 2026-07-14:
 - focused DocumentOps suite: 60 passed
 - focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
 - DocumentOps trajectory browser E2E: 2 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 2966 passed, 2 skipped, 4 deselected
+- full `pytest -q tests/ -m "not live" --tb=short`: 2967 passed, 1 skipped, 4 deselected
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

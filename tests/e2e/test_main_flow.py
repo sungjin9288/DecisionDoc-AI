@@ -557,6 +557,31 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert page_errors == []
     trajectory_text = page.locator("#document-ops-trajectories").inner_text()
     assert "trajectory 로드 실패" not in trajectory_text, trajectory_text
+    assert page.evaluate(
+        """async () => {
+          const originalFetch = window.fetch;
+          const originalTenantId = _currentTenantId;
+          const statsBefore = document.querySelector('#document-ops-stats').textContent;
+          let resolveFetch;
+          try {
+            window.fetch = () => new Promise(resolve => { resolveFetch = resolve; });
+            _currentTenantId = 'delayed-tenant';
+            const pendingStats = loadDocumentOpsStats();
+            _currentTenantId = 'current-tenant';
+            resolveFetch(new Response(JSON.stringify({
+              total_records: 99999,
+              accepted_records: 99999,
+              pending_records: 0,
+              export_count: 0,
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            await pendingStats;
+            return document.querySelector('#document-ops-stats').textContent === statsBefore;
+          } finally {
+            window.fetch = originalFetch;
+            _currentTenantId = originalTenantId;
+          }
+        }"""
+    )
     card_selector = f'[data-docops-trajectory-card][data-trajectory-id="{created["trajectory_id"]}"]'
     page.wait_for_selector(card_selector, timeout=10000)
     card = page.locator(card_selector)
@@ -594,15 +619,25 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     page.fill("#docops-reviewer", "browser-reviewer")
     card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
     assert page.evaluate(
-        "trajectoryId => _documentOpsReviewDrafts.get(trajectoryId)",
+        "trajectoryId => _documentOpsReviewDrafts.get(documentOpsReviewDraftKey(trajectoryId))",
         created["trajectory_id"],
     ) == {
         "notes": "전체 초안과 근거 상태를 확인하고 승인합니다.",
         "scoreText": "",
     }
+    assert page.evaluate(
+        """trajectoryId => {
+          const originalTenantId = _currentTenantId;
+          _currentTenantId = 'other-tenant';
+          const isolated = !_documentOpsReviewDrafts.has(documentOpsReviewDraftKey(trajectoryId));
+          _currentTenantId = originalTenantId;
+          return isolated;
+        }""",
+        created["trajectory_id"],
+    )
     card.locator("[data-docops-review-notes]").fill("")
     assert page.evaluate(
-        "trajectoryId => !_documentOpsReviewDrafts.has(trajectoryId)",
+        "trajectoryId => !_documentOpsReviewDrafts.has(documentOpsReviewDraftKey(trajectoryId))",
         created["trajectory_id"],
     )
     card.locator("[data-docops-review-notes]").fill("전체 초안과 근거 상태를 확인하고 승인합니다.")
@@ -669,7 +704,7 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert card.locator("[data-docops-review-notes]").input_value() == "전체 초안과 근거 상태를 확인하고 승인합니다."
     assert card.locator("[data-docops-review-score]").input_value() == "0.88"
     assert page.evaluate(
-        "trajectoryId => _documentOpsReviewDrafts.get(trajectoryId)",
+        "trajectoryId => _documentOpsReviewDrafts.get(documentOpsReviewDraftKey(trajectoryId))",
         created["trajectory_id"],
     ) == {
         "notes": "전체 초안과 근거 상태를 확인하고 승인합니다.",
@@ -714,7 +749,7 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert reviewed["human_feedback"]["review_version"] == 2
     assert reviewed["human_review_history"][0]["reviewer"] == "competing-reviewer"
     assert page.evaluate(
-        "trajectoryId => !_documentOpsReviewDrafts.has(trajectoryId)",
+        "trajectoryId => !_documentOpsReviewDrafts.has(documentOpsReviewDraftKey(trajectoryId))",
         created["trajectory_id"],
     )
 

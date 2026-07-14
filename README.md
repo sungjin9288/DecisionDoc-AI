@@ -31,7 +31,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side hash confirmation과 append-only audit을 통과한 export만 local review pack으로 연결 |
-| DocumentOps 검토 작업대 | tenant-scoped trajectory를 검색·필터·정렬하고 summary 목록에서 선택한 기록만 상세 조회한다. 사람 검토는 메모와 품질 점수를 export/freeze/governance 증적으로 연결하고, expected review version을 storage lock 안에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단한다. 작성 중인 검토 초안은 입력 시점부터 현재 페이지 메모리에 보존되어 목록 갱신과 충돌 후 최신 상세를 다시 읽어도 복원되며, 상세 열람, review 결정, version conflict는 본문·메모를 제외한 append-only audit으로 추적한다. |
+| DocumentOps 검토 작업대 | tenant-scoped trajectory를 검색·필터·정렬하고 summary 목록에서 선택한 기록만 상세 조회한다. 사람 검토는 메모와 품질 점수를 export/freeze/governance 증적으로 연결하고, expected review version을 storage lock 안에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단한다. 작성 중인 검토 초안은 tenant와 trajectory를 함께 묶은 현재 페이지 메모리에 보존되어 목록 갱신과 충돌 후 최신 상세를 다시 읽어도 같은 tenant에서만 복원되며, 상세 열람, review 결정, version conflict는 본문·메모를 제외한 append-only audit으로 추적한다. |
 
 ---
 
@@ -249,7 +249,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,966 passed, 2 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+mock/local 경로는 전 기능이 테스트로 검증됐습니다 (`pytest -q tests/ -m "not live" --tb=short` → 2,967 passed, 1 skipped, 4 deselected, 2026-07-14 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template

@@ -474,6 +474,7 @@ def test_index_html_ops_tenant_list_preserves_admin_session_auth():
 
     assert "headers: getOpsAccessHeaders()," in block
     assert "headers: { 'X-DecisionDoc-Ops-Key': opsKey }," not in block
+    assert "loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });" in block
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
@@ -2116,6 +2117,7 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "_documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250)",
         "responseOrder === 'oldest'",
         "requestVersion !== _documentOpsTrajectoryRequestVersion",
+        "if (tenantId !== _currentTenantId) return;",
         "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-detail",
         "data-docops-trajectory-detail-content",
@@ -2125,14 +2127,17 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "data-docops-review-notes",
         "data-docops-review-score",
         "const _documentOpsReviewDrafts = new Map();",
-        "const reviewDraft = _documentOpsReviewDrafts.get(String(item.trajectory_id || ''));",
+        "function documentOpsReviewDraftKey(trajectoryId, tenantId = _currentTenantId)",
+        "return JSON.stringify([normalizedTenantId, String(trajectoryId || '').trim()]);",
+        "const reviewDraft = _documentOpsReviewDrafts.get(documentOpsReviewDraftKey(item.trajectory_id));",
         "restoreDocumentOpsReviewDraftAfterConflict(trajectoryId)",
         "function wireDocumentOpsReviewDraftInputs(container)",
+        "const draftKey = documentOpsReviewDraftKey(trajectoryId);",
         "notesInput.addEventListener('input', rememberDraft);",
         "scoreInput.addEventListener('input', rememberDraft);",
         "wireDocumentOpsReviewDraftInputs(container);",
-        "_documentOpsReviewDrafts.set(trajectoryId, { notes, scoreText });",
-        "_documentOpsReviewDrafts.delete(trajectoryId);",
+        "_documentOpsReviewDrafts.set(draftKey, { notes, scoreText });",
+        "_documentOpsReviewDrafts.delete(draftKey);",
         "data-review-version=\"${Number(feedback.review_version || 0)}\"",
         "expected_review_version: expectedReviewVersion",
         "if (res.status === 409)",
