@@ -22,6 +22,7 @@ from app.services.report_quality_pilot_package import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts/create_report_quality_pilot_pack.py"
 SYNC_PATH = REPO_ROOT / "scripts/sync_report_quality_pilot_pack.py"
+APPLY_PATH = REPO_ROOT / "scripts/apply_report_quality_review_decisions.py"
 VALIDATOR_PATH = REPO_ROOT / "docs/specs/report_quality_learning/validate_correction_artifact.py"
 TEMPLATE_PATH = REPO_ROOT / "docs/specs/report_quality_learning/correction_artifact_template.json"
 
@@ -93,6 +94,26 @@ def _write_source_package(path: Path, source_path: Path, artifacts: list[dict]) 
     )
     path.write_bytes(package)
     return manifest
+
+
+def _record_local_ready_review(pack_dir: Path) -> dict:
+    module_name = f"apply_ready_review_{pack_dir.name.replace('-', '_')}"
+    apply_script = _load_module(APPLY_PATH, module_name)
+    decisions_path = pack_dir / "review_decisions.local-approved.json"
+    receipt_path = pack_dir / "local-ready-review-proof.json"
+    apply_script.create_review_decision_template(
+        pack_dir=pack_dir,
+        output_path=decisions_path,
+    )
+    result = apply_script.apply_review_decisions(
+        pack_dir=pack_dir,
+        decisions_path=decisions_path,
+        require_ready=True,
+        receipt_path=receipt_path,
+    )
+    assert result["ok"] is True
+    assert result["ready_decisions"] == 3
+    return result
 
 
 def test_create_report_quality_pilot_pack_writes_non_ready_drafts(tmp_path):
@@ -224,6 +245,16 @@ def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
     assert "Report Workflow UI" in index_text
     assert source_manifest["source"]["sha256"] in index_text
 
+    blocked = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=Path(result["output_dir"]),
+        min_records=3,
+        require_ready=True,
+    )
+    assert blocked["ok"] is False
+    assert blocked["output_written"] is False
+    assert "current accepted review decision receipt is required" in "\n".join(blocked["errors"])
+
+    _record_local_ready_review(Path(result["output_dir"]))
     synced = sync_script.sync_report_quality_pilot_pack(
         pack_dir=Path(result["output_dir"]),
         min_records=3,
@@ -232,12 +263,32 @@ def test_create_report_quality_pilot_pack_imports_ready_ui_export(tmp_path):
     assert synced["ok"] is True
     assert synced["ready_artifacts"] == 3
     assert synced["source_order_applied"] is True
+    assert synced["review_manifest"]["sha256"] == hashlib.sha256(
+        Path(result["review_manifest_path"]).read_bytes()
+    ).hexdigest()
+    assert synced["decision_receipt"]["artifact_count"] == 3
     synced_artifacts = [
         json.loads(line)
         for line in Path(synced["output_path"]).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     assert [artifact["artifact_id"] for artifact in synced_artifacts] == artifact_ids
+
+    review_manifest_path = Path(result["review_manifest_path"])
+    review_manifest_bytes = review_manifest_path.read_bytes()
+    review_manifest = json.loads(review_manifest_bytes)
+    review_manifest["counts"]["ready_artifacts"] = 2
+    review_manifest_path.write_text(json.dumps(review_manifest), encoding="utf-8")
+    tampered_review = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=Path(result["output_dir"]),
+        min_records=3,
+        require_ready=True,
+    )
+    assert tampered_review["ok"] is False
+    assert "human review manifest counts do not match current drafts" in "\n".join(
+        tampered_review["errors"]
+    )
+    review_manifest_path.write_bytes(review_manifest_bytes)
 
     copied_receipt_path = Path(result["source_receipt_path"])
     copied_receipt_bytes = copied_receipt_path.read_bytes()
@@ -343,6 +394,15 @@ def test_create_report_quality_pilot_pack_imports_verified_package(tmp_path):
 
     package_path.unlink()
 
+    blocked = sync_script.sync_report_quality_pilot_pack(
+        pack_dir=Path(result["output_dir"]),
+        min_records=3,
+        require_ready=True,
+    )
+    assert blocked["ok"] is False
+    assert "current accepted review decision receipt is required" in "\n".join(blocked["errors"])
+
+    _record_local_ready_review(Path(result["output_dir"]))
     synced = sync_script.sync_report_quality_pilot_pack(
         pack_dir=Path(result["output_dir"]),
         min_records=3,
@@ -508,6 +568,8 @@ def test_create_report_quality_pilot_pack_reads_previous_v2_package_provenance(t
     source_manifest["source"]["package"].pop("manifest_path")
     source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
     Path(result["source_package_manifest_path"]).unlink()
+
+    _record_local_ready_review(Path(result["output_dir"]))
 
     synced = sync_script.sync_report_quality_pilot_pack(
         pack_dir=Path(result["output_dir"]),

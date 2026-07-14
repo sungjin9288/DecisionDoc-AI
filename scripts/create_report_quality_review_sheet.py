@@ -24,7 +24,14 @@ from app.services.report_quality_learning import (  # noqa: E402
     REQUIRED_DIMENSIONS,
     validate_correction_artifact,
 )
-from scripts.report_quality_pilot_pack_provenance import load_pilot_pack  # noqa: E402
+from scripts.report_quality_pilot_pack_provenance import (  # noqa: E402
+    PilotPackSnapshot,
+    load_pilot_pack,
+)
+
+
+REVIEW_MANIFEST_REPORT_TYPE = "report_quality_human_review_sheet_manifest"
+REVIEW_MANIFEST_SCHEMA = "decisiondoc_report_quality_human_review_sheet_manifest.v1"
 
 
 def _now_iso() -> str:
@@ -194,6 +201,42 @@ def _artifact_row(
     }
 
 
+def build_report_quality_review_state(
+    snapshot: PilotPackSnapshot,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    rows: list[dict[str, Any]] = []
+    for draft in snapshot.drafts:
+        validation = validate_correction_artifact(draft.payload)
+        rows.append(
+            _artifact_row(
+                draft.path,
+                draft.payload,
+                validation,
+                draft_sha256=draft.sha256,
+            )
+        )
+
+    artifact_count = len(rows)
+    ready_artifacts = sum(1 for row in rows if row["ready_for_learning"])
+    accepted_artifacts = sum(1 for row in rows if row["accepted_for_learning"])
+    invalid_artifacts = sum(1 for row in rows if not row["validation_ok"])
+    counts = {
+        "artifact_count": artifact_count,
+        "validation_ok_artifacts": artifact_count - invalid_artifacts,
+        "invalid_artifacts": invalid_artifacts,
+        "accepted_artifacts": accepted_artifacts,
+        "ready_artifacts": ready_artifacts,
+        "not_ready_artifacts": artifact_count - ready_artifacts,
+        "pending_artifacts": sum(
+            1 for row in rows if row["human_review_status"] == "pending"
+        ),
+        "changes_requested_artifacts": sum(
+            1 for row in rows if row["human_review_status"] == "changes_requested"
+        ),
+    }
+    return rows, counts
+
+
 def create_report_quality_review_sheet(
     *,
     pack_dir: Path,
@@ -207,45 +250,16 @@ def create_report_quality_review_sheet(
         manifest_path=manifest_path,
     )
     snapshot = load_pilot_pack(resolved_pack_dir)
-    rows: list[dict[str, Any]] = []
-    for draft in snapshot.drafts:
-        payload = draft.payload
-        validation = validate_correction_artifact(payload)
-        rows.append(
-            _artifact_row(
-                draft.path,
-                payload,
-                validation,
-                draft_sha256=draft.sha256,
-            )
-        )
-
-    artifact_count = len(rows)
-    ready_artifacts = sum(1 for row in rows if row["ready_for_learning"])
-    accepted_artifacts = sum(1 for row in rows if row["accepted_for_learning"])
-    pending_artifacts = sum(1 for row in rows if row["human_review_status"] == "pending")
-    changes_requested_artifacts = sum(
-        1 for row in rows if row["human_review_status"] == "changes_requested"
-    )
-    invalid_artifacts = sum(1 for row in rows if not row["validation_ok"])
+    rows, counts = build_report_quality_review_state(snapshot)
     manifest = {
-        "report_type": "report_quality_human_review_sheet_manifest",
-        "schema_version": "decisiondoc_report_quality_human_review_sheet_manifest.v1",
+        "report_type": REVIEW_MANIFEST_REPORT_TYPE,
+        "schema_version": REVIEW_MANIFEST_SCHEMA,
         "generated_at": _now_iso(),
         "pack_dir": str(resolved_pack_dir),
         "output_path": str(resolved_output_path),
         "manifest_path": str(resolved_manifest_path),
         "pack_binding": snapshot.binding(),
-        "counts": {
-            "artifact_count": artifact_count,
-            "validation_ok_artifacts": artifact_count - invalid_artifacts,
-            "invalid_artifacts": invalid_artifacts,
-            "accepted_artifacts": accepted_artifacts,
-            "ready_artifacts": ready_artifacts,
-            "not_ready_artifacts": artifact_count - ready_artifacts,
-            "pending_artifacts": pending_artifacts,
-            "changes_requested_artifacts": changes_requested_artifacts,
-        },
+        "counts": counts,
         "artifacts": rows,
         "side_effect_boundary": {
             "reads_local_draft_json": True,

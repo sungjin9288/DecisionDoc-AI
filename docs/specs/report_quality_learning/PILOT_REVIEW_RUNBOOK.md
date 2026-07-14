@@ -150,7 +150,9 @@ python3 scripts/sync_report_quality_pilot_pack.py \
   --require-ready
 ```
 
-Sync는 모든 artifact validation과 `--require-ready` 조건이 통과한 뒤에만 JSONL을 쓴다. 실패 결과의 `output_written=false`는 이번 실행이 파일을 만들거나 덮어쓰지 않았다는 뜻이며, 이전 실행에서 남은 같은 경로의 파일은 변경하지 않는다. 성공 결과는 `output_written=true`와 `output_sha256`을 함께 반환한다. 출력은 `.jsonl`만 허용하고 symlink나 import 원본 source JSONL 경로는 거부한다.
+Sync는 모든 artifact validation을 통과한 뒤에만 JSONL을 쓴다. `--require-ready`에서는 현재 draft hash·상태·집계와 일치하는 `human_review_manifest.json`과, 기존 validator를 통과한 `require_ready=true` accepted decision application receipt도 함께 요구한다. Source import artifact가 이미 ready 상태여도 새 로컬 decision이 pending이거나 current receipt가 없으면 sync하지 않는다. 성공 결과는 `output_written=true`, `output_sha256`, `review_manifest.sha256`, `decision_receipt.sha256`을 반환하며 쓰기 직전에 pack binding과 두 검수 증거를 다시 확인한다.
+
+실패 결과의 `output_written=false`는 이번 실행이 파일을 만들거나 덮어쓰지 않았다는 뜻이며, 이전 실행에서 남은 같은 경로의 파일은 변경하지 않는다. 출력은 `.jsonl`만 허용하고 symlink, import 원본 source JSONL, symlink review evidence 경로를 거부한다. `--require-ready`가 없는 중간 sync는 기존 호환 경로대로 검수 receipt 없이도 사용할 수 있지만 학습 후보 완료 증거로 보지 않는다.
 
 ## 3. 생성과 교정
 

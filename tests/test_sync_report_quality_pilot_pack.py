@@ -71,6 +71,8 @@ def test_sync_report_quality_pilot_pack_require_ready_fails_for_pending_drafts(t
     assert result["ok"] is False
     assert result["ready_artifacts"] == 0
     assert "not all artifacts are ready_for_learning" in "\n".join(result["errors"])
+    assert "human review manifest does not match the current pack binding" in "\n".join(result["errors"])
+    assert "current accepted review decision receipt is required" in "\n".join(result["errors"])
     assert result["output_written"] is False
     assert result["output_sha256"] is None
     assert result["side_effect_boundary"]["writes_local_jsonl"] is False
@@ -105,6 +107,16 @@ def test_sync_failure_does_not_create_or_redirect_output(tmp_path):
         sync_script.sync_report_quality_pilot_pack(
             pack_dir=pack_dir,
             output_path=tmp_path / "not-jsonl.json",
+        )
+
+    receipt_target = tmp_path / "external-decision-receipt.json"
+    receipt_target.write_text("{}", encoding="utf-8")
+    linked_receipt = pack_dir / "review_decision_application_receipt.linked.json"
+    linked_receipt.symlink_to(receipt_target)
+    with pytest.raises(ValueError, match="symlink review decision receipts are not allowed"):
+        sync_script.sync_report_quality_pilot_pack(
+            pack_dir=pack_dir,
+            require_ready=True,
         )
 
 
