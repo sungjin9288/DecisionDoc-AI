@@ -42,6 +42,11 @@ from scripts.report_quality_pilot_review_evidence import (  # noqa: E402
     load_current_decision_receipt,
     load_current_review_manifest,
 )
+from scripts.report_quality_pilot_handoff_summary import (  # noqa: E402
+    SUMMARY_NAME,
+    render_report_quality_pilot_handoff_summary,
+    verify_report_quality_pilot_handoff_summary,
+)
 from scripts.validate_report_quality_review_decision_receipt import (  # noqa: E402
     NO_EXTERNAL_ACTION_KEYS,
     RECEIPT_SCHEMA,
@@ -136,6 +141,8 @@ def _write_zip_entry(archive: zipfile.ZipFile, path: str, content: bytes) -> Non
 def _media_type(path: str) -> str:
     if path.endswith(".jsonl"):
         return "application/x-ndjson"
+    if path.endswith(".md"):
+        return "text/markdown; charset=utf-8"
     return "application/json"
 
 
@@ -269,7 +276,7 @@ def create_report_quality_pilot_handoff(
         }
         for draft in snapshot.drafts
     ]
-    manifest = {
+    manifest: dict[str, Any] = {
         "report_type": REPORT_TYPE,
         "schema_version": SCHEMA_VERSION,
         "batch_id": resolved_pack_dir.name,
@@ -292,14 +299,23 @@ def create_report_quality_pilot_handoff(
         "source_evidence": sorted(
             path for path in entries if path.startswith("source/")
         ),
-        "entries": [
-            _entry_record(path, content)
-            for path, content in sorted(entries.items())
-        ],
         "external_action_boundary": {
             key: False for key in NO_EXTERNAL_ACTION_KEYS
         },
     }
+    summary_bytes = render_report_quality_pilot_handoff_summary(
+        manifest,
+        review_manifest.payload,
+    ).encode("utf-8")
+    entries[SUMMARY_NAME] = summary_bytes
+    manifest["summary"] = {
+        "path": SUMMARY_NAME,
+        "sha256": _sha256(summary_bytes),
+    }
+    manifest["entries"] = [
+        _entry_record(path, content)
+        for path, content in sorted(entries.items())
+    ]
     package_bytes = _build_archive(entries, manifest)
     verification = verify_report_quality_pilot_handoff(package_bytes)
     resolved_output_path = _resolve_output_path(
@@ -435,7 +451,7 @@ def _verify_review_evidence(
     manifest: dict[str, Any],
     artifact_ids: list[str],
     draft_hashes: dict[str, str],
-) -> None:
+) -> dict[str, Any]:
     review = manifest.get("review")
     if not isinstance(review, dict):
         raise ValueError("handoff manifest review must be an object")
@@ -565,6 +581,7 @@ def _verify_review_evidence(
         raise ValueError("review decision file must keep training_authorized=false")
     if decision_file.get("pack_binding") != receipt.get("pack_binding_before"):
         raise ValueError("review decision file does not match the receipt before binding")
+    return review_manifest
 
 
 def _verify_source_evidence(
@@ -654,7 +671,17 @@ def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
         raise ValueError("handoff manifest schema_version is unsupported")
     _verify_entry_inventory(entries, manifest)
     artifact_ids, draft_hashes = _verify_artifacts(entries, manifest)
-    _verify_review_evidence(entries, manifest, artifact_ids, draft_hashes)
+    review_manifest = _verify_review_evidence(
+        entries,
+        manifest,
+        artifact_ids,
+        draft_hashes,
+    )
+    verify_report_quality_pilot_handoff_summary(
+        entries,
+        manifest,
+        review_manifest,
+    )
     _verify_source_evidence(entries, manifest, artifact_ids)
     expected_boundary = {key: False for key in NO_EXTERNAL_ACTION_KEYS}
     if manifest.get("external_action_boundary") != expected_boundary:
@@ -668,6 +695,7 @@ def verify_report_quality_pilot_handoff(content: bytes) -> dict[str, Any]:
         "jsonl_sha256": manifest["jsonl"]["sha256"],
         "review_manifest_sha256": manifest["review"]["manifest_sha256"],
         "decision_receipt_sha256": manifest["review"]["decision_receipt_sha256"],
+        "summary_path": manifest["summary"]["path"],
         "source_bound": manifest.get("pack_binding", {}).get("source_manifest") is not None,
         "training_authorized": False,
     }
@@ -724,6 +752,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print("PASS reviewed Report Quality pilot handoff verified")
         print(f"artifact_count={result['artifact_count']}")
+        print(f"summary_path={result['summary_path']}")
         print(f"jsonl_sha256={result['jsonl_sha256']}")
         print(f"package_sha256={result['package_sha256']}")
         if result.get("output_path"):

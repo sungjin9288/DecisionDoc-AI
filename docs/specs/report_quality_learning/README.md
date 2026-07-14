@@ -256,7 +256,8 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
      reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip
    ```
    - Handoff는 exact JSONL, current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar를 embedded `handoff_manifest.json`에 결속한다.
-   - Verifier는 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다.
+   - `HANDOFF_SUMMARY.md`는 artifact별 reviewer, reviewed time, score, decision state와 evidence hash, no-training boundary를 바로 읽을 수 있게 정리한다.
+   - Verifier는 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다.
 13. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
 14. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
 15. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

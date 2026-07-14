@@ -179,15 +179,21 @@ def test_reviewed_pilot_handoff_is_deterministic_and_self_verifying(tmp_path):
     assert first["artifact_count"] == 3
     assert first["source_bound"] is False
     assert first["training_authorized"] is False
+    assert first["summary_path"] == "HANDOFF_SUMMARY.md"
     assert first_path.read_bytes() == second_path.read_bytes()
     assert first["package_sha256"] == second["package_sha256"]
     assert handoff.verify_report_quality_pilot_handoff(first_path.read_bytes())["ok"] is True
     with zipfile.ZipFile(first_path) as archive:
         names = set(archive.namelist())
         assert "handoff_manifest.json" in names
+        assert "HANDOFF_SUMMARY.md" in names
         assert "artifacts/ready_artifacts.jsonl" in names
         assert "review/human_review_manifest.json" in names
         assert len([name for name in names if name.startswith("drafts/")]) == 3
+        summary = archive.read("HANDOFF_SUMMARY.md").decode("utf-8")
+        assert "# Report Quality Pilot Review Handoff" in summary
+        assert "pilot-reviewer" in summary
+        assert "training execution: `not authorized`" in summary
 
 
 def test_reviewed_pilot_handoff_preserves_source_bound_evidence(tmp_path):
@@ -225,6 +231,35 @@ def test_reviewed_pilot_handoff_rejects_tamper_and_extra_entries(tmp_path):
         draft_name = next(name for name in archive.namelist() if name.startswith("drafts/"))
         manifest = json.loads(archive.read("handoff_manifest.json"))
         review_manifest = json.loads(archive.read("review/human_review_manifest.json"))
+
+    tampered_summary = _rewrite_zip(content, {"HANDOFF_SUMMARY.md": b"tampered\n"})
+    with pytest.raises(ValueError, match="entry SHA-256 mismatch"):
+        handoff.verify_report_quality_pilot_handoff(tampered_summary)
+
+    false_summary = b"# False summary\n"
+    false_summary_manifest = json.loads(json.dumps(manifest))
+    false_summary_manifest["summary"]["sha256"] = hashlib.sha256(false_summary).hexdigest()
+    for entry in false_summary_manifest["entries"]:
+        if entry["path"] == "HANDOFF_SUMMARY.md":
+            entry["sha256"] = hashlib.sha256(false_summary).hexdigest()
+            entry["size_bytes"] = len(false_summary)
+    semantically_tampered_summary = _rewrite_zip(
+        content,
+        {
+            "HANDOFF_SUMMARY.md": false_summary,
+            "handoff_manifest.json": (
+                json.dumps(
+                    false_summary_manifest,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8"),
+        },
+    )
+    with pytest.raises(ValueError, match="does not match the reviewed evidence"):
+        handoff.verify_report_quality_pilot_handoff(semantically_tampered_summary)
 
     tampered_draft = _rewrite_zip(content, {draft_name: b"{}\n"})
     with pytest.raises(ValueError, match="entry SHA-256 mismatch"):
@@ -332,9 +367,13 @@ def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
     created = json.loads(capsys.readouterr().out)
     verify_exit = handoff.main(["verify", str(package_path), "--json"])
     verified = json.loads(capsys.readouterr().out)
+    human_verify_exit = handoff.main(["verify", str(package_path)])
+    human_output = capsys.readouterr().out
 
     assert create_exit == 0
     assert verify_exit == 0
+    assert human_verify_exit == 0
     assert created["package_sha256"] == verified["package_sha256"]
     assert verified["artifact_count"] == 3
     assert verified["training_authorized"] is False
+    assert "summary_path=HANDOFF_SUMMARY.md" in human_output
