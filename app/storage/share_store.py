@@ -27,6 +27,9 @@ class ShareLink:
     access_count: int = 0
     last_accessed_at: str = ""
     is_active: bool = True
+    revoked_at: str = ""
+    revoked_by: str = ""
+    revoked_by_username: str = ""
     bundle_id: str = ""
     project_id: str = ""
     project_document_id: str = ""
@@ -136,6 +139,9 @@ class ShareStore(BaseJsonStore):
                 "access_count": 0,
                 "last_accessed_at": "",
                 "is_active": True,
+                "revoked_at": "",
+                "revoked_by": "",
+                "revoked_by_username": "",
                 "bundle_id": bundle_id,
                 "project_id": project_id,
                 "project_document_id": project_document_id,
@@ -159,9 +165,16 @@ class ShareStore(BaseJsonStore):
             link = data.get(share_id)
             if not link:
                 return None
-            # Mark expired
-            if datetime.fromisoformat(link["expires_at"]) < datetime.now():
+
+            if link.get("is_active") is False:
+                link["lifecycle_status"] = (
+                    "revoked" if link.get("revoked_at") else "inactive"
+                )
+            elif datetime.fromisoformat(link["expires_at"]) < datetime.now():
                 link["is_active"] = False
+                link["lifecycle_status"] = "expired"
+            else:
+                link["lifecycle_status"] = "active"
             return link
 
     def increment_access(self, share_id: str) -> None:
@@ -174,7 +187,14 @@ class ShareStore(BaseJsonStore):
                 data[share_id]["last_accessed_at"] = datetime.now().isoformat()
                 self._save(data)
 
-    def revoke(self, share_id: str, user_id: str, *, allow_admin_override: bool = False) -> bool:
+    def revoke(
+        self,
+        share_id: str,
+        user_id: str,
+        *,
+        allow_admin_override: bool = False,
+        actor_name: str = "",
+    ) -> bool:
         with self._lock:
             data = self._load()
             link = data.get(share_id)
@@ -182,7 +202,11 @@ class ShareStore(BaseJsonStore):
                 return False
             if link.get("created_by") != user_id and not allow_admin_override:
                 return False
-            data[share_id]["is_active"] = False
+            link["is_active"] = False
+            if not link.get("revoked_at"):
+                link["revoked_at"] = datetime.now().isoformat()
+                link["revoked_by"] = user_id
+                link["revoked_by_username"] = actor_name or user_id
             self._save(data)
             return True
 

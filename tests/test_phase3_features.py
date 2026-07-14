@@ -119,6 +119,8 @@ def test_shared_view_renders_procurement_review_warning_when_present():
 
 
 def test_revoke_share_link():
+    from app.storage.share_store import ShareStore
+
     token = _token()
     create_res = client.post(
         "/share",
@@ -133,6 +135,17 @@ def test_revoke_share_link():
     )
     assert revoke_res.status_code == 200
     assert "비활성화" in revoke_res.json()["message"]
+    revoked = ShareStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).get(share_id)
+    assert revoked is not None
+    assert revoked["is_active"] is False
+    assert revoked["lifecycle_status"] == "revoked"
+    assert revoked["revoked_by"] == "u1"
+    assert revoked["revoked_by_username"] == "u1"
+    assert revoked["revoked_at"]
 
 
 def test_admin_can_revoke_share_created_by_another_user():
@@ -197,6 +210,8 @@ def test_share_store_create_and_get():
     assert retrieved["title"] == "테스트 문서"
     assert retrieved["is_active"] is True
     assert retrieved["last_accessed_at"] == ""
+    assert retrieved["lifecycle_status"] == "active"
+    assert retrieved["revoked_at"] == ""
     assert retrieved["decision_council_document_status"] == "stale_procurement"
     assert retrieved["decision_council_document_status_copy"] == "현재 procurement 대비 이전 council 기준"
     assert retrieved["project_id"] == "project-share-1"
@@ -213,8 +228,14 @@ def test_share_store_revoke():
         title="취소 테스트",
         created_by="user1",
     )
-    success = store.revoke(link.share_id, "user1")
+    success = store.revoke(link.share_id, "user1", actor_name="reviewer")
     assert success is True
+    revoked = store.get(link.share_id)
+    assert revoked is not None
+    assert revoked["lifecycle_status"] == "revoked"
+    assert revoked["revoked_by"] == "user1"
+    assert revoked["revoked_by_username"] == "reviewer"
+    assert revoked["revoked_at"]
 
     # Wrong user cannot revoke
     link2 = store.create(
@@ -227,6 +248,26 @@ def test_share_store_revoke():
     assert fail is False
     admin_override = store.revoke(link2.share_id, "admin-user", allow_admin_override=True)
     assert admin_override is True
+
+
+def test_share_store_marks_elapsed_link_as_expired():
+    from app.storage.share_store import ShareStore
+
+    store = ShareStore("test-expired-lifecycle-tenant")
+    link = store.create(
+        tenant_id="test-expired-lifecycle-tenant",
+        request_id="req-expired-lifecycle",
+        title="만료 상태 테스트",
+        created_by="user1",
+        expires_days=-1,
+    )
+
+    expired = store.get(link.share_id)
+
+    assert expired is not None
+    assert expired["is_active"] is False
+    assert expired["lifecycle_status"] == "expired"
+    assert expired["revoked_at"] == ""
 
 
 def test_share_store_access_count():

@@ -3,6 +3,16 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone stale-share resolution evidence
+
+- Share revocation now preserves the first revocation time, actor ID, and actor name in the share record. The existing `share.revoke` audit entry carries the same evidence plus the linked procurement project, project document, and bundle when available.
+- The stale-share queue evaluates every risky link before choosing a document-level representative. An active and recently accessed link stays visible ahead of a newer revoked or expired link, so closing one link cannot hide another live exposure for the same document.
+- Queue items expose actual active, accessed, unaccessed, revoked, expired, inactive, and missing link counts while retaining the existing document-level queue count. Revoked and expired links remain in the audit-oriented queue but no longer expose unusable public open, copy, or revoke actions.
+- The Locations card and procurement modal use actual link counts for exposure alerts. The modal distinguishes operator revocation from natural expiry and shows revocation actor/time evidence when it exists.
+- Focused share lifecycle verification passes with 29 tests. The broader storage, audit, tenant, infrastructure, and Playwright gate passes with 294 tests plus 1 skipped test.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,937 passed, 1 skipped, and 4 deselected in 227.21 seconds.
+- Paid provider tests, AWS runtime, live G2B collection, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain deferred by user request.
+
 ## Post-milestone public share drift operations queue
 
 - The admin procurement quality summary and Locations overview now consume drift-bearing `share.view` audit entries together with stale `share.create` entries. Source binding failures, post-share source changes, stale procurement reviews, and stale Decision Council evidence share one operator-facing risk queue.

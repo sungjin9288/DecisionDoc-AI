@@ -382,6 +382,34 @@ def _build_procurement_quality_summary(
     inactive_stale_external_share_queue_count = sum(
         1 for item in stale_external_share_queue if item.get("share_is_active") is False
     )
+    active_stale_external_share_link_count = sum(
+        int(item.get("active_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    active_accessed_stale_external_share_link_count = sum(
+        int(item.get("active_accessed_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    active_unaccessed_stale_external_share_link_count = sum(
+        int(item.get("active_unaccessed_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    revoked_stale_external_share_link_count = sum(
+        int(item.get("revoked_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    expired_stale_external_share_link_count = sum(
+        int(item.get("expired_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    inactive_stale_external_share_link_count = sum(
+        int(item.get("inactive_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
+    missing_stale_external_share_link_count = sum(
+        int(item.get("missing_stale_share_count", 0) or 0)
+        for item in stale_external_share_queue
+    )
     missing_stale_external_share_record_count = sum(
         1 for item in stale_external_share_queue if item.get("share_record_found") is False
     )
@@ -657,6 +685,13 @@ def _build_procurement_quality_summary(
             "active_accessed_stale_external_share_queue_count": active_accessed_stale_external_share_queue_count,
             "active_unaccessed_stale_external_share_queue_count": active_unaccessed_stale_external_share_queue_count,
             "inactive_stale_external_share_queue_count": inactive_stale_external_share_queue_count,
+            "active_stale_external_share_link_count": active_stale_external_share_link_count,
+            "active_accessed_stale_external_share_link_count": active_accessed_stale_external_share_link_count,
+            "active_unaccessed_stale_external_share_link_count": active_unaccessed_stale_external_share_link_count,
+            "revoked_stale_external_share_link_count": revoked_stale_external_share_link_count,
+            "expired_stale_external_share_link_count": expired_stale_external_share_link_count,
+            "inactive_stale_external_share_link_count": inactive_stale_external_share_link_count,
+            "missing_stale_external_share_link_count": missing_stale_external_share_link_count,
             "missing_stale_external_share_record_count": missing_stale_external_share_record_count,
             "stale_external_share_status_counts": stale_external_share_status_counts,
             "stale_external_share_queue": stale_external_share_queue,

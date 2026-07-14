@@ -37,7 +37,9 @@ def _build_procurement_stale_share_queue(
         latest_by_share_id = payload.get("latest_by_share_id") if isinstance(payload, dict) else None
         risk_seen_share_ids = payload.get("risk_seen_share_ids") if isinstance(payload, dict) else None
         if isinstance(latest_by_share_id, dict):
-            risky_shares: list[tuple[dict[str, object], dict[str, object]]] = []
+            risky_shares: list[
+                tuple[dict[str, object], dict[str, object], dict[str, object] | None]
+            ] = []
             for candidate_share_id, candidate_entry in latest_by_share_id.items():
                 if not isinstance(candidate_entry, dict):
                     continue
@@ -45,17 +47,30 @@ def _build_procurement_stale_share_queue(
                     candidate_entry.get("detail", {})
                 )
                 if candidate_risk:
-                    risky_shares.append((candidate_entry, candidate_risk))
+                    candidate_link = share_store.get(candidate_share_id)
+                    risky_shares.append((candidate_entry, candidate_risk, candidate_link))
                 elif isinstance(risk_seen_share_ids, set) and candidate_share_id in risk_seen_share_ids:
                     recovered_share_count += 1
             if not risky_shares:
                 continue
             risky_shares.sort(
-                key=lambda item: str(item[0].get("timestamp", "")),
+                key=lambda item: (
+                    isinstance(item[2], dict) and item[2].get("is_active") is True,
+                    isinstance(item[2], dict)
+                    and int(item[2].get("access_count", 0) or 0) > 0,
+                    str(item[0].get("timestamp", "")),
+                ),
                 reverse=True,
             )
-            entry, risk = risky_shares[0]
+            entry, risk, share_link = risky_shares[0]
             stale_share_count = len(risky_shares)
+            risky_share_links = [link for _, _, link in risky_shares]
+            share_lifecycle_status_counts: Counter[str] = Counter(
+                str(link.get("lifecycle_status", "inactive") or "inactive")
+                if isinstance(link, dict)
+                else "missing"
+                for _, _, link in risky_shares
+            )
         else:
             entry = payload.get("latest") if isinstance(payload, dict) else None
             if not isinstance(entry, dict):
@@ -66,11 +81,27 @@ def _build_procurement_stale_share_queue(
             stale_share_count = (
                 int(payload.get("count", 0) or 0) if isinstance(payload, dict) else 0
             )
+            share_id = str(entry.get("resource_id", "") or "").strip()
+            share_link = share_store.get(share_id) if share_id else None
+            share_lifecycle_status_counts = Counter(
+                {
+                    (
+                        str(share_link.get("lifecycle_status", "inactive") or "inactive")
+                        if isinstance(share_link, dict)
+                        else "missing"
+                    ): 1
+                }
+            )
+            risky_share_links = [share_link]
 
         detail = entry.get("detail", {})
         risk_status = str(risk.get("status", "") or "")
         share_id = str(entry.get("resource_id", "") or "").strip()
-        share_link = share_store.get(share_id) if share_id else None
+        share_lifecycle_status = (
+            str(share_link.get("lifecycle_status", "") or "inactive")
+            if isinstance(share_link, dict)
+            else "missing"
+        )
         create_by_share_id = payload.get("create_by_share_id") if isinstance(payload, dict) else None
         latest_create = (
             create_by_share_id.get(share_id)
@@ -172,9 +203,30 @@ def _build_procurement_stale_share_queue(
             "latest_risk_observed_by_username": str(entry.get("username", "") or ""),
             "latest_risk_action": str(entry.get("action", "") or ""),
             "stale_share_count": stale_share_count,
+            "active_stale_share_count": share_lifecycle_status_counts.get("active", 0),
+            "active_accessed_stale_share_count": sum(
+                1
+                for link in risky_share_links
+                if isinstance(link, dict)
+                and link.get("is_active") is True
+                and int(link.get("access_count", 0) or 0) > 0
+            ),
+            "active_unaccessed_stale_share_count": sum(
+                1
+                for link in risky_share_links
+                if isinstance(link, dict)
+                and link.get("is_active") is True
+                and int(link.get("access_count", 0) or 0) <= 0
+            ),
+            "revoked_stale_share_count": share_lifecycle_status_counts.get("revoked", 0),
+            "expired_stale_share_count": share_lifecycle_status_counts.get("expired", 0),
+            "inactive_stale_share_count": share_lifecycle_status_counts.get("inactive", 0),
+            "missing_stale_share_count": share_lifecycle_status_counts.get("missing", 0),
+            "share_lifecycle_status_counts": _sorted_counts(share_lifecycle_status_counts),
             "share_id": share_id or None,
             "share_url": f"/shared/{share_id}" if share_id else None,
             "share_record_found": isinstance(share_link, dict),
+            "share_lifecycle_status": share_lifecycle_status,
             "share_is_active": (
                 bool(share_link.get("is_active"))
                 if isinstance(share_link, dict)
@@ -192,6 +244,21 @@ def _build_procurement_stale_share_queue(
             ),
             "share_expires_at": (
                 str(share_link.get("expires_at", "") or "") or None
+                if isinstance(share_link, dict)
+                else None
+            ),
+            "share_revoked_at": (
+                str(share_link.get("revoked_at", "") or "") or None
+                if isinstance(share_link, dict)
+                else None
+            ),
+            "share_revoked_by": (
+                str(share_link.get("revoked_by", "") or "") or None
+                if isinstance(share_link, dict)
+                else None
+            ),
+            "share_revoked_by_username": (
+                str(share_link.get("revoked_by_username", "") or "") or None
                 if isinstance(share_link, dict)
                 else None
             ),

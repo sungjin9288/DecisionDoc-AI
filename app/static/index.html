@@ -22849,9 +22849,21 @@
     const tenantId  = escapeHtml(loc.tenant_id || loc.id || '');
     const name      = escapeHtml(loc.display_name || loc.name || loc.tenant_id || '');
     const procurement = loc?.procurement || {};
-    const activeStaleShareCount = Number(procurement.active_stale_external_share_queue_count || 0);
-    const activeAccessedStaleShareCount = Number(procurement.active_accessed_stale_external_share_queue_count || 0);
-    const activeUnaccessedStaleShareCount = Number(procurement.active_unaccessed_stale_external_share_queue_count || 0);
+    const activeStaleShareCount = Number(
+      procurement.active_stale_external_share_link_count
+      ?? procurement.active_stale_external_share_queue_count
+      ?? 0
+    );
+    const activeAccessedStaleShareCount = Number(
+      procurement.active_accessed_stale_external_share_link_count
+      ?? procurement.active_accessed_stale_external_share_queue_count
+      ?? 0
+    );
+    const activeUnaccessedStaleShareCount = Number(
+      procurement.active_unaccessed_stale_external_share_link_count
+      ?? procurement.active_unaccessed_stale_external_share_queue_count
+      ?? 0
+    );
     const staleShareQueueCount = Number(procurement.stale_external_share_queue_count || 0);
     const recoveredShareCount = Number(procurement.recovered_external_share_count || 0);
     const topStaleShareItem = procurement.top_stale_external_share_item || null;
@@ -23173,10 +23185,15 @@
     const shareId = String(item?.share_id || '').trim();
     if (!shareId) return '공유 링크 기록 없음';
     if (item?.share_record_found === false) return '저장된 공유 링크 레코드 없음';
+    const lifecycleStatus = String(item?.share_lifecycle_status || '').trim();
     const bits = [
-      item?.share_is_active === false ? '비활성 공유 링크' : '활성 공유 링크',
+      getProcurementShareLinkStateLabel(item),
       `조회 ${Number(item?.share_access_count || 0)}회`,
     ];
+    if (lifecycleStatus === 'revoked') {
+      const actor = String(item?.share_revoked_by_username || item?.share_revoked_by || 'unknown').trim() || 'unknown';
+      bits.push(`비활성화 ${actor} · ${formatProcurementActivityTime(item?.share_revoked_at, '처리 시점')}`);
+    }
     if (item?.share_last_accessed_at) {
       bits.push(`최근 열람 ${formatProcurementActivityTime(item.share_last_accessed_at, '기준 시점')}`);
     } else if (Number(item?.share_access_count || 0) === 0) {
@@ -23192,7 +23209,16 @@
     const shareId = String(item?.share_id || '').trim();
     if (!shareId) return '공유 링크 기록 없음';
     if (item?.share_record_found === false) return '공유 링크 레코드 없음';
-    return item?.share_is_active === false ? '비활성 공유 링크' : '활성 공유 링크';
+    switch (String(item?.share_lifecycle_status || '').trim()) {
+      case 'revoked':
+        return '운영자 비활성화';
+      case 'expired':
+        return '만료된 공유 링크';
+      case 'inactive':
+        return '비활성 공유 링크';
+      default:
+        return item?.share_is_active === false ? '비활성 공유 링크' : '활성 공유 링크';
+    }
   }
 
   function getProcurementShareLinkStateClass(item) {
@@ -23205,7 +23231,7 @@
   function getProcurementShareAccessUrgencyLabel(item) {
     const shareId = String(item?.share_id || '').trim();
     if (!shareId || item?.share_record_found === false) return '공유 링크 재확인 필요';
-    if (item?.share_is_active !== true) return '비활성 공유 링크';
+    if (item?.share_is_active !== true) return getProcurementShareLinkStateLabel(item);
     return Number(item?.share_access_count || 0) > 0 ? '최근 public 열람 있음' : '아직 public 열람 없음';
   }
 
@@ -24257,26 +24283,37 @@
       sharing.stale_external_share_queue_count ?? staleExternalShareQueue.length
     );
     const recoveredExternalShareCount = Number(sharing.recovered_external_share_count || 0);
-    const activeStaleExternalShareQueueCount = Number(
-      sharing.active_stale_external_share_queue_count
-      ?? staleExternalShareQueue.filter((item) => item?.share_is_active === true).length
+    const activeStaleExternalShareLinkCount = Number(
+      sharing.active_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.active_stale_share_count || 0), 0)
     );
-    const activeAccessedStaleExternalShareQueueCount = Number(
-      sharing.active_accessed_stale_external_share_queue_count
-      ?? staleExternalShareQueue.filter((item) => item?.share_is_active === true && Number(item?.share_access_count || 0) > 0).length
+    const activeAccessedStaleExternalShareLinkCount = Number(
+      sharing.active_accessed_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.active_accessed_stale_share_count || 0), 0)
     );
-    const activeUnaccessedStaleExternalShareQueueCount = Number(
-      sharing.active_unaccessed_stale_external_share_queue_count
-      ?? staleExternalShareQueue.filter((item) => item?.share_is_active === true && Number(item?.share_access_count || 0) <= 0).length
+    const activeUnaccessedStaleExternalShareLinkCount = Number(
+      sharing.active_unaccessed_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.active_unaccessed_stale_share_count || 0), 0)
     );
-    const inactiveStaleExternalShareQueueCount = Number(
-      sharing.inactive_stale_external_share_queue_count
-      ?? staleExternalShareQueue.filter((item) => item?.share_is_active === false).length
+    const revokedStaleExternalShareLinkCount = Number(
+      sharing.revoked_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.revoked_stale_share_count || 0), 0)
     );
-    const missingStaleExternalShareRecordCount = Number(
-      sharing.missing_stale_external_share_record_count
-      ?? staleExternalShareQueue.filter((item) => item?.share_record_found === false).length
+    const expiredStaleExternalShareLinkCount = Number(
+      sharing.expired_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.expired_stale_share_count || 0), 0)
     );
+    const inactiveStaleExternalShareLinkCount = Number(
+      sharing.inactive_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.inactive_stale_share_count || 0), 0)
+    );
+    const missingStaleExternalShareLinkCount = Number(
+      sharing.missing_stale_external_share_link_count
+      ?? staleExternalShareQueue.reduce((count, item) => count + Number(item?.missing_stale_share_count || 0), 0)
+    );
+    const closedStaleExternalShareLinkCount = revokedStaleExternalShareLinkCount
+      + expiredStaleExternalShareLinkCount
+      + inactiveStaleExternalShareLinkCount;
     const staleProcurementShareCount = Number(staleExternalShareStatusCounts.stale_procurement || 0);
     const staleRevisionShareCount = Number(staleExternalShareStatusCounts.stale_revision || 0);
     const staleReviewShareCount = Number(staleExternalShareStatusCounts.stale_procurement_review || 0);
@@ -24460,11 +24497,11 @@
           admin quality loop에서는 막힘, retry 대기, 해소를 같은 루프로 추적합니다.
         </div>`
       : '';
-    const staleShareExposureAlertHtml = activeStaleExternalShareQueueCount > 0
+    const staleShareExposureAlertHtml = activeStaleExternalShareLinkCount > 0
       ? `<div class="location-procurement-alert">
-          현재 stale public 노출이 남아 있는 공유 링크는 <strong>${activeStaleExternalShareQueueCount}개</strong>입니다.
-          ${activeAccessedStaleExternalShareQueueCount > 0
-            ? `최근 public 열람이 확인된 stale 링크는 <strong>${activeAccessedStaleExternalShareQueueCount}개</strong>입니다.`
+          현재 stale public 노출이 남아 있는 공유 링크는 <strong>${activeStaleExternalShareLinkCount}개</strong>입니다.
+          ${activeAccessedStaleExternalShareLinkCount > 0
+            ? `최근 public 열람이 확인된 stale 링크는 <strong>${activeAccessedStaleExternalShareLinkCount}개</strong>입니다.`
             : '아직 public 열람이 확인되지 않은 stale 링크만 남아 있습니다.'}
           <span style="display:inline-flex; margin-left:8px;">
 	            <button
@@ -24646,7 +24683,7 @@
 	                data-location-procurement-copy-project-link="${escapeHtml(focusedProject.project_id || '')}"
 	                data-procurement-remediation-context="${escapeHtml(remediationContext)}"
 	              >remediation 링크 복사</button>
-              ${staleExternalShareItem?.share_url ? `
+              ${staleExternalShareItem?.share_url && staleExternalShareItem?.share_is_active === true ? `
                 <button
 	                  type="button"
 	                  class="location-procurement-action"
@@ -24796,7 +24833,7 @@
 	                  class="location-procurement-action"
 	                  data-location-procurement-copy-link="true"
 	                >현재 review 링크 복사</button>
-                ${item.share_url ? `
+                ${item.share_url && item.share_is_active === true ? `
                   <button
 	                    type="button"
 	                    class="location-procurement-action"
@@ -24824,11 +24861,14 @@
             <div class="location-procurement-toolbar">
               <div class="location-procurement-copy">
                 외부 공유 재확인 queue: <strong>${staleExternalShareQueueCount}개</strong>
-                · 활성 링크 <strong>${activeStaleExternalShareQueueCount}</strong>
-                · 최근 public 열람 있음 <strong>${activeAccessedStaleExternalShareQueueCount}</strong>
-                · 아직 열람 없음 <strong>${activeUnaccessedStaleExternalShareQueueCount}</strong>
-                · 비활성 링크 <strong>${inactiveStaleExternalShareQueueCount}</strong>
-                ${missingStaleExternalShareRecordCount ? `· 레코드 없음 <strong>${missingStaleExternalShareRecordCount}</strong>` : ''}
+                · 활성 링크 <strong>${activeStaleExternalShareLinkCount}</strong>
+                · 최근 public 열람 있음 <strong>${activeAccessedStaleExternalShareLinkCount}</strong>
+                · 아직 열람 없음 <strong>${activeUnaccessedStaleExternalShareLinkCount}</strong>
+                · 비활성 링크 <strong>${closedStaleExternalShareLinkCount}</strong>
+                · 운영자 비활성화 <strong>${revokedStaleExternalShareLinkCount}</strong>
+                · 만료 <strong>${expiredStaleExternalShareLinkCount}</strong>
+                ${inactiveStaleExternalShareLinkCount ? `· 기타 비활성 <strong>${inactiveStaleExternalShareLinkCount}</strong>` : ''}
+                ${missingStaleExternalShareLinkCount ? `· 레코드 없음 <strong>${missingStaleExternalShareLinkCount}</strong>` : ''}
                 · 최근 public 열람 우선 정렬
                 · risk audit <strong>${staleExternalShareEventCount}</strong>
                 · 복구 확인 <strong>${recoveredExternalShareCount}</strong>

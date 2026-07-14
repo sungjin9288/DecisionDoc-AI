@@ -710,6 +710,12 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
 
     latest_revoke = store.query("system", filters={"action": "share.revoke"})[0]
     assert latest_revoke["resource_id"] == share_id
+    assert latest_revoke["detail"]["project_id"] == project["project_id"]
+    assert latest_revoke["detail"]["bundle_type"] == "bid_decision_kr"
+    assert latest_revoke["detail"]["share_project_document_id"] == document["doc_id"]
+    assert latest_revoke["detail"]["share_revoked_by"] == login["user"]["user_id"]
+    assert latest_revoke["detail"]["share_revoked_by_username"] == login["user"]["username"]
+    assert latest_revoke["detail"]["share_revoked_at"]
 
 
 def test_audit_procurement_import_logged(tmp_path, monkeypatch):

@@ -1150,6 +1150,7 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
         request_id="req-stale-share-0",
         title="Stale share 0",
         created_by="analyst",
+        expires_days=-1,
         bundle_id="bid_decision_kr",
         decision_council_document_status="stale_procurement",
         decision_council_document_status_tone="danger",
@@ -1286,6 +1287,13 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     assert summary["sharing"]["active_accessed_stale_external_share_queue_count"] == 1
     assert summary["sharing"]["active_unaccessed_stale_external_share_queue_count"] == 0
     assert summary["sharing"]["inactive_stale_external_share_queue_count"] == 0
+    assert summary["sharing"]["active_stale_external_share_link_count"] == 2
+    assert summary["sharing"]["active_accessed_stale_external_share_link_count"] == 1
+    assert summary["sharing"]["active_unaccessed_stale_external_share_link_count"] == 1
+    assert summary["sharing"]["revoked_stale_external_share_link_count"] == 0
+    assert summary["sharing"]["expired_stale_external_share_link_count"] == 1
+    assert summary["sharing"]["inactive_stale_external_share_link_count"] == 0
+    assert summary["sharing"]["missing_stale_external_share_link_count"] == 0
     assert summary["sharing"]["missing_stale_external_share_record_count"] == 0
     assert summary["sharing"]["stale_external_share_status_counts"] == {
         "stale_revision": 1,
@@ -1310,6 +1318,13 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     assert stale_share_item["share_url"] == f"/shared/{share_2.share_id}"
     assert stale_share_item["share_record_found"] is True
     assert stale_share_item["share_is_active"] is True
+    assert stale_share_item["share_lifecycle_status"] == "active"
+    assert stale_share_item["share_lifecycle_status_counts"] == {
+        "active": 2,
+        "expired": 1,
+    }
+    assert stale_share_item["active_accessed_stale_share_count"] == 1
+    assert stale_share_item["active_unaccessed_stale_share_count"] == 1
     assert stale_share_item["share_access_count"] == 2
     assert stale_share_item["share_last_accessed_at"] == latest_share_record["last_accessed_at"]
     assert stale_share_item["share_expires_at"] == share_2.expires_at
@@ -1338,6 +1353,66 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
     assert focused_summary["focused_project"]["stale_external_share_item"]["share_access_count"] == 2
     assert focused_summary["focused_project"]["stale_external_share_item"]["share_last_accessed_at"] == latest_share_record["last_accessed_at"]
     assert focused_summary["focused_project"]["stale_external_share_item"]["bundle_label"] == "의사결정 문서"
+
+    assert share_store.revoke(
+        share_2.share_id,
+        "u-admin",
+        allow_admin_override=True,
+        actor_name="admin",
+    )
+    partially_resolved = client.get(
+        "/admin/locations/t-proc-stale-share/procurement-quality-summary?activity_actions=share.create",
+        headers=auth_headers,
+    ).json()["procurement"]
+    partially_resolved_item = partially_resolved["sharing"]["stale_external_share_queue"][0]
+    assert partially_resolved["sharing"]["active_stale_external_share_queue_count"] == 1
+    assert partially_resolved["sharing"]["active_stale_external_share_link_count"] == 1
+    assert partially_resolved["sharing"]["revoked_stale_external_share_link_count"] == 1
+    assert partially_resolved["sharing"]["expired_stale_external_share_link_count"] == 1
+    assert partially_resolved_item["share_id"] == share_1.share_id
+    assert partially_resolved_item["share_lifecycle_status"] == "active"
+    assert partially_resolved_item["share_lifecycle_status_counts"] == {
+        "active": 1,
+        "expired": 1,
+        "revoked": 1,
+    }
+
+    assert share_store.revoke(
+        share_1.share_id,
+        "u-admin",
+        allow_admin_override=True,
+        actor_name="admin",
+    )
+    resolved = client.get(
+        "/admin/locations/t-proc-stale-share/procurement-quality-summary?activity_actions=share.create",
+        headers=auth_headers,
+    ).json()["procurement"]
+    resolved_item = resolved["sharing"]["stale_external_share_queue"][0]
+    assert resolved["sharing"]["active_stale_external_share_queue_count"] == 0
+    assert resolved["sharing"]["inactive_stale_external_share_queue_count"] == 1
+    assert resolved["sharing"]["active_stale_external_share_link_count"] == 0
+    assert resolved["sharing"]["revoked_stale_external_share_link_count"] == 2
+    assert resolved["sharing"]["expired_stale_external_share_link_count"] == 1
+    assert resolved_item["share_id"] == share_2.share_id
+    assert resolved_item["share_lifecycle_status"] == "revoked"
+    assert resolved_item["share_revoked_by"] == "u-admin"
+    assert resolved_item["share_revoked_by_username"] == "admin"
+    assert resolved_item["share_revoked_at"]
+
+    resolved_locations = client.get(
+        "/admin/locations?include_procurement=1",
+        headers=auth_headers,
+    ).json()
+    resolved_overview = next(
+        location["procurement"]
+        for location in resolved_locations
+        if location["tenant_id"] == "t-proc-stale-share"
+    )
+    assert resolved_overview["has_active_stale_share_exposure"] is False
+    assert resolved_overview["active_stale_external_share_link_count"] == 0
+    assert resolved_overview["revoked_stale_external_share_link_count"] == 2
+    assert resolved_overview["expired_stale_external_share_link_count"] == 1
+    assert resolved_overview["top_stale_external_share_item"]["share_lifecycle_status"] == "revoked"
 
 
 def test_admin_procurement_stale_share_queue_tracks_unique_drift_links_and_current_recovery(

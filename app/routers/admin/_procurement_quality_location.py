@@ -23,6 +23,13 @@ def _empty_procurement_location_overview() -> dict[str, object]:
         "active_accessed_stale_external_share_queue_count": 0,
         "active_unaccessed_stale_external_share_queue_count": 0,
         "inactive_stale_external_share_queue_count": 0,
+        "active_stale_external_share_link_count": 0,
+        "active_accessed_stale_external_share_link_count": 0,
+        "active_unaccessed_stale_external_share_link_count": 0,
+        "revoked_stale_external_share_link_count": 0,
+        "expired_stale_external_share_link_count": 0,
+        "inactive_stale_external_share_link_count": 0,
+        "missing_stale_external_share_link_count": 0,
         "missing_stale_external_share_record_count": 0,
         "has_active_stale_share_exposure": False,
         "top_stale_external_share_item": None,
@@ -100,6 +107,48 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
         ),
         "inactive_stale_external_share_queue_count": int(
             sum(1 for item in stale_external_share_queue if item.get("share_is_active") is False)
+        ),
+        "active_stale_external_share_link_count": int(
+            sum(
+                int(item.get("active_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "active_accessed_stale_external_share_link_count": int(
+            sum(
+                int(item.get("active_accessed_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "active_unaccessed_stale_external_share_link_count": int(
+            sum(
+                int(item.get("active_unaccessed_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "revoked_stale_external_share_link_count": int(
+            sum(
+                int(item.get("revoked_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "expired_stale_external_share_link_count": int(
+            sum(
+                int(item.get("expired_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "inactive_stale_external_share_link_count": int(
+            sum(
+                int(item.get("inactive_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
+        ),
+        "missing_stale_external_share_link_count": int(
+            sum(
+                int(item.get("missing_stale_share_count", 0) or 0)
+                for item in stale_external_share_queue
+            )
         ),
         "missing_stale_external_share_record_count": int(
             sum(1 for item in stale_external_share_queue if item.get("share_record_found") is False)

@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-14 실측: 2936 passed, 1 skipped, 4 deselected
+# 2026-07-14 실측: 2937 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -71,7 +71,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 완료 receipt와 변경하지 않은 review packet을 `reviewed_package_manifest.json`과 함께 세 entry deterministic ZIP으로 묶는 `manage_procurement_reviewed_package.py create/verify` 경로를 추가했다. `review_completed`는 accepted, changes-requested, rejected 결과를 모두 보존하며 operational approval을 의미하지 않는다.
   - 2026-07-14 project procurement 상세 화면에서 reviewer를 지정하고 현재 tenant의 recommendation을 검증된 12-artifact review packet ZIP으로 내려받는 API/UI를 연결했다. Server는 injected procurement store를 재사용하고 packet SHA-256, package ID, artifact count, `operational_approval: false`를 응답 evidence로 제공하며 provider API, G2B live 수집, 입찰 제출은 실행하지 않는다.
   - 2026-07-14 tenant 전체의 pending/completed procurement review를 프로젝트 화면의 검토함에 모았다. 상태·reviewer 필터, 프로젝트 상세 이동, 검증된 completed package 재다운로드를 기존 lifecycle에 연결하고 검토함 조회 audit와 queue count observability를 남긴다.
-  - 2026-07-14 review-bound downstream 문서에 packet source timestamp를 보존하고, 프로젝트 상세 조회 때 현재 tenant의 review evidence와 procurement decision을 다시 대조한다. `current`, stale, missing, invalid 상태를 문서 badge와 후속 조치에 표시하며, stale 상태로 결재·공유를 계속하면 확인 경고를 거친다. Project-linked share는 생성 시점 source fingerprint를 보존하고 공개 조회마다 현재 tenant 원본을 다시 확인해 post-share drift 경고와 `share.view` audit evidence를 남긴다. Admin procurement summary와 Locations overview는 이 drift audit을 기존 stale-share queue에 연결하고, 반복 조회는 최신 위험 관측만 갱신하며 영향받은 고유 링크 수를 중복 증가시키지 않는다. 이후 current 관측이 들어오면 해당 링크만 queue에서 해소하고 recovered count를 별도로 유지해 audit history와 현재 노출 상태를 분리한다.
+  - 2026-07-14 review-bound downstream 문서에 packet source timestamp를 보존하고, 프로젝트 상세 조회 때 현재 tenant의 review evidence와 procurement decision을 다시 대조한다. `current`, stale, missing, invalid 상태를 문서 badge와 후속 조치에 표시하며, stale 상태로 결재·공유를 계속하면 확인 경고를 거친다. Project-linked share는 생성 시점 source fingerprint를 보존하고 공개 조회마다 현재 tenant 원본을 다시 확인해 post-share drift 경고와 `share.view` audit evidence를 남긴다. Admin procurement summary와 Locations overview는 이 drift audit을 기존 stale-share queue에 연결하고, 반복 조회는 최신 위험 관측만 갱신하며 영향받은 고유 링크 수를 중복 증가시키지 않는다. 이후 current 관측이 들어오면 해당 링크만 queue에서 해소하고 recovered count를 별도로 유지해 audit history와 현재 노출 상태를 분리한다. 링크 취소는 최초 처리자·시각을 보존하고 자연 만료와 구분하며, 같은 문서의 최신 링크가 닫혀도 남아 있는 다른 활성 링크를 대표로 유지해 실제 노출을 숨기지 않는다.
   - 2026-07-14 project document에서 시작한 approval은 tenant-scoped project/document/request/bundle binding과 요청 시점 freshness snapshot을 저장한다. 결재 상세와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 또는 binding 불일치 상태는 명시적 acknowledgement 없이는 최종 승인되지 않는다. 성공한 acknowledgement는 확인자·시각과 함께 approval record 및 audit에 남는다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.

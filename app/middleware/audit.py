@@ -347,6 +347,11 @@ def _append_audit_entries(
         share_post_share_source_changed = getattr(
             request.state, "share_post_share_source_changed", None
         )
+        share_revoked_at = getattr(request.state, "share_revoked_at", "") or ""
+        share_revoked_by = getattr(request.state, "share_revoked_by", "") or ""
+        share_revoked_by_username = (
+            getattr(request.state, "share_revoked_by_username", "") or ""
+        )
         approval_project_id = getattr(request.state, "approval_project_id", "") or ""
         approval_project_document_id = (
             getattr(request.state, "approval_project_document_id", "") or ""
@@ -455,6 +460,12 @@ def _append_audit_entries(
             detail["share_source_binding_status"] = share_source_binding_status
         if share_post_share_source_changed is not None:
             detail["share_post_share_source_changed"] = share_post_share_source_changed
+        if share_revoked_at:
+            detail["share_revoked_at"] = share_revoked_at
+        if share_revoked_by:
+            detail["share_revoked_by"] = share_revoked_by
+        if share_revoked_by_username:
+            detail["share_revoked_by_username"] = share_revoked_by_username
         if approval_project_id:
             detail["project_id"] = approval_project_id
         if approval_project_document_id:

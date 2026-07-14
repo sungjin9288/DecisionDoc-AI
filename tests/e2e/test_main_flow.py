@@ -2668,6 +2668,13 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                 active_accessed_stale_external_share_queue_count: 1,
                 active_unaccessed_stale_external_share_queue_count: 0,
                 inactive_stale_external_share_queue_count: 0,
+                active_stale_external_share_link_count: 1,
+                active_accessed_stale_external_share_link_count: 1,
+                active_unaccessed_stale_external_share_link_count: 0,
+                revoked_stale_external_share_link_count: 0,
+                expired_stale_external_share_link_count: 0,
+                inactive_stale_external_share_link_count: 0,
+                missing_stale_external_share_link_count: 0,
                 missing_stale_external_share_record_count: 0,
                 stale_external_share_status_counts: { source_changed: 1 },
                 stale_external_share_queue: [
@@ -2697,6 +2704,12 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
                     share_url: '/shared/share-stale-001',
                     share_record_found: true,
                     share_is_active: true,
+                    share_lifecycle_status: 'active',
+                    active_stale_share_count: 1,
+                    active_accessed_stale_share_count: 1,
+                    active_unaccessed_stale_share_count: 0,
+                    revoked_stale_share_count: 0,
+                    expired_stale_share_count: 0,
                     share_access_count: 2,
                     share_last_accessed_at: '2026-04-02T09:15:00+00:00',
                     share_expires_at: '2026-04-07T00:00:00+00:00',
@@ -2816,6 +2829,59 @@ def test_location_procurement_summary_stale_share_review_preset_filters_share_ac
     assert copied_url.endswith("/shared/share-stale-001")
     page.locator('#location-procurement-modal-body button:has-text("공유 링크 열기")').click()
     assert page.evaluate("() => window.__openedSharedUrl") == "/shared/share-stale-001"
+    page.evaluate(
+        """() => {
+          const state = _locationProcurementSummaryModalState;
+          const sharing = state.data.procurement.sharing;
+          const item = sharing.stale_external_share_queue[0];
+          sharing.active_stale_external_share_queue_count = 0;
+          sharing.active_accessed_stale_external_share_queue_count = 0;
+          sharing.inactive_stale_external_share_queue_count = 1;
+          sharing.active_stale_external_share_link_count = 0;
+          sharing.active_accessed_stale_external_share_link_count = 0;
+          sharing.active_unaccessed_stale_external_share_link_count = 0;
+          sharing.revoked_stale_external_share_link_count = 1;
+          sharing.expired_stale_external_share_link_count = 0;
+          item.share_is_active = false;
+          item.share_lifecycle_status = 'revoked';
+          item.active_stale_share_count = 0;
+          item.active_accessed_stale_share_count = 0;
+          item.revoked_stale_share_count = 1;
+          item.share_revoked_at = '2026-04-03T10:30:00+00:00';
+          item.share_revoked_by = 'u-admin';
+          item.share_revoked_by_username = 'admin';
+          document.getElementById('location-procurement-modal-body').innerHTML =
+            renderLocationProcurementSummary(state.data, '');
+        }"""
+    )
+    revoked_modal_text = page.locator("#location-procurement-modal-body").inner_text()
+    assert "운영자 비활성화 1" in revoked_modal_text
+    assert "만료 0" in revoked_modal_text
+    assert "운영자 비활성화 · 조회 2회 · 비활성화 admin · 2026-04-03" in revoked_modal_text
+    assert page.locator('[data-location-procurement-share-open="true"]').count() == 0
+    assert page.locator('[data-location-procurement-share-copy="true"]').count() == 0
+    assert page.locator('[data-location-procurement-share-id]').count() == 0
+    page.evaluate(
+        """() => {
+          const state = _locationProcurementSummaryModalState;
+          const sharing = state.data.procurement.sharing;
+          const item = sharing.stale_external_share_queue[0];
+          sharing.revoked_stale_external_share_link_count = 0;
+          sharing.expired_stale_external_share_link_count = 1;
+          item.share_lifecycle_status = 'expired';
+          item.revoked_stale_share_count = 0;
+          item.expired_stale_share_count = 1;
+          item.share_revoked_at = null;
+          item.share_revoked_by = null;
+          item.share_revoked_by_username = null;
+          document.getElementById('location-procurement-modal-body').innerHTML =
+            renderLocationProcurementSummary(state.data, '');
+        }"""
+    )
+    expired_modal_text = page.locator("#location-procurement-modal-body").inner_text()
+    assert "운영자 비활성화 0" in expired_modal_text
+    assert "만료 1" in expired_modal_text
+    assert "만료된 공유 링크 · 조회 2회" in expired_modal_text
     page.evaluate(
         """() => {
           const state = _locationProcurementSummaryModalState;

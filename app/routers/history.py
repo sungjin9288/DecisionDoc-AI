@@ -552,15 +552,28 @@ def revoke_share_link(share_id: str, request: Request):
     require_auth(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     user_id = getattr(request.state, "user_id", "anonymous")
+    username = getattr(request.state, "username", user_id) or user_id
     user_role = getattr(request.state, "user_role", "unknown") or "unknown"
     from app.storage.share_store import ShareStore
-    store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
+    store = ShareStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     success = store.revoke(
         share_id,
         user_id,
         allow_admin_override=(user_role == "admin"),
+        actor_name=username,
     )
     if not success:
         raise HTTPException(status_code=404, detail="공유 링크를 찾을 수 없습니다.")
+    link = store.get(share_id) or {}
     request.state.share_id = share_id
+    request.state.procurement_project_id = link.get("project_id", "")
+    request.state.share_project_document_id = link.get("project_document_id", "")
+    request.state.bundle_type = link.get("bundle_id", "")
+    request.state.share_revoked_at = link.get("revoked_at", "")
+    request.state.share_revoked_by = link.get("revoked_by", "")
+    request.state.share_revoked_by_username = link.get("revoked_by_username", "")
     return {"message": "공유 링크가 비활성화되었습니다.", "share_id": share_id}
