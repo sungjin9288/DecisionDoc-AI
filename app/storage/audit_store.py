@@ -227,7 +227,8 @@ class AuditStore:
         if filters.get("date_from"):
             result = [e for e in result if e.get("timestamp", "") >= filters["date_from"]]
         if filters.get("date_to"):
-            result = [e for e in result if e.get("timestamp", "") <= filters["date_to"]]
+            date_to = _inclusive_date_end(str(filters["date_to"]))
+            result = [e for e in result if e.get("timestamp", "") <= date_to]
 
         result.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
         return result
@@ -313,7 +314,7 @@ class AuditStore:
                 "resource_type": resource_type,
                 "result": result,
                 "date_from": date_from,
-                "date_to": _inclusive_date_end(date_to),
+                "date_to": date_to,
             },
         )
         output = io.StringIO()

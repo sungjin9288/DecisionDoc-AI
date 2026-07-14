@@ -1747,10 +1747,15 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "$id('audit-log-search-btn')?.addEventListener('click', () => {" in content
     assert "action: document.getElementById('audit-action-filter')?.value || ''" in content
     assert "result: document.getElementById('audit-result-filter')?.value || ''" in content
+    assert 'id="audit-date-from" type="date" aria-label="감사 로그 시작일" required' in content
+    assert 'id="audit-date-to" type="date" aria-label="감사 로그 종료일" required' in content
     assert "$id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs)" in content
-    assert "const params = new URLSearchParams({ date_from: monthAgo, date_to: today });" in content
-    assert "if (action) params.set('action', action);" in content
-    assert "if (result) params.set('result', result);" in content
+    assert "function initializeAuditDateFilters()" in content
+    assert "function readAuditFilters()" in content
+    assert "!filters.date_from || !filters.date_to" in content
+    assert "filters.date_from > filters.date_to" in content
+    assert "if (filters) loadAuditLogs(filters);" in content
+    assert "Object.entries(filters).forEach(([key, value]) => value && params.set(key, value));" in content
     assert "`/admin/audit-logs/export?${params}`" in content
     assert "$id('sso-refresh-btn')?.addEventListener('click', loadSSOConfig)" in content
     assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content

@@ -168,7 +168,7 @@ python3 scripts/create_report_quality_pilot_pack.py \
   --output-root reports/report-quality
 ```
 
-입력은 같은 tenant의 ready artifact 3~5개여야 합니다. UI는 export 전에 ordered artifact, resolved/ready count, 전체 JSONL SHA-256, dataset upload·provider fine-tune·training execution·model promotion 비승인 경계를 보여줍니다. Export 요청은 preview의 hash를 `preview_sha256`으로 다시 제출해야 하며, 서버가 현재 ordered JSONL과 일치하지 않으면 `400`으로 차단합니다. 성공 응답은 JSONL과 함께 server-issued receipt를 내려받고, receipt에는 같은 request ID, tenant, artifact 순서, JSONL SHA-256, preview 검증 결과, 외부 실행 비승인 경계가 들어갑니다. Export audit에는 receipt와 같은 request ID가 기록되고, preview/export audit은 각각 JSONL SHA-256·artifact count·검증 상태를 남깁니다. Admin Ops audit 화면은 두 pilot action을 필터링하고 receipt 대조에 필요한 request ID와 전체 SHA-256을 표시합니다. 같은 화면의 CSV는 선택한 action/result를 유지하고 전체 detail JSON과 pilot 식별자를 보존하며, 당일 로그와 1,000건을 넘는 결과도 누락하지 않습니다. Importer는 JSONL과 receipt를 함께 검증하고 receipt 원본을 pack 안의 `SOURCE_EXPORT_RECEIPT.json`으로 보존한 뒤 `SOURCE_MANIFEST.json` v2에 두 파일의 hash와 request ID를 결속합니다. 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync와 운영 API checker는 validation, summary/export count, unique artifact, single-tenant, ready gate를 모두 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
+입력은 같은 tenant의 ready artifact 3~5개여야 합니다. UI는 export 전에 ordered artifact, resolved/ready count, 전체 JSONL SHA-256, dataset upload·provider fine-tune·training execution·model promotion 비승인 경계를 보여줍니다. Export 요청은 preview의 hash를 `preview_sha256`으로 다시 제출해야 하며, 서버가 현재 ordered JSONL과 일치하지 않으면 `400`으로 차단합니다. 성공 응답은 JSONL과 함께 server-issued receipt를 내려받고, receipt에는 같은 request ID, tenant, artifact 순서, JSONL SHA-256, preview 검증 결과, 외부 실행 비승인 경계가 들어갑니다. Export audit에는 receipt와 같은 request ID가 기록되고, preview/export audit은 각각 JSONL SHA-256·artifact count·검증 상태를 남깁니다. Admin Ops audit 화면은 두 pilot action을 필터링하고 receipt 대조에 필요한 request ID와 전체 SHA-256을 표시합니다. 조회와 CSV는 같은 action/result/기간 filter를 사용하고, date-only 종료일은 해당 UTC 날짜 전체를 포함합니다. CSV는 전체 detail JSON과 pilot 식별자를 보존하며 1,000건을 넘는 결과도 누락하지 않습니다. Importer는 JSONL과 receipt를 함께 검증하고 receipt 원본을 pack 안의 `SOURCE_EXPORT_RECEIPT.json`으로 보존한 뒤 `SOURCE_MANIFEST.json` v2에 두 파일의 hash와 request ID를 결속합니다. 이후 worksheet와 decision template은 source manifest와 각 draft SHA-256에 결속됩니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단합니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. 최종 JSONL sync와 운영 API checker는 validation, summary/export count, unique artifact, single-tenant, ready gate를 모두 통과한 뒤에만 파일을 쓰며, 실패 시 기존 출력은 변경하지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
 
 스모크 검증 (문서화된 대표 시나리오):
 
@@ -215,10 +215,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,705개**, **221개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,706개**, **221개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2705
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2706
 python3 scripts/count_readme_metrics.py --field test_files      # → 221
 ```
 
@@ -298,4 +298,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 262 · 테스트 2,705 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 262 · 테스트 2,706 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

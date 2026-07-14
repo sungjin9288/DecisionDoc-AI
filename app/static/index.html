@@ -4236,11 +4236,13 @@
       font-size: 0.7rem; font-weight: 600; white-space: nowrap;
     }
     .audit-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .audit-filters select {
+    .audit-filters select, .audit-date-filter input {
       padding: 6px; border-radius: 6px;
       border: 1px solid rgba(255,255,255,.2);
       background: rgba(255,255,255,.08); color: #e2e8f0;
     }
+    .audit-date-filter { display: inline-flex; align-items: center; gap: 5px; color: #c4b5fd; font-size: 0.72rem; }
+    .audit-date-filter input { min-width: 128px; color-scheme: dark; }
 
     /* ── SSO ──────────────────────────────────────────────────────── */
     .sso-tabs { display:flex; gap:.5rem; margin-bottom:1rem; flex-wrap:wrap; }
@@ -6713,6 +6715,8 @@
         <option value="failure">실패</option>
         <option value="blocked">차단</option>
       </select>
+      <label class="audit-date-filter">시작 <input id="audit-date-from" type="date" aria-label="감사 로그 시작일" required></label>
+      <label class="audit-date-filter">종료 <input id="audit-date-to" type="date" aria-label="감사 로그 종료일" required></label>
       <button id="audit-log-search-btn" type="button" class="btn-sm" style="background:#6366f1;color:#fff;border:none;cursor:pointer;border-radius:6px;">조회</button>
       <button id="audit-log-export-btn" type="button" class="btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none;cursor:pointer;border-radius:6px;">CSV 내보내기</button>
     </div>
@@ -26888,14 +26892,38 @@ function renderAuditLogs(logs) {
     </table>`;
 }
 
-async function exportAuditLogs() {
+function initializeAuditDateFilters() {
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-  const params = new URLSearchParams({ date_from: monthAgo, date_to: today });
-  const action = document.getElementById('audit-action-filter')?.value || '';
-  const result = document.getElementById('audit-result-filter')?.value || '';
-  if (action) params.set('action', action);
-  if (result) params.set('result', result);
+  const dateFrom = document.getElementById('audit-date-from');
+  const dateTo = document.getElementById('audit-date-to');
+  if (dateFrom && !dateFrom.value) dateFrom.value = monthAgo;
+  if (dateTo && !dateTo.value) dateTo.value = today;
+}
+
+function readAuditFilters() {
+  const filters = {
+    action: document.getElementById('audit-action-filter')?.value || '',
+    result: document.getElementById('audit-result-filter')?.value || '',
+    date_from: document.getElementById('audit-date-from')?.value || '',
+    date_to: document.getElementById('audit-date-to')?.value || '',
+  };
+  if (!filters.date_from || !filters.date_to) {
+    showNotification('감사 로그 시작일과 종료일을 모두 선택해주세요.', 'error');
+    return null;
+  }
+  if (filters.date_from > filters.date_to) {
+    showNotification('감사 로그 시작일은 종료일보다 늦을 수 없습니다.', 'error');
+    return null;
+  }
+  return filters;
+}
+
+async function exportAuditLogs() {
+  const filters = readAuditFilters();
+  if (!filters) return;
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => value && params.set(key, value));
   try {
     const res = await fetch(
       `/admin/audit-logs/export?${params}`,
@@ -26905,19 +26933,18 @@ async function exportAuditLogs() {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `audit_${monthAgo}_${today}.csv`;
+    a.href = url; a.download = `audit_${filters.date_from}_${filters.date_to}.csv`;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
   } catch(e) { showNotification('CSV 내보내기 실패', 'error'); }
 }
 
 $id('audit-log-search-btn')?.addEventListener('click', () => {
-  loadAuditLogs({
-    action: document.getElementById('audit-action-filter')?.value || '',
-    result: document.getElementById('audit-result-filter')?.value || '',
-  });
+  const filters = readAuditFilters();
+  if (filters) loadAuditLogs(filters);
 });
 $id('audit-log-export-btn')?.addEventListener('click', exportAuditLogs);
+initializeAuditDateFilters();
 
 function getPostDeployStatusMeta(status) {
   switch (String(status || '').toLowerCase()) {

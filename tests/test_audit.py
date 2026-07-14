@@ -189,6 +189,19 @@ def test_audit_store_query_filter_by_date(tmp_path):
     assert results[0]["timestamp"] >= cutoff
 
 
+def test_audit_store_query_date_only_end_includes_full_day(tmp_path):
+    os.environ["DATA_DIR"] = str(tmp_path)
+    from app.storage.audit_store import AuditStore
+
+    store = AuditStore("t1")
+    store.append(_make_audit_log(tenant_id="t1"))
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    results = store.query("t1", filters={"date_from": today, "date_to": today})
+
+    assert len(results) == 1
+
+
 def test_audit_store_query_filter_by_ip(tmp_path):
     os.environ["DATA_DIR"] = str(tmp_path)
     from app.storage.audit_store import AuditStore
@@ -1457,9 +1470,15 @@ def test_api_audit_logs_filter_by_action(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
     login = _register_and_login(client)
 
-    res = client.get("/admin/audit-logs?action=user.login", headers=_auth(login))
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    res = client.get(
+        "/admin/audit-logs",
+        params={"action": "user.login", "date_from": today, "date_to": today},
+        headers=_auth(login),
+    )
     assert res.status_code == 200
     data = res.json()
+    assert data["logs"]
     assert all(log["action"] == "user.login" for log in data["logs"])
 
 
