@@ -577,9 +577,33 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     )
     assert duplicate.status_code == 422
 
+    requested_order = list(reversed(artifact_ids))
+    preview = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-export/preview",
+        json={"artifact_ids": requested_order},
+    )
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    assert preview_body["report_type"] == "report_quality_correction_pilot_export_preview"
+    assert preview_body["artifact_count"] == 3
+    assert preview_body["ordered_artifact_ids"] == requested_order
+    assert preview_body["validation"] == {
+        "ok": True,
+        "resolved_artifact_count": 3,
+        "ready_artifact_count": 3,
+    }
+    assert [item["position"] for item in preview_body["artifacts"]] == [1, 2, 3]
+    assert [item["artifact_id"] for item in preview_body["artifacts"]] == requested_order
+    assert all(item["ready_for_learning"] is True for item in preview_body["artifacts"])
+    assert all(item["source_material_policy"] == "metadata_only" for item in preview_body["artifacts"])
+    assert preview_body["training_boundary"]["external_dataset_upload_authorized"] is False
+    assert preview_body["training_boundary"]["training_execution_authorized"] is False
+    assert preview_body["training_boundary"]["model_promotion_authorized"] is False
+    assert _contains_key(preview_body, "content_base64") is False
+
     exported = client.post(
         "/report-workflows/learning/correction-artifacts/pilot-export",
-        json={"artifact_ids": list(reversed(artifact_ids))},
+        json={"artifact_ids": requested_order},
     )
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("application/x-ndjson")
@@ -587,18 +611,20 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert exported.headers["x-decisiondoc-training-authorized"] == "false"
     body_sha256 = hashlib.sha256(exported.content).hexdigest()
     assert exported.headers["x-decisiondoc-pilot-sha256"] == body_sha256
+    assert preview_body["export_sha256"] == body_sha256
+    assert preview_body["filename"] == f"report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl"
     assert (
         f'report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl'
         in exported.headers["content-disposition"]
     )
     lines = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
-    assert [item["artifact_id"] for item in lines] == list(reversed(artifact_ids))
+    assert [item["artifact_id"] for item in lines] == requested_order
     assert all(item["training_boundary"]["training_execution_authorized"] is False for item in lines)
     assert all(_contains_key(item, "content_base64") is False for item in lines)
 
     first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
     alias_duplicate = client.post(
-        "/report-workflows/learning/correction-artifacts/pilot-export",
+        "/report-workflows/learning/correction-artifacts/pilot-export/preview",
         json={"artifact_ids": [artifact_ids[0], first_wrapper_id, artifact_ids[1]]},
     )
     assert alias_duplicate.status_code == 400

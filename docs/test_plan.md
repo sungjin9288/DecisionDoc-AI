@@ -92,11 +92,11 @@ Procurement review receipt 테스트는 packet 밖 companion JSON의 determinist
 
 Procurement reviewed package 테스트는 completed receipt만 허용하고 accepted/changes-requested/rejected 결과를 모두 보존하는지 확인한다. 원본 packet, receipt, `reviewed_package_manifest.json`의 fixed entry order와 SHA256/size, deterministic rebuild, inner semantic revalidation, pending receipt·tamper·authority drift·history overwrite 거부, `review_completed`, `operational_approval: false`를 검증한다.
 
-Report quality correction 테스트는 server preview와 save artifact의 exact equality, SHA-256 fingerprint binding, fingerprint 누락과 stale input 거부, 동일 artifact 중복 저장 차단, review packet embedded artifact fingerprint 재검증을 포함한다. Local demo는 mock provider와 임시 storage만 사용하고 저장된 artifact와 preview가 동일한지 확인한다.
+Report quality correction 테스트는 server preview와 save artifact의 exact equality, SHA-256 fingerprint binding, fingerprint 누락과 stale input 거부, 동일 artifact 중복 저장 차단, review packet embedded artifact fingerprint 재검증을 포함한다. Pilot export 테스트는 선택한 3~5개 artifact의 tenant-scoped resolve, 요청 순서, ready gate, alias 중복 거부, preview/export JSONL SHA-256 일치, 외부 학습 비승인 경계를 함께 확인한다. Local demo는 mock provider와 임시 storage만 사용하고 저장된 artifact와 preview가 동일한지 확인한다.
 
 Training evidence 테스트는 packet evidence와 reviewer sign-off부터 discussion, experiment plan, final approval packet review, pending final approval record template까지의 hash와 권한 경계를 검증한다. 이 template은 `final_training_approval_granted=false`, required approval `pending`, provider job과 execution step `not_started`를 강제하는 terminal local artifact다. 이후 실행은 이 테스트 범위 밖의 별도 change control과 명시적 승인이 필요하다.
 
-생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 입력, review draft 다운로드, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다.
+생성된 `review.html`과 `human_review.html`은 local static server에서 request 근거, 검증 상태, Markdown 본문, reviewer 입력, review draft 다운로드, responsive overflow를 확인한다. 2026-07-13에는 desktop `1440x1000`, mobile `390x844`에서 확인했으며 mobile `documentElement.scrollWidth == innerWidth`를 검증했다. 2026-07-14 report workflow UI도 mock/local server에서 pilot 사전 검토, hash-bound JSONL 다운로드, desktop `1280x900`, mobile `390x844`, mobile bottom navigation 비가림, console error 0건, `documentElement.scrollWidth == innerWidth`를 확인했다.
 
 ```bash
 pytest -q tests/test_finished_document_packet.py tests/test_finished_doc_human_review.py tests/test_build_finished_doc_review_samples.py

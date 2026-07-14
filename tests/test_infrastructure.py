@@ -1827,6 +1827,7 @@ def test_index_html_report_workflow_list_and_artifacts_use_event_listeners():
     for marker in (
         'data-rw-quality-artifacts-action="load"',
         'data-rw-quality-artifacts-action="download"',
+        'data-rw-quality-artifacts-action="preview-pilot"',
         'data-report-workflow-select="${escapeHtml(item.report_workflow_id)}"',
     ):
         assert marker in block
@@ -1839,6 +1840,8 @@ def test_index_html_report_workflow_list_and_artifacts_wiring_exists():
         "const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {",
         "load: loadReportWorkflowQualityArtifacts",
         "download: downloadReportWorkflowQualityArtifacts",
+        "'preview-pilot': previewReportWorkflowQualityPilotArtifacts",
+        "'download-pilot': downloadReportWorkflowQualityPilotArtifacts",
         "wireReportWorkflowQualityArtifactActions(el);",
         "function wireReportWorkflowQualityArtifactActions(container)",
         "container.querySelectorAll('[data-rw-quality-artifacts-action]').forEach",

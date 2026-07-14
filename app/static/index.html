@@ -4332,6 +4332,7 @@
 
       /* Add padding for bottom nav */
       #app-container { padding-bottom: 64px; }
+      #rw-quality-artifact-detail:not(:empty) { padding-bottom: 72px; }
     }
     @media (min-width: 641px) {
       #mobile-bottom-nav { display: none !important; }
@@ -8177,6 +8178,7 @@
   let _reportWorkflowLastDevelopPreview = null;
   let _reportWorkflowLastQualityPreview = null;
   const _reportWorkflowQualityPilotSelection = new Set();
+  let _reportWorkflowQualityPilotPreview = null;
 
   const REPORT_WORKFLOW_QUALITY_DIMENSIONS = [
     ['logic', '논리'],
@@ -8264,6 +8266,7 @@
   function renderReportWorkflowQualityArtifactSummary(data) {
     const el = $id('rw-quality-artifact-summary');
     if (!el) return;
+    _reportWorkflowQualityPilotPreview = null;
     const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
     const visibleArtifacts = artifacts.slice(0, 5);
     const selectableIds = new Set(
@@ -8307,7 +8310,7 @@
         </div>
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;">
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="load">🔄 Artifact 새로고침</button>
-          <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-pilot" ${selectedCount >= 3 ? '' : 'disabled'}>⬇️ Pilot JSONL (${selectedCount}/5)</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="preview-pilot" ${selectedCount >= 3 ? '' : 'disabled'}>Pilot 검토 (${selectedCount}/5)</button>
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="download" ${Number(data?.ready_artifacts || 0) ? '' : 'disabled'}>⬇️ Ready JSONL</button>
         </div>
       </div>
@@ -8326,10 +8329,12 @@
   const REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS = {
     load: loadReportWorkflowQualityArtifacts,
     download: downloadReportWorkflowQualityArtifacts,
+    'preview-pilot': previewReportWorkflowQualityPilotArtifacts,
     'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
     inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
     'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
     close: () => {
+      _reportWorkflowQualityPilotPreview = null;
       const detail = $id('rw-quality-artifact-detail');
       if (detail) detail.innerHTML = '';
     },
@@ -8357,12 +8362,85 @@
     }
     if (input.checked) _reportWorkflowQualityPilotSelection.add(artifactId);
     else _reportWorkflowQualityPilotSelection.delete(artifactId);
+    _reportWorkflowQualityPilotPreview = null;
+
+    const detail = $id('rw-quality-artifact-detail');
+    if (detail) detail.innerHTML = '';
 
     const count = _reportWorkflowQualityPilotSelection.size;
-    const button = container.querySelector('[data-rw-quality-artifacts-action="download-pilot"]');
+    const button = container.querySelector('[data-rw-quality-artifacts-action="preview-pilot"]');
     if (button) {
       button.disabled = count < 3;
-      button.textContent = `⬇️ Pilot JSONL (${count}/5)`;
+      button.textContent = `Pilot 검토 (${count}/5)`;
+    }
+  }
+
+  function renderReportWorkflowQualityPilotPreview(preview) {
+    const el = $id('rw-quality-artifact-detail');
+    if (!el) return;
+    const artifacts = Array.isArray(preview?.artifacts) ? preview.artifacts : [];
+    const boundary = preview?.training_boundary || {};
+    const boundaryRows = [
+      ['Dataset upload', boundary.external_dataset_upload_authorized],
+      ['Provider fine-tune', boundary.provider_fine_tune_api_call_authorized],
+      ['Training execution', boundary.training_execution_authorized],
+      ['Model promotion', boundary.model_promotion_authorized],
+    ];
+    el.innerHTML = `<div style="border:1px solid rgba(30,64,175,.25);border-radius:12px;padding:.75rem;background:rgba(239,246,255,.75);">
+      <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.84rem;font-weight:900;color:#1f2a44;">Pilot export 사전 검토</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(preview.filename || '')}</div>
+        </div>
+        <span style="font-size:.7rem;font-weight:850;color:#166534;background:#dcfce7;border-radius:999px;padding:.16rem .5rem;">${Number(preview.artifact_count || 0)}개 ready</span>
+      </div>
+      <dl style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.45rem;margin:.65rem 0 0;font-size:.72rem;">
+        <div><dt style="font-weight:850;color:#334155;">JSONL SHA-256</dt><dd style="margin:.15rem 0 0;overflow-wrap:anywhere;">${escapeHtml(preview.export_sha256 || '')}</dd></div>
+        <div><dt style="font-weight:850;color:#334155;">Validation</dt><dd style="margin:.15rem 0 0;">resolved ${Number(preview?.validation?.resolved_artifact_count || 0)} · ready ${Number(preview?.validation?.ready_artifact_count || 0)}</dd></div>
+      </dl>
+      <ol style="margin:.65rem 0 0;padding-left:1.25rem;display:grid;gap:.4rem;">
+        ${artifacts.map(item => `<li style="font-size:.72rem;color:#334155;">
+          <strong>${escapeHtml(item.workflow_title || item.report_workflow_id || item.artifact_id || 'artifact')}</strong>
+          <div style="color:var(--muted);overflow-wrap:anywhere;">${escapeHtml(item.artifact_id || '')} · reviewer=${escapeHtml(item.reviewer || 'n/a')} · score=${escapeHtml(String(item.overall_score ?? 'n/a'))}</div>
+        </li>`).join('')}
+      </ol>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.4rem;margin-top:.65rem;">
+        ${boundaryRows.map(([label, authorized]) => `<div style="font-size:.7rem;color:${authorized === false ? '#166534' : '#991b1b'};background:${authorized === false ? '#f0fdf4' : '#fef2f2'};border-radius:8px;padding:.45rem;"><strong>${escapeHtml(label)}</strong><br>${authorized === false ? '승인 안 됨' : '경계 확인 필요'}</div>`).join('')}
+      </div>
+      <div style="display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap;margin-top:.7rem;">
+        <button type="button" class="action-btn" data-rw-quality-artifacts-action="close">닫기</button>
+        <button type="button" class="action-btn" data-rw-quality-artifacts-action="download-pilot">JSONL 다운로드</button>
+      </div>
+    </div>`;
+    wireReportWorkflowQualityArtifactActions(el);
+  }
+
+  async function previewReportWorkflowQualityPilotArtifacts() {
+    const artifactIds = Array.from(_reportWorkflowQualityPilotSelection);
+    if (artifactIds.length < 3 || artifactIds.length > 5) {
+      showNotification('Pilot 검토에는 ready artifact 3~5개가 필요합니다.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/report-workflows/learning/correction-artifacts/pilot-export/preview', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_ids: artifactIds }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const preview = await res.json();
+      if (!/^[a-f0-9]{64}$/.test(String(preview.export_sha256 || ''))) {
+        throw new Error('Pilot preview SHA-256이 없거나 올바르지 않습니다.');
+      }
+      if (JSON.stringify(preview.ordered_artifact_ids || []) !== JSON.stringify(artifactIds)) {
+        throw new Error('Pilot preview artifact 순서가 현재 선택과 다릅니다.');
+      }
+      _reportWorkflowQualityPilotPreview = preview;
+      renderReportWorkflowQualityPilotPreview(preview);
+      $id('rw-quality-artifact-detail')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (err) {
+      _reportWorkflowQualityPilotPreview = null;
+      showNotification('Pilot export 사전 검토 실패: ' + (err.message || err), 'error');
     }
   }
 
@@ -8459,6 +8537,10 @@
       const exportSha256 = String(res.headers.get('X-DecisionDoc-Pilot-SHA256') || '').trim().toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(exportSha256)) {
         throw new Error('Pilot export SHA-256 응답이 없거나 올바르지 않습니다.');
+      }
+      const expectedSha256 = String(_reportWorkflowQualityPilotPreview?.export_sha256 || '').trim().toLowerCase();
+      if (!expectedSha256 || expectedSha256 !== exportSha256) {
+        throw new Error('Pilot preview 이후 export 내용이 변경되었습니다. 다시 검토하세요.');
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

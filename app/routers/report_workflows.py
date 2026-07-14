@@ -1,7 +1,6 @@
 """Report workflow endpoints for staged report production."""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import urllib.parse
@@ -149,6 +148,25 @@ def export_report_quality_correction_artifacts(
 
 
 @router.post(
+    "/report-workflows/learning/correction-artifacts/pilot-export/preview",
+    dependencies=[Depends(require_api_key)],
+)
+def preview_report_quality_correction_pilot(
+    payload: ReportQualityPilotExportRequest,
+    request: Request,
+) -> dict:
+    tenant_id = get_tenant_id(request)
+    try:
+        return _get_service(request).preview_quality_correction_pilot_export(
+            payload.artifact_ids,
+            tenant_id=tenant_id,
+        )
+    except (KeyError, ValueError) as exc:
+        _handle_store_error(exc)
+    raise HTTPException(status_code=500, detail="correction artifact pilot preview failed")
+
+
+@router.post(
     "/report-workflows/learning/correction-artifacts/pilot-export",
     dependencies=[Depends(require_api_key)],
 )
@@ -158,14 +176,16 @@ def export_report_quality_correction_pilot(
 ) -> Response:
     tenant_id = get_tenant_id(request)
     try:
-        body = _get_service(request).export_quality_correction_pilot_jsonl(
+        prepared = _get_service(request).prepare_quality_correction_pilot_export(
             payload.artifact_ids,
             tenant_id=tenant_id,
         )
     except (KeyError, ValueError) as exc:
         _handle_store_error(exc)
-    body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    filename = f"report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl"
+    body = prepared["jsonl"]
+    preview = prepared["preview"]
+    body_sha256 = preview["export_sha256"]
+    filename = preview["filename"]
     return Response(
         content=body,
         media_type="application/x-ndjson; charset=utf-8",

@@ -114,11 +114,17 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "/report-workflows/learning/correction-artifacts/${encodeURIComponent(normalizedId)}" in html
     assert 'data-rw-quality-artifacts-action="inspect"' in html
     assert 'data-rw-quality-artifacts-action="download-one"' in html
+    assert 'data-rw-quality-artifacts-action="preview-pilot"' in html
     assert 'data-rw-quality-artifacts-action="download-pilot"' in html
     assert "data-rw-quality-artifact-select" in html
+    assert "/report-workflows/learning/correction-artifacts/pilot-export/preview" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export" in html
     assert "artifactIds.length < 3 || artifactIds.length > 5" in html
     assert "X-DecisionDoc-Pilot-SHA256" in html
+    assert "previewReportWorkflowQualityPilotArtifacts" in html
+    assert "renderReportWorkflowQualityPilotPreview" in html
+    assert "Pilot preview 이후 export 내용이 변경되었습니다" in html
+    assert "#rw-quality-artifact-detail:not(:empty) { padding-bottom: 72px; }" in html
     assert "report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl" in html
     assert "report_quality_correction_artifact_${safeId}.json" in html
     assert "visual-assets" in html

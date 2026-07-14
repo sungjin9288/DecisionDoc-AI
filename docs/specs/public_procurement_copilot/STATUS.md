@@ -3,6 +3,15 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone report-quality pilot export preflight
+
+- `POST /report-workflows/learning/correction-artifacts/pilot-export/preview` now resolves the selected 3-5 tenant-scoped artifacts through the same service path as export, preserves request order, and returns exact JSONL SHA-256, filename, readiness validation, reviewer metadata, and false external-training authorization boundaries.
+- The report workflow UI requires this preview before pilot download. Selection changes invalidate it, and a response hash that differs from the preview blocks browser storage instead of silently exporting drifted content.
+- Mock/local browser verification covered the reviewer preview and actual hash-bound download at desktop `1280x900` and mobile `390x844`. Mobile width stayed overflow-free, the action row remained above fixed navigation, and the browser console had no errors.
+- Focused report-workflow, static UI, infrastructure, portfolio, and README metric verification passes with 156 tests. Python compile, Ruff E/F/W, Bandit medium/high, secret hygiene, and `git diff --check` also pass.
+- Full no-cost regression passes: `pytest -q tests/ -m "not live" --tb=short` completed with 2,951 passed, 2 skipped, and 4 deselected in 214.94 seconds.
+- No provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, or contractual commitment was executed.
+
 ## Post-milestone reproducible portfolio evidence pack
 
 - `scripts/manage_portfolio_pack.py` now syncs a tracked allowlist of portfolio documents and local evidence into `_portfolio_export/decisiondoc_ai_portfolio_pack/`, prunes stale copies, and verifies exact membership and byte content against source.

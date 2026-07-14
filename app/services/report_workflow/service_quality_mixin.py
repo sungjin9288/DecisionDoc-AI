@@ -1,6 +1,7 @@
 """Quality correction artifact and develop-quality-improvement preview flows."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 from typing import Any
@@ -394,13 +395,13 @@ class ReportWorkflowQualityMixin:
 
         raise KeyError(f"quality correction artifact not found: {requested_id}")
 
-    def export_quality_correction_pilot_jsonl(
+    def prepare_quality_correction_pilot_export(
         self,
         artifact_ids: list[str],
         *,
         tenant_id: str,
-    ) -> str:
-        """Export an ordered, ready-only pilot batch without external side effects."""
+    ) -> dict[str, Any]:
+        """Resolve and fingerprint an ordered pilot batch without external side effects."""
         requested_ids = [str(artifact_id or "").strip() for artifact_id in artifact_ids]
         if not 3 <= len(requested_ids) <= 5:
             raise ValueError("pilot export requires between 3 and 5 artifact_ids")
@@ -410,8 +411,9 @@ class ReportWorkflowQualityMixin:
             raise ValueError("artifact_ids must be unique")
 
         artifacts: list[dict[str, Any]] = []
+        selections: list[dict[str, Any]] = []
         resolved_ids: set[str] = set()
-        for requested_id in requested_ids:
+        for position, requested_id in enumerate(requested_ids, start=1):
             detail = self.get_quality_correction_artifact(requested_id, tenant_id=tenant_id)
             resolved_id = str(detail.get("artifact_id") or detail.get("store_artifact_id") or "")
             if resolved_id in resolved_ids:
@@ -423,11 +425,78 @@ class ReportWorkflowQualityMixin:
                 raise ValueError(f"quality correction artifact payload is missing: {requested_id}")
             resolved_ids.add(resolved_id)
             artifacts.append(artifact)
+            workflow_reference = artifact.get("workflow_reference")
+            if not isinstance(workflow_reference, dict):
+                workflow_reference = {}
+            selections.append(
+                {
+                    "position": position,
+                    "requested_artifact_id": requested_id,
+                    "artifact_id": resolved_id,
+                    "store_artifact_id": str(detail.get("store_artifact_id") or ""),
+                    "report_workflow_id": str(detail.get("report_workflow_id") or ""),
+                    "workflow_title": str(detail.get("workflow_title") or ""),
+                    "reviewer": str(detail.get("reviewer") or detail.get("actor") or ""),
+                    "reviewed_at": str(detail.get("reviewed_at") or ""),
+                    "overall_score": detail.get("overall_score"),
+                    "schema_version": str(detail.get("schema_version") or ""),
+                    "source_material_policy": str(
+                        workflow_reference.get("source_material_policy") or ""
+                    ),
+                    "ready_for_learning": True,
+                }
+            )
 
-        return "".join(
+        body = "".join(
             json.dumps(artifact, ensure_ascii=False, sort_keys=True) + "\n"
             for artifact in artifacts
         )
+        body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        filename = f"report_quality_pilot_artifacts_{body_sha256[:12]}.jsonl"
+        return {
+            "jsonl": body,
+            "preview": {
+                "report_type": "report_quality_correction_pilot_export_preview",
+                "artifact_count": len(selections),
+                "ordered_artifact_ids": [item["artifact_id"] for item in selections],
+                "export_sha256": body_sha256,
+                "filename": filename,
+                "content_type": "application/x-ndjson",
+                "validation": {
+                    "ok": True,
+                    "resolved_artifact_count": len(selections),
+                    "ready_artifact_count": len(selections),
+                },
+                "artifacts": selections,
+                "training_boundary": self._quality_training_boundary(),
+            },
+        }
+
+    def preview_quality_correction_pilot_export(
+        self,
+        artifact_ids: list[str],
+        *,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Return the ordered batch evidence shown before a pilot download."""
+        prepared = self.prepare_quality_correction_pilot_export(
+            artifact_ids,
+            tenant_id=tenant_id,
+        )
+        return prepared["preview"]
+
+    def export_quality_correction_pilot_jsonl(
+        self,
+        artifact_ids: list[str],
+        *,
+        tenant_id: str,
+    ) -> str:
+        """Export an ordered, ready-only pilot batch without external side effects."""
+        prepared = self.prepare_quality_correction_pilot_export(
+            artifact_ids,
+            tenant_id=tenant_id,
+        )
+        return prepared["jsonl"]
 
     def export_quality_correction_artifacts_jsonl(
         self,
