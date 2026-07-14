@@ -237,7 +237,7 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
         --min-records 3
       ```
     - Packet evidence 이후의 reviewer handoff, discussion, experiment plan, final approval 준비 명령은 [Review Packet Evidence Runbook](./REVIEW_PACKET_EVIDENCE_RUNBOOK.md)을 따른다. 이 local chain은 pending final approval record template에서 끝나며 provider job, dataset upload, training execution, model promotion은 계속 미승인 상태다.
-11. 사람이 수정한 draft JSON을 batch JSONL로 동기화한다.
+11. Standalone JSONL이 필요한 분석이나 후속 처리에서만 사람이 수정한 draft JSON을 동기화한다. Handoff만 필요하면 이 단계를 건너뛰고 12단계 `finalize`를 실행한다.
    ```bash
    python3 scripts/sync_report_quality_pilot_pack.py \
      reports/report-quality/pilot-rqc-001 \
@@ -246,17 +246,16 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    ```
    - `--require-ready`는 모든 artifact가 ready인지만 보지 않는다. 현재 pack binding과 artifact 상태·count가 일치하는 `human_review_manifest.json`, `require_ready=true`로 기록된 accepted decision application receipt가 모두 있어야 한다. Source import 당시 artifact가 이미 ready여도 새 로컬 decision이 pending이면 차단한다.
    - `output_written=true`, `output_sha256`, `review_manifest.sha256`, `decision_receipt.sha256`이 함께 반환된 실행만 현재 draft와 검수 이력이 결속된 sync 성공으로 본다. 쓰기 직전 binding과 evidence hash를 다시 확인하며 실패 실행은 기존 output을 변경하지 않는다.
-12. ready JSONL과 현재 human review evidence를 portable handoff ZIP으로 묶고, 원래 pack 없이 다시 검증한다.
+12. 검수 완료 pack을 ready sync한 뒤 portable handoff ZIP으로 묶고, 원래 pack 없이 다시 검증한다.
    ```bash
-   python3 scripts/manage_report_quality_pilot_handoff.py create \
-     reports/report-quality/pilot-rqc-001 \
-     --jsonl reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl
+   python3 scripts/manage_report_quality_pilot_handoff.py finalize \
+     reports/report-quality/pilot-rqc-001
 
    python3 scripts/manage_report_quality_pilot_handoff.py verify \
      reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip \
      --summary-output reports/report-quality/pilot-rqc-001-handoff-summary.md
    ```
-   - Handoff는 exact JSONL, current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar를 embedded `handoff_manifest.json`에 결속한다.
+   - Finalize는 private temporary directory에서 `--require-ready` sync를 통과한 exact JSONL을 만들고 current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar와 함께 embedded `handoff_manifest.json`에 결속한다. 임시 JSONL은 package 발행 뒤 삭제하며 standalone JSONL이 필요한 경우에만 기존 `sync`와 `create --jsonl`을 사용한다.
    - `HANDOFF_SUMMARY.md`는 artifact별 reviewer, reviewed time, score, decision state와 evidence hash, no-training boundary를 바로 읽을 수 있게 정리한다.
    - Verifier는 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다. `--summary-output`은 이 검증을 통과한 summary만 별도 Markdown으로 atomic write하고 summary SHA-256을 함께 반환한다. Package와 summary 모두 write-once publication을 사용해 동시 생성된 기존 증거도 보존하며 기존 파일·symlink·비 Markdown output을 거부한다.
 13. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.

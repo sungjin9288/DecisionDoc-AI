@@ -10,6 +10,7 @@ import re
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 from typing import Any, Mapping, Sequence
 
 
@@ -45,6 +46,9 @@ from scripts.report_quality_pilot_handoff_summary import (  # noqa: E402
     SUMMARY_NAME,
     render_report_quality_pilot_handoff_summary,
     verify_report_quality_pilot_handoff_summary,
+)
+from scripts.sync_report_quality_pilot_pack import (  # noqa: E402
+    sync_report_quality_pilot_pack,
 )
 from scripts.validate_report_quality_review_decision_receipt import (  # noqa: E402
     NO_EXTERNAL_ACTION_KEYS,
@@ -334,6 +338,51 @@ def create_report_quality_pilot_handoff(
         **verification,
         "side_effect_boundary": {
             "reads_local_review_evidence": True,
+            "writes_local_handoff_package": True,
+            **{key: False for key in NO_EXTERNAL_ACTION_KEYS},
+        },
+    }
+
+
+def finalize_report_quality_pilot_handoff(
+    *,
+    pack_dir: Path,
+    output_path: Path | None = None,
+) -> dict[str, Any]:
+    resolved_pack_dir = pack_dir.expanduser().resolve()
+    with TemporaryDirectory(prefix="decisiondoc-report-quality-handoff-") as temp_dir:
+        jsonl_path = Path(temp_dir) / "ready-artifacts.jsonl"
+        sync_result = sync_report_quality_pilot_pack(
+            pack_dir=resolved_pack_dir,
+            output_path=jsonl_path,
+            min_records=3,
+            require_ready=True,
+        )
+        if not sync_result["ok"]:
+            errors = "; ".join(sync_result["errors"]) or "ready sync did not pass"
+            raise ValueError(f"reviewed pilot finalization blocked: {errors}")
+
+        handoff = create_report_quality_pilot_handoff(
+            pack_dir=resolved_pack_dir,
+            jsonl_path=jsonl_path,
+            output_path=output_path,
+        )
+
+    result = dict(handoff)
+    result.pop("jsonl_path", None)
+    return {
+        **result,
+        "report_type": "report_quality_pilot_review_handoff_finalized",
+        "ready_sync": {
+            "artifact_count": sync_result["artifact_count"],
+            "jsonl_sha256": sync_result["output_sha256"],
+            "review_manifest": sync_result["review_manifest"],
+            "decision_receipt": sync_result["decision_receipt"],
+        },
+        "side_effect_boundary": {
+            "reads_local_review_evidence": True,
+            "writes_temporary_jsonl": True,
+            "retains_standalone_jsonl": False,
             "writes_local_handoff_package": True,
             **{key: False for key in NO_EXTERNAL_ACTION_KEYS},
         },
@@ -723,6 +772,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--output", type=Path, default=None)
     create_parser.add_argument("--json", action="store_true")
 
+    finalize_parser = subparsers.add_parser(
+        "finalize",
+        help="Validate a reviewed pack and create its handoff ZIP in one step.",
+    )
+    finalize_parser.add_argument("pack_dir", type=Path)
+    finalize_parser.add_argument("--output", type=Path, default=None)
+    finalize_parser.add_argument("--json", action="store_true")
+
     verify_parser = subparsers.add_parser("verify", help="Verify one reviewed pilot handoff ZIP.")
     verify_parser.add_argument("package", type=Path)
     verify_parser.add_argument("--summary-output", type=Path, default=None)
@@ -737,6 +794,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = create_report_quality_pilot_handoff(
                 pack_dir=args.pack_dir,
                 jsonl_path=args.jsonl,
+                output_path=args.output,
+            )
+        elif args.operation == "finalize":
+            result = finalize_report_quality_pilot_handoff(
+                pack_dir=args.pack_dir,
                 output_path=args.output,
             )
         else:

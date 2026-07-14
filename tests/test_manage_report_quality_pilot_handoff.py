@@ -406,6 +406,85 @@ def test_reviewed_pilot_handoff_writes_only_a_verified_summary(tmp_path):
     assert not tampered_output.exists()
 
 
+def test_reviewed_pilot_handoff_finalize_needs_no_standalone_jsonl(tmp_path, monkeypatch):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_finalize")
+    pack_dir, jsonl_path = _reviewed_pack(tmp_path)
+    jsonl_path.unlink()
+    package_path = tmp_path / "finalized-handoff.zip"
+    temporary_jsonl_path = None
+    sync_pack = handoff.sync_report_quality_pilot_pack
+
+    def capture_temporary_jsonl(**kwargs):
+        nonlocal temporary_jsonl_path
+        temporary_jsonl_path = kwargs["output_path"]
+        return sync_pack(**kwargs)
+
+    monkeypatch.setattr(handoff, "sync_report_quality_pilot_pack", capture_temporary_jsonl)
+
+    result = handoff.finalize_report_quality_pilot_handoff(
+        pack_dir=pack_dir,
+        output_path=package_path,
+    )
+
+    assert result["ok"] is True
+    assert result["report_type"] == "report_quality_pilot_review_handoff_finalized"
+    assert result["ready_sync"]["artifact_count"] == 3
+    assert result["ready_sync"]["jsonl_sha256"] == result["jsonl_sha256"]
+    assert result["ready_sync"]["review_manifest"]["sha256"] == result["review_manifest_sha256"]
+    assert result["ready_sync"]["decision_receipt"]["sha256"] == result["decision_receipt_sha256"]
+    assert "jsonl_path" not in result
+    assert result["side_effect_boundary"]["retains_standalone_jsonl"] is False
+    assert package_path.is_file()
+    assert not list(pack_dir.glob("*-drafts.jsonl"))
+    assert temporary_jsonl_path is not None
+    assert not temporary_jsonl_path.exists()
+    assert not temporary_jsonl_path.parent.exists()
+    assert handoff.verify_report_quality_pilot_handoff(package_path.read_bytes())["ok"] is True
+
+
+def test_reviewed_pilot_handoff_finalize_leaves_no_package_when_review_is_pending(tmp_path):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_finalize_pending")
+    create_pack = _load_module(CREATE_PACK_PATH, "handoff_finalize_pending_pack")
+    created = create_pack.create_report_quality_pilot_pack(
+        batch_id="pilot-handoff-pending",
+        output_root=tmp_path,
+        sample_count=3,
+        reviewer="pilot-reviewer",
+    )
+    package_path = tmp_path / "blocked-handoff.zip"
+
+    with pytest.raises(ValueError, match="reviewed pilot finalization blocked"):
+        handoff.finalize_report_quality_pilot_handoff(
+            pack_dir=Path(created["output_dir"]),
+            output_path=package_path,
+        )
+
+    assert not package_path.exists()
+
+
+def test_reviewed_pilot_handoff_cli_finalize(tmp_path, capsys):
+    handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_cli_finalize")
+    pack_dir, jsonl_path = _reviewed_pack(tmp_path)
+    jsonl_path.unlink()
+    package_path = tmp_path / "cli-finalized-handoff.zip"
+
+    exit_code = handoff.main([
+        "finalize",
+        str(pack_dir),
+        "--output",
+        str(package_path),
+        "--json",
+    ])
+    result = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert result["ok"] is True
+    assert result["output_path"] == str(package_path)
+    assert result["ready_sync"]["jsonl_sha256"] == result["jsonl_sha256"]
+    assert result["training_authorized"] is False
+    assert package_path.is_file()
+
+
 def test_reviewed_pilot_handoff_cli_create_and_verify(tmp_path, capsys):
     handoff = _load_module(HANDOFF_PATH, "reviewed_pilot_handoff_cli")
     pack_dir, jsonl_path = _reviewed_pack(tmp_path)

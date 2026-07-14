@@ -141,7 +141,7 @@ python3 scripts/sync_report_quality_pilot_pack.py \
   --min-records 3
 ```
 
-승인 완료 후에는 ready gate까지 함께 확인한다.
+Standalone JSONL이 필요한 분석이나 후속 처리에서는 ready gate까지 함께 확인한다. Handoff만 필요하면 이 단계를 건너뛰고 아래 `finalize`를 실행한다.
 
 ```bash
 python3 scripts/sync_report_quality_pilot_pack.py \
@@ -154,19 +154,18 @@ Sync는 모든 artifact validation을 통과한 뒤에만 JSONL을 쓴다. `--re
 
 실패 결과의 `output_written=false`는 이번 실행이 파일을 만들거나 덮어쓰지 않았다는 뜻이며, 이전 실행에서 남은 같은 경로의 파일은 변경하지 않는다. 출력은 `.jsonl`만 허용하고 symlink, import 원본 source JSONL, symlink review evidence 경로를 거부한다. `--require-ready`가 없는 중간 sync는 기존 호환 경로대로 검수 receipt 없이도 사용할 수 있지만 학습 후보 완료 증거로 보지 않는다.
 
-승인된 JSONL을 다른 검토자나 보관 경로로 넘길 때는 현재 검수 근거와 함께 하나의 handoff ZIP으로 고정한다.
+검수 완료 pack을 다른 검토자나 보관 경로로 넘길 때는 ready sync와 handoff 생성을 한 명령으로 마친다.
 
 ```bash
-python3 scripts/manage_report_quality_pilot_handoff.py create \
-  reports/report-quality/pilot-rqc-001 \
-  --jsonl reports/report-quality/pilot-rqc-001/pilot-rqc-001-drafts.jsonl
+python3 scripts/manage_report_quality_pilot_handoff.py finalize \
+  reports/report-quality/pilot-rqc-001
 
 python3 scripts/manage_report_quality_pilot_handoff.py verify \
   reports/report-quality/pilot-rqc-001/report_quality_pilot_review_handoff_<sha12>.zip \
   --summary-output reports/report-quality/pilot-rqc-001-handoff-summary.md
 ```
 
-Create는 JSONL이 현재 draft 순서와 내용에 정확히 일치하는지 다시 확인하고, current `human_review_manifest.json`, `require_ready=true` accepted decision receipt, receipt가 가리키는 decision file, 최종 draft 3~5개, source-bound pack의 provenance sidecar를 `handoff_manifest.json`과 함께 deterministic ZIP으로 기록한다. `HANDOFF_SUMMARY.md`는 artifact별 검수자·검토 시각·점수·결정 상태, 핵심 evidence hash, 외부 실행 비승인 경계를 사람이 읽는 표로 정리한다. Verify는 원래 pack에 접근하지 않고 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고, membership, size/SHA-256, JSONL과 draft의 semantic identity, accepted review 전이, source binding, no-training boundary를 재검증한다. `--summary-output`은 이 검증이 모두 끝난 뒤 exact summary만 별도 Markdown으로 atomic write하고 summary SHA-256을 결과에 남긴다. Package와 summary는 임시 파일을 완전히 동기화한 뒤 최종 이름을 한 번만 생성하므로 사전 검사 직후 다른 프로세스가 같은 경로를 만들어도 기존 증거를 덮어쓰지 않는다. 기존 파일과 symlink output은 거부하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
+Finalize는 private temporary directory에서 `--require-ready` sync를 실행하고, 생성된 exact JSONL이 현재 draft 순서와 내용에 일치하는지 다시 확인한다. 이어서 current `human_review_manifest.json`, accepted decision receipt와 decision file, 최종 draft 3~5개, source-bound pack의 provenance sidecar를 `handoff_manifest.json`과 함께 deterministic ZIP으로 기록한 뒤 임시 JSONL을 삭제한다. Standalone JSONL이 필요한 분석 경로에서는 기존 `sync --require-ready`와 `create --jsonl`을 사용한다. `HANDOFF_SUMMARY.md`는 artifact별 검수자·검토 시각·점수·결정 상태, 핵심 evidence hash, 외부 실행 비승인 경계를 사람이 읽는 표로 정리한다. Verify는 원래 pack에 접근하지 않고 summary를 같은 evidence에서 다시 생성해 exact bytes를 대조하고, membership, size/SHA-256, JSONL과 draft의 semantic identity, accepted review 전이, source binding, no-training boundary를 재검증한다. `--summary-output`은 이 검증이 모두 끝난 뒤 exact summary만 별도 Markdown으로 atomic write하고 summary SHA-256을 결과에 남긴다. Package와 summary는 임시 파일을 완전히 동기화한 뒤 최종 이름을 한 번만 생성하므로 사전 검사 직후 다른 프로세스가 같은 경로를 만들어도 기존 증거를 덮어쓰지 않는다. 기존 파일과 symlink output은 거부하며 provider API, dataset upload, training execution, model promotion을 실행하지 않는다.
 
 ## 3. 생성과 교정
 
