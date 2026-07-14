@@ -77,6 +77,21 @@ python3 -m json.tool /tmp/decisiondoc-report-quality-learning-demo.json
 
 receipt의 `status`는 모든 단계와 exported JSONL validator가 통과한 경우에만 `passed`가 된다. `external_actions`의 provider API, AWS runtime, dataset upload, provider job, training execution, model promotion, production service resume 값은 모두 `false`로 유지된다. 이 결과는 사람이 승인한 learning candidate의 로컬 생성·검증 증거이며 fine-tuning 실행이나 운영 재개 승인이 아니다.
 
+### Full Pilot Handoff Demo
+
+3개 ready artifact를 API에서 만들고 최종 browser handoff까지 전체 local chain을 확인할 때는 다음 명령을 실행한다.
+
+```bash
+python3 scripts/run_report_quality_pilot_handoff_demo.py \
+  --output /tmp/decisiondoc-report-quality-pilot-handoff-demo.json
+
+python3 -m json.tool /tmp/decisiondoc-report-quality-pilot-handoff-demo.json
+```
+
+이 명령은 provider를 `mock`으로 고정하고 OpenAI, Gemini, Anthropic API key를 demo context에서 제거한 뒤 종료 시 원래 환경을 복원한다. API pilot preview/package, verified source import, simulated local review, ready sync, deterministic handoff, exact browser summary verification은 모두 temporary local directory에서 수행하며 실행 후 삭제한다. 최종 receipt만 write-once로 남고 기존 파일이나 symlink는 덮어쓰지 않는다.
+
+Receipt의 `review_evidence=simulated_demo_input`, `human_review_claimed=false`, `local_review.simulated=true`는 이 실행이 제품 wiring의 로컬 증거일 뿐 실제 사람 검수 완료 증거가 아님을 뜻한다. Provider API, AWS runtime, dataset upload, provider job, training, model promotion, production service resume은 실행하지 않는다.
+
 ## 3. Build The Local Package
 
 Use a temporary output directory:

@@ -56,7 +56,7 @@
 | Experiment planning | experiment plan draft/review creator와 validator | Dataset, eval, parameter 후보와 검토 결과를 planning-only artifact로 남긴다. |
 | Final approval preparation | final approval packet/review/record template creator와 validator | Required approver, source hash, 미승인 상태, `not_started` execution step을 검증한다. |
 | Pilot review | `create_report_quality_pilot_pack.py`, review sheet/workspace creator, `apply_report_quality_review_decisions.py`, receipt validator | UI export부터 browser draft, 사람의 교정 결정, 최종 draft까지 source-bound history를 보존한다. |
-| Local verification | `run_report_quality_learning_demo.py`, `sync_report_quality_pilot_pack.py`, artifact checker와 summarizer | Mock/local 경로와 운영 API export를 같은 artifact validator로 재검증한다. |
+| Local verification | `run_report_quality_learning_demo.py`, `run_report_quality_pilot_handoff_demo.py`, `sync_report_quality_pilot_pack.py`, artifact checker와 summarizer | Mock/local 경로와 운영 API export를 같은 artifact validator로 재검증하고 3-artifact handoff wiring을 simulated review receipt로 확인한다. |
 
 세부 명령과 예상 출력은 [Pilot Review Runbook](./PILOT_REVIEW_RUNBOOK.md)과 [Review Packet Evidence Runbook](./REVIEW_PACKET_EVIDENCE_RUNBOOK.md)에만 둔다. 이 README는 흐름과 권한 경계를 설명하는 진입점이다.
 
@@ -258,6 +258,7 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
    - Finalize는 private temporary directory에서 `--require-ready` sync를 통과한 exact JSONL을 만들고 current manifest, accepted decision receipt와 decision file, 최종 draft, source provenance sidecar와 함께 embedded `handoff_manifest.json`에 결속한다. 임시 JSONL은 package 발행 뒤 삭제하며 standalone JSONL이 필요한 경우에만 기존 `sync`와 `create --jsonl`을 사용한다.
    - Handoff v2는 원문 전달용 `HANDOFF_SUMMARY.md`와 별도 runtime 없이 브라우저에서 여는 script-free `HANDOFF_SUMMARY.html`을 함께 담는다. 두 파일 모두 artifact별 reviewer, reviewed time, score, decision state와 evidence hash, no-training boundary를 보여준다.
    - Verifier는 Markdown과 HTML을 같은 evidence에서 다시 생성해 exact bytes를 대조하고 artifact readiness, JSONL/draft identity, accepted review 전이, source binding, entry hash/size, no-training boundary를 archive만으로 재검증한다. 기존 v1 archive는 Markdown 계약으로 계속 검증한다. `--browser-summary-output` 또는 `--summary-output` 중 하나를 선택하면 검증을 통과한 exact HTML 또는 Markdown만 별도 파일로 write-once 발행한다. 두 옵션은 동시에 사용할 수 없고 기존 파일·symlink·잘못된 확장자를 거부한다.
+   - 실제 사람 검수 자료 없이 3-artifact 전체 wiring을 확인할 때는 `python3 scripts/run_report_quality_pilot_handoff_demo.py --output /tmp/decisiondoc-report-quality-pilot-handoff-demo.json`을 실행한다. 이 mock-only receipt는 `review_evidence=simulated_demo_input`, `human_review_claimed=false`, 외부 action 전부 `false`를 기록하므로 실제 사람 검수나 live provider 품질 증거로 사용하지 않는다.
 13. `scripts/check_report_quality_artifacts.py`로 운영 API 기준 ready count, summary/export count·tenant 일치, unique artifact ID와 export JSONL을 한 번 더 검증한다. 성공 결과의 `output_written=true`와 `output_sha256`을 확인한다.
 14. `scripts/summarize_report_quality_artifacts.py`로 batch manifest와 markdown summary를 만든다. `duplicate_artifact_ids`와 `mixed_tenants_present` blocker가 없어야 한다.
 15. 최소 30~50개까지 쌓인 뒤에만 small SFT experiment로 넘어간다.

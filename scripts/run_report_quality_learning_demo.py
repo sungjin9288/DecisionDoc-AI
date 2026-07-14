@@ -10,7 +10,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -28,7 +28,9 @@ from app.services.report_quality_learning import (  # noqa: E402
 
 
 SCHEMA_VERSION = "decisiondoc.report_quality_learning_demo.v1"
-DEFAULT_RECEIPT_PATH = Path("/tmp/decisiondoc-report-quality-learning-demo.json")
+DEFAULT_RECEIPT_PATH = (
+    Path(tempfile.gettempdir()) / "decisiondoc-report-quality-learning-demo.json"
+)
 EXCLUDED_EXTERNAL_ACTIONS = (
     "provider_api_execution",
     "aws_runtime_execution",
@@ -44,11 +46,11 @@ class DemoError(RuntimeError):
     """Raised when a local demo stage does not satisfy its contract."""
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f"{path.name}.tmp.{uuid4().hex}")
     with temporary_path.open("w", encoding="utf-8") as handle:
@@ -60,7 +62,7 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 
 @contextmanager
-def _local_demo_environment(data_dir: Path) -> Iterator[None]:
+def local_demo_environment(data_dir: Path) -> Iterator[None]:
     overrides = {
         "DECISIONDOC_PROVIDER": "mock",
         "DECISIONDOC_PROVIDER_GENERATION": "mock",
@@ -73,12 +75,18 @@ def _local_demo_environment(data_dir: Path) -> Iterator[None]:
         "DECISIONDOC_MAINTENANCE": "0",
     }
     with patch.dict(os.environ, overrides, clear=False):
-        os.environ.pop("DECISIONDOC_API_KEY", None)
-        os.environ.pop("DECISIONDOC_API_KEYS", None)
+        for key in (
+            "DECISIONDOC_API_KEY",
+            "DECISIONDOC_API_KEYS",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "ANTHROPIC_API_KEY",
+        ):
+            os.environ.pop(key, None)
         yield
 
 
-def _request_json(
+def request_json(
     client: TestClient,
     method: str,
     path: str,
@@ -139,17 +147,17 @@ def _quality_correction_payload() -> dict[str, Any]:
 
 
 def _approve_workflow(client: TestClient, workflow_id: str) -> tuple[str, int]:
-    planning = _request_json(client, "POST", f"/report-workflows/{workflow_id}/planning/generate")
+    planning = request_json(client, "POST", f"/report-workflows/{workflow_id}/planning/generate")
     if planning.get("status") != "planning_draft":
         raise DemoError("planning generation did not produce planning_draft")
 
-    _request_json(
+    request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/planning/approve",
         payload={"username": "demo-pm", "comment": "로컬 데모 기획 승인"},
     )
-    slides = _request_json(
+    slides = request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/slides/generate",
@@ -163,26 +171,26 @@ def _approve_workflow(client: TestClient, workflow_id: str) -> tuple[str, int]:
         slide_id = slide.get("slide_id") if isinstance(slide, dict) else None
         if not isinstance(slide_id, str) or not slide_id:
             raise DemoError("slide generation returned an invalid slide id")
-        _request_json(
+        request_json(
             client,
             "POST",
             f"/report-workflows/{workflow_id}/slides/{slide_id}/approve",
             payload={"username": "demo-pm", "comment": "로컬 데모 장표 승인"},
         )
 
-    _request_json(
+    request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/final/submit",
         payload={"username": "demo-owner", "comment": "최종 검토 요청"},
     )
-    _request_json(
+    request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/final/pm-approve",
         payload={"username": "demo-pm", "comment": "PM 승인"},
     )
-    approved = _request_json(
+    approved = request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/final/executive-approve",
@@ -194,13 +202,18 @@ def _approve_workflow(client: TestClient, workflow_id: str) -> tuple[str, int]:
     return status, len(slide_items)
 
 
-def _run_api_flow(client: TestClient) -> dict[str, Any]:
-    created = _request_json(
+def create_ready_report_quality_artifact(
+    client: TestClient,
+    *,
+    title: str,
+) -> dict[str, Any]:
+    """Create one mock-backed workflow and persist its reviewed correction artifact."""
+    created = request_json(
         client,
         "POST",
         "/report-workflows",
         payload={
-            "title": "Report quality learning local demo",
+            "title": title,
             "goal": "승인된 보고서와 사람 교정 근거를 학습 후보 artifact로 연결한다.",
             "client": "DecisionDoc local demo",
             "audience": "PM, executive approver",
@@ -217,7 +230,7 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
 
     workflow_status, slide_count = _approve_workflow(client, workflow_id)
     correction_payload = _quality_correction_payload()
-    preview = _request_json(
+    preview = request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/learning/correction-artifact/preview",
@@ -231,7 +244,7 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
         raise DemoError("correction artifact preview returned no content fingerprint")
     correction_payload["preview_fingerprint"] = preview_fingerprint
 
-    saved = _request_json(
+    saved = request_json(
         client,
         "POST",
         f"/report-workflows/{workflow_id}/learning/correction-artifact",
@@ -244,45 +257,86 @@ def _run_api_flow(client: TestClient) -> dict[str, Any]:
     if saved.get("artifact") != preview.get("artifact"):
         raise DemoError("saved correction artifact differs from the reviewed preview")
 
-    summary = _request_json(
-        client,
-        "GET",
-        "/report-workflows/learning/correction-artifacts?ready_only=true&limit=10",
-    )
-    if summary.get("ready_artifacts") != 1 or summary.get("returned") != 1:
-        raise DemoError("ready artifact summary did not return the saved correction artifact")
-
-    exported = client.get("/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=10")
-    if exported.status_code != 200:
-        raise DemoError(f"correction artifact export returned HTTP {exported.status_code}: {exported.text}")
-    artifacts = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
-    if len(artifacts) != 1 or not isinstance(artifacts[0], dict):
-        raise DemoError("correction artifact export did not contain exactly one JSONL record")
-
-    validation = validate_correction_artifact(artifacts[0])
+    validation = validate_correction_artifact(saved["artifact"])
     if validation.get("ok") is not True or validation.get("ready_for_learning") is not True:
-        raise DemoError(f"exported correction artifact failed validation: {validation.get('errors', [])}")
-
-    artifact_id = saved.get("artifact", {}).get("artifact_id")
-    if artifact_id != artifacts[0].get("artifact_id"):
-        raise DemoError("saved and exported artifact ids do not match")
+        raise DemoError(
+            f"saved correction artifact failed validation: {validation.get('errors', [])}"
+        )
 
     return {
         "workflow_id": workflow_id,
         "workflow_status": workflow_status,
         "slide_count": slide_count,
-        "artifact_id": artifact_id,
+        "artifact_id": saved["artifact"]["artifact_id"],
         "artifact_schema_version": validation.get("schema_version"),
         "preview_fingerprint": preview_fingerprint,
+    }
+
+
+def validate_ready_report_quality_export(
+    client: TestClient,
+    *,
+    expected_artifact_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Re-read and validate the current ready artifact pool through the public API."""
+    expected_ids = list(expected_artifact_ids)
+    summary = request_json(
+        client,
+        "GET",
+        "/report-workflows/learning/correction-artifacts?ready_only=true&limit=10",
+    )
+    if (
+        summary.get("ready_artifacts") != len(expected_ids)
+        or summary.get("returned") != len(expected_ids)
+    ):
+        raise DemoError("ready artifact summary did not return the expected artifacts")
+
+    exported = client.get("/report-workflows/learning/correction-artifacts/export?ready_only=true&limit=10")
+    if exported.status_code != 200:
+        raise DemoError(f"correction artifact export returned HTTP {exported.status_code}: {exported.text}")
+    artifacts = [json.loads(line) for line in exported.text.splitlines() if line.strip()]
+    if len(artifacts) != len(expected_ids) or any(
+        not isinstance(artifact, dict) for artifact in artifacts
+    ):
+        raise DemoError("correction artifact export did not contain the expected JSONL records")
+
+    validations = [validate_correction_artifact(artifact) for artifact in artifacts]
+    failed = [
+        validation.get("errors", [])
+        for validation in validations
+        if validation.get("ok") is not True
+        or validation.get("ready_for_learning") is not True
+    ]
+    if failed:
+        raise DemoError(f"exported correction artifacts failed validation: {failed}")
+
+    exported_ids = [str(artifact.get("artifact_id") or "") for artifact in artifacts]
+    if set(exported_ids) != set(expected_ids):
+        raise DemoError("saved and exported artifact ids do not match")
+
+    return {
         "ready_artifact_count": summary.get("ready_artifacts"),
         "exported_record_count": len(artifacts),
+        "artifacts": artifacts,
     }
+
+
+def _run_api_flow(client: TestClient) -> dict[str, Any]:
+    artifact = create_ready_report_quality_artifact(
+        client,
+        title="Report quality learning local demo",
+    )
+    export = validate_ready_report_quality_export(
+        client,
+        expected_artifact_ids=[artifact["artifact_id"]],
+    )
+    return {**artifact, **export}
 
 
 def run_demo() -> dict[str, Any]:
     """Run the complete local flow and return a compact evidence receipt."""
     with tempfile.TemporaryDirectory(prefix="decisiondoc-report-quality-demo-") as temporary_dir:
-        with _local_demo_environment(Path(temporary_dir)):
+        with local_demo_environment(Path(temporary_dir)):
             from app.main import create_app
 
             with TestClient(create_app()) as client:
@@ -291,7 +345,7 @@ def run_demo() -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "passed",
-        "generated_at": _now_iso(),
+        "generated_at": now_iso(),
         "execution_mode": {
             "provider": "mock",
             "storage": "temporary_local",
@@ -343,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
     try:
         receipt = run_demo()
-        _write_json_atomic(args.output, receipt)
+        write_json_atomic(args.output, receipt)
     except Exception as exc:
         failure = {
             "schema_version": SCHEMA_VERSION,
