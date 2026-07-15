@@ -278,7 +278,12 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
     assert created is True
     assert repeated_created is False
     assert repeated == pending
-    assert store.read_packet(pending) == packet_content
+    assert store.read_packet(
+        pending,
+        tenant_id="alpha",
+        project_id="proj-1",
+        packet_sha256=packet_sha256,
+    ) == packet_content
 
     completed_receipt = {
         **pending_receipt,
@@ -288,6 +293,9 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
     }
     reviewed_package = b"verified reviewed package"
     completed = store.complete(
+        tenant_id="alpha",
+        project_id="proj-1",
+        packet_sha256=packet_sha256,
         current=pending,
         completed_receipt=completed_receipt,
         reviewed_package_content=reviewed_package,
@@ -295,7 +303,12 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
 
     assert completed.review_status == "completed"
     assert completed.decision == "accepted"
-    assert store.read_reviewed_package(completed) == reviewed_package
+    assert store.read_reviewed_package(
+        completed,
+        tenant_id="alpha",
+        project_id="proj-1",
+        packet_sha256=packet_sha256,
+    ) == reviewed_package
     assert (
         "unit-bucket",
         f"decisiondoc-ai/state/tenants/alpha/procurement_reviews/proj-1/{packet_sha256}/record.json",

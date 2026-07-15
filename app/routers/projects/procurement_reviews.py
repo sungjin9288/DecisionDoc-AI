@@ -318,7 +318,12 @@ def complete_project_procurement_review_endpoint(
         )
 
     try:
-        packet_content = review_store.read_packet(review_record)
+        packet_content = review_store.read_packet(
+            review_record,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+        )
         validate_procurement_review_receipt(review_record.receipt, packet_content)
         current_packet = build_project_procurement_review_packet(
             decision_record,
@@ -353,6 +358,9 @@ def complete_project_procurement_review_endpoint(
         )
         verification = verify_procurement_reviewed_package(reviewed_package)
         completed_record = review_store.complete(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
             current=review_record,
             completed_receipt=completed_receipt,
             reviewed_package_content=reviewed_package,
@@ -444,7 +452,12 @@ def download_project_procurement_reviewed_package_endpoint(
         )
 
     try:
-        reviewed_package = review_store.read_reviewed_package(review_record)
+        reviewed_package = review_store.read_reviewed_package(
+            review_record,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+        )
         verification = verify_procurement_reviewed_package(reviewed_package)
     except (KeyError, ValueError) as exc:
         request.state.error_code = "procurement_reviewed_package_invalid"

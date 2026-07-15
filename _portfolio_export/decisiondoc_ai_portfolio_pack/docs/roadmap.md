@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `9ef73b6` 기준 GitHub Actions CI `29455002429` success, CD `29455002433` success. CI는 `3136 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `558b8ed` 기준 GitHub Actions CI `29456452543` success, CD `29456452580` success. CI는 `3146 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3145 passed, 2 skipped, 4 deselected
+# 2026-07-16 실측: 3171 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -95,6 +95,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-16 `UsageStore`를 생성 시점 tenant에 결속하고 월별 조회·일별 집계·한도 검사 API의 중복 tenant 인자를 제거했다. Generation usage event는 store tenant와 일치할 때만 기록하고, tenant path 안의 explicit foreign JSONL event와 summary drift는 과금·한도 집계에서 제외하며 summary 충돌 시 원본을 바꾸지 않고 중단한다. 독립 store 인스턴스는 usage path별 shared lock을 사용하고 append-only event는 flush·fsync, 재계산 가능한 monthly summary는 atomic replace로 저장한다. H27 회귀는 unsafe tenant의 경로 생성 전 거부, foreign event·summary 보존, 20개 독립 인스턴스의 동시 기록, production caller의 tenant 명시를 mock/local로 검증하며 Stripe 결제, provider API, AWS runtime은 실행하지 않았다.
   - 2026-07-16 G2B `BookmarkStore`를 생성 시점의 required tenant에 결속하고 route가 인증된 tenant/user resolver를 사용하도록 통일했다. Bookmark는 내부 owner metadata를 저장하되 API 응답에서는 숨기며, tenant path 안의 explicit foreign drift는 조회·중복 판단·삭제 대상에서 제외하고 원본을 보존한다. 같은 tenant path를 쓰는 독립 store 인스턴스는 path별 shared lock으로 read-modify-write를 직렬화한다. H28 회귀는 unsafe tenant의 경로 생성 전 거부, forged owner 덮어쓰기, user/API 격리, local/S3 재로드, 20개 독립 인스턴스의 동시 추가와 production caller의 tenant 명시를 no-cost local/fake backend로 검증하며 G2B live API, provider API, AWS runtime은 실행하지 않았다.
   - 2026-07-16 root-scoped `DecisionCouncilStore`의 read/write가 검증된 caller tenant를 명시하도록 고정하고, write 시 session tenant·canonical project/use-case/bundle key와 procurement record의 tenant/project scope를 다시 대조한다. Tenant path 안의 explicit foreign·malformed record는 조회·갱신에서 제외하고 원본을 보존하며, 동일 scope의 owned duplicate와 invalid top-level state document는 덮어쓰지 않고 중단한다. 독립 store 인스턴스는 tenant file별 shared lock으로 read-modify-write를 직렬화한다. H29 회귀는 unsafe tenant의 경로 생성 전 거부, local/S3 재로드, 20개 독립 인스턴스의 동시 session 저장, API 연계와 production write caller의 tenant 명시를 no-cost local/fake backend로 검증하며 G2B live API, provider API, AWS runtime은 실행하지 않았다.
+  - 2026-07-16 root-scoped `ProcurementReviewStore`의 packet/package read와 one-time completion을 caller tenant·project·packet SHA-256에 명시적으로 결속했다. Persisted record identity가 path scope와 다르거나 record가 malformed인 경우 direct lookup은 중단하고 tenant/project 목록에서는 원본을 보존한 채 제외한다. Project prefix는 canonical `{packet_sha256}/record.json`만 수용하며 중첩 alias를 노출하지 않는다. 같은 review path를 쓰는 독립 store 인스턴스는 process-local shared lock으로 idempotent prepare와 completion을 직렬화해 동시 completion 중 하나만 성공한다. H30 회귀는 unsafe tenant/project, forged record artifact access, tenant/project/hash drift, malformed record, local/fake-S3 재로드, concurrent prepare/completion과 production caller scope를 no-cost로 검증하며 distributed S3 CAS, provider API, G2B live API, AWS runtime, bid submission은 실행하지 않았다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

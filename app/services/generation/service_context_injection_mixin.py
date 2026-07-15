@@ -247,7 +247,12 @@ class GenerationContextInjectionMixin:
         valid_review_found = False
         for review in completed_reviews:
             try:
-                packet_content = self._procurement_review_store.read_packet(review)
+                packet_content = self._procurement_review_store.read_packet(
+                    review,
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    packet_sha256=review.packet_sha256,
+                )
                 verify_procurement_review_packet(packet_content)
                 with zipfile.ZipFile(io.BytesIO(packet_content)) as archive:
                     packet_manifest = json.loads(archive.read(PACKET_MANIFEST_NAME))

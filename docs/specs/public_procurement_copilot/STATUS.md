@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone procurement review evidence ownership hardening
+
+- Root-scoped `ProcurementReviewStore`의 packet read, reviewed-package read, one-time completion은 caller tenant, project, packet SHA-256을 모두 필수로 받고 persisted record와 exact match를 다시 확인한다.
+- Record의 tenant, project, packet SHA-256이 canonical storage path와 다르거나 JSON이 malformed이면 direct lookup은 fail closed로 중단한다. Tenant/project 목록은 해당 drift를 노출하지 않으며 원본 파일은 변경하지 않는다. Project prefix 안의 nested path alias도 canonical record로 중복 해석하지 않는다.
+- 같은 review path를 쓰는 독립 store 인스턴스는 process-local shared lock으로 idempotent prepare와 completion을 직렬화한다. 20-way concurrent prepare는 한 record만 만들고, 20-way concurrent completion은 한 package만 완료 증빙으로 확정한다. 이 경계는 distributed S3 compare-and-swap을 주장하지 않는다.
+- Local/fake-S3 persistence, project review completion/download API, generation handoff, audit/observability와 production caller AST contract를 no-cost regression으로 검증한다.
+- Full no-cost regression은 `3171 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone Decision Council tenant ownership hardening
 
 - Root-scoped `DecisionCouncilStore`의 read/write는 검증된 caller tenant를 필수로 받고, write는 session tenant와 canonical project/use-case/bundle key를 다시 확인한다.

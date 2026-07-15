@@ -2907,6 +2907,73 @@ def test_production_decision_council_writes_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_procurement_review_store_contract_requires_explicit_resource_scope():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "storage" / "procurement_review_store.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    store = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ProcurementReviewStore"
+    )
+    required_scope = {
+        "prepare": {"tenant_id", "project_id"},
+        "get": {"tenant_id", "project_id", "packet_sha256"},
+        "list_by_project": {"tenant_id", "project_id"},
+        "list_by_tenant": {"tenant_id"},
+        "read_packet": {"tenant_id", "project_id", "packet_sha256"},
+        "complete": {"tenant_id", "project_id", "packet_sha256"},
+        "read_reviewed_package": {"tenant_id", "project_id", "packet_sha256"},
+    }
+    methods = {
+        node.name: node
+        for node in store.body
+        if isinstance(node, ast.FunctionDef) and node.name in required_scope
+    }
+    assert set(methods) == set(required_scope)
+
+    for method_name, required_names in required_scope.items():
+        method = methods[method_name]
+        keyword_names = [argument.arg for argument in method.args.kwonlyargs]
+        for required_name in required_names:
+            required_index = keyword_names.index(required_name)
+            assert method.args.kw_defaults[required_index] is None
+
+
+def test_production_procurement_review_artifact_calls_bind_resource_scope():
+    root = Path(__file__).resolve().parents[1]
+    paths = (
+        root / "app" / "storage" / "procurement_review_store.py",
+        root / "app" / "routers" / "projects" / "procurement_reviews.py",
+        root / "app" / "services" / "generation" / "service_context_injection_mixin.py",
+    )
+    artifact_methods = {"read_packet", "complete", "read_reviewed_package"}
+    required_keywords = {"tenant_id", "project_id", "packet_sha256"}
+    discovered: dict[str, int] = {method: 0 for method in artifact_methods}
+    incomplete_calls: list[str] = []
+
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            method_name = node.func.attr
+            if method_name not in artifact_methods:
+                continue
+            discovered[method_name] += 1
+            keyword_names = {keyword.arg for keyword in node.keywords}
+            if not required_keywords.issubset(keyword_names):
+                relative_path = path.relative_to(root).as_posix()
+                incomplete_calls.append(f"{relative_path}:{node.lineno}:{method_name}")
+
+    assert discovered == {
+        "read_packet": 3,
+        "complete": 1,
+        "read_reviewed_package": 1,
+    }
+    assert incomplete_calls == []
+
+
 def test_trajectory_store_contract_requires_explicit_tenant_binding():
     root = Path(__file__).resolve().parents[1]
     expected_methods = {
