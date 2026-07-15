@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone tenant registry integrity hardening
+
+- Root-scoped `TenantStore`는 모든 public tenant ID를 공통 validator로 확인하고 registry key와 persisted `tenant_id`가 정확히 일치하는 record만 tenant 조회, 목록, custom hint, API-key 인증, 변경 대상으로 사용한다. Admin 생성은 leading/trailing whitespace와 path-like ID를 422로 거부하고 middleware도 unsafe header를 tenant scope로 채택하지 않는다.
+- Explicit foreign·malformed record는 원본 registry에 남기되 읽기와 쓰기에서 제외한다. Invalid top-level JSON, non-object document, duplicate JSON key는 더 이상 빈 registry로 간주하지 않으며 이후 create/update가 기존 바이트를 덮어쓰지 못한다.
+- 같은 registry path를 쓰는 독립 store 인스턴스는 process-local shared reentrant lock으로 create, update, key rotation, custom hint와 system bootstrap을 직렬화한다. 20-way distinct create는 모든 tenant를 보존하고 duplicate create는 하나만 성공하며 concurrent system bootstrap은 하나의 canonical record를 공유한다.
+- Per-tenant API key는 constant-time hash comparison을 사용하고 둘 이상의 active tenant에 같은 hash가 있으면 어느 tenant에도 인증하지 않는다. Local/fake-S3 forged identity, admin/middleware/auth/generation/infrastructure 회귀를 no-cost로 검증했으며 distributed S3 compare-and-swap을 주장하지 않는다.
+- Full no-cost regression은 `3197 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone procurement review evidence ownership hardening
 
 - Root-scoped `ProcurementReviewStore`의 packet read, reviewed-package read, one-time completion은 caller tenant, project, packet SHA-256을 모두 필수로 받고 persisted record와 exact match를 다시 확인한다.

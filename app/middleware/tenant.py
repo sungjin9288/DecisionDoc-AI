@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.tenant import SYSTEM_TENANT_ID
+from app.tenant import SYSTEM_TENANT_ID, require_tenant_id
 
 _log = logging.getLogger("decisiondoc.middleware.tenant")
 
@@ -58,7 +58,12 @@ def install_tenant_middleware(app: FastAPI, tenant_store: Any) -> None:
 
         # Step 2: Validate the resolved tenant exists and is active.
         if tenant_id != SYSTEM_TENANT_ID:
-            tenant = tenant_store.get_tenant(tenant_id)
+            try:
+                tenant_id = require_tenant_id(tenant_id)
+            except ValueError:
+                tenant = None
+            else:
+                tenant = tenant_store.get_tenant(tenant_id)
             if not tenant or not tenant.is_active:
                 _log.warning("Rejected request for unknown/inactive tenant: %s", tenant_id)
                 return JSONResponse(

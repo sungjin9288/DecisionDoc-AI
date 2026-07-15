@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.api_key import require_api_key
 from app.dependencies import require_admin
+from app.storage.tenant_store import TenantRegistryError
+from app.tenant import require_tenant_id
 
 router = APIRouter()
 
@@ -24,10 +26,15 @@ def admin_create_tenant(payload: dict, request: Request) -> dict:
     """Create a new tenant. Accepts admin JWT or OPS key."""
     require_admin(request)
     tenant_store = request.app.state.tenant_store
-    tenant_id_val = payload.get("tenant_id", "").strip()
-    display_name_val = payload.get("display_name", "").strip()
-    if not tenant_id_val or not display_name_val:
+    tenant_id_val = payload.get("tenant_id", "")
+    display_name_val = payload.get("display_name", "")
+    if not isinstance(display_name_val, str) or not display_name_val.strip():
         raise HTTPException(status_code=422, detail="tenant_id and display_name are required.")
+    display_name_val = display_name_val.strip()
+    try:
+        tenant_id_val = require_tenant_id(tenant_id_val)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     allowed = payload.get("allowed_bundles") or []
     try:
         tenant = tenant_store.create_tenant(
@@ -35,6 +42,8 @@ def admin_create_tenant(payload: dict, request: Request) -> dict:
             display_name=display_name_val,
             allowed_bundles=allowed,
         )
+    except TenantRegistryError:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return dataclasses.asdict(tenant)
@@ -149,4 +158,3 @@ def admin_rotate_tenant_key(tenant_id_path: str, request: Request) -> dict:
         "api_key": key,
         "note": "이 키는 지금만 표시됩니다. 안전한 곳에 저장하세요.",
     }
-

@@ -285,6 +285,14 @@ def test_middleware_inactive_tenant_returns_403(tmp_path: Path, monkeypatch) -> 
     assert resp.status_code == 403
 
 
+def test_middleware_unsafe_tenant_header_returns_403(tmp_path: Path, monkeypatch) -> None:
+    client = _make_client(tmp_path, monkeypatch)
+
+    resp = client.get("/health", headers={"X-Tenant-ID": " tenant-a"})
+
+    assert resp.status_code == 403
+
+
 # ─── 13-14: Bundle filtering + access enforcement ─────────────────────────────
 
 def test_bundles_filtered_by_allowed_bundles(tmp_path: Path, monkeypatch) -> None:
@@ -354,6 +362,27 @@ def test_admin_create_tenant(tmp_path: Path, monkeypatch) -> None:
     assert data["tenant_id"] == "new-corp"
     assert data["display_name"] == "New Corp"
     assert data["is_active"] is True
+
+
+@pytest.mark.parametrize("tenant_id", [" tenant-a", "tenant-a ", ".", "..", "tenant/a", "tenant\\a"])
+def test_admin_create_tenant_rejects_unsafe_id(
+    tmp_path: Path,
+    monkeypatch,
+    tenant_id: str,
+) -> None:
+    client = _make_client(tmp_path, monkeypatch)
+
+    resp = client.post(
+        "/admin/tenants",
+        json={"tenant_id": tenant_id, "display_name": "Unsafe"},
+        headers=_ops_headers(),
+    )
+
+    assert resp.status_code == 422
+    assert all(
+        tenant["display_name"] != "Unsafe"
+        for tenant in client.get("/admin/tenants", headers=_ops_headers()).json()
+    )
 
 
 def test_admin_create_tenant_with_admin_jwt(tmp_path: Path, monkeypatch) -> None:

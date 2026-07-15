@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from app.schemas import (
     NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
@@ -89,6 +91,26 @@ def test_tenant_store_persists_to_s3_state_backend():
     reloaded = TenantStore(Path("/virtual/data"), backend=backend).get_tenant("alpha")
     assert reloaded is not None
     assert reloaded.display_name == "Alpha Team"
+
+
+def test_tenant_store_rejects_forged_s3_record_identity():
+    backend, client = _backend()
+    store = TenantStore(Path("/virtual/data"), backend=backend)
+    store.create_tenant("alpha", "Alpha Team")
+    api_key = store.rotate_api_key("alpha")
+    key = ("unit-bucket", "decisiondoc-ai/state/tenants.json")
+    payload = json.loads(client.objects[key])
+    payload["alpha"]["tenant_id"] = "beta"
+    client.objects[key] = json.dumps(payload).encode()
+    forged_bytes = client.objects[key]
+
+    reloaded = TenantStore(Path("/virtual/data"), backend=backend)
+    assert reloaded.get_tenant("alpha") is None
+    assert reloaded.list_tenants() == []
+    assert reloaded.find_tenant_by_api_key(api_key) is None
+    with pytest.raises(ValueError, match="ownership mismatch"):
+        reloaded.update_tenant("alpha", display_name="Overwritten")
+    assert client.objects[key] == forged_bytes
 
 
 def test_user_store_persists_to_s3_state_backend():
