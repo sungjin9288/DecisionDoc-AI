@@ -119,7 +119,7 @@ class TestApprovalStoreCreate:
         rec = _create_rec(store)
         # fresh store, same dir
         store2 = _store(tmp_path)
-        rec2 = store2.get(rec.approval_id)
+        rec2 = store2.get(rec.approval_id, tenant_id="t1")
         assert rec2 is not None
         assert rec2.title == rec.title
 
@@ -132,12 +132,12 @@ class TestApprovalStoreRead:
     def test_get_existing(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        got = store.get(rec.approval_id)
+        got = store.get(rec.approval_id, tenant_id="t1")
         assert got is not None
         assert got.approval_id == rec.approval_id
 
     def test_get_nonexistent_returns_none(self, tmp_path):
-        assert _store(tmp_path).get("nonexistent-id") is None
+        assert _store(tmp_path).get("nonexistent-id", tenant_id="t1") is None
 
     def test_list_by_tenant_returns_all(self, tmp_path):
         store = _store(tmp_path)
@@ -154,7 +154,7 @@ class TestApprovalStoreRead:
     def test_list_by_tenant_status_filter(self, tmp_path):
         store = _store(tmp_path)
         r1 = _create_rec(store)
-        store.submit_for_review(r1.approval_id, reviewer="검토자")
+        store.submit_for_review(r1.approval_id, tenant_id="t1", reviewer="검토자")
         _create_rec(store)  # stays draft
         in_review = store.list_by_tenant("t1", status="in_review")
         assert len(in_review) == 1
@@ -184,124 +184,125 @@ class TestValidTransitions:
     def test_draft_to_in_review(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        updated = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        updated = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert updated.status == ApprovalStatus.IN_REVIEW.value
 
     def test_submit_sets_reviewer(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        updated = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        updated = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert updated.reviewer == "검토자A"
 
     def test_submit_sets_submitted_at(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        updated = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        updated = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert updated.submitted_at is not None
 
     def test_in_review_to_changes_requested(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.request_changes(rec.approval_id, author="검토자A", comment="수정 필요")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="수정 필요")
         assert updated.status == ApprovalStatus.CHANGES_REQUESTED.value
 
     def test_request_changes_adds_comment(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.request_changes(rec.approval_id, author="검토자A", comment="수정 필요")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="수정 필요")
         assert len(updated.comments) == 1
         assert updated.comments[0].is_change_request is True
 
     def test_changes_requested_to_in_review_again(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.request_changes(rec.approval_id, author="검토자A", comment="수정 필요")
-        updated = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="수정 필요")
+        updated = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert updated.status == ApprovalStatus.IN_REVIEW.value
 
     def test_resubmit_resets_reviewer_approved(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.approve_review(rec.approval_id, author="검토자A")
-        store.request_changes(rec.approval_id, author="검토자A", comment="재수정")
-        updated = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
+        store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="재수정")
+        updated = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert updated.reviewer_approved is False
 
     def test_approve_review_sets_flag(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.approve_review(rec.approval_id, author="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
         assert updated.reviewer_approved is True
 
     def test_approve_review_status_stays_in_review(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.approve_review(rec.approval_id, author="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
         assert updated.status == ApprovalStatus.IN_REVIEW.value
 
     def test_approve_review_sets_reviewed_at(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.approve_review(rec.approval_id, author="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
         assert updated.reviewed_at is not None
 
     def test_approve_final_sets_approved(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.approve_review(rec.approval_id, author="검토자A")
-        updated = store.approve_final(rec.approval_id, author="결재자B")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
+        updated = store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
         assert updated.status == ApprovalStatus.APPROVED.value
 
     def test_approve_final_sets_approved_at(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.approve_review(rec.approval_id, author="검토자A")
-        updated = store.approve_final(rec.approval_id, author="결재자B")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
+        updated = store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
         assert updated.approved_at is not None
 
     def test_approve_final_persists_source_fingerprint(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.approve_review(rec.approval_id, author="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
 
         updated = store.approve_final(
             rec.approval_id,
+            tenant_id="t1",
             author="결재자B",
             approved_source_fingerprint="a" * 64,
         )
 
         assert updated.approved_source_fingerprint == "a" * 64
-        assert store.get(rec.approval_id).approved_source_fingerprint == "a" * 64
+        assert store.get(rec.approval_id, tenant_id="t1").approved_source_fingerprint == "a" * 64
 
     def test_reject_from_in_review(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.reject(rec.approval_id, author="결재자B", comment="반려")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="반려")
         assert updated.status == ApprovalStatus.REJECTED.value
 
     def test_reject_sets_rejected_at(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.reject(rec.approval_id, author="결재자B", comment="반려")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="반려")
         assert updated.rejected_at is not None
 
     def test_reject_adds_comment(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        updated = store.reject(rec.approval_id, author="결재자B", comment="사유 있음")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        updated = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="사유 있음")
         assert any(c.content == "사유 있음" for c in updated.comments)
 
 
@@ -313,54 +314,54 @@ class TestInvalidTransitions:
     def test_submit_from_in_review_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.submit_for_review(rec.approval_id, reviewer="검토자A")
+            store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
 
     def test_request_changes_from_draft_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.request_changes(rec.approval_id, author="검토자A", comment="X")
+            store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="X")
 
     def test_approve_final_without_reviewer_approved_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         with pytest.raises(ValueError, match="검토자 승인"):
-            store.approve_final(rec.approval_id, author="결재자B")
+            store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
 
     def test_approve_final_from_draft_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.approve_final(rec.approval_id, author="결재자B")
+            store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
 
     def test_reject_from_draft_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.reject(rec.approval_id, author="결재자B", comment="X")
+            store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="X")
 
     def test_reject_approved_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.approve_review(rec.approval_id, author="검토자A")
-        store.approve_final(rec.approval_id, author="결재자B")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
+        store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.reject(rec.approval_id, author="결재자B", comment="너무 늦음")
+            store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="너무 늦음")
 
     def test_approve_review_from_draft_raises(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
         with pytest.raises(ValueError, match="상태 전환 오류"):
-            store.approve_review(rec.approval_id, author="검토자A")
+            store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
 
     def test_get_nonexistent_raises_key_error(self, tmp_path):
         store = _store(tmp_path)
         with pytest.raises(KeyError):
-            store.submit_for_review("nonexistent", reviewer="X")
+            store.submit_for_review("nonexistent", tenant_id="t1", reviewer="X")
 
 
 # ---------------------------------------------------------------------------
@@ -376,18 +377,18 @@ class TestHappyPathFlow:
         assert rec.status == "draft"
 
         # 2. Submit for review (검토 요청)
-        rec = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        rec = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert rec.status == "in_review"
         assert rec.reviewer == "검토자A"
 
         # 3. Reviewer approves (검토 승인)
-        rec = store.approve_review(rec.approval_id, author="검토자A", comment="검토 완료")
+        rec = store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A", comment="검토 완료")
         assert rec.status == "in_review"  # status unchanged
         assert rec.reviewer_approved is True
         assert len(rec.comments) == 1
 
         # 4. Final approval (최종 결재)
-        rec = store.approve_final(rec.approval_id, author="결재자B", comment="승인합니다")
+        rec = store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B", comment="승인합니다")
         assert rec.status == "approved"
         assert rec.approved_at is not None
         assert len(rec.comments) == 2  # reviewer + approver comments
@@ -397,13 +398,13 @@ class TestHappyPathFlow:
         rec = _create_rec(store)
         assert rec.created_at is not None
 
-        rec = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        rec = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert rec.submitted_at is not None
 
-        rec = store.approve_review(rec.approval_id, author="검토자A")
+        rec = store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
         assert rec.reviewed_at is not None
 
-        rec = store.approve_final(rec.approval_id, author="결재자B")
+        rec = store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
         assert rec.approved_at is not None
 
 
@@ -415,24 +416,24 @@ class TestRejectionFlow:
     def test_rejection_flow(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        rec = store.reject(rec.approval_id, author="결재자B", comment="재작성 필요")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        rec = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="재작성 필요")
         assert rec.status == "rejected"
         assert rec.rejected_at is not None
 
     def test_rejection_comment_stored(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        rec = store.reject(rec.approval_id, author="결재자B", comment="재작성 필요")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        rec = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="재작성 필요")
         assert rec.comments[0].content == "재작성 필요"
         assert rec.comments[0].author == "결재자B"
 
     def test_rejection_comment_stage_is_approval(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        rec = store.reject(rec.approval_id, author="결재자B", comment="X")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        rec = store.reject(rec.approval_id, tenant_id="t1", author="결재자B", comment="X")
         assert rec.comments[0].stage == "approval"
 
 
@@ -446,26 +447,26 @@ class TestChangeRequestFlow:
         rec = _create_rec(store)
 
         # 1. Submit
-        rec = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        rec = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert rec.status == "in_review"
 
         # 2. Request changes
-        rec = store.request_changes(rec.approval_id, author="검토자A", comment="3절 보완")
+        rec = store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="3절 보완")
         assert rec.status == "changes_requested"
         assert rec.reviewer_approved is False
 
         # 3. Update docs
         new_docs = [{"doc_type": "report", "markdown": "# 수정된 보고서\n내용"}]
-        rec = store.update_docs(rec.approval_id, new_docs)
+        rec = store.update_docs(rec.approval_id, new_docs, tenant_id="t1")
         assert json.loads(rec.current_docs) == new_docs
 
         # 4. Re-submit
-        rec = store.submit_for_review(rec.approval_id, reviewer="검토자A")
+        rec = store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
         assert rec.status == "in_review"
 
         # 5. Reviewer approves → final approve
-        store.approve_review(rec.approval_id, author="검토자A")
-        rec = store.approve_final(rec.approval_id, author="결재자B")
+        store.approve_review(rec.approval_id, tenant_id="t1", author="검토자A")
+        rec = store.approve_final(rec.approval_id, tenant_id="t1", author="결재자B")
         assert rec.status == "approved"
 
     def test_doc_snapshot_immutable_after_update(self, tmp_path):
@@ -474,10 +475,10 @@ class TestChangeRequestFlow:
         rec = _create_rec(store)
         original_snapshot = rec.doc_snapshot
 
-        store.submit_for_review(rec.approval_id, reviewer="검토자A")
-        store.request_changes(rec.approval_id, author="검토자A", comment="X")
+        store.submit_for_review(rec.approval_id, tenant_id="t1", reviewer="검토자A")
+        store.request_changes(rec.approval_id, tenant_id="t1", author="검토자A", comment="X")
         new_docs = [{"doc_type": "report", "markdown": "# 새 내용"}]
-        rec = store.update_docs(rec.approval_id, new_docs)
+        rec = store.update_docs(rec.approval_id, new_docs, tenant_id="t1")
 
         # current_docs updated, snapshot unchanged
         assert rec.current_docs != original_snapshot
@@ -493,29 +494,29 @@ class TestUpdateDocsAndComments:
         store = _store(tmp_path)
         rec = _create_rec(store)
         new_docs = [{"doc_type": "x", "markdown": "새 내용"}]
-        updated = store.update_docs(rec.approval_id, new_docs)
+        updated = store.update_docs(rec.approval_id, new_docs, tenant_id="t1")
         assert json.loads(updated.current_docs) == new_docs
 
     def test_update_docs_does_not_change_snapshot(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
         snapshot_before = rec.doc_snapshot
-        store.update_docs(rec.approval_id, [{"doc_type": "x", "markdown": "X"}])
-        rec2 = store.get(rec.approval_id)
+        store.update_docs(rec.approval_id, [{"doc_type": "x", "markdown": "X"}], tenant_id="t1")
+        rec2 = store.get(rec.approval_id, tenant_id="t1")
         assert rec2.doc_snapshot == snapshot_before
 
     def test_add_comment_increases_count(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.add_comment(rec.approval_id, author="검토자A", content="좋습니다", stage="review")
-        rec2 = store.get(rec.approval_id)
+        store.add_comment(rec.approval_id, tenant_id="t1", author="검토자A", content="좋습니다", stage="review")
+        rec2 = store.get(rec.approval_id, tenant_id="t1")
         assert len(rec2.comments) == 1
 
     def test_add_comment_fields(self, tmp_path):
         store = _store(tmp_path)
         rec = _create_rec(store)
-        store.add_comment(rec.approval_id, author="검토자A", content="의견", stage="review", is_change_request=True)
-        rec2 = store.get(rec.approval_id)
+        store.add_comment(rec.approval_id, tenant_id="t1", author="검토자A", content="의견", stage="review", is_change_request=True)
+        rec2 = store.get(rec.approval_id, tenant_id="t1")
         c = rec2.comments[0]
         assert c.author == "검토자A"
         assert c.content == "의견"
@@ -590,7 +591,11 @@ class TestThreadSafety:
 
         def try_submit():
             try:
-                store.submit_for_review(rec.approval_id, reviewer="검토자")
+                store.submit_for_review(
+                    rec.approval_id,
+                    tenant_id="shared2",
+                    reviewer="검토자",
+                )
                 successes.append(True)
             except ValueError:
                 failures.append(True)
@@ -604,7 +609,7 @@ class TestThreadSafety:
             t.join()
 
         assert len(successes) == 1
-        final = store.get(rec.approval_id)
+        final = store.get(rec.approval_id, tenant_id="shared2")
         assert final.status == "in_review"
 
 

@@ -330,6 +330,7 @@ async def generate_stream(
                     try:
                         project_store.add_document(
                             project_id=payload.project_id,
+                            tenant_id=tenant_id,
                             request_id=request_id,
                             bundle_id=payload.bundle_type,
                             title=payload.title,

@@ -9,8 +9,8 @@ Coverage (25+ tests):
   H1: Stripe webhook wrong signature → ValueError
   H1: Stripe webhook old timestamp → ValueError
   H1: Dev mode without STRIPE_WEBHOOK_SECRET processes event (no raise)
-  H2: ApprovalStore.get() is not tenant-scoped — cross-tenant access returns result
-  H3: ProjectStore.get() is not tenant-scoped — cross-tenant access returns result
+  H2: ApprovalStore.get() requires tenant scope and blocks cross-tenant access
+  H3: ProjectStore.get() requires tenant scope and blocks cross-tenant access
   H7: CORS not wildcard in non-dev environment
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
@@ -269,12 +269,11 @@ def test_stripe_webhook_no_secret_production_raises(monkeypatch):
 
 # ── H2/H3: Cross-tenant data access ──────────────────────────────────────────
 
-def test_approval_store_get_not_tenant_scoped(tmp_path):
-    """ApprovalStore.get() finds records across all tenants (documents the IDOR gap)."""
+def test_approval_store_get_requires_tenant_scope(tmp_path):
+    """Approval lookup fails closed without the owning tenant context."""
     from app.storage.approval_store import ApprovalStore
     store = ApprovalStore(base_dir=str(tmp_path))
 
-    # Create approval in tenant_b
     rec = store.create(
         tenant_id="tenant_b",
         request_id="req-1",
@@ -285,21 +284,20 @@ def test_approval_store_get_not_tenant_scoped(tmp_path):
     )
     approval_id = rec.approval_id
 
-    # store.get() is NOT tenant-scoped — it searches all tenants
-    # This test documents the current behavior (potential IDOR)
-    result = store.get(approval_id)
-    assert result is not None, (
-        "ApprovalStore.get() should find the record (it searches across all tenants)"
-    )
+    with pytest.raises(TypeError, match="tenant_id"):
+        store.get(approval_id)  # type: ignore[call-arg]
+
+    assert store.get(approval_id, tenant_id="tenant_a") is None
+    result = store.get(approval_id, tenant_id="tenant_b")
+    assert result is not None
     assert result.tenant_id == "tenant_b"
 
 
-def test_project_store_get_not_tenant_scoped(tmp_path):
-    """ProjectStore.get() finds records across all tenants (documents the IDOR gap)."""
+def test_project_store_get_requires_tenant_scope(tmp_path):
+    """Project lookup fails closed without the owning tenant context."""
     from app.storage.project_store import ProjectStore
     store = ProjectStore(base_dir=str(tmp_path))
 
-    # Create project in tenant_b
     proj = store.create(
         tenant_id="tenant_b",
         name="Test Project",
@@ -307,11 +305,12 @@ def test_project_store_get_not_tenant_scoped(tmp_path):
     )
     project_id = proj.project_id
 
-    # store.get() is NOT tenant-scoped — it searches all tenants
-    result = store.get(project_id)
-    assert result is not None, (
-        "ProjectStore.get() should find the record (it searches across all tenants)"
-    )
+    with pytest.raises(TypeError, match="tenant_id"):
+        store.get(project_id)  # type: ignore[call-arg]
+
+    assert store.get(project_id, tenant_id="tenant_a") is None
+    result = store.get(project_id, tenant_id="tenant_b")
+    assert result is not None
     assert result.tenant_id == "tenant_b"
 
 

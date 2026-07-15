@@ -174,37 +174,21 @@ class ApprovalStore(BaseJsonStore):
             approved_source_fingerprint=d.get("approved_source_fingerprint", ""),
         )
 
-    def _find(self, approval_id: str, tenant_id: str | None = None) -> tuple[str, list[dict], int, ApprovalRecord] | None:
-        """Locate a record scoped to the given tenant (caller holds lock).
-
-        If tenant_id is provided, only that tenant's records are searched,
-        preventing cross-tenant IDOR. Falls back to full scan only when
-        tenant_id is None (internal maintenance use).
-        """
-        if tenant_id is not None:
-            # Scoped lookup — only search within the specified tenant
-            records = self._load(tenant_id)
-            for i, r in enumerate(records):
-                if r.get("approval_id") == approval_id:
-                    rec = self._from_dict(r)
-                    if rec.tenant_id != tenant_id:
-                        return None  # Mismatch — deny access
-                    return tenant_id, records, i, rec
-            return None
-        # Unscoped fallback (for backward compatibility with internal callers)
-        tenant_paths = self._backend.list_prefix("tenants/")
-        tenant_ids = sorted(
-            {
-                Path(path).parts[1]
-                for path in tenant_paths
-                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
-            }
-        )
-        for tid in tenant_ids:
-            records = self._load(tid)
-            for i, r in enumerate(records):
-                if r.get("approval_id") == approval_id:
-                    return tid, records, i, self._from_dict(r)
+    def _find(
+        self,
+        approval_id: str,
+        *,
+        tenant_id: str,
+    ) -> tuple[str, list[dict], int, ApprovalRecord] | None:
+        """Locate an approval only within the caller's tenant."""
+        records = self._load(tenant_id)
+        for i, raw_record in enumerate(records):
+            if raw_record.get("approval_id") != approval_id:
+                continue
+            record = self._from_dict(raw_record)
+            if record.tenant_id != tenant_id:
+                return None
+            return tenant_id, records, i, record
         return None
 
     def _flush(self, tenant_id: str, records: list[dict], idx: int, rec: ApprovalRecord) -> ApprovalRecord:
@@ -272,7 +256,7 @@ class ApprovalStore(BaseJsonStore):
             self._save(tenant_id, records)
             return rec
 
-    def get(self, approval_id: str, tenant_id: str | None = None) -> ApprovalRecord | None:
+    def get(self, approval_id: str, *, tenant_id: str) -> ApprovalRecord | None:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             return result[3] if result else None
@@ -296,7 +280,13 @@ class ApprovalStore(BaseJsonStore):
             return [r for r in all_recs if getattr(r, attr) == username]
         return all_recs
 
-    def submit_for_review(self, approval_id: str, reviewer: str, tenant_id: str | None = None) -> ApprovalRecord:
+    def submit_for_review(
+        self,
+        approval_id: str,
+        reviewer: str,
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -314,7 +304,14 @@ class ApprovalStore(BaseJsonStore):
             rec.reviewer_approved = False
             return self._flush(tenant_id, records, idx, rec)
 
-    def request_changes(self, approval_id: str, author: str, comment: str, tenant_id: str | None = None) -> ApprovalRecord:
+    def request_changes(
+        self,
+        approval_id: str,
+        author: str,
+        comment: str,
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -333,7 +330,14 @@ class ApprovalStore(BaseJsonStore):
             ))
             return self._flush(tenant_id, records, idx, rec)
 
-    def approve_review(self, approval_id: str, author: str, comment: str = "", tenant_id: str | None = None) -> ApprovalRecord:
+    def approve_review(
+        self,
+        approval_id: str,
+        author: str,
+        comment: str = "",
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -353,7 +357,13 @@ class ApprovalStore(BaseJsonStore):
                 ))
             return self._flush(tenant_id, records, idx, rec)
 
-    def submit_for_approval(self, approval_id: str, approver: str, tenant_id: str | None = None) -> ApprovalRecord:
+    def submit_for_approval(
+        self,
+        approval_id: str,
+        approver: str,
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -367,8 +377,8 @@ class ApprovalStore(BaseJsonStore):
         approval_id: str,
         author: str,
         comment: str = "",
-        tenant_id: str | None = None,
         *,
+        tenant_id: str,
         freshness_acknowledged: bool = False,
         approved_source_fingerprint: str = "",
     ) -> ApprovalRecord:
@@ -400,7 +410,14 @@ class ApprovalStore(BaseJsonStore):
                 ))
             return self._flush(tenant_id, records, idx, rec)
 
-    def reject(self, approval_id: str, author: str, comment: str, tenant_id: str | None = None) -> ApprovalRecord:
+    def reject(
+        self,
+        approval_id: str,
+        author: str,
+        comment: str,
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -419,7 +436,7 @@ class ApprovalStore(BaseJsonStore):
             ))
             return self._flush(tenant_id, records, idx, rec)
 
-    def update(self, approval_id: str, tenant_id: str | None = None, **kwargs: Any) -> ApprovalRecord:
+    def update(self, approval_id: str, *, tenant_id: str, **kwargs: Any) -> ApprovalRecord:
         """Update allowed fields: drafter, reviewer, approver.
 
         Used primarily for cascade operations (e.g., user withdrawal).
@@ -435,7 +452,13 @@ class ApprovalStore(BaseJsonStore):
                     setattr(rec, k, v)
             return self._flush(tid, records, idx, rec)
 
-    def _set_status_direct(self, approval_id: str, status: ApprovalStatus, tenant_id: str | None = None) -> None:
+    def _set_status_direct(
+        self,
+        approval_id: str,
+        status: ApprovalStatus,
+        *,
+        tenant_id: str,
+    ) -> None:
         """Test-only helper — set status bypassing transition guards."""
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
@@ -445,7 +468,13 @@ class ApprovalStore(BaseJsonStore):
             rec.status = status.value
             self._flush(tid, records, idx, rec)
 
-    def update_docs(self, approval_id: str, docs: list[dict], tenant_id: str | None = None) -> ApprovalRecord:
+    def update_docs(
+        self,
+        approval_id: str,
+        docs: list[dict],
+        *,
+        tenant_id: str,
+    ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
@@ -460,8 +489,9 @@ class ApprovalStore(BaseJsonStore):
         author: str,
         content: str,
         stage: str,
+        *,
+        tenant_id: str,
         is_change_request: bool = False,
-        tenant_id: str | None = None,
     ) -> ApprovalRecord:
         with self._lock:
             result = self._find(approval_id, tenant_id=tenant_id)

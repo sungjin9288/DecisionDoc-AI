@@ -158,37 +158,21 @@ class ProjectStore(BaseJsonStore):
             tags=d.get("tags", []),
         )
 
-    def _find(self, project_id: str, tenant_id: str | None = None) -> tuple[str, list[dict], int, Project] | None:
-        """Find a project scoped to the given tenant (caller holds lock).
-
-        If tenant_id is provided, only that tenant's records are searched,
-        preventing cross-tenant IDOR. Falls back to full scan only when
-        tenant_id is None (internal maintenance use).
-        """
-        if tenant_id is not None:
-            # Scoped lookup — only search within the specified tenant
-            records = self._load(tenant_id)
-            for i, r in enumerate(records):
-                if r.get("project_id") == project_id:
-                    proj = self._from_dict(r)
-                    if proj.tenant_id != tenant_id:
-                        return None  # Mismatch — deny access
-                    return tenant_id, records, i, proj
-            return None
-        # Unscoped fallback (for backward compatibility with internal callers)
-        tenant_paths = self._backend.list_prefix("tenants/")
-        tenant_ids = sorted(
-            {
-                Path(path).parts[1]
-                for path in tenant_paths
-                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
-            }
-        )
-        for tid in tenant_ids:
-            records = self._load(tid)
-            for i, r in enumerate(records):
-                if r.get("project_id") == project_id:
-                    return tid, records, i, self._from_dict(r)
+    def _find(
+        self,
+        project_id: str,
+        *,
+        tenant_id: str,
+    ) -> tuple[str, list[dict], int, Project] | None:
+        """Locate a project only within the caller's tenant."""
+        records = self._load(tenant_id)
+        for i, raw_record in enumerate(records):
+            if raw_record.get("project_id") != project_id:
+                continue
+            project = self._from_dict(raw_record)
+            if project.tenant_id != tenant_id:
+                return None
+            return tenant_id, records, i, project
         return None
 
     def _flush(self, tenant_id: str, records: list[dict], idx: int, proj: Project) -> Project:
@@ -229,7 +213,7 @@ class ProjectStore(BaseJsonStore):
             self._save(tenant_id, records)
             return proj
 
-    def get(self, project_id: str, tenant_id: str | None = None) -> Project | None:
+    def get(self, project_id: str, *, tenant_id: str) -> Project | None:
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)
             return result[3] if result else None
@@ -248,7 +232,7 @@ class ProjectStore(BaseJsonStore):
             records = [r for r in records if r.fiscal_year == fiscal_year]
         return sorted(records, key=lambda r: r.created_at, reverse=True)
 
-    def update(self, project_id: str, tenant_id: str | None = None, **kwargs: Any) -> Project:
+    def update(self, project_id: str, *, tenant_id: str, **kwargs: Any) -> Project:
         """Update allowed fields: name, description, client, contract_number, status, tags, fiscal_year."""
         ALLOWED = {"name", "description", "client", "contract_number", "status", "tags", "fiscal_year"}
         with self._lock:
@@ -261,7 +245,7 @@ class ProjectStore(BaseJsonStore):
                     setattr(proj, k, v)
             return self._flush(tenant_id, records, idx, proj)
 
-    def delete(self, project_id: str, tenant_id: str | None = None) -> None:
+    def delete(self, project_id: str, *, tenant_id: str) -> None:
         """Permanently delete a project (documents are unlinked, not deleted)."""
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)
@@ -271,7 +255,7 @@ class ProjectStore(BaseJsonStore):
             del records[idx]
             self._save(tid, records)
 
-    def archive(self, project_id: str, tenant_id: str | None = None) -> Project:
+    def archive(self, project_id: str, *, tenant_id: str) -> Project:
         return self.update(project_id, tenant_id=tenant_id, status="archived")
 
     def add_document(
@@ -281,10 +265,11 @@ class ProjectStore(BaseJsonStore):
         bundle_id: str,
         title: str,
         docs: list[dict],
+        *,
+        tenant_id: str,
         approval_id: str | None = None,
         tags: list[str] | None = None,
         gov_options: dict | None = None,
-        tenant_id: str | None = None,
         source_kind: str | None = None,
         source_recording_id: str | None = None,
         source_summary_revision_id: str | None = None,
@@ -436,7 +421,13 @@ class ProjectStore(BaseJsonStore):
             self._flush(tenant_id, records, idx, proj)
             return doc, operation
 
-    def remove_document(self, project_id: str, doc_id: str, tenant_id: str | None = None) -> None:
+    def remove_document(
+        self,
+        project_id: str,
+        doc_id: str,
+        *,
+        tenant_id: str,
+    ) -> None:
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
@@ -451,7 +442,8 @@ class ProjectStore(BaseJsonStore):
         request_id: str,
         approval_id: str,
         approval_status: str,
-        tenant_id: str | None = None,
+        *,
+        tenant_id: str,
     ) -> None:
         """Update approval_id and approval_status on document(s) matching request_id."""
         with self._lock:

@@ -126,7 +126,7 @@ class TestProjectStoreCreate:
         store = _store(tmp_path)
         p = _create(store)
         # Fresh store, same dir
-        p2 = _store(tmp_path).get(p.project_id)
+        p2 = _store(tmp_path).get(p.project_id, tenant_id=p.tenant_id)
         assert p2 is not None
         assert p2.name == p.name
 
@@ -139,12 +139,12 @@ class TestProjectStoreRead:
     def test_get_existing(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        got = store.get(p.project_id)
+        got = store.get(p.project_id, tenant_id=p.tenant_id)
         assert got is not None
         assert got.project_id == p.project_id
 
     def test_get_nonexistent_returns_none(self, tmp_path):
-        assert _store(tmp_path).get("no-such-id") is None
+        assert _store(tmp_path).get("no-such-id", tenant_id="t1") is None
 
     def test_list_returns_all(self, tmp_path):
         store = _store(tmp_path)
@@ -155,7 +155,7 @@ class TestProjectStoreRead:
     def test_list_status_filter(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.archive(p.project_id)
+        store.archive(p.project_id, tenant_id=p.tenant_id)
         _create(store)  # stays active
         archived = store.list_by_tenant("t1", status="archived")
         assert len(archived) == 1
@@ -185,25 +185,25 @@ class TestProjectStoreUpdate:
     def test_update_name(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        updated = store.update(p.project_id, name="새 이름")
+        updated = store.update(p.project_id, tenant_id=p.tenant_id, name="새 이름")
         assert updated.name == "새 이름"
 
     def test_update_description(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        updated = store.update(p.project_id, description="새 설명")
+        updated = store.update(p.project_id, tenant_id=p.tenant_id, description="새 설명")
         assert updated.description == "새 설명"
 
     def test_update_status_to_completed(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        updated = store.update(p.project_id, status="completed")
+        updated = store.update(p.project_id, tenant_id=p.tenant_id, status="completed")
         assert updated.status == "completed"
 
     def test_update_tags(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        updated = store.update(p.project_id, tags=["AI", "2026"])
+        updated = store.update(p.project_id, tenant_id=p.tenant_id, tags=["AI", "2026"])
         assert updated.tags == ["AI", "2026"]
 
     def test_update_sets_updated_at(self, tmp_path):
@@ -211,24 +211,24 @@ class TestProjectStoreUpdate:
         p = _create(store)
         old_updated = p.updated_at
         time.sleep(0.01)
-        updated = store.update(p.project_id, name="변경됨")
+        updated = store.update(p.project_id, tenant_id=p.tenant_id, name="변경됨")
         assert updated.updated_at >= old_updated
 
     def test_update_nonexistent_raises(self, tmp_path):
         with pytest.raises(KeyError):
-            _store(tmp_path).update("no-such-id", name="X")
+            _store(tmp_path).update("no-such-id", tenant_id="t1", name="X")
 
     def test_archive_sets_archived_status(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        archived = store.archive(p.project_id)
+        archived = store.archive(p.project_id, tenant_id=p.tenant_id)
         assert archived.status == "archived"
 
     def test_persisted_after_update(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.update(p.project_id, name="영속화 확인")
-        reloaded = _store(tmp_path).get(p.project_id)
+        store.update(p.project_id, tenant_id=p.tenant_id, name="영속화 확인")
+        reloaded = _store(tmp_path).get(p.project_id, tenant_id=p.tenant_id)
         assert reloaded.name == "영속화 확인"
 
 
@@ -240,14 +240,14 @@ class TestDocumentManagement:
     def test_add_document_increases_count(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.add_document(p.project_id, "req-1", "business_plan_kr", "사업계획서", DOCS)
-        updated = store.get(p.project_id)
+        store.add_document(p.project_id, "req-1", "business_plan_kr", "사업계획서", DOCS, tenant_id=p.tenant_id)
+        updated = store.get(p.project_id, tenant_id=p.tenant_id)
         assert len(updated.documents) == 1
 
     def test_add_document_returns_project_document(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        doc = store.add_document(p.project_id, "req-1", "business_plan_kr", "사업계획서", DOCS)
+        doc = store.add_document(p.project_id, "req-1", "business_plan_kr", "사업계획서", DOCS, tenant_id=p.tenant_id)
         assert isinstance(doc, ProjectDocument)
         assert doc.doc_id and len(doc.doc_id) == 36
 
@@ -256,7 +256,7 @@ class TestDocumentManagement:
         p = _create(store)
         doc = store.add_document(
             p.project_id, "req-42", "meeting_minutes_kr", "회의록",
-            DOCS, tags=["중요"]
+            DOCS, tenant_id=p.tenant_id, tags=["중요"]
         )
         assert doc.request_id == "req-42"
         assert doc.bundle_id == "meeting_minutes_kr"
@@ -266,34 +266,34 @@ class TestDocumentManagement:
     def test_add_document_snapshot_is_docs_json(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS)
+        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS, tenant_id=p.tenant_id)
         assert json.loads(doc.doc_snapshot) == DOCS
 
     def test_add_document_file_size_chars(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS)
+        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS, tenant_id=p.tenant_id)
         expected_size = sum(len(d.get("markdown", "")) for d in DOCS)
         assert doc.file_size_chars == expected_size
 
     def test_remove_document_decreases_count(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS)
-        store.remove_document(p.project_id, doc.doc_id)
-        updated = store.get(p.project_id)
+        doc = store.add_document(p.project_id, "req-1", "b", "t", DOCS, tenant_id=p.tenant_id)
+        store.remove_document(p.project_id, doc.doc_id, tenant_id=p.tenant_id)
+        updated = store.get(p.project_id, tenant_id=p.tenant_id)
         assert len(updated.documents) == 0
 
     def test_remove_nonexistent_project_raises(self, tmp_path):
         with pytest.raises(KeyError):
-            _store(tmp_path).remove_document("no-such-project", "doc-id")
+            _store(tmp_path).remove_document("no-such-project", "doc-id", tenant_id="t1")
 
     def test_add_multiple_documents(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
         for i in range(3):
-            store.add_document(p.project_id, f"req-{i}", "b", f"문서{i}", DOCS)
-        updated = store.get(p.project_id)
+            store.add_document(p.project_id, f"req-{i}", "b", f"문서{i}", DOCS, tenant_id=p.tenant_id)
+        updated = store.get(p.project_id, tenant_id=p.tenant_id)
         assert len(updated.documents) == 3
 
 
@@ -305,24 +305,24 @@ class TestUpdateDocumentApproval:
     def test_updates_approval_status(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.add_document(p.project_id, "req-777", "b", "제목", DOCS)
-        store.update_document_approval(p.project_id, "req-777", "approval-abc", "approved")
-        updated = store.get(p.project_id)
+        store.add_document(p.project_id, "req-777", "b", "제목", DOCS, tenant_id=p.tenant_id)
+        store.update_document_approval(p.project_id, "req-777", "approval-abc", "approved", tenant_id=p.tenant_id)
+        updated = store.get(p.project_id, tenant_id=p.tenant_id)
         assert updated.documents[0].approval_status == "approved"
         assert updated.documents[0].approval_id == "approval-abc"
 
     def test_update_nonexistent_request_id_is_noop(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.add_document(p.project_id, "req-1", "b", "t", DOCS)
+        store.add_document(p.project_id, "req-1", "b", "t", DOCS, tenant_id=p.tenant_id)
         # request_id "req-999" doesn't exist — should not raise
-        store.update_document_approval(p.project_id, "req-999", "approval-x", "approved")
-        updated = store.get(p.project_id)
+        store.update_document_approval(p.project_id, "req-999", "approval-x", "approved", tenant_id=p.tenant_id)
+        updated = store.get(p.project_id, tenant_id=p.tenant_id)
         assert updated.documents[0].approval_status is None  # unchanged
 
     def test_update_nonexistent_project_is_noop(self, tmp_path):
         # Should silently skip missing projects (used in bulk approval loops)
-        _store(tmp_path).update_document_approval("no-such-project", "req-1", "a", "approved")
+        _store(tmp_path).update_document_approval("no-such-project", "req-1", "a", "approved", tenant_id="t1")
         # No exception = pass
 
 
@@ -349,7 +349,7 @@ class TestProjectSearch:
     def test_search_by_doc_title(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store, name="일반 프로젝트")
-        store.add_document(p.project_id, "req-1", "b", "블록체인 보안 문서", DOCS)
+        store.add_document(p.project_id, "req-1", "b", "블록체인 보안 문서", DOCS, tenant_id=p.tenant_id)
         results = store.search("t1", "블록체인")
         assert len(results) == 1
         assert results[0]["matched_docs"][0]["title"] == "블록체인 보안 문서"
@@ -357,7 +357,7 @@ class TestProjectSearch:
     def test_search_by_tag(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store, name="태그 프로젝트")
-        store.update(p.project_id, tags=["공공기관", "2026"])
+        store.update(p.project_id, tenant_id=p.tenant_id, tags=["공공기관", "2026"])
         results = store.search("t1", "공공기관")
         assert len(results) == 1
 
@@ -396,17 +396,17 @@ class TestYearlyArchive:
     def test_archive_counts_docs(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store, fiscal_year=2025)
-        store.add_document(p.project_id, "r1", "business_plan_kr", "문서1", DOCS)
-        store.add_document(p.project_id, "r2", "meeting_minutes_kr", "문서2", DOCS)
+        store.add_document(p.project_id, "r1", "business_plan_kr", "문서1", DOCS, tenant_id=p.tenant_id)
+        store.add_document(p.project_id, "r2", "meeting_minutes_kr", "문서2", DOCS, tenant_id=p.tenant_id)
         result = store.get_yearly_archive("t1", 2025)
         assert result["total_docs"] == 2
 
     def test_archive_bundle_breakdown(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store, fiscal_year=2025)
-        store.add_document(p.project_id, "r1", "business_plan_kr", "문서1", DOCS)
-        store.add_document(p.project_id, "r2", "business_plan_kr", "문서2", DOCS)
-        store.add_document(p.project_id, "r3", "meeting_minutes_kr", "문서3", DOCS)
+        store.add_document(p.project_id, "r1", "business_plan_kr", "문서1", DOCS, tenant_id=p.tenant_id)
+        store.add_document(p.project_id, "r2", "business_plan_kr", "문서2", DOCS, tenant_id=p.tenant_id)
+        store.add_document(p.project_id, "r3", "meeting_minutes_kr", "문서3", DOCS, tenant_id=p.tenant_id)
         result = store.get_yearly_archive("t1", 2025)
         assert result["bundle_breakdown"]["business_plan_kr"] == 2
         assert result["bundle_breakdown"]["meeting_minutes_kr"] == 1
@@ -435,15 +435,15 @@ class TestProjectStats:
         store = _store(tmp_path)
         p1 = _create(store)
         _create(store)
-        store.archive(p1.project_id)
+        store.archive(p1.project_id, tenant_id=p1.tenant_id)
         stats = store.get_stats("t1")
         assert stats["active_projects"] == 1
 
     def test_stats_total_docs(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.add_document(p.project_id, "r1", "b", "문서1", DOCS)
-        store.add_document(p.project_id, "r2", "b", "문서2", DOCS)
+        store.add_document(p.project_id, "r1", "b", "문서1", DOCS, tenant_id=p.tenant_id)
+        store.add_document(p.project_id, "r2", "b", "문서2", DOCS, tenant_id=p.tenant_id)
         stats = store.get_stats("t1")
         assert stats["total_docs"] == 2
 
@@ -451,9 +451,9 @@ class TestProjectStats:
         store = _store(tmp_path)
         p1 = _create(store, fiscal_year=2025)
         p2 = _create(store, fiscal_year=2026)
-        store.add_document(p1.project_id, "r1", "b", "t", DOCS)
-        store.add_document(p2.project_id, "r2", "b", "t", DOCS)
-        store.add_document(p2.project_id, "r3", "b", "t", DOCS)
+        store.add_document(p1.project_id, "r1", "b", "t", DOCS, tenant_id=p1.tenant_id)
+        store.add_document(p2.project_id, "r2", "b", "t", DOCS, tenant_id=p2.tenant_id)
+        store.add_document(p2.project_id, "r3", "b", "t", DOCS, tenant_id=p2.tenant_id)
         stats = store.get_stats("t1")
         assert stats["by_year"][2025] == 1
         assert stats["by_year"][2026] == 2
@@ -461,8 +461,8 @@ class TestProjectStats:
     def test_stats_by_bundle(self, tmp_path):
         store = _store(tmp_path)
         p = _create(store)
-        store.add_document(p.project_id, "r1", "business_plan_kr", "t", DOCS)
-        store.add_document(p.project_id, "r2", "meeting_minutes_kr", "t", DOCS)
+        store.add_document(p.project_id, "r1", "business_plan_kr", "t", DOCS, tenant_id=p.tenant_id)
+        store.add_document(p.project_id, "r2", "meeting_minutes_kr", "t", DOCS, tenant_id=p.tenant_id)
         stats = store.get_stats("t1")
         assert stats["by_bundle"]["business_plan_kr"] == 1
         assert stats["by_bundle"]["meeting_minutes_kr"] == 1
@@ -471,7 +471,7 @@ class TestProjectStats:
         store = _store(tmp_path)
         p = _create(store)
         _create(store)
-        store.archive(p.project_id)
+        store.archive(p.project_id, tenant_id=p.tenant_id)
         stats = store.get_stats("t1")
         assert stats["by_status"]["active"] == 1
         assert stats["by_status"]["archived"] == 1
