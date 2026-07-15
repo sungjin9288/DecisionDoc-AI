@@ -33,9 +33,9 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 
 | 검증 | 현재 증거 |
 |---|---|
-| Non-live pytest gate | `pytest -q tests/ -m "not live" --tb=short` -> 2026-07-14 실측 결과는 README와 roadmap에 동일하게 기록 |
-| GitHub Actions CI | 최근 확인한 main 자동화 증적: commit `a2575cc`, CI `29334312731` success |
-| GitHub Actions CD | 최근 확인한 main 자동화 증적: commit `a2575cc`, CD `29334312781` success. staging deploy/smoke는 설정 부재로 skip되어 M6 proof로 보지 않는다 |
+| Non-live pytest gate | `pytest -q tests/ -m "not live" --tb=short` -> `3020 passed, 1 skipped, 4 deselected` (2026-07-15 실측) |
+| GitHub Actions CI | 최근 확인한 main 자동화 증적: commit `8e064d0`, CI `29388238274` success |
+| GitHub Actions CD | 최근 확인한 main 자동화 증적: commit `8e064d0`, CD `29388238234` success. image build/push는 통과했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof로 보지 않는다 |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |
