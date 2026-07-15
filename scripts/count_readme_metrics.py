@@ -42,23 +42,42 @@ def _count_test_functions(root: Path) -> int:
     return count
 
 
-def _is_route_decorator(node: ast.AST) -> bool:
+def _route_owner_names(tree: ast.Module) -> set[str]:
+    names = {"app", "router"}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = node.value
+        if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name):
+            continue
+        if value.func.id not in {"APIRouter", "FastAPI"}:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names.update(target.id for target in targets if isinstance(target, ast.Name))
+    return names
+
+
+def _is_route_decorator(node: ast.AST, *, owner_names: set[str]) -> bool:
     if not isinstance(node, ast.Call):
         return False
     if not isinstance(node.func, ast.Attribute):
         return False
     if node.func.attr not in ROUTE_METHODS:
         return False
-    return isinstance(node.func.value, ast.Name) and node.func.value.id in {"app", "router"}
+    return isinstance(node.func.value, ast.Name) and node.func.value.id in owner_names
 
 
 def _count_route_decorators(root: Path) -> int:
     count = 0
     for path in _python_files(root / "app"):
         tree = _parse_python(path)
+        owner_names = _route_owner_names(tree)
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                count += sum(_is_route_decorator(decorator) for decorator in node.decorator_list)
+                count += sum(
+                    _is_route_decorator(decorator, owner_names=owner_names)
+                    for decorator in node.decorator_list
+                )
     return count
 
 

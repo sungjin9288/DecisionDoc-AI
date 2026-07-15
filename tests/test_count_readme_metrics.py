@@ -59,6 +59,12 @@ def _write_fixture_repo(root: Path) -> None:
                 "@router.post('/items')",
                 "async def create_item():",
                 "    return {}",
+                "",
+                "collection_router = APIRouter()",
+                "",
+                "@collection_router.delete('/items/{item_id}')",
+                "def delete_item(item_id: str):",
+                "    return {'item_id': item_id}",
             ]
         )
         + "\n",
@@ -75,7 +81,7 @@ def test_collect_metrics_counts_source_definitions_without_string_matches(tmp_pa
 
     assert metrics["test_functions"] == 2
     assert metrics["test_files"] == 1
-    assert metrics["route_decorators"] == 2
+    assert metrics["route_decorators"] == 3
     assert metrics["env_keys"] == 2
     assert metrics["router_files"] == 1
     assert metrics["service_files"] == 1

@@ -40,7 +40,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 배포·인프라 관점 구성도(Nginx/TLS/PWA 포함)는 [architecture.md](./architecture.md) 참조. 여기서는 코드 레이어 관점을 다룬다. 레이어 수치는 아래 커맨드로 재측정 가능하다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field router_files      # → 20 (top-level 라우터 파일)
+python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 41 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 37 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
@@ -56,7 +56,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
   │
-  ├─ Routers (20 top-level files, 라우트 264):
+  ├─ Routers (23 top-level files, 라우트 264):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

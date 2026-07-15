@@ -61,7 +61,7 @@ Client (Web UI / CLI / API)
 FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
   │     → rate_limit → auth → tenant → billing → audit → metrics
-  ├─ Routers (20 top-level files, 라우트 264): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 264): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
