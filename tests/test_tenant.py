@@ -195,6 +195,9 @@ def test_migrate_legacy_data_copies_files(tmp_path: Path) -> None:
     (legacy_finetune / "dataset.jsonl").write_text('{"messages": []}\n', encoding="utf-8")
     legacy_patterns = tmp_path / "request_patterns.jsonl"
     legacy_patterns.write_text('{"raw_input": "legacy"}\n', encoding="utf-8")
+    legacy_knowledge = tmp_path / "knowledge" / "legacy-project"
+    legacy_knowledge.mkdir(parents=True)
+    (legacy_knowledge / "index.json").write_text("[]", encoding="utf-8")
 
     migrate_legacy_data(tmp_path)
 
@@ -203,6 +206,9 @@ def test_migrate_legacy_data_copies_files(tmp_path: Path) -> None:
     assert (system_dir / "prompt_overrides.json").exists()
     assert (system_dir / "finetune" / "dataset.jsonl").read_text(encoding="utf-8") == '{"messages": []}\n'
     assert (system_dir / "request_patterns.jsonl").read_text(encoding="utf-8") == '{"raw_input": "legacy"}\n'
+    assert (system_dir / "knowledge" / "legacy-project" / "index.json").read_text(
+        encoding="utf-8"
+    ) == "[]"
 
 
 def test_migrate_legacy_data_no_overwrite(tmp_path: Path) -> None:
@@ -215,15 +221,22 @@ def test_migrate_legacy_data_no_overwrite(tmp_path: Path) -> None:
     # 이미 존재하는 대상 파일 (다른 내용)
     existing_dst = system_dir / "feedback.jsonl"
     existing_dst.write_text('{"id": "existing"}\n', encoding="utf-8")
+    existing_knowledge = system_dir / "knowledge" / "existing-project"
+    existing_knowledge.mkdir(parents=True)
+    (existing_knowledge / "index.json").write_text('[{"source": "existing"}]', encoding="utf-8")
 
     # 레거시 파일 (다른 내용)
     (tmp_path / "feedback.jsonl").write_text('{"id": "legacy"}\n', encoding="utf-8")
+    legacy_knowledge = tmp_path / "knowledge" / "legacy-project"
+    legacy_knowledge.mkdir(parents=True)
+    (legacy_knowledge / "index.json").write_text('[{"source": "legacy"}]', encoding="utf-8")
 
     migrate_legacy_data(tmp_path)
 
     # 대상이 변경되지 않아야 함
     content = existing_dst.read_text(encoding="utf-8")
     assert "existing" in content
+    assert not (system_dir / "knowledge" / "legacy-project").exists()
 
 
 # ─── 9-12: Tenant middleware (HTTP) ───────────────────────────────────────────

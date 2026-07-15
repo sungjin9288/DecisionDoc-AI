@@ -89,7 +89,10 @@ class ServiceCoreMixin:
         return self._procurement_store.upsert(payload)
 
     def _build_inputs(self, record: ProcurementDecisionRecord) -> _EvaluationInputs:
-        capability_profile, capability_text = self._resolve_capability_profile(record.project_id)
+        capability_profile, capability_text = self._resolve_capability_profile(
+            record.project_id,
+            tenant_id=record.tenant_id,
+        )
         latest_snapshot_payload = self._load_latest_snapshot_payload(record)
         parsed_rfp_fields = latest_snapshot_payload.get("extracted_fields", {}) or {}
         opportunity_text = "\n".join(
@@ -122,8 +125,14 @@ class ServiceCoreMixin:
     def _resolve_capability_profile(
         self,
         project_id: str,
+        *,
+        tenant_id: str,
     ) -> tuple[CapabilityProfileReference | None, str]:
-        store = KnowledgeStore(project_id, data_dir=self._data_dir)
+        store = KnowledgeStore(
+            project_id,
+            data_dir=self._data_dir,
+            tenant_id=tenant_id,
+        )
         docs = store.list_documents()
         if not docs:
             return None, ""

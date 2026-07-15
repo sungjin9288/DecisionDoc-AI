@@ -105,7 +105,7 @@ class TestProcurementDecisionService:
             raw_text="입찰참가자격: 소프트웨어사업자, ISMS 보유. 유사사업 수행실적 필요.",
             key_requirements=["AI 민원 서비스", "클라우드 전환", "정보보호 체계"],
         )
-        ks = KnowledgeStore("proj-go", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-go", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             (
@@ -137,7 +137,7 @@ class TestProcurementDecisionService:
             raw_text="지역제한 없음. 데이터 분석 및 보고체계 구축.",
             key_requirements=["데이터 분석", "정책 지원", "보고 체계"],
         )
-        ks = KnowledgeStore("proj-conditional", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-conditional", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             (
@@ -166,7 +166,7 @@ class TestProcurementDecisionService:
             raw_text="필수 요건: ISMS 보유, 공동수급 가능. 유사사업 수행실적 필요.",
             key_requirements=["보안 관제", "클라우드", "통합 플랫폼"],
         )
-        ks = KnowledgeStore("proj-no-go", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-no-go", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             "공공 컨설팅 수행 경험은 있으나 보안 인증과 협력사 체계는 아직 확보되지 않음.",
@@ -211,7 +211,7 @@ class TestProcurementDecisionService:
             raw_text="입찰참가자격: 소프트웨어사업자, ISMS 보유. 유사사업 수행실적 필요.",
             key_requirements=["AI 민원 서비스", "클라우드 전환", "정보보호 체계"],
         )
-        ks = KnowledgeStore("proj-go-rec", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-go-rec", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             (
@@ -242,7 +242,7 @@ class TestProcurementDecisionService:
             raw_text="지역제한 없음. 데이터 분석 및 보고체계 구축.",
             key_requirements=["데이터 분석", "정책 지원", "보고 체계"],
         )
-        ks = KnowledgeStore("proj-conditional-rec", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-conditional-rec", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             (
@@ -270,7 +270,7 @@ class TestProcurementDecisionService:
             raw_text="필수 요건: ISMS 보유, 공동수급 가능. 유사사업 수행실적 필요.",
             key_requirements=["보안 관제", "클라우드", "통합 플랫폼"],
         )
-        ks = KnowledgeStore("proj-no-go-rec", data_dir=str(tmp_path))
+        ks = KnowledgeStore("proj-no-go-rec", data_dir=str(tmp_path), tenant_id="tenant-a")
         ks.add_document(
             "capability.txt",
             "공공 컨설팅 수행 경험은 있으나 보안 인증과 협력사 체계는 아직 확보되지 않음.",

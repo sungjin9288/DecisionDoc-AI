@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
+from app.dependencies import get_tenant_id
 from app.providers.factory import get_provider_for_capability
 from app.schemas import PromoteKnowledgeReferenceRequest, UpdateKnowledgeMetadataRequest
 
@@ -73,16 +74,28 @@ def _safe_graph_export_filename(project_id: str) -> str:
     return f"decisiondoc-knowledge-graph-{safe_project_id or 'project'}.json"
 
 
+def _knowledge_store(request: Request, project_id: str):
+    from app.storage.knowledge_store import KnowledgeStore
+
+    try:
+        return KnowledgeStore(
+            project_id,
+            data_dir=str(request.app.state.data_dir),
+            tenant_id=get_tenant_id(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
 def _build_temporal_graph_payload(
     project_id: str,
     *,
+    request: Request,
     source_organization: str = "",
     report_workflow_id: str = "",
     bundle_type: str = "",
 ) -> dict:
-    from app.storage.knowledge_store import KnowledgeStore
-
-    graph = KnowledgeStore(project_id).build_temporal_graph(
+    graph = _knowledge_store(request, project_id).build_temporal_graph(
         source_organization=source_organization,
         report_workflow_id=report_workflow_id,
         bundle_type=bundle_type,
@@ -127,8 +140,6 @@ async def upload_knowledge_document(
                .png .jpg .jpeg .webp (provider OCR/vision fallback)
     """
     from app.services.attachment_service import extract_text_with_ai_fallback, AttachmentError
-    from app.storage.knowledge_store import KnowledgeStore
-
     raw = await file.read()
     if len(raw) > _MAX_UPLOAD_BYTES:
         raise HTTPException(413, detail="파일 크기가 20 MB를 초과합니다.")
@@ -163,7 +174,7 @@ async def upload_knowledge_document(
 
     # 저장
     tag_list = _parse_csv_list(tags)
-    store = KnowledgeStore(project_id)
+    store = _knowledge_store(request, project_id)
     entry = store.add_document(
         filename=filename,
         text=text,
@@ -183,11 +194,9 @@ async def upload_knowledge_document(
 # ── 목록 조회 ──────────────────────────────────────────────────────────────────
 
 @router.get("/knowledge/{project_id}/documents", dependencies=[Depends(require_api_key)])
-def list_knowledge_documents(project_id: str) -> dict:
+def list_knowledge_documents(project_id: str, request: Request) -> dict:
     """프로젝트의 지식 문서 목록."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    store = KnowledgeStore(project_id)
+    store = _knowledge_store(request, project_id)
     docs = store.list_documents()
     return {"project_id": project_id, "count": len(docs), "documents": docs}
 
@@ -198,11 +207,9 @@ def list_knowledge_documents(project_id: str) -> dict:
     "/knowledge/{project_id}/documents/{doc_id}",
     dependencies=[Depends(require_api_key)],
 )
-def get_knowledge_document(project_id: str, doc_id: str) -> dict:
+def get_knowledge_document(project_id: str, doc_id: str, request: Request) -> dict:
     """단일 문서 전문 + 스타일 프로필 조회."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    entry = KnowledgeStore(project_id).get_document(doc_id)
+    entry = _knowledge_store(request, project_id).get_document(doc_id)
     if entry is None:
         raise HTTPException(404, detail="문서를 찾을 수 없습니다.")
     return {
@@ -234,11 +241,10 @@ def update_knowledge_document_metadata(
     project_id: str,
     doc_id: str,
     body: UpdateKnowledgeMetadataRequest,
+    request: Request,
 ) -> dict:
     """지식 문서의 학습/우선참조 메타데이터를 수정."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    store = KnowledgeStore(project_id)
+    store = _knowledge_store(request, project_id)
     updated = store.update_metadata(doc_id, **body.model_dump(exclude_none=True))
     if not updated:
         raise HTTPException(404, detail="문서를 찾을 수 없습니다.")
@@ -260,9 +266,7 @@ def promote_generated_documents_to_knowledge(
     body: PromoteKnowledgeReferenceRequest,
 ) -> dict:
     """승인된 생성 결과를 프로젝트 지식 학습 라이브러리로 승격."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    store = KnowledgeStore(project_id)
+    store = _knowledge_store(request, project_id)
     base_tags = [tag.strip() for tag in body.tags if tag.strip()]
     created: list[dict] = []
     reused: list[dict] = []
@@ -357,11 +361,9 @@ def promote_generated_documents_to_knowledge(
     "/knowledge/{project_id}/documents/{doc_id}",
     dependencies=[Depends(require_api_key)],
 )
-def delete_knowledge_document(project_id: str, doc_id: str) -> dict:
+def delete_knowledge_document(project_id: str, doc_id: str, request: Request) -> dict:
     """지식 문서 삭제."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    deleted = KnowledgeStore(project_id).delete_document(doc_id)
+    deleted = _knowledge_store(request, project_id).delete_document(doc_id)
     if not deleted:
         raise HTTPException(404, detail="문서를 찾을 수 없습니다.")
     return {"deleted": True, "doc_id": doc_id}
@@ -372,6 +374,7 @@ def delete_knowledge_document(project_id: str, doc_id: str) -> dict:
 @router.get("/knowledge/{project_id}/context", dependencies=[Depends(require_api_key)])
 def preview_knowledge_context(
     project_id: str,
+    request: Request,
     bundle_type: str = Query(default=""),
     title: str = Query(default=""),
     goal: str = Query(default=""),
@@ -379,9 +382,7 @@ def preview_knowledge_context(
     report_workflow_id: str = Query(default=""),
 ) -> dict:
     """생성 프롬프트에 실제로 주입될 컨텍스트 미리보기."""
-    from app.storage.knowledge_store import KnowledgeStore
-
-    store = KnowledgeStore(project_id)
+    store = _knowledge_store(request, project_id)
     ranking = store.rank_documents_for_context(
         bundle_type=bundle_type or None,
         title=title,
@@ -447,6 +448,7 @@ def preview_knowledge_context(
 @router.get("/knowledge/{project_id}/temporal-graph", dependencies=[Depends(require_api_key)])
 def get_knowledge_temporal_graph(
     project_id: str,
+    request: Request,
     source_organization: str = Query(default=""),
     report_workflow_id: str = Query(default=""),
     bundle_type: str = Query(default=""),
@@ -454,6 +456,7 @@ def get_knowledge_temporal_graph(
     """지식 메타데이터에서 프로젝트/기관/workflow/bundle 관계 그래프를 생성."""
     return _build_temporal_graph_payload(
         project_id,
+        request=request,
         source_organization=source_organization,
         report_workflow_id=report_workflow_id,
         bundle_type=bundle_type,
@@ -463,6 +466,7 @@ def get_knowledge_temporal_graph(
 @router.get("/knowledge/{project_id}/temporal-graph/export", dependencies=[Depends(require_api_key)])
 def export_knowledge_temporal_graph(
     project_id: str,
+    request: Request,
     source_organization: str = Query(default=""),
     report_workflow_id: str = Query(default=""),
     bundle_type: str = Query(default=""),
@@ -474,6 +478,7 @@ def export_knowledge_temporal_graph(
 
     graph = _build_temporal_graph_payload(
         project_id,
+        request=request,
         source_organization=source_organization,
         report_workflow_id=report_workflow_id,
         bundle_type=bundle_type,

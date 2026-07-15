@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import io
 import json
-import zipfile
-from pathlib import Path
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -308,6 +307,131 @@ class TestKnowledgeStore:
         assert fetched is not None
         assert fetched.doc_id == entry.doc_id
 
+    def test_same_project_id_is_isolated_by_tenant(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store_a = KnowledgeStore(
+            "shared-project",
+            data_dir=str(tmp_path),
+            tenant_id="tenant-a",
+        )
+        store_b = KnowledgeStore(
+            "shared-project",
+            data_dir=str(tmp_path),
+            tenant_id="tenant-b",
+        )
+        entry_a = store_a.add_document("tenant-a.txt", "tenant A private context")
+        entry_b = store_b.add_document("tenant-b.txt", "tenant B private context")
+
+        assert [item["doc_id"] for item in store_a.list_documents()] == [entry_a.doc_id]
+        assert [item["doc_id"] for item in store_b.list_documents()] == [entry_b.doc_id]
+        assert store_a.get_document(entry_b.doc_id) is None
+        assert store_b.get_document(entry_a.doc_id) is None
+        assert "tenant B private context" not in store_a.build_context()
+        assert "tenant A private context" not in store_b.build_context()
+        assert (
+            tmp_path / "tenants" / "tenant-a" / "knowledge" / "shared-project" / "index.json"
+        ).exists()
+
+    def test_foreign_drift_is_hidden_and_preserved_during_owned_update(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore(
+            "project-a",
+            data_dir=str(tmp_path),
+            tenant_id="tenant-a",
+        )
+        owned = store.add_document("owned.txt", "owned context")
+        index_path = (
+            tmp_path / "tenants" / "tenant-a" / "knowledge" / "project-a" / "index.json"
+        )
+        records = json.loads(index_path.read_text(encoding="utf-8"))
+        foreign = {
+            **records[0],
+            "doc_id": "abcdef123456",
+            "tenant_id": "tenant-b",
+            "filename": "foreign.txt",
+        }
+        records.append(foreign)
+        index_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+        index_path.with_name("abcdef123456.txt").write_text(
+            "foreign context",
+            encoding="utf-8",
+        )
+
+        assert [item["doc_id"] for item in store.list_documents()] == [owned.doc_id]
+        assert store.get_document("abcdef123456") is None
+        assert "foreign context" not in store.build_context()
+        assert store.update_metadata("abcdef123456", notes="changed") is False
+        assert store.delete_document("abcdef123456") is False
+        assert store.update_metadata(owned.doc_id, notes="owned update") is True
+
+        persisted = json.loads(index_path.read_text(encoding="utf-8"))
+        assert persisted[1] == foreign
+        assert persisted[0]["notes"] == "owned update"
+
+    def test_duplicate_doc_identity_fails_closed(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore(
+            "project-a",
+            data_dir=str(tmp_path),
+            tenant_id="tenant-a",
+        )
+        owned = store.add_document("owned.txt", "owned context")
+        index_path = (
+            tmp_path / "tenants" / "tenant-a" / "knowledge" / "project-a" / "index.json"
+        )
+        records = json.loads(index_path.read_text(encoding="utf-8"))
+        records.append({
+            **records[0],
+            "tenant_id": "tenant-b",
+            "filename": "conflicting.txt",
+        })
+        index_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+
+        assert store.list_documents() == []
+        assert store.get_document(owned.doc_id) is None
+        assert store.update_metadata(owned.doc_id, notes="changed") is False
+        assert store.delete_document(owned.doc_id) is False
+        assert json.loads(index_path.read_text(encoding="utf-8")) == records
+
+    def test_concurrent_instances_preserve_all_documents(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        stores = [
+            KnowledgeStore(
+                "concurrent-project",
+                data_dir=str(tmp_path),
+                tenant_id="tenant-a",
+            )
+            for _ in range(20)
+        ]
+        threads = [
+            threading.Thread(
+                target=store.add_document,
+                args=(f"document-{index}.txt", f"content {index}"),
+            )
+            for index, store in enumerate(stores)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        documents = stores[0].list_documents()
+        assert len(documents) == 20
+        assert {item["filename"] for item in documents} == {
+            f"document-{index}.txt" for index in range(20)
+        }
+
+    @pytest.mark.parametrize("project_id", ["", ".", "..", "../outside", "a\\b"])
+    def test_rejects_unsafe_project_storage_component(self, tmp_path, project_id):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        with pytest.raises(ValueError, match="Invalid project_id"):
+            KnowledgeStore(project_id, data_dir=str(tmp_path), tenant_id="tenant-a")
+
 
 # ── attachment_service PPTX 테스트 ────────────────────────────────────────────
 
@@ -408,6 +532,45 @@ class TestKnowledgeAPI:
         body = resp.json()
         assert body["count"] == 1
         assert body["documents"][0]["filename"] == "doc.txt"
+
+    def test_routes_keep_same_project_id_inside_request_tenant(self, client):
+        client.app.state.tenant_store.create_tenant("tenant-a", "Tenant A")
+        client.app.state.tenant_store.create_tenant("tenant-b", "Tenant B")
+
+        def headers(tenant_id: str) -> dict[str, str]:
+            return {
+                **HEADERS,
+                "X-Tenant-ID": tenant_id,
+            }
+
+        upload_a = client.post(
+            "/knowledge/shared-project/documents",
+            headers=headers("tenant-a"),
+            files={"file": ("tenant-a.txt", b"tenant A private context", "text/plain")},
+        )
+        upload_b = client.post(
+            "/knowledge/shared-project/documents",
+            headers=headers("tenant-b"),
+            files={"file": ("tenant-b.txt", b"tenant B private context", "text/plain")},
+        )
+        assert upload_a.status_code == upload_b.status_code == 200
+
+        list_a = client.get(
+            "/knowledge/shared-project/documents",
+            headers=headers("tenant-a"),
+        ).json()
+        list_b = client.get(
+            "/knowledge/shared-project/documents",
+            headers=headers("tenant-b"),
+        ).json()
+        assert [item["filename"] for item in list_a["documents"]] == ["tenant-a.txt"]
+        assert [item["filename"] for item in list_b["documents"]] == ["tenant-b.txt"]
+
+        foreign_read = client.get(
+            f"/knowledge/shared-project/documents/{upload_a.json()['doc_id']}",
+            headers=headers("tenant-b"),
+        )
+        assert foreign_read.status_code == 404
 
     def test_get_document(self, client, tmp_path):
         content = b"Detailed content here."

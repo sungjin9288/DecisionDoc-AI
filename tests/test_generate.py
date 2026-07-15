@@ -692,6 +692,47 @@ def test_generate_injects_ranked_knowledge_context(tmp_path, monkeypatch):
     assert "품질 등급: gold" in injected
 
 
+def test_generate_context_injection_uses_requested_tenant(tmp_path, monkeypatch):
+    from app.storage.knowledge_store import KnowledgeStore
+
+    client = _create_client(tmp_path, monkeypatch)
+    KnowledgeStore(
+        "shared-project",
+        data_dir=str(tmp_path),
+        tenant_id="tenant-a",
+    ).add_document(
+        "tenant-a.txt",
+        "tenant A private context",
+        applicable_bundles=["proposal_kr"],
+    )
+
+    tenant_b_payload = {
+        "project_id": "shared-project",
+        "title": "Tenant B proposal",
+        "goal": "Do not reuse foreign knowledge",
+    }
+    client.app.state.service._inject_project_contexts(
+        tenant_b_payload,
+        bundle_type="proposal_kr",
+        tenant_id="tenant-b",
+        request_id="tenant-b-request",
+    )
+    assert "_knowledge_context" not in tenant_b_payload
+
+    tenant_a_payload = {
+        "project_id": "shared-project",
+        "title": "Tenant A proposal",
+        "goal": "Reuse owned knowledge",
+    }
+    client.app.state.service._inject_project_contexts(
+        tenant_a_payload,
+        bundle_type="proposal_kr",
+        tenant_id="tenant-a",
+        request_id="tenant-a-request",
+    )
+    assert "tenant A private context" in tenant_a_payload["_knowledge_context"]
+
+
 def test_generate_succeeds_when_eval_executor_is_unavailable(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
 

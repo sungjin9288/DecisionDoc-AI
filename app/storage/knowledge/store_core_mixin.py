@@ -8,9 +8,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
+from weakref import WeakValueDictionary
 
 from app.storage.knowledge.constants import (
     _LEARNING_MODE_DEFAULT,
@@ -28,8 +31,30 @@ from app.storage.knowledge.normalizers import (
     _normalize_success_state,
 )
 from app.storage.knowledge_search import KnowledgeSearchBackend, get_knowledge_search_backend
+from app.storage.base import atomic_write_text
 
 _log = logging.getLogger("decisiondoc.knowledge")
+_DOC_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
+_path_locks: WeakValueDictionary[Path, Any] = WeakValueDictionary()
+_path_locks_guard = threading.Lock()
+
+
+def _lock_for_path(path: Path) -> Any:
+    with _path_locks_guard:
+        return _path_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _storage_component(value: str, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or "\x00" in value
+    ):
+        raise ValueError(f"Invalid {label}")
+    return value
 
 
 class KnowledgeStoreCoreMixin:
@@ -40,12 +65,16 @@ class KnowledgeStoreCoreMixin:
         project_id: str,
         data_dir: str | None = None,
         search_backend: KnowledgeSearchBackend | None = None,
+        *,
+        tenant_id: str = "system",
     ) -> None:
-        self.project_id = project_id
+        self.project_id = _storage_component(project_id, "project_id")
+        self.tenant_id = _storage_component(tenant_id, "tenant_id")
         self._search_backend = search_backend or get_knowledge_search_backend()
         base = Path(data_dir or os.getenv("DATA_DIR", "data"))
-        self._dir = base / "knowledge" / project_id
+        self._dir = base / "tenants" / self.tenant_id / "knowledge" / self.project_id
         self._index_path = self._dir / "index.json"
+        self._lock = _lock_for_path(self._index_path)
 
     # ── 쓰기 ──────────────────────────────────────────────────────────────────
 
@@ -85,8 +114,11 @@ class KnowledgeStoreCoreMixin:
             source_bundle_id=source_bundle_id,
             source_request_id=source_request_id,
             source_doc_type=source_doc_type,
+            tenant_id=self.tenant_id,
+            project_id=self.project_id,
         )
-        self._save_entry(entry)
+        with self._lock:
+            self._save_entry(entry)
         _log.info(
             "[Knowledge] Added doc=%s file=%s project=%s",
             doc_id, filename, self.project_id,
@@ -95,29 +127,24 @@ class KnowledgeStoreCoreMixin:
 
     def update_style(self, doc_id: str, style_profile: dict[str, Any]) -> bool:
         """기존 문서의 스타일 프로필을 업데이트."""
-        style_path = self._dir / f"{doc_id}_style.json"
-        if not (self._dir / f"{doc_id}.txt").exists():
-            return False
-        self._atomic_write_json(style_path, style_profile)
-        # index에서 has_style 갱신
-        index = self._load_index()
-        for item in index:
-            if item["doc_id"] == doc_id:
-                item["has_style"] = True
-                break
-        self._atomic_write_json(self._index_path, index)
-        return True
+        with self._lock:
+            records = self._read_index()
+            item = self._find_owned_record(records, doc_id)
+            if item is None or not (self._dir / f"{doc_id}.txt").exists():
+                return False
+            self._atomic_write_json(self._dir / f"{doc_id}_style.json", style_profile)
+            item["has_style"] = True
+            self._replace_with_normalized(item)
+            self._write_index(records)
+            return True
 
     def update_metadata(self, doc_id: str, **fields: Any) -> bool:
         """문서의 학습용 메타데이터를 업데이트."""
-        txt_path = self._dir / f"{doc_id}.txt"
-        if not txt_path.exists():
-            return False
-        index = self._load_index()
-        updated = False
-        for item in index:
-            if item.get("doc_id") != doc_id:
-                continue
+        with self._lock:
+            records = self._read_index()
+            item = self._find_owned_record(records, doc_id)
+            if item is None or not (self._dir / f"{doc_id}.txt").exists():
+                return False
             if "tags" in fields and fields["tags"] is not None:
                 item["tags"] = _normalize_list(fields["tags"])
             if "learning_mode" in fields and fields["learning_mode"] is not None:
@@ -140,21 +167,17 @@ class KnowledgeStoreCoreMixin:
                 item["source_request_id"] = _normalize_string(fields["source_request_id"])
             if "source_doc_type" in fields and fields["source_doc_type"] is not None:
                 item["source_doc_type"] = _normalize_string(fields["source_doc_type"])
-            updated = True
-            break
-        if updated:
-            self._atomic_write_json(self._index_path, [self._normalize_meta(item) for item in index])
-        return updated
+            self._replace_with_normalized(item)
+            self._write_index(records)
+            return True
 
     def delete_document(self, doc_id: str) -> bool:
         """문서 삭제. 존재하지 않으면 False."""
-        txt_path = self._dir / f"{doc_id}.txt"
-        if not txt_path.exists():
-            return False
-        txt_path.unlink(missing_ok=True)
-        (self._dir / f"{doc_id}_style.json").unlink(missing_ok=True)
-        index = [i for i in self._load_index() if i["doc_id"] != doc_id]
-        self._atomic_write_json(self._index_path, index)
+        with self._lock:
+            records = self._read_index()
+            if not self._delete_owned_document(records, doc_id):
+                return False
+            self._write_index(records)
         _log.info("[Knowledge] Deleted doc=%s project=%s", doc_id, self.project_id)
         return True
 
@@ -166,15 +189,21 @@ class KnowledgeStoreCoreMixin:
 
     def get_document(self, doc_id: str) -> KnowledgeEntry | None:
         """단일 문서 전체 조회. 없으면 None."""
+        meta = next(
+            (item for item in self._load_index() if item.get("doc_id") == doc_id),
+            None,
+        )
+        if meta is None:
+            return None
         txt_path = self._dir / f"{doc_id}.txt"
         if not txt_path.exists():
             return None
         text = txt_path.read_text(encoding="utf-8")
         style_path = self._dir / f"{doc_id}_style.json"
-        style = json.loads(style_path.read_text()) if style_path.exists() else {}
-        meta = next(
-            (m for m in self._load_index() if m["doc_id"] == doc_id), {}
-        )
+        try:
+            style = json.loads(style_path.read_text(encoding="utf-8")) if style_path.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            style = {}
         return KnowledgeEntry(
             doc_id=doc_id,
             filename=meta.get("filename", ""),
@@ -193,6 +222,8 @@ class KnowledgeStoreCoreMixin:
             source_request_id=meta.get("source_request_id", ""),
             source_doc_type=meta.get("source_doc_type", ""),
             knowledge_scope=meta.get("knowledge_scope", {}),
+            tenant_id=self.tenant_id,
+            project_id=self.project_id,
         )
 
     def find_promoted_document(
@@ -232,6 +263,12 @@ class KnowledgeStoreCoreMixin:
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def _load_index(self) -> list[dict[str, Any]]:
+        return [
+            self._normalize_meta(item)
+            for item in self._owned_records(self._read_index())
+        ]
+
+    def _read_index(self) -> list[dict[str, Any]]:
         if not self._index_path.exists():
             return []
         try:
@@ -240,15 +277,76 @@ class KnowledgeStoreCoreMixin:
             return []
         if not isinstance(data, list):
             return []
-        return [self._normalize_meta(item) for item in data if isinstance(item, dict)]
+        return [item for item in data if isinstance(item, dict)]
+
+    def _write_index(self, records: list[dict[str, Any]]) -> None:
+        self._atomic_write_json(self._index_path, records)
+
+    def _owns(self, item: dict[str, Any]) -> bool:
+        return (
+            item.get("tenant_id") in (None, self.tenant_id)
+            and item.get("project_id") in (None, self.project_id)
+        )
+
+    def _owned_records(
+        self,
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        counts: dict[str, int] = {}
+        for item in records:
+            if not self._safe_doc_id(item.get("doc_id")):
+                continue
+            doc_id = item["doc_id"]
+            counts[doc_id] = counts.get(doc_id, 0) + 1
+        return [
+            item
+            for item in records
+            if self._owns(item)
+            and self._safe_doc_id(item.get("doc_id"))
+            and counts[item["doc_id"]] == 1
+        ]
+
+    @staticmethod
+    def _safe_doc_id(value: Any) -> bool:
+        return isinstance(value, str) and _DOC_ID_PATTERN.fullmatch(value) is not None
+
+    def _find_owned_record(
+        self,
+        records: list[dict[str, Any]],
+        doc_id: str,
+    ) -> dict[str, Any] | None:
+        if not self._safe_doc_id(doc_id):
+            return None
+        matches = [item for item in records if item.get("doc_id") == doc_id]
+        if len(matches) != 1 or not self._owns(matches[0]):
+            return None
+        return matches[0]
+
+    def _replace_with_normalized(self, item: dict[str, Any]) -> None:
+        normalized = self._normalize_meta(item)
+        item.clear()
+        item.update(normalized)
+
+    def _delete_owned_document(
+        self,
+        records: list[dict[str, Any]],
+        doc_id: str,
+    ) -> bool:
+        item = self._find_owned_record(records, doc_id)
+        if item is None:
+            return False
+        (self._dir / f"{doc_id}.txt").unlink(missing_ok=True)
+        (self._dir / f"{doc_id}_style.json").unlink(missing_ok=True)
+        records.remove(item)
+        return True
 
     def _save_entry(self, entry: KnowledgeEntry) -> None:
         # 최대 문서 수 초과 시 가장 오래된 것 삭제
-        index = self._load_index()
-        if len(index) >= MAX_DOCS_PER_PROJECT:
-            oldest = sorted(index, key=lambda x: x.get("created_at", 0))[0]
-            self.delete_document(oldest["doc_id"])
-            index = self._load_index()
+        records = self._read_index()
+        owned = self._owned_records(records)
+        if len(owned) >= MAX_DOCS_PER_PROJECT:
+            oldest = min(owned, key=lambda item: item.get("created_at", 0))
+            self._delete_owned_document(records, oldest["doc_id"])
 
         # 텍스트 저장
         self._atomic_write(self._dir / f"{entry.doc_id}.txt", entry.text)
@@ -262,11 +360,13 @@ class KnowledgeStoreCoreMixin:
         # 인덱스 갱신
         meta = self._normalize_meta(entry.to_meta())
         entry.knowledge_scope = dict(meta.get("knowledge_scope") or {})
-        index.append(meta)
-        self._atomic_write_json(self._index_path, index)
+        records.append(meta)
+        self._write_index(records)
 
     def _normalize_meta(self, meta: dict[str, Any]) -> dict[str, Any]:
         item = dict(meta)
+        item["tenant_id"] = self.tenant_id
+        item["project_id"] = self.project_id
         item["tags"] = _normalize_list(item.get("tags"))
         item["applicable_bundles"] = _normalize_list(item.get("applicable_bundles"))
         item["source_organization"] = _normalize_string(item.get("source_organization"))
@@ -293,11 +393,7 @@ class KnowledgeStoreCoreMixin:
         }
 
     def _atomic_write(self, path: Path, text: str) -> None:
-        import os as _os
-        tmp = path.with_name(f"{path.name}.tmp.{uuid.uuid4().hex[:8]}")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.flush() if hasattr(tmp, "flush") else None
-        _os.replace(tmp, path)
+        atomic_write_text(path, text)
 
     def _atomic_write_json(self, path: Path, data: Any) -> None:
         self._atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2))

@@ -74,7 +74,11 @@ class GenerationContextInjectionMixin:
         try:
             from app.storage.knowledge_store import KnowledgeStore
 
-            ks = KnowledgeStore(project_id)
+            ks = KnowledgeStore(
+                project_id,
+                data_dir=str(self.data_dir),
+                tenant_id=tenant_id,
+            )
             ranked_documents = ks.rank_documents_for_context(
                 bundle_type=bundle_type,
                 title=str(payload.get("title", "") or ""),

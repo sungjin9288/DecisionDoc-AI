@@ -204,6 +204,7 @@ class ReportWorkflowApprovalMixin:
                 raise ValueError("learning_opt_in=true인 워크플로우만 지식 후보로 승격할 수 있습니다.")
             knowledge_payload = self._promote_docs_to_knowledge(
                 rec,
+                tenant_id=tenant_id,
                 project_id=project_id,
                 docs=docs,
                 tags=resolved_tags,
@@ -266,6 +267,7 @@ class ReportWorkflowApprovalMixin:
         self,
         rec: ReportWorkflowRecord,
         *,
+        tenant_id: str,
         project_id: str,
         docs: list[dict[str, Any]],
         tags: list[str],
@@ -275,7 +277,11 @@ class ReportWorkflowApprovalMixin:
         reference_year: int | None,
         notes: str,
     ) -> list[dict[str, Any]]:
-        store = KnowledgeStore(project_id, data_dir=self._data_dir)
+        store = KnowledgeStore(
+            project_id,
+            data_dir=self._data_dir,
+            tenant_id=tenant_id,
+        )
         source_request_id = self._approval_request_id(rec)
         promoted: list[dict[str, Any]] = []
         for item in docs:

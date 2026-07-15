@@ -152,7 +152,11 @@ def _seed_case(tmp_path, case: dict) -> str:
     )
     capability_text = str(case.get("capability_text", "")).strip()
     if capability_text:
-        KnowledgeStore(project_id, data_dir=str(tmp_path)).add_document(
+        KnowledgeStore(
+            project_id,
+            data_dir=str(tmp_path),
+            tenant_id="tenant-a",
+        ).add_document(
             f"{project_id}.txt",
             capability_text,
         )

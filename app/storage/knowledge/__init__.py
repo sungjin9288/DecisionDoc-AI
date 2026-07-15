@@ -4,7 +4,7 @@
 이후 문서 생성 시 컨텍스트로 자동 주입된다.
 
 저장 구조 (로컬):
-    data/knowledge/{project_id}/
+    data/tenants/{tenant_id}/knowledge/{project_id}/
         index.json          — 문서 목록 및 메타데이터
         {doc_id}.txt        — 추출된 원본 텍스트
         {doc_id}_style.json — 스타일 프로필 (선택)

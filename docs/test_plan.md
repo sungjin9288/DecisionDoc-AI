@@ -32,11 +32,12 @@
 | 알림/협업 | `tests/test_notifications.py`, `tests/test_history_favorites.py` | 알림 및 사용자 협업 흐름 |
 | DocumentOps 이력 | `tests/test_document_ops_agent_api.py`, `tests/storage/test_trajectory_store.py`, `tests/test_audit.py`, `tests/e2e/test_main_flow.py` | tenant/filter/search total, 양방향 pagination, summary/lazy detail, 열람·review audit, desktop/mobile 작업대 |
 | Auto bundle 입력 | `tests/test_bundle_expander.py` | tenant별 request pattern, admin/Ops 조회, concurrent atomic write, provider contract와 path-safe bundle publication |
+| 프로젝트 지식 | `tests/test_knowledge.py`, `tests/test_generate.py`, `tests/test_tenant.py`, `tests/test_infrastructure.py` | 같은 project ID의 tenant별 CRUD/context 격리, ownership drift·중복 ID 차단, concurrent atomic write, legacy system migration, production caller tenant binding |
 
 ### 2.2 보안 시험
 | 시험 항목 | 대표 시험 파일 | 비고 |
 |-----------|----------------|------|
-| OWASP Top 10 대응 | `tests/test_security.py`, `tests/test_bundle_expander.py` | XSS, auth, SSRF, project/approval/procurement/report-workflow/model-registry의 tenant 필수 조회, tenant-bound billing/user/invite/style/SSO/template/notification/message/history/share/audit/meeting-recording/quality-learning/request-pattern 상태, provider-derived path와 cross-tenant IDOR 차단 |
+| OWASP Top 10 대응 | `tests/test_security.py`, `tests/test_bundle_expander.py`, `tests/test_knowledge.py` | XSS, auth, SSRF, project/approval/procurement/report-workflow/model-registry의 tenant 필수 조회, tenant-bound billing/user/invite/style/SSO/template/notification/message/history/share/audit/meeting-recording/quality-learning/request-pattern/knowledge 상태, provider-derived path와 cross-tenant IDOR 차단 |
 | 인프라 보안 | `tests/test_infrastructure.py` | 헤더, 운영 설정 |
 | Rate Limiting | `tests/test_infrastructure.py` 포함 | 로그인/요청 제한 |
 

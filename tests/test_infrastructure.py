@@ -11,6 +11,7 @@ Coverage (12 tests):
 """
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import re
 import shutil
@@ -2618,6 +2619,24 @@ def test_app_python_modules_stay_within_800_line_guide():
             oversized_modules[path.relative_to(root).as_posix()] = line_count
 
     assert oversized_modules == {}
+
+
+def test_production_knowledge_store_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "KnowledgeStore":
+                continue
+            if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}")
+
+    assert missing_tenant == []
 
 
 def test_primary_smoke_modules_stay_within_800_line_guide():

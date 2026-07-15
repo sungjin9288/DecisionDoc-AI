@@ -37,6 +37,9 @@ class KnowledgeEntry:
         source_request_id: str = "",
         source_doc_type: str = "",
         knowledge_scope: dict[str, Any] | None = None,
+        *,
+        tenant_id: str,
+        project_id: str,
     ) -> None:
         self.doc_id = doc_id
         self.filename = filename
@@ -55,11 +58,15 @@ class KnowledgeEntry:
         self.source_request_id = _normalize_string(source_request_id)
         self.source_doc_type = _normalize_string(source_doc_type)
         self.knowledge_scope = dict(knowledge_scope or {})
+        self.tenant_id = tenant_id
+        self.project_id = project_id
 
     def to_meta(self) -> dict[str, Any]:
         """index.json에 저장할 메타데이터 (text 제외)."""
         return {
             "doc_id": self.doc_id,
+            "tenant_id": self.tenant_id,
+            "project_id": self.project_id,
             "filename": self.filename,
             "text_len": len(self.text),
             "has_style": bool(self.style_profile),
