@@ -16,6 +16,8 @@ Coverage (25+ tests):
   H6: ModelRegistry.list_models() requires tenant scope and never scans all tenants
   H7: CORS not wildcard in non-dev environment
   H8: BillingStore operations stay bound to the tenant selected at construction
+  H9: UserStore creates and lists users only within its tenant directory
+  H10: InviteStore records its own tenant and writes under DATA_DIR
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -396,6 +398,82 @@ def test_billing_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     assert tenant_a.get_plan().plan_id == "enterprise"
     assert tenant_b.get_account().tenant_id == "tenant_b"
     assert tenant_b.get_plan().plan_id == "free"
+
+
+def test_user_store_is_bound_to_one_tenant(tmp_path):
+    """User creation cannot redirect a tenant-scoped store to another tenant."""
+    from app.storage.user_store import UserRole, UserStore
+
+    tenant_a = UserStore(tmp_path / "tenant_a")
+    tenant_b = UserStore(tmp_path / "tenant_b")
+
+    user = tenant_a.create(
+        "alice",
+        "Alice",
+        "alice@example.com",
+        "SecurePass1",
+        UserRole.ADMIN,
+    )
+
+    with pytest.raises(TypeError):
+        tenant_a.create(
+            tenant_id="tenant_b",
+            username="bob",
+            display_name="Bob",
+            email="bob@example.com",
+            password="SecurePass2",
+            role=UserRole.MEMBER,
+        )
+
+    assert user.tenant_id == "tenant_a"
+    assert [stored.user_id for stored in tenant_a.list_users()] == [user.user_id]
+    assert tenant_b.list_users() == []
+
+    path = tmp_path / "tenant_a" / "users.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[user.user_id]["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert tenant_a.get_by_id(user.user_id) is None
+    assert tenant_a.get_by_username("alice") is None
+    assert tenant_a.verify_password(user.user_id, "SecurePass1") is False
+    assert tenant_a.list_users() == []
+
+
+def test_invite_store_is_bound_to_data_dir_tenant(tmp_path, monkeypatch):
+    """Invitation records use the store tenant and the configured data root."""
+    from app.storage.invite_store import InviteStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = InviteStore("tenant_a")
+    invite = store.create(
+        "invite-1",
+        "reviewer@example.com",
+        "member",
+        "admin-1",
+    )
+
+    with pytest.raises(TypeError):
+        store.create(
+            invite_id="invite-2",
+            tenant_id="tenant_b",
+            email="reviewer@example.com",
+            role="member",
+            created_by="admin-1",
+        )
+
+    assert invite["tenant_id"] == "tenant_a"
+    path = tmp_path / "tenants" / "tenant_a" / "invites.json"
+    assert path.is_file()
+
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records["invite-1"]["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert store.get("invite-1") is None
+    store.mark_used("invite-1")
+    records = json.loads(path.read_text(encoding="utf-8"))
+    assert records["invite-1"]["is_active"] is True
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

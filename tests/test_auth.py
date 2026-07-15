@@ -63,8 +63,8 @@ def _register_and_login(client: TestClient) -> dict:
 def test_user_store_create(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "alice", "Alice", "alice@test.com", "password123", UserRole.ADMIN)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("alice", "Alice", "alice@test.com", "password123", UserRole.ADMIN)
     assert user.user_id
     assert user.username == "alice"
     assert user.role == UserRole.ADMIN
@@ -75,17 +75,17 @@ def test_user_store_create(tmp_path):
 def test_user_store_duplicate_username_raises(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    store.create("t1", "bob", "Bob", "bob@test.com", "password123", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    store.create("bob", "Bob", "bob@test.com", "password123", UserRole.MEMBER)
     with pytest.raises(ValueError, match="이미 존재"):
-        store.create("t1", "bob", "Bob2", "bob2@test.com", "password123", UserRole.MEMBER)
+        store.create("bob", "Bob2", "bob2@test.com", "password123", UserRole.MEMBER)
 
 
 def test_user_store_verify_password(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "carol", "Carol", "carol@test.com", "SecurePass1!", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("carol", "Carol", "carol@test.com", "SecurePass1!", UserRole.MEMBER)
     assert store.verify_password(user.user_id, "SecurePass1!") is True
     assert store.verify_password(user.user_id, "WrongPass!") is False
 
@@ -93,31 +93,32 @@ def test_user_store_verify_password(tmp_path):
 def test_user_store_wrong_password_returns_false(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "dave", "Dave", "dave@test.com", "password123", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("dave", "Dave", "dave@test.com", "password123", UserRole.MEMBER)
     assert store.verify_password(user.user_id, "COMPLETELY_WRONG") is False
 
 
-def test_user_store_list_by_tenant(tmp_path):
+def test_user_store_lists_only_its_tenant(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    store.create("tenant_a", "u1", "U1", "u1@test.com", "password123", UserRole.MEMBER)
-    store.create("tenant_a", "u2", "U2", "u2@test.com", "password123", UserRole.ADMIN)
-    store.create("tenant_b", "u3", "U3", "u3@test.com", "password123", UserRole.MEMBER)
+    tenant_a = UserStore(tmp_path / "tenant_a")
+    tenant_b = UserStore(tmp_path / "tenant_b")
+    tenant_a.create("u1", "U1", "u1@test.com", "password123", UserRole.MEMBER)
+    tenant_a.create("u2", "U2", "u2@test.com", "password123", UserRole.ADMIN)
+    tenant_b.create("u3", "U3", "u3@test.com", "password123", UserRole.MEMBER)
 
-    users_a = store.list_by_tenant("tenant_a")
+    users_a = tenant_a.list_users()
     assert len(users_a) == 2
 
-    users_b = store.list_by_tenant("tenant_b")
+    users_b = tenant_b.list_users()
     assert len(users_b) == 1
 
 
 def test_user_store_update(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "eve", "Eve", "eve@test.com", "password123", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("eve", "Eve", "eve@test.com", "password123", UserRole.MEMBER)
     updated = store.update(user.user_id, display_name="Eveline", email="eveline@test.com")
     assert updated.display_name == "Eveline"
     assert updated.email == "eveline@test.com"
@@ -126,8 +127,8 @@ def test_user_store_update(tmp_path):
 def test_user_store_deactivate(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "frank", "Frank", "frank@test.com", "password123", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("frank", "Frank", "frank@test.com", "password123", UserRole.MEMBER)
     store.deactivate(user.user_id)
     found = store.get_by_id(user.user_id)
     assert found is not None
@@ -137,8 +138,8 @@ def test_user_store_deactivate(tmp_path):
 def test_user_store_change_password(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
-    user = store.create("t1", "grace", "Grace", "grace@test.com", "OldPass123!", UserRole.MEMBER)
+    store = UserStore(tmp_path / "t1")
+    user = store.create("grace", "Grace", "grace@test.com", "OldPass123!", UserRole.MEMBER)
     result = store.change_password(user.user_id, "OldPass123!", "NewPass456!")
     assert result is True
     assert store.verify_password(user.user_id, "NewPass456!") is True
@@ -148,9 +149,9 @@ def test_user_store_change_password(tmp_path):
 def test_user_store_password_too_short_raises(tmp_path):
     from app.storage.user_store import UserRole, UserStore
 
-    store = UserStore(tmp_path)
+    store = UserStore(tmp_path / "t1")
     with pytest.raises(ValueError):
-        store.create("t1", "helen", "Helen", "h@test.com", "short", UserRole.MEMBER)
+        store.create("helen", "Helen", "h@test.com", "short", UserRole.MEMBER)
 
 
 # ── JWT service unit tests ─────────────────────────────────────────────────────

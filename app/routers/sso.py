@@ -62,7 +62,7 @@ def _provision_sso_user(tenant_id: str, username: str, display_name: str, email:
     from app.storage.user_store import UserRole, get_user_store
 
     usr_store = get_user_store(tenant_id)
-    user = usr_store.get_by_username(tenant_id, username)
+    user = usr_store.get_by_username(username)
     if user is None:
         random_pw = _secrets.token_urlsafe(32)
         try:
@@ -70,7 +70,6 @@ def _provision_sso_user(tenant_id: str, username: str, display_name: str, email:
         except ValueError:
             user_role = UserRole.MEMBER
         user = usr_store.create(
-            tenant_id=tenant_id,
             username=username,
             display_name=display_name or username,
             email=email,

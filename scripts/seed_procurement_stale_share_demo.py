@@ -329,7 +329,6 @@ def seed_procurement_stale_share_demo(
 
     user_store = UserStore(data_dir / "tenants" / DEMO_TENANT_ID, backend=backend)
     user = user_store.create(
-        tenant_id=DEMO_TENANT_ID,
         username=DEMO_USERNAME,
         display_name=DEMO_DISPLAY_NAME,
         email=DEMO_EMAIL,

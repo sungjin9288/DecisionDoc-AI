@@ -37,7 +37,7 @@ def admin_list_locations(request: Request, include_procurement: bool = False) ->
                 data_dir / "tenants" / tenant.tenant_id,
                 backend=request.app.state.state_backend,
             )
-            users = user_store.list_by_tenant(tenant.tenant_id)
+            users = user_store.list_users()
             user_count = len(users)
         except Exception:
             user_count = 0
@@ -79,7 +79,7 @@ def admin_location_users(tenant_id_path: str, request: Request) -> list[dict]:
         data_dir / "tenants" / tenant_id_path,
         backend=request.app.state.state_backend,
     )
-    users = user_store.list_by_tenant(tenant_id_path)
+    users = user_store.list_users()
     return [
         {
             "user_id": u.user_id,
@@ -121,4 +121,3 @@ def admin_update_location_user(tenant_id_path: str, user_id: str, payload: dict,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"message": "사용자 업무 AI 배정이 수정되었습니다."}
-

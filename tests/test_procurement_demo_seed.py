@@ -56,7 +56,7 @@ def test_seed_procurement_stale_share_demo_creates_local_manual_verification_sta
     assert tenant_store.get_tenant("t-clean-location") is not None
 
     user_store = UserStore(data_dir / "tenants" / "system", backend=backend)
-    user = user_store.get_by_username("system", "stale_demo_admin")
+    user = user_store.get_by_username("stale_demo_admin")
     assert user is not None
     assert user_store.verify_password(user.user_id, "DemoPass123!")
 

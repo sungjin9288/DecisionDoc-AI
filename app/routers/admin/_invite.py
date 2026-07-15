@@ -121,7 +121,6 @@ async def admin_invite_user(body: InviteUserRequest, request: Request) -> dict:
     store = InviteStore(tenant_id)
     store.create(
         invite_id=invite_id,
-        tenant_id=tenant_id,
         email=body.email,
         role=body.role,
         created_by=getattr(request.state, "user_id", "admin"),
@@ -173,11 +172,10 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                 data_dir / "tenants" / tenant.tenant_id,
                 backend=request.app.state.state_backend,
             )
-            existing = user_store.get_by_username(tenant.tenant_id, body.username)
+            existing = user_store.get_by_username(body.username)
             if existing:
                 raise HTTPException(400, "이미 사용 중인 아이디입니다.")
             user = user_store.create(
-                tenant_id=tenant.tenant_id,
                 username=body.username,
                 display_name=body.display_name,
                 email=invite.get("email", ""),
@@ -202,4 +200,3 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                 },
             }
     raise HTTPException(404, "초대 링크를 찾을 수 없습니다.")
-

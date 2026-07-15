@@ -90,11 +90,11 @@ def test_user_store_persists_to_s3_state_backend():
     backend, client = _backend()
     store = UserStore(Path("/virtual/data/tenants/alpha"), backend=backend)
 
-    user = store.create("alpha", "alice", "Alice", "alice@test.com", "Secure123", UserRole.ADMIN)
+    user = store.create("alice", "Alice", "alice@test.com", "Secure123", UserRole.ADMIN)
 
     assert user.username == "alice"
     assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/users.json") in client.objects
-    reloaded = UserStore(Path("/virtual/data/tenants/alpha"), backend=backend).get_by_username("alpha", "alice")
+    reloaded = UserStore(Path("/virtual/data/tenants/alpha"), backend=backend).get_by_username("alice")
     assert reloaded is not None
     assert reloaded.role == UserRole.ADMIN
 

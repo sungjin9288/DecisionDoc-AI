@@ -85,7 +85,7 @@ class MessageStore:
             store = get_user_store(tenant_id)
             resolved: list[str] = []
             for name in names:
-                user = store.get_by_username(tenant_id, name)
+                user = store.get_by_username(name)
                 if user:
                     resolved.append(user.user_id)
                 else:

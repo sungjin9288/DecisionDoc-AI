@@ -92,18 +92,20 @@ def test_invite_store_create_and_get(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.invite_store import InviteStore
     store = InviteStore("test-inv-tenant")
-    store.create("inv-001", "test-inv-tenant", "test@test.com", "member", "admin")
+    store.create("inv-001", "test@test.com", "member", "admin")
     invite = store.get("inv-001")
     assert invite is not None
+    assert invite["tenant_id"] == "test-inv-tenant"
     assert invite["email"] == "test@test.com"
     assert invite["is_active"] is True
+    assert (tmp_path / "tenants" / "test-inv-tenant" / "invites.json").is_file()
 
 
 def test_invite_store_mark_used(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.invite_store import InviteStore
     store = InviteStore("test-used-tenant")
-    store.create("inv-002", "test-used-tenant", "used@test.com", "member", "admin")
+    store.create("inv-002", "used@test.com", "member", "admin")
     store.mark_used("inv-002")
     invite = store.get("inv-002")
     assert invite["is_active"] is False

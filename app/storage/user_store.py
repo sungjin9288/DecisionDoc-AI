@@ -88,8 +88,9 @@ class UserStore(BaseJsonStore):
     def __init__(self, tenant_dir: Path, *, backend: StateBackend | None = None) -> None:
         super().__init__()
         self._tenant_dir = Path(tenant_dir)
+        self._tenant_id = self._tenant_dir.name
         self._path = self._tenant_dir / "users.json"
-        self._relative_path = f"tenants/{self._tenant_dir.name}/users.json"
+        self._relative_path = f"tenants/{self._tenant_id}/users.json"
         self._backend = backend
         if self._backend is None:
             self._tenant_dir.mkdir(parents=True, exist_ok=True)
@@ -129,11 +130,13 @@ class UserStore(BaseJsonStore):
         d.setdefault("assigned_ai_profiles", [])
         return User(**d)
 
+    def _owns(self, record: dict | None) -> bool:
+        return bool(record and record.get("tenant_id") == self._tenant_id)
+
     # ── public API ────────────────────────────────────────────────────────
 
     def create(
         self,
-        tenant_id: str,
         username: str,
         display_name: str,
         email: str,
@@ -153,14 +156,13 @@ class UserStore(BaseJsonStore):
         )
         with self._lock:
             data = self._load()
-            # Check uniqueness within tenant
             for u in data.values():
-                if u["tenant_id"] == tenant_id and u["username"] == username:
+                if u["username"] == username:
                     raise ValueError(f"사용자 이름 '{username}'이(가) 이미 존재합니다.")
             user_id = str(uuid.uuid4())
             user = User(
                 user_id=user_id,
-                tenant_id=tenant_id,
+                tenant_id=self._tenant_id,
                 username=username,
                 display_name=display_name,
                 email=email,
@@ -181,13 +183,13 @@ class UserStore(BaseJsonStore):
         with self._lock:
             data = self._load()
         rec = data.get(user_id)
-        return self._to_user(rec) if rec else None
+        return self._to_user(rec) if self._owns(rec) else None
 
-    def get_by_username(self, tenant_id: str, username: str) -> User | None:
+    def get_by_username(self, username: str) -> User | None:
         with self._lock:
             data = self._load()
         for u in data.values():
-            if u["tenant_id"] == tenant_id and u["username"] == username:
+            if self._owns(u) and u["username"] == username:
                 return self._to_user(u)
         return None
 
@@ -195,17 +197,14 @@ class UserStore(BaseJsonStore):
         with self._lock:
             data = self._load()
         rec = data.get(user_id)
-        if not rec:
+        if not self._owns(rec):
             return False
         return _check_password(password, rec["password_hash"])
 
-    def list_by_tenant(self, tenant_id: str, role: UserRole | str | None = None) -> list[User]:
+    def list_users(self, role: UserRole | str | None = None) -> list[User]:
         with self._lock:
             data = self._load()
-        users = [
-            self._to_user(u) for u in data.values()
-            if u["tenant_id"] == tenant_id
-        ]
+        users = [self._to_user(u) for u in data.values() if self._owns(u)]
         if role is not None:
             role_val = UserRole(role) if isinstance(role, str) else role
             users = [u for u in users if u.role == role_val]
@@ -227,7 +226,7 @@ class UserStore(BaseJsonStore):
         with self._lock:
             data = self._load()
             rec = data.get(user_id)
-            if not rec:
+            if not self._owns(rec):
                 raise ValueError(f"사용자를 찾을 수 없습니다: {user_id}")
             for k, v in kwargs.items():
                 if v is None:
@@ -265,7 +264,7 @@ class UserStore(BaseJsonStore):
     def update_last_login(self, user_id: str) -> None:
         with self._lock:
             data = self._load()
-            if user_id in data:
+            if self._owns(data.get(user_id)):
                 data[user_id]["last_login"] = _now_iso()
                 self._save(data)
 

@@ -35,7 +35,7 @@
 ### 2.2 보안 시험
 | 시험 항목 | 대표 시험 파일 | 비고 |
 |-----------|----------------|------|
-| OWASP Top 10 대응 | `tests/test_security.py` | XSS, auth, SSRF, project/approval/procurement/report-workflow/model-registry의 tenant 필수 조회, tenant-bound billing 상태와 cross-tenant IDOR 차단 |
+| OWASP Top 10 대응 | `tests/test_security.py` | XSS, auth, SSRF, project/approval/procurement/report-workflow/model-registry의 tenant 필수 조회, tenant-bound billing/user/invite 상태와 cross-tenant IDOR 차단 |
 | 인프라 보안 | `tests/test_infrastructure.py` | 헤더, 운영 설정 |
 | Rate Limiting | `tests/test_infrastructure.py` 포함 | 로그인/요청 제한 |
 

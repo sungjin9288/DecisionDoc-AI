@@ -56,12 +56,11 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
 
     tenant_id = get_tenant_id(request)
     user_store = get_user_store(tenant_id)
-    existing = user_store.list_by_tenant(tenant_id)
+    existing = user_store.list_users()
     if existing:
         raise HTTPException(403, "이미 사용자가 존재합니다. 관리자에게 초대를 요청하세요.")
     try:
         user = user_store.create(
-            tenant_id=tenant_id,
             username=body.username,
             display_name=body.display_name,
             email=body.email,
@@ -88,7 +87,7 @@ async def login(request: Request, body: LoginRequest):
 
     tenant_id = get_tenant_id(request)
     user_store = get_user_store(tenant_id)
-    user = user_store.get_by_username(tenant_id, body.username)
+    user = user_store.get_by_username(body.username)
     if not user or not user.is_active:
         raise HTTPException(401, "아이디 또는 비밀번호가 올바르지 않습니다.")
     if not user_store.verify_password(user.user_id, body.password):
@@ -382,7 +381,7 @@ async def list_users(request: Request):
         raise HTTPException(403, "관리자 권한이 필요합니다.")
     tenant_id = get_tenant_id(request)
     user_store = get_user_store(tenant_id)
-    users = user_store.list_by_tenant(tenant_id)
+    users = user_store.list_users()
     return {"users": [
         {
             **_serialize_user_for_client(u),
@@ -402,7 +401,6 @@ async def create_user(request: Request, body: CreateUserRequest):
     user_store = get_user_store(tenant_id)
     try:
         user = user_store.create(
-            tenant_id=tenant_id,
             username=body.username,
             display_name=body.display_name,
             email=body.email,
