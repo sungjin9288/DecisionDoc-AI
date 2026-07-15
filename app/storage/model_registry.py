@@ -230,30 +230,14 @@ class ModelRegistry:
 
     def list_models(
         self,
-        tenant_id: str | None = None,
+        *,
+        tenant_id: str,
         bundle_id: str | None = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List models with optional filters.
-
-        If tenant_id is None, lists all tenants' models (scans all tenant dirs).
-        """
-        results: list[dict[str, Any]] = []
-
-        if tenant_id is not None:
-            with self._lock:
-                models = self._load(tenant_id)
-            results = list(models)
-        else:
-            # Scan all tenant directories
-            tenants_dir = self._data_dir / "tenants"
-            if tenants_dir.exists():
-                for tid_path in tenants_dir.iterdir():
-                    if tid_path.is_dir():
-                        reg_path = tid_path / "model_registry.json"
-                        if reg_path.exists():
-                            with self._lock:
-                                results.extend(self._load(tid_path.name))
+        """List models for one tenant with optional bundle and status filters."""
+        with self._lock:
+            results = list(self._load(tenant_id))
 
         if bundle_id is not None:
             results = [m for m in results if m.get("bundle_id") == bundle_id]

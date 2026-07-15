@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-15 실측: 3029 passed, 2 skipped, 4 deselected
+# 2026-07-15 실측: 3034 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -76,6 +76,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 project document에서 시작한 approval은 tenant-scoped project/document/request/bundle binding과 요청 시점 freshness snapshot을 저장한다. 결재 상세와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 또는 binding 불일치 상태는 명시적 acknowledgement 없이는 최종 승인되지 않는다. 성공한 acknowledgement는 확인자·시각과 함께 approval record 및 audit에 남는다.
   - 2026-07-15 `ProjectStore`와 `ApprovalStore`의 객체 ID 기반 조회·변경 계약에서 tenant 생략 시 전체 tenant를 탐색하던 fallback을 제거했다. Public read/write 메서드는 `tenant_id`를 필수 keyword-only 인자로 받고 현재 tenant 파일만 조회하며, 잘못된 tenant는 기존 route와 동일하게 리소스를 찾지 못한 것으로 처리한다. Generate stream의 project 자동 연결도 인증된 request tenant를 명시적으로 전달하고, 보안 회귀 테스트는 tenant 누락·교차 tenant 접근 거부와 소유 tenant 조회 성공을 함께 확인한다.
   - 2026-07-15 같은 fail-closed tenant 계약을 `ProcurementDecisionStore`와 `ReportWorkflowStore`까지 확장했다. Procurement 조회와 report workflow의 기획·장표·시각자료·최종 검토·승격 상태 변경은 모두 tenant를 명시해야 하며, 내부 lookup은 더 이상 다른 tenant 디렉터리를 순회하지 않는다. Store 회귀 테스트와 전체 호출부 AST 점검이 tenant 누락과 교차 접근 차단을 검증한다.
+  - 2026-07-15 tenant별 인스턴스로 생성되는 `BillingStore`가 메서드 인자로 다른 tenant를 다시 선택할 수 없도록 계약을 단순화했다. 계정·plan·Stripe 상태·기능·초과 비용 조회와 변경은 생성 시점 tenant 경로에만 작동한다. `ModelRegistry.list_models()`도 tenant를 필수 keyword 인자로 받고 전체 tenant 디렉터리 scan fallback을 제거했다. 회귀 테스트는 두 tenant의 billing 상태 분리와 tenant별 model listing을 직접 확인한다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

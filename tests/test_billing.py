@@ -15,12 +15,12 @@ Coverage (25+ tests):
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 
 import pytest
 
+from app.storage.usage_store import UsageEvent
 from tests.async_helper import run_async
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -95,8 +95,7 @@ def admin_client(tmp_path, monkeypatch):
     return tc, tmp_path
 
 
-def _make_event(tenant_id: str = "t1", tokens: int = 1000) -> "UsageEvent":
-    from app.storage.usage_store import UsageEvent
+def _make_event(tenant_id: str = "t1", tokens: int = 1000) -> UsageEvent:
     return UsageEvent(
         event_id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -211,7 +210,7 @@ def test_usage_store_no_events_empty_summary(tmp_path):
 def test_billing_store_creates_free_plan_by_default(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("new_tenant")
-    account = store.get_account("new_tenant")
+    account = store.get_account()
     assert account.plan_id == "free"
     assert account.status == "active"
     assert account.tenant_id == "new_tenant"
@@ -220,7 +219,7 @@ def test_billing_store_creates_free_plan_by_default(tmp_path):
 def test_billing_store_get_plan_free(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("plan_tenant")
-    plan = store.get_plan("plan_tenant")
+    plan = store.get_plan()
     assert plan.plan_id == "free"
     assert plan.monthly_generations == 20
 
@@ -228,8 +227,8 @@ def test_billing_store_get_plan_free(tmp_path):
 def test_billing_store_update_plan(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("upgrade_tenant")
-    store.update_plan("upgrade_tenant", "pro")
-    plan = store.get_plan("upgrade_tenant")
+    store.update_plan("pro")
+    plan = store.get_plan()
     assert plan.plan_id == "pro"
     assert plan.monthly_generations == 200
 
@@ -238,27 +237,27 @@ def test_billing_store_is_feature_enabled(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("feat_tenant")
     # Free plan has basic_bundles but not sso
-    assert store.is_feature_enabled("feat_tenant", "basic_bundles") is True
-    assert store.is_feature_enabled("feat_tenant", "sso") is False
+    assert store.is_feature_enabled("basic_bundles") is True
+    assert store.is_feature_enabled("sso") is False
     # Upgrade to enterprise
-    store.update_plan("feat_tenant", "enterprise")
-    assert store.is_feature_enabled("feat_tenant", "sso") is True
-    assert store.is_feature_enabled("feat_tenant", "finetune") is True
+    store.update_plan("enterprise")
+    assert store.is_feature_enabled("sso") is True
+    assert store.is_feature_enabled("finetune") is True
 
 
 def test_billing_store_set_status(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("status_tenant")
-    store.set_status("status_tenant", "past_due")
-    account = store.get_account("status_tenant")
+    store.set_status("past_due")
+    account = store.get_account()
     assert account.status == "past_due"
 
 
 def test_billing_store_update_stripe_info(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("stripe_tenant")
-    store.update_stripe_info("stripe_tenant", "cus_123", "sub_456", "4242", "visa")
-    account = store.get_account("stripe_tenant")
+    store.update_stripe_info("cus_123", "sub_456", "4242", "visa")
+    account = store.get_account()
     assert account.stripe_customer_id == "cus_123"
     assert account.stripe_subscription_id == "sub_456"
     assert account.card_last4 == "4242"
@@ -267,7 +266,7 @@ def test_billing_store_update_stripe_info(tmp_path):
 def test_billing_store_overage_cost_zero_on_free(tmp_path):
     from app.storage.billing_store import get_billing_store
     store = get_billing_store("overage_tenant")
-    cost = store.get_overage_cost("overage_tenant")
+    cost = store.get_overage_cost()
     assert cost == 0.0  # free plan price_per_1k_tokens = 0
 
 
@@ -288,7 +287,7 @@ def test_webhook_checkout_completed(tmp_path):
     payload = json.dumps(event).encode()
     run_async(handle_webhook(payload, ""))
     store = get_billing_store("wh_tenant")
-    account = store.get_account("wh_tenant")
+    account = store.get_account()
     assert account.plan_id == "pro"
     assert account.status == "active"
 
@@ -299,7 +298,7 @@ def test_webhook_subscription_deleted_downgrades(tmp_path):
 
     # First upgrade
     store = get_billing_store("cancel_tenant")
-    store.update_plan("cancel_tenant", "pro")
+    store.update_plan("pro")
 
     event = {
         "type": "customer.subscription.deleted",
@@ -310,7 +309,7 @@ def test_webhook_subscription_deleted_downgrades(tmp_path):
     }
     payload = json.dumps(event).encode()
     run_async(handle_webhook(payload, ""))
-    account = store.get_account("cancel_tenant")
+    account = store.get_account()
     assert account.plan_id == "free"
     assert account.status == "canceled"
 
@@ -325,7 +324,7 @@ def test_webhook_payment_failed_sets_past_due(tmp_path):
     }
     payload = json.dumps(event).encode()
     run_async(handle_webhook(payload, ""))
-    account = get_billing_store("fail_tenant").get_account("fail_tenant")
+    account = get_billing_store("fail_tenant").get_account()
     assert account.status == "past_due"
 
 
@@ -341,9 +340,8 @@ def test_webhook_invalid_signature(tmp_path, monkeypatch):
 
 def test_billing_middleware_free_plan_over_limit(tmp_path, monkeypatch):
     """Free tenant over the 20-generation limit should get a 402 on metered endpoints."""
-    import asyncio
     from app.storage.billing_store import get_billing_store
-    from app.storage.usage_store import UsageStore, UsageEvent
+    from app.storage.usage_store import UsageStore
 
     tenant_id = "limit_tenant"
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
@@ -355,7 +353,7 @@ def test_billing_middleware_free_plan_over_limit(tmp_path, monkeypatch):
 
     # Now check that check_limit reports over limit
     billing = get_billing_store(tenant_id)
-    plan = billing.get_plan(tenant_id)
+    plan = billing.get_plan()
     usage = UsageStore()
     result = usage.check_limit(tenant_id, plan)
     assert result["within_limit"] is False
@@ -363,15 +361,15 @@ def test_billing_middleware_free_plan_over_limit(tmp_path, monkeypatch):
 
 def test_billing_middleware_enterprise_always_passes(tmp_path, monkeypatch):
     """Enterprise plan should always be within limit regardless of usage."""
-    from app.storage.billing_store import get_billing_store, PREDEFINED_PLANS
+    from app.storage.billing_store import get_billing_store
     from app.storage.usage_store import UsageStore
 
     tenant_id = "ent_limit_tenant"
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
     billing = get_billing_store(tenant_id)
-    billing.update_plan(tenant_id, "enterprise")
-    plan = billing.get_plan(tenant_id)
+    billing.update_plan("enterprise")
+    plan = billing.get_plan()
 
     store = UsageStore()
     for _ in range(500):

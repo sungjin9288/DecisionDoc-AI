@@ -29,7 +29,7 @@ async def create_checkout_session(
         raise ValueError(f"No Stripe price configured for plan: {plan_id}")
 
     billing = get_billing_store(tenant_id)
-    account = billing.get_account(tenant_id)
+    account = billing.get_account()
 
     params = {
         "mode": "subscription",
@@ -83,9 +83,9 @@ async def handle_webhook(payload: bytes, signature: str) -> dict:
         subscription_id = data.get("subscription")
         if tenant_id and plan_id:
             b = get_billing_store(tenant_id)
-            b.update_plan(tenant_id, plan_id)
-            b.update_stripe_info(tenant_id, customer_id, subscription_id, None, None)
-            b.set_status(tenant_id, "active")
+            b.update_plan(plan_id)
+            b.update_stripe_info(customer_id, subscription_id, None, None)
+            b.set_status("active")
             _log.info("[Billing] Plan upgraded: %s → %s", tenant_id, plan_id)
 
     elif event_type == "invoice.paid":
@@ -95,14 +95,14 @@ async def handle_webhook(payload: bytes, signature: str) -> dict:
         tenant_id = data.get("metadata", {}).get("tenant_id")
         if tenant_id:
             b = get_billing_store(tenant_id)
-            b.update_plan(tenant_id, "free")
-            b.set_status(tenant_id, "canceled")
+            b.update_plan("free")
+            b.set_status("canceled")
             _log.info("[Billing] Subscription canceled: %s", tenant_id)
 
     elif event_type == "invoice.payment_failed":
         tenant_id = data.get("metadata", {}).get("tenant_id")
         if tenant_id:
-            get_billing_store(tenant_id).set_status(tenant_id, "past_due")
+            get_billing_store(tenant_id).set_status("past_due")
             _log.warning("[Billing] Payment failed: %s", tenant_id)
 
     return {"received": True}
@@ -113,7 +113,7 @@ async def cancel_subscription(tenant_id: str) -> bool:
     if not api_key:
         return False
     from app.storage.billing_store import get_billing_store
-    account = get_billing_store(tenant_id).get_account(tenant_id)
+    account = get_billing_store(tenant_id).get_account()
     if not account.stripe_subscription_id:
         return False
     async with httpx.AsyncClient() as client:

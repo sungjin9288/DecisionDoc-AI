@@ -13,7 +13,9 @@ Coverage (25+ tests):
   H3: ProjectStore.get() requires tenant scope and blocks cross-tenant access
   H4: ProcurementDecisionStore.get() requires tenant scope and blocks cross-tenant access
   H5: ReportWorkflowStore.get() requires tenant scope and blocks cross-tenant access
+  H6: ModelRegistry.list_models() requires tenant scope and never scans all tenants
   H7: CORS not wildcard in non-dev environment
+  H8: BillingStore operations stay bound to the tenant selected at construction
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -33,9 +35,7 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import time
-import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -352,6 +352,50 @@ def test_report_workflow_store_get_requires_tenant_scope(tmp_path):
     result = store.get(record.report_workflow_id, tenant_id="tenant_b")
     assert result is not None
     assert result.tenant_id == "tenant_b"
+
+
+def test_model_registry_list_requires_tenant_scope(tmp_path):
+    """Model listings never fall back to an all-tenant directory scan."""
+    from app.storage.model_registry import ModelRegistry
+
+    registry = ModelRegistry(tmp_path)
+    for tenant_id in ("tenant_a", "tenant_b"):
+        registry.register_model(
+            model_id=f"model-{tenant_id}",
+            base_model="test-model",
+            bundle_id=None,
+            tenant_id=tenant_id,
+            training_file_id=f"file-{tenant_id}",
+            record_count=3,
+            avg_score_before=0.5,
+            openai_job_id=f"job-{tenant_id}",
+        )
+
+    with pytest.raises(TypeError, match="tenant_id"):
+        registry.list_models()
+
+    assert [model["tenant_id"] for model in registry.list_models(tenant_id="tenant_a")] == [
+        "tenant_a"
+    ]
+
+
+def test_billing_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """A tenant-scoped billing instance cannot redirect an operation to another tenant."""
+    from app.storage.billing_store import BillingStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    tenant_a = BillingStore("tenant_a")
+    tenant_b = BillingStore("tenant_b")
+
+    tenant_a.update_plan("enterprise")
+
+    with pytest.raises(TypeError):
+        tenant_a.get_account("tenant_b")
+
+    assert tenant_a.get_account().tenant_id == "tenant_a"
+    assert tenant_a.get_plan().plan_id == "enterprise"
+    assert tenant_b.get_account().tenant_id == "tenant_b"
+    assert tenant_b.get_plan().plan_id == "free"
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

@@ -31,7 +31,7 @@ def _record_usage_sync(
     import uuid as _uuid
     from datetime import datetime as _datetime, timezone as _timezone
 
-    plan = get_billing_store(tenant_id).get_plan(tenant_id)
+    plan = get_billing_store(tenant_id).get_plan()
     tokens_total = tokens_input + tokens_output
     cost = (tokens_total / 1000) * plan.price_per_1k_tokens if tokens_total > 0 else 0.0
 

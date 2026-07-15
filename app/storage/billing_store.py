@@ -147,23 +147,23 @@ class BillingStore(BaseJsonStore):
         self._data_dir = Path(os.getenv("DATA_DIR", "./data"))
 
     def _get_path(self) -> Path:
-        return self._billing_path(self._tenant_id)
+        return self._billing_path()
 
-    def _billing_path(self, tenant_id: str) -> Path:
-        return self._data_dir / "tenants" / tenant_id / "billing.json"
+    def _billing_path(self) -> Path:
+        return self._data_dir / "tenants" / self._tenant_id / "billing.json"
 
-    def _load_account(self, tenant_id: str) -> BillingAccount:
-        path = self._billing_path(tenant_id)
+    def _load_account(self) -> BillingAccount:
+        path = self._billing_path()
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 return BillingAccount(**data)
             except (OSError, json.JSONDecodeError, TypeError, KeyError):
                 pass
-        return _default_account(tenant_id)
+        return _default_account(self._tenant_id)
 
     def _save_account(self, account: BillingAccount) -> None:
-        path = self._billing_path(account.tenant_id)
+        path = self._billing_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_name(f"{path.name}.tmp.{uuid.uuid4().hex}")
         try:
@@ -181,25 +181,23 @@ class BillingStore(BaseJsonStore):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def get_account(self, tenant_id: str | None = None) -> BillingAccount:
+    def get_account(self) -> BillingAccount:
         """Return billing account, creating a free default if missing."""
-        tid = tenant_id or self._tenant_id
         with self._lock:
-            return self._load_account(tid)
+            return self._load_account()
 
-    def get_plan(self, tenant_id: str | None = None) -> PlanConfig:
+    def get_plan(self) -> PlanConfig:
         """Return the PlanConfig for the tenant's current plan."""
-        account = self.get_account(tenant_id)
+        account = self.get_account()
         return PREDEFINED_PLANS.get(account.plan_id, PREDEFINED_PLANS["free"])
 
     def update_plan(
         self,
-        tenant_id: str,
         plan_id: str,
         stripe_data: dict | None = None,
     ) -> None:
         with self._lock:
-            account = self._load_account(tenant_id)
+            account = self._load_account()
             account.plan_id = plan_id
             account.updated_at = datetime.now(timezone.utc).isoformat()
             if stripe_data:
@@ -211,14 +209,13 @@ class BillingStore(BaseJsonStore):
 
     def update_stripe_info(
         self,
-        tenant_id: str,
         customer_id: str | None,
         subscription_id: str | None,
         card_last4: str | None,
         card_brand: str | None,
     ) -> None:
         with self._lock:
-            account = self._load_account(tenant_id)
+            account = self._load_account()
             if customer_id is not None:
                 account.stripe_customer_id = customer_id
             if subscription_id is not None:
@@ -230,24 +227,24 @@ class BillingStore(BaseJsonStore):
             account.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_account(account)
 
-    def set_status(self, tenant_id: str, status: str) -> None:
+    def set_status(self, status: str) -> None:
         with self._lock:
-            account = self._load_account(tenant_id)
+            account = self._load_account()
             account.status = status
             account.updated_at = datetime.now(timezone.utc).isoformat()
             self._save_account(account)
 
-    def is_feature_enabled(self, tenant_id: str, feature: str) -> bool:
-        plan = self.get_plan(tenant_id)
+    def is_feature_enabled(self, feature: str) -> bool:
+        plan = self.get_plan()
         return feature in plan.features
 
-    def get_overage_cost(self, tenant_id: str) -> float:
+    def get_overage_cost(self) -> float:
         """Return cost for tokens used beyond the plan's monthly limit."""
         from app.storage.usage_store import UsageStore
-        plan = self.get_plan(tenant_id)
+        plan = self.get_plan()
         if plan.monthly_tokens == -1 or plan.price_per_1k_tokens == 0:
             return 0.0
-        summary = UsageStore().get_current_month(tenant_id)
+        summary = UsageStore().get_current_month(self._tenant_id)
         if summary is None:
             return 0.0
         overage = summary.total_tokens - plan.monthly_tokens

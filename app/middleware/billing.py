@@ -35,8 +35,8 @@ async def billing_middleware(request: Request, call_next):
         billing = get_billing_store(tenant_id)
         usage = UsageStore()
 
-        account = billing.get_account(tenant_id)
-        plan = billing.get_plan(tenant_id)
+        account = billing.get_account()
+        plan = billing.get_plan()
         limit_check = usage.check_limit(tenant_id, plan)
 
         # Enterprise + trialing: always pass

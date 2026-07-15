@@ -23,8 +23,8 @@ async def get_billing_status(request: Request):
 
     billing = get_billing_store(tenant_id)
     usage = UsageStore()
-    account = billing.get_account(tenant_id)
-    plan = billing.get_plan(tenant_id)
+    account = billing.get_account()
+    plan = billing.get_plan()
     summary = usage.get_current_month(tenant_id)
     limit_check = usage.check_limit(tenant_id, plan)
     return {
@@ -133,5 +133,5 @@ async def override_plan(request: Request, body: PlanOverrideRequest):
     tenant_id = get_tenant_id(request)
     from app.storage.billing_store import get_billing_store
 
-    get_billing_store(tenant_id).update_plan(tenant_id, body.plan_id)
+    get_billing_store(tenant_id).update_plan(body.plan_id)
     return {"message": f"플랜이 {body.plan_id}로 변경되었습니다."}
