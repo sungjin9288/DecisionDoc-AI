@@ -183,6 +183,7 @@ manifest는 reviewer, document type, score distribution, unique artifact 수, te
 3. 사람이 결과, 수정 이유, 점수, scan 결과를 검토하고 ready correction artifact로 저장한다.
 4. UI에서 서로 다른 ready artifact 3~5개를 선택해 `report_quality_pilot_review_package_<sha12>.zip`을 내려받는다. 기존 JSONL + receipt 개별 다운로드도 호환 경로로 유지한다.
    - 실제 파일명에는 응답 본문 SHA-256 앞 12자가 붙고, 전체 hash는 `X-DecisionDoc-Pilot-SHA256` 응답 헤더로도 제공된다.
+   - 수신 UI에서 같은 ZIP을 검증하면 package SHA-256 기반 batch ID와 현재 파일명을 반영한 importer 명령을 바로 복사할 수 있다. 명령은 `~/Downloads`를 가정하므로 다른 위치에서 선택한 파일은 `--source-package` 경로만 바꾼다. 같은 batch ID가 이미 있으면 importer의 write-once 경계를 우회하지 말고 새 ID를 사용한다.
 5. export를 source-bound 파일럿 review pack으로 가져온다.
    ```bash
    python3 scripts/create_report_quality_pilot_pack.py \

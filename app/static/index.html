@@ -8788,10 +8788,12 @@
     'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
     'download-pilot-package': downloadReportWorkflowQualityPilotPackage,
     'verify-package': () => $id('rw-quality-package-file')?.click(),
+    'copy-pilot-import-command': copyReportWorkflowQualityPilotImportCommand,
     inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
     'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
     close: () => {
       _reportWorkflowQualityPilotPreview = null;
+      _reportWorkflowQualityPilotImportCommand = '';
       const detail = $id('rw-quality-artifact-detail');
       if (detail) detail.innerHTML = '';
     },
@@ -9126,6 +9128,36 @@
     }
   }
 
+  let _reportWorkflowQualityPilotImportCommand = '';
+
+  function quotePosixShellArgument(value) {
+    return "'" + String(value || '').replace(/'/g, "'\"'\"'") + "'";
+  }
+
+  function buildReportWorkflowQualityPilotImportCommand(result, filename) {
+    const packageSha256 = String(result?.package_sha256 || '');
+    const batchSuffix = /^[a-f0-9]{64}$/.test(packageSha256)
+      ? packageSha256.slice(0, 12)
+      : 'verified-package';
+    const batchId = `pilot-rqc-${batchSuffix}`;
+    const packageName = String(filename || 'report_quality_pilot_review_package.zip');
+    return `python3 scripts/create_report_quality_pilot_pack.py --batch-id ${quotePosixShellArgument(batchId)} --source-package "$HOME"/Downloads/${quotePosixShellArgument(packageName)} --output-root reports/report-quality`;
+  }
+
+  function copyReportWorkflowQualityPilotImportCommand() {
+    if (!_reportWorkflowQualityPilotImportCommand) {
+      showNotification('먼저 Pilot 검토 패키지를 검증하세요.', 'warn');
+      return;
+    }
+    if (!navigator.clipboard?.writeText) {
+      showNotification('이 브라우저에서는 클립보드 복사를 지원하지 않습니다.', 'error');
+      return;
+    }
+    navigator.clipboard.writeText(_reportWorkflowQualityPilotImportCommand)
+      .then(() => showNotification('Local review pack 준비 명령을 복사했습니다.', 'success'))
+      .catch(() => showNotification('클립보드 복사에 실패했습니다.', 'error'));
+  }
+
   function renderReportWorkflowQualityPackageArtifact(item) {
     const claims = item?.claim_counts || {};
     const changes = Array.isArray(item?.change_requests) ? item.change_requests : [];
@@ -9161,6 +9193,7 @@
     const checks = result?.validation || {};
     const allChecksPassed = Object.values(checks).length > 0 && Object.values(checks).every(value => value === true);
     const externalActionsBlocked = Object.values(boundary).length > 0 && Object.values(boundary).every(value => value === false);
+    _reportWorkflowQualityPilotImportCommand = buildReportWorkflowQualityPilotImportCommand(result, filename);
     el.innerHTML = `<div style="border:1px solid rgba(22,101,52,.28);border-radius:12px;padding:.75rem;background:rgba(240,253,244,.8);">
       <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
         <div>
@@ -9192,6 +9225,16 @@
       <ol style="margin:.7rem 0 0;padding-left:1.25rem;display:grid;gap:.35rem;">
         ${entries.map(item => `<li style="font-size:.71rem;color:#334155;"><strong>${escapeHtml(item.path || '')}</strong><div style="color:var(--muted);overflow-wrap:anywhere;">${Number(item.size_bytes || 0).toLocaleString()} bytes · ${escapeHtml(item.sha256 || '')}</div></li>`).join('')}
       </ol>
+      <section style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem;">
+        <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+          <div>
+            <strong style="font-size:.76rem;color:#1f2a44;">Local review pack 준비</strong>
+            <p style="font-size:.7rem;line-height:1.5;margin:.2rem 0 0;color:var(--muted);">기본 Downloads 폴더 기준입니다. 다른 폴더에서 선택했다면 <code>--source-package</code> 경로만 바꾸세요. 같은 batch ID가 이미 있으면 새 ID로 변경해야 하며, 이 명령은 외부 API나 training을 실행하지 않습니다.</p>
+          </div>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="copy-pilot-import-command">명령 복사</button>
+        </div>
+        <pre style="margin:.55rem 0 0;padding:.6rem;border-radius:8px;background:#f8fafc;border:1px solid var(--border);font-size:.68rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;"><code>${escapeHtml(_reportWorkflowQualityPilotImportCommand)}</code></pre>
+      </section>
       <div style="display:flex;justify-content:flex-end;margin-top:.7rem;">
         <button type="button" class="action-btn" data-rw-quality-artifacts-action="close">닫기</button>
       </div>
@@ -9202,6 +9245,7 @@
   async function verifyReportWorkflowQualityPilotPackage(file) {
     const el = $id('rw-quality-artifact-detail');
     if (!el) return;
+    _reportWorkflowQualityPilotImportCommand = '';
     if (file.size > 5 * 1024 * 1024) {
       showNotification('Pilot 검토 패키지는 5 MB 이하여야 합니다.', 'error');
       return;
@@ -9252,6 +9296,7 @@
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       showNotification(`검토 패키지 ${Number(result.artifact_count || 0)}개 artifact의 무결성과 learning-ready evidence를 확인했습니다.`, 'success');
     } catch (err) {
+      _reportWorkflowQualityPilotImportCommand = '';
       el.innerHTML = `<div style="border:1px solid rgba(239,68,68,.28);border-radius:12px;padding:.75rem;background:rgba(254,242,242,.8);color:#991b1b;font-size:.78rem;">검토 패키지 검증 실패: ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('검토 패키지 검증 실패: ' + (err.message || err), 'error');
     }

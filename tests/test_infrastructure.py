@@ -1809,6 +1809,8 @@ def test_index_html_ops_static_action_wiring_exists():
     assert '<option value="report_quality.pilot_preview">' in content
     assert '<option value="report_quality.pilot_export">' in content
     assert '<option value="report_quality.pilot_package_verify">' in content
+    assert 'data-rw-quality-artifacts-action="copy-pilot-import-command"' in content
+    assert "buildReportWorkflowQualityPilotImportCommand" in content
     assert '<option value="document_ops.trajectory_view">' in content
     assert '<option value="document_ops.trajectory_review">' in content
     assert "function renderAuditEvidence(log, detail)" in content

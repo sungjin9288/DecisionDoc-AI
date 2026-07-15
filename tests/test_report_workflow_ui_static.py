@@ -121,11 +121,18 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert 'data-rw-quality-artifacts-action="download-pilot"' in html
     assert 'data-rw-quality-artifacts-action="download-pilot-package"' in html
     assert 'data-rw-quality-artifacts-action="verify-package"' in html
+    assert 'data-rw-quality-artifacts-action="copy-pilot-import-command"' in html
     assert 'id="rw-quality-package-file"' in html
     assert "data-rw-quality-artifact-select" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export/preview" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export/package" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-package/verify" in html
+    assert "buildReportWorkflowQualityPilotImportCommand" in html
+    assert "quotePosixShellArgument" in html
+    assert '"$HOME"/Downloads/' in html
+    assert "copyReportWorkflowQualityPilotImportCommand" in html
+    assert "Local review pack 준비 명령을 복사했습니다." in html
+    assert "_reportWorkflowQualityPilotImportCommand = '';" in html
     assert "X-DecisionDoc-Pilot-Package-SHA256" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export" in html
     assert "artifactIds.length < 3 || artifactIds.length > 5" in html
