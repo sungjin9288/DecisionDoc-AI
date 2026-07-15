@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.tenant import require_tenant_id
+
 
 class GenerationCacheMixin:
     """File-based bundle cache: TTL check, path derivation, atomic read/write, clear."""
@@ -25,9 +27,17 @@ class GenerationCacheMixin:
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         return age_hours < ttl_hours
 
-    def _cache_path(self, provider_name: str, schema_version: str, payload: dict[str, Any]) -> Path:
+    def _cache_path(
+        self,
+        provider_name: str,
+        schema_version: str,
+        payload: dict[str, Any],
+        *,
+        tenant_id: str,
+    ) -> Path:
+        tenant_id = require_tenant_id(tenant_id)
         canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        key = f"{provider_name}:{schema_version}:{canonical}"
+        key = f"{tenant_id}:{provider_name}:{schema_version}:{canonical}"
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{digest}.json"
 

@@ -76,7 +76,7 @@ class DocumentOpsService:
         request_id: str,
     ) -> dict[str, Any]:
         req = DocumentOpsRequest.model_validate(payload)
-        result = self._agent.run(req, request_id=request_id)
+        result = self._agent.run(req, request_id=request_id, tenant_id=tenant_id)
         body = self._serialize_result(result)
         trajectory_id = ""
         trajectory_saved = False

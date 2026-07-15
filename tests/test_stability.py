@@ -178,7 +178,9 @@ def test_retry_succeeds_on_first_attempt(tmp_path: Path, monkeypatch) -> None:
     bundle_spec = MagicMock(spec=BundleSpec)
     bundle_spec.id = "tech_decision"
 
-    result = svc._call_provider_with_retry(MagicMock(), {}, "req-1", bundle_spec)
+    result = svc._call_provider_with_retry(
+        MagicMock(), {}, "req-1", bundle_spec, tenant_id="system"
+    )
     assert result == {"adr": "# ADR"}
     assert call_count == 1
 
@@ -205,7 +207,9 @@ def test_retry_succeeds_on_third_attempt(tmp_path: Path, monkeypatch) -> None:
     bundle_spec = MagicMock(spec=BundleSpec)
     bundle_spec.id = "tech_decision"
 
-    result = svc._call_provider_with_retry(MagicMock(), {}, "req-2", bundle_spec)
+    result = svc._call_provider_with_retry(
+        MagicMock(), {}, "req-2", bundle_spec, tenant_id="system"
+    )
     assert result == {"result": "ok"}
     assert call_count == 3
 
@@ -227,7 +231,9 @@ def test_retry_raises_after_all_attempts(tmp_path: Path, monkeypatch) -> None:
     bundle_spec.id = "tech_decision"
 
     with pytest.raises(ProviderFailedError):
-        svc._call_provider_with_retry(MagicMock(), {}, "req-3", bundle_spec)
+        svc._call_provider_with_retry(
+            MagicMock(), {}, "req-3", bundle_spec, tenant_id="system"
+        )
     assert svc._call_provider_once.call_count == 2
 
 
@@ -269,7 +275,9 @@ def test_retry_uses_retry_after_when_provider_is_rate_limited(tmp_path: Path, mo
     bundle_spec = MagicMock(spec=BundleSpec)
     bundle_spec.id = "tech_decision"
 
-    result = svc._call_provider_with_retry(MagicMock(), {}, "req-rate-limit", bundle_spec)
+    result = svc._call_provider_with_retry(
+        MagicMock(), {}, "req-rate-limit", bundle_spec, tenant_id="system"
+    )
     assert result == {"result": "ok"}
     assert call_count == 2
     assert delays == [4]

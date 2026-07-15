@@ -31,6 +31,7 @@ from app.services.markdown_utils import (
 )
 from app.services.validator import validate_docs
 from app.storage.base import Storage
+from app.tenant import require_tenant_id
 
 if TYPE_CHECKING:
     from app.storage.feedback_store import FeedbackStore
@@ -83,7 +84,39 @@ class GenerationCoreMixin:
         self.env.filters["markdown_kv_table"] = build_markdown_kv_table
         self.env.filters["slide_outline_table"] = build_slide_outline_table
 
-    def generate_documents(self, requirements: GenerateRequest, *, request_id: str, tenant_id: str = "system") -> dict[str, Any]:
+    def generate_documents(
+        self,
+        requirements: GenerateRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Generate one bundle while binding tenant customizations to this call."""
+        from app.domain.schema import _current_tenant_id
+
+        tenant_id = require_tenant_id(tenant_id)
+        had_previous_tenant = hasattr(_current_tenant_id, "value")
+        previous_tenant = getattr(_current_tenant_id, "value", None)
+        _current_tenant_id.value = tenant_id
+        try:
+            return self._generate_documents_for_tenant(
+                requirements,
+                request_id=request_id,
+                tenant_id=tenant_id,
+            )
+        finally:
+            if had_previous_tenant:
+                _current_tenant_id.value = previous_tenant
+            else:
+                del _current_tenant_id.value
+
+    def _generate_documents_for_tenant(
+        self,
+        requirements: GenerateRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
         bundle_id = str(uuid4())
         payload = requirements.model_dump(mode="json")
 
@@ -95,13 +128,6 @@ class GenerationCoreMixin:
         _generation_context.bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
         _generation_context.system_prompt = ""
         _generation_context.output = ""
-
-        # Set current tenant for multi-tenant store isolation
-        try:
-            from app.domain.schema import _current_tenant_id
-            _current_tenant_id.value = tenant_id
-        except Exception:
-            pass
 
         # Resolve bundle spec (defaults to tech_decision for backward compatibility).
         bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
@@ -151,7 +177,12 @@ class GenerationCoreMixin:
         cache_hit = False
 
         bundle: dict[str, Any]
-        cache_path = self._cache_path(provider.name, SCHEMA_VERSION, payload)
+        cache_path = self._cache_path(
+            provider.name,
+            SCHEMA_VERSION,
+            payload,
+            tenant_id=tenant_id,
+        )
         if cache_enabled and cache_path.exists() and self._is_cache_fresh(cache_path):
             cached = self._try_read_cache(cache_path)
             if cached is not None:
@@ -164,7 +195,14 @@ class GenerationCoreMixin:
                     cache_path.unlink()
                 except OSError:
                     pass
-                bundle = self._call_and_prepare_bundle(provider, payload, request_id, timer, bundle_spec)
+                bundle = self._call_and_prepare_bundle(
+                    provider,
+                    payload,
+                    request_id,
+                    timer,
+                    bundle_spec,
+                    tenant_id=tenant_id,
+                )
                 self._write_cache_atomic(cache_path, bundle)
         else:
             # Inject web search context if available
@@ -184,7 +222,14 @@ class GenerationCoreMixin:
                         )
                         payload["_search_context"] = snippets
 
-            bundle = self._call_and_prepare_bundle(provider, payload, request_id, timer, bundle_spec)
+            bundle = self._call_and_prepare_bundle(
+                provider,
+                payload,
+                request_id,
+                timer,
+                bundle_spec,
+                tenant_id=tenant_id,
+            )
             if cache_enabled:
                 self._write_cache_atomic(cache_path, bundle)
 
@@ -328,6 +373,7 @@ class GenerationCoreMixin:
                 "cache_hit": cache_hit if cache_enabled else None,
                 "request_id": request_id,
                 "bundle_id": bundle_id,
+                "tenant_id": tenant_id,
                 "bundle_type": bundle_type,
                 "project_id": payload.get("project_id"),
                 "doc_count": len(docs),

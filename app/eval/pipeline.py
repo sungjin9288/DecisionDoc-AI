@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.eval.eval_store import EvalRecord, EvalStore
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.eval.pipeline")
 
@@ -41,7 +42,7 @@ def run_eval_pipeline(
     finetune_store: Any | None = None,
     ft_system_prompt: str = "",
     ft_output: str = "",
-    tenant_id: str = "system",
+    tenant_id: str,
 ) -> EvalRecord:
     """번들 생성 결과에 대해 평가 파이프라인 실행.
 
@@ -64,6 +65,7 @@ def run_eval_pipeline(
     Returns:
         저장된 EvalRecord
     """
+    tenant_id = require_tenant_id(tenant_id)
     heuristic_score = 0.0
     issues: list[str] = []
     doc_scores: dict[str, float] = {}

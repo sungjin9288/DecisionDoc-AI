@@ -2708,6 +2708,99 @@ def test_production_trajectory_store_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_generation_context_contract_requires_explicit_tenant_binding():
+    root = Path(__file__).resolve().parents[1]
+    expected_functions = {
+        "app/agents/document_ops_agent.py": {"run"},
+        "app/eval/pipeline.py": {"run_eval_pipeline"},
+        "app/services/generation/context_store.py": {
+            "_store_generation_context",
+            "get_generation_context",
+        },
+        "app/services/generation/service_cache_mixin.py": {"_cache_path"},
+        "app/services/generation/service_context_injection_mixin.py": {"_build_feedback_hints"},
+        "app/services/generation/service_core_mixin.py": {"generate_documents"},
+        "app/services/generation/service_provider_mixin.py": {
+            "_call_and_prepare_bundle",
+            "_call_provider_once",
+            "_call_provider_with_retry",
+            "_safe_get_provider",
+        },
+    }
+    discovered: dict[str, set[str]] = {path: set() for path in expected_functions}
+    defaulted: list[str] = []
+
+    for relative_path, function_names in expected_functions.items():
+        path = root / relative_path
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name not in function_names:
+                continue
+            discovered[relative_path].add(node.name)
+            keyword_names = [argument.arg for argument in node.args.kwonlyargs]
+            tenant_index = keyword_names.index("tenant_id")
+            if node.args.kw_defaults[tenant_index] is not None:
+                defaulted.append(f"{relative_path}:{node.name}")
+
+    assert discovered == expected_functions
+    assert defaulted == []
+
+
+def test_production_generation_context_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    guarded_calls = {
+        "generate_documents",
+        "get_generation_context",
+        "run_eval_pipeline",
+        "_store_generation_context",
+    }
+    missing_tenant: list[str] = []
+
+    for base in (root / "app", root / "scripts"):
+        for path in base.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                call_name = ""
+                if isinstance(node.func, ast.Name):
+                    call_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    call_name = node.func.attr
+                    if (
+                        call_name == "submit"
+                        and node.args
+                        and isinstance(node.args[0], ast.Name)
+                        and node.args[0].id == "run_eval_pipeline"
+                    ):
+                        call_name = "run_eval_pipeline"
+                if call_name not in guarded_calls:
+                    continue
+                if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
+                    relative_path = path.relative_to(root).as_posix()
+                    missing_tenant.append(f"{relative_path}:{node.lineno}:{call_name}")
+
+    assert missing_tenant == []
+
+
+def test_document_ops_service_binds_agent_run_to_request_tenant():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "services" / "document_ops_service.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    agent_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "_agent"
+    ]
+
+    assert len(agent_calls) == 1
+    assert any(keyword.arg == "tenant_id" for keyword in agent_calls[0].keywords)
+
+
 def test_primary_smoke_modules_stay_within_800_line_guide():
     root = Path(__file__).resolve().parents[1]
     module_paths = (

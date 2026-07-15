@@ -22,6 +22,7 @@ from app.services.generation.context_store import (
 from app.services.procurement_review_handoff import (
     PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
 )
+from app.tenant import SYSTEM_TENANT_ID, require_tenant_id
 from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_NAME,
     verify_procurement_review_packet,
@@ -406,21 +407,25 @@ class GenerationContextInjectionMixin:
             bundle_type=bundle_type,
         )
 
-    def _build_feedback_hints(self, bundle_type: str, title: str = "") -> str:
+    def _build_feedback_hints(
+        self,
+        bundle_type: str,
+        title: str = "",
+        *,
+        tenant_id: str,
+    ) -> str:
         """Build structured few-shot hints from high-rated feedback examples.
 
         Returns a formatted string injected into the LLM prompt.
         Each example includes: title, rating, user comment, and per-doc
         section heading + first 800 chars for all doc types.
         """
-        # Resolve tenant-scoped feedback store if available
+        tenant_id = require_tenant_id(tenant_id)
         try:
-            from app.domain.schema import _current_tenant_id
             from app.storage.feedback_store import get_feedback_store
-            tid = getattr(_current_tenant_id, "value", "system") or "system"
-            feedback_store = get_feedback_store(tid)
+            feedback_store = get_feedback_store(tenant_id)
         except Exception:
-            feedback_store = self.feedback_store
+            feedback_store = self.feedback_store if tenant_id == SYSTEM_TENANT_ID else None
         if not feedback_store:
             return ""
         try:

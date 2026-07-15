@@ -55,6 +55,7 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
             capture_trajectory=True,
         ),
         request_id="agent-test-001",
+        tenant_id="system",
     )
 
     assert result.provider_name == "mock"
@@ -104,6 +105,7 @@ def test_document_ops_agent_runs_evidence_gap_review_with_mock_provider() -> Non
             },
         ),
         request_id="agent-test-002",
+        tenant_id="system",
     )
 
     assert result.skill_name == "evidence-gap-checker"
@@ -125,6 +127,7 @@ def test_document_ops_agent_runs_decision_brief_with_preferred_skill() -> None:
             source_references=[{"id": "part02-v6"}],
         ),
         request_id="agent-test-003",
+        tenant_id="system",
     )
 
     assert result.skill_name == "decision-brief-builder"
@@ -146,6 +149,7 @@ def test_document_ops_agent_runs_develop_quality_improvement_with_mock_provider(
             capture_trajectory=True,
         ),
         request_id="agent-test-develop",
+        tenant_id="system",
     )
 
     assert result.skill_name == "develop-document-improver"
@@ -167,6 +171,7 @@ def test_document_ops_agent_marks_local_fallback_when_provider_output_is_invalid
             source_references=[{"id": "source-1"}],
         ),
         request_id="agent-test-004",
+        tenant_id="system",
     )
 
     assert result.qa["fallback_used"] is True
@@ -212,6 +217,7 @@ def test_document_ops_agent_normalizes_live_provider_payload_variants() -> None:
             requirements={"title": "보행자 안전서비스"},
         ),
         request_id="agent-test-normalize",
+        tenant_id="system",
     )
 
     assert result.provider_name == "static-json"
@@ -256,6 +262,7 @@ def test_document_ops_agent_parses_fenced_json_without_fallback() -> None:
     result = agent.run(
         DocumentOpsRequest(task_type="policy_planning_brief", requirements={"title": "Fenced JSON"}),
         request_id="agent-test-fenced",
+        tenant_id="system",
     )
 
     assert result.qa["hard_gate_pass"] is True
@@ -273,4 +280,20 @@ def test_document_ops_agent_does_not_hide_provider_errors() -> None:
                 requirements={"title": "Provider failure"},
             ),
             request_id="agent-test-005",
+            tenant_id="system",
+        )
+
+
+@pytest.mark.parametrize("tenant_id", ["", " tenant", "tenant ", ".", "..", "a/b", "a\\b"])
+def test_document_ops_agent_rejects_invalid_tenant_before_provider_call(tenant_id: str) -> None:
+    agent = DocumentOpsAgent(provider=FailingProvider())
+
+    with pytest.raises(ValueError, match="Invalid tenant_id"):
+        agent.run(
+            DocumentOpsRequest(
+                task_type="policy_planning_brief",
+                requirements={"title": "Invalid tenant"},
+            ),
+            request_id="agent-invalid-tenant",
+            tenant_id=tenant_id,
         )

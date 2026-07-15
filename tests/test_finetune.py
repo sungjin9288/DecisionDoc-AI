@@ -159,6 +159,7 @@ def test_trigger_b_collects_record_when_score_high(tmp_path: Path, monkeypatch) 
         finetune_store=ft_store,
         ft_system_prompt="You are an expert.",
         ft_output="# Generated Doc",
+        tenant_id="system",
     )
 
     records = ft_store.get_records()
@@ -188,6 +189,7 @@ def test_trigger_b_skips_record_when_score_low(tmp_path: Path, monkeypatch) -> N
         finetune_store=ft_store,
         ft_system_prompt="You are an expert.",
         ft_output="# Generated Doc",
+        tenant_id="system",
     )
 
     # Score must be < 1.0 to pass, but we required 1.0 exactly — so nothing collected

@@ -25,6 +25,7 @@ from app.agents.skill_registry import SkillRegistry
 from app.evals.document_ops.gates import evaluate_document_ops_output
 from app.evals.document_ops.rubric import DEFAULT_FORBIDDEN_TERMS
 from app.providers.base import Provider, ProviderError
+from app.tenant import require_tenant_id
 
 if TYPE_CHECKING:
     from app.storage.trajectory_store import TrajectoryStore
@@ -54,13 +55,14 @@ class DocumentOpsAgent:
             self._provider = get_provider_for_capability("generation")
         return self._provider
 
-    def run(self, request: DocumentOpsRequest, *, request_id: str, tenant_id: str = "system") -> DocumentOpsResult:
+    def run(self, request: DocumentOpsRequest, *, request_id: str, tenant_id: str) -> DocumentOpsResult:
         """Execute a single DocumentOps task.
 
         The current Phase 1 loop is deliberately narrow:
         select skill -> build prompt -> call provider.generate_raw -> validate
         provider JSON -> apply local QA -> optionally emit a compact trajectory.
         """
+        tenant_id = require_tenant_id(tenant_id)
         skill = self._skill_registry.select(request.task_type, preferred_name=request.skill_name)
         prompt = self._build_prompt(request, skill)
         draft = self._generate_draft(prompt, request=request, skill=skill, request_id=request_id)

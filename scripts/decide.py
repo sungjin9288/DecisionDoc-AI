@@ -291,7 +291,11 @@ def main() -> int:
 
     try:
         from app.services.generation_service import EvalLintFailedError, ProviderFailedError
-        result = service.generate_documents(req, request_id=request_id)
+        result = service.generate_documents(
+            req,
+            request_id=request_id,
+            tenant_id="system",
+        )
     except ProviderFailedError as e:
         print(f"Error: Provider failed: {e}", file=sys.stderr)
         return 1

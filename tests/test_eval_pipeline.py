@@ -80,6 +80,7 @@ def test_run_eval_pipeline_returns_record(tmp_path: Path) -> None:
         bundle_id="tech_decision",
         docs=_sample_docs(),
         eval_store=store,
+        tenant_id="system",
     )
     assert record.request_id == "req-test"
     assert 0.0 <= record.heuristic_score <= 1.0
@@ -88,8 +89,8 @@ def test_run_eval_pipeline_returns_record(tmp_path: Path) -> None:
 
 def test_run_eval_pipeline_saves_multiple(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
-    run_eval_pipeline("r1", "tech_decision", _sample_docs(), store)
-    run_eval_pipeline("r2", "tech_decision", _sample_docs(), store)
+    run_eval_pipeline("r1", "tech_decision", _sample_docs(), store, tenant_id="system")
+    run_eval_pipeline("r2", "tech_decision", _sample_docs(), store, tenant_id="system")
     assert len(store.load_all()) == 2
 
 

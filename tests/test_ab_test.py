@@ -157,11 +157,13 @@ def test_ab_store_delete_test(tmp_path):
 
 def test_build_bundle_prompt_uses_ab_variant(tmp_path, monkeypatch):
     """활성 A/B 테스트가 있을 때 build_bundle_prompt가 해당 variant의 hint를 주입하는지 확인."""
-    from app.storage.ab_test_store import ABTestStore
+    from app.storage.ab_test_store import ABTestStore, clear_ab_test_store_cache
     from app.bundle_catalog.registry import get_bundle_spec
-    from app.domain.schema import build_bundle_prompt, _ab_selected
+    from app.domain.schema import build_bundle_prompt, _ab_selected, _current_tenant_id
 
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(_current_tenant_id, "value", "system", raising=False)
+    clear_ab_test_store_cache()
 
     # A/B 테스트 생성
     ab_store = ABTestStore(tmp_path)

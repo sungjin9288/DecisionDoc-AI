@@ -78,7 +78,11 @@ def run_eval(
         request_payload = _sanitize_payload_for_eval(payload)
         req = GenerateRequest(**request_payload)
         request_id = f"eval-{fixture_id}"
-        generated = service.generate_documents(req, request_id=request_id)
+        generated = service.generate_documents(
+            req,
+            request_id=request_id,
+            tenant_id="system",
+        )
         docs = generated["docs"]
         metrics = evaluate_fixture(docs)
 

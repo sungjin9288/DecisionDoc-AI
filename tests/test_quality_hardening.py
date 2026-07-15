@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.providers.openai_provider import OpenAIProvider
+from app.providers.mock_provider import MockProvider
 from app.schemas import GenerateRequest
 from app.services.generation_service import GenerationService, ProviderFailedError
 
@@ -24,7 +25,7 @@ def test_eval_lints_ok_for_fixture(tmp_path, monkeypatch):
         data_dir=Path(tmp_path),
     )
     payload = GenerateRequest(title="lint fixture", goal="validate lints do not trigger")
-    result = service.generate_documents(payload, request_id="lint-req")
+    result = service.generate_documents(payload, request_id="lint-req", tenant_id="system")
     assert len(result["docs"]) == 4
 
 
@@ -58,16 +59,71 @@ def test_cache_corruption_is_cache_miss(tmp_path, monkeypatch):
     )
     payload = GenerateRequest(title="cache", goal="corruption handling")
     payload_dict = payload.model_dump(mode="json")
-    cache_path = service._cache_path("mock", "v1", payload_dict)
+    cache_path = service._cache_path("mock", "v1", payload_dict, tenant_id="system")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text("{not-json", encoding="utf-8")
 
-    result = service.generate_documents(payload, request_id="cache-req")
+    result = service.generate_documents(payload, request_id="cache-req", tenant_id="system")
     assert result["metadata"]["cache_hit"] is False
 
     repaired = json.loads(cache_path.read_text(encoding="utf-8"))
     assert isinstance(repaired, dict)
     assert "adr" in repaired
+
+
+def test_generation_cache_isolated_by_tenant(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "1")
+    monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+
+    class CountingMockProvider(MockProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def generate_bundle(self, *args, **kwargs):
+            self.calls += 1
+            return super().generate_bundle(*args, **kwargs)
+
+    provider = CountingMockProvider()
+    service = GenerationService(
+        provider_factory=lambda: provider,
+        template_dir=Path("app/templates/v1"),
+        data_dir=tmp_path,
+    )
+    payload = GenerateRequest(title="tenant cache", goal="same request")
+
+    first = service.generate_documents(payload, request_id="cache-alpha-1", tenant_id="alpha")
+    repeated = service.generate_documents(payload, request_id="cache-alpha-2", tenant_id="alpha")
+    other_tenant = service.generate_documents(payload, request_id="cache-beta", tenant_id="beta")
+
+    assert first["metadata"]["cache_hit"] is False
+    assert repeated["metadata"]["cache_hit"] is True
+    assert other_tenant["metadata"]["cache_hit"] is False
+    assert first["metadata"]["tenant_id"] == "alpha"
+    assert other_tenant["metadata"]["tenant_id"] == "beta"
+    assert provider.calls == 2
+
+
+def test_generation_rejects_invalid_tenant_before_provider_call(tmp_path, monkeypatch):
+    monkeypatch.setenv("DECISIONDOC_CACHE_ENABLED", "0")
+
+    class UnexpectedProvider(MockProvider):
+        def generate_bundle(self, *args, **kwargs):
+            pytest.fail("provider must not be called for an invalid tenant")
+
+    provider = UnexpectedProvider()
+    service = GenerationService(
+        provider_factory=lambda: provider,
+        template_dir=Path("app/templates/v1"),
+        data_dir=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="Invalid tenant_id"):
+        service.generate_documents(
+            GenerateRequest(title="invalid tenant", goal="reject before provider"),
+            request_id="invalid-tenant",
+            tenant_id="../other",
+        )
 
 
 def _make_service(tmp_path):

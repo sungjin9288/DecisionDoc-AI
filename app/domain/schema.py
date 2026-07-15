@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.tenant import require_tenant_id
+
 # Per-thread tracking of the A/B variant selected during the current generation.
 # Set by _inject_prompt_override() when an active A/B test is found.
 # Read by generation_service.py to record the result after eval.
@@ -19,6 +21,14 @@ _ft_last_prompt: threading.local = threading.local()
 # Per-thread current tenant ID for multi-tenant store isolation.
 # Set by GenerationService.generate_documents() at request start.
 _current_tenant_id: threading.local = threading.local()
+
+
+def _current_generation_tenant_id() -> str | None:
+    tenant_id = getattr(_current_tenant_id, "value", None)
+    try:
+        return require_tenant_id(tenant_id)
+    except ValueError:
+        return None
 
 if TYPE_CHECKING:
     from app.bundle_catalog.spec import BundleSpec
@@ -274,7 +284,7 @@ def build_bundle_prompt(
         from app.storage.style_store import StyleStore
         from app.services.style_analyzer import build_style_prompt as _build_style_prompt
 
-        _tid = getattr(_current_tenant_id, "value", None)
+        _tid = _current_generation_tenant_id()
         if _tid:
             _sp = StyleStore(_tid).get_default()
             if _sp:
@@ -293,7 +303,7 @@ def build_bundle_prompt(
     if bundle_spec is not None:
         try:
             from app.storage.tenant_store import TenantStore
-            tid = getattr(_current_tenant_id, "value", None)
+            tid = _current_generation_tenant_id()
             if tid and tid != "system":
                 ts = TenantStore(Path(os.getenv("DATA_DIR", "./data")))
                 hint = ts.get_custom_hint(tid, bundle_spec.id)
@@ -323,11 +333,13 @@ def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
     # Always reset thread-local A/B selection at the start of each call
     _ab_selected.bundle_id = None
     _ab_selected.variant = None
+    tid = _current_generation_tenant_id()
+    if tid is None:
+        return
 
     # 1. Check for active A/B test first
     try:
         from app.storage.ab_test_store import get_ab_test_store
-        tid = getattr(_current_tenant_id, "value", "system") or "system"
         ab_store = get_ab_test_store(tid)
         test = ab_store.get_active_test(bundle_id)
         if test:
@@ -345,7 +357,6 @@ def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
     # 2. Fall back to PromptOverrideStore
     try:
         from app.storage.prompt_override_store import get_override_store
-        tid = getattr(_current_tenant_id, "value", "system") or "system"
         store = get_override_store(tid)
         record = store.get_override(bundle_id)
         if record and record.get("override_hint"):
@@ -357,9 +368,11 @@ def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
 
 def _inject_llm_feedbacks(out: list[str], bundle_id: str) -> None:
     """EvalStore에서 최근 LLM judge 피드백을 읽어 out에 추가. 실패 시 무시."""
+    tid = _current_generation_tenant_id()
+    if tid is None:
+        return
     try:
         from app.eval.eval_store import get_eval_store
-        tid = getattr(_current_tenant_id, "value", "system") or "system"
         store = get_eval_store(tid)
         records = store.load_all()
         feedbacks = [

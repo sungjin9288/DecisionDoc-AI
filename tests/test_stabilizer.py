@@ -42,7 +42,7 @@ def test_internal_marker_does_not_leak_to_cache_or_render(tmp_path, monkeypatch)
         data_dir=tmp_path,
     )
     req = GenerateRequest(title="stabilizer", goal="leak test")
-    result = service.generate_documents(req, request_id="req-stabilizer")
+    result = service.generate_documents(req, request_id="req-stabilizer", tenant_id="system")
 
     assert "_stabilized" not in result["raw_bundle"]
     for doc in result["docs"]:

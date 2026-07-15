@@ -3030,7 +3030,7 @@ def test_admin_tenant_procurement_quality_summary_not_found(tmp_path: Path, monk
 
 # ─── 22: _current_tenant_id thread-local in schema.py ────────────────────────
 
-def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path) -> None:
+def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path, monkeypatch) -> None:
     """generate_documents() 호출 시 _current_tenant_id 스레드-로컬이 설정됨."""
     from app.domain.schema import _current_tenant_id
     svc, _ = _make_generation_service(tmp_path)
@@ -3067,7 +3067,8 @@ def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path
 
     captured_tid: list[str] = []
 
-    def _fake_cap(provider, payload, request_id, timer, bundle_spec):
+    def _fake_cap(provider, payload, request_id, timer, bundle_spec, *, tenant_id):
+        assert tenant_id == "acme-tenant"
         captured_tid.append(getattr(_current_tenant_id, "value", "NOT_SET"))
         return mock_bundle
 
@@ -3075,6 +3076,7 @@ def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path
 
     from app.schemas import GenerateRequest
     req = GenerateRequest(title="Test", goal="Goal", bundle_type="tech_decision")
+    monkeypatch.setattr(_current_tenant_id, "value", "previous-tenant", raising=False)
     # Disable cache so _call_and_prepare_bundle is actually invoked
     with patch.dict(os.environ, {"DECISIONDOC_CACHE_ENABLED": "0"}):
         try:
@@ -3083,6 +3085,7 @@ def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path
             pass  # lint/validate may fail for mock bundle; we only care about tid capture
 
     assert captured_tid and captured_tid[0] == "acme-tenant"
+    assert _current_tenant_id.value == "previous-tenant"
 
 
 def _make_generation_service(tmp_path: Path):

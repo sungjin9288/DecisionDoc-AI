@@ -11,6 +11,8 @@ import logging
 import threading
 import time
 
+from app.tenant import require_tenant_id
+
 _log = logging.getLogger("decisiondoc.generate")
 _DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {
     "bid_decision_kr",
@@ -69,9 +71,10 @@ def _store_generation_context(
     request_id: str,
     ctx: dict,
     *,
-    tenant_id: str = "system",
+    tenant_id: str,
 ) -> None:
     """Store ctx with timestamp; evict expired + oldest-over-limit entries."""
+    tenant_id = require_tenant_id(tenant_id)
     with _ctx_lock:
         now = time.time()
         # Purge expired entries first
@@ -89,9 +92,10 @@ def _store_generation_context(
 def get_generation_context(
     request_id: str,
     *,
-    tenant_id: str = "system",
+    tenant_id: str,
 ) -> dict | None:
     """Return stored generation context for a request_id, or None if missing/expired."""
+    tenant_id = require_tenant_id(tenant_id)
     key = (tenant_id, request_id)
     with _ctx_lock:
         entry = _recent_generation_contexts.get(key)

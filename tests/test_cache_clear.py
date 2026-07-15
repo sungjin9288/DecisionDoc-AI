@@ -27,7 +27,7 @@ def test_clear_cache_removes_json_files(tmp_path, monkeypatch):
     """clear_cache() removes all *.json files in the cache directory."""
     service = _make_service(tmp_path, monkeypatch)
     payload = GenerateRequest(title="cache clear test", goal="verify clear_cache")
-    service.generate_documents(payload, request_id="cc-req-1")
+    service.generate_documents(payload, request_id="cc-req-1", tenant_id="system")
 
     cache_files = list(service.cache_dir.glob("*.json"))
     assert len(cache_files) >= 1
@@ -41,10 +41,10 @@ def test_clear_cache_returns_correct_count(tmp_path, monkeypatch):
     """clear_cache() returns the count of files removed."""
     service = _make_service(tmp_path, monkeypatch)
     service.generate_documents(
-        GenerateRequest(title="t1", goal="g1"), request_id="cc-1"
+        GenerateRequest(title="t1", goal="g1"), request_id="cc-1", tenant_id="system"
     )
     service.generate_documents(
-        GenerateRequest(title="t2", goal="g2"), request_id="cc-2"
+        GenerateRequest(title="t2", goal="g2"), request_id="cc-2", tenant_id="system"
     )
     count_before = len(list(service.cache_dir.glob("*.json")))
     removed = service.clear_cache()

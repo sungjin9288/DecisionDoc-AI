@@ -13,6 +13,7 @@ from weakref import WeakValueDictionary
 from app.storage.base import atomic_write_text
 from app.storage.trajectory.redaction import _now_iso, _redact_input
 from app.storage.trajectory.sft_quality import _is_accepted, _sft_export_blockers, _source_references
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.storage.trajectory")
 _path_locks: WeakValueDictionary[Path, Any] = WeakValueDictionary()
@@ -25,18 +26,7 @@ def _lock_for_path(path: Path) -> Any:
 
 
 def _tenant_component(tenant_id: str) -> str:
-    if (
-        not isinstance(tenant_id, str)
-        or not tenant_id
-        or not tenant_id.strip()
-        or tenant_id != tenant_id.strip()
-        or tenant_id in {".", ".."}
-        or "/" in tenant_id
-        or "\\" in tenant_id
-        or "\x00" in tenant_id
-    ):
-        raise ValueError("Invalid tenant_id")
-    return tenant_id
+    return require_tenant_id(tenant_id)
 
 
 class TrajectoryReviewConflictError(ValueError):

@@ -232,7 +232,11 @@ def run_live_eval(
             request_payload["doc_types"] = EVAL_DOC_TYPES
             req = GenerateRequest(**request_payload)
             try:
-                result = service.generate_documents(req, request_id=f"live-{provider}-{fixture_id}")
+                result = service.generate_documents(
+                    req,
+                    request_id=f"live-{provider}-{fixture_id}",
+                    tenant_id="system",
+                )
                 docs = result["docs"]
                 rendered = {d["doc_type"]: d["markdown"] for d in docs}
                 metrics = evaluate_fixture(docs)

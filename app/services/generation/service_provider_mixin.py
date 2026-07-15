@@ -20,6 +20,7 @@ from app.services.generation.procurement_slide_guidance import (
     _extract_procurement_context_from_text,
 )
 from app.services.generation.quality_guard_finish import _apply_finished_doc_quality_guard
+from app.tenant import require_tenant_id
 
 
 class GenerationProviderCallMixin:
@@ -32,10 +33,18 @@ class GenerationProviderCallMixin:
         request_id: str,
         timer: Timer,
         bundle_spec: BundleSpec,
+        *,
+        tenant_id: str,
     ) -> dict[str, Any]:
         """Call the provider, stabilize, strip internal fields, and validate schema."""
         with timer.measure("provider_ms"):
-            bundle = self._call_provider_with_retry(provider, payload, request_id, bundle_spec)
+            bundle = self._call_provider_with_retry(
+                provider,
+                payload,
+                request_id,
+                bundle_spec,
+                tenant_id=tenant_id,
+            )
         bundle = stabilize_bundle(bundle, structure=bundle_spec.stabilizer_structure())
         bundle = strip_internal_bundle_fields(bundle)
         bundle = _apply_finished_doc_quality_guard(
@@ -72,8 +81,14 @@ class GenerationProviderCallMixin:
         payload: dict[str, Any],
         request_id: str,
         bundle_spec: BundleSpec,
+        *,
+        tenant_id: str,
     ) -> dict[str, Any]:
-        feedback_hints = self._build_feedback_hints(bundle_spec.id, title=payload.get("title", ""))
+        feedback_hints = self._build_feedback_hints(
+            bundle_spec.id,
+            title=payload.get("title", ""),
+            tenant_id=tenant_id,
+        )
         try:
             return provider.generate_bundle(
                 payload,
@@ -91,6 +106,8 @@ class GenerationProviderCallMixin:
         payload: dict[str, Any],
         request_id: str,
         bundle_spec: BundleSpec,
+        *,
+        tenant_id: str,
     ) -> dict[str, Any]:
         """Call provider with exponential backoff retry on ProviderFailedError."""
         from app.config import get_llm_retry_attempts, get_llm_retry_backoff_seconds
@@ -99,7 +116,13 @@ class GenerationProviderCallMixin:
         last_exc: ProviderFailedError | None = None
         for attempt in range(attempts):
             try:
-                return self._call_provider_once(provider, payload, request_id, bundle_spec)
+                return self._call_provider_once(
+                    provider,
+                    payload,
+                    request_id,
+                    bundle_spec,
+                    tenant_id=tenant_id,
+                )
             except ProviderFailedError as exc:
                 last_exc = exc
                 if attempt < attempts - 1:
@@ -116,7 +139,10 @@ class GenerationProviderCallMixin:
         raise last_exc  # type: ignore[misc]
 
     def _safe_get_provider(
-        self, bundle_type: str | None = None, tenant_id: str = "system"
+        self,
+        bundle_type: str | None = None,
+        *,
+        tenant_id: str,
     ) -> Provider:
         """Return the best available provider, preferring fine-tuned model if active.
 
@@ -124,6 +150,7 @@ class GenerationProviderCallMixin:
         returns an OpenAI provider using that model_id.  Otherwise falls back to
         the injected ``provider_factory`` so that tests keep full DI control.
         """
+        tenant_id = require_tenant_id(tenant_id)
         try:
             from app.storage.model_registry import ModelRegistry
             registry = ModelRegistry()

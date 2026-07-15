@@ -165,12 +165,13 @@ def test_build_bundle_prompt_injects_override(tmp_path, monkeypatch):
     from app.storage.prompt_override_store import PromptOverrideStore, clear_override_store_cache
     from app.storage.ab_test_store import clear_ab_test_store_cache
     from app.bundle_catalog.registry import get_bundle_spec
-    from app.domain.schema import build_bundle_prompt
+    from app.domain.schema import _current_tenant_id, build_bundle_prompt
 
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     # Clear LRU caches so stores point to tmp_path, not a previous test's directory
     clear_ab_test_store_cache()
     clear_override_store_cache()
+    monkeypatch.setattr(_current_tenant_id, "value", "system", raising=False)
     store = PromptOverrideStore(tmp_path)
     store.save_override(
         bundle_id="tech_decision",
@@ -189,6 +190,33 @@ def test_build_bundle_prompt_injects_override(tmp_path, monkeypatch):
 
     # increment_applied 확인
     assert store.get_override("tech_decision")["applied_count"] == 1
+
+
+def test_build_bundle_prompt_without_tenant_does_not_read_system_override(tmp_path, monkeypatch):
+    from app.bundle_catalog.registry import get_bundle_spec
+    from app.domain.schema import _current_tenant_id, build_bundle_prompt
+    from app.storage.ab_test_store import clear_ab_test_store_cache
+    from app.storage.prompt_override_store import PromptOverrideStore, clear_override_store_cache
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delattr(_current_tenant_id, "value", raising=False)
+    clear_ab_test_store_cache()
+    clear_override_store_cache()
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
+    store.save_override(
+        bundle_id="tech_decision",
+        override_hint="system tenant only",
+        trigger_reason="test",
+    )
+
+    prompt = build_bundle_prompt(
+        {"title": "테스트", "goal": "목표"},
+        "v1",
+        bundle_spec=get_bundle_spec("tech_decision"),
+    )
+
+    assert "system tenant only" not in prompt
+    assert store.get_override("tech_decision")["applied_count"] == 0
 
 
 # ── get_high_rated_examples 구조화된 포맷 테스트 ─────────────────────────
@@ -283,7 +311,7 @@ def test_build_feedback_hints_uses_all_docs(tmp_path, monkeypatch):
         data_dir=tmp_path,
         feedback_store=store,
     )
-    hints = svc._build_feedback_hints("tech_decision")
+    hints = svc._build_feedback_hints("tech_decision", tenant_id="system")
 
     # 모든 doc_type 포함 확인
     assert "adr" in hints
@@ -311,4 +339,36 @@ def test_build_feedback_hints_empty_when_no_feedback(tmp_path, monkeypatch):
         data_dir=tmp_path,
         feedback_store=store,
     )
-    assert svc._build_feedback_hints("tech_decision") == ""
+    assert svc._build_feedback_hints("tech_decision", tenant_id="system") == ""
+
+
+def test_feedback_hint_lookup_does_not_fall_back_to_system_store(tmp_path, monkeypatch):
+    from app.services.generation_service import GenerationService
+    from app.storage.feedback_store import FeedbackStore
+    from unittest.mock import MagicMock
+
+    system_store = FeedbackStore(tmp_path, tenant_id="system")
+    system_store.save(
+        {
+            "bundle_type": "tech_decision",
+            "rating": 5,
+            "comment": "system-only feedback",
+            "title": "System example",
+            "docs": [{"doc_type": "adr", "markdown": "system-only content"}],
+        }
+    )
+    service = GenerationService(
+        provider_factory=MagicMock(),
+        template_dir=tmp_path,
+        data_dir=tmp_path,
+        feedback_store=system_store,
+    )
+    def unavailable_store(tenant_id: str):
+        raise RuntimeError(tenant_id)
+
+    monkeypatch.setattr(
+        "app.storage.feedback_store.get_feedback_store",
+        unavailable_store,
+    )
+
+    assert service._build_feedback_hints("tech_decision", tenant_id="alpha") == ""
