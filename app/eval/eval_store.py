@@ -1,6 +1,6 @@
 """eval_store.py — 평가 결과 영속 저장소 (JSON Lines 형식).
 
-생성된 문서의 품질 점수를 data/eval_results.jsonl에 누적 저장하고
+생성된 문서의 품질 점수를 data/tenants/{tenant_id}/eval_results.jsonl에 누적 저장하고
 집계 통계를 제공합니다.
 """
 from __future__ import annotations
@@ -28,6 +28,7 @@ class EvalRecord:
     issues: list[str]                 # 발견된 품질 문제 목록
     doc_scores: dict[str, float]      # 문서 키별 점수 {doc_key: score}
     llm_feedbacks: list[str] = field(default_factory=list)  # LLM judge brief_feedback 목록
+    tenant_id: str | None = None
 
 
 class EvalStore:
@@ -42,9 +43,12 @@ class EvalStore:
 
     def append(self, record: EvalRecord) -> None:
         """평가 결과를 파일에 추가 저장 (스레드 안전)."""
+        if record.tenant_id is not None and record.tenant_id != self._tenant_id:
+            raise ValueError("Eval record tenant does not match store tenant")
+        payload = {**asdict(record), "tenant_id": self._tenant_id}
         with self._lock:
             with self._path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def load_all(self) -> list[EvalRecord]:
         """저장된 모든 평가 결과 로드."""
@@ -59,7 +63,9 @@ class EvalStore:
                         continue
                     try:
                         d = json.loads(line)
-                        records.append(EvalRecord(**d))
+                        record = EvalRecord(**d)
+                        if record.tenant_id is None or record.tenant_id == self._tenant_id:
+                            records.append(record)
                     except Exception as exc:
                         _log.warning("Skipping malformed eval record: %s", exc)
         return records

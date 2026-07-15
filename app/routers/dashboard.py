@@ -8,17 +8,23 @@ import json as _json
 
 from fastapi import APIRouter, Request
 
+from app.dependencies import get_tenant_id
+
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("/overview")
 def dashboard_overview(request: Request) -> dict:
     """AI 성능 대시보드 — 전체 요약 지표."""
-    from app.storage.ab_test_store import ABTestStore
+    from app.eval.eval_store import get_eval_store
+    from app.storage.ab_test_store import get_ab_test_store
+    from app.storage.feedback_store import get_feedback_store
+    from app.storage.prompt_override_store import get_override_store
 
-    eval_store = request.app.state.eval_store
-    feedback_store = request.app.state.feedback_store
-    prompt_override_store = request.app.state.prompt_override_store
+    tenant_id = get_tenant_id(request)
+    eval_store = get_eval_store(tenant_id)
+    feedback_store = get_feedback_store(tenant_id)
+    prompt_override_store = get_override_store(tenant_id)
     data_dir = request.app.state.data_dir
 
     eval_stats = eval_store.get_all_stats()
@@ -29,7 +35,7 @@ def dashboard_overview(request: Request) -> dict:
     if all_feedback:
         avg_rating = round(sum(f.get("rating", 0) for f in all_feedback) / total_feedback, 2)
 
-    ab_store = ABTestStore(data_dir)
+    ab_store = get_ab_test_store(tenant_id)
     active_ab_tests = len(ab_store.list_active_tests())
 
     auto_registry_path = data_dir / "auto_bundles" / "registry.json"
@@ -58,15 +64,18 @@ def dashboard_overview(request: Request) -> dict:
 @router.get("/bundle-performance")
 def dashboard_bundle_performance(request: Request) -> list[dict]:
     """AI 성능 대시보드 — 번들별 성능 지표 (최근 30일)."""
-    from app.storage.ab_test_store import ABTestStore
+    from app.eval.eval_store import get_eval_store
+    from app.storage.ab_test_store import get_ab_test_store
+    from app.storage.feedback_store import get_feedback_store
+    from app.storage.prompt_override_store import get_override_store
 
-    eval_store = request.app.state.eval_store
-    feedback_store = request.app.state.feedback_store
-    prompt_override_store = request.app.state.prompt_override_store
-    data_dir = request.app.state.data_dir
+    tenant_id = get_tenant_id(request)
+    eval_store = get_eval_store(tenant_id)
+    feedback_store = get_feedback_store(tenant_id)
+    prompt_override_store = get_override_store(tenant_id)
 
     per_bundle = eval_store.get_per_bundle_stats()
-    ab_store = ABTestStore(data_dir)
+    ab_store = get_ab_test_store(tenant_id)
     overrides = {o["bundle_id"]: o for o in prompt_override_store.list_overrides()}
 
     all_feedback = feedback_store.get_all()
@@ -122,7 +131,12 @@ def dashboard_bundle_performance(request: Request) -> list[dict]:
 @router.get("/improvement-history")
 def dashboard_improvement_history(request: Request) -> list[dict]:
     """AI 성능 대시보드 — AI 자기개선 이력 (시간순)."""
-    prompt_override_store = request.app.state.prompt_override_store
+    from app.storage.ab_test_store import get_ab_test_store
+    from app.storage.prompt_override_store import get_override_store
+
+    tenant_id = get_tenant_id(request)
+    prompt_override_store = get_override_store(tenant_id)
+    ab_store = get_ab_test_store(tenant_id)
     data_dir = request.app.state.data_dir
 
     events: list[dict] = []
@@ -137,14 +151,7 @@ def dashboard_improvement_history(request: Request) -> list[dict]:
             "score_after": None,
         })
 
-    all_ab: list[dict] = []
-    try:
-        ab_data = _json.loads((data_dir / "ab_tests.json").read_text(encoding="utf-8")) if (data_dir / "ab_tests.json").exists() else {}
-        all_ab = list(ab_data.values())
-    except Exception:
-        pass
-
-    for test in all_ab:
+    for test in ab_store.list_tests():
         events.append({
             "timestamp": test.get("created_at", ""),
             "event_type": "ab_test_started",
@@ -186,8 +193,12 @@ def dashboard_improvement_history(request: Request) -> list[dict]:
 @router.get("/score-history/{bundle_id}")
 def dashboard_score_history(bundle_id: str, request: Request) -> list[dict]:
     """AI 성능 대시보드 — 특정 번들의 점수 시계열 (최근 50건)."""
-    eval_store = request.app.state.eval_store
-    prompt_override_store = request.app.state.prompt_override_store
+    from app.eval.eval_store import get_eval_store
+    from app.storage.prompt_override_store import get_override_store
+
+    tenant_id = get_tenant_id(request)
+    eval_store = get_eval_store(tenant_id)
+    prompt_override_store = get_override_store(tenant_id)
 
     records = eval_store.get_bundle_history(bundle_id, limit=50)
     overrides = {o["bundle_id"]: o for o in prompt_override_store.list_overrides()}

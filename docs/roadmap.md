@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3045 passed, 1 skipped, 4 deselected
+# 2026-07-16 실측: 3048 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -85,6 +85,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-15 `ShareStore`의 중복 tenant 생성 인자를 제거하고 생성 시점 tenant만 share record에 기록하도록 했다. 명시적으로 drift된 persisted link는 인증된 목록·취소뿐 아니라 public lookup과 access count 갱신에서도 제외해 외부 노출과 상태 변경을 함께 막는다. 기존 tenant-scoped 파일에 `tenant_id`가 없는 link는 경로 소유권으로 읽으며 H17 회귀는 public route의 404와 원본 record 불변성을 확인한다.
   - 2026-07-16 `AuditStore`의 조회·통계·CSV API에서 중복 tenant 인자를 제거하고 생성 시점 tenant만 증빙 범위로 사용하도록 했다. 다른 tenant의 audit log append를 거부하고, persisted tenant가 다르거나 없는 record는 일반 조회·latest lookup·session/user activity·failed-login monitoring·통계·CSV에서 모두 제외한다. H18 회귀는 변조 record가 append-only 원본에는 남아도 어떤 tenant evidence에도 나타나지 않는지 확인한다.
   - 2026-07-16 `MeetingRecordingStore`가 metadata의 tenant·project·recording ID와 canonical audio path를 요청 scope에 다시 결속하도록 했다. 단건 조회와 프로젝트 목록은 네 값이 모두 일치하는 record만 반환하고, audio read는 외부 record 객체 대신 tenant·project·recording ID를 받아 내부 검증을 다시 거친다. H19 회귀는 foreign audio path로 변조된 metadata가 녹음 bytes, transcript lifecycle, approval 상태에 접근하거나 이를 변경하지 못하는지 확인한다.
+  - 2026-07-16 feedback·eval·A/B test·prompt override·fine-tune candidate를 같은 tenant 품질 학습 체인으로 결속했다. 새 record는 store tenant를 직접 기록하고 명시적으로 drift된 record는 조회·집계·변경·export에서 제외한다. Generation context cache도 tenant와 request ID의 복합 key를 사용하며 dashboard, eval, feedback, fine-tune route와 background eval이 현재 request tenant store만 선택한다. A/B winner는 같은 tenant와 data root의 override로만 전달되고, fine-tune download는 metadata에 등록된 tenant export만 허용해 raw dataset 직접 조회를 차단한다. 기존 flat fine-tune directory는 system tenant로 copy migration하며 외부 provider 호출·dataset upload·training execution은 수행하지 않는다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

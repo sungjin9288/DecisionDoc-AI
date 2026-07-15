@@ -709,6 +709,37 @@ def test_generate_succeeds_when_eval_executor_is_unavailable(tmp_path, monkeypat
     assert response.json()["provider"] == "mock"
 
 
+def test_generate_skips_background_eval_when_tenant_store_is_unavailable(
+    tmp_path,
+    monkeypatch,
+):
+    """Tenant store failures must not fall back to the system eval store."""
+    client = _create_client(tmp_path, monkeypatch)
+    submitted: list[object] = []
+
+    def _raise_store_error(_tenant_id):  # noqa: ANN001
+        raise OSError("tenant eval store unavailable")
+
+    def _capture_submit(*args, **kwargs):  # noqa: ANN001, ARG001
+        submitted.append(args)
+        raise AssertionError("background eval must be skipped")
+
+    monkeypatch.setattr("app.eval.eval_store.get_eval_store", _raise_store_error)
+    monkeypatch.setattr(
+        "app.services.generation_service._eval_executor.submit",
+        _capture_submit,
+    )
+
+    response = client.post(
+        "/generate",
+        json={"title": "tenant store failure", "goal": "fail closed"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "mock"
+    assert submitted == []
+
+
 def test_generate_export_validation_failure_returns_500_and_no_export_dir(tmp_path, monkeypatch):
     import app.main as main_module
     from app.providers.mock_provider import MockProvider

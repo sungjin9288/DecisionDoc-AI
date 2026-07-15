@@ -14,13 +14,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.storage.base import atomic_write_text
+
 _log = logging.getLogger("decisiondoc.storage.prompt_override")
 
 
 class PromptOverrideStore:
     """Thread-safe JSON store for per-bundle prompt improvement overrides.
 
-    Storage: data/prompt_overrides.json
+    Storage: data/tenants/{tenant_id}/prompt_overrides.json
     Shape: {bundle_id: OverrideRecord, ...}
     """
 
@@ -54,10 +56,16 @@ class PromptOverrideStore:
             return {}
 
     def _persist(self, data: dict[str, Any]) -> None:
-        self._path.write_text(
+        atomic_write_text(
+            self._path,
             json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
         )
+
+    def _owns(self, record: Any) -> bool:
+        if not isinstance(record, dict):
+            return False
+        stored_tenant_id = record.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -78,13 +86,16 @@ class PromptOverrideStore:
         """
         with self._lock:
             data = self._load()
-            existing = data.get(bundle_id, {})
+            existing = data.get(bundle_id)
+            if existing is not None and not self._owns(existing):
+                raise ValueError("Prompt override tenant does not match store tenant")
             data[bundle_id] = {
                 "bundle_id": bundle_id,
+                "tenant_id": self._tenant_id,
                 "override_hint": override_hint,
                 "trigger_reason": trigger_reason,
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "applied_count": existing.get("applied_count", 0),
+                "applied_count": existing.get("applied_count", 0) if existing else 0,
                 "avg_score_before": avg_score_before,
             }
             self._persist(data)
@@ -92,26 +103,28 @@ class PromptOverrideStore:
     def get_override(self, bundle_id: str) -> dict[str, Any] | None:
         """번들 오버라이드 조회. 없으면 None."""
         with self._lock:
-            return self._load().get(bundle_id)
+            record = self._load().get(bundle_id)
+            return record if self._owns(record) else None
 
     def increment_applied(self, bundle_id: str) -> None:
         """생성 프롬프트에 오버라이드가 사용될 때마다 카운트 증가."""
         with self._lock:
             data = self._load()
-            if bundle_id in data:
-                data[bundle_id]["applied_count"] = data[bundle_id].get("applied_count", 0) + 1
+            record = data.get(bundle_id)
+            if self._owns(record):
+                record["applied_count"] = record.get("applied_count", 0) + 1
                 self._persist(data)
 
     def list_overrides(self) -> list[dict[str, Any]]:
         """모든 오버라이드 레코드 목록 반환."""
         with self._lock:
-            return list(self._load().values())
+            return [record for record in self._load().values() if self._owns(record)]
 
     def delete_override(self, bundle_id: str) -> None:
         """특정 번들의 오버라이드 삭제."""
         with self._lock:
             data = self._load()
-            if bundle_id in data:
+            if self._owns(data.get(bundle_id)):
                 del data[bundle_id]
                 self._persist(data)
 

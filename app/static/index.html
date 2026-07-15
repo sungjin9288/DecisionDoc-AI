@@ -22748,7 +22748,10 @@
     const bid = this.value;
     if (!bid) { destroyChart(); return; }
     try {
-      const history = await fetch(`/dashboard/score-history/${encodeURIComponent(bid)}`).then(r => r.json());
+      const history = await fetch(
+        `/dashboard/score-history/${encodeURIComponent(bid)}`,
+        { headers: getAuthHeaders() },
+      ).then(r => r.json());
       renderScoreChart(history);
     } catch(e) { console.error('[Dashboard] 점수 이력 로드 실패:', e); }
   });

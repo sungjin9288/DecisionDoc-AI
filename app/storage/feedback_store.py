@@ -31,13 +31,45 @@ class FeedbackStore:
         self._path = tenant_dir / "feedback.jsonl"
         self._lock = threading.Lock()
 
+    def _owns(self, record: Any) -> bool:
+        if not isinstance(record, dict):
+            return False
+        stored_tenant_id = record.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
+
+    def _read_owned(self) -> list[dict[str, Any]]:
+        if not self._path.exists():
+            return []
+        try:
+            lines = self._path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+
+        records: list[dict[str, Any]] = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                _log.warning("Skipping malformed feedback line: %s", exc)
+                continue
+            if self._owns(record):
+                records.append(record)
+        return records
+
     def save(self, feedback: dict[str, Any]) -> str:
         """Append one feedback record. Returns the generated feedback_id."""
+        supplied_tenant_id = feedback.get("tenant_id")
+        if supplied_tenant_id is not None and supplied_tenant_id != self._tenant_id:
+            raise ValueError("Feedback tenant does not match store tenant")
         feedback_id = str(uuid.uuid4())
         record = {
-            "feedback_id": feedback_id,
-            "timestamp": time.time(),
             **feedback,
+            "feedback_id": feedback_id,
+            "tenant_id": self._tenant_id,
+            "timestamp": time.time(),
         }
         line = json.dumps(record, ensure_ascii=False)
         with self._lock:
@@ -58,24 +90,8 @@ class FeedbackStore:
 
     def get_all(self) -> list[dict[str, Any]]:
         """Return all feedback records (all bundles, all ratings)."""
-        if not self._path.exists():
-            return []
-        results: list[dict[str, Any]] = []
         with self._lock:
-            try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                return []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                results.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                _log.warning("Skipping malformed feedback line: %s", exc)
-                continue
-        return results
+            return self._read_owned()
 
     def get_low_rated(
         self, bundle_type: str, max_rating: int = 2
@@ -84,28 +100,16 @@ class FeedbackStore:
 
         Used by prompt_optimizer to detect quality degradation patterns.
         """
-        if not self._path.exists():
-            return []
-        results: list[dict[str, Any]] = []
         with self._lock:
-            try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                return []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            records = self._read_owned()
+        return [
+            record
+            for record in records
             if (
                 record.get("bundle_type") == bundle_type
                 and record.get("rating", 5) <= max_rating
-            ):
-                results.append(record)
-        return results
+            )
+        ]
 
     def get_high_rated_examples(
         self,
@@ -135,22 +139,10 @@ class FeedbackStore:
             },
           }
         """
-        if not self._path.exists():
-            return []
         raw: list[dict[str, Any]] = []
         with self._lock:
-            try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                return []
-        for line in reversed(lines):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            records = self._read_owned()
+        for record in reversed(records):
             if (
                 record.get("bundle_type") == bundle_type
                 and record.get("rating", 0) >= min_rating

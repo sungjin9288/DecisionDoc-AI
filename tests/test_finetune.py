@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +58,7 @@ def test_save_record_stores_successfully(tmp_path: Path) -> None:
     records = store.get_records()
     assert len(records) == 1
     assert records[0]["metadata"]["request_id"] == "req-001"
+    assert records[0]["metadata"]["tenant_id"] == "system"
 
 
 def test_save_record_deduplication(tmp_path: Path) -> None:
@@ -95,7 +95,7 @@ def test_export_for_training_writes_messages_only(tmp_path: Path) -> None:
     path = Path(export_path)
     assert path.exists()
 
-    lines = [l for l in path.read_text().splitlines() if l.strip()]
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
     assert len(lines) == 12
     for line in lines:
         obj = json.loads(line)

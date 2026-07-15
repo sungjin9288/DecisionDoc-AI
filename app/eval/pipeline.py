@@ -110,6 +110,7 @@ def run_eval_pipeline(
         issues=issues[:20],       # 최대 20개 저장
         doc_scores=doc_scores,
         llm_feedbacks=llm_feedbacks[:5],  # 최대 5개
+        tenant_id=tenant_id,
     )
 
     eval_store.append(record)

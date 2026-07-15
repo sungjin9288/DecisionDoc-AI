@@ -9,6 +9,7 @@ import json as _json
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.ops_key import require_ops_key
+from app.dependencies import get_tenant_id
 from app.providers.factory import get_provider
 
 router = APIRouter()
@@ -25,7 +26,9 @@ def expand_bundles(request: Request) -> dict:
     from app.config import get_auto_expand_threshold
 
     data_dir = request.app.state.data_dir
-    prompt_override_store = request.app.state.prompt_override_store
+    from app.storage.prompt_override_store import get_override_store
+
+    prompt_override_store = get_override_store(get_tenant_id(request))
     provider = get_provider()
     pattern_store = RequestPatternStore(data_dir)
     expander = BundleAutoExpander(
@@ -112,4 +115,3 @@ def get_request_patterns(request: Request) -> dict:
         "ready_to_expand": len(unmatched) >= threshold,
         "records": all_records,
     }
-

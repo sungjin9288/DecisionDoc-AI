@@ -10,8 +10,6 @@ Coverage:
 """
 from __future__ import annotations
 
-import json
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -302,3 +300,11 @@ def test_dashboard_score_history_limit_50(tmp_path, monkeypatch):
     resp = client.get("/dashboard/score-history/tech_decision")
     assert resp.status_code == 200
     assert len(resp.json()) == 50
+
+
+def test_dashboard_score_history_fetch_includes_auth_headers() -> None:
+    """The authenticated dashboard keeps its token on the score-history request."""
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    marker = "`/dashboard/score-history/${encodeURIComponent(bid)}`"
+    request_block = html[html.index(marker):html.index(marker) + 180]
+    assert "{ headers: getAuthHeaders() }" in request_block

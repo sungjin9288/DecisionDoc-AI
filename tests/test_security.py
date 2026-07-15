@@ -27,6 +27,7 @@ Coverage (25+ tests):
   H17: ShareStore keeps public and authenticated lifecycle tenant-bound
   H18: AuditStore keeps append and evidence queries tenant-bound
   H19: MeetingRecordingStore validates metadata and audio scope
+  H20: Quality-learning stores and routes preserve tenant ownership
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -975,6 +976,257 @@ def test_meeting_recording_store_validates_metadata_and_audio_scope(tmp_path):
     assert persisted["audio_relative_path"] == foreign.audio_relative_path
     assert persisted["transcription_status"] == "uploaded"
     assert persisted["approval_status"] == "pending"
+
+
+def test_quality_learning_stores_are_bound_to_one_tenant(tmp_path):
+    """Drifted learning records stay hidden and cannot affect another tenant."""
+    from app.eval.eval_store import EvalRecord, EvalStore
+    from app.storage.ab_test_store import ABTestStore
+    from app.storage.feedback_store import FeedbackStore
+    from app.storage.finetune_store import FineTuneStore
+    from app.storage.prompt_override_store import PromptOverrideStore
+
+    feedback_store = FeedbackStore(tmp_path, tenant_id="tenant_a")
+    feedback_store.save({"bundle_type": "proposal_kr", "rating": 5})
+    with pytest.raises(ValueError, match="Feedback tenant"):
+        feedback_store.save({
+            "tenant_id": "tenant_b",
+            "bundle_type": "proposal_kr",
+            "rating": 1,
+        })
+    feedback_path = tmp_path / "tenants" / "tenant_a" / "feedback.jsonl"
+    with feedback_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({
+            "feedback_id": "foreign-feedback",
+            "tenant_id": "tenant_b",
+            "bundle_type": "proposal_kr",
+            "rating": 1,
+        }) + "\n")
+    assert [item["rating"] for item in feedback_store.get_all()] == [5]
+    assert feedback_store.get_low_rated("proposal_kr") == []
+
+    eval_store = EvalStore(tmp_path, tenant_id="tenant_a")
+    own_eval = EvalRecord(
+        request_id="own-eval",
+        bundle_id="proposal_kr",
+        timestamp="2026-07-16T00:00:00+00:00",
+        heuristic_score=0.8,
+        llm_score=None,
+        issues=[],
+        doc_scores={},
+    )
+    eval_store.append(own_eval)
+    with pytest.raises(ValueError, match="Eval record tenant"):
+        eval_store.append(EvalRecord(
+            **{**own_eval.__dict__, "request_id": "foreign-eval", "tenant_id": "tenant_b"}
+        ))
+    eval_path = tmp_path / "tenants" / "tenant_a" / "eval_results.jsonl"
+    with eval_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({
+            **own_eval.__dict__,
+            "request_id": "drifted-eval",
+            "tenant_id": "tenant_b",
+        }) + "\n")
+    assert [record.request_id for record in eval_store.load_all()] == ["own-eval"]
+
+    override_store = PromptOverrideStore(tmp_path, tenant_id="tenant_a")
+    override_store.save_override("own", "own hint", "manual")
+    override_path = tmp_path / "tenants" / "tenant_a" / "prompt_overrides.json"
+    override_data = json.loads(override_path.read_text(encoding="utf-8"))
+    override_data["foreign"] = {
+        "bundle_id": "foreign",
+        "tenant_id": "tenant_b",
+        "override_hint": "foreign hint",
+        "trigger_reason": "manual",
+        "applied_count": 0,
+    }
+    override_path.write_text(json.dumps(override_data), encoding="utf-8")
+    assert override_store.get_override("foreign") is None
+    override_store.increment_applied("foreign")
+    override_store.delete_override("foreign")
+    assert [item["bundle_id"] for item in override_store.list_overrides()] == ["own"]
+    assert json.loads(override_path.read_text(encoding="utf-8"))["foreign"]["applied_count"] == 0
+
+    ab_store = ABTestStore(tmp_path, tenant_id="tenant_a")
+    ab_store.create_test("winner", "tenant-a hint", "other hint", min_samples=1)
+    ab_store.record_result("winner", "variant_a", 0.9)
+    ab_store.record_result("winner", "variant_b", 0.2)
+    assert ab_store.evaluate_and_conclude("winner") == "variant_a"
+    assert PromptOverrideStore(tmp_path, tenant_id="tenant_a").get_override("winner") is not None
+    assert PromptOverrideStore(tmp_path, tenant_id="system").get_override("winner") is None
+
+    ab_path = tmp_path / "tenants" / "tenant_a" / "ab_tests.json"
+    ab_data = json.loads(ab_path.read_text(encoding="utf-8"))
+    ab_data["foreign"] = {
+        **ab_data["winner"],
+        "bundle_id": "foreign",
+        "tenant_id": "tenant_b",
+        "status": "active",
+    }
+    ab_path.write_text(json.dumps(ab_data), encoding="utf-8")
+    assert ab_store.get_active_test("foreign") is None
+    ab_store.record_result("foreign", "variant_a", 1.0)
+    ab_store.delete_test("foreign")
+    assert json.loads(ab_path.read_text(encoding="utf-8"))["foreign"]["results"] == ab_data["foreign"]["results"]
+
+    finetune_store = FineTuneStore(tmp_path, tenant_id="tenant_a")
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "user"},
+        {"role": "assistant", "content": "assistant"},
+    ]
+    metadata = {
+        "request_id": "own-request",
+        "bundle_id": "proposal_kr",
+        "heuristic_score": 0.9,
+        "source": "high_rating",
+    }
+    assert finetune_store.save_record(messages, metadata) is True
+    assert "tenant_id" not in metadata
+    with pytest.raises(ValueError, match="Fine-tune record tenant"):
+        finetune_store.save_record(messages, {
+            **metadata,
+            "request_id": "foreign-input",
+            "tenant_id": "tenant_b",
+        })
+
+    dataset_path = tmp_path / "tenants" / "tenant_a" / "finetune" / "dataset.jsonl"
+    foreign_record = {
+        "messages": messages,
+        "metadata": {
+            **metadata,
+            "request_id": "foreign-record",
+            "tenant_id": "tenant_b",
+        },
+    }
+    with dataset_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(foreign_record) + "\n")
+    assert finetune_store.get_stats()["total_records"] == 1
+    assert [record["metadata"]["request_id"] for record in finetune_store.get_records()] == ["own-request"]
+    assert finetune_store.get_export_path("dataset.jsonl") is None
+    assert finetune_store.clear_dataset() == 1
+    remaining = [json.loads(line) for line in dataset_path.read_text(encoding="utf-8").splitlines()]
+    assert remaining == [foreign_record]
+
+
+def test_quality_learning_routes_use_request_tenant(tmp_path, monkeypatch):
+    """Dashboard, A/B, and fine-tune routes never fall back to system state."""
+    from app.eval.eval_store import EvalRecord, EvalStore
+    from app.main import create_app
+    from app.storage.ab_test_store import ABTestStore
+    from app.storage.feedback_store import FeedbackStore
+    from app.storage.finetune_store import FineTuneStore
+    from app.storage.prompt_override_store import PromptOverrideStore
+    from app.services.generation.context_store import (
+        _store_generation_context,
+        get_generation_context,
+    )
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "quality-api-key")
+    monkeypatch.setenv("DECISIONDOC_OPS_KEY", "quality-ops-key")
+    application = create_app()
+    application.state.tenant_store.create_tenant("tenant_a", "Tenant A")
+    application.state.tenant_store.create_tenant("tenant_b", "Tenant B")
+
+    def seed(tenant_id: str, count: int) -> None:
+        for index in range(count):
+            EvalStore(tmp_path, tenant_id=tenant_id).append(EvalRecord(
+                request_id=f"{tenant_id}-eval-{index}",
+                bundle_id="proposal_kr",
+                timestamp=f"2026-07-16T00:00:0{index}+00:00",
+                heuristic_score=0.8,
+                llm_score=None,
+                issues=[],
+                doc_scores={},
+            ))
+            FeedbackStore(tmp_path, tenant_id=tenant_id).save({
+                "bundle_type": "proposal_kr",
+                "rating": 4,
+            })
+            FineTuneStore(tmp_path, tenant_id=tenant_id).save_record(
+                [{"role": "user", "content": tenant_id}],
+                {
+                    "request_id": f"{tenant_id}-fine-{index}",
+                    "bundle_id": "proposal_kr",
+                    "heuristic_score": 0.8,
+                    "source": "high_rating",
+                },
+            )
+        PromptOverrideStore(tmp_path, tenant_id=tenant_id).save_override(
+            "proposal_kr",
+            f"{tenant_id} hint",
+            "manual",
+        )
+        ABTestStore(tmp_path, tenant_id=tenant_id).create_test(
+            f"{tenant_id}-test",
+            "hint a",
+            "hint b",
+        )
+
+    seed("tenant_a", 1)
+    seed("tenant_b", 2)
+    _store_generation_context(
+        "shared-request",
+        {"output": "tenant-a output"},
+        tenant_id="tenant_a",
+    )
+    _store_generation_context(
+        "shared-request",
+        {"output": "tenant-b output"},
+        tenant_id="tenant_b",
+    )
+    assert get_generation_context("shared-request", tenant_id="tenant_a") == {
+        "output": "tenant-a output",
+    }
+    assert get_generation_context("shared-request", tenant_id="tenant_b") == {
+        "output": "tenant-b output",
+    }
+    client = TestClient(application)
+
+    def headers(tenant_id: str) -> dict[str, str]:
+        return {
+            "X-Tenant-ID": tenant_id,
+            "X-DecisionDoc-Api-Key": "quality-api-key",
+            "X-DecisionDoc-Ops-Key": "quality-ops-key",
+        }
+
+    overview_a = client.get("/dashboard/overview", headers=headers("tenant_a"))
+    overview_b = client.get("/dashboard/overview", headers=headers("tenant_b"))
+    assert overview_a.status_code == overview_b.status_code == 200
+    assert overview_a.json()["total_generations"] == 1
+    assert overview_a.json()["total_feedback_count"] == 1
+    assert overview_b.json()["total_generations"] == 2
+    assert overview_b.json()["total_feedback_count"] == 2
+
+    active_a = client.get("/ab-tests/active", headers=headers("tenant_a"))
+    active_b = client.get("/ab-tests/active", headers=headers("tenant_b"))
+    assert [item["bundle_id"] for item in active_a.json()] == ["tenant_a-test"]
+    assert [item["bundle_id"] for item in active_b.json()] == ["tenant_b-test"]
+    assert client.get("/finetune/stats", headers=headers("tenant_a")).json()["total_records"] == 1
+    assert client.get("/finetune/stats", headers=headers("tenant_b")).json()["total_records"] == 2
+
+    raw_dataset = client.get(
+        "/finetune/export/dataset.jsonl",
+        headers=headers("tenant_a"),
+    )
+    assert raw_dataset.status_code == 404
+    export = client.post(
+        "/finetune/export",
+        headers=headers("tenant_a"),
+        json={"min_records": 1},
+    )
+    assert export.status_code == 200
+    export_name = export.json()["filename"]
+    downloaded = client.get(
+        f"/finetune/export/{export_name}",
+        headers=headers("tenant_a"),
+    )
+    assert downloaded.status_code == 200
+    assert b"tenant_a" in downloaded.content
+    assert b"tenant_b" not in downloaded.content
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

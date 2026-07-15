@@ -84,7 +84,7 @@ class FineTuneOrchestrator:
         from app.storage.finetune_store import FineTuneStore
         from app.storage.model_registry import ModelRegistry
 
-        finetune_store = FineTuneStore(self._data_dir / "tenants" / tenant_id)
+        finetune_store = FineTuneStore(self._data_dir, tenant_id=tenant_id)
         registry = ModelRegistry(self._data_dir)
 
         # Check data threshold

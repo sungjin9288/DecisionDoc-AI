@@ -26,7 +26,6 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -191,12 +190,16 @@ def test_migrate_legacy_data_copies_files(tmp_path: Path) -> None:
     legacy_feedback.write_text('{"id": "x"}\n', encoding="utf-8")
     legacy_overrides = tmp_path / "prompt_overrides.json"
     legacy_overrides.write_text('{}', encoding="utf-8")
+    legacy_finetune = tmp_path / "finetune"
+    legacy_finetune.mkdir()
+    (legacy_finetune / "dataset.jsonl").write_text('{"messages": []}\n', encoding="utf-8")
 
     migrate_legacy_data(tmp_path)
 
     system_dir = tmp_path / "tenants" / "system"
     assert (system_dir / "feedback.jsonl").exists()
     assert (system_dir / "prompt_overrides.json").exists()
+    assert (system_dir / "finetune" / "dataset.jsonl").read_text(encoding="utf-8") == '{"messages": []}\n'
 
 
 def test_migrate_legacy_data_no_overwrite(tmp_path: Path) -> None:
@@ -1025,7 +1028,6 @@ def test_admin_location_procurement_quality_summary_includes_remediation_link_op
         ProcurementRecommendation,
     )
     from app.storage.audit_store import AuditLog, AuditStore
-    from app.storage.share_store import ShareStore
 
     client = _make_client(tmp_path, monkeypatch)
     client.post(
@@ -3015,10 +3017,6 @@ def test_admin_tenant_procurement_quality_summary_not_found(tmp_path: Path, monk
 def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path) -> None:
     """generate_documents() 호출 시 _current_tenant_id 스레드-로컬이 설정됨."""
     from app.domain.schema import _current_tenant_id
-    from app.services.generation_service import GenerationService
-    from unittest.mock import MagicMock
-    from app.bundle_catalog.spec import BundleSpec
-
     svc, _ = _make_generation_service(tmp_path)
 
     # Patch _call_and_prepare_bundle to avoid real LLM call
@@ -3052,8 +3050,6 @@ def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path
     }
 
     captured_tid: list[str] = []
-
-    original_cap = svc._call_and_prepare_bundle
 
     def _fake_cap(provider, payload, request_id, timer, bundle_spec):
         captured_tid.append(getattr(_current_tenant_id, "value", "NOT_SET"))

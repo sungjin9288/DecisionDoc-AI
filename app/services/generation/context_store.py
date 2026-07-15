@@ -60,12 +60,17 @@ _generation_context: threading.local = threading.local()
 # Used by the /feedback endpoint (a separate request) to find the original
 # system_prompt + output for Trigger A fine-tune collection.
 _ctx_lock: threading.Lock = threading.Lock()
-_recent_generation_contexts: dict[str, tuple[dict, float]] = {}
+_recent_generation_contexts: dict[tuple[str, str], tuple[dict, float]] = {}
 _CTX_MAX_SIZE = 500   # evict oldest entries beyond this limit
 _CTX_TTL_SECONDS = 3600  # 1 hour — stale entries expire regardless of size
 
 
-def _store_generation_context(request_id: str, ctx: dict) -> None:
+def _store_generation_context(
+    request_id: str,
+    ctx: dict,
+    *,
+    tenant_id: str = "system",
+) -> None:
     """Store ctx with timestamp; evict expired + oldest-over-limit entries."""
     with _ctx_lock:
         now = time.time()
@@ -78,18 +83,23 @@ def _store_generation_context(request_id: str, ctx: dict) -> None:
         if len(_recent_generation_contexts) >= _CTX_MAX_SIZE:
             oldest = min(_recent_generation_contexts.items(), key=lambda x: x[1][1])
             del _recent_generation_contexts[oldest[0]]
-        _recent_generation_contexts[request_id] = (ctx, now)
+        _recent_generation_contexts[(tenant_id, request_id)] = (ctx, now)
 
 
-def get_generation_context(request_id: str) -> dict | None:
+def get_generation_context(
+    request_id: str,
+    *,
+    tenant_id: str = "system",
+) -> dict | None:
     """Return stored generation context for a request_id, or None if missing/expired."""
+    key = (tenant_id, request_id)
     with _ctx_lock:
-        entry = _recent_generation_contexts.get(request_id)
+        entry = _recent_generation_contexts.get(key)
         if entry is None:
             return None
         ctx, ts = entry
         if time.time() - ts > _CTX_TTL_SECONDS:
-            del _recent_generation_contexts[request_id]
+            del _recent_generation_contexts[key]
             return None
         return ctx
 

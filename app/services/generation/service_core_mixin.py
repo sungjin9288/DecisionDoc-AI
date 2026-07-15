@@ -217,15 +217,19 @@ class GenerationCoreMixin:
         ft_output = "\n\n".join(doc.get("markdown", "") for doc in docs).strip()
 
         # Store cross-request context snapshot (used by /feedback → Trigger A).
-        _store_generation_context(request_id, {
-            "request_id": request_id,
-            "bundle_type": bundle_type,
-            "title": payload.get("title", ""),
-            "goal": payload.get("goal", ""),
-            "context_text": payload.get("context", ""),
-            "system_prompt": ft_system_prompt,
-            "output": ft_output,
-        })
+        _store_generation_context(
+            request_id,
+            {
+                "request_id": request_id,
+                "bundle_type": bundle_type,
+                "title": payload.get("title", ""),
+                "goal": payload.get("goal", ""),
+                "context_text": payload.get("context", ""),
+                "system_prompt": ft_system_prompt,
+                "output": ft_output,
+            },
+            tenant_id=tenant_id,
+        )
 
         # 백그라운드 품질 평가 (EvalStore가 연결된 경우)
         if self._eval_store is not None:
@@ -241,7 +245,10 @@ class GenerationCoreMixin:
                     if sel_variant and sel_bundle_id == bundle_type:
                         ab_variant = sel_variant
                         from app.storage.ab_test_store import ABTestStore
-                        ab_store_instance = ABTestStore(self.data_dir)
+                        ab_store_instance = ABTestStore(
+                            self.data_dir,
+                            tenant_id=tenant_id,
+                        )
                 except Exception:
                     pass
 
@@ -249,33 +256,52 @@ class GenerationCoreMixin:
             try:
                 from app.eval.eval_store import get_eval_store
                 active_eval_store = get_eval_store(tenant_id)
-            except Exception:
-                active_eval_store = self._eval_store
-
-            from app.eval.pipeline import run_eval_pipeline
-            try:
-                _future = _eval_executor.submit(
-                    run_eval_pipeline,
-                    request_id,
-                    bundle_type,
-                    docs,
-                    active_eval_store,
-                    title=payload.get("title", ""),
-                    goal=payload.get("goal", ""),
-                    context=payload.get("context", ""),
-                    ab_store=ab_store_instance,
-                    ab_variant=ab_variant,
-                    finetune_store=self._finetune_store,
-                    ft_system_prompt=ft_system_prompt,
-                    ft_output=ft_output,
-                    tenant_id=tenant_id,
-                )
-                _future.add_done_callback(_eval_done_callback)
-            except RuntimeError as exc:
+            except Exception as exc:
+                active_eval_store = None
                 _log.warning(
-                    "[Eval] Background eval skipped because executor is unavailable: %s",
+                    "[Eval] Tenant eval store unavailable; background eval skipped "
+                    "tenant=%s: %s",
+                    tenant_id,
                     exc,
                 )
+
+            try:
+                from app.storage.finetune_store import get_finetune_store
+                active_finetune_store = get_finetune_store(tenant_id)
+            except Exception as exc:
+                active_finetune_store = None
+                _log.warning(
+                    "[FineTune] Tenant store unavailable; collection skipped "
+                    "tenant=%s: %s",
+                    tenant_id,
+                    exc,
+                )
+
+            if active_eval_store is not None:
+                from app.eval.pipeline import run_eval_pipeline
+                try:
+                    _future = _eval_executor.submit(
+                        run_eval_pipeline,
+                        request_id,
+                        bundle_type,
+                        docs,
+                        active_eval_store,
+                        title=payload.get("title", ""),
+                        goal=payload.get("goal", ""),
+                        context=payload.get("context", ""),
+                        ab_store=ab_store_instance,
+                        ab_variant=ab_variant,
+                        finetune_store=active_finetune_store,
+                        ft_system_prompt=ft_system_prompt,
+                        ft_output=ft_output,
+                        tenant_id=tenant_id,
+                    )
+                    _future.add_done_callback(_eval_done_callback)
+                except RuntimeError as exc:
+                    _log.warning(
+                        "[Eval] Background eval skipped because executor is unavailable: %s",
+                        exc,
+                    )
 
         # Record usage (fire-and-forget — don't fail generation on billing errors)
         try:

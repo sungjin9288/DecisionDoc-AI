@@ -3,7 +3,7 @@
 각 번들별로 두 가지 프롬프트 변형(variant_a / variant_b)을 A/B 테스트하고,
 충분한 샘플이 쌓이면 우승 변형을 PromptOverrideStore에 저장합니다.
 
-Storage: data/ab_tests.json
+Storage: data/tenants/{tenant_id}/ab_tests.json
 Shape: {bundle_id: ABTestRecord, ...}
 """
 from __future__ import annotations
@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.storage.base import atomic_write_text
+
 _log = logging.getLogger("decisiondoc.storage.ab_test")
 
 
@@ -25,7 +27,8 @@ class ABTestStore:
 
     def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
         self._tenant_id = tenant_id
-        tenant_dir = Path(data_dir) / "tenants" / tenant_id
+        self._data_dir = Path(data_dir)
+        tenant_dir = self._data_dir / "tenants" / tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
         self._path = tenant_dir / "ab_tests.json"
         self._lock = threading.Lock()
@@ -51,10 +54,16 @@ class ABTestStore:
             return {}
 
     def _persist(self, data: dict[str, Any]) -> None:
-        self._path.write_text(
+        atomic_write_text(
+            self._path,
             json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
         )
+
+    def _owns(self, record: Any) -> bool:
+        if not isinstance(record, dict):
+            return False
+        stored_tenant_id = record.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -75,8 +84,12 @@ class ABTestStore:
         """
         with self._lock:
             data = self._load()
+            existing = data.get(bundle_id)
+            if existing is not None and not self._owns(existing):
+                raise ValueError("A/B test tenant does not match store tenant")
             data[bundle_id] = {
                 "bundle_id": bundle_id,
+                "tenant_id": self._tenant_id,
                 "status": "active",
                 "variant_a_hint": variant_a_hint,
                 "variant_b_hint": variant_b_hint,
@@ -98,7 +111,7 @@ class ABTestStore:
         with self._lock:
             data = self._load()
             test = data.get(bundle_id)
-            if test and test.get("status") == "active":
+            if self._owns(test) and test.get("status") == "active":
                 return test
             return None
 
@@ -114,7 +127,7 @@ class ABTestStore:
         with self._lock:
             data = self._load()
             test = data.get(bundle_id)
-            if not test or test.get("status") != "active":
+            if not self._owns(test) or test.get("status") != "active":
                 return None
             count = test.get("generation_count", 0)
             variant = "variant_a" if count % 2 == 0 else "variant_b"
@@ -142,7 +155,7 @@ class ABTestStore:
         with self._lock:
             data = self._load()
             test = data.get(bundle_id)
-            if not test or test.get("status") != "active":
+            if not self._owns(test) or test.get("status") != "active":
                 return
             results = test.setdefault("results", {"variant_a": [], "variant_b": []})
             results.setdefault(variant, []).append({
@@ -167,7 +180,7 @@ class ABTestStore:
         with self._lock:
             data = self._load()
             test = data.get(bundle_id)
-            if not test or test.get("status") != "active":
+            if not self._owns(test) or test.get("status") != "active":
                 return None
 
             min_samples = test.get("min_samples", 5)
@@ -196,8 +209,10 @@ class ABTestStore:
         if winner_hint:
             try:
                 from app.storage.prompt_override_store import PromptOverrideStore
-                data_dir = Path(os.getenv("DATA_DIR", "./data"))
-                override_store = PromptOverrideStore(data_dir)
+                override_store = PromptOverrideStore(
+                    self._data_dir,
+                    tenant_id=self._tenant_id,
+                )
                 override_store.save_override(
                     bundle_id=bundle_id,
                     override_hint=winner_hint,
@@ -217,19 +232,32 @@ class ABTestStore:
         """Return all active A/B tests."""
         with self._lock:
             data = self._load()
-            return [t for t in data.values() if t.get("status") == "active"]
+            return [
+                test
+                for test in data.values()
+                if self._owns(test) and test.get("status") == "active"
+            ]
 
     def list_concluded_tests(self) -> list[dict[str, Any]]:
         """Return all concluded A/B tests."""
         with self._lock:
             data = self._load()
-            return [t for t in data.values() if t.get("status") == "concluded"]
+            return [
+                test
+                for test in data.values()
+                if self._owns(test) and test.get("status") == "concluded"
+            ]
+
+    def list_tests(self) -> list[dict[str, Any]]:
+        """Return every test owned by this tenant."""
+        with self._lock:
+            return [test for test in self._load().values() if self._owns(test)]
 
     def delete_test(self, bundle_id: str) -> None:
         """Delete the A/B test for a bundle (used by reset endpoint)."""
         with self._lock:
             data = self._load()
-            if bundle_id in data:
+            if self._owns(data.get(bundle_id)):
                 del data[bundle_id]
                 self._persist(data)
 

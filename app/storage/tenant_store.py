@@ -199,9 +199,9 @@ class TenantStore:
 def migrate_legacy_data(data_dir: Path) -> None:
     """Copy legacy flat data files into the system tenant directory.
 
-    For each legacy file that exists but whose destination does not yet exist,
-    copies the file into ``<data_dir>/tenants/system/`` so that existing data
-    is preserved after the multi-tenant migration.
+    For each legacy file or fine-tune directory that exists but whose destination
+    does not yet exist, copies it into ``<data_dir>/tenants/system/`` so that
+    existing data is preserved after the multi-tenant migration.
     """
     try:
         system_dir = Path(data_dir) / "tenants" / "system"
@@ -218,5 +218,11 @@ def migrate_legacy_data(data_dir: Path) -> None:
             if src.exists() and not dst.exists():
                 shutil.copy2(src, dst)
                 _log.info("Migrated %s → %s", src.name, dst)
+
+        legacy_finetune_dir = Path(data_dir) / "finetune"
+        system_finetune_dir = system_dir / "finetune"
+        if legacy_finetune_dir.is_dir() and not system_finetune_dir.exists():
+            shutil.copytree(legacy_finetune_dir, system_finetune_dir)
+            _log.info("Migrated %s → %s", legacy_finetune_dir.name, system_finetune_dir)
     except Exception as exc:
         _log.warning("migrate_legacy_data failed: %s", exc)

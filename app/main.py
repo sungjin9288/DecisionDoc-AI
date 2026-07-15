@@ -116,6 +116,22 @@ def create_app() -> FastAPI:
 
     data_dir = _resolve_data_dir(explicit_data_dir=explicit_data_dir)
     os.environ["DATA_DIR"] = str(data_dir)
+
+    # Tenant store factories cache by tenant ID. A new app instance may point at
+    # a different data root in tests or embedded deployments, so reset them
+    # after DATA_DIR is finalized.
+    from app.eval.eval_store import clear_eval_store_cache
+    from app.storage.ab_test_store import clear_ab_test_store_cache
+    from app.storage.feedback_store import clear_feedback_store_cache
+    from app.storage.finetune_store import clear_finetune_store_cache
+    from app.storage.prompt_override_store import clear_override_store_cache
+
+    clear_eval_store_cache()
+    clear_ab_test_store_cache()
+    clear_feedback_store_cache()
+    clear_finetune_store_cache()
+    clear_override_store_cache()
+
     storage = get_storage()
     state_backend = get_state_backend(data_dir=data_dir)
 

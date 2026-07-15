@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFil
 
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
-from app.dependencies import require_admin as _require_admin
+from app.dependencies import get_tenant_id, require_admin as _require_admin
 from app.maintenance.mode import is_maintenance_mode, require_not_maintenance
 from app.observability.logging import log_event
 from app.providers.factory import get_provider_for_bundle
@@ -63,10 +63,16 @@ def _facade():
 
 @router.post("/feedback", response_model=FeedbackResponse)
 def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackResponse:
-    feedback_store = request.app.state.feedback_store
-    prompt_override_store = request.app.state.prompt_override_store
-    eval_store = request.app.state.eval_store
-    finetune_store = request.app.state.finetune_store
+    tenant_id = get_tenant_id(request)
+    from app.eval.eval_store import get_eval_store
+    from app.storage.feedback_store import get_feedback_store
+    from app.storage.finetune_store import get_finetune_store
+    from app.storage.prompt_override_store import get_override_store
+
+    feedback_store = get_feedback_store(tenant_id)
+    prompt_override_store = get_override_store(tenant_id)
+    eval_store = get_eval_store(tenant_id)
+    finetune_store = get_finetune_store(tenant_id)
 
     feedback_id = feedback_store.save(payload.model_dump())
     log_event(logger, {
@@ -83,6 +89,8 @@ def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackRespo
         feedback_store=feedback_store,
         override_store=prompt_override_store,
         eval_store=eval_store,
+        tenant_id=tenant_id,
+        data_dir=request.app.state.data_dir,
     )
 
     # ── Trigger A: high user rating → collect fine-tune record ───────────
@@ -91,7 +99,7 @@ def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackRespo
         gen_request_id = payload.request_id or ""
         if payload.rating >= get_finetune_min_rating() and gen_request_id:
             from app.services.generation_service import get_generation_context
-            ctx = get_generation_context(gen_request_id)
+            ctx = get_generation_context(gen_request_id, tenant_id=tenant_id)
             if ctx and ctx.get("system_prompt") and ctx.get("output"):
                 user_content = (
                     f"{ctx.get('title', '')}\n"
