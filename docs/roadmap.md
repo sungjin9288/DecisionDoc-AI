@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-15 실측: 3037 passed, 1 skipped, 4 deselected
+# 2026-07-15 실측: 3039 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -79,6 +79,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-15 tenant별 인스턴스로 생성되는 `BillingStore`가 메서드 인자로 다른 tenant를 다시 선택할 수 없도록 계약을 단순화했다. 계정·plan·Stripe 상태·기능·초과 비용 조회와 변경은 생성 시점 tenant 경로에만 작동한다. `ModelRegistry.list_models()`도 tenant를 필수 keyword 인자로 받고 전체 tenant 디렉터리 scan fallback을 제거했다. 회귀 테스트는 두 tenant의 billing 상태 분리와 tenant별 model listing을 직접 확인한다.
   - 2026-07-15 사용자 등록·로그인·SSO·초대 수락 경로의 `UserStore`를 생성 시점 tenant에 결속했다. 사용자 생성·username 조회·목록은 더 이상 tenant를 다시 받지 않으며 현재 tenant 파일만 사용한다. `InviteStore`도 초대 record의 tenant를 store에서 결정하고 hard-coded `data/` 대신 설정된 `DATA_DIR` 아래에 저장한다. 회귀 테스트는 tenant별 사용자 분리, 초대 tenant 불변성, 실제 저장 경로를 함께 확인한다.
   - 2026-07-15 tenant별 `StyleStore`의 profile 생성·기본값 조회·목록·default style 초기화에서 중복 tenant 인자를 제거했다. Profile ID 기반 조회, default 변경, tone·bundle override·example 수정, system profile 확인과 삭제는 persisted `tenant_id`가 store tenant와 일치할 때만 수행한다. Route와 document schema의 style 조회도 같은 tenant-bound API를 사용하며 회귀 테스트는 drifted profile의 read/write 차단을 확인한다.
+  - 2026-07-15 tenant별 `SSOStore`와 `TemplateStore`가 저장 시 다른 tenant의 record를 거부하도록 했다. Tenant별 경로에 저장된 record가 명시적으로 다른 `tenant_id`를 가지면 SSO는 disabled 기본 설정으로 격리하고 template은 조회·삭제·use count 변경에서 제외한다. 기존 tenant-scoped 파일에 `tenant_id` 필드가 없는 경우는 경로 소유권을 유지하며 회귀 테스트로 호환성을 확인한다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

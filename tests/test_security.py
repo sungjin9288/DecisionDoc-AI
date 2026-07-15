@@ -19,6 +19,8 @@ Coverage (25+ tests):
   H9: UserStore creates and lists users only within its tenant directory
   H10: InviteStore records its own tenant and writes under DATA_DIR
   H11: StyleStore reads and mutates only profiles owned by its tenant
+  H12: SSOStore rejects and hides configuration owned by another tenant
+  H13: TemplateStore rejects and ignores templates owned by another tenant
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -513,6 +515,88 @@ def test_style_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     store.delete(profile.profile_id)
     records = json.loads(path.read_text(encoding="utf-8"))
     assert profile.profile_id in records
+
+
+def test_sso_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """SSO configuration with a drifted tenant is treated as disabled."""
+    from app.storage.sso_store import SSOConfig, SSOProvider, SSOStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = SSOStore("tenant_a")
+
+    with pytest.raises(ValueError, match="tenant does not match"):
+        store.save(SSOConfig(tenant_id="tenant_b", provider=SSOProvider.LDAP))
+
+    config = SSOConfig(tenant_id="tenant_a", provider=SSOProvider.LDAP)
+    config.ldap.server_url = "ldap://tenant-a.example"
+    store.save(config)
+
+    path = tmp_path / "tenants" / "tenant_a" / "sso_config.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    loaded = store.get()
+    assert loaded.tenant_id == "tenant_a"
+    assert loaded.provider == SSOProvider.DISABLED
+    assert loaded.ldap.server_url == ""
+    assert store.is_sso_enabled() is False
+
+    record.pop("tenant_id")
+    path.write_text(json.dumps(record), encoding="utf-8")
+    legacy = store.get()
+    assert legacy.tenant_id == "tenant_a"
+    assert legacy.provider == SSOProvider.LDAP
+    assert legacy.ldap.server_url == "ldap://tenant-a.example"
+
+
+def test_template_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Drifted templates cannot be read, deleted, or marked as used."""
+    from app.storage.template_store import TemplateEntry, TemplateStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = TemplateStore("tenant_a")
+
+    other_tenant_entry = TemplateEntry(
+        template_id="template-b",
+        tenant_id="tenant_b",
+        user_id="user-1",
+        name="다른 tenant 템플릿",
+        bundle_id="tech_decision",
+        bundle_name="기술 결정",
+    )
+    with pytest.raises(ValueError, match="tenant does not match"):
+        store.add(other_tenant_entry)
+
+    entry = TemplateEntry(
+        template_id="template-a",
+        tenant_id="tenant_a",
+        user_id="user-1",
+        name="현재 tenant 템플릿",
+        bundle_id="tech_decision",
+        bundle_name="기술 결정",
+    )
+    store.add(entry)
+
+    path = tmp_path / "tenants" / "tenant_a" / "templates.jsonl"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    assert store.list_for_user("user-1") == []
+    assert store.get(entry.template_id, "user-1") is None
+    assert store.delete(entry.template_id, "user-1") is False
+    store.increment_use_count(entry.template_id, "user-1")
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert persisted["tenant_id"] == "tenant_b"
+    assert persisted["use_count"] == 0
+
+    persisted.pop("tenant_id")
+    path.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
+    legacy = store.get(entry.template_id, "user-1")
+    assert legacy is not None
+    assert legacy["name"] == "현재 tenant 템플릿"
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

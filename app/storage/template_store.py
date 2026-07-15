@@ -59,7 +59,13 @@ class TemplateStore:
         import os as _os
         _os.replace(tmp, self._path)
 
+    def _owns(self, entry: dict) -> bool:
+        stored_tenant_id = entry.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
+
     def add(self, entry: TemplateEntry) -> None:
+        if entry.tenant_id != self._tenant_id:
+            raise ValueError("Template tenant does not match store tenant")
         with self._lock:
             entries = self._load()
             entries.append(asdict(entry))
@@ -68,20 +74,36 @@ class TemplateStore:
     def list_for_user(self, user_id: str) -> list[dict]:
         with self._lock:
             entries = self._load()
-        return [e for e in entries if e.get("user_id") == user_id]
+        return [
+            entry
+            for entry in entries
+            if self._owns(entry) and entry.get("user_id") == user_id
+        ]
 
     def get(self, template_id: str, user_id: str) -> dict | None:
         with self._lock:
             entries = self._load()
-        for e in entries:
-            if e.get("template_id") == template_id and e.get("user_id") == user_id:
-                return e
+        for entry in entries:
+            if (
+                self._owns(entry)
+                and entry.get("template_id") == template_id
+                and entry.get("user_id") == user_id
+            ):
+                return entry
         return None
 
     def delete(self, template_id: str, user_id: str) -> bool:
         with self._lock:
             entries = self._load()
-            new = [e for e in entries if not (e.get("template_id") == template_id and e.get("user_id") == user_id)]
+            new = [
+                entry
+                for entry in entries
+                if not (
+                    self._owns(entry)
+                    and entry.get("template_id") == template_id
+                    and entry.get("user_id") == user_id
+                )
+            ]
             if len(new) == len(entries):
                 return False
             self._save(new)
@@ -90,9 +112,15 @@ class TemplateStore:
     def increment_use_count(self, template_id: str, user_id: str) -> None:
         with self._lock:
             entries = self._load()
-            for e in entries:
-                if e.get("template_id") == template_id and e.get("user_id") == user_id:
-                    e["use_count"] = e.get("use_count", 0) + 1
-                    e["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            for entry in entries:
+                if (
+                    self._owns(entry)
+                    and entry.get("template_id") == template_id
+                    and entry.get("user_id") == user_id
+                ):
+                    entry["use_count"] = entry.get("use_count", 0) + 1
+                    entry["updated_at"] = datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat()
                     break
             self._save(entries)

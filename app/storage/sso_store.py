@@ -174,11 +174,15 @@ class SSOStore(BaseJsonStore):
     def _get_path(self) -> Path:
         return self._path
 
+    def _owns(self, data: dict) -> bool:
+        stored_tenant_id = data.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
+
     def get(self) -> SSOConfig:
         """Load SSO config from disk. Returns default SSOConfig if file missing."""
         with self._lock:
             data = self._load()
-            if not data:
+            if not data or not self._owns(data):
                 return SSOConfig(tenant_id=self._tenant_id)
             try:
                 return _sso_config_from_dict(self._tenant_id, data)
@@ -187,6 +191,8 @@ class SSOStore(BaseJsonStore):
 
     def save(self, config: SSOConfig) -> None:
         """Serialize and atomically write SSOConfig to disk."""
+        if config.tenant_id != self._tenant_id:
+            raise ValueError("SSO config tenant does not match store tenant")
         d = _sso_config_to_dict(config)
         with self._lock:
             atomic_write_text(self._path, __import__("json").dumps(d, ensure_ascii=False, indent=2))
