@@ -86,6 +86,10 @@ class HistoryStore:
             content_type="application/x-ndjson; charset=utf-8",
         )
 
+    def _owns(self, entry: dict) -> bool:
+        stored_tenant_id = entry.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self.tenant_id
+
     @staticmethod
     def _sanitize_entry(
         entry: dict,
@@ -124,6 +128,8 @@ class HistoryStore:
         return sanitized[:12]
 
     def add(self, entry: HistoryEntry) -> None:
+        if entry.tenant_id != self.tenant_id:
+            raise ValueError("History entry tenant does not match store tenant")
         with self._lock:
             entries = self._load()
             entries.insert(0, {
@@ -151,8 +157,16 @@ class HistoryStore:
                 "knowledge_documents": entry.knowledge_documents or [],
             })
             # Cap per-user entries
-            user_entries = [e for e in entries if e.get("user_id") == entry.user_id]
-            other_entries = [e for e in entries if e.get("user_id") != entry.user_id]
+            user_entries = [
+                item
+                for item in entries
+                if self._owns(item) and item.get("user_id") == entry.user_id
+            ]
+            other_entries = [
+                item
+                for item in entries
+                if not self._owns(item) or item.get("user_id") != entry.user_id
+            ]
             user_entries = user_entries[:MAX_HISTORY_PER_USER]
             self._save(other_entries + user_entries)
 
@@ -162,14 +176,18 @@ class HistoryStore:
         return [
             self._sanitize_entry(e)
             for e in entries
-            if e.get("user_id") == user_id
+            if self._owns(e) and e.get("user_id") == user_id
         ][:limit]
 
     def get_entry(self, entry_id: str, user_id: str) -> dict | None:
         with self._lock:
             entries = self._load()
         for entry in entries:
-            if entry.get("entry_id") == entry_id and entry.get("user_id") == user_id:
+            if (
+                self._owns(entry)
+                and entry.get("entry_id") == entry_id
+                and entry.get("user_id") == user_id
+            ):
                 return self._sanitize_entry(entry, include_docs=True, include_visual_assets=True)
         return None
 
@@ -178,6 +196,8 @@ class HistoryStore:
             entries = self._load()
             updated = False
             for entry in entries:
+                if not self._owns(entry):
+                    continue
                 if entry.get("entry_id") != entry_id or entry.get("user_id") != user_id:
                     continue
                 entry["visual_assets"] = self._sanitize_visual_assets(visual_assets)
@@ -192,7 +212,11 @@ class HistoryStore:
             entries = self._load()
             entries = [
                 e for e in entries
-                if not (e.get("entry_id") == entry_id and e.get("user_id") == user_id)
+                if not (
+                    self._owns(e)
+                    and e.get("entry_id") == entry_id
+                    and e.get("user_id") == user_id
+                )
             ]
             self._save(entries)
 
@@ -202,7 +226,11 @@ class HistoryStore:
             entries = self._load()
             new_state = False
             for e in entries:
-                if e.get("entry_id") == entry_id and e.get("user_id") == user_id:
+                if (
+                    self._owns(e)
+                    and e.get("entry_id") == entry_id
+                    and e.get("user_id") == user_id
+                ):
                     e["starred"] = not e.get("starred", False)
                     new_state = e["starred"]
                     break
@@ -231,6 +259,8 @@ class HistoryStore:
         with self._lock:
             entries = self._load()
             for entry in entries:
+                if not self._owns(entry):
+                    continue
                 if entry.get("request_id") != request_id:
                     continue
                 if user_id and entry.get("user_id") != user_id:
@@ -264,7 +294,9 @@ class HistoryStore:
         return [
             self._sanitize_entry(e)
             for e in entries
-            if e.get("user_id") == user_id and e.get("starred", False)
+            if self._owns(e)
+            and e.get("user_id") == user_id
+            and e.get("starred", False)
         ]
 
     def search(self, user_id: str, q: str, limit: int = 20) -> list[dict]:
@@ -276,7 +308,7 @@ class HistoryStore:
             entries = self._load()
         results = []
         for e in entries:
-            if e.get("user_id") != user_id:
+            if not self._owns(e) or e.get("user_id") != user_id:
                 continue
             haystack = " ".join([
                 str(e.get("title", "")),

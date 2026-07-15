@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-15 실측: 3041 passed, 1 skipped, 4 deselected
+# 2026-07-15 실측: 3042 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -81,6 +81,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-15 tenant별 `StyleStore`의 profile 생성·기본값 조회·목록·default style 초기화에서 중복 tenant 인자를 제거했다. Profile ID 기반 조회, default 변경, tone·bundle override·example 수정, system profile 확인과 삭제는 persisted `tenant_id`가 store tenant와 일치할 때만 수행한다. Route와 document schema의 style 조회도 같은 tenant-bound API를 사용하며 회귀 테스트는 drifted profile의 read/write 차단을 확인한다.
   - 2026-07-15 tenant별 `SSOStore`와 `TemplateStore`가 저장 시 다른 tenant의 record를 거부하도록 했다. Tenant별 경로에 저장된 record가 명시적으로 다른 `tenant_id`를 가지면 SSO는 disabled 기본 설정으로 격리하고 template은 조회·삭제·use count 변경에서 제외한다. 기존 tenant-scoped 파일에 `tenant_id` 필드가 없는 경우는 경로 소유권을 유지하며 회귀 테스트로 호환성을 확인한다.
   - 2026-07-15 collaboration state의 `NotificationStore`와 `MessageStore`도 생성 시점 tenant에 결속했다. Notification 생성과 message post/thread/mention/unread API는 중복 tenant 인자를 받지 않으며, persisted `tenant_id`가 store tenant와 다른 record는 조회, 읽음·전송 상태, 보존 삭제, 수정·삭제 대상에서 제외한다. H14/H15 회귀 테스트는 같은 recipient·author·resource ID가 남아 있어도 drifted record가 변경되지 않는지 확인한다.
+  - 2026-07-15 `HistoryStore`가 다른 tenant의 entry 저장을 거부하고, 명시적으로 drift된 persisted entry를 목록·상세·검색·즐겨찾기·시각자료 업데이트·knowledge 승격·삭제와 per-user cap 대상에서 제외하도록 했다. 같은 user ID와 entry/request ID가 남아 있어도 변경하지 않으며, 기존 tenant-scoped JSONL에 `tenant_id` 필드가 없는 entry는 경로 소유권으로 읽는다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

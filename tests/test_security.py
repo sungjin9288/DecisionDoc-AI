@@ -23,6 +23,7 @@ Coverage (25+ tests):
   H13: TemplateStore rejects and ignores templates owned by another tenant
   H14: NotificationStore reads and mutates only records owned by its tenant
   H15: MessageStore reads and mutates only records owned by its tenant
+  H16: HistoryStore reads and mutates only entries owned by its tenant
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -695,6 +696,99 @@ def test_message_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     assert persisted[0]["tenant_id"] == "tenant_b"
     assert persisted[0]["content"] == "@reviewer 확인해주세요"
     assert persisted[0]["is_deleted"] is False
+
+
+def test_history_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Drifted history entries stay hidden and unchanged."""
+    from app.storage.history_store import HistoryEntry, HistoryStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = HistoryStore("tenant_a", base_dir=str(tmp_path))
+
+    with pytest.raises(ValueError, match="tenant does not match"):
+        store.add(
+            HistoryEntry(
+                entry_id="history-b",
+                tenant_id="tenant_b",
+                user_id="user-1",
+                bundle_id="proposal_kr",
+                bundle_name="제안서",
+                title="다른 tenant 이력",
+                request_id="request-b",
+                created_at="2026-07-15T00:00:00+00:00",
+            )
+        )
+
+    entry = HistoryEntry(
+        entry_id="history-a",
+        tenant_id="tenant_a",
+        user_id="user-1",
+        bundle_id="proposal_kr",
+        bundle_name="제안서",
+        title="현재 tenant 이력",
+        request_id="request-a",
+        created_at="2026-07-15T00:00:00+00:00",
+    )
+    store.add(entry)
+
+    path = tmp_path / "tenants" / "tenant_a" / "history.jsonl"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    assert store.get_for_user("user-1") == []
+    assert store.get_entry(entry.entry_id, "user-1") is None
+    assert store.get_favorites("user-1") == []
+    assert store.search("user-1", "현재 tenant") == []
+    assert store.update_visual_assets(entry.entry_id, "user-1", []) is False
+    assert store.toggle_favorite(entry.entry_id, "user-1") is False
+    assert store.mark_promoted(
+        entry.request_id,
+        project_id="project-a",
+        document_count=1,
+        quality_tier="gold",
+        success_state="approved",
+        promoted_at="2026-07-15T01:00:00+00:00",
+        user_id="user-1",
+    ) == 0
+    store.delete(entry.entry_id, "user-1")
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert persisted["tenant_id"] == "tenant_b"
+    assert persisted.get("starred") is None
+    assert persisted["knowledge_promoted"] is False
+
+    store.add(
+        HistoryEntry(
+            entry_id="history-new",
+            tenant_id="tenant_a",
+            user_id="user-1",
+            bundle_id="proposal_kr",
+            bundle_name="제안서",
+            title="새 이력",
+            request_id="request-new",
+            created_at="2026-07-15T02:00:00+00:00",
+        )
+    )
+    records = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    persisted = next(item for item in records if item["entry_id"] == entry.entry_id)
+    assert persisted["tenant_id"] == "tenant_b"
+    assert [item["entry_id"] for item in store.get_for_user("user-1")] == [
+        "history-new"
+    ]
+
+    persisted.pop("tenant_id")
+    path.write_text(
+        "".join(json.dumps(item) + "\n" for item in records),
+        encoding="utf-8",
+    )
+    legacy = store.get_entry(entry.entry_id, "user-1")
+    assert legacy is not None
+    assert legacy["title"] == "현재 tenant 이력"
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):
