@@ -20,7 +20,7 @@ class ReportWorkflowPromotionMixin:
         *,
         project_id: str,
         project_document_id: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -41,7 +41,7 @@ class ReportWorkflowPromotionMixin:
         project_id: str,
         document_count: int,
         documents: list[dict[str, Any]],
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -63,7 +63,7 @@ class ReportWorkflowPromotionMixin:
         kind: str,
         payload: dict[str, Any],
         actor: str = "",
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)

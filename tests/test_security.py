@@ -11,6 +11,8 @@ Coverage (25+ tests):
   H1: Dev mode without STRIPE_WEBHOOK_SECRET processes event (no raise)
   H2: ApprovalStore.get() requires tenant scope and blocks cross-tenant access
   H3: ProjectStore.get() requires tenant scope and blocks cross-tenant access
+  H4: ProcurementDecisionStore.get() requires tenant scope and blocks cross-tenant access
+  H5: ReportWorkflowStore.get() requires tenant scope and blocks cross-tenant access
   H7: CORS not wildcard in non-dev environment
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
@@ -310,6 +312,44 @@ def test_project_store_get_requires_tenant_scope(tmp_path):
 
     assert store.get(project_id, tenant_id="tenant_a") is None
     result = store.get(project_id, tenant_id="tenant_b")
+    assert result is not None
+    assert result.tenant_id == "tenant_b"
+
+
+def test_procurement_store_get_requires_tenant_scope(tmp_path):
+    """Procurement lookup fails closed without the owning tenant context."""
+    from app.schemas import ProcurementDecisionUpsert
+    from app.storage.procurement_store import ProcurementDecisionStore
+
+    store = ProcurementDecisionStore(base_dir=str(tmp_path))
+    record = store.upsert(
+        ProcurementDecisionUpsert(
+            project_id="project-b",
+            tenant_id="tenant_b",
+        )
+    )
+
+    with pytest.raises(TypeError, match="tenant_id"):
+        store.get(record.project_id)  # type: ignore[call-arg]
+
+    assert store.get(record.project_id, tenant_id="tenant_a") is None
+    result = store.get(record.project_id, tenant_id="tenant_b")
+    assert result is not None
+    assert result.tenant_id == "tenant_b"
+
+
+def test_report_workflow_store_get_requires_tenant_scope(tmp_path):
+    """Report workflow lookup fails closed without the owning tenant context."""
+    from app.storage.report_workflow_store import ReportWorkflowStore
+
+    store = ReportWorkflowStore(base_dir=str(tmp_path))
+    record = store.create(tenant_id="tenant_b", title="Tenant B report")
+
+    with pytest.raises(TypeError, match="tenant_id"):
+        store.get(record.report_workflow_id)  # type: ignore[call-arg]
+
+    assert store.get(record.report_workflow_id, tenant_id="tenant_a") is None
+    result = store.get(record.report_workflow_id, tenant_id="tenant_b")
     assert result is not None
     assert result.tenant_id == "tenant_b"
 

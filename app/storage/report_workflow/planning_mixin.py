@@ -21,7 +21,7 @@ class ReportWorkflowPlanningMixin:
         report_workflow_id: str,
         planning: PlanningVersion,
         *,
-        tenant_id: str | None = None,
+        tenant_id: str,
         quality_warnings: list[str] | None = None,
     ) -> ReportWorkflowRecord:
         with self._lock:
@@ -61,7 +61,7 @@ class ReportWorkflowPlanningMixin:
         *,
         author: str,
         comment: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -95,7 +95,7 @@ class ReportWorkflowPlanningMixin:
         report_workflow_id: str,
         *,
         author: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)

@@ -23,7 +23,7 @@ class ReportWorkflowSlideMixin:
         report_workflow_id: str,
         slides: list[SlideDraft],
         *,
-        tenant_id: str | None = None,
+        tenant_id: str,
         quality_warnings: list[str] | None = None,
     ) -> ReportWorkflowRecord:
         with self._lock:
@@ -69,7 +69,7 @@ class ReportWorkflowSlideMixin:
         *,
         author: str,
         comment: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -107,7 +107,7 @@ class ReportWorkflowSlideMixin:
         slide_id: str,
         *,
         author: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -144,7 +144,7 @@ class ReportWorkflowSlideMixin:
         selected_asset_id: str = "",
         selected_asset: dict[str, Any] | None = None,
         author: str = "",
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -185,7 +185,7 @@ class ReportWorkflowSlideMixin:
         report_workflow_id: str,
         assets: list[dict[str, Any]],
         *,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -203,7 +203,7 @@ class ReportWorkflowSlideMixin:
         *,
         asset_id: str,
         author: str = "",
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)

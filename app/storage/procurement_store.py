@@ -83,31 +83,17 @@ class ProcurementDecisionStore(BaseJsonStore):
     def _find(
         self,
         project_id: str,
-        tenant_id: str | None = None,
+        *,
+        tenant_id: str,
     ) -> tuple[str, list[dict[str, Any]], int, ProcurementDecisionRecord] | None:
-        if tenant_id is not None:
-            records = self._load(tenant_id)
-            for idx, record in enumerate(records):
-                if record.get("project_id") == project_id:
-                    parsed = self._from_dict(record)
-                    if parsed.tenant_id != tenant_id:
-                        return None
-                    return tenant_id, records, idx, parsed
-            return None
-
-        tenant_paths = self._backend.list_prefix("tenants/")
-        tenant_ids = sorted(
-            {
-                Path(path).parts[1]
-                for path in tenant_paths
-                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
-            }
-        )
-        for tid in tenant_ids:
-            records = self._load(tid)
-            for idx, record in enumerate(records):
-                if record.get("project_id") == project_id:
-                    return tid, records, idx, self._from_dict(record)
+        records = self._load(tenant_id)
+        for idx, raw_record in enumerate(records):
+            if raw_record.get("project_id") != project_id:
+                continue
+            record = self._from_dict(raw_record)
+            if record.tenant_id != tenant_id:
+                return None
+            return tenant_id, records, idx, record
         return None
 
     def _flush(
@@ -151,7 +137,7 @@ class ProcurementDecisionStore(BaseJsonStore):
             )
             return self._flush(tenant_id, records, idx, record)
 
-    def get(self, project_id: str, tenant_id: str | None = None) -> ProcurementDecisionRecord | None:
+    def get(self, project_id: str, *, tenant_id: str) -> ProcurementDecisionRecord | None:
         with self._lock:
             result = self._find(project_id, tenant_id=tenant_id)
             return result[3] if result else None

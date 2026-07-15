@@ -22,7 +22,7 @@ class ReportWorkflowApprovalMixin:
         report_workflow_id: str,
         *,
         author: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -57,7 +57,7 @@ class ReportWorkflowApprovalMixin:
         *,
         approval_id: str,
         approval_status: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -80,7 +80,7 @@ class ReportWorkflowApprovalMixin:
         report_workflow_id: str,
         *,
         approval_status: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -100,7 +100,7 @@ class ReportWorkflowApprovalMixin:
         stage: str,
         author: str,
         comment: str = "",
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -155,7 +155,7 @@ class ReportWorkflowApprovalMixin:
         *,
         author: str,
         comment: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
@@ -197,7 +197,7 @@ class ReportWorkflowApprovalMixin:
         report_workflow_id: str,
         *,
         author: str,
-        tenant_id: str | None = None,
+        tenant_id: str,
     ) -> ReportWorkflowRecord:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)

@@ -57,31 +57,17 @@ class ReportWorkflowCoreMixin:
     def _find(
         self,
         report_workflow_id: str,
-        tenant_id: str | None = None,
+        *,
+        tenant_id: str,
     ) -> tuple[str, list[dict], int, ReportWorkflowRecord] | None:
-        if tenant_id is not None:
-            records = self._load(tenant_id)
-            for idx, raw in enumerate(records):
-                if raw.get("report_workflow_id") == report_workflow_id:
-                    rec = self._from_dict(raw)
-                    if rec.tenant_id != tenant_id:
-                        return None
-                    return tenant_id, records, idx, rec
-            return None
-
-        tenant_paths = self._backend.list_prefix("tenants/")
-        tenant_ids = sorted(
-            {
-                Path(path).parts[1]
-                for path in tenant_paths
-                if len(Path(path).parts) >= 3 and Path(path).parts[0] == "tenants"
-            }
-        )
-        for tid in tenant_ids:
-            records = self._load(tid)
-            for idx, raw in enumerate(records):
-                if raw.get("report_workflow_id") == report_workflow_id:
-                    return tid, records, idx, self._from_dict(raw)
+        records = self._load(tenant_id)
+        for idx, raw_record in enumerate(records):
+            if raw_record.get("report_workflow_id") != report_workflow_id:
+                continue
+            record = self._from_dict(raw_record)
+            if record.tenant_id != tenant_id:
+                return None
+            return tenant_id, records, idx, record
         return None
 
     def _flush(
@@ -143,7 +129,7 @@ class ReportWorkflowCoreMixin:
             self._save(tenant_id, records)
             return rec
 
-    def get(self, report_workflow_id: str, tenant_id: str | None = None) -> ReportWorkflowRecord | None:
+    def get(self, report_workflow_id: str, *, tenant_id: str) -> ReportWorkflowRecord | None:
         with self._lock:
             result = self._find(report_workflow_id, tenant_id=tenant_id)
             return result[3] if result else None
