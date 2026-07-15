@@ -2639,6 +2639,75 @@ def test_production_knowledge_store_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_trajectory_store_contract_requires_explicit_tenant_binding():
+    root = Path(__file__).resolve().parents[1]
+    expected_methods = {
+        "approve_training_from_freeze",
+        "export_sft_messages",
+        "export_training_pre_execution_audit",
+        "freeze_sft_export",
+        "get_record",
+        "get_record_page",
+        "get_records",
+        "get_reviewed_sft_export_path",
+        "get_sft_export_path",
+        "get_stats",
+        "get_training_pre_execution_audit_path",
+        "inspect_sft_export_quality",
+        "list_dataset_freezes",
+        "list_reviewed_sft_exports",
+        "list_sft_exports",
+        "list_training_approvals",
+        "list_training_execution_requests",
+        "list_training_pre_execution_audits",
+        "mark_reviewed",
+        "preview_sft_export",
+        "report_sft_export_quality",
+        "request_training_execution_from_plan",
+        "reviewer_signoff_summary",
+        "save",
+        "training_execution_plan_preview",
+        "training_governance_dashboard_summary",
+        "training_pre_execution_audit_checklist",
+        "training_readiness_summary",
+    }
+    discovered_methods: set[str] = set()
+    defaulted_methods: list[str] = []
+
+    for path in (root / "app" / "storage" / "trajectory").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name not in expected_methods:
+                continue
+            discovered_methods.add(node.name)
+            keyword_names = [argument.arg for argument in node.args.kwonlyargs]
+            tenant_index = keyword_names.index("tenant_id")
+            if node.args.kw_defaults[tenant_index] is not None:
+                defaulted_methods.append(node.name)
+
+    assert discovered_methods == expected_methods
+    assert defaulted_methods == []
+
+
+def test_production_trajectory_store_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            receiver = node.func.value
+            if not isinstance(receiver, ast.Attribute) or receiver.attr != "_trajectory_store":
+                continue
+            if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}")
+
+    assert missing_tenant == []
+
+
 def test_primary_smoke_modules_stay_within_800_line_guide():
     root = Path(__file__).resolve().parents[1]
     module_paths = (

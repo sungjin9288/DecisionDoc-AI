@@ -27,13 +27,13 @@ class TrajectoryTrainingApprovalMixin:
     def list_training_approvals(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Return newest dry-run training approval gate metadata."""
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_approvals = meta.get("training_approvals") if isinstance(meta.get("training_approvals"), list) else []
+        raw_approvals = self._owned_meta_items(meta, "training_approvals", tenant_id)
         approvals: list[dict[str, Any]] = []
         seen_files: set[str] = set()
         for item in reversed(raw_approvals):
@@ -43,6 +43,8 @@ class TrajectoryTrainingApprovalMixin:
             if approval_file in seen_files:
                 continue
             approval_path = self._resolve_training_approval_path(tenant_id, approval_file)
+            if approval_path and not self._json_artifact_belongs_to_tenant(approval_path, tenant_id):
+                continue
             approval_sha256 = str(item.get("approval_sha256") or "")
             approvals.append(
                 {
@@ -79,7 +81,7 @@ class TrajectoryTrainingApprovalMixin:
         self,
         manifest_id: str,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         approver: str,
         eval_plan: dict[str, Any],
         notes: str = "",
@@ -182,7 +184,7 @@ class TrajectoryTrainingApprovalMixin:
     def training_readiness_summary(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> dict[str, Any]:
         """Summarize readiness gates without starting training or uploads."""
@@ -338,7 +340,7 @@ class TrajectoryTrainingApprovalMixin:
     def training_execution_plan_preview(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         provider: str = "provider_agnostic",
         base_model: str | None = None,
         limit: int = 50,
@@ -429,13 +431,14 @@ class TrajectoryTrainingApprovalMixin:
         approval_sha256: str,
     ) -> None:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
+            meta = self._load_meta_unlocked(tenant_id, for_update=True)
             meta["training_approval_count"] = int(meta.get("training_approval_count") or 0) + 1
             manifest = approval.get("manifest") if isinstance(approval.get("manifest"), dict) else {}
             guard = approval.get("execution_guard") if isinstance(approval.get("execution_guard"), dict) else {}
             gate = approval.get("approval_gate") if isinstance(approval.get("approval_gate"), dict) else {}
             meta.setdefault("training_approvals", []).append(
                 {
+                    "tenant_id": tenant_id,
                     "approval_id": approval.get("approval_id"),
                     "approval_file": approval_file,
                     "approval_sha256": approval_sha256,
@@ -453,7 +456,7 @@ class TrajectoryTrainingApprovalMixin:
                     "created_at": approval.get("created_at"),
                 }
             )
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            self._write_meta_unlocked(tenant_id, meta)
 
     def _training_artifact_chain_summary(
         self,
@@ -560,11 +563,15 @@ class TrajectoryTrainingApprovalMixin:
         approval_path = self._resolve_training_approval_path(tenant_id, filename)
         if approval_path is None:
             return None
+        if not self._json_artifact_belongs_to_tenant(approval_path, tenant_id):
+            return None
         try:
             data = json.loads(approval_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
+            return None
+        return data
 
     def _training_approval_eval_summary(self, tenant_id: str, approval: dict[str, Any]) -> dict[str, Any]:
         approval_file = str(approval.get("approval_file") or "")

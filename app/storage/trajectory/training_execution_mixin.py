@@ -17,13 +17,17 @@ class TrajectoryTrainingExecutionMixin:
     def list_training_execution_requests(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Return newest no-side-effect training execution request records."""
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_requests = meta.get("training_execution_requests") if isinstance(meta.get("training_execution_requests"), list) else []
+        raw_requests = self._owned_meta_items(
+            meta,
+            "training_execution_requests",
+            tenant_id,
+        )
         requests: list[dict[str, Any]] = []
         seen_files: set[str] = set()
         for item in reversed(raw_requests):
@@ -33,6 +37,8 @@ class TrajectoryTrainingExecutionMixin:
             if request_file in seen_files:
                 continue
             request_path = self._resolve_training_execution_request_path(tenant_id, request_file)
+            if request_path and not self._json_artifact_belongs_to_tenant(request_path, tenant_id):
+                continue
             request_sha256 = str(item.get("request_sha256") or "")
             requests.append(
                 {
@@ -69,7 +75,7 @@ class TrajectoryTrainingExecutionMixin:
     def request_training_execution_from_plan(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         requester: str,
         provider: str = "provider_agnostic",
         base_model: str | None = None,
@@ -170,7 +176,7 @@ class TrajectoryTrainingExecutionMixin:
         request_sha256: str,
     ) -> None:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
+            meta = self._load_meta_unlocked(tenant_id, for_update=True)
             meta["training_execution_request_count"] = int(meta.get("training_execution_request_count") or 0) + 1
             plan = request_record.get("plan_preview") if isinstance(request_record.get("plan_preview"), dict) else {}
             dataset = plan.get("dataset") if isinstance(plan.get("dataset"), dict) else {}
@@ -179,6 +185,7 @@ class TrajectoryTrainingExecutionMixin:
             two_person = request_record.get("two_person_guard") if isinstance(request_record.get("two_person_guard"), dict) else {}
             meta.setdefault("training_execution_requests", []).append(
                 {
+                    "tenant_id": tenant_id,
                     "request_id": request_record.get("request_id"),
                     "request_file": request_file,
                     "request_sha256": request_sha256,
@@ -197,7 +204,7 @@ class TrajectoryTrainingExecutionMixin:
                     "created_at": request_record.get("created_at"),
                 }
             )
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            self._write_meta_unlocked(tenant_id, meta)
 
     def _resolve_training_execution_request_path(self, tenant_id: str, filename: str) -> Path | None:
         if not _is_safe_training_execution_request_filename(filename):
@@ -221,8 +228,12 @@ class TrajectoryTrainingExecutionMixin:
         request_path = self._resolve_training_execution_request_path(tenant_id, filename)
         if request_path is None:
             return None
+        if not self._json_artifact_belongs_to_tenant(request_path, tenant_id):
+            return None
         try:
             data = json.loads(request_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
+            return None
+        return data

@@ -17,7 +17,7 @@ class TrajectoryTrainingAuditMixin:
     def training_pre_execution_audit_checklist(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         provider: str = "provider_agnostic",
         base_model: str | None = None,
         limit: int = 50,
@@ -239,13 +239,17 @@ class TrajectoryTrainingAuditMixin:
     def list_training_pre_execution_audits(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Return newest exported pre-execution audit artifacts."""
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_audits = meta.get("training_pre_execution_audits") if isinstance(meta.get("training_pre_execution_audits"), list) else []
+        raw_audits = self._owned_meta_items(
+            meta,
+            "training_pre_execution_audits",
+            tenant_id,
+        )
         audits: list[dict[str, Any]] = []
         seen_files: set[str] = set()
         for item in reversed(raw_audits):
@@ -255,6 +259,8 @@ class TrajectoryTrainingAuditMixin:
             if audit_file in seen_files:
                 continue
             audit_path = self._resolve_training_audit_path(tenant_id, audit_file)
+            if audit_path and not self._json_artifact_belongs_to_tenant(audit_path, tenant_id):
+                continue
             audit_sha256 = str(item.get("audit_sha256") or "")
             audits.append(
                 {
@@ -290,7 +296,7 @@ class TrajectoryTrainingAuditMixin:
     def export_training_pre_execution_audit(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         auditor: str,
         provider: str = "provider_agnostic",
         base_model: str | None = None,
@@ -374,14 +380,14 @@ class TrajectoryTrainingAuditMixin:
         )
         return audit_record
 
-    def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str = "system") -> Path | None:
+    def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str) -> Path | None:
         """Resolve a metadata-safe pre-execution audit artifact path."""
         return self._resolve_training_audit_path(tenant_id, filename)
 
     def training_governance_dashboard_summary(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         provider: str = "provider_agnostic",
         base_model: str | None = None,
         limit: int = 50,
@@ -505,7 +511,7 @@ class TrajectoryTrainingAuditMixin:
         audit_sha256: str,
     ) -> None:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
+            meta = self._load_meta_unlocked(tenant_id, for_update=True)
             meta["training_pre_execution_audit_count"] = int(meta.get("training_pre_execution_audit_count") or 0) + 1
             gate = audit_record.get("audit_gate") if isinstance(audit_record.get("audit_gate"), dict) else {}
             guard = audit_record.get("execution_guard") if isinstance(audit_record.get("execution_guard"), dict) else {}
@@ -528,6 +534,7 @@ class TrajectoryTrainingAuditMixin:
             job_spec = plan.get("job_spec") if isinstance(plan.get("job_spec"), dict) else {}
             meta.setdefault("training_pre_execution_audits", []).append(
                 {
+                    "tenant_id": tenant_id,
                     "audit_id": audit_record.get("audit_id"),
                     "audit_file": audit_file,
                     "audit_sha256": audit_sha256,
@@ -545,7 +552,7 @@ class TrajectoryTrainingAuditMixin:
                     "created_at": audit_record.get("created_at"),
                 }
             )
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            self._write_meta_unlocked(tenant_id, meta)
 
     def _training_audit_chain_summary(
         self,
@@ -643,8 +650,12 @@ class TrajectoryTrainingAuditMixin:
         audit_path = self._resolve_training_audit_path(tenant_id, filename)
         if audit_path is None:
             return None
+        if not self._json_artifact_belongs_to_tenant(audit_path, tenant_id):
+            return None
         try:
             data = json.loads(audit_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
+            return None
+        return data

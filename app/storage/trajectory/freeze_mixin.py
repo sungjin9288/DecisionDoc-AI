@@ -17,13 +17,13 @@ class TrajectoryFreezeMixin:
     def list_dataset_freezes(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Return newest dataset freeze manifest metadata."""
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_freezes = meta.get("freezes") if isinstance(meta.get("freezes"), list) else []
+        raw_freezes = self._owned_meta_items(meta, "freezes", tenant_id)
         freezes: list[dict[str, Any]] = []
         seen_manifest_files: set[str] = set()
         for item in reversed(raw_freezes):
@@ -33,6 +33,8 @@ class TrajectoryFreezeMixin:
             if manifest_file in seen_manifest_files:
                 continue
             manifest_path = self._resolve_freeze_path(tenant_id, manifest_file)
+            if manifest_path and not self._json_artifact_belongs_to_tenant(manifest_path, tenant_id):
+                continue
             manifest_sha256 = str(item.get("manifest_sha256") or "")
             freezes.append(
                 {
@@ -65,7 +67,7 @@ class TrajectoryFreezeMixin:
         self,
         filename: str,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         reviewer: str,
         notes: str = "",
         sample_limit: int = 5,
@@ -143,10 +145,11 @@ class TrajectoryFreezeMixin:
         manifest_sha256: str,
     ) -> None:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
+            meta = self._load_meta_unlocked(tenant_id, for_update=True)
             meta["freeze_count"] = int(meta.get("freeze_count") or 0) + 1
             meta.setdefault("freezes", []).append(
                 {
+                    "tenant_id": tenant_id,
                     "manifest_id": manifest.get("manifest_id"),
                     "manifest_file": manifest_file,
                     "manifest_sha256": manifest_sha256,
@@ -160,12 +163,12 @@ class TrajectoryFreezeMixin:
                     "created_at": manifest.get("created_at"),
                 }
             )
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            self._write_meta_unlocked(tenant_id, meta)
 
     def _load_freeze_manifest_by_id(self, manifest_id: str, *, tenant_id: str) -> dict[str, Any] | None:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_freezes = meta.get("freezes") if isinstance(meta.get("freezes"), list) else []
+        raw_freezes = self._owned_meta_items(meta, "freezes", tenant_id)
         manifest_file = ""
         for item in raw_freezes:
             if isinstance(item, dict) and item.get("manifest_id") == manifest_id:
@@ -176,11 +179,15 @@ class TrajectoryFreezeMixin:
         manifest_path = self._resolve_freeze_path(tenant_id, manifest_file)
         if manifest_path is None:
             return None
+        if not self._json_artifact_belongs_to_tenant(manifest_path, tenant_id):
+            return None
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
+            return None
+        return data
 
     def _resolve_freeze_path(self, tenant_id: str, filename: str) -> Path | None:
         if not _is_safe_freeze_filename(filename):

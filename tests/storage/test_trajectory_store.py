@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -70,11 +71,34 @@ def test_save_stores_tenant_scoped_redacted_jsonl(tmp_path: Path) -> None:
     assert trajectory_id == "trj_001"
     records = store.get_records(tenant_id="alpha")
     assert len(records) == 1
+    assert records[0]["tenant_id"] == "alpha"
     assert records[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
     assert store.get_record("trj_001", tenant_id="alpha") == records[0]
     assert store.get_record("trj_001", tenant_id="beta") is None
     assert store.get_record("missing", tenant_id="alpha") is None
     assert store.get_records(tenant_id="beta") == []
+
+
+def test_save_rejects_explicit_foreign_tenant_ownership(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    trajectory = _sample_trajectory("trj_foreign")
+    trajectory["tenant_id"] = "beta"
+
+    with pytest.raises(ValueError, match="does not match"):
+        store.save(trajectory, tenant_id="alpha")
+
+    assert store.get_records(tenant_id="alpha") == []
+
+
+@pytest.mark.parametrize(
+    "tenant_id",
+    ["", " ", " alpha", "alpha ", ".", "..", "../beta", "alpha/beta", "alpha\\beta", "alpha\x00beta"],
+)
+def test_trajectory_store_rejects_unsafe_tenant_path_components(tmp_path: Path, tenant_id: str) -> None:
+    store = TrajectoryStore(tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid tenant_id"):
+        store.get_records(tenant_id=tenant_id)
 
 
 def test_save_deduplicates_by_trajectory_id(tmp_path: Path) -> None:
@@ -84,6 +108,69 @@ def test_save_deduplicates_by_trajectory_id(tmp_path: Path) -> None:
     store.save(_sample_trajectory("trj_dup"), tenant_id="system")
 
     assert len(store.get_records(tenant_id="system")) == 1
+
+
+def test_independent_store_instances_serialize_concurrent_saves(tmp_path: Path) -> None:
+    def save_one(index: int) -> str:
+        store = TrajectoryStore(tmp_path)
+        return store.save(_sample_trajectory(f"trj_concurrent_{index}"), tenant_id="alpha")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        trajectory_ids = list(executor.map(save_one, range(40)))
+
+    records = TrajectoryStore(tmp_path).get_records(tenant_id="alpha")
+    assert len(trajectory_ids) == 40
+    assert {record["trajectory_id"] for record in records} == set(trajectory_ids)
+
+
+def test_foreign_trajectory_drift_is_hidden_and_preserved_during_review(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_owned"), tenant_id="alpha")
+    path = store._jsonl_path("alpha")
+    foreign = _sample_trajectory("trj_foreign")
+    foreign["tenant_id"] = "beta"
+    path.write_text(
+        path.read_text(encoding="utf-8") + json.dumps(foreign, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    assert [record["trajectory_id"] for record in store.get_records(tenant_id="alpha")] == ["trj_owned"]
+    assert store.get_record("trj_foreign", tenant_id="alpha") is None
+    assert store.get_stats(tenant_id="alpha")["total_records"] == 1
+
+    reviewed = store.mark_reviewed(
+        "trj_owned",
+        tenant_id="alpha",
+        accepted=True,
+        reviewer="pm",
+    )
+
+    assert reviewed is not None
+    raw_records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    preserved = next(record for record in raw_records if record["trajectory_id"] == "trj_foreign")
+    assert preserved == foreign
+
+
+def test_duplicate_trajectory_ids_fail_closed_across_declared_owners(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_duplicate_owner"), tenant_id="alpha")
+    path = store._jsonl_path("alpha")
+    foreign = _sample_trajectory("trj_duplicate_owner")
+    foreign["tenant_id"] = "beta"
+    path.write_text(
+        path.read_text(encoding="utf-8") + json.dumps(foreign, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    assert store.get_records(tenant_id="alpha") == []
+    assert store.get_record("trj_duplicate_owner", tenant_id="alpha") is None
+    assert store.mark_reviewed(
+        "trj_duplicate_owner",
+        tenant_id="alpha",
+        accepted=True,
+        reviewer="pm",
+    ) is None
+    assert store.get_stats(tenant_id="alpha")["total_records"] == 0
 
 
 def test_get_record_page_searches_filters_and_paginates_in_requested_order(tmp_path: Path) -> None:
@@ -324,6 +411,81 @@ def test_export_sft_messages_reuses_identical_dataset_fingerprint(tmp_path: Path
     assert without_metadata is not None
     assert without_metadata != first
     assert store.get_stats(tenant_id="system")["export_count"] == 2
+
+
+def test_foreign_top_level_metadata_blocks_mutation_without_overwrite(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_foreign_meta"), tenant_id="alpha")
+    store.mark_reviewed(
+        "trj_foreign_meta",
+        tenant_id="alpha",
+        accepted=True,
+        reviewer="pm",
+    )
+    metadata_path = store._meta_path("alpha")
+    foreign_metadata = {
+        "tenant_id": "beta",
+        "export_count": 7,
+        "exports": [{"tenant_id": "beta", "filename": "sft_foreign.jsonl"}],
+    }
+    metadata_path.write_text(json.dumps(foreign_metadata, sort_keys=True), encoding="utf-8")
+    original_bytes = metadata_path.read_bytes()
+
+    assert store.get_stats(tenant_id="alpha")["export_count"] == 0
+    assert store.list_sft_exports(tenant_id="alpha") == []
+    with pytest.raises(ValueError, match="metadata tenant_id does not match"):
+        store.export_sft_messages(tenant_id="alpha", min_records=1)
+
+    assert metadata_path.read_bytes() == original_bytes
+
+
+def test_foreign_export_metadata_is_hidden_and_preserved_on_append(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_export_one"), tenant_id="alpha")
+    store.mark_reviewed("trj_export_one", tenant_id="alpha", accepted=True, reviewer="pm")
+    first_export = store.export_sft_messages(tenant_id="alpha", min_records=1)
+    assert first_export is not None
+
+    metadata_path = store._meta_path("alpha")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    foreign_item = {
+        "tenant_id": "beta",
+        "filename": "sft_foreign.jsonl",
+        "record_count": 99,
+        "accepted_only": True,
+        "include_metadata": True,
+        "export_fingerprint": "foreign",
+    }
+    metadata["exports"].append(foreign_item)
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+
+    store.save(_sample_trajectory("trj_export_two"), tenant_id="alpha")
+    store.mark_reviewed("trj_export_two", tenant_id="alpha", accepted=True, reviewer="pm")
+    second_export = store.export_sft_messages(tenant_id="alpha", min_records=1)
+
+    assert second_export is not None
+    assert second_export != first_export
+    visible_filenames = {item["filename"] for item in store.list_sft_exports(tenant_id="alpha")}
+    assert visible_filenames == {Path(first_export).name, Path(second_export).name}
+    persisted = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert foreign_item in persisted["exports"]
+
+
+def test_foreign_tenant_declared_inside_export_is_not_exposed(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    store.save(_sample_trajectory("trj_export_drift"), tenant_id="alpha")
+    store.mark_reviewed("trj_export_drift", tenant_id="alpha", accepted=True, reviewer="pm")
+    export_path_value = store.export_sft_messages(tenant_id="alpha", min_records=1)
+    assert export_path_value is not None
+    export_path = Path(export_path_value)
+    record = json.loads(export_path.read_text(encoding="utf-8"))
+    record["metadata"]["tenant_id"] = "beta"
+    export_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert store.list_sft_exports(tenant_id="alpha") == []
+    assert store.list_reviewed_sft_exports(tenant_id="alpha") == []
+    assert store.get_sft_export_path(export_path.name, tenant_id="alpha") is None
+    assert store.inspect_sft_export_quality(export_path.name, tenant_id="alpha") is None
 
 
 def test_accepted_export_blocks_legacy_review_without_reviewer_identity(tmp_path: Path) -> None:
@@ -717,6 +879,26 @@ def test_training_readiness_rejects_tampered_approval_artifact(tmp_path: Path) -
     assert summary["artifact_chain"]["approval_integrity_verified"] is False
     assert summary["ready_for_training_execution"] is False
     assert "latest_training_approval_integrity_failed" in summary["blockers"]
+
+
+def test_training_readiness_hides_approval_artifact_with_foreign_tenant(tmp_path: Path) -> None:
+    store = TrajectoryStore(tmp_path)
+    _, _, approval = _create_training_approval_chain(store, "trj_foreign_approval")
+    approval_meta = store.list_training_approvals(tenant_id="system")[0]
+    approval_path = store._resolve_training_approval_path("system", approval_meta["approval_file"])
+    assert approval_path is not None
+    approval_record = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval_record["tenant_id"] = "other"
+    approval_path.write_text(json.dumps(approval_record, sort_keys=True), encoding="utf-8")
+
+    summary = store.training_readiness_summary(tenant_id="system")
+
+    assert store.list_training_approvals(tenant_id="system") == []
+    assert store._load_training_approval_by_file("system", approval_meta["approval_file"]) is None
+    assert summary["latest_training_approval"] is None
+    assert summary["ready_for_training_execution"] is False
+    assert "no_dry_run_training_approval" in summary["blockers"]
+    assert approval["approval_id"] not in json.dumps(summary, sort_keys=True)
 
 
 def test_training_execution_plan_preview_builds_provider_agnostic_dry_run_spec(tmp_path: Path) -> None:

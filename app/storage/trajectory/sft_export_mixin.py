@@ -35,7 +35,7 @@ class TrajectorySftExportMixin:
     def export_sft_messages(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         task_type: str | None = None,
         min_records: int = 1,
         accepted_only: bool = True,
@@ -53,7 +53,14 @@ class TrajectorySftExportMixin:
         )
         if len(records) < min_records:
             return None
-        export_records = [self._to_sft_record(record, include_metadata=include_metadata) for record in records]
+        export_records = [
+            self._to_sft_record(
+                record,
+                tenant_id=tenant_id,
+                include_metadata=include_metadata,
+            )
+            for record in records
+        ]
         content = "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in export_records) + "\n"
         content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
         source_trajectory_ids = [str(record.get("trajectory_id") or "") for record in records]
@@ -81,7 +88,7 @@ class TrajectorySftExportMixin:
     def list_sft_exports(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         task_type: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
@@ -92,7 +99,7 @@ class TrajectorySftExportMixin:
         """
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
         exports: list[dict[str, Any]] = []
         seen_filenames: set[str] = set()
         for item in reversed(raw_exports):
@@ -104,6 +111,8 @@ class TrajectorySftExportMixin:
             if task_type is not None and item.get("task_type") != task_type:
                 continue
             path = self._resolve_export_path(tenant_id, filename)
+            if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+                continue
             exports.append(
                 {
                     "filename": filename,
@@ -127,7 +136,7 @@ class TrajectorySftExportMixin:
     def list_reviewed_sft_exports(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         task_type: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
@@ -140,7 +149,7 @@ class TrajectorySftExportMixin:
         """
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
         exports: list[dict[str, Any]] = []
         seen_filenames: set[str] = set()
         for item in reversed(raw_exports):
@@ -154,6 +163,8 @@ class TrajectorySftExportMixin:
             if task_type is not None and item.get("task_type") != task_type:
                 continue
             path = self._resolve_export_path(tenant_id, filename)
+            if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+                continue
             exports.append(
                 {
                     "filename": filename,
@@ -174,13 +185,13 @@ class TrajectorySftExportMixin:
                 break
         return exports
 
-    def get_sft_export_path(self, filename: str, *, tenant_id: str = "system") -> Path | None:
+    def get_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
         """Resolve a metadata-recorded SFT export filename to a safe path."""
         if not _is_safe_export_filename(filename):
             raise ValueError("Invalid export filename.")
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
         known = {
             str(item.get("filename") or "")
             for item in raw_exports
@@ -188,15 +199,18 @@ class TrajectorySftExportMixin:
         }
         if filename not in known:
             return None
-        return self._resolve_export_path(tenant_id, filename)
+        path = self._resolve_export_path(tenant_id, filename)
+        if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+            return None
+        return path
 
-    def get_reviewed_sft_export_path(self, filename: str, *, tenant_id: str = "system") -> Path | None:
+    def get_reviewed_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
         """Resolve a reviewed-only SFT export filename to a safe path."""
         if not _is_safe_export_filename(filename):
             raise ValueError("Invalid export filename.")
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        raw_exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
         reviewed_known = {
             str(item.get("filename") or "")
             for item in raw_exports
@@ -204,12 +218,15 @@ class TrajectorySftExportMixin:
         }
         if filename not in reviewed_known:
             return None
-        return self._resolve_export_path(tenant_id, filename)
+        path = self._resolve_export_path(tenant_id, filename)
+        if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+            return None
+        return path
 
     def preview_sft_export(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         task_type: str | None = None,
         min_records: int = 1,
         accepted_only: bool = True,
@@ -279,7 +296,7 @@ class TrajectorySftExportMixin:
     def report_sft_export_quality(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         task_type: str | None = None,
         min_records: int = 1,
         accepted_only: bool = True,
@@ -306,7 +323,14 @@ class TrajectorySftExportMixin:
                 blocked.append(_record_preview(record, blockers=blockers))
             else:
                 eligible.append(record)
-        sft_records = [self._to_sft_record(record, include_metadata=include_metadata) for record in eligible]
+        sft_records = [
+            self._to_sft_record(
+                record,
+                tenant_id=tenant_id,
+                include_metadata=include_metadata,
+            )
+            for record in eligible
+        ]
         report = _build_sft_quality_report(
             sft_records,
             blocked_samples=blocked,
@@ -340,7 +364,7 @@ class TrajectorySftExportMixin:
         self,
         filename: str,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         sample_limit: int = 5,
     ) -> dict[str, Any] | None:
         """Inspect a metadata-recorded SFT JSONL export without modifying it."""
@@ -411,7 +435,7 @@ class TrajectorySftExportMixin:
     def _get_export_metadata(self, tenant_id: str, filename: str) -> dict[str, Any]:
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
-        exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+        exports = self._owned_meta_items(meta, "exports", tenant_id)
         for item in reversed(exports):
             if isinstance(item, dict) and item.get("filename") == filename:
                 return item
@@ -445,21 +469,30 @@ class TrajectorySftExportMixin:
         source_trajectory_ids: list[str],
     ) -> str:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
-            exports = meta.get("exports") if isinstance(meta.get("exports"), list) else []
+            meta = self._load_meta_unlocked(tenant_id, for_update=True)
+            raw_exports = meta.setdefault("exports", [])
+            if not isinstance(raw_exports, list):
+                raw_exports = []
+                meta["exports"] = raw_exports
+            exports = self._owned_meta_items(meta, "exports", tenant_id)
             for item in reversed(exports):
                 if not isinstance(item, dict) or item.get("export_fingerprint") != export_fingerprint:
                     continue
                 existing = self._resolve_export_path(tenant_id, str(item.get("filename") or ""))
-                if existing is not None and _file_sha256(existing) == content_sha256:
+                if (
+                    existing is not None
+                    and self._jsonl_export_belongs_to_tenant(existing, tenant_id)
+                    and _file_sha256(existing) == content_sha256
+                ):
                     return str(existing)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
             suffix = f"_{_safe_label(task_type)}" if task_type else ""
             export_path = self._export_dir(tenant_id) / f"sft{suffix}_{timestamp}_{export_fingerprint[:8]}.jsonl"
             atomic_write_text(export_path, content)
-            exports.append(
+            raw_exports.append(
                 {
+                    "tenant_id": tenant_id,
                     "filename": export_path.name,
                     "record_count": len(records),
                     "task_type": task_type,
@@ -471,9 +504,8 @@ class TrajectorySftExportMixin:
                     "source_trajectory_ids": source_trajectory_ids,
                 }
             )
-            meta["exports"] = exports
             meta["export_count"] = int(meta.get("export_count") or 0) + 1
-            atomic_write_text(self._meta_path(tenant_id), json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True))
+            self._write_meta_unlocked(tenant_id, meta)
             return str(export_path)
 
 

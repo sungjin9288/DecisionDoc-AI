@@ -18,7 +18,7 @@ class TrajectorySignoffMixin:
     def reviewer_signoff_summary(
         self,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
         limit: int = 50,
     ) -> dict[str, Any]:
         """Summarize tenant-local reviewer sign-off JSON records without side effects."""
@@ -31,6 +31,8 @@ class TrajectorySignoffMixin:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict):
                     raise ValueError("sign-off record must be a JSON object")
+                if data.get("tenant_id") not in (None, tenant_id):
+                    continue
                 records.append(_summarize_reviewer_signoff_record(path.name, data))
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 load_errors.append({"filename": path.name, "error": str(exc)})
