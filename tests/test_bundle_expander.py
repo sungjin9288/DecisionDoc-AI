@@ -38,7 +38,7 @@ def test_pattern_store_record_and_get_all(tmp_path):
     """record_request 후 get_all이 레코드를 반환하는지 확인."""
     from app.storage.request_pattern_store import RequestPatternStore
 
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     rid = store.record_request("AI 문서 자동화", bundle_id="tech_decision", matched=True)
 
     assert isinstance(rid, str) and len(rid) == 36  # UUID
@@ -115,7 +115,7 @@ def test_pattern_store_get_unmatched_filters_correctly(tmp_path):
     """get_unmatched이 matched=False 레코드만 반환하는지 확인."""
     from app.storage.request_pattern_store import RequestPatternStore
 
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     store.record_request("매칭된 요청", bundle_id="tech_decision", matched=True)
     store.record_request("비매칭 요청 A", bundle_id=None, matched=False)
     store.record_request("비매칭 요청 B", bundle_id=None, matched=False)
@@ -129,7 +129,7 @@ def test_pattern_store_clear_unmatched_removes_only_unmatched(tmp_path):
     """clear_unmatched 후 matched 레코드만 남는지 확인."""
     from app.storage.request_pattern_store import RequestPatternStore
 
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     store.record_request("매칭 요청", bundle_id="prd_kr", matched=True)
     store.record_request("비매칭 1", bundle_id=None, matched=False)
     store.record_request("비매칭 2", bundle_id=None, matched=False)
@@ -149,7 +149,7 @@ def test_pattern_store_limit_respected(tmp_path):
     """get_unmatched / get_all의 limit 파라미터가 동작하는지 확인."""
     from app.storage.request_pattern_store import RequestPatternStore
 
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     for i in range(10):
         store.record_request(f"요청 {i}", bundle_id=None, matched=False)
 
@@ -161,7 +161,7 @@ def test_pattern_store_raw_input_truncated(tmp_path):
     """raw_input이 200자로 잘리는지 확인."""
     from app.storage.request_pattern_store import RequestPatternStore
 
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     long_input = "A" * 300
     store.record_request(long_input, bundle_id=None, matched=False)
 
@@ -181,7 +181,7 @@ def test_bundle_expander_below_threshold_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "10")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     # 5건만 추가 (threshold=10 미만)
     for i in range(5):
         pattern_store.record_request(f"비매칭 요청 {i}", bundle_id=None, matched=False)
@@ -200,7 +200,7 @@ def test_bundle_expander_low_confidence_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "3")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     for i in range(5):
         pattern_store.record_request(f"요청 {i}", bundle_id=None, matched=False)
 
@@ -233,7 +233,7 @@ def test_bundle_expander_success(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "3")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     for i in range(5):
         pattern_store.record_request(f"비매칭 요청 {i}", bundle_id=None, matched=False)
 
@@ -269,7 +269,7 @@ def test_bundle_expander_no_conflict_with_builtin(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "3")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     for i in range(5):
         pattern_store.record_request(f"요청 {i}", bundle_id=None, matched=False)
 
@@ -302,7 +302,7 @@ def test_bundle_expander_rejects_unsafe_bundle_id_before_writing(
     from app.storage.request_pattern_store import RequestPatternStore
 
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "1")
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     pattern_store.record_request("unsafe bundle request", None, False)
 
     class UnsafeBundleProvider:
@@ -358,7 +358,7 @@ def test_bundle_expander_rejects_malformed_provider_contract(
     from app.storage.request_pattern_store import RequestPatternStore
 
     monkeypatch.setenv("AUTO_EXPAND_THRESHOLD", "1")
-    pattern_store = RequestPatternStore(tmp_path)
+    pattern_store = RequestPatternStore(tmp_path, tenant_id="system")
     pattern_store.record_request("malformed provider request", None, False)
 
     class MalformedProvider:
@@ -492,7 +492,7 @@ def test_admin_request_patterns_shows_records(tmp_path, monkeypatch):
     client = TestClient(main_module.create_app())
 
     # 직접 패턴 기록
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     store.record_request("비매칭 요청 A", bundle_id=None, matched=False)
     store.record_request("매칭 요청 B", bundle_id="tech_decision", matched=True)
 
@@ -754,7 +754,7 @@ def test_admin_expand_bundles_below_threshold(tmp_path, monkeypatch):
 
     # 2건만 기록 (threshold=10 미만)
     from app.storage.request_pattern_store import RequestPatternStore
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     store.record_request("비매칭 A", bundle_id=None, matched=False)
     store.record_request("비매칭 B", bundle_id=None, matched=False)
 
@@ -780,7 +780,7 @@ def test_admin_expand_bundles_success(tmp_path, monkeypatch):
 
     # 5건 기록 (threshold=3 이상)
     from app.storage.request_pattern_store import RequestPatternStore
-    store = RequestPatternStore(tmp_path)
+    store = RequestPatternStore(tmp_path, tenant_id="system")
     for i in range(5):
         store.record_request(f"비매칭 요청 {i}", bundle_id=None, matched=False)
 

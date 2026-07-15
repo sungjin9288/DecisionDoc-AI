@@ -42,7 +42,7 @@ def _make_record(bundle_id, h_score, llm_score=None, ts_offset=0):
 def test_eval_store_get_all_stats_empty(tmp_path):
     """데이터 없을 때 get_all_stats가 0값 반환하는지 확인."""
     from app.eval.eval_store import EvalStore
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     stats = store.get_all_stats()
     assert stats["total_count"] == 0
     assert stats["avg_heuristic"] is None
@@ -53,7 +53,7 @@ def test_eval_store_get_all_stats_empty(tmp_path):
 def test_eval_store_get_all_stats_with_data(tmp_path):
     """heuristic, llm, low_quality 집계가 올바른지 확인."""
     from app.eval.eval_store import EvalStore
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     store.append(_make_record("tech_decision", 0.9, llm_score=4.0))
     store.append(_make_record("tech_decision", 0.5, llm_score=2.0))  # low quality
     store.append(_make_record("prd_kr", 0.75))
@@ -69,7 +69,7 @@ def test_eval_store_get_all_stats_with_data(tmp_path):
 def test_eval_store_get_per_bundle_stats(tmp_path):
     """번들별 집계 (count, avg_heuristic, last_timestamp, recent_scores) 확인."""
     from app.eval.eval_store import EvalStore
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     for i in range(5):
         store.append(_make_record("tech_decision", 0.7 + i * 0.04, ts_offset=i))
     store.append(_make_record("prd_kr", 0.8))
@@ -87,7 +87,7 @@ def test_eval_store_get_per_bundle_stats(tmp_path):
 def test_eval_store_get_bundle_history(tmp_path):
     """get_bundle_history가 해당 번들 레코드만, 최신 순으로 반환하는지 확인."""
     from app.eval.eval_store import EvalStore
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     for i in range(8):
         store.append(_make_record("tech_decision", 0.7 + i * 0.02, ts_offset=i))
     store.append(_make_record("prd_kr", 0.9))  # 다른 번들
@@ -102,7 +102,7 @@ def test_eval_store_get_bundle_history(tmp_path):
 def test_feedback_store_get_all(tmp_path):
     """FeedbackStore.get_all이 모든 레코드를 반환하는지 확인."""
     from app.storage.feedback_store import FeedbackStore
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     store.save({"bundle_type": "tech_decision", "rating": 5, "comment": "좋아요"})
     store.save({"bundle_type": "prd_kr", "rating": 2, "comment": "아쉬워요"})
 
@@ -151,10 +151,10 @@ def test_dashboard_overview_with_data(tmp_path, monkeypatch):
     from app.storage.feedback_store import FeedbackStore
 
     # Seed data
-    eval_store = EvalStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
     eval_store.append(_make_record("tech_decision", 0.85))
     eval_store.append(_make_record("tech_decision", 0.75))
-    fb_store = FeedbackStore(tmp_path)
+    fb_store = FeedbackStore(tmp_path, tenant_id="system")
     fb_store.save({"bundle_type": "tech_decision", "rating": 4, "comment": ""})
 
     client = TestClient(main_module.create_app())
@@ -188,7 +188,7 @@ def test_dashboard_bundle_performance_with_data(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from app.eval.eval_store import EvalStore
 
-    eval_store = EvalStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
     for i in range(6):
         eval_store.append(_make_record("tech_decision", 0.7 + i * 0.03, ts_offset=i))
     eval_store.append(_make_record("prd_kr", 0.85))
@@ -230,7 +230,7 @@ def test_dashboard_improvement_history_with_override(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from app.storage.prompt_override_store import PromptOverrideStore
 
-    override_store = PromptOverrideStore(tmp_path)
+    override_store = PromptOverrideStore(tmp_path, tenant_id="system")
     override_store.save_override(
         bundle_id="tech_decision",
         override_hint="더 구체적인 예시를 포함할 것",
@@ -269,7 +269,7 @@ def test_dashboard_score_history_with_data(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from app.eval.eval_store import EvalStore
 
-    eval_store = EvalStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
     for i in range(5):
         eval_store.append(_make_record("tech_decision", 0.7 + i * 0.04, llm_score=3.0, ts_offset=i))
 
@@ -292,7 +292,7 @@ def test_dashboard_score_history_limit_50(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from app.eval.eval_store import EvalStore
 
-    eval_store = EvalStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
     for i in range(70):
         eval_store.append(_make_record("tech_decision", 0.75, ts_offset=i))
 

@@ -1109,6 +1109,33 @@ def test_quality_learning_stores_are_bound_to_one_tenant(tmp_path):
     assert remaining == [foreign_record]
 
 
+def test_quality_learning_store_constructors_require_a_valid_tenant(tmp_path):
+    from app.eval.eval_store import EvalStore
+    from app.storage.ab_test_store import ABTestStore
+    from app.storage.feedback_store import FeedbackStore
+    from app.storage.finetune_store import FineTuneStore
+    from app.storage.prompt_override_store import PromptOverrideStore
+    from app.storage.request_pattern_store import RequestPatternStore
+
+    store_types = (
+        EvalStore,
+        ABTestStore,
+        FeedbackStore,
+        FineTuneStore,
+        PromptOverrideStore,
+        RequestPatternStore,
+    )
+    for store_type in store_types:
+        with pytest.raises(TypeError):
+            store_type(tmp_path)
+
+        invalid_root = tmp_path / store_type.__name__
+        for invalid_tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+            with pytest.raises(ValueError, match="Invalid tenant_id"):
+                store_type(invalid_root, tenant_id=invalid_tenant_id)
+        assert not (invalid_root / "tenants").exists()
+
+
 def test_quality_learning_routes_use_request_tenant(tmp_path, monkeypatch):
     """Dashboard, A/B, and fine-tune routes never fall back to system state."""
     from app.eval.eval_store import EvalRecord, EvalStore

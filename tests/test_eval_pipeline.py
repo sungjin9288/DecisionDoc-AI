@@ -10,7 +10,7 @@ from app.eval.report import _grade, generate_report
 
 
 def _make_store(tmp_path: Path) -> EvalStore:
-    return EvalStore(tmp_path)
+    return EvalStore(tmp_path, tenant_id="system")
 
 
 def _sample_docs() -> list[dict]:

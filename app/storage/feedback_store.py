@@ -18,15 +18,17 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from app.tenant import require_tenant_id
+
 _log = logging.getLogger("decisiondoc.storage.feedback")
 
 
 class FeedbackStore:
     """Thread-safe, append-only JSONL feedback store."""
 
-    def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
-        self._tenant_id = tenant_id
-        tenant_dir = Path(data_dir) / "tenants" / tenant_id
+    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        tenant_dir = Path(data_dir) / "tenants" / self._tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
         self._path = tenant_dir / "feedback.jsonl"
         self._lock = threading.Lock()
@@ -184,7 +186,7 @@ class FeedbackStore:
 
 
 @functools.lru_cache(maxsize=50)
-def get_feedback_store(tenant_id: str = "system") -> "FeedbackStore":
+def get_feedback_store(tenant_id: str) -> "FeedbackStore":
     """Return a cached FeedbackStore for the given tenant."""
     from pathlib import Path
     data_dir = Path(os.getenv("DATA_DIR", "./data"))

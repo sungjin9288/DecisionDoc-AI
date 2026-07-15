@@ -13,7 +13,7 @@ def test_ab_store_create_and_get_active(tmp_path):
     """create_test 후 get_active_test가 올바른 레코드를 반환하는지 확인."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test(
         bundle_id="tech_decision",
         variant_a_hint="수치를 포함하세요.",
@@ -38,7 +38,7 @@ def test_ab_store_get_next_variant_alternates(tmp_path):
     """get_next_variant가 A→B→A→B 순으로 교대 반환하는지 확인."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("prd_kr", "hint_a", "hint_b")
 
     assert store.get_next_variant("prd_kr") == "variant_a"   # count 0 → A
@@ -55,7 +55,7 @@ def test_ab_store_no_active_test_returns_none(tmp_path):
     """활성 테스트가 없으면 get_active_test / get_next_variant 모두 None 반환."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     assert store.get_active_test("nonexistent") is None
     assert store.get_next_variant("nonexistent") is None
 
@@ -64,7 +64,7 @@ def test_ab_store_record_and_conclude(tmp_path):
     """양쪽 variant에 min_samples 건 채운 후 evaluate_and_conclude가 winner를 반환."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("tech_decision", "hint_a", "hint_b", min_samples=3)
 
     # variant_a 점수가 높음 → variant_a 우승이어야 함
@@ -96,7 +96,7 @@ def test_ab_store_conclude_winner_saved_to_override(tmp_path, monkeypatch):
     from app.storage.prompt_override_store import PromptOverrideStore
 
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("prd_kr", "hint_a_wins", "hint_b_loses", min_samples=2)
 
     # variant_a 점수 우세
@@ -108,7 +108,7 @@ def test_ab_store_conclude_winner_saved_to_override(tmp_path, monkeypatch):
     assert winner == "variant_a"
 
     # PromptOverrideStore에 winner hint 저장 확인
-    override_store = PromptOverrideStore(tmp_path)
+    override_store = PromptOverrideStore(tmp_path, tenant_id="system")
     record = override_store.get_override("prd_kr")
     assert record is not None
     assert record["override_hint"] == "hint_a_wins"
@@ -119,7 +119,7 @@ def test_ab_store_list_active_and_concluded(tmp_path):
     """list_active_tests / list_concluded_tests 필터링 동작 확인."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("bundle_a", "a_hint", "b_hint", min_samples=1)
     store.create_test("bundle_b", "a_hint", "b_hint", min_samples=1)
 
@@ -143,7 +143,7 @@ def test_ab_store_delete_test(tmp_path):
     """delete_test 후 get_active_test가 None을 반환하는지 확인."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("tech_decision", "h_a", "h_b")
     assert store.get_active_test("tech_decision") is not None
 
@@ -166,7 +166,7 @@ def test_build_bundle_prompt_uses_ab_variant(tmp_path, monkeypatch):
     clear_ab_test_store_cache()
 
     # A/B 테스트 생성
-    ab_store = ABTestStore(tmp_path)
+    ab_store = ABTestStore(tmp_path, tenant_id="system")
     ab_store.create_test(
         bundle_id="tech_decision",
         variant_a_hint="A 변형: 반드시 수치를 포함하세요.",
@@ -235,7 +235,7 @@ def test_ab_test_api_endpoints(tmp_path, monkeypatch):
     assert _tests(resp) == []
 
     # ABTestStore에 직접 테스트 생성
-    ab_store = ABTestStore(tmp_path)
+    ab_store = ABTestStore(tmp_path, tenant_id="system")
     ab_store.create_test("tech_decision", "hint_a", "hint_b", min_samples=5)
 
     resp = client.get("/ab-tests/active", headers=auth_headers)

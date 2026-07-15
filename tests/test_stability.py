@@ -87,7 +87,7 @@ def test_ab_test_store_corruption_backup(tmp_path: Path) -> None:
     store_path = tenant_dir / "ab_tests.json"
     store_path.write_text("{invalid json!!}", encoding="utf-8")
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     with store._lock:
         data = store._load()
 
@@ -107,7 +107,7 @@ def test_prompt_override_store_corruption_backup(tmp_path: Path) -> None:
     store_path = tenant_dir / "prompt_overrides.json"
     store_path.write_text("<<<broken>>>", encoding="utf-8")
 
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     with store._lock:
         data = store._load()
 
@@ -122,7 +122,7 @@ def test_ab_test_store_winner_exception_logged(tmp_path: Path) -> None:
     """evaluate_and_conclude에서 PromptOverrideStore 예외 → re-raise 없이 _log.error."""
     from app.storage.ab_test_store import ABTestStore
 
-    store = ABTestStore(tmp_path)
+    store = ABTestStore(tmp_path, tenant_id="system")
     store.create_test("bundle_x", "hint_a", "hint_b", min_samples=1)
 
     # Record enough results

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.storage.request_pattern")
 _path_locks: dict[Path, threading.Lock] = {}
@@ -40,9 +41,9 @@ def _lock_for_path(path: Path) -> threading.Lock:
 class RequestPatternStore:
     """Thread-safe, append-only JSONL store for request pattern tracking."""
 
-    def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
-        self._tenant_id = tenant_id
-        tenant_dir = Path(data_dir) / "tenants" / tenant_id
+    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        tenant_dir = Path(data_dir) / "tenants" / self._tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
         self._path = tenant_dir / "request_patterns.jsonl"
         self._lock = _lock_for_path(self._path)

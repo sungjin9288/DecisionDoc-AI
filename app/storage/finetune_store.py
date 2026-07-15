@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.storage.finetune")
 
@@ -43,9 +44,9 @@ _log = logging.getLogger("decisiondoc.storage.finetune")
 class FineTuneStore:
     """Thread-safe JSONL store for OpenAI fine-tuning dataset collection."""
 
-    def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
-        self._tenant_id = tenant_id
-        self._dir = Path(data_dir) / "tenants" / tenant_id / "finetune"
+    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        self._dir = Path(data_dir) / "tenants" / self._tenant_id / "finetune"
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dataset_path = self._dir / "dataset.jsonl"
         self._meta_path    = self._dir / "metadata.json"
@@ -286,7 +287,7 @@ class FineTuneStore:
 
 
 @functools.lru_cache(maxsize=50)
-def get_finetune_store(tenant_id: str = "system") -> FineTuneStore:
+def get_finetune_store(tenant_id: str) -> FineTuneStore:
     """Return a cached FineTuneStore for the given tenant."""
     return FineTuneStore(Path(os.getenv("DATA_DIR", "./data")), tenant_id=tenant_id)
 

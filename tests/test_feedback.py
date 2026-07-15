@@ -13,7 +13,7 @@ from app.storage.feedback_store import FeedbackStore
 
 def test_feedback_store_save_writes_jsonl(tmp_path):
     """save() appends a JSONL record with feedback_id and timestamp."""
-    store = FeedbackStore(data_dir=tmp_path)
+    store = FeedbackStore(data_dir=tmp_path, tenant_id="system")
     feedback_id = store.save(
         {
             "bundle_type": "tech_decision",
@@ -36,7 +36,7 @@ def test_feedback_store_save_writes_jsonl(tmp_path):
 
 def test_feedback_store_get_high_rated_filters_correctly(tmp_path):
     """get_high_rated_examples() returns only matching bundle_type with rating >= min_rating."""
-    store = FeedbackStore(data_dir=tmp_path)
+    store = FeedbackStore(data_dir=tmp_path, tenant_id="system")
     store.save({"bundle_type": "tech_decision", "rating": 5, "comment": "Excellent", "bundle_id": "b-1"})
     store.save({"bundle_type": "tech_decision", "rating": 2, "comment": "Bad", "bundle_id": "b-2"})
     store.save({"bundle_type": "proposal_kr", "rating": 5, "comment": "Good proposal", "bundle_id": "b-3"})
@@ -48,7 +48,7 @@ def test_feedback_store_get_high_rated_filters_correctly(tmp_path):
 
 def test_feedback_store_get_high_rated_returns_empty_on_no_match(tmp_path):
     """Returns empty list when no records match the criteria."""
-    store = FeedbackStore(data_dir=tmp_path)
+    store = FeedbackStore(data_dir=tmp_path, tenant_id="system")
     store.save({"bundle_type": "tech_decision", "rating": 1, "comment": "Bad", "bundle_id": "b-1"})
 
     results = store.get_high_rated_examples("tech_decision", min_rating=4)
@@ -57,7 +57,7 @@ def test_feedback_store_get_high_rated_returns_empty_on_no_match(tmp_path):
 
 def test_feedback_store_get_high_rated_empty_file(tmp_path):
     """Returns empty list when feedback file does not exist."""
-    store = FeedbackStore(data_dir=tmp_path)
+    store = FeedbackStore(data_dir=tmp_path, tenant_id="system")
     results = store.get_high_rated_examples("tech_decision")
     assert results == []
 

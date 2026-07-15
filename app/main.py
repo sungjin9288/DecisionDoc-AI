@@ -43,6 +43,7 @@ from app.storage.trajectory_store import TrajectoryStore
 from app.storage.feedback_store import FeedbackStore
 from app.storage.prompt_override_store import PromptOverrideStore
 from app.storage.state_backend import get_state_backend
+from app.tenant import SYSTEM_TENANT_ID
 
 
 def _resolve_cors_allow_origins(environment: str) -> list[str]:
@@ -142,13 +143,16 @@ def create_app() -> FastAPI:
     _tenant_store.ensure_system_tenant()
     migrate_legacy_data(data_dir)
 
-    feedback_store = FeedbackStore(data_dir=data_dir)
-    _prompt_override_store = PromptOverrideStore(data_dir=data_dir)
+    feedback_store = FeedbackStore(data_dir=data_dir, tenant_id=SYSTEM_TENANT_ID)
+    _prompt_override_store = PromptOverrideStore(
+        data_dir=data_dir,
+        tenant_id=SYSTEM_TENANT_ID,
+    )
     from app.eval.eval_store import EvalStore as _EvalStore
-    _eval_store = _EvalStore(data_dir)
+    _eval_store = _EvalStore(data_dir, tenant_id=SYSTEM_TENANT_ID)
     _search_service = SearchService()
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
-    _finetune_store = _FineTuneStore(data_dir)
+    _finetune_store = _FineTuneStore(data_dir, tenant_id=SYSTEM_TENANT_ID)
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
     procurement_review_store = ProcurementReviewStore(base_dir=str(data_dir), backend=state_backend)
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)

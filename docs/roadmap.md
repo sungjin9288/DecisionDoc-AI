@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `3ac9ad6` 기준 GitHub Actions CI `29444590404` success, CD `29444590294` success. CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `385b233` 기준 GitHub Actions CI `29447357594` success, CD `29447357584` success. CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3108 passed, 2 skipped, 4 deselected
+# 2026-07-16 실측: 3111 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -90,6 +90,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-16 프로젝트 지식 저장소를 `data/tenants/{tenant_id}/knowledge/{project_id}`에 결속하고 생성 context, 조달 capability 평가, report workflow 승격, 모든 knowledge API가 현재 request/record tenant를 명시하도록 했다. Index record는 tenant·project ownership을 보존하며 foreign drift, unsafe·duplicate document ID를 조회·ranking·변경에서 fail closed로 제외한다. Path별 shared lock과 atomic write로 독립 store 인스턴스의 동시 추가를 보호하고 기존 flat knowledge directory는 target을 덮어쓰지 않는 system tenant copy migration으로 유지한다. H22 회귀 테스트는 같은 project ID의 cross-tenant CRUD/context 차단, drift 보존, 동시 쓰기, legacy migration과 production 호출부의 tenant 명시를 mock/local 경로로 확인하며 외부 provider 호출은 수행하지 않았다.
   - 2026-07-16 `TrajectoryStore`의 28개 public trajectory·SFT export·freeze·training approval/request/audit API에서 묵시적 system tenant 기본값을 제거하고 호출자가 `tenant_id`를 명시하도록 했다. 새 trajectory와 metadata는 tenant ownership을 저장하고, tenant path traversal·공백 component를 거부하며, 독립 store 인스턴스는 data root별 shared lock으로 JSONL append와 metadata 갱신을 직렬화한다. 기존 tenant 경로의 tenant 미표기 record는 호환하되 explicit foreign drift, duplicate trajectory ID, foreign JSON/JSONL artifact는 조회·review·통계·export·freeze·training readiness에서 fail closed로 제외하고 원본은 보존한다. H23 회귀 테스트와 production caller AST guard는 이 경계를 mock/local로 검증하며 provider API, dataset upload, training execution, model promotion은 수행하지 않았다.
   - 2026-07-16 `GenerationService.generate_documents()`, `DocumentOpsAgent.run()`, generation context cache, eval pipeline과 provider preparation 경로에서 묵시적 system tenant 기본값을 제거했다. Generation entry는 검증된 tenant를 호출 동안만 thread-local에 binding하고 이전 값을 성공·실패 모두에서 원복한다. Bundle cache key와 응답 metadata는 tenant를 포함하며, 같은 입력이라도 다른 tenant의 cached output을 재사용하지 않는다. Tenant context 없는 direct prompt build는 system A/B variant, prompt override, eval feedback을 읽지 않고, tenant feedback store 조회 실패도 system store로 fallback하지 않는다. H24 mock/local 회귀와 production caller AST guard는 invalid tenant 선차단, cross-tenant cache miss, thread-local 복원, customization 격리를 확인하며 live provider와 외부 실행은 수행하지 않았다.
+  - 2026-07-16 feedback, eval, A/B test, prompt override, fine-tune, request-pattern store 생성자와 cached factory에서 묵시적 system tenant 기본값을 제거했다. 모든 store는 경로 생성 전에 공통 tenant validator를 통과해야 하며, 단일 tenant app bootstrap과 테스트 fixture도 `SYSTEM_TENANT_ID` 또는 명시적 tenant를 전달한다. H25 AST guard는 production constructor/factory 호출의 tenant 누락을 차단하고 invalid tenant가 디렉터리를 만들지 않는지 mock/local로 확인한다. Provider API, dataset upload, training execution, model promotion은 수행하지 않았다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

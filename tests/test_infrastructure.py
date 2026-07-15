@@ -2783,6 +2783,105 @@ def test_production_generation_context_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_quality_learning_store_contract_requires_explicit_tenant_binding():
+    root = Path(__file__).resolve().parents[1]
+    store_classes = {
+        "app/eval/eval_store.py": "EvalStore",
+        "app/storage/ab_test_store.py": "ABTestStore",
+        "app/storage/feedback_store.py": "FeedbackStore",
+        "app/storage/finetune_store.py": "FineTuneStore",
+        "app/storage/prompt_override_store.py": "PromptOverrideStore",
+        "app/storage/request_pattern_store.py": "RequestPatternStore",
+    }
+    store_factories = {
+        "app/eval/eval_store.py": "get_eval_store",
+        "app/storage/ab_test_store.py": "get_ab_test_store",
+        "app/storage/feedback_store.py": "get_feedback_store",
+        "app/storage/finetune_store.py": "get_finetune_store",
+        "app/storage/prompt_override_store.py": "get_override_store",
+    }
+    discovered_classes: set[str] = set()
+    discovered_factories: set[str] = set()
+    defaulted_tenant_arguments: list[str] = []
+
+    for relative_path, class_name in store_classes.items():
+        path = root / relative_path
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == class_name:
+                constructor = next(
+                    child
+                    for child in node.body
+                    if isinstance(child, ast.FunctionDef) and child.name == "__init__"
+                )
+                discovered_classes.add(class_name)
+                keyword_names = [argument.arg for argument in constructor.args.kwonlyargs]
+                tenant_index = keyword_names.index("tenant_id")
+                if constructor.args.kw_defaults[tenant_index] is not None:
+                    defaulted_tenant_arguments.append(f"{relative_path}:{class_name}")
+
+    for relative_path, factory_name in store_factories.items():
+        path = root / relative_path
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name != factory_name:
+                continue
+            discovered_factories.add(factory_name)
+            positional_names = [argument.arg for argument in node.args.args]
+            tenant_index = positional_names.index("tenant_id")
+            first_default_index = len(positional_names) - len(node.args.defaults)
+            if tenant_index >= first_default_index:
+                defaulted_tenant_arguments.append(f"{relative_path}:{factory_name}")
+
+    assert discovered_classes == set(store_classes.values())
+    assert discovered_factories == set(store_factories.values())
+    assert defaulted_tenant_arguments == []
+
+
+def test_production_quality_learning_store_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    constructors = {
+        "ABTestStore",
+        "EvalStore",
+        "FeedbackStore",
+        "FineTuneStore",
+        "PromptOverrideStore",
+        "RequestPatternStore",
+        "_EvalStore",
+        "_FineTuneStore",
+    }
+    factories = {
+        "get_ab_test_store",
+        "get_eval_store",
+        "get_feedback_store",
+        "get_finetune_store",
+        "get_override_store",
+    }
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                call_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                call_name = node.func.attr
+            else:
+                continue
+            tenant_keyword = any(keyword.arg == "tenant_id" for keyword in node.keywords)
+            factory_positional_tenant = call_name in factories and bool(node.args)
+            if call_name in constructors and not tenant_keyword:
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}:{call_name}")
+            if call_name in factories and not tenant_keyword and not factory_positional_tenant:
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}:{call_name}")
+
+    assert missing_tenant == []
+
+
 def test_document_ops_service_binds_agent_run_to_request_tenant():
     root = Path(__file__).resolve().parents[1]
     path = root / "app" / "services" / "document_ops_service.py"

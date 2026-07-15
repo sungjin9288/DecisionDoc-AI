@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.tenant import require_tenant_id
+
 _log = logging.getLogger("decisiondoc.eval.store")
 
 
@@ -34,9 +36,9 @@ class EvalRecord:
 class EvalStore:
     """스레드 안전 JSON Lines 기반 평가 결과 저장소."""
 
-    def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
-        self._tenant_id = tenant_id
-        tenant_dir = Path(data_dir) / "tenants" / tenant_id
+    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        tenant_dir = Path(data_dir) / "tenants" / self._tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
         self._path = tenant_dir / "eval_results.jsonl"
         self._lock = threading.Lock()
@@ -169,7 +171,7 @@ class EvalStore:
 
 
 @functools.lru_cache(maxsize=50)
-def get_eval_store(tenant_id: str = "system") -> "EvalStore":
+def get_eval_store(tenant_id: str) -> "EvalStore":
     """Return a cached EvalStore for the given tenant."""
     from pathlib import Path
     data_dir = Path(os.getenv("DATA_DIR", "./data"))

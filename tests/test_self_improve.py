@@ -14,7 +14,7 @@ import pytest
 
 def test_override_store_save_and_get(tmp_path):
     from app.storage.prompt_override_store import PromptOverrideStore
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     store.save_override(
         bundle_id="tech_decision",
         override_hint="반드시 구체적인 수치를 포함하세요.",
@@ -31,7 +31,7 @@ def test_override_store_save_and_get(tmp_path):
 
 def test_override_store_increment_applied(tmp_path):
     from app.storage.prompt_override_store import PromptOverrideStore
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     store.save_override("prd_kr", "섹션을 빠짐없이 작성하세요.", "low_rating_pattern")
     store.increment_applied("prd_kr")
     store.increment_applied("prd_kr")
@@ -40,7 +40,7 @@ def test_override_store_increment_applied(tmp_path):
 
 def test_override_store_delete(tmp_path):
     from app.storage.prompt_override_store import PromptOverrideStore
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     store.save_override("okr_plan_kr", "힌트", "low_rating_pattern")
     store.delete_override("okr_plan_kr")
     assert store.get_override("okr_plan_kr") is None
@@ -48,7 +48,7 @@ def test_override_store_delete(tmp_path):
 
 def test_override_store_list_overrides(tmp_path):
     from app.storage.prompt_override_store import PromptOverrideStore
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     store.save_override("a", "hint_a", "low_rating_pattern")
     store.save_override("b", "hint_b", "llm_judge_feedback")
     overrides = store.list_overrides()
@@ -57,7 +57,7 @@ def test_override_store_list_overrides(tmp_path):
 
 def test_override_store_missing_bundle_returns_none(tmp_path):
     from app.storage.prompt_override_store import PromptOverrideStore
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     assert store.get_override("nonexistent") is None
 
 
@@ -66,7 +66,7 @@ def test_override_store_missing_bundle_returns_none(tmp_path):
 
 def test_feedback_store_get_low_rated(tmp_path):
     from app.storage.feedback_store import FeedbackStore
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     store.save({"bundle_type": "prd_kr", "rating": 1, "comment": "너무 추상적"})
     store.save({"bundle_type": "prd_kr", "rating": 2, "comment": "섹션 누락"})
     store.save({"bundle_type": "prd_kr", "rating": 5, "comment": "훌륭해요"})
@@ -83,7 +83,7 @@ def test_feedback_store_get_low_rated(tmp_path):
 
 def test_eval_record_llm_feedbacks_field(tmp_path):
     from app.eval.eval_store import EvalRecord, EvalStore
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     record = EvalRecord(
         request_id="req-1",
         bundle_id="tech_decision",
@@ -118,7 +118,7 @@ def test_eval_record_default_llm_feedbacks(tmp_path):
     tenant_dir.mkdir(parents=True, exist_ok=True)
     path = tenant_dir / "eval_results.jsonl"
     path.write_text(old_line + "\n")
-    store = EvalStore(tmp_path)
+    store = EvalStore(tmp_path, tenant_id="system")
     records = store.load_all()
     assert len(records) == 1
     assert records[0].llm_feedbacks == []  # default_factory 적용
@@ -139,7 +139,7 @@ def test_feedback_triggers_override_after_threshold(tmp_path, monkeypatch):
 
     app = main_module.create_app()
     client = TestClient(app)
-    override_store = PromptOverrideStore(tmp_path)
+    override_store = PromptOverrideStore(tmp_path, tenant_id="system")
 
     payload = {
         "bundle_id": "tech_decision",
@@ -172,7 +172,7 @@ def test_build_bundle_prompt_injects_override(tmp_path, monkeypatch):
     clear_ab_test_store_cache()
     clear_override_store_cache()
     monkeypatch.setattr(_current_tenant_id, "value", "system", raising=False)
-    store = PromptOverrideStore(tmp_path)
+    store = PromptOverrideStore(tmp_path, tenant_id="system")
     store.save_override(
         bundle_id="tech_decision",
         override_hint="반드시 구체적인 수치를 포함하세요.",
@@ -226,7 +226,7 @@ def test_get_high_rated_examples_structured_docs(tmp_path):
     """고평점 예시가 구조화된 docs dict(doc_type 키)로 반환되는지 확인."""
     from app.storage.feedback_store import FeedbackStore
 
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     store.save({
         "bundle_type": "tech_decision",
         "rating": 5,
@@ -271,7 +271,7 @@ def test_get_high_rated_examples_no_docs(tmp_path):
     """docs 없는 고평점 피드백도 빈 docs dict으로 반환되는지 확인."""
     from app.storage.feedback_store import FeedbackStore
 
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     store.save({
         "bundle_type": "prd_kr",
         "rating": 4,
@@ -293,7 +293,7 @@ def test_build_feedback_hints_uses_all_docs(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     # Clear LRU cache so get_feedback_store picks up tmp_path
     clear_feedback_store_cache()
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     store.save({
         "bundle_type": "tech_decision",
         "rating": 5,
@@ -332,7 +332,7 @@ def test_build_feedback_hints_empty_when_no_feedback(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     # Clear LRU cache so get_feedback_store picks up tmp_path (empty store)
     clear_feedback_store_cache()
-    store = FeedbackStore(tmp_path)
+    store = FeedbackStore(tmp_path, tenant_id="system")
     svc = GenerationService(
         provider_factory=MagicMock(),
         template_dir=tmp_path,

@@ -28,7 +28,7 @@ import pytest
 
 def _make_store(tmp_path: Path):
     from app.storage.finetune_store import FineTuneStore
-    return FineTuneStore(tmp_path)
+    return FineTuneStore(tmp_path, tenant_id="system")
 
 
 def _sample_messages() -> list[dict[str, str]]:
@@ -141,8 +141,8 @@ def test_trigger_b_collects_record_when_score_high(tmp_path: Path, monkeypatch) 
     from app.eval.pipeline import run_eval_pipeline
     from app.storage.finetune_store import FineTuneStore
 
-    eval_store = EvalStore(tmp_path)
-    ft_store = FineTuneStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
+    ft_store = FineTuneStore(tmp_path, tenant_id="system")
 
     monkeypatch.setenv("FINETUNE_MIN_SCORE", "0.0")  # 모든 점수 통과
 
@@ -174,8 +174,8 @@ def test_trigger_b_skips_record_when_score_low(tmp_path: Path, monkeypatch) -> N
     from app.eval.pipeline import run_eval_pipeline
     from app.storage.finetune_store import FineTuneStore
 
-    eval_store = EvalStore(tmp_path)
-    ft_store = FineTuneStore(tmp_path)
+    eval_store = EvalStore(tmp_path, tenant_id="system")
+    ft_store = FineTuneStore(tmp_path, tenant_id="system")
 
     monkeypatch.setenv("FINETUNE_MIN_SCORE", "1.0")  # 최대값이므로 사실상 절대 통과 안 함
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.base import atomic_write_text
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.storage.ab_test")
 
@@ -25,10 +26,10 @@ _log = logging.getLogger("decisiondoc.storage.ab_test")
 class ABTestStore:
     """Thread-safe JSON store for per-bundle A/B prompt variant tests."""
 
-    def __init__(self, data_dir: Path, tenant_id: str = "system") -> None:
-        self._tenant_id = tenant_id
+    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
         self._data_dir = Path(data_dir)
-        tenant_dir = self._data_dir / "tenants" / tenant_id
+        tenant_dir = self._data_dir / "tenants" / self._tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
         self._path = tenant_dir / "ab_tests.json"
         self._lock = threading.Lock()
@@ -263,7 +264,7 @@ class ABTestStore:
 
 
 @functools.lru_cache(maxsize=50)
-def get_ab_test_store(tenant_id: str = "system") -> "ABTestStore":
+def get_ab_test_store(tenant_id: str) -> "ABTestStore":
     """Return a cached ABTestStore for the given tenant."""
     from pathlib import Path
     data_dir = Path(os.getenv("DATA_DIR", "./data"))
