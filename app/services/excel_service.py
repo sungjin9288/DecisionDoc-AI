@@ -16,7 +16,6 @@ DOCX cover page.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
 
@@ -24,6 +23,7 @@ import xlsxwriter
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
+from app.services.export_reproducibility import DOCUMENT_CREATED_AT, normalize_zip_metadata
 from app.services.markdown_utils import parse_markdown_blocks
 
 # Excel hard limit on a single cell's text length.
@@ -181,12 +181,10 @@ def _write_cover_sheet(
     ws.set_row(2, 40)
     ws.merge_range(2, 0, 2, 1, title or "제목 없음", fmt_title)
 
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     doc_types = [str(doc.get("doc_type", "문서")) for doc in docs]
     doc_labels = ", ".join(humanize_doc_type(dt) for dt in doc_types) or "없음"
 
     rows = [
-        ("생성 시각", generated_at),
         ("문서 수", f"{len(docs)}개"),
         ("문서 유형", doc_labels),
     ]
@@ -290,6 +288,7 @@ def build_excel(docs: list[dict[str, Any]], title: str) -> bytes:
     docs = docs or []
     buf = BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    wb.set_properties({"created": DOCUMENT_CREATED_AT})
 
     try:
         _write_cover_sheet(wb, title=title, docs=docs)
@@ -306,4 +305,4 @@ def build_excel(docs: list[dict[str, Any]], title: str) -> bytes:
         wb.close()
 
     buf.seek(0)
-    return buf.getvalue()
+    return normalize_zip_metadata(buf.getvalue())

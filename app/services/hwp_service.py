@@ -20,7 +20,7 @@ from typing import Any
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
-from app.services.hwpx_archive import write_archive_entry
+from app.services.export_reproducibility import write_archive_entry
 from app.services.markdown_utils import parse_markdown_blocks
 from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 

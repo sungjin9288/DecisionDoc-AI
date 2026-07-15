@@ -18,7 +18,7 @@
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-15 실측: 3022 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-15 실측: 3026 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501

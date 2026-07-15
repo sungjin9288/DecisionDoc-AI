@@ -23,6 +23,7 @@ from docx.shared import Inches, Mm, Pt, RGBColor
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
+from app.services.export_reproducibility import normalize_zip_metadata
 from app.services.markdown_utils import parse_markdown_blocks
 from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 
@@ -774,4 +775,4 @@ def build_docx(
 
     buf = BytesIO()
     doc.save(buf)
-    return buf.getvalue()
+    return normalize_zip_metadata(buf.getvalue())

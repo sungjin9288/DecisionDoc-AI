@@ -10,6 +10,7 @@ from pptx.enum.text import PP_ALIGN
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import presentation_points, summarize_export_docs
+from app.services.export_reproducibility import normalize_zip_metadata
 from app.services.markdown_utils import (
     parse_markdown_blocks,
     slide_outline_layout,
@@ -146,7 +147,7 @@ def build_pptx(
 
     buf = BytesIO()
     prs.save(buf)
-    return buf.getvalue()
+    return normalize_zip_metadata(buf.getvalue())
 
 
 def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
@@ -289,4 +290,4 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
 
     buf = BytesIO()
     prs.save(buf)
-    return buf.getvalue()
+    return normalize_zip_metadata(buf.getvalue())

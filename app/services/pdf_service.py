@@ -19,6 +19,7 @@ from playwright.async_api import async_playwright
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
+from app.services.export_reproducibility import normalize_pdf_metadata
 from app.services.markdown_utils import parse_markdown_blocks, render_inline_html
 from app.services.visual_asset_service import group_visual_assets_by_doc_type, visual_asset_data_uri
 
@@ -581,4 +582,4 @@ async def build_pdf(
         finally:
             await browser.close()
 
-    return pdf_bytes
+    return normalize_pdf_metadata(pdf_bytes)

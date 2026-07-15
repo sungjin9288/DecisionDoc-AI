@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-15 실측: 3022 passed, 1 skipped, 4 deselected
+# 2026-07-15 실측: 3026 passed, 1 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -65,7 +65,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 - 목표: 생성 품질과 프로젝트 지식 재사용 흐름을 강화한다.
 - 현재 상태:
   - export 대칭성, local procurement package, CLI contract receipt는 로컬 검증 경로를 갖고 있다.
-  - 2026-07-15 HWPX export의 모든 ZIP entry를 고정 timestamp와 파일 권한으로 기록해 같은 입력이 같은 bytes와 SHA-256을 만들도록 정리했다. HWPX 규격에 필요한 첫 `mimetype` entry와 uncompressed 저장 방식은 유지하며 반복 생성·XML parse·정부 문서·edited export 회귀 테스트로 확인한다.
+  - 2026-07-15 DOCX·PPTX·HWPX의 ZIP entry metadata, XLSX의 core 생성 시각과 cover content, PDF의 길이를 바꾸지 않는 생성·수정 시각 metadata를 안정화했다. 같은 runtime과 입력의 반복 생성 bytes와 SHA-256이 5종 모두 일치하며, HWPX의 첫 `mimetype` entry와 uncompressed 저장 규칙을 포함한 형식별 회귀 테스트로 확인한다. 실제 요청 시각은 export 본문이 아니라 기존 audit/history 경계에서 추적한다.
   - 2026-07-13 local procurement package에 script-free `procurement_review.html`을 추가해 recommendation, hard filters, score factors, evidence gaps, bid readiness, handoff, pending sign-off, 실행 권한 경계를 한 화면에서 확인한다. 이 화면은 12개 artifact audit/export/hash inventory에 포함되며 별도 승인 workflow를 만들지 않는다.
   - 2026-07-13 검증된 12개 procurement artifact를 embedded `packet_manifest.json`과 함께 deterministic ZIP으로 묶는 `manage_procurement_decision_review_packet.py create/verify` 경로를 추가했다. Packet은 `review_ready`와 `operational_approval: false`를 유지하고 path, membership, SHA256/size, semantic drift를 재검증한다.
   - 2026-07-13 packet 밖의 `procurement_review_receipt.json`을 `packet_sha256`에 결속하고 요청 reviewer의 결정을 `pending`에서 `completed`로 한 번만 기록하는 receipt 경로를 추가했다. `render/apply-draft`는 packet과 pending receipt hash에 결속된 browser draft를 atomic update로 연결하며, 기존 script-free packet과 외부 실행 권한 경계는 바꾸지 않는다.
