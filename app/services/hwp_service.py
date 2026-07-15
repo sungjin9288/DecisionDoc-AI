@@ -20,6 +20,7 @@ from typing import Any
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
+from app.services.hwpx_archive import write_archive_entry
 from app.services.markdown_utils import parse_markdown_blocks
 from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 
@@ -760,24 +761,29 @@ def build_hwp(
     prepared_visual_assets, binary_items = _prepare_hwp_visual_assets(visual_assets)
 
     buf = BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(buf, "w") as archive:
         # mimetype MUST be stored uncompressed (per hwpx spec)
-        zi = zipfile.ZipInfo("mimetype")
-        zi.compress_type = zipfile.ZIP_STORED
-        zf.writestr(zi, "application/hwp+zip")
-        zf.writestr("version.xml", _version_xml())
-        zf.writestr("META-INF/container.xml", _container_xml())
-        zf.writestr("META-INF/manifest.xml", _manifest_xml(binary_items))
-        zf.writestr("Contents/content.hpf", _content_hpf_xml(binary_items))
-        zf.writestr(
+        write_archive_entry(
+            archive,
+            "mimetype",
+            "application/hwp+zip",
+            compress_type=zipfile.ZIP_STORED,
+        )
+        write_archive_entry(archive, "version.xml", _version_xml())
+        write_archive_entry(archive, "META-INF/container.xml", _container_xml())
+        write_archive_entry(archive, "META-INF/manifest.xml", _manifest_xml(binary_items))
+        write_archive_entry(archive, "Contents/content.hpf", _content_hpf_xml(binary_items))
+        write_archive_entry(
+            archive,
             "Contents/header.xml",
             _header_xml(title, font_name, font_size, spacing),
         )
-        zf.writestr(
+        write_archive_entry(
+            archive,
             "Contents/section0.xml",
             _section_xml(docs, title, opts, top_mm, bot_mm, left_mm, right_mm, visual_assets=prepared_visual_assets),
         )
-        zf.writestr("Contents/settings.xml", _settings_xml())
+        write_archive_entry(archive, "Contents/settings.xml", _settings_xml())
         for item in binary_items:
-            zf.writestr(item["href"], item["raw"])
+            write_archive_entry(archive, item["href"], item["raw"])
     return buf.getvalue()

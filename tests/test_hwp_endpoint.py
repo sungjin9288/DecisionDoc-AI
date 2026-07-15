@@ -23,6 +23,21 @@ def test_build_hwp_returns_zip():
     assert zipfile.is_zipfile(BytesIO(result))
 
 
+def test_build_hwp_is_byte_reproducible_with_fixed_archive_metadata():
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 제목\n\n같은 입력입니다."}]
+    first = build_hwp(docs, title="재현성 테스트")
+    second = build_hwp(docs, title="재현성 테스트")
+
+    assert first == second
+    with zipfile.ZipFile(BytesIO(first)) as archive:
+        assert archive.infolist()[0].filename == "mimetype"
+        assert {info.date_time for info in archive.infolist()} == {(1980, 1, 1, 0, 0, 0)}
+        assert {info.external_attr >> 16 for info in archive.infolist()} == {0o100644}
+        assert archive.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
+
+
 def test_build_hwp_contains_mimetype():
     from app.services.hwp_service import build_hwp
     docs = [{"doc_type": "adr", "markdown": "# 테스트"}]

@@ -18,7 +18,7 @@
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-15 실측: 3020 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-15 실측: 3022 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -41,7 +41,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 41 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 42 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 37 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 264 (라우트)
@@ -63,7 +63,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (41) — 도메인 오케스트레이션
+Services (42) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
