@@ -9126,10 +9126,37 @@
     }
   }
 
+  function renderReportWorkflowQualityPackageArtifact(item) {
+    const claims = item?.claim_counts || {};
+    const changes = Array.isArray(item?.change_requests) ? item.change_requests : [];
+    const warnings = Array.isArray(item?.warnings) ? item.warnings : [];
+    return `<section style="border-top:1px solid var(--border);padding:.75rem 0;">
+      <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <h4 style="margin:0;font-size:.8rem;color:#1f2a44;overflow-wrap:anywhere;">${escapeHtml(item.artifact_id || 'artifact')}</h4>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.18rem;overflow-wrap:anywhere;">${escapeHtml(item.report_workflow_id || '')} · ${escapeHtml(item.document_type || '')} · ${escapeHtml(item.domain || '')}</div>
+        </div>
+        <span style="font-size:.68rem;font-weight:850;color:#166534;background:#dcfce7;border-radius:999px;padding:.15rem .45rem;">learning-ready</span>
+      </div>
+      <div style="font-size:.72rem;color:#334155;margin-top:.45rem;">reviewer=${escapeHtml(item.reviewer || 'n/a')} · score=${escapeHtml(String(item.overall_score ?? 'n/a'))} · reviewed=${escapeHtml(item.reviewed_at || 'n/a')}</div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:.25rem;">confirmed ${Number(claims.confirmed || 0)} · assumed ${Number(claims.assumed || 0)} · todo ${Number(claims.todo || 0)} · scans ${escapeHtml(item.forbidden_terms_scan || 'n/a')}/${escapeHtml(item.privacy_security_scan || 'n/a')}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.65rem;margin-top:.65rem;">
+        <div><strong style="font-size:.71rem;color:#475569;">교정 전 기획</strong><p style="font-size:.72rem;line-height:1.55;margin:.2rem 0 0;white-space:pre-wrap;">${escapeHtml(item.before_planning_summary || '기록 없음')}</p></div>
+        <div><strong style="font-size:.71rem;color:#475569;">교정 후 기획</strong><p style="font-size:.72rem;line-height:1.55;margin:.2rem 0 0;white-space:pre-wrap;">${escapeHtml(item.after_planning_summary || '기록 없음')}</p></div>
+      </div>
+      <div style="margin-top:.65rem;">
+        <strong style="font-size:.71rem;color:#475569;">Change requests ${changes.length}건</strong>
+        ${changes.length ? `<ol style="margin:.3rem 0 0;padding-left:1.2rem;display:grid;gap:.4rem;">${changes.map(change => `<li style="font-size:.71rem;line-height:1.5;"><strong>${escapeHtml(change.target || 'target')}</strong> · ${escapeHtml(change.issue || '')}<br><span style="color:#334155;">${escapeHtml(change.correction || '')}</span><br><span style="color:var(--muted);">${escapeHtml(change.rationale || '')}</span></li>`).join('')}</ol>` : '<p style="font-size:.71rem;color:var(--muted);margin:.25rem 0 0;">기록된 change request 없음</p>'}
+      </div>
+      ${warnings.length ? `<div style="font-size:.7rem;color:#92400e;margin-top:.5rem;">warning: ${warnings.map(warning => escapeHtml(warning)).join(' · ')}</div>` : ''}
+    </section>`;
+  }
+
   function renderReportWorkflowQualityPackageVerification(result, filename) {
     const el = $id('rw-quality-artifact-detail');
     if (!el) return;
     const entries = Array.isArray(result?.entries) ? result.entries : [];
+    const artifacts = Array.isArray(result?.artifacts) ? result.artifacts : [];
     const boundary = result?.external_action_boundary || {};
     const checks = result?.validation || {};
     const allChecksPassed = Object.values(checks).length > 0 && Object.values(checks).every(value => value === true);
@@ -9153,6 +9180,15 @@
         <div style="border-radius:8px;padding:.5rem;background:${externalActionsBlocked ? '#dcfce7' : '#fee2e2'};color:${externalActionsBlocked ? '#166534' : '#991b1b'};font-size:.71rem;"><strong>외부 실행 경계</strong><br>${externalActionsBlocked ? 'upload · provider · training · promotion 승인 안 됨' : '권한 경계 확인 필요'}</div>
         <div style="border-radius:8px;padding:.5rem;background:${result.persisted === false ? '#e0f2fe' : '#fee2e2'};color:${result.persisted === false ? '#075985' : '#991b1b'};font-size:.71rem;"><strong>서버 보존</strong><br>${result.persisted === false ? '검증만 수행 · package 저장 안 함' : '저장 상태 확인 필요'}</div>
       </div>
+      <div style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem;">
+        <strong style="font-size:.76rem;color:#14532d;">검토 판단</strong>
+        <p style="font-size:.73rem;line-height:1.55;margin:.25rem 0 0;">${escapeHtml(result.operator_summary || '')}</p>
+        <p style="font-size:.72rem;line-height:1.55;margin:.35rem 0 0;color:#334155;"><strong>다음 행동:</strong> ${escapeHtml(result.next_review_action || '')}</p>
+      </div>
+      <div style="margin-top:.7rem;">
+        <h4 style="font-size:.77rem;color:#1f2a44;margin:0 0 .15rem;">검증된 correction evidence ${artifacts.length}건</h4>
+        ${artifacts.map(renderReportWorkflowQualityPackageArtifact).join('')}
+      </div>
       <ol style="margin:.7rem 0 0;padding-left:1.25rem;display:grid;gap:.35rem;">
         ${entries.map(item => `<li style="font-size:.71rem;color:#334155;"><strong>${escapeHtml(item.path || '')}</strong><div style="color:var(--muted);overflow-wrap:anywhere;">${Number(item.size_bytes || 0).toLocaleString()} bytes · ${escapeHtml(item.sha256 || '')}</div></li>`).join('')}
       </ol>
@@ -9170,7 +9206,7 @@
       showNotification('Pilot 검토 패키지는 5 MB 이하여야 합니다.', 'error');
       return;
     }
-    el.innerHTML = '<div style="font-size:.76rem;color:var(--muted);">검토 패키지의 membership, hash, receipt, tenant 경계를 확인하는 중...</div>';
+    el.innerHTML = '<div style="font-size:.76rem;color:var(--muted);">검토 패키지의 membership, hash, receipt, tenant, artifact readiness를 확인하는 중...</div>';
     try {
       const packageBytes = new Uint8Array(await file.arrayBuffer());
       const browserSha256 = await sha256Hex(packageBytes);
@@ -9188,6 +9224,7 @@
         'entry_hashes_verified',
         'receipt_binding_verified',
         'artifact_boundaries_verified',
+        'artifact_semantics_verified',
       ];
       const blockedActions = [
         'external_dataset_upload_authorized',
@@ -9197,8 +9234,15 @@
       ];
       if (
         result?.status !== 'verified'
+        || result?.schema_version !== 'decisiondoc_report_quality_pilot_package_verification.v1'
         || result?.persisted !== false
         || result?.package_sha256 !== browserSha256
+        || result?.review_readiness?.all_ready !== true
+        || result?.review_readiness?.ready_artifact_count !== result?.artifact_count
+        || !Array.isArray(result?.artifacts)
+        || result.artifacts.length !== result?.artifact_count
+        || !result.artifacts.every(item => item?.validation_ok === true && item?.ready_for_learning === true)
+        || result.artifacts.some((item, index) => item?.artifact_id !== result?.ordered_artifact_ids?.[index])
         || !requiredChecks.every(key => result?.validation?.[key] === true)
         || !blockedActions.every(key => result?.external_action_boundary?.[key] === false)
       ) {
@@ -9206,7 +9250,7 @@
       }
       renderReportWorkflowQualityPackageVerification(result, file.name);
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      showNotification(`검토 패키지 ${Number(result.artifact_count || 0)}개 artifact의 무결성을 확인했습니다.`, 'success');
+      showNotification(`검토 패키지 ${Number(result.artifact_count || 0)}개 artifact의 무결성과 learning-ready evidence를 확인했습니다.`, 'success');
     } catch (err) {
       el.innerHTML = `<div style="border:1px solid rgba(239,68,68,.28);border-radius:12px;padding:.75rem;background:rgba(254,242,242,.8);color:#991b1b;font-size:.78rem;">검토 패키지 검증 실패: ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('검토 패키지 검증 실패: ' + (err.message || err), 'error');
@@ -27540,7 +27584,7 @@ function renderAuditEvidence(log, detail) {
       request=${escapeHtml(detail.request_id || '-')}<br>
       ${packageSha256}
       sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>
-      artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}
+      artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))} · semantics_verified=${escapeHtml(String(detail.pilot_artifact_semantics_verified === true))}
     </div>`;
   }
   if (['document_ops.trajectory_view', 'document_ops.trajectory_review'].includes(log?.action)) {

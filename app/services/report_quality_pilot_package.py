@@ -7,6 +7,7 @@ import json
 import zipfile
 from typing import Any
 
+from app.services.report_quality_learning import validate_correction_artifact
 from app.services.report_quality_pilot_receipt import (
     RECEIPT_SHA256_HEADER,
     build_pilot_export_receipt,
@@ -19,6 +20,7 @@ from app.services.report_quality_pilot_receipt import (
 
 PACKAGE_REPORT_TYPE = "report_quality_pilot_review_package"
 PACKAGE_SCHEMA_VERSION = "decisiondoc_report_quality_pilot_review_package.v1"
+VERIFICATION_SCHEMA_VERSION = "decisiondoc_report_quality_pilot_package_verification.v1"
 PACKAGE_SHA256_HEADER = "X-DecisionDoc-Pilot-Package-SHA256"
 PACKAGE_ENTRY_TIMESTAMP = (2020, 1, 1, 0, 0, 0)
 PACKAGE_MANIFEST_NAME = "pilot_package_manifest.json"
@@ -37,6 +39,73 @@ def _sha256(content: bytes) -> str:
 
 def _json_bytes(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _parse_artifacts(content: bytes) -> list[dict[str, Any]]:
+    try:
+        artifacts = [
+            json.loads(line)
+            for line in content.decode("utf-8").splitlines()
+            if line.strip()
+        ]
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("pilot review package JSONL is invalid") from exc
+    if any(not isinstance(item, dict) for item in artifacts):
+        raise ValueError("pilot review package JSONL entries must be objects")
+    return artifacts
+
+
+def _receiver_artifact_summary(
+    artifact: dict[str, Any],
+    validation: dict[str, Any],
+) -> dict[str, Any]:
+    workflow = artifact["workflow_reference"]
+    profile = artifact["document_profile"]
+    quality = artifact["quality_baseline"]
+    before = artifact["before"]
+    correction = artifact["correction"]
+    after = artifact["after"]
+    labels = artifact["learning_labels"]
+    change_requests = [
+        {
+            "target": str(item.get("target") or ""),
+            "issue": str(item.get("issue") or ""),
+            "correction": str(item.get("correction") or ""),
+            "rationale": str(item.get("rationale") or ""),
+        }
+        for item in correction.get("change_requests") or []
+        if isinstance(item, dict)
+    ]
+
+    def claim_count(field: str) -> int:
+        values = labels.get(field)
+        return len(values) if isinstance(values, list) else 0
+
+    return {
+        "artifact_id": artifact["artifact_id"],
+        "report_workflow_id": workflow["report_workflow_id"],
+        "workflow_status": workflow["workflow_status"],
+        "document_type": profile["document_type"],
+        "domain": profile["domain"],
+        "overall_score": quality["overall_score"],
+        "reviewer": correction["reviewer"],
+        "reviewed_at": correction["reviewed_at"],
+        "human_review_status": labels["human_review_status"],
+        "accepted_for_learning": labels["accepted_for_learning"],
+        "forbidden_terms_scan": labels["forbidden_terms_scan"],
+        "privacy_security_scan": labels["privacy_security_scan"],
+        "before_planning_summary": str(before.get("planning_summary") or ""),
+        "after_planning_summary": str(after.get("planning_summary") or ""),
+        "change_requests": change_requests,
+        "claim_counts": {
+            "confirmed": claim_count("confirmed_claims"),
+            "assumed": claim_count("assumed_claims"),
+            "todo": claim_count("todo_claims"),
+        },
+        "validation_ok": validation["ok"],
+        "ready_for_learning": validation["ready_for_learning"],
+        "warnings": validation["warnings"],
+    }
 
 
 def _write_entry(archive: zipfile.ZipFile, path: str, content: bytes) -> None:
@@ -215,16 +284,7 @@ def verify_pilot_review_package(content: bytes) -> dict[str, Any]:
     if _sha256(entries[jsonl_name]) != export_sha256:
         raise ValueError("pilot review package JSONL does not match export_sha256")
 
-    try:
-        artifacts = [
-            json.loads(line)
-            for line in entries[jsonl_name].decode("utf-8").splitlines()
-            if line.strip()
-        ]
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("pilot review package JSONL is invalid") from exc
-    if any(not isinstance(item, dict) for item in artifacts):
-        raise ValueError("pilot review package JSONL entries must be objects")
+    artifacts = _parse_artifacts(entries[jsonl_name])
     artifact_ids = [str(item.get("artifact_id") or "") for item in artifacts]
     if not 3 <= len(artifact_ids) <= 5:
         raise ValueError("pilot review package must contain three to five artifacts")
@@ -247,6 +307,13 @@ def verify_pilot_review_package(content: bytes) -> dict[str, Any]:
             boundary.get(key) is not False for key in NO_EXTERNAL_ACTION_KEYS
         ):
             raise ValueError("pilot review package artifact external action boundary is invalid")
+        validation = validate_correction_artifact(artifact)
+        if validation["ready_for_learning"] is not True:
+            reason = next(iter(validation["errors"]), "artifact is not learning-ready")
+            raise ValueError(
+                f"pilot review package artifact is not learning-ready: "
+                f"{artifact['artifact_id']}: {reason}"
+            )
     receipt = parse_pilot_export_receipt(entries[receipt_name])
     validate_pilot_export_receipt(
         receipt,
@@ -265,23 +332,46 @@ def verify_pilot_review_package(content: bytes) -> dict[str, Any]:
 
 def summarize_pilot_review_package_verification(content: bytes) -> dict[str, Any]:
     """Return the evidence a receiver needs after verifying a package in memory."""
-    manifest = verify_pilot_review_package(content)
+    package = read_pilot_review_package(content)
+    manifest = package["manifest"]
+    artifacts = _parse_artifacts(package["jsonl_bytes"])
+    artifact_summaries = [
+        _receiver_artifact_summary(artifact, validate_correction_artifact(artifact))
+        for artifact in artifacts
+    ]
+    artifact_count = len(artifact_summaries)
     return {
         "report_type": "report_quality_pilot_review_package_verification",
+        "schema_version": VERIFICATION_SCHEMA_VERSION,
         "status": "verified",
         "package_sha256": _sha256(content),
         "package_size_bytes": len(content),
         "tenant_id": manifest["tenant_id"],
         "request_id": manifest["request_id"],
-        "artifact_count": manifest["artifact_count"],
+        "artifact_count": artifact_count,
         "ordered_artifact_ids": manifest["ordered_artifact_ids"],
         "export_sha256": manifest["export_sha256"],
         "entries": manifest["entries"],
+        "operator_summary": (
+            f"검증된 correction artifact {artifact_count}개가 모두 learning-ready 상태입니다. "
+            "이 결과는 수신 검토 증거이며 외부 실행 승인이 아닙니다."
+        ),
+        "next_review_action": (
+            "교정 전후 근거를 확인한 뒤 source-bound local review pack에서 "
+            "별도의 사람 검토 결정을 기록하세요."
+        ),
+        "review_readiness": {
+            "all_ready": True,
+            "ready_artifact_count": artifact_count,
+            "blocked_artifact_count": 0,
+        },
+        "artifacts": artifact_summaries,
         "validation": {
             "membership_verified": True,
             "entry_hashes_verified": True,
             "receipt_binding_verified": True,
             "artifact_boundaries_verified": True,
+            "artifact_semantics_verified": True,
         },
         "external_action_boundary": manifest["external_action_boundary"],
         "persisted": False,

@@ -171,6 +171,8 @@ python3 scripts/create_report_quality_pilot_pack.py \
 
 입력은 같은 tenant의 ready artifact 3~5개여야 합니다. UI는 export 전에 ordered artifact, resolved/ready count, 전체 JSONL SHA-256, dataset upload·provider fine-tune·training execution·model promotion 비승인 경계를 보여줍니다. Export 요청은 preview의 hash를 `preview_sha256`으로 다시 제출해야 하며, 서버가 현재 ordered JSONL과 일치하지 않으면 `400`으로 차단합니다. 성공한 검토 패키지는 JSONL, server-issued receipt, entry별 size/SHA-256·tenant·artifact 순서·외부 실행 비승인 경계를 기록한 manifest를 포함합니다. 서버와 브라우저가 ZIP 전체 SHA-256을 대조하고 importer도 package membership, receipt, tenant, 순서, no-training boundary를 다시 검증합니다. 수신자는 같은 UI에서 ZIP을 다시 선택해 브라우저 SHA-256과 서버 검증 결과를 대조할 수 있습니다. 서버는 active tenant, exact membership, entry hash, receipt binding, artifact 권한 경계를 메모리에서 확인하고 `persisted=false` 요약만 반환하며, 성공·변조·tenant 차단 결과는 audit에 남깁니다. Importer는 원본 receipt와 embedded package manifest를 각각 `SOURCE_EXPORT_RECEIPT.json`, `SOURCE_PACKAGE_MANIFEST.json`으로 보존하고 `SOURCE_MANIFEST.json` v3에 hash·size·request ID·tenant·artifact 순서를 결속합니다. 따라서 원본 ZIP이 이동되거나 삭제되어도 downstream sync가 pack-local 증빙만으로 manifest hash와 semantics를 다시 검증합니다. Pack 생성 명령은 같은 binding을 사용하는 `HUMAN_REVIEW_WORKSHEET.md`, `human_review_manifest.json`, `review_decisions.json`, `HUMAN_REVIEW_WORKSPACE.html`까지 함께 준비합니다. Browser workspace는 raw JSON을 열지 않아도 교정 전후 planning summary·장표 구조·검토 대상 claim, workflow 상태, final reference, validation error·warning과 필요한 조치를 같은 화면에서 보여줍니다. 검수자는 이 근거를 확인한 뒤 결정·점수·scan·차원별 근거·보완 요청을 입력하고, 원본 pack 파일을 직접 바꾸지 않는 source-bound `review_decisions.browser-draft.json`을 내려받을 수 있습니다. 자동 decision template은 이전 상태를 `previous_decision`으로 남기되 새 파일럿 판단은 모두 `pending`에서 시작합니다. `--browser-draft` apply 경로는 내려받은 파일을 이동하지 않고 읽기 전용 검증한 뒤 정확한 바이트를 SHA 기반 이름으로 pack에 보존하고, draft 반영과 같은 suffix의 receipt 생성을 한 명령으로 수행합니다. 적용으로 draft hash와 상태가 바뀌면 worksheet와 human review manifest도 현재 binding으로 즉시 갱신합니다. 모든 pack mode는 기존 batch 디렉터리나 symlink를 거부하고 decision template, workspace, SHA 보관본, receipt도 기존 파일을 덮어쓰지 않아 사람의 수정 이력을 보존합니다. Decision template과 SHA 보관본은 write-once publication을 사용해 사전 검사 직후 같은 경로가 생겨도 기존 파일을 보존하고 draft 적용 전에 중단합니다. 기존 v1/v2 source manifest와 JSONL + receipt 개별 입력도 호환 경로로 유지합니다. Stale decision이나 일부만 유효한 batch는 draft를 쓰기 전에 전체 차단하며 dry-run이나 실패 batch에서는 draft와 파생 검수 증거를 변경하지 않습니다. 적용 성공 시에는 decision SHA-256과 before/after draft hash 전이를 pack-local receipt로 남기고 현재 pack과 다시 검증할 수 있습니다. Ready JSONL sync는 현재 artifact 상태·count와 일치하는 review manifest 및 `require_ready=true` accepted decision receipt를 요구하고, 성공 결과에 두 evidence SHA를 함께 반환합니다. 따라서 source artifact가 이미 ready여도 새 로컬 검수가 pending이면 downstream batch로 넘어가지 않습니다. 이 로컬 경로는 provider API, dataset upload, training execution, model promotion을 실행하거나 승인하지 않습니다. 자세한 검수 절차는 [Pilot Review Runbook](./docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md)을 따릅니다.
 
+수신 package 검증은 ZIP 구조 확인에서 끝나지 않습니다. 각 correction artifact의 schema, scan, score, 사람 검토 상태와 learning-ready 조건까지 다시 검사합니다. 통과한 경우에만 reviewer, score, 교정 전후 기획, claim 구분, change request, operator summary와 다음 검토 행동을 `persisted=false` 결과로 보여줍니다. 변조·not-ready·tenant 차단은 audit에 남고 package나 workflow record는 저장하지 않습니다.
+
 스모크 검증 (문서화된 대표 시나리오):
 
 ```bash
@@ -240,10 +242,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,766개**, **228개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,767개**, **228개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2766
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2767
 python3 scripts/count_readme_metrics.py --field test_files      # → 228
 ```
 
@@ -273,7 +275,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest -q tests/ -m "not live" --tb=short` → 3,027 passed, 2 skipped, 4 deselected, 2026-07-15 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest -q tests/ -m "not live" --tb=short` → 3,028 passed, 2 skipped, 4 deselected, 2026-07-15 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -323,4 +325,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,766 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,767 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

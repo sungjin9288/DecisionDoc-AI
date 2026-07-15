@@ -47,6 +47,7 @@ def record_quality_pilot_package_verification_state(
     result: dict[str, Any] | None = None,
 ) -> None:
     request.state.audit_action = "report_quality.pilot_package_verify"
+    request.state.report_quality_pilot_artifact_semantics_verified = False
     if result is None:
         return
     request.state.report_quality_pilot_sha256 = str(result.get("export_sha256") or "")
@@ -55,6 +56,9 @@ def record_quality_pilot_package_verification_state(
     )
     request.state.report_quality_pilot_artifact_count = int(
         result.get("artifact_count") or 0
+    )
+    request.state.report_quality_pilot_artifact_semantics_verified = (
+        result.get("validation", {}).get("artifact_semantics_verified") is True
     )
     request.state.report_quality_pilot_preview_verified = True
 

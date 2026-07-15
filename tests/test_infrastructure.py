@@ -1813,6 +1813,7 @@ def test_index_html_ops_static_action_wiring_exists():
     assert '<option value="document_ops.trajectory_review">' in content
     assert "function renderAuditEvidence(log, detail)" in content
     assert "package_sha256=${escapeHtml(detail.pilot_package_sha256)}" in content
+    assert "semantics_verified=${escapeHtml(String(detail.pilot_artifact_semantics_verified === true))}" in content
     assert "status=${detail.review_status || '-'}" in content
     assert "decision=${detail.review_decision}" in content
     assert "reviewer=${detail.reviewer}" in content

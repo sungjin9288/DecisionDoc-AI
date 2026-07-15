@@ -14,6 +14,10 @@ from app.services.report_quality_pilot_package import (
     MAX_PACKAGE_SIZE_BYTES,
     build_pilot_review_package,
 )
+from app.services.report_quality_learning import (
+    REQUIRED_DIMENSIONS,
+    build_correction_artifact_from_snapshot,
+)
 from app.services.report_quality_pilot_receipt import (
     build_pilot_export_receipt,
     serialize_pilot_export_receipt,
@@ -186,21 +190,58 @@ def _create_ready_quality_artifact(client: TestClient, *, title: str) -> dict:
     return saved.json()
 
 
-def _pilot_review_package_for_tenant(tenant_id: str) -> bytes:
-    boundary = {
-        "external_dataset_upload_authorized": False,
-        "provider_fine_tune_api_call_authorized": False,
-        "training_execution_authorized": False,
-        "model_promotion_authorized": False,
-    }
+def _pilot_review_package_for_tenant(
+    tenant_id: str,
+    *,
+    learning_ready: bool = True,
+) -> bytes:
     artifacts = [
-        {
-            "artifact_id": f"rqa_external_{index}",
-            "workflow_reference": {"tenant_id": tenant_id},
-            "training_boundary": boundary,
-        }
+        build_correction_artifact_from_snapshot(
+            {
+                "tenant_id": tenant_id,
+                "report_workflow_id": f"rw_external_{index}",
+                "status": "final_approved",
+                "export_version": 1,
+                "report_type": "proposal_deck",
+                "audience": "executive",
+                "client": "public_sector",
+                "learning": {"learning_opt_in": True},
+            },
+            {
+                "reviewer": f"receiver-reviewer-{index}",
+                "reviewed_at": "2026-07-15T09:00:00+09:00",
+                "overall_score": 0.88,
+                "dimension_scores": {
+                    dimension: 0.86 for dimension in REQUIRED_DIMENSIONS
+                },
+                "change_requests": [
+                    {
+                        "target": "slide:1",
+                        "issue": "근거와 결론의 연결이 약함",
+                        "correction": "확인된 근거 다음에 결론을 배치함",
+                        "rationale": "검토자가 판단 근거를 바로 확인할 수 있어야 함",
+                    }
+                ],
+                "rationale_by_dimension": {
+                    dimension: f"{dimension} 검토 완료"
+                    for dimension in REQUIRED_DIMENSIONS
+                },
+                "before_planning_summary": f"교정 전 기획 {index}",
+                "after_planning_summary": f"교정 후 기획 {index}",
+                "accepted_for_learning": True,
+                "confirmed_claims": ["검토된 근거"],
+                "assumed_claims": [],
+                "todo_claims": [],
+                "forbidden_terms_scan": "pass",
+                "privacy_security_scan": "pass",
+                "human_review_status": "accepted",
+            },
+            artifact_id=f"rqa_external_{index}",
+        )
         for index in range(1, 4)
     ]
+    if not learning_ready:
+        artifacts[1]["learning_labels"]["human_review_status"] = "pending"
     jsonl = "".join(
         json.dumps(artifact, ensure_ascii=False, sort_keys=True) + "\n"
         for artifact in artifacts
@@ -796,6 +837,17 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert verification["ordered_artifact_ids"] == requested_order
     assert verification["export_sha256"] == body_sha256
     assert len(verification["entries"]) == 2
+    assert verification["review_readiness"] == {
+        "all_ready": True,
+        "ready_artifact_count": 3,
+        "blocked_artifact_count": 0,
+    }
+    assert [item["artifact_id"] for item in verification["artifacts"]] == requested_order
+    assert all(item["ready_for_learning"] is True for item in verification["artifacts"])
+    assert all(item["validation_ok"] is True for item in verification["artifacts"])
+    assert all(item["reviewer"] == "pm-reviewer" for item in verification["artifacts"])
+    assert "외부 실행 승인이 아닙니다" in verification["operator_summary"]
+    assert "사람 검토 결정" in verification["next_review_action"]
     assert all(verification["validation"].values())
     assert all(
         value is False
@@ -846,6 +898,10 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     )
     assert package_verification_audits[0]["detail"]["pilot_artifact_count"] == 3
     assert package_verification_audits[0]["detail"]["pilot_preview_verified"] is True
+    assert (
+        package_verification_audits[0]["detail"]["pilot_artifact_semantics_verified"]
+        is True
+    )
 
     first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
     alias_duplicate = client.post(
@@ -884,6 +940,17 @@ def test_report_quality_pilot_package_verification_rejects_tamper_cross_tenant_a
     assert tampered_result.status_code == 400
     assert "SHA-256 mismatch" in tampered_result.json()["detail"]
 
+    not_ready_package = _pilot_review_package_for_tenant(
+        "system",
+        learning_ready=False,
+    )
+    not_ready_result = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+        files={"file": ("not-ready.zip", not_ready_package, "application/zip")},
+    )
+    assert not_ready_result.status_code == 400
+    assert "artifact is not learning-ready" in not_ready_result.json()["detail"]
+
     cross_tenant_package = _pilot_review_package_for_tenant("other-tenant")
     cross_tenant_result = client.post(
         "/report-workflows/learning/correction-artifacts/pilot-package/verify",
@@ -921,7 +988,11 @@ def test_report_quality_pilot_package_verification_rejects_tamper_cross_tenant_a
         "system",
         filters={"action": "access.blocked", "result": "blocked"},
     )
-    assert len(failed_audits) == 2
+    assert len(failed_audits) == 3
+    assert all(
+        item["detail"]["pilot_artifact_semantics_verified"] is False
+        for item in failed_audits
+    )
     assert len(blocked_audits) == 1
     assert blocked_audits[0]["detail"]["status_code"] == 403
     assert blocked_audits[0]["detail"]["path"].endswith("/pilot-package/verify")
@@ -929,6 +1000,7 @@ def test_report_quality_pilot_package_verification_rejects_tamper_cross_tenant_a
         cross_tenant_package
     ).hexdigest()
     assert blocked_audits[0]["detail"]["pilot_artifact_count"] == 3
+    assert blocked_audits[0]["detail"]["pilot_artifact_semantics_verified"] is True
 
 
 def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_path, monkeypatch):

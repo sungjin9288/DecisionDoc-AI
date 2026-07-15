@@ -148,6 +148,12 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "Pilot export receipt가 현재 다운로드와 일치하지 않습니다" in html
     assert "result?.package_sha256 !== browserSha256" in html
     assert "result?.persisted !== false" in html
+    assert "artifact_semantics_verified" in html
+    assert "result?.review_readiness?.all_ready !== true" in html
+    assert "item?.validation_ok === true && item?.ready_for_learning === true" in html
+    assert "검증된 correction evidence" in html
+    assert "교정 전 기획" in html
+    assert "Change requests" in html
     assert "requiredChecks.every(key => result?.validation?.[key] === true)" in html
     assert "blockedActions.every(key => result?.external_action_boundary?.[key] === false)" in html
     assert "#rw-quality-artifact-detail:not(:empty) { padding-bottom: 72px; }" in html

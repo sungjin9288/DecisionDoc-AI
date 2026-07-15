@@ -406,6 +406,11 @@ def _append_audit_entries(
         report_quality_pilot_package_sha256 = (
             getattr(request.state, "report_quality_pilot_package_sha256", "") or ""
         )
+        report_quality_pilot_artifact_semantics_verified = getattr(
+            request.state,
+            "report_quality_pilot_artifact_semantics_verified",
+            None,
+        )
         report_quality_pilot_preview_verified = getattr(
             request.state, "report_quality_pilot_preview_verified", None
         )
@@ -556,6 +561,10 @@ def _append_audit_entries(
             detail["pilot_artifact_count"] = report_quality_pilot_artifact_count
         if report_quality_pilot_package_sha256:
             detail["pilot_package_sha256"] = report_quality_pilot_package_sha256
+        if report_quality_pilot_artifact_semantics_verified is not None:
+            detail["pilot_artifact_semantics_verified"] = (
+                report_quality_pilot_artifact_semantics_verified
+            )
         if report_quality_pilot_preview_verified is not None:
             detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
         if document_ops_trajectory_id:

@@ -27,13 +27,15 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | Source-backed README metrics | route/test/env 수치를 AST와 source parser로 재계산해 README drift를 줄이는 검증 경로 | `scripts/count_readme_metrics.py`, `tests/test_count_readme_metrics.py` |
 | Portfolio evidence pack | tracked 문서/evidence allowlist를 source와 byte 단위로 동기화하고 SHA-256 manifest와 deterministic ZIP을 검증 | `scripts/manage_portfolio_pack.py`, `tests/test_manage_portfolio_pack.py`, `portfolio_manifest.md` |
 
+Report Quality receiver inspection은 ZIP 무결성만 확인하지 않는다. 기존 correction artifact validator를 다시 실행해 schema, scan, 점수, 사람 검토와 learning-ready 조건을 확인하고, 통과한 artifact의 reviewer·score·교정 전후 기획·claim 구분·change request와 다음 검토 행동을 raw JSON 없이 보여준다. Package와 workflow record는 저장하지 않으며 semantic gate 결과는 audit evidence에 남는다.
+
 ## 3. 검증된 범위
 
 현재 로컬에서 증거로 말할 수 있는 범위는 다음과 같다.
 
 | 검증 | 현재 증거 |
 |---|---|
-| Non-live pytest gate | `pytest -q tests/ -m "not live" --tb=short` -> `3027 passed, 2 skipped, 4 deselected` (2026-07-15 실측) |
+| Non-live pytest gate | `pytest -q tests/ -m "not live" --tb=short` -> `3028 passed, 2 skipped, 4 deselected` (2026-07-15 실측) |
 | GitHub Actions CI | 최근 확인한 main 자동화 증적: commit `8e064d0`, CI `29388238274` success |
 | GitHub Actions CD | 최근 확인한 main 자동화 증적: commit `8e064d0`, CD `29388238234` success. image build/push는 통과했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof로 보지 않는다 |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
