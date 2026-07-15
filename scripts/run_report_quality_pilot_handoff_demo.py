@@ -32,9 +32,16 @@ from scripts.manage_report_quality_pilot_handoff import (  # noqa: E402
     finalize_report_quality_pilot_handoff,
     write_verified_handoff_browser_summary,
 )
+from scripts.report_quality_pilot_handoff_demo_receipt import (  # noqa: E402
+    ARTIFACT_COUNT,
+    COMPLETED_STAGES,
+    EXPECTED_EXECUTION_MODE,
+    EXPECTED_EXTERNAL_ACTIONS,
+    SCHEMA_VERSION,
+    validate_demo_receipt,
+)
 from scripts.run_report_quality_learning_demo import (  # noqa: E402
     DemoError,
-    EXCLUDED_EXTERNAL_ACTIONS,
     create_ready_report_quality_artifact,
     local_demo_environment,
     now_iso,
@@ -43,12 +50,10 @@ from scripts.run_report_quality_learning_demo import (  # noqa: E402
 )
 
 
-SCHEMA_VERSION = "decisiondoc.report_quality_pilot_handoff_demo.v1"
 DEFAULT_RECEIPT_PATH = (
     Path(tempfile.gettempdir())
     / "decisiondoc-report-quality-pilot-handoff-demo.json"
 )
-ARTIFACT_COUNT = 3
 
 
 def _sha256(content: bytes) -> str:
@@ -208,17 +213,11 @@ def run_demo() -> dict[str, Any]:
     review = local["review"]
     handoff = local["handoff"]
     verification = local["verification"]
-    return {
+    receipt = {
         "schema_version": SCHEMA_VERSION,
         "status": "passed",
         "generated_at": now_iso(),
-        "execution_mode": {
-            "provider": "mock",
-            "storage": "temporary_local",
-            "runtime_data_persisted": False,
-            "review_evidence": "simulated_demo_input",
-            "human_review_claimed": False,
-        },
+        "execution_mode": dict(EXPECTED_EXECUTION_MODE),
         "api_pilot_package": {
             "artifact_count": ARTIFACT_COUNT,
             "ready_artifact_count": exported["ready_artifact_count"],
@@ -244,20 +243,11 @@ def run_demo() -> dict[str, Any]:
             "training_authorized": verification["training_authorized"],
             "temporary_artifacts_retained": False,
         },
-        "completed_stages": [
-            "three_ready_artifacts_created",
-            "pilot_preview_confirmed",
-            "pilot_package_verified",
-            "source_package_imported",
-            "simulated_local_review_applied",
-            "ready_sync_completed",
-            "handoff_finalized",
-            "browser_summary_verified",
-        ],
-        "external_actions": {
-            action: False for action in EXCLUDED_EXTERNAL_ACTIONS
-        },
+        "completed_stages": list(COMPLETED_STAGES),
+        "external_actions": dict(EXPECTED_EXTERNAL_ACTIONS),
     }
+    validate_demo_receipt(receipt)
+    return receipt
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:

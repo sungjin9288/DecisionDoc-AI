@@ -225,9 +225,13 @@ python3 scripts/manage_report_quality_pilot_handoff.py verify \
 ```bash
 python3 scripts/run_report_quality_pilot_handoff_demo.py \
   --output /tmp/decisiondoc-report-quality-pilot-handoff-demo.json
+
+python3 scripts/check_report_quality_pilot_handoff_demo_receipt.py \
+  /tmp/decisiondoc-report-quality-pilot-handoff-demo.json \
+  --json
 ```
 
-이 demo는 현재 shell의 provider API key를 실행 중 제거하고 mock provider와 temporary local storage만 사용합니다. API pilot package, source-bound import, simulated local review, ready sync, handoff finalize, exact HTML 검증을 통과한 뒤 write-once JSON receipt만 남깁니다. Receipt의 `human_review_claimed=false`와 `review_evidence=simulated_demo_input`은 이 결과가 실제 사람 검수나 live provider 품질 증거가 아님을 명시합니다.
+이 demo는 현재 shell의 provider API key를 실행 중 제거하고 mock provider와 temporary local storage만 사용합니다. API pilot package, source-bound import, simulated local review, ready sync, handoff finalize, exact HTML 검증을 통과한 뒤 write-once JSON receipt만 남깁니다. Read-only checker는 receipt schema, UTC timestamp, 3개 artifact identity, SHA-256 형식, stage 순서, simulated review와 외부 action 경계를 다시 검사하고 파일을 쓰거나 외부 요청을 보내지 않습니다. Receipt의 `human_review_claimed=false`와 `review_evidence=simulated_demo_input`은 이 결과가 실제 사람 검수나 live provider 품질 증거가 아님을 명시합니다.
 
 ```bash
 pytest tests/                 # 전체
@@ -235,11 +239,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,757개**, **226개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,760개**, **227개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2757
-python3 scripts/count_readme_metrics.py --field test_files      # → 226
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2760
+python3 scripts/count_readme_metrics.py --field test_files      # → 227
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -318,4 +322,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,757 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 264 · 테스트 2,760 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
