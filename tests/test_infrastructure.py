@@ -2745,6 +2745,69 @@ def test_production_model_registry_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_usage_store_contract_uses_constructor_tenant_only():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "storage" / "usage_store.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    store = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "UsageStore"
+    )
+    constructor = next(
+        node
+        for node in store.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    keyword_names = [argument.arg for argument in constructor.args.kwonlyargs]
+    tenant_index = keyword_names.index("tenant_id")
+    assert constructor.args.kw_defaults[tenant_index] is None
+
+    expected_methods = {
+        "check_limit",
+        "get_current_month",
+        "get_daily_usage",
+        "get_month",
+        "get_total_month_cost",
+        "record",
+    }
+    methods = {
+        node.name: node
+        for node in store.body
+        if isinstance(node, ast.FunctionDef) and node.name in expected_methods
+    }
+    assert set(methods) == expected_methods
+    for method in methods.values():
+        argument_names = {
+            argument.arg
+            for argument in (*method.args.args, *method.args.kwonlyargs)
+        }
+        assert "tenant_id" not in argument_names
+
+
+def test_production_usage_store_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = ""
+            if isinstance(node.func, ast.Name):
+                call_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                call_name = node.func.attr
+            if call_name != "UsageStore":
+                continue
+            if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}")
+
+    assert missing_tenant == []
+
+
 def test_trajectory_store_contract_requires_explicit_tenant_binding():
     root = Path(__file__).resolve().parents[1]
     expected_methods = {

@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 import os
 import threading
-import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+from app.storage.base import atomic_write_text
+from app.tenant import require_tenant_id
 
 
 @dataclass
@@ -45,78 +47,30 @@ class UsageSummary:
     last_updated: str
 
 
-# Per-tenant locks for thread safety
-_tenant_locks: dict[str, threading.Lock] = {}
-_locks_meta: threading.Lock = threading.Lock()
+# Independent store instances that target the same tenant file share one lock.
+_path_locks: dict[Path, threading.Lock] = {}
+_path_locks_guard = threading.Lock()
 
 
-def _get_tenant_lock(tenant_id: str) -> threading.Lock:
-    with _locks_meta:
-        if tenant_id not in _tenant_locks:
-            _tenant_locks[tenant_id] = threading.Lock()
-        return _tenant_locks[tenant_id]
+def _lock_for_path(path: Path) -> threading.Lock:
+    with _path_locks_guard:
+        return _path_locks.setdefault(path.resolve(), threading.Lock())
 
 
 class UsageStore:
-    """Stateless usage store — all state is on disk. Thread-safe via per-tenant locks."""
+    """Usage metering store bound to one tenant."""
 
-    def __init__(self) -> None:
-        self._data_dir = Path(os.getenv("DATA_DIR", "./data"))
+    def __init__(self, data_dir: Path | None = None, *, tenant_id: str) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        self._data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+        self._tenant_dir = self._data_dir / "tenants" / self._tenant_id
+        self._jsonl_path = self._tenant_dir / "usage.jsonl"
+        self._summary_path = self._tenant_dir / "usage_summary.json"
+        self._lock = _lock_for_path(self._jsonl_path)
 
-    # ── Path helpers ──────────────────────────────────────────────────────────
-
-    def _tenant_dir(self, tenant_id: str) -> Path:
-        return self._data_dir / "tenants" / tenant_id
-
-    def _jsonl_path(self, tenant_id: str) -> Path:
-        return self._tenant_dir(tenant_id) / "usage.jsonl"
-
-    def _summary_path(self, tenant_id: str) -> Path:
-        return self._tenant_dir(tenant_id) / "usage_summary.json"
-
-    # ── Core I/O ──────────────────────────────────────────────────────────────
-
-    def _read_events(self, tenant_id: str) -> list[dict]:
-        path = self._jsonl_path(tenant_id)
-        if not path.exists():
-            return []
-        events: list[dict] = []
-        try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    events.append(json.loads(line))
-                except (json.JSONDecodeError, ValueError):
-                    continue  # skip corrupt lines
-        except OSError:
-            pass
-        return events
-
-    def _load_summary(self, tenant_id: str, year_month: str) -> UsageSummary:
-        path = self._summary_path(tenant_id)
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if year_month in data:
-                    entry = data[year_month]
-                    return UsageSummary(
-                        tenant_id=tenant_id,
-                        year_month=year_month,
-                        total_generations=entry.get("total_generations", 0),
-                        total_tokens=entry.get("total_tokens", 0),
-                        total_cost_usd=entry.get("total_cost_usd", 0.0),
-                        by_bundle=entry.get("by_bundle", {}),
-                        by_user=entry.get("by_user", {}),
-                        by_model=entry.get("by_model", {}),
-                        last_updated=entry.get("last_updated", ""),
-                    )
-            except (OSError, json.JSONDecodeError, KeyError):
-                pass
-        # Return empty summary
+    def _empty_summary(self, year_month: str) -> UsageSummary:
         return UsageSummary(
-            tenant_id=tenant_id,
+            tenant_id=self._tenant_id,
             year_month=year_month,
             total_generations=0,
             total_tokens=0,
@@ -127,15 +81,71 @@ class UsageStore:
             last_updated="",
         )
 
+    def _owns_event(self, event: Any) -> bool:
+        return isinstance(event, dict) and event.get("tenant_id") == self._tenant_id
+
+    # ── Core I/O ──────────────────────────────────────────────────────────────
+
+    def _read_events(self) -> list[dict]:
+        if not self._jsonl_path.exists():
+            return []
+        events: list[dict] = []
+        try:
+            for line in self._jsonl_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue  # skip corrupt lines
+                if self._owns_event(event):
+                    events.append(event)
+        except OSError:
+            pass
+        return events
+
+    def _load_summary(
+        self,
+        year_month: str,
+        *,
+        reject_foreign: bool = False,
+    ) -> UsageSummary:
+        if self._summary_path.exists():
+            try:
+                data = json.loads(self._summary_path.read_text(encoding="utf-8"))
+                if year_month in data:
+                    entry = data[year_month]
+                    if not isinstance(entry, dict) or entry.get("tenant_id") != self._tenant_id:
+                        if reject_foreign and isinstance(entry, dict):
+                            raise ValueError("Usage summary tenant ownership mismatch")
+                        return self._empty_summary(year_month)
+                    return UsageSummary(
+                        tenant_id=self._tenant_id,
+                        year_month=year_month,
+                        total_generations=entry.get("total_generations", 0),
+                        total_tokens=entry.get("total_tokens", 0),
+                        total_cost_usd=entry.get("total_cost_usd", 0.0),
+                        by_bundle=entry.get("by_bundle", {}),
+                        by_user=entry.get("by_user", {}),
+                        by_model=entry.get("by_model", {}),
+                        last_updated=entry.get("last_updated", ""),
+                    )
+            except (OSError, json.JSONDecodeError, KeyError, TypeError):
+                pass
+        return self._empty_summary(year_month)
+
     def _save_summary(self, summary: UsageSummary) -> None:
-        path = self._summary_path(summary.tenant_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if summary.tenant_id != self._tenant_id:
+            raise ValueError("Usage summary tenant ownership mismatch")
 
         # Load existing data (all months)
         all_data: dict = {}
-        if path.exists():
+        if self._summary_path.exists():
             try:
-                all_data = json.loads(path.read_text(encoding="utf-8"))
+                loaded = json.loads(self._summary_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    all_data = loaded
             except (OSError, json.JSONDecodeError):
                 all_data = {}
 
@@ -151,24 +161,14 @@ class UsageStore:
             "last_updated": summary.last_updated,
         }
 
-        # Atomic write: tmp + rename
-        tmp_path = path.with_name(f"{path.name}.tmp.{uuid.uuid4().hex}")
-        try:
-            tmp_path.write_text(
-                json.dumps(all_data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            os.replace(tmp_path, path)
-        finally:
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
+        atomic_write_text(
+            self._summary_path,
+            json.dumps(all_data, ensure_ascii=False, indent=2),
+        )
 
-    def _update_summary(self, event: UsageEvent) -> None:
+    def _updated_summary(self, event: UsageEvent) -> UsageSummary:
         year_month = event.timestamp[:7]  # "YYYY-MM"
-        summary = self._load_summary(event.tenant_id, year_month)
+        summary = self._load_summary(year_month, reject_foreign=True)
 
         if event.event_type == "doc.generate":
             summary.total_generations += 1
@@ -201,38 +201,41 @@ class UsageStore:
         model_bucket["tokens"] += event.tokens_total
         model_bucket["cost"] += event.cost_usd
 
-        self._save_summary(summary)
+        return summary
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def record(self, event: UsageEvent) -> None:
-        """Append event to JSONL and update monthly summary atomically."""
-        lock = _get_tenant_lock(event.tenant_id)
-        with lock:
-            path = self._jsonl_path(event.tenant_id)
-            path.parent.mkdir(parents=True, exist_ok=True)
+        """Persist an event and its monthly summary under one tenant lock."""
+        if event.tenant_id != self._tenant_id:
+            raise ValueError("Usage event tenant ownership mismatch")
+        with self._lock:
+            summary = self._updated_summary(event)
             line = json.dumps(asdict(event), ensure_ascii=False) + "\n"
-            with path.open("a", encoding="utf-8") as f:
-                f.write(line)
-            self._update_summary(event)
+            self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._jsonl_path.open("a", encoding="utf-8") as stream:
+                stream.write(line)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._save_summary(summary)
 
-    def get_current_month(self, tenant_id: str) -> UsageSummary | None:
+    def get_current_month(self) -> UsageSummary | None:
         year_month = datetime.now(timezone.utc).strftime("%Y-%m")
-        summary = self._load_summary(tenant_id, year_month)
+        summary = self._load_summary(year_month)
         if summary.last_updated:
             return summary
         return None
 
-    def get_month(self, tenant_id: str, year_month: str) -> UsageSummary | None:
-        summary = self._load_summary(tenant_id, year_month)
+    def get_month(self, year_month: str) -> UsageSummary | None:
+        summary = self._load_summary(year_month)
         if summary.last_updated:
             return summary
         return None
 
-    def get_daily_usage(self, tenant_id: str, days: int = 30) -> list[dict]:
+    def get_daily_usage(self, days: int = 30) -> list[dict]:
         """Return list of {date, generations, tokens, cost} for the last N days."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        events = self._read_events(tenant_id)
+        events = self._read_events()
 
         daily: dict[str, dict] = {}
         for evt in events:
@@ -254,18 +257,18 @@ class UsageStore:
 
         return sorted(daily.values(), key=lambda x: x["date"])
 
-    def get_total_month_cost(self, tenant_id: str) -> float:
-        summary = self.get_current_month(tenant_id)
+    def get_total_month_cost(self) -> float:
+        summary = self.get_current_month()
         return summary.total_cost_usd if summary else 0.0
 
-    def check_limit(self, tenant_id: str, plan: Any) -> dict:
+    def check_limit(self, plan: Any) -> dict:
         """Check whether usage is within plan limits.
 
         Returns:
             {within_limit, generations_used, generations_limit,
              tokens_used, tokens_limit, percent_used}
         """
-        summary = self.get_current_month(tenant_id)
+        summary = self.get_current_month()
         generations_used = summary.total_generations if summary else 0
         tokens_used = summary.total_tokens if summary else 0
 

@@ -22,11 +22,11 @@ async def get_billing_status(request: Request):
     from app.storage.usage_store import UsageStore
 
     billing = get_billing_store(tenant_id)
-    usage = UsageStore()
+    usage = UsageStore(tenant_id=tenant_id)
     account = billing.get_account()
     plan = billing.get_plan()
-    summary = usage.get_current_month(tenant_id)
-    limit_check = usage.check_limit(tenant_id, plan)
+    summary = usage.get_current_month()
+    limit_check = usage.check_limit(plan)
     return {
         "plan": {
             "plan_id": plan.plan_id,
@@ -53,10 +53,10 @@ async def get_usage_history(request: Request, days: int = 30):
     from app.storage.usage_store import UsageStore
 
     tenant_id = get_tenant_id(request)
-    store = UsageStore()
-    summary = store.get_current_month(tenant_id)
+    store = UsageStore(tenant_id=tenant_id)
+    summary = store.get_current_month()
     return {
-        "daily": store.get_daily_usage(tenant_id, days=days),
+        "daily": store.get_daily_usage(days=days),
         "summary": dataclasses.asdict(summary) if summary else None,
     }
 

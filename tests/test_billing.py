@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pytest
@@ -37,8 +38,7 @@ def _clear_billing_caches(tmp_path, monkeypatch):
         pass
     try:
         import app.storage.usage_store as us
-        if hasattr(us, "_tenant_locks"):
-            us._tenant_locks.clear()
+        us._path_locks.clear()
     except Exception:
         pass
     yield
@@ -116,10 +116,10 @@ def _make_event(tenant_id: str = "t1", tokens: int = 1000) -> UsageEvent:
 
 def test_usage_store_record_and_get_current_month(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_a")
     event = _make_event("tenant_a")
     store.record(event)
-    summary = store.get_current_month("tenant_a")
+    summary = store.get_current_month()
     assert summary is not None
     assert summary.total_generations == 1
     assert summary.total_tokens == event.tokens_total
@@ -127,26 +127,26 @@ def test_usage_store_record_and_get_current_month(tmp_path):
 
 def test_usage_store_multiple_events(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_b")
     for _ in range(5):
         store.record(_make_event("tenant_b"))
-    summary = store.get_current_month("tenant_b")
+    summary = store.get_current_month()
     assert summary.total_generations == 5
 
 
 def test_usage_store_by_bundle(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_c")
     store.record(_make_event("tenant_c"))
-    summary = store.get_current_month("tenant_c")
+    summary = store.get_current_month()
     assert "proposal_kr" in summary.by_bundle
 
 
 def test_usage_store_get_daily_usage(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_d")
     store.record(_make_event("tenant_d"))
-    daily = store.get_daily_usage("tenant_d", days=7)
+    daily = store.get_daily_usage(days=7)
     assert isinstance(daily, list)
     assert len(daily) >= 1
     assert "date" in daily[0]
@@ -155,18 +155,18 @@ def test_usage_store_get_daily_usage(tmp_path):
 
 def test_usage_store_get_total_month_cost(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_e")
     store.record(_make_event("tenant_e"))
-    cost = store.get_total_month_cost("tenant_e")
+    cost = store.get_total_month_cost()
     assert cost >= 0
 
 
 def test_check_limit_within_free_plan(tmp_path):
     from app.storage.usage_store import UsageStore
     from app.storage.billing_store import PREDEFINED_PLANS
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_f")
     plan = PREDEFINED_PLANS["free"]  # 20 generations
-    result = store.check_limit("tenant_f", plan)
+    result = store.check_limit(plan)
     assert result["within_limit"] is True
     assert result["generations_limit"] == 20
     assert result["generations_used"] == 0
@@ -175,11 +175,11 @@ def test_check_limit_within_free_plan(tmp_path):
 def test_check_limit_over_free_plan(tmp_path):
     from app.storage.usage_store import UsageStore
     from app.storage.billing_store import PREDEFINED_PLANS
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_g")
     plan = PREDEFINED_PLANS["free"]  # 20 limit
     for _ in range(21):
         store.record(_make_event("tenant_g"))
-    result = store.check_limit("tenant_g", plan)
+    result = store.check_limit(plan)
     assert result["within_limit"] is False
     assert result["generations_used"] == 21
     assert result["percent_used"] >= 100
@@ -188,21 +188,110 @@ def test_check_limit_over_free_plan(tmp_path):
 def test_check_limit_enterprise_unlimited(tmp_path):
     from app.storage.usage_store import UsageStore
     from app.storage.billing_store import PREDEFINED_PLANS
-    store = UsageStore()
+    store = UsageStore(tenant_id="tenant_h")
     plan = PREDEFINED_PLANS["enterprise"]  # unlimited
     for _ in range(1000):
         store.record(_make_event("tenant_h"))
-    result = store.check_limit("tenant_h", plan)
+    result = store.check_limit(plan)
     assert result["within_limit"] is True
     assert result["percent_used"] == 0
 
 
 def test_usage_store_no_events_empty_summary(tmp_path):
     from app.storage.usage_store import UsageStore
-    store = UsageStore()
-    summary = store.get_current_month("no_events_tenant")
+    store = UsageStore(tenant_id="no_events_tenant")
+    summary = store.get_current_month()
     # Either None or empty summary with 0 generations
     assert summary is None or summary.total_generations == 0
+
+
+def test_usage_store_requires_safe_tenant_before_creating_paths(tmp_path):
+    from app.storage.usage_store import UsageStore
+
+    with pytest.raises(TypeError):
+        UsageStore(tmp_path)
+
+    for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+        with pytest.raises(ValueError, match="Invalid tenant_id"):
+            UsageStore(tmp_path, tenant_id=tenant_id)
+
+    assert not (tmp_path / "tenants").exists()
+
+
+def test_usage_store_rejects_foreign_event_without_writing(tmp_path):
+    from app.storage.usage_store import UsageStore
+
+    store = UsageStore(tmp_path, tenant_id="tenant-a")
+
+    with pytest.raises(ValueError, match="event tenant ownership mismatch"):
+        store.record(_make_event("tenant-b"))
+
+    assert not (tmp_path / "tenants").exists()
+
+
+def test_usage_store_excludes_foreign_event_drift_and_preserves_source(tmp_path):
+    from app.storage.usage_store import UsageStore
+
+    store = UsageStore(tmp_path, tenant_id="tenant-a")
+    store.record(_make_event("tenant-a"))
+    path = tmp_path / "tenants" / "tenant-a" / "usage.jsonl"
+    foreign = _make_event("tenant-b")
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(foreign.__dict__) + "\n")
+    source_before = path.read_text(encoding="utf-8")
+
+    daily = store.get_daily_usage(days=7)
+
+    assert sum(day["generations"] for day in daily) == 1
+    assert path.read_text(encoding="utf-8") == source_before
+
+
+def test_usage_store_preserves_foreign_summary_and_stops_update(tmp_path):
+    from app.storage.usage_store import UsageStore
+
+    store = UsageStore(tmp_path, tenant_id="tenant-a")
+    year_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    summary_path = tmp_path / "tenants" / "tenant-a" / "usage_summary.json"
+    summary_path.parent.mkdir(parents=True)
+    summary_path.write_text(
+        json.dumps(
+            {
+                year_month: {
+                    "tenant_id": "tenant-b",
+                    "year_month": year_month,
+                    "total_generations": 99,
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_before = summary_path.read_bytes()
+
+    assert store.get_current_month() is None
+    with pytest.raises(ValueError, match="summary tenant ownership mismatch"):
+        store.record(_make_event("tenant-a"))
+
+    assert summary_path.read_bytes() == source_before
+    assert not (summary_path.parent / "usage.jsonl").exists()
+
+
+def test_usage_store_concurrent_instances_preserve_every_event(tmp_path):
+    from app.storage.usage_store import UsageStore
+
+    stores = [UsageStore(tmp_path, tenant_id="tenant-a") for _ in range(20)]
+    events = [_make_event("tenant-a") for _ in stores]
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(executor.map(lambda pair: pair[0].record(pair[1]), zip(stores, events)))
+
+    path = tmp_path / "tenants" / "tenant-a" / "usage.jsonl"
+    persisted = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    summary = stores[0].get_current_month()
+
+    assert {event["event_id"] for event in persisted} == {event.event_id for event in events}
+    assert summary is not None
+    assert summary.total_generations == 20
 
 
 # ── BillingStore tests ────────────────────────────────────────────────────────
@@ -347,15 +436,15 @@ def test_billing_middleware_free_plan_over_limit(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
 
     # Record 21 events to exceed free plan (20 limit)
-    store = UsageStore()
+    store = UsageStore(tenant_id=tenant_id)
     for _ in range(21):
         store.record(_make_event(tenant_id))
 
     # Now check that check_limit reports over limit
     billing = get_billing_store(tenant_id)
     plan = billing.get_plan()
-    usage = UsageStore()
-    result = usage.check_limit(tenant_id, plan)
+    usage = UsageStore(tenant_id=tenant_id)
+    result = usage.check_limit(plan)
     assert result["within_limit"] is False
 
 
@@ -371,11 +460,11 @@ def test_billing_middleware_enterprise_always_passes(tmp_path, monkeypatch):
     billing.update_plan("enterprise")
     plan = billing.get_plan()
 
-    store = UsageStore()
+    store = UsageStore(tenant_id=tenant_id)
     for _ in range(500):
         store.record(_make_event(tenant_id, tokens=5000))
 
-    result = store.check_limit(tenant_id, plan)
+    result = store.check_limit(plan)
     assert result["within_limit"] is True
 
 

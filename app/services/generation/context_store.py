@@ -51,7 +51,7 @@ def _record_usage_sync(
         model=model,
         request_id=request_id,
     )
-    UsageStore().record(event)
+    UsageStore(tenant_id=tenant_id).record(event)
 
 
 # ── Fine-tune context capture ─────────────────────────────────────────────────

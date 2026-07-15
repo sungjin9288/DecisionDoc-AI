@@ -244,7 +244,7 @@ class BillingStore(BaseJsonStore):
         plan = self.get_plan()
         if plan.monthly_tokens == -1 or plan.price_per_1k_tokens == 0:
             return 0.0
-        summary = UsageStore().get_current_month(self._tenant_id)
+        summary = UsageStore(tenant_id=self._tenant_id).get_current_month()
         if summary is None:
             return 0.0
         overage = summary.total_tokens - plan.monthly_tokens
