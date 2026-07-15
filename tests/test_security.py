@@ -26,6 +26,7 @@ Coverage (25+ tests):
   H16: HistoryStore reads and mutates only entries owned by its tenant
   H17: ShareStore keeps public and authenticated lifecycle tenant-bound
   H18: AuditStore keeps append and evidence queries tenant-bound
+  H19: MeetingRecordingStore validates metadata and audio scope
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -903,6 +904,77 @@ def test_audit_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     persisted.pop("tenant_id")
     path.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
     assert store.query() == []
+
+
+def test_meeting_recording_store_validates_metadata_and_audio_scope(tmp_path):
+    """Drifted recording metadata cannot expose audio or accept state changes."""
+    from app.storage.meeting_recording_store import MeetingRecordingStore
+
+    store = MeetingRecordingStore(base_dir=str(tmp_path))
+    foreign = store.create(
+        tenant_id="tenant_b",
+        project_id="project-b",
+        filename="foreign.wav",
+        content_type="audio/wav",
+        raw=b"foreign-audio",
+    )
+    recording = store.create(
+        tenant_id="tenant_a",
+        project_id="project-a",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"tenant-a-audio",
+    )
+
+    metadata_path = (
+        tmp_path
+        / "tenants"
+        / "tenant_a"
+        / "meeting_recordings"
+        / "project-a"
+        / recording.recording_id
+        / "metadata.json"
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["tenant_id"] = "tenant_b"
+    metadata["project_id"] = "project-b"
+    metadata["audio_relative_path"] = foreign.audio_relative_path
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    assert store.get(
+        tenant_id="tenant_a",
+        project_id="project-a",
+        recording_id=recording.recording_id,
+    ) is None
+    assert store.list_by_project(tenant_id="tenant_a", project_id="project-a") == []
+    with pytest.raises(TypeError):
+        store.read_audio_bytes(recording)
+    with pytest.raises(KeyError, match="녹음 파일을 찾을 수 없습니다"):
+        store.read_audio_bytes(
+            tenant_id="tenant_a",
+            project_id="project-a",
+            recording_id=recording.recording_id,
+        )
+    with pytest.raises(KeyError, match="녹음 파일을 찾을 수 없습니다"):
+        store.mark_processing(
+            tenant_id="tenant_a",
+            project_id="project-a",
+            recording_id=recording.recording_id,
+        )
+    with pytest.raises(KeyError, match="녹음 파일을 찾을 수 없습니다"):
+        store.approve(
+            tenant_id="tenant_a",
+            project_id="project-a",
+            recording_id=recording.recording_id,
+            approved_by="reviewer",
+        )
+
+    persisted = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert persisted["tenant_id"] == "tenant_b"
+    assert persisted["project_id"] == "project-b"
+    assert persisted["audio_relative_path"] == foreign.audio_relative_path
+    assert persisted["transcription_status"] == "uploaded"
+    assert persisted["approval_status"] == "pending"
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

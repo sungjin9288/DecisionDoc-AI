@@ -129,7 +129,11 @@ class MeetingRecordingService:
             project_id=project_id,
             recording_id=recording_id,
         )
-        raw = self._recording_store.read_audio_bytes(recording)
+        raw = self._recording_store.read_audio_bytes(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+        )
         model = get_meeting_recording_transcription_model()
         self._recording_store.mark_processing(
             tenant_id=tenant_id,

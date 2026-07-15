@@ -149,7 +149,11 @@ def test_meeting_recording_store_persists_metadata_and_audio_to_s3_state_backend
     )
     assert reloaded is not None
     assert reloaded.filename == "meeting.wav"
-    assert store.read_audio_bytes(reloaded) == b"RIFF....fakewav"
+    assert store.read_audio_bytes(
+        tenant_id="alpha",
+        project_id="proj-audio-1",
+        recording_id=recording.recording_id,
+    ) == b"RIFF....fakewav"
 
 
 def test_procurement_store_persists_record_and_snapshot_to_s3_state_backend():

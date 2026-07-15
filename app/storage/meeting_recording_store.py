@@ -86,6 +86,34 @@ class MeetingRecordingStore:
             approved_by=payload.get("approved_by"),
         )
 
+    def _load_recording(
+        self,
+        raw: str,
+        *,
+        tenant_id: str,
+        project_id: str,
+        recording_id: str,
+    ) -> MeetingRecording | None:
+        try:
+            recording = self._from_dict(json.loads(raw))
+        except (json.JSONDecodeError, ValueError, KeyError):
+            return None
+
+        expected_audio_path = self._audio_relative_path(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+            filename=recording.filename,
+        )
+        if (
+            recording.tenant_id != tenant_id
+            or recording.project_id != project_id
+            or recording.recording_id != recording_id
+            or recording.audio_relative_path != expected_audio_path
+        ):
+            return None
+        return recording
+
     def _save(self, recording: MeetingRecording) -> None:
         self._backend.write_text(
             self._metadata_relative_path(
@@ -137,10 +165,12 @@ class MeetingRecordingStore:
         raw = self._backend.read_text(self._metadata_relative_path(tenant_id, project_id, recording_id))
         if raw is None:
             return None
-        try:
-            return self._from_dict(json.loads(raw))
-        except (json.JSONDecodeError, ValueError, KeyError):
-            return None
+        return self._load_recording(
+            raw,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+        )
 
     def list_by_project(self, *, tenant_id: str, project_id: str) -> list[MeetingRecording]:
         prefix = self._project_prefix(tenant_id, project_id)
@@ -148,16 +178,37 @@ class MeetingRecordingStore:
         for path in sorted(self._backend.list_prefix(prefix)):
             if not path.endswith("/metadata.json"):
                 continue
+            metadata_path = Path(path)
+            if metadata_path.parent.parent != Path(prefix):
+                continue
+            recording_id = metadata_path.parent.name
             raw = self._backend.read_text(path)
             if raw is None:
                 continue
-            try:
-                records.append(self._from_dict(json.loads(raw)))
-            except (json.JSONDecodeError, ValueError, KeyError):
-                continue
+            recording = self._load_recording(
+                raw,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                recording_id=recording_id,
+            )
+            if recording is not None:
+                records.append(recording)
         return sorted(records, key=lambda item: item.uploaded_at, reverse=True)
 
-    def read_audio_bytes(self, recording: MeetingRecording) -> bytes:
+    def read_audio_bytes(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        recording_id: str,
+    ) -> bytes:
+        recording = self.get(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            recording_id=recording_id,
+        )
+        if recording is None:
+            raise KeyError(f"녹음 파일을 찾을 수 없습니다: {recording_id}")
         raw = self._backend.read_bytes(recording.audio_relative_path)
         if raw is None:
             raise KeyError(f"녹음 파일을 찾을 수 없습니다: {recording.recording_id}")
