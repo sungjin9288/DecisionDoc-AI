@@ -175,7 +175,7 @@ def _build_procurement_quality_summary(
         data_dir=request.app.state.data_dir,
         backend=request.app.state.state_backend,
     )
-    audit_entries = audit_store.query_all(tenant_id)
+    audit_entries = audit_store.query_all()
     activity_counts: Counter[str] = Counter()
     recent_activity: list[dict[str, object]] = []
     project_activity_actions: dict[str, list[str]] = {}
@@ -288,7 +288,6 @@ def _build_procurement_quality_summary(
             latest_override_reason = _extract_latest_override_reason(decision.notes)
             followup_state = _hydrate_procurement_followup_state(
                 audit_store,
-                tenant_id,
                 project_id=decision.project_id,
                 current_state=project_followup_state.get(decision.project_id, {}),
                 decision_project_ids=decision_project_ids,
@@ -468,7 +467,6 @@ def _build_procurement_quality_summary(
             latest_focus_entry, fallback_project_id, fallback_approval_id = (
                 _find_latest_procurement_project_entry(
                     audit_store,
-                    tenant_id,
                     project_id=focus_project_id,
                     actions=_PROCUREMENT_ACTIVITY_ACTIONS,
                     decision_project_ids=decision_project_ids,
@@ -554,7 +552,6 @@ def _build_procurement_quality_summary(
             )
             focused_followup_state = _hydrate_procurement_followup_state(
                 audit_store,
-                tenant_id,
                 project_id=focus_project_id,
                 current_state={
                     "latest_blocked_at": (

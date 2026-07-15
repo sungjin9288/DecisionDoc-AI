@@ -25,6 +25,7 @@ Coverage (25+ tests):
   H15: MessageStore reads and mutates only records owned by its tenant
   H16: HistoryStore reads and mutates only entries owned by its tenant
   H17: ShareStore keeps public and authenticated lifecycle tenant-bound
+  H18: AuditStore keeps append and evidence queries tenant-bound
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -847,6 +848,61 @@ def test_share_store_is_bound_to_one_tenant(client, tmp_path):
     legacy = store.get(link.share_id)
     assert legacy is not None
     assert legacy["title"] == "현재 tenant 공유"
+
+
+def test_audit_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Foreign audit records cannot enter or appear in tenant evidence."""
+    from datetime import datetime, timezone
+
+    from app.storage.audit_store import AuditLog, AuditStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = AuditStore("tenant_a")
+
+    def make_log(log_id: str, tenant_id: str) -> AuditLog:
+        return AuditLog(
+            log_id=log_id,
+            tenant_id=tenant_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            user_id="user-1",
+            username="Alice",
+            user_role="member",
+            ip_address="127.0.0.1",
+            user_agent="security-test",
+            action="user.login_fail",
+            resource_type="user",
+            resource_id="user-1",
+            resource_name="Alice",
+            result="failure",
+            detail={},
+            session_id="session-a",
+        )
+
+    with pytest.raises(ValueError, match="tenant does not match"):
+        store.append(make_log("audit-b", "tenant_b"))
+
+    store.append(make_log("audit-a", "tenant_a"))
+    path = tmp_path / "tenants" / "tenant_a" / "audit_logs.jsonl"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    with pytest.raises(TypeError):
+        store.query("tenant_b")
+    assert store.query() == []
+    assert store.query_all() == []
+    assert store.find_latest_entry(actions={"user.login_fail"}) is None
+    assert store.get_session_activity("session-a") == []
+    assert store.get_user_activity("user-1") == []
+    assert store.get_failed_logins() == []
+    assert store.get_stats()["total_actions"] == 0
+    assert "audit-a" not in store.export_csv("2000-01-01", "2999-12-31")
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert persisted["tenant_id"] == "tenant_b"
+    persisted.pop("tenant_id")
+    path.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
+    assert store.query() == []
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

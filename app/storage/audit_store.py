@@ -192,14 +192,19 @@ class AuditStore:
 
     def append(self, log: AuditLog) -> None:
         """Thread-safe append of a single audit log entry."""
+        if log.tenant_id != self._tenant_id:
+            raise ValueError("Audit log tenant does not match store tenant")
         line = json.dumps(asdict(log), ensure_ascii=False) + "\n"
         with self._lock:
             with self._path.open("a", encoding="utf-8") as f:
                 f.write(line)
 
+    def _owns(self, entry: dict[str, Any]) -> bool:
+        return entry.get("tenant_id") == self._tenant_id
+
     def query(
         self,
-        tenant_id: str,
+        *,
         filters: dict[str, Any] | None = None,
     ) -> list[dict]:
         """Return filtered log entries (max 1000), newest first.
@@ -207,18 +212,18 @@ class AuditStore:
         Filter keys: user_id, action, resource_type, result,
                      date_from (ISO), date_to (ISO), ip_address
         """
-        return self.query_all(tenant_id, filters=filters)[:1000]
+        return self.query_all(filters=filters)[:1000]
 
     def query_all(
         self,
-        tenant_id: str,
+        *,
         filters: dict[str, Any] | None = None,
     ) -> list[dict]:
         """Return all filtered log entries, newest first, without the query() cap."""
         filters = filters or {}
         entries = self._read_all()
 
-        result: list[dict] = [e for e in entries if e.get("tenant_id") == tenant_id]
+        result = [entry for entry in entries if self._owns(entry)]
         if filters.get("user_id"):
             result = [e for e in result if e.get("user_id") == filters["user_id"]]
         if filters.get("action"):
@@ -240,7 +245,6 @@ class AuditStore:
 
     def find_latest_entry(
         self,
-        tenant_id: str,
         *,
         actions: tuple[str, ...] | list[str] | set[str] | None = None,
         resource_ids: tuple[str, ...] | list[str] | set[str] | None = None,
@@ -257,7 +261,7 @@ class AuditStore:
         }
 
         for entry in reversed(self._read_all()):
-            if entry.get("tenant_id") != tenant_id:
+            if not self._owns(entry):
                 continue
             if action_set and str(entry.get("action", "")) not in action_set:
                 continue
@@ -277,31 +281,33 @@ class AuditStore:
     def get_session_activity(self, session_id: str) -> list[dict]:
         """Return all log entries for a given session_id, newest first."""
         entries = self._read_all()
-        result = [e for e in entries if e.get("session_id") == session_id]
+        result = [
+            entry
+            for entry in entries
+            if self._owns(entry) and entry.get("session_id") == session_id
+        ]
         result.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
         return result
 
     def get_user_activity(
         self,
-        tenant_id: str,
         user_id: str,
+        *,
         days: int = 30,
     ) -> list[dict]:
         """Return log entries for a user within the last *days* days."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        return self.query(tenant_id, filters={"user_id": user_id, "date_from": cutoff})
+        return self.query(filters={"user_id": user_id, "date_from": cutoff})
 
-    def get_failed_logins(self, tenant_id: str, hours: int = 24) -> list[dict]:
+    def get_failed_logins(self, *, hours: int = 24) -> list[dict]:
         """Return failed login entries within the last *hours* hours."""
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         return self.query(
-            tenant_id,
             filters={"action": "user.login_fail", "date_from": cutoff},
         )
 
     def export_csv(
         self,
-        tenant_id: str,
         date_from: str,
         date_to: str,
         *,
@@ -312,7 +318,6 @@ class AuditStore:
     ) -> str:
         """Return every matching log entry as an evidence-preserving CSV string."""
         entries = self.query_all(
-            tenant_id,
             filters={
                 "user_id": user_id,
                 "action": action,
@@ -351,10 +356,10 @@ class AuditStore:
             writer.writerow({key: _safe_csv_cell(value) for key, value in row.items()})
         return output.getvalue()
 
-    def get_stats(self, tenant_id: str, days: int = 30) -> dict:
+    def get_stats(self, *, days: int = 30) -> dict:
         """Return summary statistics for the last *days* days."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        entries = self.query(tenant_id, filters={"date_from": cutoff})
+        entries = self.query(filters={"date_from": cutoff})
 
         by_action: dict[str, int] = {}
         by_user: dict[str, int] = {}

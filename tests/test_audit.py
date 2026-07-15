@@ -94,7 +94,7 @@ def test_audit_store_append(tmp_path):
     store = AuditStore("tenant1")
     log = _make_audit_log(tenant_id="tenant1")
     store.append(log)
-    entries = store.query("tenant1")
+    entries = store.query()
     assert len(entries) == 1
     assert entries[0]["action"] == "doc.generate"
 
@@ -131,7 +131,7 @@ def test_audit_store_query_filter_by_action(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", action="user.login"))
     store.append(_make_audit_log(tenant_id="t1", action="doc.generate"))
     store.append(_make_audit_log(tenant_id="t1", action="user.login"))
-    results = store.query("t1", filters={"action": "user.login"})
+    results = store.query(filters={"action": "user.login"})
     assert len(results) == 2
     assert all(r["action"] == "user.login" for r in results)
 
@@ -142,7 +142,7 @@ def test_audit_store_query_filter_by_user(tmp_path):
     store = AuditStore("t1")
     store.append(_make_audit_log(tenant_id="t1", user_id="u1"))
     store.append(_make_audit_log(tenant_id="t1", user_id="u2"))
-    results = store.query("t1", filters={"user_id": "u1"})
+    results = store.query(filters={"user_id": "u1"})
     assert len(results) == 1
     assert results[0]["user_id"] == "u1"
 
@@ -154,7 +154,7 @@ def test_audit_store_query_filter_by_result(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", result="success"))
     store.append(_make_audit_log(tenant_id="t1", result="blocked"))
     store.append(_make_audit_log(tenant_id="t1", result="blocked"))
-    results = store.query("t1", filters={"result": "blocked"})
+    results = store.query(filters={"result": "blocked"})
     assert len(results) == 2
 
 
@@ -179,7 +179,7 @@ def test_audit_store_query_filter_by_date(tmp_path):
     _log_at(new_ts)
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
-    results = store.query("t1", filters={"date_from": cutoff})
+    results = store.query(filters={"date_from": cutoff})
     assert len(results) == 1
     assert results[0]["timestamp"] >= cutoff
 
@@ -192,7 +192,7 @@ def test_audit_store_query_date_only_end_includes_full_day(tmp_path):
     store.append(_make_audit_log(tenant_id="t1"))
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    results = store.query("t1", filters={"date_from": today, "date_to": today})
+    results = store.query(filters={"date_from": today, "date_to": today})
 
     assert len(results) == 1
 
@@ -203,7 +203,7 @@ def test_audit_store_query_filter_by_ip(tmp_path):
     store = AuditStore("t1")
     store.append(_make_audit_log(tenant_id="t1", ip="10.0.0.1"))
     store.append(_make_audit_log(tenant_id="t1", ip="10.0.0.2"))
-    results = store.query("t1", filters={"ip_address": "10.0.0.1"})
+    results = store.query(filters={"ip_address": "10.0.0.1"})
     assert len(results) == 1
     assert results[0]["ip_address"] == "10.0.0.1"
 
@@ -215,7 +215,7 @@ def test_audit_store_get_failed_logins(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", action="user.login_fail"))
     store.append(_make_audit_log(tenant_id="t1", action="user.login"))
     store.append(_make_audit_log(tenant_id="t1", action="user.login_fail"))
-    results = store.get_failed_logins("t1", hours=24)
+    results = store.get_failed_logins(hours=24)
     assert len(results) == 2
     assert all(r["action"] == "user.login_fail" for r in results)
 
@@ -227,7 +227,7 @@ def test_audit_store_get_user_activity(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", user_id="u1"))
     store.append(_make_audit_log(tenant_id="t1", user_id="u2"))
     store.append(_make_audit_log(tenant_id="t1", user_id="u1"))
-    results = store.get_user_activity("t1", "u1", days=30)
+    results = store.get_user_activity("u1", days=30)
     assert len(results) == 2
 
 
@@ -249,7 +249,7 @@ def test_audit_store_get_stats(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", action="user.login", result="success"))
     store.append(_make_audit_log(tenant_id="t1", action="doc.generate", result="success"))
     store.append(_make_audit_log(tenant_id="t1", action="access.blocked", result="blocked"))
-    stats = store.get_stats("t1", days=30)
+    stats = store.get_stats(days=30)
     assert stats["total_actions"] == 3
     assert stats["blocked_count"] == 1
     assert "user.login" in stats["by_action_type"]
@@ -262,7 +262,7 @@ def test_audit_store_export_csv(tmp_path):
     store.append(_make_audit_log(tenant_id="t1", action="user.login", username="alice"))
     date_from = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     date_to = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-    csv_str = store.export_csv("t1", date_from, date_to)
+    csv_str = store.export_csv(date_from, date_to)
     assert "log_id" in csv_str  # header present
     assert "user.login" in csv_str
     assert "alice" in csv_str
@@ -293,7 +293,7 @@ def test_audit_store_export_csv_preserves_full_pilot_evidence(tmp_path):
         ))
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    rows = list(csv.DictReader(io.StringIO(store.export_csv("t1", today, today))))
+    rows = list(csv.DictReader(io.StringIO(store.export_csv(today, today))))
 
     assert len(rows) == 1001
     pilot = rows[0]
@@ -325,7 +325,6 @@ def test_audit_store_export_csv_applies_action_and_result_filters(tmp_path):
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rows = list(csv.DictReader(io.StringIO(store.export_csv(
-        "t1",
         today,
         today,
         action="report_quality.pilot_export",
@@ -400,12 +399,11 @@ def test_audit_store_find_latest_entry_bypasses_query_cap(tmp_path):
             )
         )
 
-    capped_results = store.query("t1")
+    capped_results = store.query()
     assert len(capped_results) == 1000
     assert all(entry["resource_id"] != "project-a" for entry in capped_results)
 
     latest_entry = store.find_latest_entry(
-        "t1",
         actions={"procurement.import", "procurement.evaluate"},
         resource_ids={"project-a"},
     )
@@ -440,8 +438,8 @@ def test_audit_store_query_all_is_not_capped(tmp_path):
             )
         )
 
-    assert len(store.query("t1")) == 1000
-    assert len(store.query_all("t1")) == 1002
+    assert len(store.query()) == 1000
+    assert len(store.query_all()) == 1002
 
 
 # ── Middleware helper unit tests ───────────────────────────────────────────────
@@ -574,7 +572,6 @@ def test_procurement_review_inbox_view_is_audited_with_queue_counts(tmp_path, mo
     assert response.status_code == 200
     from app.storage.audit_store import AuditStore
     entries = AuditStore("system").query(
-        "system",
         filters={"action": "procurement.review_inbox_view"},
     )
     assert len(entries) == 1
@@ -729,7 +726,7 @@ def test_audit_login_success_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    results = store.query("system", filters={"action": "user.login"})
+    results = store.query(filters={"action": "user.login"})
     assert len(results) >= 1
     assert results[0]["result"] == "success"
 
@@ -743,7 +740,7 @@ def test_audit_login_fail_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    results = store.query("system", filters={"action": "user.login_fail"})
+    results = store.query(filters={"action": "user.login_fail"})
     assert len(results) >= 1
     assert results[0]["result"] == "blocked"
 
@@ -764,7 +761,7 @@ def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    results = store.query("system", filters={"action": "access.blocked"})
+    results = store.query(filters={"action": "access.blocked"})
     assert len(results) >= 1
 
 
@@ -777,7 +774,7 @@ def test_audit_admin_path_logged(tmp_path, monkeypatch):
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
     # At least one entry for /admin/ path
-    all_entries = store.query("system")
+    all_entries = store.query()
     admin_entries = [e for e in all_entries if "/admin/" in e.get("detail", {}).get("path", "")]
     assert len(admin_entries) >= 1
 
@@ -825,7 +822,7 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    create_entries = store.query("system", filters={"action": "share.create"})
+    create_entries = store.query(filters={"action": "share.create"})
     assert len(create_entries) >= 1
     latest_create = create_entries[0]
     assert latest_create["resource_id"] == share_id
@@ -835,12 +832,12 @@ def test_audit_share_create_and_revoke_logged(tmp_path, monkeypatch):
     assert latest_create["detail"]["share_source_binding_status"] == "current"
     assert latest_create["detail"]["share_post_share_source_changed"] is False
 
-    latest_view = store.query("system", filters={"action": "share.view"})[0]
+    latest_view = store.query(filters={"action": "share.view"})[0]
     assert latest_view["resource_id"] == share_id
     assert latest_view["detail"]["share_source_binding_status"] == "current"
     assert latest_view["detail"]["share_post_share_source_changed"] is False
 
-    latest_revoke = store.query("system", filters={"action": "share.revoke"})[0]
+    latest_revoke = store.query(filters={"action": "share.revoke"})[0]
     assert latest_revoke["resource_id"] == share_id
     assert latest_revoke["detail"]["project_id"] == project["project_id"]
     assert latest_revoke["detail"]["bundle_type"] == "bid_decision_kr"
@@ -885,7 +882,7 @@ def test_audit_procurement_import_logged(tmp_path, monkeypatch):
 
     from app.storage.audit_store import AuditStore
     store = AuditStore("system")
-    entries = store.query("system", filters={"action": "procurement.import"})
+    entries = store.query(filters={"action": "procurement.import"})
     assert len(entries) >= 1
     assert entries[0]["result"] == "success"
 
@@ -945,7 +942,7 @@ def test_audit_procurement_downstream_block_logged_with_project_link(tmp_path, m
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    entries = store.query("system", filters={"action": "procurement.downstream_blocked"})
+    entries = store.query(filters={"action": "procurement.downstream_blocked"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "failure"
@@ -1026,11 +1023,11 @@ def test_audit_logs_procurement_downstream_resolved_after_override_reason(tmp_pa
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    generate_entries = store.query(filters={"action": "doc.generate"})
     assert len(generate_entries) >= 1
     assert generate_entries[0]["detail"]["project_id"] == project.project_id
     assert generate_entries[0]["detail"]["procurement_operation"] == "override_reason_present"
-    entries = store.query("system", filters={"action": "procurement.downstream_resolved"})
+    entries = store.query(filters={"action": "procurement.downstream_resolved"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "success"
@@ -1098,7 +1095,7 @@ def test_audit_logs_procurement_remediation_link_copy(tmp_path, monkeypatch):
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    entries = store.query("system", filters={"action": "procurement.remediation_link_copied"})
+    entries = store.query(filters={"action": "procurement.remediation_link_copied"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "success"
@@ -1166,7 +1163,7 @@ def test_audit_logs_procurement_remediation_link_open(tmp_path, monkeypatch):
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    entries = store.query("system", filters={"action": "procurement.remediation_link_opened"})
+    entries = store.query(filters={"action": "procurement.remediation_link_opened"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "success"
@@ -1222,7 +1219,7 @@ def test_audit_logs_decision_council_run(tmp_path, monkeypatch):
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    entries = store.query("system", filters={"action": "decision_council.run"})
+    entries = store.query(filters={"action": "decision_council.run"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "success"
@@ -1289,10 +1286,10 @@ def test_audit_logs_decision_council_handoff_used_on_generate(tmp_path, monkeypa
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    generate_entries = store.query(filters={"action": "doc.generate"})
     assert len(generate_entries) >= 1
     assert generate_entries[0]["detail"]["decision_council_handoff_used"] is True
-    entries = store.query("system", filters={"action": "decision_council.handoff_used"})
+    entries = store.query(filters={"action": "decision_council.handoff_used"})
     assert len(entries) >= 1
     latest = entries[0]
     assert latest["result"] == "success"
@@ -1379,7 +1376,7 @@ def test_audit_logs_stale_decision_council_skip_reason_on_generate(tmp_path, mon
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    generate_entries = store.query(filters={"action": "doc.generate"})
     assert len(generate_entries) >= 1
     matching = [
         entry for entry in generate_entries
@@ -1445,7 +1442,7 @@ def test_audit_logs_decision_council_handoff_used_on_proposal_generate(tmp_path,
     from app.storage.audit_store import AuditStore
 
     store = AuditStore("system")
-    generate_entries = store.query("system", filters={"action": "doc.generate"})
+    generate_entries = store.query(filters={"action": "doc.generate"})
     matching_generate = [
         entry for entry in generate_entries
         if entry["detail"].get("project_id") == project.project_id
@@ -1456,7 +1453,7 @@ def test_audit_logs_decision_council_handoff_used_on_proposal_generate(tmp_path,
     assert matching_generate[0]["detail"]["decision_council_target_bundle"] == "bid_decision_kr"
     assert matching_generate[0]["detail"]["decision_council_applied_bundle"] == "proposal_kr"
 
-    entries = store.query("system", filters={"action": "decision_council.handoff_used"})
+    entries = store.query(filters={"action": "decision_council.handoff_used"})
     matching = [
         entry for entry in entries
         if entry["detail"].get("project_id") == project.project_id

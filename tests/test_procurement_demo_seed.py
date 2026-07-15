@@ -114,7 +114,6 @@ def test_seed_procurement_stale_share_demo_creates_local_manual_verification_sta
 
     audit_store = AuditStore("system")
     latest_share_audit = audit_store.find_latest_entry(
-        "system",
         actions=("share.create",),
         resource_ids=(share["share_id"],),
     )

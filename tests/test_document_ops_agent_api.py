@@ -114,7 +114,6 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     from app.storage.audit_store import AuditStore
 
     view_audits = AuditStore("system").query(
-        "system",
         filters={"action": "document_ops.trajectory_view"},
     )
     assert len(view_audits) == 2
@@ -367,7 +366,6 @@ def test_document_ops_review_requires_traceable_reviewer_identity(tmp_path, monk
     from app.storage.audit_store import AuditStore
 
     review_audits = AuditStore("system").query(
-        "system",
         filters={"action": "document_ops.trajectory_review"},
     )
     assert len(review_audits) == 1
@@ -451,7 +449,6 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     from app.storage.audit_store import AuditStore
 
     review_audits = AuditStore("system").query(
-        "system",
         filters={"action": "document_ops.trajectory_review"},
     )
     assert len(review_audits) == 3

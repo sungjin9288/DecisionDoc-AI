@@ -859,7 +859,6 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     from app.storage.audit_store import AuditStore
 
     preview_audits = AuditStore("system").query(
-        "system",
         filters={"action": "report_quality.pilot_preview", "result": "success"},
     )
     assert preview_audits
@@ -868,7 +867,6 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert preview_audits[0]["detail"]["pilot_preview_verified"] is False
 
     export_audits = AuditStore("system").query(
-        "system",
         filters={"action": "report_quality.pilot_export", "result": "success"},
     )
     assert export_audits
@@ -878,7 +876,6 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert export_audits[0]["detail"]["pilot_preview_verified"] is True
 
     package_audits = AuditStore("system").query(
-        "system",
         filters={"action": "report_quality.pilot_package", "result": "success"},
     )
     assert package_audits
@@ -887,7 +884,6 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert package_audits[0]["detail"]["pilot_preview_verified"] is True
 
     package_verification_audits = AuditStore("system").query(
-        "system",
         filters={"action": "report_quality.pilot_package_verify", "result": "success"},
     )
     assert package_verification_audits
@@ -981,11 +977,9 @@ def test_report_quality_pilot_package_verification_rejects_tamper_cross_tenant_a
     from app.storage.audit_store import AuditStore
 
     failed_audits = AuditStore("system").query(
-        "system",
         filters={"action": "report_quality.pilot_package_verify", "result": "failure"},
     )
     blocked_audits = AuditStore("system").query(
-        "system",
         filters={"action": "access.blocked", "result": "blocked"},
     )
     assert len(failed_audits) == 3

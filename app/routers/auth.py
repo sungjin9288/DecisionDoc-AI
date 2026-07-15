@@ -214,7 +214,7 @@ async def get_my_data(request: Request):
     audit_store = AuditStore(tenant_id)
     try:
         my_audits = audit_store.query(
-            tenant_id, filters={"user_id": user_id}
+            filters={"user_id": user_id}
         )[:100]
     except Exception:
         my_audits = []

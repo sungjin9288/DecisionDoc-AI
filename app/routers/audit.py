@@ -38,7 +38,6 @@ async def query_audit_logs(
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     store = AuditStore(tenant_id)
     logs = store.query_all(
-        tenant_id,
         filters={
             "user_id": user_id,
             "action": action,
@@ -65,7 +64,7 @@ async def audit_stats(request: Request, days: int = 30):
 
     _require_admin(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    return AuditStore(tenant_id).get_stats(tenant_id, days=days)
+    return AuditStore(tenant_id).get_stats(days=days)
 
 
 @router.get("/admin/audit-logs/export")
@@ -84,7 +83,6 @@ async def export_audit_logs(
     _require_admin(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
     csv_content = AuditStore(tenant_id).export_csv(
-        tenant_id,
         date_from,
         date_to,
         user_id=user_id,
@@ -108,7 +106,7 @@ async def failed_logins(request: Request, hours: int = 24):
 
     _require_admin(request)
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    logs = AuditStore(tenant_id).get_failed_logins(tenant_id, hours=hours)
+    logs = AuditStore(tenant_id).get_failed_logins(hours=hours)
 
     ip_counts = Counter(log.get("ip_address", "") for log in logs)
     suspicious_ips = [

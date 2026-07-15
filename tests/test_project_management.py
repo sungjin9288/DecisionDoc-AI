@@ -1209,7 +1209,6 @@ class TestProjectProcurementApi:
         from app.storage.audit_store import AuditStore
 
         audit_entries = AuditStore("system").query(
-            "system",
             filters={"action": "procurement.review_handoff_used"},
         )
         assert audit_entries
@@ -1246,7 +1245,6 @@ class TestProjectProcurementApi:
         )
 
         share_view_audits = AuditStore("system").query(
-            "system",
             filters={"action": "share.view"},
         )
         stale_share_view = next(
@@ -1413,7 +1411,6 @@ class TestProjectProcurementApi:
         from app.storage.audit_store import AuditStore
 
         approval_audits = AuditStore("system").query(
-            "system",
             filters={"action": "approval.approve"},
         )
         stale_audits = [
@@ -1433,7 +1430,6 @@ class TestProjectProcurementApi:
         )
 
         download_audits = AuditStore("system").query(
-            "system",
             filters={"action": "doc.download"},
         )
         drift_download_audits = [
@@ -2804,7 +2800,6 @@ class TestProjectDocumentReuseFlows:
         from app.storage.audit_store import AuditStore
 
         view_audits = AuditStore("system").query(
-            "system",
             filters={"action": "share.view"},
         )
         missing_view = next(

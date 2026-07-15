@@ -355,7 +355,6 @@ def _pick_newer_audit_entry(
 
 def _find_latest_procurement_project_entry(
     audit_store,
-    tenant_id: str,
     *,
     project_id: str,
     actions: tuple[str, ...] | list[str] | set[str],
@@ -372,13 +371,11 @@ def _find_latest_procurement_project_entry(
     )
     latest_entry = _pick_newer_audit_entry(
         audit_store.find_latest_entry(
-            tenant_id,
             actions=actions,
             resource_ids=focus_resource_ids,
             result=result,
         ),
         audit_store.find_latest_entry(
-            tenant_id,
             actions=actions,
             detail_filters={"project_id": project_id},
             result=result,
@@ -399,7 +396,6 @@ def _find_latest_procurement_project_entry(
 
 def _hydrate_procurement_followup_state(
     audit_store,
-    tenant_id: str,
     *,
     project_id: str,
     current_state: dict[str, str] | None,
@@ -426,7 +422,6 @@ def _hydrate_procurement_followup_state(
     if not followup_state["latest_blocked_at"]:
         blocked_entry, _, _ = _find_latest_procurement_project_entry(
             audit_store,
-            tenant_id,
             project_id=project_id,
             actions={"procurement.downstream_blocked"},
             decision_project_ids=decision_project_ids,
@@ -446,7 +441,6 @@ def _hydrate_procurement_followup_state(
     if not followup_state["latest_resolved_at"]:
         resolved_entry, _, _ = _find_latest_procurement_project_entry(
             audit_store,
-            tenant_id,
             project_id=project_id,
             actions={"procurement.downstream_resolved"},
             decision_project_ids=decision_project_ids,
@@ -463,7 +457,6 @@ def _hydrate_procurement_followup_state(
     if not followup_state["latest_override_reason_at"]:
         override_entry, _, _ = _find_latest_procurement_project_entry(
             audit_store,
-            tenant_id,
             project_id=project_id,
             actions={"procurement.override_reason"},
             decision_project_ids=decision_project_ids,

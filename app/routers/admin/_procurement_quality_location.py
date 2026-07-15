@@ -59,7 +59,7 @@ def _build_procurement_location_overview(tenant_id: str, request: Request) -> di
         backend=request.app.state.state_backend,
     )
     stale_share_events_by_key: dict[tuple[str, str, str], dict[str, object]] = {}
-    for entry in audit_store.query_all(tenant_id):
+    for entry in audit_store.query_all():
         if str(entry.get("action", "")) not in {"share.create", "share.view"}:
             continue
         detail = entry.get("detail", {})
