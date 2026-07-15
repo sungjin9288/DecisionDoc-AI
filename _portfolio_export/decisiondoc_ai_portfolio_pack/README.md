@@ -173,6 +173,8 @@ python3 scripts/create_report_quality_pilot_pack.py \
 
 수신 package 검증은 ZIP 구조 확인에서 끝나지 않습니다. 각 correction artifact의 schema, scan, score, 사람 검토 상태와 learning-ready 조건까지 다시 검사합니다. 통과한 경우에만 reviewer, score, 교정 전후 기획, claim 구분, change request, operator summary와 다음 검토 행동을 `persisted=false` 결과로 보여줍니다. 검증 완료 화면은 package SHA-256에서 local batch ID를 만들고 실제 파일명을 POSIX shell argument로 escape한 importer 명령을 보여주며, 버튼으로 복사할 수 있습니다. 명령은 기본 Downloads 폴더를 가정하므로 다른 위치의 파일은 `--source-package`만 바꿔야 하고, 기존 batch 디렉터리를 덮어쓰지 않습니다. 변조·not-ready·tenant 차단은 audit에 남고 package나 workflow record는 저장하지 않습니다.
 
+Pack-local `HUMAN_REVIEW_WORKSPACE.html`은 browser draft를 내려받은 다음 실행할 dry-run 검증 명령과 결정 반영 명령도 현재 pack 절대경로에 결속해 보여줍니다. 공백이나 작은따옴표가 있는 경로는 POSIX shell-safe하게 처리되며, 모든 artifact 결정이 `accepted`일 때만 두 명령에 `--require-ready`를 자동으로 붙입니다. `changes_requested`, `rejected`, `pending`이 하나라도 있으면 일반 apply 경로를 유지해 사람의 결정을 기록하되 downstream-ready 증거로 과장하지 않습니다. Clipboard API를 쓸 수 없는 local browser에서는 같은 명령을 선택 복사하는 fallback을 사용합니다.
+
 스모크 검증 (문서화된 대표 시나리오):
 
 ```bash
@@ -242,10 +244,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,767개**, **228개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,768개**, **228개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2767
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2768
 python3 scripts/count_readme_metrics.py --field test_files      # → 228
 ```
 
@@ -275,7 +277,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest -q tests/ -m "not live" --tb=short` → 3,028 passed, 2 skipped, 4 deselected, 2026-07-15 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest -q tests/ -m "not live" --tb=short` → 3,029 passed, 2 skipped, 4 deselected, 2026-07-15 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -325,4 +327,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,767 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,768 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

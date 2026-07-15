@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shlex
 from pathlib import Path
 
 import pytest
@@ -62,9 +63,43 @@ def test_pilot_pack_creates_source_bound_browser_workspace(tmp_path):
     assert embedded["minimum_overall_score"] == 0.8
     assert embedded["minimum_dimension_scores"]["visual_design"] == 0.7
     assert embedded["minimum_dimension_scores"]["export_readiness"] == 0.8
+    commands = embedded["review_commands"]
+    assert shlex.split(commands["validate"])[2] == str(pack_dir)
+    assert shlex.split(commands["validate"])[-1] == "--dry-run"
+    assert shlex.split(commands["validate_ready"])[-2:] == [
+        "--dry-run",
+        "--require-ready",
+    ]
+    assert shlex.split(commands["apply"])[2] == str(pack_dir)
+    assert shlex.split(commands["apply_ready"])[-1] == "--require-ready"
+    assert 'data-copy-review-command="validate"' in workspace
+    assert 'data-copy-review-command="apply"' in workspace
+    assert 'data-review-command-preview="validate"' in workspace
+    assert 'data-review-command-preview="apply"' in workspace
+    assert "const allAccepted" in workspace
+    assert "document.execCommand(\"copy\")" in workspace
     assert len(embedded["decision_file"]["decisions"]) == 3
     assert "fetch(" not in workspace
     assert "XMLHttpRequest" not in workspace
+
+
+def test_workspace_shell_quotes_pack_path_for_review_commands(tmp_path):
+    quoted_root = tmp_path / "receiver's review packs"
+    pack_dir, result = _create_pack(quoted_root)
+    workspace = Path(result["review_workspace_path"]).read_text(encoding="utf-8")
+    commands = _embedded_payload(workspace)["review_commands"]
+
+    for command in commands.values():
+        arguments = shlex.split(command)
+        assert arguments[:2] == [
+            "python3",
+            "scripts/apply_report_quality_review_decisions.py",
+        ]
+        assert arguments[2] == str(pack_dir)
+        assert arguments[3:5] == [
+            "--browser-draft",
+            "$HOME/Downloads/review_decisions.browser-draft.json",
+        ]
 
 
 def test_workspace_escapes_html_and_script_content(tmp_path):

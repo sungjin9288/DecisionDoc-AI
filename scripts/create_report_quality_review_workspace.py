@@ -6,6 +6,7 @@ import argparse
 import html
 import json
 import os
+import shlex
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -116,6 +117,20 @@ def _safe_script_json(payload: dict[str, Any]) -> str:
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
     )
+
+
+def _review_application_commands(pack_dir: Path) -> dict[str, str]:
+    base = (
+        "python3 scripts/apply_report_quality_review_decisions.py "
+        f"{shlex.quote(str(pack_dir))} "
+        f'--browser-draft "$HOME"/Downloads/{shlex.quote(DOWNLOAD_NAME)}'
+    )
+    return {
+        "validate": f"{base} --dry-run",
+        "validate_ready": f"{base} --dry-run --require-ready",
+        "apply": base,
+        "apply_ready": f"{base} --require-ready",
+    }
 
 
 def _resolve_pack_file(pack_dir: Path, path: Path | None, default_name: str) -> Path:
@@ -392,6 +407,8 @@ WORKSPACE_SCRIPT = """<script>
 
   const template = JSON.parse(templateNode.textContent);
   const groups = Array.from(document.querySelectorAll("[data-review-form]"));
+  const commandButtons = Array.from(document.querySelectorAll("[data-copy-review-command]"));
+  const commandPreviews = Array.from(document.querySelectorAll("[data-review-command-preview]"));
   const lineValues = value => value
     .replaceAll(String.fromCharCode(13), "")
     .split(String.fromCharCode(10))
@@ -399,6 +416,40 @@ WORKSPACE_SCRIPT = """<script>
     .filter(Boolean);
   const field = (group, name) => group.querySelector(`[name="${name}"]`);
   const textValue = (group, name) => field(group, name).value.trim();
+
+  const allAccepted = () => groups.every(group => textValue(group, "decision") === "accepted");
+
+  function selectedCommand(kind) {
+    const key = allAccepted() ? `${kind}_ready` : kind;
+    return template.review_commands[key];
+  }
+
+  function updateCommandPreviews() {
+    commandPreviews.forEach(node => {
+      node.textContent = selectedCommand(node.dataset.reviewCommandPreview);
+    });
+  }
+
+  async function writeClipboard(value) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return;
+      } catch {
+        // Local file pages may deny the asynchronous clipboard API.
+      }
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("클립보드 복사를 지원하지 않는 브라우저입니다.");
+  }
 
   function scoreValue(group, name) {
     const raw = textValue(group, name);
@@ -481,6 +532,26 @@ WORKSPACE_SCRIPT = """<script>
       message.textContent = error instanceof Error ? error.message : String(error);
     }
   });
+
+  groups.forEach(group => {
+    field(group, "decision").addEventListener("change", updateCommandPreviews);
+  });
+  commandButtons.forEach(button => {
+    button.addEventListener("click", async () => {
+      try {
+        const kind = button.dataset.copyReviewCommand;
+        await writeClipboard(selectedCommand(kind));
+        message.dataset.tone = "pass";
+        message.textContent = allAccepted()
+          ? "모든 결정이 승인 상태라 learning-ready 검증을 포함한 명령을 복사했습니다."
+          : "현재 검토 결정을 보존하는 명령을 복사했습니다.";
+      } catch (error) {
+        message.dataset.tone = "fail";
+        message.textContent = error instanceof Error ? error.message : String(error);
+      }
+    });
+  });
+  updateCommandPreviews();
 })();
 </script>"""
 
@@ -497,6 +568,7 @@ def render_report_quality_review_workspace(
     embedded = {
         "decision_file": decision_file,
         "download_name": DOWNLOAD_NAME,
+        "review_commands": _review_application_commands(pack_dir),
         "minimum_overall_score": MIN_OVERALL_SCORE,
         "minimum_dimension_scores": {
             dimension: (
@@ -560,11 +632,15 @@ def render_report_quality_review_workspace(
     .dimension-list {{ border-top:1px solid var(--line); }} .dimension-row {{ display:grid; grid-template-columns:180px minmax(0,1fr); gap:14px; padding:12px 0; border-bottom:1px solid var(--line); }}
     .list-fields {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }}
     .change-requests {{ margin-top:16px; }} .change-request {{ margin:0; padding:16px 0; border:0; border-top:1px solid var(--line); }} .change-request legend {{ padding:0 8px 0 0; font-size:12px; font-weight:800; }} .change-request-fields {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }}
+    .review-handoff {{ padding:28px 0; border-bottom:1px solid var(--strong); }} .review-handoff > p {{ margin:6px 0 0; color:var(--muted); font-size:13px; }}
+    .command-list {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; margin-top:18px; }} .command-item {{ min-width:0; padding-top:14px; border-top:1px solid var(--line); }} .command-header {{ display:flex; justify-content:space-between; gap:12px; align-items:center; }} .command-header h3 {{ font-size:14px; }}
+    .command-preview {{ display:block; margin-top:10px; padding:12px; border:1px solid var(--line); background:var(--surface); font-size:11px; line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; }}
+    .secondary-action {{ min-height:38px; padding:8px 12px; border:1px solid var(--strong); border-radius:5px; background:var(--surface); color:var(--text); font-weight:800; cursor:pointer; white-space:nowrap; }} .secondary-action:hover {{ border-color:var(--accent); color:var(--accent-dark); }}
     .actions {{ position:sticky; bottom:0; display:flex; justify-content:space-between; gap:20px; align-items:center; padding:16px 0; border-top:1px solid var(--strong); background:color-mix(in srgb,var(--bg) 94%,transparent); backdrop-filter:blur(10px); }}
     .actions p {{ margin:0; color:var(--muted); font-size:13px; }} .actions p[data-tone="pass"] {{ color:var(--pass); }} .actions p[data-tone="fail"] {{ color:var(--fail); }}
     .primary-action {{ min-height:42px; padding:9px 14px; border:1px solid var(--accent); border-radius:5px; background:var(--accent); color:#fff; font-weight:800; cursor:pointer; white-space:nowrap; }} .primary-action:hover {{ background:var(--accent-dark); }}
     @media (max-width:760px) {{ .primary-fields {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .dimension-row {{ grid-template-columns:140px minmax(0,1fr); }} .evidence-compare {{ grid-template-columns:1fr; }} }}
-    @media (max-width:560px) {{ .shell {{ width:calc(100vw - 24px); }} .page-header,.artifact-header,.evidence-header,.actions {{ flex-direction:column; }} .header-links,.artifact-links {{ justify-content:flex-start; }} .binding,.workflow-state,.primary-fields,.dimension-row,.list-fields,.change-request-fields {{ grid-template-columns:1fr; }} .binding dt,.workflow-state dt {{ padding-bottom:0; border-bottom:0; }} .binding dd,.workflow-state dd {{ padding-top:4px; }} .actions {{ align-items:stretch; }} .primary-action {{ width:100%; }} h1 {{ font-size:25px; }} }}
+    @media (max-width:560px) {{ .shell {{ width:calc(100vw - 24px); }} .page-header,.artifact-header,.evidence-header,.actions {{ flex-direction:column; }} .header-links,.artifact-links {{ justify-content:flex-start; }} .binding,.workflow-state,.primary-fields,.dimension-row,.list-fields,.change-request-fields,.command-list {{ grid-template-columns:1fr; }} .binding dt,.workflow-state dt {{ padding-bottom:0; border-bottom:0; }} .binding dd,.workflow-state dd {{ padding-top:4px; }} .actions {{ align-items:stretch; }} .primary-action {{ width:100%; }} h1 {{ font-size:25px; }} }}
   </style>
 </head>
 <body>
@@ -579,6 +655,20 @@ def render_report_quality_review_workspace(
       <dt>Training boundary</dt><dd><strong>not authorized</strong></dd>
     </dl>
     {sections}
+    <section class="review-handoff">
+      <h2>검토 결과 반영</h2>
+      <p>Draft 다운로드 후 현재 결정 상태에 맞는 명령을 repo root에서 실행합니다. 모든 결정이 승인일 때만 learning-ready 검증이 자동으로 포함됩니다.</p>
+      <div class="command-list">
+        <article class="command-item">
+          <div class="command-header"><h3>쓰기 전 검증</h3><button class="secondary-action" type="button" data-copy-review-command="validate">검증 명령 복사</button></div>
+          <code class="command-preview" data-review-command-preview="validate"></code>
+        </article>
+        <article class="command-item">
+          <div class="command-header"><h3>검토 결정 반영</h3><button class="secondary-action" type="button" data-copy-review-command="apply">반영 명령 복사</button></div>
+          <code class="command-preview" data-review-command-preview="apply"></code>
+        </article>
+      </div>
+    </section>
     <section class="actions">
       <p data-workspace-message role="status" aria-live="polite">입력 결과는 원본을 바꾸지 않고 source-bound JSON draft로 내려받습니다.</p>
       <button class="primary-action" type="button" data-download-draft>검수 Draft 다운로드</button>
