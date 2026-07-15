@@ -13,7 +13,6 @@ Coverage (24 tests):
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.async_helper import run_async
@@ -43,7 +42,7 @@ def test_style_store_create(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore
 
     store = StyleStore("t1")
-    profile = store.create("t1", "표준체", "우리 회사 표준 문체", "user-1")
+    profile = store.create("표준체", "우리 회사 표준 문체", "user-1")
     assert profile.profile_id
     assert profile.name == "표준체"
     assert profile.description == "우리 회사 표준 문체"
@@ -56,7 +55,7 @@ def test_style_store_get(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore
 
     store = StyleStore("t1")
-    created = store.create("t1", "A", "", "u1")
+    created = store.create("A", "", "u1")
     found = store.get(created.profile_id)
     assert found is not None
     assert found.profile_id == created.profile_id
@@ -68,25 +67,25 @@ def test_style_store_get_default(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore
 
     store = StyleStore("t1")
-    p1 = store.create("t1", "First", "", "u1")
-    p2 = store.create("t1", "Second", "", "u1")
+    p1 = store.create("First", "", "u1")
+    store.create("Second", "", "u1")
     # First is auto-default; second should not be
-    default = store.get_default("t1")
+    default = store.get_default()
     assert default is not None
     assert default.profile_id == p1.profile_id
 
 
-def test_style_store_list_by_tenant(tmp_path, monkeypatch):
+def test_style_store_lists_only_its_tenant(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.style_store import StyleStore
 
-    store = StyleStore("multi")
-    store.create("tenant_a", "A1", "", "u1")
-    store.create("tenant_a", "A2", "", "u1")
-    store.create("tenant_b", "B1", "", "u2")
-    assert len(store.list_by_tenant("tenant_a")) == 2
-    assert len(store.list_by_tenant("tenant_b")) == 1
-    assert store.list_by_tenant("no_tenant") == []
+    tenant_a = StyleStore("tenant_a")
+    tenant_b = StyleStore("tenant_b")
+    tenant_a.create("A1", "", "u1")
+    tenant_a.create("A2", "", "u1")
+    tenant_b.create("B1", "", "u2")
+    assert len(tenant_a.list_profiles()) == 2
+    assert len(tenant_b.list_profiles()) == 1
 
 
 def test_style_store_set_default(tmp_path, monkeypatch):
@@ -94,13 +93,13 @@ def test_style_store_set_default(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore
 
     store = StyleStore("t1")
-    p1 = store.create("t1", "First", "", "u1")
-    p2 = store.create("t1", "Second", "", "u1")
+    p1 = store.create("First", "", "u1")
+    p2 = store.create("Second", "", "u1")
 
     store.set_default(p2.profile_id)
     assert store.get(p2.profile_id).is_default is True
     assert store.get(p1.profile_id).is_default is False
-    assert store.get_default("t1").profile_id == p2.profile_id
+    assert store.get_default().profile_id == p2.profile_id
 
 
 def test_style_store_update_tone_guide(tmp_path, monkeypatch):
@@ -108,7 +107,7 @@ def test_style_store_update_tone_guide(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore, ToneGuide
 
     store = StyleStore("t1")
-    profile = store.create("t1", "A", "", "u1")
+    profile = store.create("A", "", "u1")
     tone = ToneGuide(
         formality="합쇼체",
         density="상세하게",
@@ -129,7 +128,7 @@ def test_style_store_bundle_override_set_and_remove(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore, ToneGuide
 
     store = StyleStore("t1")
-    profile = store.create("t1", "A", "", "u1")
+    profile = store.create("A", "", "u1")
     override_tone = ToneGuide(formality="해요체", density="간결하게")
     store.set_bundle_override(profile.profile_id, "proposal_kr", override_tone)
 
@@ -148,7 +147,7 @@ def test_style_store_add_and_remove_example(tmp_path, monkeypatch):
     import uuid
 
     store = StyleStore("t1")
-    profile = store.create("t1", "A", "", "u1")
+    profile = store.create("A", "", "u1")
     example = StyleExample(
         example_id=str(uuid.uuid4()),
         source_filename="report.pdf",
@@ -173,7 +172,7 @@ def test_style_store_delete(tmp_path, monkeypatch):
     from app.storage.style_store import StyleStore
 
     store = StyleStore("t1")
-    profile = store.create("t1", "ToDelete", "", "u1")
+    profile = store.create("ToDelete", "", "u1")
     assert store.get(profile.profile_id) is not None
     store.delete(profile.profile_id)
     assert store.get(profile.profile_id) is None
@@ -188,7 +187,7 @@ def test_build_style_prompt_with_tone_guide(tmp_path, monkeypatch):
     from app.services.style_analyzer import build_style_prompt
 
     store = StyleStore("t1")
-    profile = store.create("t1", "A", "", "u1")
+    profile = store.create("A", "", "u1")
     store.update_tone_guide(
         profile.profile_id,
         ToneGuide(
@@ -218,7 +217,7 @@ def test_build_style_prompt_uses_bundle_override(tmp_path, monkeypatch):
     from app.services.style_analyzer import build_style_prompt
 
     store = StyleStore("t1")
-    profile = store.create("t1", "A", "", "u1")
+    profile = store.create("A", "", "u1")
     # Global tone: 합쇼체
     store.update_tone_guide(profile.profile_id, ToneGuide(formality="합쇼체"))
     # Override for proposal_kr: 해요체
@@ -248,7 +247,7 @@ def test_build_style_prompt_no_content_returns_empty(tmp_path, monkeypatch):
 
     store = StyleStore("t1")
     # Fresh profile with empty ToneGuide and no examples
-    profile = store.create("t1", "Empty", "", "u1")
+    profile = store.create("Empty", "", "u1")
     reloaded = store.get(profile.profile_id)
     # All ToneGuide fields are "" by default → nothing to inject
     assert build_style_prompt(reloaded) == ""
@@ -261,7 +260,7 @@ def test_build_style_prompt_includes_sample_sentences(tmp_path, monkeypatch):
     import uuid
 
     store = StyleStore("t1")
-    profile = store.create("t1", "WithEx", "", "u1")
+    profile = store.create("WithEx", "", "u1")
     store.update_tone_guide(profile.profile_id, ToneGuide(formality="합쇼체"))
     example = StyleExample(
         example_id=str(uuid.uuid4()),
@@ -386,7 +385,7 @@ def test_api_get_nonexistent_profile_returns_404(tmp_path, monkeypatch):
 
 def test_api_set_default_style(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
-    p1 = client.post("/styles", json={"name": "P1"}).json()["profile_id"]
+    client.post("/styles", json={"name": "P1"})
     p2 = client.post("/styles", json={"name": "P2"}).json()["profile_id"]
 
     client.post(f"/styles/{p2}/set-default")
@@ -454,7 +453,7 @@ def test_style_injection_in_build_bundle_prompt(tmp_path, monkeypatch):
 
     # Create a style profile with a distinct formality marker
     store = StyleStore("injection-test")
-    profile = store.create("injection-test", "Test", "", "u1")
+    profile = store.create("Test", "", "u1")
     store.update_tone_guide(
         profile.profile_id,
         ToneGuide(formality="합쇼체_UNIQUE_MARKER", density="보통"),

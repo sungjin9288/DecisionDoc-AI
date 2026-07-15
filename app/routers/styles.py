@@ -25,7 +25,6 @@ async def create_style_profile(request: Request, body: CreateStyleProfileRequest
     user_id = get_user_id(request)
     style_store = StyleStore(tenant_id)
     profile = style_store.create(
-        tenant_id=tenant_id,
         name=body.name,
         description=body.description,
         created_by=user_id,
@@ -40,7 +39,7 @@ async def list_style_profiles(request: Request):
 
     tenant_id = get_tenant_id(request)
     style_store = StyleStore(tenant_id)
-    profiles = style_store.list_by_tenant(tenant_id)
+    profiles = style_store.list_profiles()
     raw_data = style_store._load()
     return {
         "profiles": [
@@ -219,10 +218,9 @@ async def delete_style_profile(request: Request, profile_id: str):
     tenant_id = get_tenant_id(request)
     style_store = StyleStore(tenant_id)
 
-    raw = style_store._load().get(profile_id)
-    if raw is None:
+    if style_store.get(profile_id) is None:
         raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
-    if raw.get("is_system"):
+    if style_store.is_system(profile_id):
         raise HTTPException(400, "기본 제공 스타일 프로필은 삭제할 수 없습니다.")
 
     style_store.delete(profile_id)

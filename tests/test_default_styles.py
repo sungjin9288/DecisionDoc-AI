@@ -51,7 +51,7 @@ def test_system_profiles_not_deletable():
     from app.storage.style_store import StyleStore
 
     # Ensure defaults are present (lifespan not called in test client)
-    StyleStore("system").initialize_defaults("system")
+    StyleStore("system").initialize_defaults()
 
     token = create_access_token("user1", "system", "admin", "admin")
     res = client.delete(
@@ -67,8 +67,8 @@ def test_initialize_defaults_idempotent():
     from app.storage.style_store import StyleStore
 
     store = StyleStore("test-style-init")
-    store.initialize_defaults("test-style-init")
-    store.initialize_defaults("test-style-init")  # second call — no-op
+    store.initialize_defaults()
+    store.initialize_defaults()  # second call — no-op
 
     data = store._load()
     system_profiles = [v for v in data.values() if v.get("is_system")]
@@ -84,7 +84,7 @@ def test_initialize_defaults_adds_correct_fields():
     from app.storage.style_store import StyleStore
 
     store = StyleStore("test-style-fields")
-    store.initialize_defaults("test-style-fields")
+    store.initialize_defaults()
 
     data = store._load()
     official = data.get("default-official")
@@ -106,7 +106,7 @@ def test_style_profiles_listed_include_system_flag():
     from app.storage.style_store import StyleStore
 
     # Ensure defaults are present (lifespan not called in test client)
-    StyleStore("system").initialize_defaults("system")
+    StyleStore("system").initialize_defaults()
 
     token = create_access_token("user1", "system", "member", "user1")
     res = client.get(

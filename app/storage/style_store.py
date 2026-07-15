@@ -136,6 +136,7 @@ class StyleStore(BaseJsonStore):
 
     def __init__(self, tenant_id: str) -> None:
         super().__init__()
+        self._tenant_id = tenant_id
         data_dir = Path(os.getenv("DATA_DIR", "./data"))
         tenant_dir = data_dir / "tenants" / tenant_id
         tenant_dir.mkdir(parents=True, exist_ok=True)
@@ -146,11 +147,19 @@ class StyleStore(BaseJsonStore):
     def _get_path(self) -> Path:
         return self._path
 
+    def _owns(self, record: dict | None) -> bool:
+        return bool(record and record.get("tenant_id") == self._tenant_id)
+
+    def _require_owned(self, data: dict, profile_id: str) -> dict:
+        profile = data.get(profile_id)
+        if not self._owns(profile):
+            raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
+        return profile
+
     # ── public API ─────────────────────────────────────────────────────────
 
     def create(
         self,
-        tenant_id: str,
         name: str,
         description: str,
         created_by: str,
@@ -158,7 +167,7 @@ class StyleStore(BaseJsonStore):
         """Create a new (empty) style profile."""
         profile = StyleProfile(
             profile_id=str(uuid.uuid4()),
-            tenant_id=tenant_id,
+            tenant_id=self._tenant_id,
             name=name,
             description=description,
             tone_guide=ToneGuide(),
@@ -171,8 +180,7 @@ class StyleStore(BaseJsonStore):
         )
         with self._lock:
             data = self._load()
-            # Auto-set default when this is the first profile
-            if not data:
+            if not any(self._owns(item) for item in data.values()):
                 profile.is_default = True
             data[profile.profile_id] = _profile_to_dict(profile)
             self._save(data)
@@ -182,31 +190,34 @@ class StyleStore(BaseJsonStore):
         with self._lock:
             data = self._load()
         raw = data.get(profile_id)
-        return _profile_from_dict(raw) if raw else None
+        return _profile_from_dict(raw) if self._owns(raw) else None
 
-    def get_default(self, tenant_id: str) -> StyleProfile | None:
+    def get_default(self) -> StyleProfile | None:
         """Return the default profile for this tenant, or None if none exists."""
         with self._lock:
             data = self._load()
         for raw in data.values():
-            if raw.get("tenant_id") == tenant_id and raw.get("is_default"):
+            if self._owns(raw) and raw.get("is_default"):
                 return _profile_from_dict(raw)
         return None
 
-    def list_by_tenant(self, tenant_id: str) -> list[StyleProfile]:
+    def list_profiles(self) -> list[StyleProfile]:
         with self._lock:
             data = self._load()
         return [
             _profile_from_dict(v)
             for v in data.values()
-            if v.get("tenant_id") == tenant_id
+            if self._owns(v)
         ]
 
     def set_default(self, profile_id: str) -> None:
         """Mark *profile_id* as the default; clear the flag on all others."""
         with self._lock:
             data = self._load()
+            self._require_owned(data, profile_id)
             for pid, raw in data.items():
+                if not self._owns(raw):
+                    continue
                 raw["is_default"] = pid == profile_id
                 raw["updated_at"] = _now_iso()
             self._save(data)
@@ -214,69 +225,66 @@ class StyleStore(BaseJsonStore):
     def update_tone_guide(self, profile_id: str, tone_guide: ToneGuide) -> StyleProfile:
         with self._lock:
             data = self._load()
-            if profile_id not in data:
-                raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
-            data[profile_id]["tone_guide"] = asdict(tone_guide)
-            data[profile_id]["updated_at"] = _now_iso()
+            profile = self._require_owned(data, profile_id)
+            profile["tone_guide"] = asdict(tone_guide)
+            profile["updated_at"] = _now_iso()
             self._save(data)
-            return _profile_from_dict(data[profile_id])
+            return _profile_from_dict(profile)
 
     def set_bundle_override(
         self, profile_id: str, bundle_id: str, tone_guide: ToneGuide
     ) -> None:
         with self._lock:
             data = self._load()
-            if profile_id not in data:
-                raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
-            data[profile_id].setdefault("bundle_overrides", {})[bundle_id] = asdict(
+            profile = self._require_owned(data, profile_id)
+            profile.setdefault("bundle_overrides", {})[bundle_id] = asdict(
                 tone_guide
             )
-            data[profile_id]["updated_at"] = _now_iso()
+            profile["updated_at"] = _now_iso()
             self._save(data)
 
     def remove_bundle_override(self, profile_id: str, bundle_id: str) -> None:
         with self._lock:
             data = self._load()
-            if profile_id not in data:
-                raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
-            data[profile_id].get("bundle_overrides", {}).pop(bundle_id, None)
-            data[profile_id]["updated_at"] = _now_iso()
+            profile = self._require_owned(data, profile_id)
+            profile.get("bundle_overrides", {}).pop(bundle_id, None)
+            profile["updated_at"] = _now_iso()
             self._save(data)
 
     def add_example(self, profile_id: str, example: StyleExample) -> None:
         with self._lock:
             data = self._load()
-            if profile_id not in data:
-                raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
-            data[profile_id].setdefault("examples", []).append(asdict(example))
-            data[profile_id]["updated_at"] = _now_iso()
+            profile = self._require_owned(data, profile_id)
+            profile.setdefault("examples", []).append(asdict(example))
+            profile["updated_at"] = _now_iso()
             self._save(data)
 
     def remove_example(self, profile_id: str, example_id: str) -> None:
         with self._lock:
             data = self._load()
-            if profile_id not in data:
-                raise ValueError(f"프로필을 찾을 수 없습니다: {profile_id}")
-            data[profile_id]["examples"] = [
-                e for e in data[profile_id].get("examples", [])
+            profile = self._require_owned(data, profile_id)
+            profile["examples"] = [
+                e for e in profile.get("examples", [])
                 if e["example_id"] != example_id
             ]
-            data[profile_id]["updated_at"] = _now_iso()
+            profile["updated_at"] = _now_iso()
             self._save(data)
 
     def delete(self, profile_id: str) -> None:
         with self._lock:
             data = self._load()
-            data.pop(profile_id, None)
+            if self._owns(data.get(profile_id)):
+                data.pop(profile_id)
             self._save(data)
 
     def is_system(self, profile_id: str) -> bool:
         """Return True if this profile is a built-in system profile."""
         with self._lock:
             data = self._load()
-        return bool(data.get(profile_id, {}).get("is_system", False))
+        profile = data.get(profile_id)
+        return bool(self._owns(profile) and profile.get("is_system", False))
 
-    def initialize_defaults(self, tenant_id: str) -> None:
+    def initialize_defaults(self) -> None:
         """Load default system style profiles on first startup.
 
         Idempotent — only adds profiles whose style_id is not already present.
@@ -297,7 +305,7 @@ class StyleStore(BaseJsonStore):
                 now = datetime.now(timezone.utc).isoformat()
                 entry: dict = {
                     "profile_id": sid,
-                    "tenant_id": tenant_id,
+                    "tenant_id": self._tenant_id,
                     "name": profile["name"],
                     "description": profile["description"],
                     "tone_guide": {
@@ -323,7 +331,11 @@ class StyleStore(BaseJsonStore):
 
             if added:
                 self._save(data)
-                _log.info("[StyleStore] Loaded %d default style profiles for tenant=%s", added, tenant_id)
+                _log.info(
+                    "[StyleStore] Loaded %d default style profiles for tenant=%s",
+                    added,
+                    self._tenant_id,
+                )
 
 
 # ── per-tenant singleton factory ───────────────────────────────────────────────

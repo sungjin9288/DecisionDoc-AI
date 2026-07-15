@@ -18,6 +18,7 @@ Coverage (25+ tests):
   H8: BillingStore operations stay bound to the tenant selected at construction
   H9: UserStore creates and lists users only within its tenant directory
   H10: InviteStore records its own tenant and writes under DATA_DIR
+  H11: StyleStore reads and mutates only profiles owned by its tenant
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -474,6 +475,44 @@ def test_invite_store_is_bound_to_data_dir_tenant(tmp_path, monkeypatch):
     store.mark_used("invite-1")
     records = json.loads(path.read_text(encoding="utf-8"))
     assert records["invite-1"]["is_active"] is True
+
+
+def test_style_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Style profiles with a drifted tenant cannot be read or changed."""
+    from app.storage.style_store import StyleStore, ToneGuide
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = StyleStore("tenant_a")
+    profile = store.create("공식 문체", "대외 문서용", "user-1")
+
+    with pytest.raises(TypeError):
+        store.create(
+            tenant_id="tenant_b",
+            name="다른 문체",
+            description="잘못된 tenant",
+            created_by="user-2",
+        )
+
+    assert profile.tenant_id == "tenant_a"
+    assert [item.profile_id for item in store.list_profiles()] == [profile.profile_id]
+
+    path = tmp_path / "tenants" / "tenant_a" / "style_profiles.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[profile.profile_id]["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert store.get(profile.profile_id) is None
+    assert store.get_default() is None
+    assert store.list_profiles() == []
+    assert store.is_system(profile.profile_id) is False
+    with pytest.raises(ValueError, match="프로필을 찾을 수 없습니다"):
+        store.update_tone_guide(profile.profile_id, ToneGuide(formality="합쇼체"))
+    with pytest.raises(ValueError, match="프로필을 찾을 수 없습니다"):
+        store.set_default(profile.profile_id)
+
+    store.delete(profile.profile_id)
+    records = json.loads(path.read_text(encoding="utf-8"))
+    assert profile.profile_id in records
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

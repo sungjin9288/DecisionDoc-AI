@@ -276,7 +276,7 @@ def build_bundle_prompt(
 
         _tid = getattr(_current_tenant_id, "value", None)
         if _tid:
-            _sp = StyleStore(_tid).get_default(_tid)
+            _sp = StyleStore(_tid).get_default()
             if _sp:
                 _style_block = _build_style_prompt(
                     _sp, bundle_id=bundle_spec.id if bundle_spec is not None else None
