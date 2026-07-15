@@ -76,7 +76,13 @@ def test_pilot_pack_creates_source_bound_browser_workspace(tmp_path):
     assert 'data-copy-review-command="apply"' in workspace
     assert 'data-review-command-preview="validate"' in workspace
     assert 'data-review-command-preview="apply"' in workspace
-    assert "const allAccepted" in workspace
+    assert 'data-copy-review-command="validate" disabled' in workspace
+    assert 'data-copy-review-command="apply" disabled' in workspace
+    assert "let downloadedDraftAccepted = null" in workspace
+    assert "draft.decisions.every(decision => decision.decision === \"accepted\")" in workspace
+    assert 'group.addEventListener("input", markDownloadedDraftStale)' in workspace
+    assert 'group.addEventListener("change", markDownloadedDraftStale)' in workspace
+    assert "검토 입력이 바뀌었습니다. 명령을 복사하기 전에 Draft를 다시 다운로드하세요." in workspace
     assert "document.execCommand(\"copy\")" in workspace
     assert len(embedded["decision_file"]["decisions"]) == 3
     assert "fetch(" not in workspace

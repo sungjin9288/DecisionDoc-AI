@@ -104,7 +104,7 @@ python3 scripts/create_report_quality_review_workspace.py \
 
 `검수 Draft 다운로드`는 초기 template의 `pack_binding`, artifact 순서, `previous_decision`, `training_authorized=false`를 보존한 `review_decisions.browser-draft.json`만 만든다. HTML은 pack의 draft나 decision template을 직접 수정하지 않으며 외부 요청도 보내지 않는다.
 
-같은 화면의 `검증 명령 복사`와 `반영 명령 복사`는 현재 pack 절대경로와 기본 `~/Downloads/review_decisions.browser-draft.json` 경로를 사용한다. Pack 경로에 공백이나 작은따옴표가 있어도 POSIX shell-safe한 문자열을 생성한다. 세 결정이 모두 `accepted`이면 `--require-ready`가 자동으로 포함되고, 하나라도 `pending`, `changes_requested`, `rejected`이면 일반 apply 명령을 유지한다. 따라서 보완·반려 이력은 기록할 수 있지만 accepted batch만 ready sync에 필요한 receipt를 만들 수 있다. Draft를 다른 폴더에 저장했다면 `--browser-draft` 경로만 실제 위치로 바꾼다.
+같은 화면의 `검증 명령 복사`와 `반영 명령 복사`는 현재 pack 절대경로와 기본 `~/Downloads/review_decisions.browser-draft.json` 경로를 사용한다. 두 명령은 현재 입력으로 draft를 다운로드한 뒤에만 활성화되고, 이후 입력이 하나라도 바뀌면 즉시 다시 잠긴다. 이때는 draft를 다시 내려받은 뒤 명령을 복사해야 화면의 결정과 Downloads 파일이 같은 상태라고 볼 수 있다. Pack 경로에 공백이나 작은따옴표가 있어도 POSIX shell-safe한 문자열을 생성한다. 다운로드한 draft의 세 결정이 모두 `accepted`이면 `--require-ready`가 포함되고, 하나라도 `pending`, `changes_requested`, `rejected`이면 일반 apply 명령을 유지한다. `--require-ready`는 source artifact readiness를 실제 CLI에서 검증하라는 의미이지 이미 통과했다는 주장이 아니다. 따라서 보완·반려 이력은 기록할 수 있지만 accepted batch만 ready sync에 필요한 receipt를 만들 수 있다. Draft를 다른 폴더에 저장했다면 `--browser-draft` 경로만 실제 위치로 바꾼다.
 
 내려받은 draft는 이동하거나 이름을 바꾸지 않고 외부 경로에서 바로 검증·보관·반영한다. 먼저 쓰기 없이 확인하려면 `--dry-run`을 붙인다.
 

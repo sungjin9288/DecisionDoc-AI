@@ -409,6 +409,8 @@ WORKSPACE_SCRIPT = """<script>
   const groups = Array.from(document.querySelectorAll("[data-review-form]"));
   const commandButtons = Array.from(document.querySelectorAll("[data-copy-review-command]"));
   const commandPreviews = Array.from(document.querySelectorAll("[data-review-command-preview]"));
+  const commandUnavailable = "현재 입력으로 검수 Draft를 다운로드하면 명령이 활성화됩니다.";
+  let downloadedDraftAccepted = null;
   const lineValues = value => value
     .replaceAll(String.fromCharCode(13), "")
     .split(String.fromCharCode(10))
@@ -417,17 +419,27 @@ WORKSPACE_SCRIPT = """<script>
   const field = (group, name) => group.querySelector(`[name="${name}"]`);
   const textValue = (group, name) => field(group, name).value.trim();
 
-  const allAccepted = () => groups.every(group => textValue(group, "decision") === "accepted");
-
   function selectedCommand(kind) {
-    const key = allAccepted() ? `${kind}_ready` : kind;
+    if (downloadedDraftAccepted === null) return null;
+    const key = downloadedDraftAccepted ? `${kind}_ready` : kind;
     return template.review_commands[key];
   }
 
-  function updateCommandPreviews() {
+  function updateCommandControls() {
     commandPreviews.forEach(node => {
-      node.textContent = selectedCommand(node.dataset.reviewCommandPreview);
+      node.textContent = selectedCommand(node.dataset.reviewCommandPreview) || commandUnavailable;
     });
+    commandButtons.forEach(button => {
+      button.disabled = downloadedDraftAccepted === null;
+    });
+  }
+
+  function markDownloadedDraftStale() {
+    if (downloadedDraftAccepted === null) return;
+    downloadedDraftAccepted = null;
+    updateCommandControls();
+    message.dataset.tone = "pending";
+    message.textContent = "검토 입력이 바뀌었습니다. 명령을 복사하기 전에 Draft를 다시 다운로드하세요.";
   }
 
   async function writeClipboard(value) {
@@ -525,8 +537,12 @@ WORKSPACE_SCRIPT = """<script>
       link.click();
       link.remove();
       URL.revokeObjectURL(link.href);
+      downloadedDraftAccepted = draft.decisions.every(decision => decision.decision === "accepted");
+      updateCommandControls();
       message.dataset.tone = "pass";
-      message.textContent = `${draft.decisions.length}개 artifact의 source-bound draft를 생성했습니다.`;
+      message.textContent = downloadedDraftAccepted
+        ? `${draft.decisions.length}개 artifact의 승인 결정 draft를 생성했습니다.`
+        : `${draft.decisions.length}개 artifact의 source-bound draft를 생성했습니다.`;
     } catch (error) {
       message.dataset.tone = "fail";
       message.textContent = error instanceof Error ? error.message : String(error);
@@ -534,24 +550,27 @@ WORKSPACE_SCRIPT = """<script>
   });
 
   groups.forEach(group => {
-    field(group, "decision").addEventListener("change", updateCommandPreviews);
+    group.addEventListener("input", markDownloadedDraftStale);
+    group.addEventListener("change", markDownloadedDraftStale);
   });
   commandButtons.forEach(button => {
     button.addEventListener("click", async () => {
       try {
         const kind = button.dataset.copyReviewCommand;
-        await writeClipboard(selectedCommand(kind));
+        const command = selectedCommand(kind);
+        if (!command) throw new Error("현재 입력으로 검수 Draft를 먼저 다운로드하세요.");
+        await writeClipboard(command);
         message.dataset.tone = "pass";
-        message.textContent = allAccepted()
-          ? "모든 결정이 승인 상태라 learning-ready 검증을 포함한 명령을 복사했습니다."
-          : "현재 검토 결정을 보존하는 명령을 복사했습니다.";
+        message.textContent = downloadedDraftAccepted
+          ? "모든 결정이 승인 상태라 learning-ready 검증을 요구하는 명령을 복사했습니다."
+          : "다운로드한 검토 결정을 보존하는 명령을 복사했습니다.";
       } catch (error) {
         message.dataset.tone = "fail";
         message.textContent = error instanceof Error ? error.message : String(error);
       }
     });
   });
-  updateCommandPreviews();
+  updateCommandControls();
 })();
 </script>"""
 
@@ -635,9 +654,9 @@ def render_report_quality_review_workspace(
     .review-handoff {{ padding:28px 0; border-bottom:1px solid var(--strong); }} .review-handoff > p {{ margin:6px 0 0; color:var(--muted); font-size:13px; }}
     .command-list {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; margin-top:18px; }} .command-item {{ min-width:0; padding-top:14px; border-top:1px solid var(--line); }} .command-header {{ display:flex; justify-content:space-between; gap:12px; align-items:center; }} .command-header h3 {{ font-size:14px; }}
     .command-preview {{ display:block; margin-top:10px; padding:12px; border:1px solid var(--line); background:var(--surface); font-size:11px; line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; }}
-    .secondary-action {{ min-height:38px; padding:8px 12px; border:1px solid var(--strong); border-radius:5px; background:var(--surface); color:var(--text); font-weight:800; cursor:pointer; white-space:nowrap; }} .secondary-action:hover {{ border-color:var(--accent); color:var(--accent-dark); }}
+    .secondary-action {{ min-height:38px; padding:8px 12px; border:1px solid var(--strong); border-radius:5px; background:var(--surface); color:var(--text); font-weight:800; cursor:pointer; white-space:nowrap; }} .secondary-action:hover {{ border-color:var(--accent); color:var(--accent-dark); }} .secondary-action:disabled {{ border-color:var(--line); color:var(--muted); cursor:not-allowed; opacity:.72; }}
     .actions {{ position:sticky; bottom:0; display:flex; justify-content:space-between; gap:20px; align-items:center; padding:16px 0; border-top:1px solid var(--strong); background:color-mix(in srgb,var(--bg) 94%,transparent); backdrop-filter:blur(10px); }}
-    .actions p {{ margin:0; color:var(--muted); font-size:13px; }} .actions p[data-tone="pass"] {{ color:var(--pass); }} .actions p[data-tone="fail"] {{ color:var(--fail); }}
+    .actions p {{ margin:0; color:var(--muted); font-size:13px; }} .actions p[data-tone="pass"] {{ color:var(--pass); }} .actions p[data-tone="pending"] {{ color:#7a4307; }} .actions p[data-tone="fail"] {{ color:var(--fail); }}
     .primary-action {{ min-height:42px; padding:9px 14px; border:1px solid var(--accent); border-radius:5px; background:var(--accent); color:#fff; font-weight:800; cursor:pointer; white-space:nowrap; }} .primary-action:hover {{ background:var(--accent-dark); }}
     @media (max-width:760px) {{ .primary-fields {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .dimension-row {{ grid-template-columns:140px minmax(0,1fr); }} .evidence-compare {{ grid-template-columns:1fr; }} }}
     @media (max-width:560px) {{ .shell {{ width:calc(100vw - 24px); }} .page-header,.artifact-header,.evidence-header,.actions {{ flex-direction:column; }} .header-links,.artifact-links {{ justify-content:flex-start; }} .binding,.workflow-state,.primary-fields,.dimension-row,.list-fields,.change-request-fields,.command-list {{ grid-template-columns:1fr; }} .binding dt,.workflow-state dt {{ padding-bottom:0; border-bottom:0; }} .binding dd,.workflow-state dd {{ padding-top:4px; }} .actions {{ align-items:stretch; }} .primary-action {{ width:100%; }} h1 {{ font-size:25px; }} }}
@@ -657,14 +676,14 @@ def render_report_quality_review_workspace(
     {sections}
     <section class="review-handoff">
       <h2>검토 결과 반영</h2>
-      <p>Draft 다운로드 후 현재 결정 상태에 맞는 명령을 repo root에서 실행합니다. 모든 결정이 승인일 때만 learning-ready 검증이 자동으로 포함됩니다.</p>
+      <p>현재 입력으로 Draft를 다운로드하면 그 파일에 맞는 명령이 활성화됩니다. 다운로드 뒤 입력이 바뀌면 명령은 잠기며, 모든 결정이 승인된 Draft에는 learning-ready 검증을 요구하는 옵션이 포함됩니다.</p>
       <div class="command-list">
         <article class="command-item">
-          <div class="command-header"><h3>쓰기 전 검증</h3><button class="secondary-action" type="button" data-copy-review-command="validate">검증 명령 복사</button></div>
+          <div class="command-header"><h3>쓰기 전 검증</h3><button class="secondary-action" type="button" data-copy-review-command="validate" disabled>검증 명령 복사</button></div>
           <code class="command-preview" data-review-command-preview="validate"></code>
         </article>
         <article class="command-item">
-          <div class="command-header"><h3>검토 결정 반영</h3><button class="secondary-action" type="button" data-copy-review-command="apply">반영 명령 복사</button></div>
+          <div class="command-header"><h3>검토 결정 반영</h3><button class="secondary-action" type="button" data-copy-review-command="apply" disabled>반영 명령 복사</button></div>
           <code class="command-preview" data-review-command-preview="apply"></code>
         </article>
       </div>
