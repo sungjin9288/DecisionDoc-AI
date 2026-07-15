@@ -255,7 +255,6 @@ def test_share_store_persists_to_s3_state_backend():
     store = ShareStore("alpha", backend=backend)
 
     link = store.create(
-        tenant_id="alpha",
         request_id="req-1",
         title="Shared Doc",
         created_by="user-1",

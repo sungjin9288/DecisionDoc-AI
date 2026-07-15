@@ -430,7 +430,6 @@ def seed_procurement_stale_share_demo(
         raise SystemExit("Demo seed expected a stale_procurement council-backed document status.")
 
     share_link = share_store.create(
-        tenant_id=DEMO_TENANT_ID,
         request_id=DEMO_PROPOSAL_REQUEST_ID,
         title=DEMO_PROPOSAL_DOCUMENT_TITLE,
         created_by=user.user_id,

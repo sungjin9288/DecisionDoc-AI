@@ -79,9 +79,12 @@ class ShareStore(BaseJsonStore):
             json.dumps(data, ensure_ascii=False, indent=2),
         )
 
+    def _owns(self, link: dict) -> bool:
+        stored_tenant_id = link.get("tenant_id")
+        return stored_tenant_id is None or stored_tenant_id == self.tenant_id
+
     def create(
         self,
-        tenant_id: str,
         request_id: str,
         title: str,
         created_by: str,
@@ -106,7 +109,7 @@ class ShareStore(BaseJsonStore):
 
         link = ShareLink(
             share_id=share_id,
-            tenant_id=tenant_id,
+            tenant_id=self.tenant_id,
             request_id=request_id,
             title=title,
             created_by=created_by,
@@ -130,7 +133,7 @@ class ShareStore(BaseJsonStore):
             data = self._load()
             data[share_id] = {
                 "share_id": share_id,
-                "tenant_id": tenant_id,
+                "tenant_id": self.tenant_id,
                 "request_id": request_id,
                 "title": title,
                 "created_by": created_by,
@@ -163,7 +166,7 @@ class ShareStore(BaseJsonStore):
         with self._lock:
             data = self._load()
             link = data.get(share_id)
-            if not link:
+            if not link or not self._owns(link):
                 return None
 
             if link.get("is_active") is False:
@@ -180,11 +183,12 @@ class ShareStore(BaseJsonStore):
     def increment_access(self, share_id: str) -> None:
         with self._lock:
             data = self._load()
-            if share_id in data:
-                data[share_id]["access_count"] = (
-                    data[share_id].get("access_count", 0) + 1
+            link = data.get(share_id)
+            if link and self._owns(link):
+                link["access_count"] = (
+                    link.get("access_count", 0) + 1
                 )
-                data[share_id]["last_accessed_at"] = datetime.now().isoformat()
+                link["last_accessed_at"] = datetime.now().isoformat()
                 self._save(data)
 
     def revoke(
@@ -198,7 +202,7 @@ class ShareStore(BaseJsonStore):
         with self._lock:
             data = self._load()
             link = data.get(share_id)
-            if not link:
+            if not link or not self._owns(link):
                 return False
             if link.get("created_by") != user_id and not allow_admin_override:
                 return False
@@ -215,5 +219,5 @@ class ShareStore(BaseJsonStore):
             data = self._load()
             return [
                 v for v in data.values()
-                if v.get("created_by") == user_id
+                if self._owns(v) and v.get("created_by") == user_id
             ]

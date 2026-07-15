@@ -182,7 +182,6 @@ def test_share_store_create_and_get():
     from app.storage.share_store import ShareStore
     store = ShareStore("test-share-tenant")
     link = store.create(
-        tenant_id="test-share-tenant",
         request_id="req-001",
         title="테스트 문서",
         created_by="user1",
@@ -223,7 +222,6 @@ def test_share_store_revoke():
     from app.storage.share_store import ShareStore
     store = ShareStore("test-revoke-tenant")
     link = store.create(
-        tenant_id="test-revoke-tenant",
         request_id="req-002",
         title="취소 테스트",
         created_by="user1",
@@ -239,7 +237,6 @@ def test_share_store_revoke():
 
     # Wrong user cannot revoke
     link2 = store.create(
-        tenant_id="test-revoke-tenant",
         request_id="req-003",
         title="취소 테스트 2",
         created_by="user1",
@@ -255,7 +252,6 @@ def test_share_store_marks_elapsed_link_as_expired():
 
     store = ShareStore("test-expired-lifecycle-tenant")
     link = store.create(
-        tenant_id="test-expired-lifecycle-tenant",
         request_id="req-expired-lifecycle",
         title="만료 상태 테스트",
         created_by="user1",
@@ -275,7 +271,6 @@ def test_share_store_access_count():
     from datetime import datetime
     store = ShareStore("test-access-tenant")
     link = store.create(
-        tenant_id="test-access-tenant",
         request_id="req-004",
         title="조회 테스트",
         created_by="user1",
@@ -296,11 +291,11 @@ def test_share_store_list_by_user():
     tenant = f"test-list-{uuid.uuid4().hex[:8]}"
     store = ShareStore(tenant)
 
-    store.create(tenant_id=tenant, request_id="req-005",
+    store.create(request_id="req-005",
                  title="목록 테스트 1", created_by="userA")
-    store.create(tenant_id=tenant, request_id="req-006",
+    store.create(request_id="req-006",
                  title="목록 테스트 2", created_by="userA")
-    store.create(tenant_id=tenant, request_id="req-007",
+    store.create(request_id="req-007",
                  title="다른 유저", created_by="userB")
 
     userA_links = store.list_by_user("userA")
@@ -328,7 +323,6 @@ def test_share_link_expires_at_format():
     from datetime import datetime
     store = ShareStore("test-expires-tenant")
     link = store.create(
-        tenant_id="test-expires-tenant",
         request_id="req-exp",
         title="만료 테스트",
         created_by="user1",

@@ -24,6 +24,7 @@ Coverage (25+ tests):
   H14: NotificationStore reads and mutates only records owned by its tenant
   H15: MessageStore reads and mutates only records owned by its tenant
   H16: HistoryStore reads and mutates only entries owned by its tenant
+  H17: ShareStore keeps public and authenticated lifecycle tenant-bound
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -789,6 +790,63 @@ def test_history_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     legacy = store.get_entry(entry.entry_id, "user-1")
     assert legacy is not None
     assert legacy["title"] == "현재 tenant 이력"
+
+
+def test_share_store_is_bound_to_one_tenant(client, tmp_path):
+    """Drifted share links stay private and unchanged."""
+    from app.storage.share_store import ShareStore
+
+    client.app.state.tenant_store.create_tenant("tenant_a", "Tenant A")
+    store = ShareStore(
+        "tenant_a",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    )
+
+    with pytest.raises(TypeError):
+        store.create(
+            tenant_id="tenant_b",
+            request_id="request-b",
+            title="다른 tenant 공유",
+            created_by="user-1",
+        )
+
+    link = store.create(
+        request_id="request-a",
+        title="현재 tenant 공유",
+        created_by="user-1",
+    )
+    assert link.tenant_id == "tenant_a"
+
+    path = tmp_path / "tenants" / "tenant_a" / "shares.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[link.share_id]["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert store.get(link.share_id) is None
+    assert client.get(f"/shared/{link.share_id}").status_code == 404
+    store.increment_access(link.share_id)
+    assert store.revoke(
+        link.share_id,
+        "admin",
+        allow_admin_override=True,
+    ) is False
+    assert store.list_by_user("user-1") == []
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))[link.share_id]
+    assert persisted["tenant_id"] == "tenant_b"
+    assert persisted["access_count"] == 0
+    assert persisted["last_accessed_at"] == ""
+    assert persisted["is_active"] is True
+
+    persisted.pop("tenant_id")
+    path.write_text(
+        json.dumps({link.share_id: persisted}),
+        encoding="utf-8",
+    )
+    legacy = store.get(link.share_id)
+    assert legacy is not None
+    assert legacy["title"] == "현재 tenant 공유"
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

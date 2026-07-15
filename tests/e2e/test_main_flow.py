@@ -1942,7 +1942,6 @@ def test_locations_page_stale_share_risk_strip_opens_review_preset(page):
     )
     share_store = ShareStore("system")
     share = share_store.create(
-        tenant_id="system",
         request_id="req-e2e-loc-stale-share",
         title="거점 stale share",
         created_by="e2e_admin",

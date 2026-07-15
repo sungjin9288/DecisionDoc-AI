@@ -315,7 +315,6 @@ def create_share_link(payload: CreateShareRequest, request: Request):
     from app.storage.share_store import ShareStore
     store = ShareStore(tenant_id, data_dir=request.app.state.data_dir)
     link = store.create(
-        tenant_id=tenant_id,
         request_id=payload.request_id,
         title=payload.title,
         created_by=user_id,

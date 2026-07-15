@@ -1160,7 +1160,6 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
         backend=client.app.state.state_backend,
     )
     share_0 = share_store.create(
-        tenant_id="t-proc-stale-share",
         request_id="req-stale-share-0",
         title="Stale share 0",
         created_by="analyst",
@@ -1172,7 +1171,6 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
         decision_council_document_status_summary="현재 procurement recommendation 또는 checklist가 바뀌어 외부 공유 전 재확인이 필요합니다.",
     )
     share_1 = share_store.create(
-        tenant_id="t-proc-stale-share",
         request_id="req-stale-share-1",
         title="Stale share 1",
         created_by="admin",
@@ -1183,7 +1181,6 @@ def test_admin_location_procurement_quality_summary_includes_stale_share_create_
         decision_council_document_status_summary="현재 procurement recommendation 또는 checklist가 바뀌어 외부 공유 전 재확인이 필요합니다.",
     )
     share_2 = share_store.create(
-        tenant_id="t-proc-stale-share",
         request_id="req-stale-share-2",
         title="Stale share 2",
         created_by="reviewer",
@@ -1472,7 +1469,6 @@ def test_admin_procurement_stale_share_queue_tracks_unique_drift_links_and_curre
         backend=client.app.state.state_backend,
     )
     share = share_store.create(
-        tenant_id=tenant_id,
         request_id="req-share-drift-view",
         title="Share drift view",
         created_by="reviewer",
@@ -1486,7 +1482,6 @@ def test_admin_procurement_stale_share_queue_tracks_unique_drift_links_and_curre
     share_store.increment_access(share.share_id)
     share_store.increment_access(share.share_id)
     recovered_share = share_store.create(
-        tenant_id=tenant_id,
         request_id="req-share-drift-recovered",
         title="Recovered share drift view",
         created_by="reviewer",
@@ -1755,7 +1750,6 @@ def test_admin_procurement_quality_summary_includes_stale_proposal_share_queue(
         backend=client.app.state.state_backend,
     )
     share = share_store.create(
-        tenant_id="t-proc-stale-proposal",
         request_id="req-stale-proposal-share-1",
         title="Stale proposal share",
         created_by="proposal-owner",
@@ -1852,7 +1846,6 @@ def test_admin_locations_can_include_procurement_stale_share_overview(
         backend=client.app.state.state_backend,
     )
     share = share_store.create(
-        tenant_id="t-loc-stale-card",
         request_id="req-loc-stale-card",
         title="Location stale share",
         created_by="admin",
@@ -1975,7 +1968,6 @@ def test_admin_location_procurement_quality_summary_prioritizes_recently_accesse
         backend=client.app.state.state_backend,
     )
     older_share = share_store.create(
-        tenant_id="t-proc-stale-share-order",
         request_id="req-stale-share-order-older",
         title="Older accessed stale share",
         created_by="older",
@@ -1986,7 +1978,6 @@ def test_admin_location_procurement_quality_summary_prioritizes_recently_accesse
         decision_council_document_status_summary="public 열람이 있었던 stale share입니다.",
     )
     newer_share = share_store.create(
-        tenant_id="t-proc-stale-share-order",
         request_id="req-stale-share-order-newer",
         title="Newer accessed stale share",
         created_by="newer",
