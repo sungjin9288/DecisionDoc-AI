@@ -2619,6 +2619,8 @@ def test_primary_smoke_modules_stay_within_800_line_guide():
         root / "scripts/smoke_support.py",
         root / "scripts/procurement_smoke.py",
         root / "scripts/procurement_smoke_handoff.py",
+        root / "scripts/post_deploy_check.py",
+        root / "scripts/post_deploy_reports.py",
     )
     oversized_modules: dict[str, int] = {}
     for path in module_paths:
