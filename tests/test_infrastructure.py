@@ -2864,6 +2864,49 @@ def test_production_bookmark_store_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_decision_council_store_write_contract_requires_explicit_tenant():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "storage" / "decision_council_store.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    store = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DecisionCouncilStore"
+    )
+    methods = {
+        node.name: node
+        for node in store.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"get_latest", "upsert_latest"}
+    }
+    assert set(methods) == {"get_latest", "upsert_latest"}
+
+    for method in methods.values():
+        keyword_names = [argument.arg for argument in method.args.kwonlyargs]
+        tenant_index = keyword_names.index("tenant_id")
+        assert method.args.kw_defaults[tenant_index] is None
+
+
+def test_production_decision_council_writes_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "upsert_latest":
+                continue
+            if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}")
+
+    assert missing_tenant == []
+
+
 def test_trajectory_store_contract_requires_explicit_tenant_binding():
     root = Path(__file__).resolve().parents[1]
     expected_methods = {

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import pytest
 
 from app.schemas import (
     NormalizedProcurementOpportunity,
@@ -113,7 +117,11 @@ def test_decision_council_service_builds_structured_procurement_session(tmp_path
 def test_decision_council_store_upsert_latest_reuses_session_id_and_bumps_revision(tmp_path):
     store = DecisionCouncilStore(base_dir=str(tmp_path))
     service = DecisionCouncilService(decision_council_store=store)
-    record = _build_procurement_record(tmp_path, recommendation_value="NO_GO")
+    record = _build_procurement_record(
+        tmp_path,
+        project_id="proj-council-2",
+        recommendation_value="NO_GO",
+    )
 
     first = service.run_procurement_council(
         tenant_id="default",
@@ -139,10 +147,205 @@ def test_decision_council_store_upsert_latest_reuses_session_id_and_bumps_revisi
     assert latest.goal == "입찰 미진행 근거를 더 명확히 정리한다."
 
 
+def test_decision_council_store_rejects_unsafe_tenant_before_creating_paths(tmp_path):
+    store = DecisionCouncilStore(base_dir=str(tmp_path))
+
+    for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+        with pytest.raises(ValueError, match="Invalid tenant_id"):
+            store.get_latest(tenant_id=tenant_id, project_id="proj-unsafe")
+
+    assert not (tmp_path / "tenants").exists()
+
+
+def test_decision_council_store_rejects_mismatched_scope_before_writing(tmp_path):
+    source_dir = tmp_path / "source"
+    target_dir = tmp_path / "target"
+    source_store = DecisionCouncilStore(base_dir=str(source_dir))
+    source_service = DecisionCouncilService(decision_council_store=source_store)
+    record = _build_procurement_record(source_dir, project_id="proj-scope")
+    session = source_service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-scope",
+        goal="scope 검증용 council을 만든다.",
+        procurement_record=record,
+    )
+    target_store = DecisionCouncilStore(base_dir=str(target_dir))
+
+    with pytest.raises(ValueError, match="tenant does not match"):
+        target_store.upsert_latest(
+            session.model_copy(update={"tenant_id": "foreign"}),
+            tenant_id="default",
+        )
+    with pytest.raises(ValueError, match="key does not match"):
+        target_store.upsert_latest(
+            session.model_copy(update={"session_key": "forged:key"}),
+            tenant_id="default",
+        )
+
+    assert not (target_dir / "tenants").exists()
+
+
+def test_decision_council_service_rejects_foreign_procurement_record(tmp_path):
+    store = DecisionCouncilStore(base_dir=str(tmp_path))
+    service = DecisionCouncilService(decision_council_store=store)
+    record = _build_procurement_record(tmp_path, project_id="proj-owned")
+
+    with pytest.raises(ValueError, match="does not match Decision Council scope"):
+        service.run_procurement_council(
+            tenant_id="other-tenant",
+            project_id="proj-owned",
+            goal="다른 tenant record를 사용하지 않는다.",
+            procurement_record=record,
+        )
+    with pytest.raises(ValueError, match="does not match Decision Council scope"):
+        service.run_procurement_council(
+            tenant_id="default",
+            project_id="proj-other",
+            goal="다른 project record를 사용하지 않는다.",
+            procurement_record=record,
+        )
+
+    assert not (tmp_path / "tenants" / "other-tenant").exists()
+
+
+def test_decision_council_store_preserves_drift_and_updates_owned_record(tmp_path):
+    store = DecisionCouncilStore(base_dir=str(tmp_path))
+    service = DecisionCouncilService(decision_council_store=store)
+    record = _build_procurement_record(tmp_path, project_id="proj-drift")
+    first = service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-drift",
+        goal="현재 tenant의 council을 만든다.",
+        procurement_record=record,
+    )
+    path = tmp_path / "tenants" / "default" / "decision_council_sessions.json"
+    owned = json.loads(path.read_text(encoding="utf-8"))[0]
+    foreign = {**owned, "tenant_id": "foreign", "session_id": "session-foreign"}
+    malformed = {**owned, "session_id": "session-malformed"}
+    malformed.pop("goal")
+    path.write_text(
+        json.dumps([foreign, malformed, owned], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    latest = store.get_latest(tenant_id="default", project_id="proj-drift")
+    assert latest is not None
+    assert latest.session_id == first.session_id
+
+    updated = service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-drift",
+        goal="현재 tenant의 council만 갱신한다.",
+        procurement_record=record,
+    )
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+
+    assert persisted[:2] == [foreign, malformed]
+    assert persisted[2]["session_id"] == first.session_id
+    assert persisted[2]["session_revision"] == 2
+    assert updated.session_revision == 2
+
+
+def test_decision_council_store_rejects_duplicate_owned_session(tmp_path):
+    store = DecisionCouncilStore(base_dir=str(tmp_path))
+    service = DecisionCouncilService(decision_council_store=store)
+    record = _build_procurement_record(tmp_path, project_id="proj-duplicate")
+    session = service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-duplicate",
+        goal="중복 감지 기준을 만든다.",
+        procurement_record=record,
+    )
+    path = tmp_path / "tenants" / "default" / "decision_council_sessions.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    duplicate = {**records[0], "session_id": "session-duplicate"}
+    records.append(duplicate)
+    path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(ValueError, match="Duplicate Decision Council"):
+        store.get_latest(tenant_id="default", project_id="proj-duplicate")
+    with pytest.raises(ValueError, match="Duplicate Decision Council"):
+        store.upsert_latest(session, tenant_id="default")
+
+    assert path.read_bytes() == original
+
+
+def test_decision_council_store_preserves_invalid_state_document(tmp_path):
+    source_dir = tmp_path / "source"
+    target_dir = tmp_path / "target"
+    source_store = DecisionCouncilStore(base_dir=str(source_dir))
+    source_service = DecisionCouncilService(decision_council_store=source_store)
+    record = _build_procurement_record(source_dir, project_id="proj-invalid-state")
+    session = source_service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-invalid-state",
+        goal="invalid state 보존을 검증한다.",
+        procurement_record=record,
+    )
+    path = target_dir / "tenants" / "default" / "decision_council_sessions.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"not": "a session list"}', encoding="utf-8")
+    original = path.read_bytes()
+    store = DecisionCouncilStore(base_dir=str(target_dir))
+
+    with pytest.raises(ValueError, match="Invalid Decision Council state document"):
+        store.get_latest(tenant_id="default", project_id="proj-invalid-state")
+    with pytest.raises(ValueError, match="Invalid Decision Council state document"):
+        store.upsert_latest(session, tenant_id="default")
+
+    assert path.read_bytes() == original
+
+
+def test_decision_council_concurrent_instances_preserve_every_session(tmp_path):
+    source_dir = tmp_path / "source"
+    target_dir = tmp_path / "target"
+    source_store = DecisionCouncilStore(base_dir=str(source_dir))
+    source_service = DecisionCouncilService(decision_council_store=source_store)
+    record = _build_procurement_record(source_dir, project_id="proj-template")
+    template = source_service.run_procurement_council(
+        tenant_id="default",
+        project_id="proj-template",
+        goal="동시 저장 template을 만든다.",
+        procurement_record=record,
+    )
+    stores = [DecisionCouncilStore(base_dir=str(target_dir)) for _ in range(20)]
+
+    def save_session(index: int) -> None:
+        project_id = f"proj-concurrent-{index}"
+        session = template.model_copy(
+            update={
+                "session_id": f"session-concurrent-{index}",
+                "session_key": DecisionCouncilStore.build_session_key(
+                    project_id=project_id,
+                    use_case="public_procurement",
+                    target_bundle_type="bid_decision_kr",
+                ),
+                "project_id": project_id,
+                "goal": f"동시 저장 {index}",
+                "operation": None,
+            }
+        )
+        stores[index].upsert_latest(session, tenant_id="default")
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(executor.map(save_session, range(20)))
+
+    path = target_dir / "tenants" / "default" / "decision_council_sessions.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    assert {record["project_id"] for record in records} == {
+        f"proj-concurrent-{index}" for index in range(20)
+    }
+
+
 def test_decision_council_generation_context_includes_consensus_and_handoff(tmp_path):
     store = DecisionCouncilStore(base_dir=str(tmp_path))
     service = DecisionCouncilService(decision_council_store=store)
-    record = _build_procurement_record(tmp_path, recommendation_value="GO")
+    record = _build_procurement_record(
+        tmp_path,
+        project_id="proj-council-3",
+        recommendation_value="GO",
+    )
 
     session = service.run_procurement_council(
         tenant_id="default",

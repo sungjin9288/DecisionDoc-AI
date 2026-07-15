@@ -8,14 +8,25 @@ Storage:
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from app.schemas import DecisionCouncilSessionResponse
 from app.storage.base import BaseJsonStore, atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
+
+
+_path_locks: dict[Path, threading.Lock] = {}
+_path_locks_guard = threading.Lock()
+
+
+def _lock_for_path(path: Path) -> threading.Lock:
+    with _path_locks_guard:
+        return _path_locks.setdefault(path.resolve(), threading.Lock())
 
 
 def _now_iso() -> str:
@@ -47,24 +58,26 @@ class DecisionCouncilStore(BaseJsonStore):
         return self._base / "tenants"
 
     def _path(self, tenant_id: str) -> Path:
-        tenant_dir = self._base / "tenants" / tenant_id
-        if self._backend.kind == "local":
-            tenant_dir.mkdir(parents=True, exist_ok=True)
-        return tenant_dir / "decision_council_sessions.json"
+        tenant_id = require_tenant_id(tenant_id)
+        return self._base / "tenants" / tenant_id / "decision_council_sessions.json"
 
     def _relative_path(self, tenant_id: str) -> str:
+        tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "decision_council_sessions.json")
 
-    def _load(self, tenant_id: str) -> list[dict]:
+    def _load(self, tenant_id: str) -> list[Any]:
         raw = self._backend.read_text(self._relative_path(tenant_id))
-        if raw is None:
+        if raw is None or not raw.strip():
             return []
         try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return []
+            records = json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError("Invalid Decision Council state document") from exc
+        if not isinstance(records, list):
+            raise ValueError("Invalid Decision Council state document")
+        return records
 
-    def _save(self, tenant_id: str, records: list[dict]) -> None:
+    def _save(self, tenant_id: str, records: list[Any]) -> None:
         payload = json.dumps(records, ensure_ascii=False, indent=2)
         if self._backend.kind == "local":
             atomic_write_text(self._path(tenant_id), payload)
@@ -96,28 +109,47 @@ class DecisionCouncilStore(BaseJsonStore):
         *,
         tenant_id: str,
         session_key: str,
-    ) -> tuple[list[dict], int, DecisionCouncilSessionResponse] | None:
+    ) -> tuple[list[Any], int, DecisionCouncilSessionResponse] | None:
         records = self._load(tenant_id)
+        matches: list[tuple[int, DecisionCouncilSessionResponse]] = []
         for idx, record in enumerate(records):
+            if not isinstance(record, dict):
+                continue
             if record.get("session_key") == session_key:
-                session = self._from_dict(record)
-                if session.tenant_id != tenant_id:
-                    return None
-                return records, idx, session
-        return None
+                if record.get("tenant_id") != tenant_id:
+                    continue
+                try:
+                    session = self._from_dict(record)
+                except ValueError:
+                    continue
+                matches.append((idx, session))
+        if len(matches) > 1:
+            raise ValueError("Duplicate Decision Council session records")
+        if not matches:
+            return None
+        idx, session = matches[0]
+        return records, idx, session
 
     def upsert_latest(
         self,
         session: DecisionCouncilSessionResponse,
+        *,
+        tenant_id: str,
     ) -> tuple[DecisionCouncilSessionResponse, Literal["created", "updated"]]:
-        with self._lock:
+        tenant_id = require_tenant_id(tenant_id)
+        if session.tenant_id != tenant_id:
+            raise ValueError("Decision Council session tenant does not match store scope")
+        session_key = self.build_session_key(
+            project_id=session.project_id,
+            use_case=session.use_case,
+            target_bundle_type=session.target_bundle_type,
+        )
+        if session.session_key != session_key:
+            raise ValueError("Decision Council session key does not match session identity")
+
+        with _lock_for_path(self._path(tenant_id)):
             now = _now_iso()
-            session_key = session.session_key or self.build_session_key(
-                project_id=session.project_id,
-                use_case=session.use_case,
-                target_bundle_type=session.target_bundle_type,
-            )
-            existing = self._find(tenant_id=session.tenant_id, session_key=session_key)
+            existing = self._find(tenant_id=tenant_id, session_key=session_key)
             session_payload = session.model_dump(
                 mode="json",
                 exclude=self._DERIVED_RESPONSE_FIELDS,
@@ -133,9 +165,9 @@ class DecisionCouncilStore(BaseJsonStore):
                         "updated_at": now,
                     }
                 )
-                records = self._load(session.tenant_id)
+                records = self._load(tenant_id)
                 records.append(self._to_dict(stored))
-                self._save(session.tenant_id, records)
+                self._save(tenant_id, records)
                 return stored.model_copy(update={"operation": "created"}), "created"
 
             records, idx, current = existing
@@ -150,7 +182,7 @@ class DecisionCouncilStore(BaseJsonStore):
                 }
             )
             records[idx] = self._to_dict(stored)
-            self._save(session.tenant_id, records)
+            self._save(tenant_id, records)
             return stored.model_copy(update={"operation": "updated"}), "updated"
 
     def get_latest(
@@ -161,7 +193,8 @@ class DecisionCouncilStore(BaseJsonStore):
         use_case: str = "public_procurement",
         target_bundle_type: str = "bid_decision_kr",
     ) -> DecisionCouncilSessionResponse | None:
-        with self._lock:
+        tenant_id = require_tenant_id(tenant_id)
+        with _lock_for_path(self._path(tenant_id)):
             session_key = self.build_session_key(
                 project_id=project_id,
                 use_case=use_case,

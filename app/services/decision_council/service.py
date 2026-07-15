@@ -20,6 +20,7 @@ from app.services.decision_council.binding import (
 )
 from app.services.decision_council.council_synthesis_mixin import CouncilSynthesisMixin
 from app.storage.decision_council_store import DecisionCouncilStore
+from app.tenant import require_tenant_id
 
 _ROLE_ORDER = (
     "Requirement Analyst",
@@ -46,6 +47,12 @@ class DecisionCouncilService(CouncilSynthesisMixin):
         constraints: str = "",
         procurement_record: ProcurementDecisionRecord,
     ) -> DecisionCouncilSessionResponse:
+        tenant_id = require_tenant_id(tenant_id)
+        if (
+            procurement_record.tenant_id != tenant_id
+            or procurement_record.project_id != project_id
+        ):
+            raise ValueError("Procurement record does not match Decision Council scope")
         if procurement_record.opportunity is None or procurement_record.recommendation is None:
             raise KeyError("decision_council_procurement_context_required")
 
@@ -137,7 +144,10 @@ class DecisionCouncilService(CouncilSynthesisMixin):
                 "handoff": handoff.model_dump(mode="json"),
             }
         )
-        stored, _ = self._decision_council_store.upsert_latest(session)
+        stored, _ = self._decision_council_store.upsert_latest(
+            session,
+            tenant_id=tenant_id,
+        )
         return stored
 
     def get_latest_procurement_council(

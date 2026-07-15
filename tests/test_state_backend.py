@@ -7,9 +7,13 @@ from pathlib import Path
 from app.schemas import (
     NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
+    ProcurementRecommendation,
+    ProcurementRecommendationValue,
 )
+from app.services.decision_council_service import DecisionCouncilService
 from app.storage.approval_store import ApprovalStore
 from app.storage.bookmark_store import BookmarkStore
+from app.storage.decision_council_store import DecisionCouncilStore
 from app.storage.history_store import HistoryEntry, HistoryStore
 from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.notification_store import NotificationStore
@@ -191,6 +195,52 @@ def test_procurement_store_persists_record_and_snapshot_to_s3_state_backend():
         project_id="proj-1",
         snapshot_id=snapshot.snapshot_id,
     ) == {"bid_number": "2026-0001"}
+
+
+def test_decision_council_store_persists_owned_session_to_s3_state_backend():
+    backend, client = _backend()
+    procurement_store = ProcurementDecisionStore(
+        base_dir="/virtual/data",
+        backend=backend,
+    )
+    record = procurement_store.upsert(
+        ProcurementDecisionUpsert(
+            project_id="proj-council-s3",
+            tenant_id="alpha",
+            opportunity=NormalizedProcurementOpportunity(
+                source_kind="g2b",
+                source_id="2026-COUNCIL-S3",
+                title="S3 council 검증",
+            ),
+            recommendation=ProcurementRecommendation(
+                value=ProcurementRecommendationValue.GO,
+                summary="S3 저장 검증",
+            ),
+        )
+    )
+    store = DecisionCouncilStore(base_dir="/virtual/data", backend=backend)
+    service = DecisionCouncilService(decision_council_store=store)
+
+    created = service.run_procurement_council(
+        tenant_id="alpha",
+        project_id="proj-council-s3",
+        goal="S3에 tenant-owned council session을 저장한다.",
+        procurement_record=record,
+    )
+
+    key = (
+        "unit-bucket",
+        "decisiondoc-ai/state/tenants/alpha/decision_council_sessions.json",
+    )
+    assert key in client.objects
+    raw = json.loads(client.objects[key].decode("utf-8"))
+    assert raw[0]["tenant_id"] == "alpha"
+    reloaded = DecisionCouncilStore(
+        base_dir="/virtual/data",
+        backend=backend,
+    ).get_latest(tenant_id="alpha", project_id="proj-council-s3")
+    assert reloaded is not None
+    assert reloaded.session_id == created.session_id
 
 
 def test_procurement_review_store_preserves_packet_and_completed_package_on_s3():

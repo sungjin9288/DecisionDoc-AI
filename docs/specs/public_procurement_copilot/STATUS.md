@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone Decision Council tenant ownership hardening
+
+- Root-scoped `DecisionCouncilStore`의 read/write는 검증된 caller tenant를 필수로 받고, write는 session tenant와 canonical project/use-case/bundle key를 다시 확인한다.
+- `DecisionCouncilService`는 council을 만들기 전에 procurement record의 tenant와 project가 요청 scope와 일치하는지 확인해 다른 project 또는 tenant의 판단 근거가 session으로 저장되지 않게 한다.
+- Tenant path 안의 explicit foreign·malformed record는 조회와 갱신에서 제외하되 원본에는 남긴다. 동일 scope의 owned duplicate와 invalid top-level state document는 임의 복구나 overwrite 없이 중단한다.
+- 같은 tenant file을 쓰는 독립 store 인스턴스는 path-shared lock으로 read-modify-write를 직렬화한다. Local 20-session concurrency, fake S3 persistence, project API 연계와 production caller AST guard를 no-cost regression으로 검증한다.
+- Full no-cost regression은 `3145 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone report-quality server-bound pilot confirmation
 
 - Pilot export now requires the preview response hash as `preview_sha256`. The service rebuilds the current ordered JSONL and uses a constant-time comparison, so missing or stale review evidence cannot produce a download.
