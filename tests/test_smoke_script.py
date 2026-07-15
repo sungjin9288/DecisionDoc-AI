@@ -6,6 +6,8 @@ from pathlib import Path
 
 import httpx
 
+from scripts import procurement_smoke
+
 
 def _load_smoke_module():
     path = Path(__file__).resolve().parents[1] / "scripts" / "smoke.py"
@@ -56,7 +58,9 @@ def _decision_council_response(
             "alignment": "aligned",
             "recommended_direction": direction,
             "summary": "기존 recommendation을 bid_decision_kr drafting brief로 전달한다.",
-            "strategy_options": ["현재 recommendation 기준으로 의사결정 문서를 작성한다."],
+            "strategy_options": [
+                "현재 recommendation 기준으로 의사결정 문서를 작성한다."
+            ],
             "disagreements": [],
             "top_risks": ["최신 인증 증빙 재확인 필요"],
             "conditions": [],
@@ -76,7 +80,6 @@ def _decision_council_response(
 
 
 def test_discover_recent_g2b_bid_number_returns_first_available_result():
-    smoke = _load_smoke_module()
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -89,7 +92,10 @@ def test_discover_recent_g2b_bid_number_returns_first_available_result():
                 "response": {
                     "body": {
                         "items": [
-                            {"bidNtceNo": "R26BK01499999", "bidNtceNm": "Smoke Fixture"},
+                            {
+                                "bidNtceNo": "R26BK01499999",
+                                "bidNtceNm": "Smoke Fixture",
+                            },
                         ]
                     }
                 }
@@ -97,7 +103,7 @@ def test_discover_recent_g2b_bid_number_returns_first_available_result():
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    discovered = smoke._discover_recent_g2b_bid_number(
+    discovered = procurement_smoke._discover_recent_g2b_bid_number(
         "fake-key",
         timeout_sec=30,
         now=datetime(2026, 3, 28, 9, 0, 0),
@@ -110,14 +116,12 @@ def test_discover_recent_g2b_bid_number_returns_first_available_result():
 
 
 def test_discover_recent_g2b_bid_number_returns_none_when_no_items_exist():
-    smoke = _load_smoke_module()
-
     def handler(request: httpx.Request) -> httpx.Response:
         _ = request
         return httpx.Response(200, json={"response": {"body": {"items": []}}})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    discovered = smoke._discover_recent_g2b_bid_number(
+    discovered = procurement_smoke._discover_recent_g2b_bid_number(
         "fake-key",
         timeout_sec=30,
         now=datetime(2026, 3, 28, 9, 0, 0),
@@ -136,7 +140,9 @@ def test_run_document_upload_smoke_validates_auth_and_success_paths(capsys):
             raise AssertionError(f"Unhandled request: {request.method} {request.url}")
         seen_api_key_headers.append(request.headers.get("x-decisiondoc-api-key", ""))
         if request.headers.get("x-decisiondoc-api-key") != "api-key":
-            return httpx.Response(401, json={"code": "UNAUTHORIZED", "request_id": "req-no-auth"})
+            return httpx.Response(
+                401, json={"code": "UNAUTHORIZED", "request_id": "req-no-auth"}
+            )
         return httpx.Response(
             200,
             json={
@@ -149,7 +155,9 @@ def test_run_document_upload_smoke_validates_auth_and_success_paths(capsys):
             },
         )
 
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
     smoke._run_document_upload_smoke(
         client,
         base_url="https://example.com",
@@ -171,7 +179,9 @@ def test_run_attachment_generation_smoke_validates_auth_and_success_paths(capsys
             raise AssertionError(f"Unhandled request: {request.method} {request.url}")
         seen_api_key_headers.append(request.headers.get("x-decisiondoc-api-key", ""))
         if request.headers.get("x-decisiondoc-api-key") != "api-key":
-            return httpx.Response(401, json={"code": "UNAUTHORIZED", "request_id": "req-no-auth"})
+            return httpx.Response(
+                401, json={"code": "UNAUTHORIZED", "request_id": "req-no-auth"}
+            )
         return httpx.Response(
             200,
             json={
@@ -184,7 +194,9 @@ def test_run_attachment_generation_smoke_validates_auth_and_success_paths(capsys
             },
         )
 
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
     smoke._run_attachment_generation_smoke(
         client,
         base_url="https://example.com",
@@ -197,7 +209,9 @@ def test_run_attachment_generation_smoke_validates_auth_and_success_paths(capsys
     assert seen_api_key_headers == ["", "api-key"]
 
 
-def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(monkeypatch):
+def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(
+    monkeypatch,
+):
     smoke = _load_smoke_module()
     requested_targets: list[str] = []
     council_payloads: list[dict[str, str]] = []
@@ -231,7 +245,9 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
         if path.endswith("/procurement/recommend"):
             return httpx.Response(200, json={"recommendation": {"value": "GO"}})
         if path.endswith("/decision-council/run"):
-            council_payloads.append(smoke._json_body(httpx.Response(200, content=request.content)))
+            council_payloads.append(
+                smoke._json_body(httpx.Response(200, content=request.content))
+            )
             return httpx.Response(200, json=council_response)
         if path == "/generate/stream":
             payload = smoke._json_body(httpx.Response(200, content=request.content))
@@ -247,8 +263,12 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
                     "bundle_id": "bid_decision_kr",
                     "title": "Recovered announcement",
                     "doc_snapshot": "[]",
-                    "source_decision_council_session_id": council_response["session_id"],
-                    "source_decision_council_session_revision": council_response["session_revision"],
+                    "source_decision_council_session_id": council_response[
+                        "session_id"
+                    ],
+                    "source_decision_council_session_revision": council_response[
+                        "session_revision"
+                    ],
                     "source_decision_council_direction": "proceed",
                 }
             ]
@@ -259,8 +279,12 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
                         "bundle_id": "proposal_kr",
                         "title": "Recovered announcement proposal",
                         "doc_snapshot": "[]",
-                        "source_decision_council_session_id": council_response["session_id"],
-                        "source_decision_council_session_revision": council_response["session_revision"],
+                        "source_decision_council_session_id": council_response[
+                            "session_id"
+                        ],
+                        "source_decision_council_session_revision": council_response[
+                            "session_revision"
+                        ],
                         "source_decision_council_direction": "proceed",
                     }
                 )
@@ -268,12 +292,20 @@ def test_run_procurement_smoke_retries_import_with_detail_url_before_discovery(m
         if path == "/approvals":
             return httpx.Response(200, json={"approval_id": "approval-1"})
         if path == "/share":
-            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
+            return httpx.Response(
+                200, json={"share_id": "share-1", "share_url": "/shared/share-1"}
+            )
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
-    smoke._run_procurement_smoke(
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -313,7 +345,9 @@ def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monke
         if path.endswith("/imports/g2b-opportunity"):
             payload = smoke._json_body(httpx.Response(200, content=request.content))
             requested_targets.append(payload["url_or_number"])
-            return httpx.Response(200, json={"opportunity": {"title": "Discovered announcement"}})
+            return httpx.Response(
+                200, json={"opportunity": {"title": "Discovered announcement"}}
+            )
         if path.endswith("/procurement/evaluate"):
             return httpx.Response(200, json={"decision": {"soft_fit_score": 61.0}})
         if path.endswith("/procurement/recommend"):
@@ -336,8 +370,12 @@ def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monke
                     "bundle_id": "bid_decision_kr",
                     "title": "Discovered announcement",
                     "doc_snapshot": "[]",
-                    "source_decision_council_session_id": council_response["session_id"],
-                    "source_decision_council_session_revision": council_response["session_revision"],
+                    "source_decision_council_session_id": council_response[
+                        "session_id"
+                    ],
+                    "source_decision_council_session_revision": council_response[
+                        "session_revision"
+                    ],
                     "source_decision_council_direction": "proceed",
                 }
             ]
@@ -348,8 +386,12 @@ def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monke
                         "bundle_id": "proposal_kr",
                         "title": "Discovered announcement proposal",
                         "doc_snapshot": "[]",
-                        "source_decision_council_session_id": council_response["session_id"],
-                        "source_decision_council_session_revision": council_response["session_revision"],
+                        "source_decision_council_session_id": council_response[
+                            "session_id"
+                        ],
+                        "source_decision_council_session_revision": council_response[
+                            "session_revision"
+                        ],
                         "source_decision_council_direction": "proceed",
                     }
                 )
@@ -357,12 +399,20 @@ def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monke
         if path == "/approvals":
             return httpx.Response(200, json={"approval_id": "approval-1"})
         if path == "/share":
-            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
+            return httpx.Response(
+                200, json={"share_id": "share-1", "share_url": "/shared/share-1"}
+            )
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: "R26BK01455555")
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
-    smoke._run_procurement_smoke(
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: "R26BK01455555",
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -374,9 +424,9 @@ def test_run_procurement_smoke_discovers_recent_target_when_not_configured(monke
     assert generated_bundles == ["bid_decision_kr", "proposal_kr"]
 
 
-def test_run_procurement_smoke_skips_when_no_target_is_configured_and_discovery_finds_nothing(monkeypatch, capsys):
-    smoke = _load_smoke_module()
-
+def test_run_procurement_smoke_skips_when_no_target_is_configured_and_discovery_finds_nothing(
+    monkeypatch, capsys
+):
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/version":
@@ -387,10 +437,16 @@ def test_run_procurement_smoke_skips_when_no_target_is_configured_and_discovery_
             return httpx.Response(200, json={"project_id": "project-123"})
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
 
-    smoke._run_procurement_smoke(
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -398,10 +454,15 @@ def test_run_procurement_smoke_skips_when_no_target_is_configured_and_discovery_
         url_or_number="",
     )
 
-    assert "SKIP procurement smoke could not discover a recent live G2B opportunity" in capsys.readouterr().out
+    assert (
+        "SKIP procurement smoke could not discover a recent live G2B opportunity"
+        in capsys.readouterr().out
+    )
 
 
-def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(monkeypatch, capsys):
+def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(
+    monkeypatch, capsys
+):
     smoke = _load_smoke_module()
     requested_targets: list[str] = []
 
@@ -419,10 +480,16 @@ def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(monkey
             return httpx.Response(404, json={"code": "not_found"})
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
 
-    smoke._run_procurement_smoke(
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -434,10 +501,15 @@ def test_run_procurement_smoke_skips_when_all_import_fallback_targets_404(monkey
         "R26BK01398367",
         "https://www.g2b.go.kr/pt/menu/selectSubFrame.do?bidNtceNo=R26BK01398367",
     ]
-    assert "SKIP procurement smoke import could not resolve a live G2B opportunity" in capsys.readouterr().out
+    assert (
+        "SKIP procurement smoke import could not resolve a live G2B opportunity"
+        in capsys.readouterr().out
+    )
 
 
-def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(monkeypatch):
+def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(
+    monkeypatch,
+):
     smoke = _load_smoke_module()
     summary_statuses: list[str] = []
     copy_payloads: list[dict[str, str]] = []
@@ -462,7 +534,9 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
         if path == "/projects":
             return httpx.Response(200, json={"project_id": "project-123"})
         if path.endswith("/imports/g2b-opportunity"):
-            return httpx.Response(200, json={"opportunity": {"title": "Recovered announcement"}})
+            return httpx.Response(
+                200, json={"opportunity": {"title": "Recovered announcement"}}
+            )
         if path.endswith("/procurement/evaluate"):
             return httpx.Response(200, json={"decision": {"soft_fit_score": 54.0}})
         if path.endswith("/procurement/recommend"):
@@ -480,7 +554,9 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
                 if not state["override_saved"]:
                     return httpx.Response(
                         409,
-                        json={"detail": {"code": "procurement_override_reason_required"}},
+                        json={
+                            "detail": {"code": "procurement_override_reason_required"}
+                        },
                     )
                 state["proposal_generated"] = True
                 body = 'event: complete\ndata: {"request_id":"req-2","bundle_id":"proposal_kr"}\n\n'
@@ -492,8 +568,12 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
                     "bundle_id": "bid_decision_kr",
                     "title": "Recovered announcement",
                     "doc_snapshot": "[]",
-                    "source_decision_council_session_id": council_response["session_id"],
-                    "source_decision_council_session_revision": council_response["session_revision"],
+                    "source_decision_council_session_id": council_response[
+                        "session_id"
+                    ],
+                    "source_decision_council_session_revision": council_response[
+                        "session_revision"
+                    ],
                     "source_decision_council_direction": "do_not_proceed",
                 }
             ]
@@ -504,8 +584,12 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
                         "bundle_id": "proposal_kr",
                         "title": "Recovered announcement proposal",
                         "doc_snapshot": "[]",
-                        "source_decision_council_session_id": council_response["session_id"],
-                        "source_decision_council_session_revision": council_response["session_revision"],
+                        "source_decision_council_session_id": council_response[
+                            "session_id"
+                        ],
+                        "source_decision_council_session_revision": council_response[
+                            "session_revision"
+                        ],
                         "source_decision_council_direction": "do_not_proceed",
                     }
                 )
@@ -513,7 +597,9 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
         if path == "/approvals":
             return httpx.Response(200, json={"approval_id": "approval-1"})
         if path == "/share":
-            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
+            return httpx.Response(
+                200, json={"share_id": "share-1", "share_url": "/shared/share-1"}
+            )
         if path.endswith("/procurement/remediation-link-copy"):
             payload = _request_json(request)
             copy_payloads.append(payload)
@@ -551,9 +637,15 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
             )
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
-    smoke._run_procurement_smoke(
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -593,7 +685,9 @@ def test_run_procurement_smoke_validates_remediation_handoff_queue_for_no_go(mon
     ]
 
 
-def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(monkeypatch):
+def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
+    monkeypatch,
+):
     smoke = _load_smoke_module()
     summary_paths: list[str] = []
     council_response = _decision_council_response(direction="do_not_proceed")
@@ -615,7 +709,9 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
         if path == "/projects":
             return httpx.Response(200, json={"project_id": "project-123"})
         if path.endswith("/imports/g2b-opportunity"):
-            return httpx.Response(200, json={"opportunity": {"title": "Recovered announcement"}})
+            return httpx.Response(
+                200, json={"opportunity": {"title": "Recovered announcement"}}
+            )
         if path.endswith("/procurement/evaluate"):
             return httpx.Response(200, json={"decision": {"soft_fit_score": 54.0}})
         if path.endswith("/procurement/recommend"):
@@ -630,7 +726,12 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
                 return httpx.Response(200, text=body)
             if bundle_type == "proposal_kr":
                 if not state["override_saved"]:
-                    return httpx.Response(409, json={"detail": {"code": "procurement_override_reason_required"}})
+                    return httpx.Response(
+                        409,
+                        json={
+                            "detail": {"code": "procurement_override_reason_required"}
+                        },
+                    )
                 state["proposal_generated"] = True
                 body = 'event: complete\ndata: {"request_id":"req-2","bundle_id":"proposal_kr"}\n\n'
                 return httpx.Response(200, text=body)
@@ -641,8 +742,12 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
                     "bundle_id": "bid_decision_kr",
                     "title": "Recovered announcement",
                     "doc_snapshot": "[]",
-                    "source_decision_council_session_id": council_response["session_id"],
-                    "source_decision_council_session_revision": council_response["session_revision"],
+                    "source_decision_council_session_id": council_response[
+                        "session_id"
+                    ],
+                    "source_decision_council_session_revision": council_response[
+                        "session_revision"
+                    ],
                     "source_decision_council_direction": "do_not_proceed",
                 }
             ]
@@ -653,8 +758,12 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
                         "bundle_id": "proposal_kr",
                         "title": "Recovered announcement proposal",
                         "doc_snapshot": "[]",
-                        "source_decision_council_session_id": council_response["session_id"],
-                        "source_decision_council_session_revision": council_response["session_revision"],
+                        "source_decision_council_session_id": council_response[
+                            "session_id"
+                        ],
+                        "source_decision_council_session_revision": council_response[
+                            "session_revision"
+                        ],
                         "source_decision_council_direction": "do_not_proceed",
                     }
                 )
@@ -662,7 +771,9 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
         if path == "/approvals":
             return httpx.Response(200, json={"approval_id": "approval-1"})
         if path == "/share":
-            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
+            return httpx.Response(
+                200, json={"share_id": "share-1", "share_url": "/shared/share-1"}
+            )
         if path.endswith("/procurement/remediation-link-copy"):
             return httpx.Response(200, json={"logged": True})
         if path.endswith("/procurement/remediation-link-open"):
@@ -696,13 +807,21 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
                 },
             )
         if path == "/admin/locations/system/procurement-quality-summary":
-            raise AssertionError("Location summary route should not be used when SMOKE_OPS_KEY is set")
+            raise AssertionError(
+                "Location summary route should not be used when SMOKE_OPS_KEY is set"
+            )
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setenv("SMOKE_OPS_KEY", "ops-key")
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
-    smoke._run_procurement_smoke(
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",
@@ -717,7 +836,9 @@ def test_run_procurement_smoke_prefers_ops_summary_route_for_handoff_validation(
     ]
 
 
-def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_not_no_go(monkeypatch, capsys):
+def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_not_no_go(
+    monkeypatch, capsys
+):
     smoke = _load_smoke_module()
     remediation_calls: list[str] = []
     generated_bundles: list[str] = []
@@ -732,7 +853,9 @@ def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_n
         if path == "/projects":
             return httpx.Response(200, json={"project_id": "project-123"})
         if path.endswith("/imports/g2b-opportunity"):
-            return httpx.Response(200, json={"opportunity": {"title": "Recovered announcement"}})
+            return httpx.Response(
+                200, json={"opportunity": {"title": "Recovered announcement"}}
+            )
         if path.endswith("/procurement/evaluate"):
             return httpx.Response(200, json={"decision": {"soft_fit_score": 72.0}})
         if path.endswith("/procurement/recommend"):
@@ -756,8 +879,12 @@ def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_n
                             "bundle_id": "bid_decision_kr",
                             "title": "Recovered announcement",
                             "doc_snapshot": "[]",
-                            "source_decision_council_session_id": council_response["session_id"],
-                            "source_decision_council_session_revision": council_response["session_revision"],
+                            "source_decision_council_session_id": council_response[
+                                "session_id"
+                            ],
+                            "source_decision_council_session_revision": council_response[
+                                "session_revision"
+                            ],
                             "source_decision_council_direction": "proceed",
                         },
                         {
@@ -765,8 +892,12 @@ def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_n
                             "bundle_id": "proposal_kr",
                             "title": "Recovered announcement proposal",
                             "doc_snapshot": "[]",
-                            "source_decision_council_session_id": council_response["session_id"],
-                            "source_decision_council_session_revision": council_response["session_revision"],
+                            "source_decision_council_session_id": council_response[
+                                "session_id"
+                            ],
+                            "source_decision_council_session_revision": council_response[
+                                "session_revision"
+                            ],
                             "source_decision_council_direction": "proceed",
                         },
                     ]
@@ -775,15 +906,29 @@ def test_run_procurement_smoke_skips_handoff_validation_when_recommendation_is_n
         if path == "/approvals":
             return httpx.Response(200, json={"approval_id": "approval-1"})
         if path == "/share":
-            return httpx.Response(200, json={"share_id": "share-1", "share_url": "/shared/share-1"})
-        if "remediation-link" in path or "procurement-quality-summary" in path or "override-reason" in path:
+            return httpx.Response(
+                200, json={"share_id": "share-1", "share_url": "/shared/share-1"}
+            )
+        if (
+            "remediation-link" in path
+            or "procurement-quality-summary" in path
+            or "override-reason" in path
+        ):
             remediation_calls.append(path)
-            raise AssertionError(f"Unexpected remediation handoff request: {request.method} {request.url}")
+            raise AssertionError(
+                f"Unexpected remediation handoff request: {request.method} {request.url}"
+            )
         raise AssertionError(f"Unhandled request: {request.method} {request.url}")
 
-    monkeypatch.setattr(smoke, "_discover_recent_g2b_bid_number", lambda *args, **kwargs: None)
-    client = httpx.Client(base_url="https://example.com", transport=httpx.MockTransport(handler))
-    smoke._run_procurement_smoke(
+    monkeypatch.setattr(
+        procurement_smoke,
+        "_discover_recent_g2b_bid_number",
+        lambda *args, **kwargs: None,
+    )
+    client = httpx.Client(
+        base_url="https://example.com", transport=httpx.MockTransport(handler)
+    )
+    procurement_smoke.run_procurement_smoke(
         client,
         base_url="https://example.com",
         api_key="api-key",

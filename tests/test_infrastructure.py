@@ -2612,6 +2612,23 @@ def test_app_python_modules_stay_within_800_line_guide():
     assert oversized_modules == {}
 
 
+def test_primary_smoke_modules_stay_within_800_line_guide():
+    root = Path(__file__).resolve().parents[1]
+    module_paths = (
+        root / "scripts/smoke.py",
+        root / "scripts/smoke_support.py",
+        root / "scripts/procurement_smoke.py",
+        root / "scripts/procurement_smoke_handoff.py",
+    )
+    oversized_modules: dict[str, int] = {}
+    for path in module_paths:
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > 800:
+            oversized_modules[path.relative_to(root).as_posix()] = line_count
+
+    assert oversized_modules == {}
+
+
 def test_procurement_package_constants_facade_reexports_foundation_contract():
     from app.services.procurement_decision_package import constants, package_constants
 
