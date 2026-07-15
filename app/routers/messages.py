@@ -25,7 +25,6 @@ async def post_message(request: Request, body: PostMessageRequest):
     author_name = get_username(request)
     msg_store = get_message_store(tenant_id)
     msg = msg_store.post(
-        tenant_id=tenant_id,
         author_id=author_id,
         author_name=author_name,
         content=body.content,
@@ -73,7 +72,7 @@ async def get_thread(
 
     tenant_id = get_tenant_id(request)
     msg_store = get_message_store(tenant_id)
-    msgs = msg_store.get_thread(tenant_id, context_type, context_id, limit=limit)
+    msgs = msg_store.get_thread(context_type, context_id, limit=limit)
     return {"messages": [asdict(m) for m in msgs]}
 
 
@@ -85,7 +84,7 @@ async def get_my_mentions(request: Request, limit: int = 20):
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
     msg_store = get_message_store(tenant_id)
-    msgs = msg_store.get_mentions(tenant_id, user_id, limit=limit)
+    msgs = msg_store.get_mentions(user_id, limit=limit)
     return {"messages": [asdict(m) for m in msgs]}
 
 
@@ -100,7 +99,7 @@ async def get_messages_unread_count(request: Request, since: str = ""):
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
     msg_store = get_message_store(tenant_id)
-    count = msg_store.get_unread_count(tenant_id, user_id, since)
+    count = msg_store.get_unread_count(user_id, since)
     return {"unread_count": count}
 
 

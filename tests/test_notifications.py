@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.async_helper import run_async
@@ -69,7 +68,6 @@ def test_notification_store_create(tmp_path):
 
     store = NotificationStore("tenant1")
     n = store.create(
-        tenant_id="tenant1",
         recipient_id="user1",
         event_type="system",
         title="테스트",
@@ -88,9 +86,9 @@ def test_notification_store_get_for_user(tmp_path):
     from app.storage.notification_store import NotificationStore
 
     store = NotificationStore("tenant1")
-    store.create("tenant1", "user1", "system", "A", "body A", "system", "")
-    store.create("tenant1", "user1", "system", "B", "body B", "system", "")
-    store.create("tenant1", "user2", "system", "C", "body C", "system", "")
+    store.create("user1", "system", "A", "body A", "system", "")
+    store.create("user1", "system", "B", "body B", "system", "")
+    store.create("user2", "system", "C", "body C", "system", "")
 
     results = store.get_for_user("user1")
     assert len(results) == 2
@@ -102,8 +100,8 @@ def test_notification_store_unread_count(tmp_path):
     from app.storage.notification_store import NotificationStore
 
     store = NotificationStore("tenant1")
-    n1 = store.create("tenant1", "user1", "system", "A", "body", "system", "")
-    store.create("tenant1", "user1", "system", "B", "body", "system", "")
+    n1 = store.create("user1", "system", "A", "body", "system", "")
+    store.create("user1", "system", "B", "body", "system", "")
 
     assert store.get_unread_count("user1") == 2
     store.mark_read(n1.notification_id, "user1")
@@ -115,7 +113,7 @@ def test_notification_store_mark_read(tmp_path):
     from app.storage.notification_store import NotificationStore
 
     store = NotificationStore("tenant1")
-    n = store.create("tenant1", "user1", "system", "A", "body", "system", "")
+    n = store.create("user1", "system", "A", "body", "system", "")
     assert not n.is_read
 
     found = store.mark_read(n.notification_id, "user1")
@@ -133,9 +131,9 @@ def test_notification_store_mark_all_read(tmp_path):
     from app.storage.notification_store import NotificationStore
 
     store = NotificationStore("tenant1")
-    store.create("tenant1", "user1", "system", "A", "body", "system", "")
-    store.create("tenant1", "user1", "system", "B", "body", "system", "")
-    store.create("tenant1", "user2", "system", "C", "body", "system", "")
+    store.create("user1", "system", "A", "body", "system", "")
+    store.create("user1", "system", "B", "body", "system", "")
+    store.create("user2", "system", "C", "body", "system", "")
 
     count = store.mark_all_read("user1")
     assert count == 2
@@ -149,8 +147,8 @@ def test_notification_store_unread_only_filter(tmp_path):
     from app.storage.notification_store import NotificationStore
 
     store = NotificationStore("tenant1")
-    n = store.create("tenant1", "user1", "system", "A", "body", "system", "")
-    store.create("tenant1", "user1", "system", "B", "body", "system", "")
+    n = store.create("user1", "system", "A", "body", "system", "")
+    store.create("user1", "system", "B", "body", "system", "")
     store.mark_read(n.notification_id, "user1")
 
     all_items = store.get_for_user("user1")
@@ -167,8 +165,8 @@ def test_notification_store_delete_old(tmp_path):
 
     store = NotificationStore("tenant1")
     # Create a notification and manually backdate it
-    n = store.create("tenant1", "user1", "system", "Old", "body", "system", "")
-    store.create("tenant1", "user1", "system", "New", "body", "system", "")
+    n = store.create("user1", "system", "Old", "body", "system", "")
+    store.create("user1", "system", "New", "body", "system", "")
 
     # Backdate first notification to 40 days ago
     old_ts = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
@@ -191,7 +189,7 @@ def test_notification_store_mark_email_slack_sent(tmp_path):
     import json
 
     store = NotificationStore("tenant1")
-    n = store.create("tenant1", "user1", "system", "A", "body", "system", "")
+    n = store.create("user1", "system", "A", "body", "system", "")
     assert n.sent_email is False
     assert n.sent_slack is False
 
@@ -432,8 +430,8 @@ def test_api_mark_read_and_all_read(tmp_path, monkeypatch):
     # Manually create notifications via store
     from app.storage.notification_store import get_notification_store
     store = get_notification_store("system")
-    n1 = store.create("system", user_id, "system", "알림1", "본문1", "system", "")
-    n2 = store.create("system", user_id, "system", "알림2", "본문2", "system", "")
+    n1 = store.create(user_id, "system", "알림1", "본문1", "system", "")
+    store.create(user_id, "system", "알림2", "본문2", "system", "")
 
     # Unread count should be 2
     res = client.get("/notifications/unread-count", headers=_auth(login))
@@ -465,8 +463,8 @@ def test_api_notifications_returned_newest_first(tmp_path, monkeypatch):
 
     from app.storage.notification_store import get_notification_store
     store = get_notification_store("system")
-    store.create("system", user_id, "system", "첫번째", "b", "system", "")
-    store.create("system", user_id, "system", "두번째", "b", "system", "")
+    store.create(user_id, "system", "첫번째", "b", "system", "")
+    store.create(user_id, "system", "두번째", "b", "system", "")
 
     res = client.get("/notifications", headers=_auth(login))
     notifs = res.json()["notifications"]

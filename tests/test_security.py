@@ -21,6 +21,8 @@ Coverage (25+ tests):
   H11: StyleStore reads and mutates only profiles owned by its tenant
   H12: SSOStore rejects and hides configuration owned by another tenant
   H13: TemplateStore rejects and ignores templates owned by another tenant
+  H14: NotificationStore reads and mutates only records owned by its tenant
+  H15: MessageStore reads and mutates only records owned by its tenant
   M1: Login endpoint exists and returns 401 for wrong credentials
   M4: localhost URL → ValueError (SSRF)
   M4: AWS metadata URL → ValueError (SSRF)
@@ -597,6 +599,102 @@ def test_template_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
     legacy = store.get(entry.template_id, "user-1")
     assert legacy is not None
     assert legacy["name"] == "현재 tenant 템플릿"
+
+
+def test_notification_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Drifted notifications stay hidden and unchanged."""
+    from app.storage.notification_store import NotificationStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = NotificationStore("tenant_a")
+
+    with pytest.raises(TypeError):
+        store.create(
+            tenant_id="tenant_b",
+            recipient_id="user-1",
+            event_type="system",
+            title="다른 tenant 알림",
+            body="본문",
+            context_type="system",
+            context_id="ctx-b",
+        )
+
+    notification = store.create(
+        recipient_id="user-1",
+        event_type="system",
+        title="현재 tenant 알림",
+        body="본문",
+        context_type="system",
+        context_id="ctx-a",
+    )
+    assert notification.tenant_id == "tenant_a"
+
+    path = tmp_path / "tenants" / "tenant_a" / "notifications.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[0]["tenant_id"] = "tenant_b"
+    records[0]["created_at"] = "2000-01-01T00:00:00+00:00"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert store.get_for_user("user-1") == []
+    assert store.get_unread_count("user-1") == 0
+    assert store.mark_read(notification.notification_id, "user-1") is False
+    assert store.mark_all_read("user-1") == 0
+    store.mark_email_sent(notification.notification_id)
+    store.mark_slack_sent(notification.notification_id)
+    assert store.delete_for_user("user-1") == 0
+    assert store.delete_old(days=30) == 0
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert len(persisted) == 1
+    assert persisted[0]["tenant_id"] == "tenant_b"
+    assert persisted[0]["is_read"] is False
+    assert persisted[0]["sent_email"] is False
+    assert persisted[0]["sent_slack"] is False
+
+
+def test_message_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
+    """Drifted messages cannot be listed, edited, or deleted."""
+    from app.storage.message_store import MessageStore
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    store = MessageStore("tenant_a", data_dir=tmp_path)
+
+    with pytest.raises(TypeError):
+        store.post(
+            tenant_id="tenant_b",
+            author_id="user-1",
+            author_name="Alice",
+            content="다른 tenant 메시지",
+            context_type="general",
+            context_id="global",
+        )
+
+    message = store.post(
+        author_id="user-1",
+        author_name="Alice",
+        content="@reviewer 확인해주세요",
+        context_type="general",
+        context_id="global",
+    )
+    assert message.tenant_id == "tenant_a"
+
+    path = tmp_path / "tenants" / "tenant_a" / "messages.json"
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[0]["tenant_id"] = "tenant_b"
+    path.write_text(json.dumps(records), encoding="utf-8")
+
+    assert store.get_thread("general", "global") == []
+    assert store.get_mentions("reviewer") == []
+    assert store.get_unread_count("reviewer", "2000-01-01T00:00:00+00:00") == 0
+    with pytest.raises(ValueError, match="메시지를 찾을 수 없습니다"):
+        store.edit(message.message_id, "user-1", "변경된 본문")
+    with pytest.raises(ValueError, match="메시지를 찾을 수 없습니다"):
+        store.delete(message.message_id, "user-1")
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert persisted[0]["tenant_id"] == "tenant_b"
+    assert persisted[0]["content"] == "@reviewer 확인해주세요"
+    assert persisted[0]["is_deleted"] is False
 
 
 def test_project_route_blocks_cross_tenant_access(tmp_path, monkeypatch):

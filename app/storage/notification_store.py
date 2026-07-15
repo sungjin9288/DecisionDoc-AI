@@ -91,6 +91,7 @@ class NotificationStore:
         backend: StateBackend | None = None,
     ) -> None:
         resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+        self._tenant_id = tenant_id
         self._backend = backend or get_state_backend(data_dir=resolved_data_dir)
         tenant_dir = resolved_data_dir / "tenants" / tenant_id
         self._path = tenant_dir / "notifications.json"
@@ -119,11 +120,13 @@ class NotificationStore:
             return
         self._backend.write_text(self._relative_path, payload)
 
+    def _owns(self, record: dict) -> bool:
+        return record.get("tenant_id") == self._tenant_id
+
     # ── public API ─────────────────────────────────────────────────────────
 
     def create(
         self,
-        tenant_id: str,
         recipient_id: str,
         event_type: str,
         title: str,
@@ -134,7 +137,7 @@ class NotificationStore:
         """Create and persist a new notification."""
         notif = Notification(
             notification_id=str(uuid.uuid4()),
-            tenant_id=tenant_id,
+            tenant_id=self._tenant_id,
             recipient_id=recipient_id,
             event_type=event_type,
             title=title,
@@ -162,7 +165,11 @@ class NotificationStore:
         """Return notifications for a user, newest first."""
         with self._lock:
             data = self._read()
-        items = [d for d in data if d.get("recipient_id") == recipient_id]
+        items = [
+            record
+            for record in data
+            if self._owns(record) and record.get("recipient_id") == recipient_id
+        ]
         if unread_only:
             items = [d for d in items if not d.get("is_read", False)]
         # Sort newest first
@@ -174,8 +181,11 @@ class NotificationStore:
         with self._lock:
             data = self._read()
         return sum(
-            1 for d in data
-            if d.get("recipient_id") == recipient_id and not d.get("is_read", False)
+            1
+            for record in data
+            if self._owns(record)
+            and record.get("recipient_id") == recipient_id
+            and not record.get("is_read", False)
         )
 
     def mark_read(self, notification_id: str, recipient_id: str) -> bool:
@@ -183,12 +193,13 @@ class NotificationStore:
         with self._lock:
             data = self._read()
             found = False
-            for d in data:
+            for record in data:
                 if (
-                    d.get("notification_id") == notification_id
-                    and d.get("recipient_id") == recipient_id
+                    self._owns(record)
+                    and record.get("notification_id") == notification_id
+                    and record.get("recipient_id") == recipient_id
                 ):
-                    d["is_read"] = True
+                    record["is_read"] = True
                     found = True
                     break
             if found:
@@ -200,9 +211,13 @@ class NotificationStore:
         with self._lock:
             data = self._read()
             count = 0
-            for d in data:
-                if d.get("recipient_id") == recipient_id and not d.get("is_read", False):
-                    d["is_read"] = True
+            for record in data:
+                if (
+                    self._owns(record)
+                    and record.get("recipient_id") == recipient_id
+                    and not record.get("is_read", False)
+                ):
+                    record["is_read"] = True
                     count += 1
             if count:
                 self._write(data)
@@ -212,21 +227,27 @@ class NotificationStore:
         """Record that an email was sent for this notification."""
         with self._lock:
             data = self._read()
-            for d in data:
-                if d.get("notification_id") == notification_id:
-                    d["sent_email"] = True
+            for record in data:
+                if (
+                    self._owns(record)
+                    and record.get("notification_id") == notification_id
+                ):
+                    record["sent_email"] = True
+                    self._write(data)
                     break
-            self._write(data)
 
     def mark_slack_sent(self, notification_id: str) -> None:
         """Record that a Slack message was sent for this notification."""
         with self._lock:
             data = self._read()
-            for d in data:
-                if d.get("notification_id") == notification_id:
-                    d["sent_slack"] = True
+            for record in data:
+                if (
+                    self._owns(record)
+                    and record.get("notification_id") == notification_id
+                ):
+                    record["sent_slack"] = True
+                    self._write(data)
                     break
-            self._write(data)
 
     def delete_for_user(self, user_id: str) -> int:
         """Delete all notifications belonging to a withdrawn user.
@@ -236,7 +257,11 @@ class NotificationStore:
         with self._lock:
             data = self._read()
             original = len(data)
-            data = [d for d in data if d.get("recipient_id") != user_id]
+            data = [
+                record
+                for record in data
+                if not self._owns(record) or record.get("recipient_id") != user_id
+            ]
             deleted = original - len(data)
             if deleted:
                 self._write(data)
@@ -254,7 +279,12 @@ class NotificationStore:
         with self._lock:
             data = self._read()
             original = len(data)
-            data = [d for d in data if d.get("created_at", "") >= cutoff_iso]
+            data = [
+                record
+                for record in data
+                if not self._owns(record)
+                or record.get("created_at", "") >= cutoff_iso
+            ]
             deleted = original - len(data)
             if deleted:
                 self._write(data)

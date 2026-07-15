@@ -171,7 +171,6 @@ class NotificationService:
         """Save in-app notification and fire email/Slack as background tasks."""
         # 1. In-app store (always)
         notif = self._store().create(
-            tenant_id=self._tenant_id,
             recipient_id=recipient_id,
             event_type=event_type,
             title=title,

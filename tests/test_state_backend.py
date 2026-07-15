@@ -309,7 +309,6 @@ def test_notification_store_persists_to_s3_state_backend():
     store = NotificationStore("alpha", data_dir=Path("/virtual/data"), backend=backend)
 
     notif = store.create(
-        tenant_id="alpha",
         recipient_id="user-1",
         event_type="system",
         title="알림",
