@@ -59,6 +59,10 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ): "report_quality.pilot_package",
     (
         "POST",
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+    ): "report_quality.pilot_package_verify",
+    (
+        "POST",
         "/report-workflows/learning/correction-artifacts/pilot-export",
     ): "report_quality.pilot_export",
 }
@@ -399,6 +403,9 @@ def _append_audit_entries(
         report_quality_pilot_artifact_count = getattr(
             request.state, "report_quality_pilot_artifact_count", None
         )
+        report_quality_pilot_package_sha256 = (
+            getattr(request.state, "report_quality_pilot_package_sha256", "") or ""
+        )
         report_quality_pilot_preview_verified = getattr(
             request.state, "report_quality_pilot_preview_verified", None
         )
@@ -547,6 +554,8 @@ def _append_audit_entries(
             detail["request_id"] = str(getattr(request.state, "request_id", "") or "")
         if report_quality_pilot_artifact_count is not None:
             detail["pilot_artifact_count"] = report_quality_pilot_artifact_count
+        if report_quality_pilot_package_sha256:
+            detail["pilot_package_sha256"] = report_quality_pilot_package_sha256
         if report_quality_pilot_preview_verified is not None:
             detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
         if document_ops_trajectory_id:

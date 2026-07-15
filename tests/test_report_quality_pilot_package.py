@@ -10,6 +10,7 @@ import pytest
 from app.services.report_quality_pilot_package import (
     PACKAGE_MANIFEST_NAME,
     build_pilot_review_package,
+    summarize_pilot_review_package_verification,
     verify_pilot_review_package,
 )
 from app.services.report_quality_pilot_receipt import (
@@ -83,6 +84,31 @@ def test_pilot_review_package_is_deterministic_and_self_verifying():
                 f"report_quality_pilot_receipt_{preview['export_sha256'][:12]}.json",
             ]
         )
+
+
+def test_pilot_review_package_verification_summary_is_read_only_and_receiver_facing():
+    jsonl, preview, receipt_bytes = _package_inputs()
+    package, _ = build_pilot_review_package(
+        jsonl=jsonl,
+        receipt_bytes=receipt_bytes,
+        preview=preview,
+        tenant_id="tenant-a",
+    )
+
+    result = summarize_pilot_review_package_verification(package)
+
+    assert result["report_type"] == "report_quality_pilot_review_package_verification"
+    assert result["status"] == "verified"
+    assert result["package_sha256"] == hashlib.sha256(package).hexdigest()
+    assert result["package_size_bytes"] == len(package)
+    assert result["tenant_id"] == "tenant-a"
+    assert result["artifact_count"] == 3
+    assert result["ordered_artifact_ids"] == ["rqa_1", "rqa_2", "rqa_3"]
+    assert result["export_sha256"] == preview["export_sha256"]
+    assert len(result["entries"]) == 2
+    assert all(result["validation"].values())
+    assert all(value is False for value in result["external_action_boundary"].values())
+    assert result["persisted"] is False
 
 
 def test_pilot_review_package_rejects_tampered_jsonl():

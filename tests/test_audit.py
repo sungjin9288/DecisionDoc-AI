@@ -506,7 +506,7 @@ def test_resolve_action_procurement_review_packet_export():
     )
 
 
-def test_resolve_action_report_quality_pilot_preview_and_export():
+def test_resolve_action_report_quality_pilot_flows():
     from app.middleware.audit import _resolve_action
     from app.storage.audit_store import ACTION_TYPES
 
@@ -514,9 +514,21 @@ def test_resolve_action_report_quality_pilot_preview_and_export():
     assert _resolve_action("POST", f"{base_path}/preview", 200) == "report_quality.pilot_preview"
     assert _resolve_action("POST", f"{base_path}/package", 200) == "report_quality.pilot_package"
     assert _resolve_action("POST", base_path, 200) == "report_quality.pilot_export"
+    assert (
+        _resolve_action(
+            "POST",
+            "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+            200,
+        )
+        == "report_quality.pilot_package_verify"
+    )
     assert ACTION_TYPES["report_quality.pilot_preview"] == "보고서 품질 파일럿 사전 검토"
     assert ACTION_TYPES["report_quality.pilot_export"] == "보고서 품질 파일럿 내보내기"
     assert ACTION_TYPES["report_quality.pilot_package"] == "보고서 품질 파일럿 검토 패키지"
+    assert (
+        ACTION_TYPES["report_quality.pilot_package_verify"]
+        == "보고서 품질 파일럿 수신 패키지 검증"
+    )
 
 
 def test_resolve_action_explicit_document_ops_events_preserves_access_failures():

@@ -6807,6 +6807,7 @@
         <option value="report_quality.pilot_preview">품질 Pilot 사전 검토</option>
         <option value="report_quality.pilot_export">품질 Pilot 내보내기</option>
         <option value="report_quality.pilot_package">품질 Pilot 검토 패키지</option>
+        <option value="report_quality.pilot_package_verify">품질 Pilot 수신 패키지 검증</option>
         <option value="document_ops.trajectory_view">DocumentOps 상세 조회</option>
         <option value="document_ops.trajectory_review">DocumentOps 사람 검토</option>
       </select>
@@ -8743,6 +8744,8 @@
         </div>
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;">
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="load">🔄 Artifact 새로고침</button>
+          <button type="button" class="action-btn" data-rw-quality-artifacts-action="verify-package">검토 패키지 검증</button>
+          <input id="rw-quality-package-file" type="file" accept=".zip,application/zip" hidden>
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="preview-pilot" ${selectedCount >= 3 ? '' : 'disabled'}>Pilot 검토 (${selectedCount}/5)</button>
           <button type="button" class="action-btn" data-rw-quality-artifacts-action="download" ${Number(data?.ready_artifacts || 0) ? '' : 'disabled'}>⬇️ Ready JSONL</button>
         </div>
@@ -8784,6 +8787,7 @@
     'preview-pilot': previewReportWorkflowQualityPilotArtifacts,
     'download-pilot': downloadReportWorkflowQualityPilotArtifacts,
     'download-pilot-package': downloadReportWorkflowQualityPilotPackage,
+    'verify-package': () => $id('rw-quality-package-file')?.click(),
     inspect: btn => loadReportWorkflowQualityArtifactDetail(btn.dataset.rwQualityArtifactId || ''),
     'download-one': btn => downloadReportWorkflowQualityArtifact(btn.dataset.rwQualityArtifactId || ''),
     close: () => {
@@ -8802,6 +8806,12 @@
     });
     container.querySelectorAll('[data-rw-quality-artifact-select]').forEach(input => {
       input.addEventListener('change', () => updateReportWorkflowQualityPilotSelection(input, container));
+    });
+    const packageInput = container.querySelector('#rw-quality-package-file');
+    packageInput?.addEventListener('change', async () => {
+      const file = packageInput.files?.[0];
+      packageInput.value = '';
+      if (file) await verifyReportWorkflowQualityPilotPackage(file);
     });
   }
 
@@ -9113,6 +9123,93 @@
       );
     } catch (err) {
       showNotification('Pilot 검토 패키지 다운로드 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function renderReportWorkflowQualityPackageVerification(result, filename) {
+    const el = $id('rw-quality-artifact-detail');
+    if (!el) return;
+    const entries = Array.isArray(result?.entries) ? result.entries : [];
+    const boundary = result?.external_action_boundary || {};
+    const checks = result?.validation || {};
+    const allChecksPassed = Object.values(checks).length > 0 && Object.values(checks).every(value => value === true);
+    const externalActionsBlocked = Object.values(boundary).length > 0 && Object.values(boundary).every(value => value === false);
+    el.innerHTML = `<div style="border:1px solid rgba(22,101,52,.28);border-radius:12px;padding:.75rem;background:rgba(240,253,244,.8);">
+      <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.84rem;font-weight:900;color:#14532d;">수신 패키지 검증 완료</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;overflow-wrap:anywhere;">${escapeHtml(filename || 'pilot review package')} · 서버 저장 없음</div>
+        </div>
+        <span style="font-size:.7rem;font-weight:850;color:#166534;background:#dcfce7;border-radius:999px;padding:.16rem .5rem;">VERIFIED</span>
+      </div>
+      <dl style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem;margin:.7rem 0 0;font-size:.72rem;">
+        <div><dt style="font-weight:850;color:#334155;">Package SHA-256</dt><dd style="margin:.15rem 0 0;overflow-wrap:anywhere;">${escapeHtml(result.package_sha256 || '')}</dd></div>
+        <div><dt style="font-weight:850;color:#334155;">Export SHA-256</dt><dd style="margin:.15rem 0 0;overflow-wrap:anywhere;">${escapeHtml(result.export_sha256 || '')}</dd></div>
+        <div><dt style="font-weight:850;color:#334155;">Request</dt><dd style="margin:.15rem 0 0;overflow-wrap:anywhere;">${escapeHtml(result.request_id || '')}</dd></div>
+        <div><dt style="font-weight:850;color:#334155;">Artifacts</dt><dd style="margin:.15rem 0 0;">${Number(result.artifact_count || 0)}개 · ${Number(result.package_size_bytes || 0).toLocaleString()} bytes</dd></div>
+      </dl>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.45rem;margin-top:.65rem;">
+        <div style="border-radius:8px;padding:.5rem;background:${allChecksPassed ? '#dcfce7' : '#fee2e2'};color:${allChecksPassed ? '#166534' : '#991b1b'};font-size:.71rem;"><strong>무결성 검증</strong><br>${allChecksPassed ? 'membership · entry hash · receipt binding 통과' : '검증 결과 확인 필요'}</div>
+        <div style="border-radius:8px;padding:.5rem;background:${externalActionsBlocked ? '#dcfce7' : '#fee2e2'};color:${externalActionsBlocked ? '#166534' : '#991b1b'};font-size:.71rem;"><strong>외부 실행 경계</strong><br>${externalActionsBlocked ? 'upload · provider · training · promotion 승인 안 됨' : '권한 경계 확인 필요'}</div>
+        <div style="border-radius:8px;padding:.5rem;background:${result.persisted === false ? '#e0f2fe' : '#fee2e2'};color:${result.persisted === false ? '#075985' : '#991b1b'};font-size:.71rem;"><strong>서버 보존</strong><br>${result.persisted === false ? '검증만 수행 · package 저장 안 함' : '저장 상태 확인 필요'}</div>
+      </div>
+      <ol style="margin:.7rem 0 0;padding-left:1.25rem;display:grid;gap:.35rem;">
+        ${entries.map(item => `<li style="font-size:.71rem;color:#334155;"><strong>${escapeHtml(item.path || '')}</strong><div style="color:var(--muted);overflow-wrap:anywhere;">${Number(item.size_bytes || 0).toLocaleString()} bytes · ${escapeHtml(item.sha256 || '')}</div></li>`).join('')}
+      </ol>
+      <div style="display:flex;justify-content:flex-end;margin-top:.7rem;">
+        <button type="button" class="action-btn" data-rw-quality-artifacts-action="close">닫기</button>
+      </div>
+    </div>`;
+    wireReportWorkflowQualityArtifactActions(el);
+  }
+
+  async function verifyReportWorkflowQualityPilotPackage(file) {
+    const el = $id('rw-quality-artifact-detail');
+    if (!el) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showNotification('Pilot 검토 패키지는 5 MB 이하여야 합니다.', 'error');
+      return;
+    }
+    el.innerHTML = '<div style="font-size:.76rem;color:var(--muted);">검토 패키지의 membership, hash, receipt, tenant 경계를 확인하는 중...</div>';
+    try {
+      const packageBytes = new Uint8Array(await file.arrayBuffer());
+      const browserSha256 = await sha256Hex(packageBytes);
+      const form = new FormData();
+      form.append('file', file, file.name || 'report_quality_pilot_review_package.zip');
+      const res = await fetch('/report-workflows/learning/correction-artifacts/pilot-package/verify', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: form,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
+      const requiredChecks = [
+        'membership_verified',
+        'entry_hashes_verified',
+        'receipt_binding_verified',
+        'artifact_boundaries_verified',
+      ];
+      const blockedActions = [
+        'external_dataset_upload_authorized',
+        'provider_fine_tune_api_call_authorized',
+        'training_execution_authorized',
+        'model_promotion_authorized',
+      ];
+      if (
+        result?.status !== 'verified'
+        || result?.persisted !== false
+        || result?.package_sha256 !== browserSha256
+        || !requiredChecks.every(key => result?.validation?.[key] === true)
+        || !blockedActions.every(key => result?.external_action_boundary?.[key] === false)
+      ) {
+        throw new Error('브라우저가 읽은 package와 서버 검증 결과가 일치하지 않습니다.');
+      }
+      renderReportWorkflowQualityPackageVerification(result, file.name);
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showNotification(`검토 패키지 ${Number(result.artifact_count || 0)}개 artifact의 무결성을 확인했습니다.`, 'success');
+    } catch (err) {
+      el.innerHTML = `<div style="border:1px solid rgba(239,68,68,.28);border-radius:12px;padding:.75rem;background:rgba(254,242,242,.8);color:#991b1b;font-size:.78rem;">검토 패키지 검증 실패: ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('검토 패키지 검증 실패: ' + (err.message || err), 'error');
     }
   }
 
@@ -27435,9 +27532,13 @@ function renderAuditPagination(data) {
 }
 
 function renderAuditEvidence(log, detail) {
-  if (['report_quality.pilot_preview', 'report_quality.pilot_export', 'report_quality.pilot_package'].includes(log?.action)) {
+  if (['report_quality.pilot_preview', 'report_quality.pilot_export', 'report_quality.pilot_package', 'report_quality.pilot_package_verify'].includes(log?.action)) {
+    const packageSha256 = detail.pilot_package_sha256
+      ? `package_sha256=${escapeHtml(detail.pilot_package_sha256)}<br>`
+      : '';
     return `<div class="audit-evidence">
       request=${escapeHtml(detail.request_id || '-')}<br>
+      ${packageSha256}
       sha256=${escapeHtml(detail.pilot_sha256 || '-')}<br>
       artifacts=${escapeHtml(String(detail.pilot_artifact_count ?? '-'))} · preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}
     </div>`;

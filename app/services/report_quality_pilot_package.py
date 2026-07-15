@@ -263,6 +263,31 @@ def verify_pilot_review_package(content: bytes) -> dict[str, Any]:
     return manifest
 
 
+def summarize_pilot_review_package_verification(content: bytes) -> dict[str, Any]:
+    """Return the evidence a receiver needs after verifying a package in memory."""
+    manifest = verify_pilot_review_package(content)
+    return {
+        "report_type": "report_quality_pilot_review_package_verification",
+        "status": "verified",
+        "package_sha256": _sha256(content),
+        "package_size_bytes": len(content),
+        "tenant_id": manifest["tenant_id"],
+        "request_id": manifest["request_id"],
+        "artifact_count": manifest["artifact_count"],
+        "ordered_artifact_ids": manifest["ordered_artifact_ids"],
+        "export_sha256": manifest["export_sha256"],
+        "entries": manifest["entries"],
+        "validation": {
+            "membership_verified": True,
+            "entry_hashes_verified": True,
+            "receipt_binding_verified": True,
+            "artifact_boundaries_verified": True,
+        },
+        "external_action_boundary": manifest["external_action_boundary"],
+        "persisted": False,
+    }
+
+
 def read_pilot_review_package(content: bytes) -> dict[str, Any]:
     """Return verified package entries without writing them to disk."""
     manifest = verify_pilot_review_package(content)

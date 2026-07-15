@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
@@ -12,6 +12,7 @@ from app.routers._report_workflow_shared import (
     actor,
     get_service,
     handle_store_error,
+    record_quality_pilot_package_verification_state,
     record_quality_pilot_state,
 )
 from app.schemas import (
@@ -19,7 +20,11 @@ from app.schemas import (
     ReportQualityPilotExportRequest,
     ReportQualityPilotPreviewRequest,
 )
-from app.services.report_quality_pilot_package import prepare_pilot_review_package_delivery
+from app.services.report_quality_pilot_package import (
+    MAX_PACKAGE_SIZE_BYTES,
+    prepare_pilot_review_package_delivery,
+    summarize_pilot_review_package_verification,
+)
 from app.services.report_quality_pilot_receipt import (
     RECEIPT_HEADER,
     RECEIPT_SHA256_HEADER,
@@ -188,6 +193,36 @@ def package_report_quality_correction_pilot(
             **delivery["headers"],
         },
     )
+
+
+@collection_router.post(
+    "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+    dependencies=[Depends(require_api_key)],
+)
+async def verify_report_quality_correction_pilot_package(
+    request: Request,
+    file: UploadFile = File(...),
+) -> dict:
+    record_quality_pilot_package_verification_state(request)
+    try:
+        content = await file.read(MAX_PACKAGE_SIZE_BYTES + 1)
+    finally:
+        await file.close()
+    if len(content) > MAX_PACKAGE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="pilot review package is too large")
+    try:
+        result = summarize_pilot_review_package_verification(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    record_quality_pilot_package_verification_state(request, result)
+    tenant_id = get_tenant_id(request)
+    if result["tenant_id"] != tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="pilot review package tenant does not match the active tenant",
+        )
+    return result
 
 
 @collection_router.get(

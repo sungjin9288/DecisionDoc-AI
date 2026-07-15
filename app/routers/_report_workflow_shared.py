@@ -42,6 +42,23 @@ def record_quality_pilot_state(
     request.state.report_quality_pilot_preview_verified = preview_verified
 
 
+def record_quality_pilot_package_verification_state(
+    request: Request,
+    result: dict[str, Any] | None = None,
+) -> None:
+    request.state.audit_action = "report_quality.pilot_package_verify"
+    if result is None:
+        return
+    request.state.report_quality_pilot_sha256 = str(result.get("export_sha256") or "")
+    request.state.report_quality_pilot_package_sha256 = str(
+        result.get("package_sha256") or ""
+    )
+    request.state.report_quality_pilot_artifact_count = int(
+        result.get("artifact_count") or 0
+    )
+    request.state.report_quality_pilot_preview_verified = True
+
+
 def handle_store_error(exc: Exception) -> None:
     if isinstance(exc, KeyError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -81,6 +81,9 @@ def test_report_workflow_tab_and_stepper_present():
     assert "renderReportWorkflowQualityArtifactSummary" in html
     assert "loadReportWorkflowQualityArtifacts" in html
     assert "downloadReportWorkflowQualityArtifacts" in html
+    assert "검토 패키지 검증" in html
+    assert "수신 패키지 검증 완료" in html
+    assert "verifyReportWorkflowQualityPilotPackage" in html
     quality_review_markup = html[
         html.index("function renderReportWorkflowQualityScoreInputs"):
         html.index("function reportWorkflowSplitLines")
@@ -117,9 +120,12 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert 'data-rw-quality-artifacts-action="preview-pilot"' in html
     assert 'data-rw-quality-artifacts-action="download-pilot"' in html
     assert 'data-rw-quality-artifacts-action="download-pilot-package"' in html
+    assert 'data-rw-quality-artifacts-action="verify-package"' in html
+    assert 'id="rw-quality-package-file"' in html
     assert "data-rw-quality-artifact-select" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export/preview" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export/package" in html
+    assert "/report-workflows/learning/correction-artifacts/pilot-package/verify" in html
     assert "X-DecisionDoc-Pilot-Package-SHA256" in html
     assert "/report-workflows/learning/correction-artifacts/pilot-export" in html
     assert "artifactIds.length < 3 || artifactIds.length > 5" in html
@@ -140,6 +146,10 @@ def test_report_workflow_ui_calls_expected_api_endpoints():
     assert "Pilot preview 이후 export 내용이 변경되었습니다" in html
     assert "Pilot export의 server preview 검증 증거가 없습니다" in html
     assert "Pilot export receipt가 현재 다운로드와 일치하지 않습니다" in html
+    assert "result?.package_sha256 !== browserSha256" in html
+    assert "result?.persisted !== false" in html
+    assert "requiredChecks.every(key => result?.validation?.[key] === true)" in html
+    assert "blockedActions.every(key => result?.external_action_boundary?.[key] === false)" in html
     assert "#rw-quality-artifact-detail:not(:empty) { padding-bottom: 72px; }" in html
     assert "report_quality_pilot_artifacts_${exportSha256.slice(0, 12)}.jsonl" in html
     assert "report_quality_pilot_receipt_${exportSha256.slice(0, 12)}.json" in html

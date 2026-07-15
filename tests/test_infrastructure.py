@@ -1808,9 +1808,11 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "$id('billing-refresh-btn')?.addEventListener('click', loadBillingStatus)" in content
     assert '<option value="report_quality.pilot_preview">' in content
     assert '<option value="report_quality.pilot_export">' in content
+    assert '<option value="report_quality.pilot_package_verify">' in content
     assert '<option value="document_ops.trajectory_view">' in content
     assert '<option value="document_ops.trajectory_review">' in content
     assert "function renderAuditEvidence(log, detail)" in content
+    assert "package_sha256=${escapeHtml(detail.pilot_package_sha256)}" in content
     assert "status=${detail.review_status || '-'}" in content
     assert "decision=${detail.review_decision}" in content
     assert "reviewer=${detail.reviewer}" in content
@@ -1909,6 +1911,7 @@ def test_index_html_report_workflow_list_and_artifacts_use_event_listeners():
         'data-rw-quality-artifacts-action="load"',
         'data-rw-quality-artifacts-action="download"',
         'data-rw-quality-artifacts-action="preview-pilot"',
+        'data-rw-quality-artifacts-action="verify-package"',
         'data-report-workflow-select="${escapeHtml(item.report_workflow_id)}"',
     ):
         assert marker in block
@@ -1925,10 +1928,12 @@ def test_index_html_report_workflow_list_and_artifacts_wiring_exists():
         "download: downloadReportWorkflowQualityArtifacts",
         "'preview-pilot': previewReportWorkflowQualityPilotArtifacts",
         "'download-pilot': downloadReportWorkflowQualityPilotArtifacts",
+        "'verify-package': () => $id('rw-quality-package-file')?.click()",
         "preview_sha256: _reportWorkflowQualityPilotPreview.export_sha256",
         "wireReportWorkflowQualityArtifactActions(el);",
         "function wireReportWorkflowQualityArtifactActions(container)",
         "container.querySelectorAll('[data-rw-quality-artifacts-action]').forEach",
+        "packageInput?.addEventListener('change'",
         "const action = REPORT_WORKFLOW_QUALITY_ARTIFACT_ACTIONS[btn.dataset.rwQualityArtifactsAction || ''];",
         "wireReportWorkflowListActions(list);",
         "function wireReportWorkflowListActions(list)",

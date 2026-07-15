@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-15 실측: 3026 passed, 1 skipped, 4 deselected
+# 2026-07-15 실측: 3027 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -84,6 +84,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-14 pilot export가 preview의 `preview_sha256`을 필수 precondition으로 받아 현재 ordered JSONL과 서버에서 다시 대조하도록 강화했다. 누락·stale hash는 다운로드 전에 차단하고, 성공한 preview/export는 SHA-256·artifact count·verification state를 observability와 append-only audit에 남긴다.
   - 2026-07-14 서버 검증형 export가 JSONL과 같은 request에 결속된 portable receipt를 함께 내려주도록 확장했다. Local importer는 receipt의 tenant·artifact 순서·JSONL SHA-256·preview 검증·외부 실행 비승인 경계를 확인한 뒤 원본 receipt를 pack에 보존하고 `SOURCE_MANIFEST.json` v2에 결속한다. 기존 v1 manifest는 read compatibility를 유지한다.
   - 2026-07-14 browser handoff에서 JSONL과 receipt가 따로 저장되던 부분 실패 가능성을 줄이기 위해 두 파일과 `pilot_package_manifest.json`을 하나의 deterministic ZIP으로 묶는 package endpoint/UI를 추가했다. Manifest와 server validator는 exact membership, entry size/SHA-256, tenant, artifact 순서, receipt binding, no-training boundary를 확인하고 package 전체 SHA-256은 브라우저에서 다시 대조한다.
+  - 2026-07-15 Report Workflow UI에 수신 package 검증을 연결했다. 브라우저가 ZIP SHA-256을 먼저 계산하고 서버는 5 MB 이하 package를 저장 없이 메모리에서 검증한다. Active tenant, membership, entry hash, receipt binding, artifact 순서와 외부 실행 비승인 경계를 통과한 경우에만 `persisted=false` 요약을 보여주며, 변조·cross-tenant·oversize 차단과 성공 hash는 audit evidence로 남긴다.
   - 2026-07-14 local review pack importer에 `--source-package`를 추가해 검토 ZIP을 수동으로 풀지 않고 직접 가져오도록 연결했다. Importer는 server package validator를 재사용하고 package·manifest·embedded JSONL·receipt hash와 request ID를 `SOURCE_MANIFEST.json` v2에 보존하며, tamper나 혼합 source 인자는 출력 생성 전에 차단한다.
   - 2026-07-14 package import 증빙을 `SOURCE_MANIFEST.json` v3로 확장하고 embedded manifest 원문을 `SOURCE_PACKAGE_MANIFEST.json`에 atomic 보존한다. Downstream loader는 원본 ZIP 없이도 manifest hash와 entry size/SHA-256, tenant, request ID, artifact 순서, no-training boundary를 다시 검증하며 변조·symlink를 차단한다. 기존 v1/v2 source manifest는 read compatibility를 유지한다.
   - 2026-07-14 pilot review pack 생성이 source-bound `HUMAN_REVIEW_WORKSHEET.md`와 `human_review_manifest.json`까지 한 번에 준비하도록 연결했다. 검수자는 import 직후 review table과 artifact별 required action을 확인할 수 있고, draft 수정 뒤에는 같은 generator를 refresh 용도로 재실행한다. Worksheet refresh는 기존 decision template이나 browser workspace를 덮어쓰지 않는다.

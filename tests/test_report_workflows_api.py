@@ -10,6 +10,15 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.services.report_quality_pilot_package import (
+    MAX_PACKAGE_SIZE_BYTES,
+    build_pilot_review_package,
+)
+from app.services.report_quality_pilot_receipt import (
+    build_pilot_export_receipt,
+    serialize_pilot_export_receipt,
+)
+
 
 _PPTX_MAGIC = b"PK\x03\x04"
 
@@ -175,6 +184,46 @@ def _create_ready_quality_artifact(client: TestClient, *, title: str) -> dict:
     )
     assert saved.status_code == 200
     return saved.json()
+
+
+def _pilot_review_package_for_tenant(tenant_id: str) -> bytes:
+    boundary = {
+        "external_dataset_upload_authorized": False,
+        "provider_fine_tune_api_call_authorized": False,
+        "training_execution_authorized": False,
+        "model_promotion_authorized": False,
+    }
+    artifacts = [
+        {
+            "artifact_id": f"rqa_external_{index}",
+            "workflow_reference": {"tenant_id": tenant_id},
+            "training_boundary": boundary,
+        }
+        for index in range(1, 4)
+    ]
+    jsonl = "".join(
+        json.dumps(artifact, ensure_ascii=False, sort_keys=True) + "\n"
+        for artifact in artifacts
+    )
+    export_sha256 = hashlib.sha256(jsonl.encode("utf-8")).hexdigest()
+    preview = {
+        "filename": f"report_quality_pilot_artifacts_{export_sha256[:12]}.jsonl",
+        "export_sha256": export_sha256,
+        "ordered_artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
+        "artifact_count": len(artifacts),
+    }
+    receipt = build_pilot_export_receipt(
+        preview=preview,
+        tenant_id=tenant_id,
+        request_id="external-package-request-01",
+    )
+    package, _ = build_pilot_review_package(
+        jsonl=jsonl,
+        receipt_bytes=serialize_pilot_export_receipt(receipt),
+        preview=preview,
+        tenant_id=tenant_id,
+    )
+    return package
 
 
 def test_report_workflow_crud_and_tenant_boundary(tmp_path, monkeypatch):
@@ -731,6 +780,30 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
         assert preview_body["filename"] in archive.namelist()
         assert f"report_quality_pilot_receipt_{body_sha256[:12]}.json" in archive.namelist()
 
+    workflow_state_before_verification = client.get("/report-workflows").json()
+    verified = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+        files={"file": ("received-pilot-package.zip", packaged.content, "application/zip")},
+    )
+    assert verified.status_code == 200
+    verification = verified.json()
+    assert verification["report_type"] == "report_quality_pilot_review_package_verification"
+    assert verification["status"] == "verified"
+    assert verification["package_sha256"] == hashlib.sha256(packaged.content).hexdigest()
+    assert verification["package_size_bytes"] == len(packaged.content)
+    assert verification["tenant_id"] == "system"
+    assert verification["artifact_count"] == 3
+    assert verification["ordered_artifact_ids"] == requested_order
+    assert verification["export_sha256"] == body_sha256
+    assert len(verification["entries"]) == 2
+    assert all(verification["validation"].values())
+    assert all(
+        value is False
+        for value in verification["external_action_boundary"].values()
+    )
+    assert verification["persisted"] is False
+    assert client.get("/report-workflows").json() == workflow_state_before_verification
+
     from app.storage.audit_store import AuditStore
 
     preview_audits = AuditStore("system").query(
@@ -761,6 +834,19 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     assert package_audits[0]["detail"]["pilot_artifact_count"] == 3
     assert package_audits[0]["detail"]["pilot_preview_verified"] is True
 
+    package_verification_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "report_quality.pilot_package_verify", "result": "success"},
+    )
+    assert package_verification_audits
+    assert package_verification_audits[0]["detail"]["pilot_sha256"] == body_sha256
+    assert (
+        package_verification_audits[0]["detail"]["pilot_package_sha256"]
+        == verification["package_sha256"]
+    )
+    assert package_verification_audits[0]["detail"]["pilot_artifact_count"] == 3
+    assert package_verification_audits[0]["detail"]["pilot_preview_verified"] is True
+
     first_wrapper_id = saved_artifacts[0]["report_workflow"]["learning_artifacts"][-1]["artifact_id"]
     alias_duplicate = client.post(
         "/report-workflows/learning/correction-artifacts/pilot-export/preview",
@@ -775,6 +861,74 @@ def test_report_quality_pilot_export_requires_three_to_five_unique_ready_artifac
     )
     assert missing.status_code == 404
     assert "quality correction artifact not found" in missing.json()["detail"]
+
+
+def test_report_quality_pilot_package_verification_rejects_tamper_cross_tenant_and_oversize(
+    tmp_path,
+    monkeypatch,
+):
+    client = _create_client(tmp_path, monkeypatch)
+    package = _pilot_review_package_for_tenant("system")
+
+    tampered = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(package)) as source, zipfile.ZipFile(tampered, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name.endswith(".jsonl"):
+                content += b"{}\n"
+            target.writestr(name, content)
+    tampered_result = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+        files={"file": ("tampered.zip", tampered.getvalue(), "application/zip")},
+    )
+    assert tampered_result.status_code == 400
+    assert "SHA-256 mismatch" in tampered_result.json()["detail"]
+
+    cross_tenant_package = _pilot_review_package_for_tenant("other-tenant")
+    cross_tenant_result = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+        files={
+            "file": (
+                "other-tenant.zip",
+                cross_tenant_package,
+                "application/zip",
+            )
+        },
+    )
+    assert cross_tenant_result.status_code == 403
+    assert "tenant does not match" in cross_tenant_result.json()["detail"]
+
+    oversized_result = client.post(
+        "/report-workflows/learning/correction-artifacts/pilot-package/verify",
+        files={
+            "file": (
+                "oversized.zip",
+                b"x" * (MAX_PACKAGE_SIZE_BYTES + 1),
+                "application/zip",
+            )
+        },
+    )
+    assert oversized_result.status_code == 413
+    assert oversized_result.json()["detail"] == "pilot review package is too large"
+
+    from app.storage.audit_store import AuditStore
+
+    failed_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "report_quality.pilot_package_verify", "result": "failure"},
+    )
+    blocked_audits = AuditStore("system").query(
+        "system",
+        filters={"action": "access.blocked", "result": "blocked"},
+    )
+    assert len(failed_audits) == 2
+    assert len(blocked_audits) == 1
+    assert blocked_audits[0]["detail"]["status_code"] == 403
+    assert blocked_audits[0]["detail"]["path"].endswith("/pilot-package/verify")
+    assert blocked_audits[0]["detail"]["pilot_package_sha256"] == hashlib.sha256(
+        cross_tenant_package
+    ).hexdigest()
+    assert blocked_audits[0]["detail"]["pilot_artifact_count"] == 3
 
 
 def test_report_quality_correction_artifact_requires_final_approved_opt_in(tmp_path, monkeypatch):
