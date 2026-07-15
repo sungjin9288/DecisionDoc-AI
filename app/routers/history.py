@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from app.auth.api_key import require_api_key
-from app.dependencies import require_auth
+from app.dependencies import get_tenant_id, get_user_id, require_auth
 from app.routers.projects._provenance import (
     PROJECT_DOCUMENT_FRESHNESS_FIELDS,
     lookup_project_document,
@@ -146,12 +146,12 @@ def toggle_history_star(entry_id: str, request: Request):
 @router.get("/g2b/bookmarks", dependencies=[Depends(require_api_key)])
 def get_g2b_bookmarks(request: Request):
     require_auth(request)
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    user_id = getattr(request.state, "user_id", "anonymous")
+    tenant_id = get_tenant_id(request)
+    user_id = get_user_id(request)
     from app.storage.bookmark_store import BookmarkStore
     store = BookmarkStore(
-        tenant_id,
         base_dir=str(request.app.state.data_dir),
+        tenant_id=tenant_id,
         backend=request.app.state.state_backend,
     )
     bookmarks = store.get_for_user(user_id)
@@ -161,12 +161,12 @@ def get_g2b_bookmarks(request: Request):
 @router.post("/g2b/bookmarks", dependencies=[Depends(require_api_key)])
 def add_g2b_bookmark(request: Request, payload: dict):
     require_auth(request)
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    user_id = getattr(request.state, "user_id", "anonymous")
+    tenant_id = get_tenant_id(request)
+    user_id = get_user_id(request)
     from app.storage.bookmark_store import BookmarkStore
     store = BookmarkStore(
-        tenant_id,
         base_dir=str(request.app.state.data_dir),
+        tenant_id=tenant_id,
         backend=request.app.state.state_backend,
     )
     result = store.add(user_id, payload)
@@ -176,12 +176,12 @@ def add_g2b_bookmark(request: Request, payload: dict):
 @router.delete("/g2b/bookmarks/{bid_number}", dependencies=[Depends(require_api_key)])
 def remove_g2b_bookmark(bid_number: str, request: Request):
     require_auth(request)
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    user_id = getattr(request.state, "user_id", "anonymous")
+    tenant_id = get_tenant_id(request)
+    user_id = get_user_id(request)
     from app.storage.bookmark_store import BookmarkStore
     store = BookmarkStore(
-        tenant_id,
         base_dir=str(request.app.state.data_dir),
+        tenant_id=tenant_id,
         backend=request.app.state.state_backend,
     )
     store.remove(user_id, bid_number)

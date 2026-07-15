@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from app.schemas import (
@@ -297,14 +298,27 @@ def test_history_store_persists_to_s3_state_backend():
 
 def test_bookmark_store_persists_to_s3_state_backend():
     backend, client = _backend()
-    store = BookmarkStore("alpha", base_dir="/virtual/data", backend=backend)
+    store = BookmarkStore(base_dir="/virtual/data", tenant_id="alpha", backend=backend)
 
     store.add("user-1", {"bid_number": "R26BK01398367", "title": "공고", "issuer": "기관"})
 
     assert ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/g2b_bookmarks.json") in client.objects
-    reloaded = BookmarkStore("alpha", base_dir="/virtual/data", backend=backend).get_for_user("user-1")
+    stored_bytes = client.objects[
+        ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/g2b_bookmarks.json")
+    ]
+    raw = json.loads(stored_bytes.decode("utf-8"))
+    assert raw["user-1"][0]["_bookmark_owner"] == {
+        "tenant_id": "alpha",
+        "user_id": "user-1",
+    }
+    reloaded = BookmarkStore(
+        base_dir="/virtual/data",
+        tenant_id="alpha",
+        backend=backend,
+    ).get_for_user("user-1")
     assert len(reloaded) == 1
     assert reloaded[0]["bid_number"] == "R26BK01398367"
+    assert "_bookmark_owner" not in reloaded[0]
 
 
 def test_notification_store_persists_to_s3_state_backend():

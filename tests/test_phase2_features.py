@@ -2,7 +2,6 @@
 import io
 import zipfile
 
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -127,7 +126,7 @@ def test_g2b_bookmark_deadline_stored():
     from datetime import datetime, timedelta
 
     tenant = f"test-deadline-{uuid.uuid4().hex[:8]}"
-    store = BookmarkStore(tenant)
+    store = BookmarkStore(tenant_id=tenant)
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
     bid = f"URGENT-{uuid.uuid4().hex[:6]}"
     store.add("user1", {
@@ -149,7 +148,7 @@ def test_g2b_bookmark_past_deadline():
     from datetime import datetime, timedelta
 
     tenant = f"test-past-{uuid.uuid4().hex[:8]}"
-    store = BookmarkStore(tenant)
+    store = BookmarkStore(tenant_id=tenant)
     past = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
     bid = f"PAST-{uuid.uuid4().hex[:6]}"
     store.add("user2", {

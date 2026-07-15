@@ -1,6 +1,7 @@
 """Tests for Phase 1 features: server-side history, G2B bookmarks, endpoints."""
+import json
 import uuid
-from dataclasses import asdict
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
@@ -234,7 +235,7 @@ def test_history_store_user_isolation(tmp_path, monkeypatch):
 
 def test_bookmark_store_add_and_get(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    store = BookmarkStore("t1")
+    store = BookmarkStore(tenant_id="t1")
     ann = {"bid_number": "20260101-001", "title": "AI 시스템 구축", "issuer": "행안부"}
     store.add("u1", ann)
     bookmarks = store.get_for_user("u1")
@@ -245,7 +246,7 @@ def test_bookmark_store_add_and_get(tmp_path, monkeypatch):
 
 def test_bookmark_store_deduplication(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    store = BookmarkStore("t1")
+    store = BookmarkStore(tenant_id="t1")
     ann = {"bid_number": "20260101-001", "title": "AI"}
     store.add("u1", ann)
     store.add("u1", ann)  # duplicate
@@ -254,7 +255,7 @@ def test_bookmark_store_deduplication(tmp_path, monkeypatch):
 
 def test_bookmark_store_remove(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    store = BookmarkStore("t1")
+    store = BookmarkStore(tenant_id="t1")
     store.add("u1", {"bid_number": "BID-001", "title": "Test"})
     store.remove("u1", "BID-001")
     assert store.get_for_user("u1") == []
@@ -262,7 +263,7 @@ def test_bookmark_store_remove(tmp_path, monkeypatch):
 
 def test_bookmark_store_is_bookmarked(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    store = BookmarkStore("t1")
+    store = BookmarkStore(tenant_id="t1")
     store.add("u1", {"bid_number": "BID-X", "title": "Test"})
     assert store.is_bookmarked("u1", "BID-X") is True
     assert store.is_bookmarked("u1", "BID-Y") is False
@@ -270,19 +271,108 @@ def test_bookmark_store_is_bookmarked(tmp_path, monkeypatch):
 
 def test_bookmark_store_user_isolation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    store = BookmarkStore("t1")
+    store = BookmarkStore(tenant_id="t1")
     store.add("alice", {"bid_number": "BID-A", "title": "Alice entry"})
     assert len(store.get_for_user("alice")) == 1
     assert len(store.get_for_user("bob")) == 0
 
 
+def test_bookmark_store_requires_safe_tenant_before_creating_paths(tmp_path):
+    with pytest.raises(TypeError):
+        BookmarkStore(base_dir=str(tmp_path))
+
+    for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+        with pytest.raises(ValueError, match="Invalid tenant_id"):
+            BookmarkStore(base_dir=str(tmp_path), tenant_id=tenant_id)
+
+    assert not (tmp_path / "tenants").exists()
+
+
+def test_bookmark_store_owns_metadata_without_exposing_it(tmp_path):
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a")
+    result = store.add(
+        "user-a",
+        {
+            "bid_number": "BID-OWNER",
+            "title": "Ownership",
+            "_bookmark_owner": {"tenant_id": "tenant-b", "user_id": "user-b"},
+        },
+    )
+
+    path = tmp_path / "tenants" / "tenant-a" / "g2b_bookmarks.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))["user-a"][0]
+
+    assert "_bookmark_owner" not in result
+    assert "_bookmark_owner" not in store.get_for_user("user-a")[0]
+    assert stored["_bookmark_owner"] == {
+        "tenant_id": "tenant-a",
+        "user_id": "user-a",
+    }
+
+
+def test_bookmark_store_preserves_foreign_drift_during_remove(tmp_path):
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a")
+    store.add("user-a", {"bid_number": "BID-SHARED", "title": "Owned"})
+    path = tmp_path / "tenants" / "tenant-a" / "g2b_bookmarks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    foreign = {
+        "bid_number": "BID-SHARED",
+        "title": "Foreign",
+        "_bookmark_owner": {"tenant_id": "tenant-b", "user_id": "user-a"},
+    }
+    malformed = {
+        "bid_number": "BID-MALFORMED",
+        "title": "Malformed owner",
+        "_bookmark_owner": None,
+    }
+    data["user-a"].extend([foreign, malformed])
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    assert [item["title"] for item in store.get_for_user("user-a")] == ["Owned"]
+    store.remove("user-a", "BID-SHARED")
+
+    persisted = json.loads(path.read_text(encoding="utf-8"))["user-a"]
+    assert persisted == [foreign, malformed]
+    assert store.get_for_user("user-a") == []
+
+
+def test_bookmark_store_rejects_invalid_user_without_writing(tmp_path):
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a")
+
+    with pytest.raises(ValueError, match="Invalid user_id"):
+        store.add("", {"bid_number": "BID-EMPTY", "title": "Empty user"})
+
+    assert not (tmp_path / "tenants" / "tenant-a" / "g2b_bookmarks.json").exists()
+
+
+def test_bookmark_store_concurrent_instances_preserve_every_bookmark(tmp_path):
+    stores = [
+        BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a")
+        for _ in range(20)
+    ]
+
+    def add_bookmark(index: int) -> None:
+        stores[index].add(
+            "user-a",
+            {"bid_number": f"BID-{index}", "title": f"Announcement {index}"},
+        )
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(executor.map(add_bookmark, range(20)))
+
+    bookmarks = stores[0].get_for_user("user-a")
+    assert {bookmark["bid_number"] for bookmark in bookmarks} == {
+        f"BID-{index}" for index in range(20)
+    }
+
+
 # ── History API endpoint tests ────────────────────────────────────────────────
 
-def _auth_headers():
+def _auth_headers(*, user_id: str = "testuser", tenant_id: str = "system"):
     """Create a test JWT token for API calls."""
     from app.services.auth_service import create_access_token
     token = create_access_token(
-        user_id="testuser", tenant_id="system", role="admin", username="testuser"
+        user_id=user_id, tenant_id=tenant_id, role="admin", username=user_id
     )
     return {"Authorization": f"Bearer {token}"}
 
@@ -405,3 +495,50 @@ def test_g2b_bookmarks_post_and_delete():
     # Delete
     res3 = client.delete("/g2b/bookmarks/TEST-BID-001", headers=headers)
     assert res3.status_code == 200
+
+
+def test_g2b_bookmark_api_keeps_user_ownership_private_and_isolated():
+    owner_headers = _auth_headers(user_id="bookmark-owner")
+    other_headers = _auth_headers(user_id="bookmark-other")
+    bid_number = f"TEST-OWNER-{uuid.uuid4().hex}"
+
+    created = client.post(
+        "/g2b/bookmarks",
+        json={
+            "bid_number": bid_number,
+            "title": "소유권 격리 테스트",
+            "_bookmark_owner": {
+                "tenant_id": "forged-tenant",
+                "user_id": "bookmark-other",
+            },
+        },
+        headers=owner_headers,
+    )
+    assert created.status_code == 200
+    assert "_bookmark_owner" not in created.json()["bookmark"]
+
+    other_list = client.get("/g2b/bookmarks", headers=other_headers)
+    assert other_list.status_code == 200
+    assert bid_number not in {
+        bookmark["bid_number"] for bookmark in other_list.json()["bookmarks"]
+    }
+
+    other_delete = client.delete(
+        f"/g2b/bookmarks/{bid_number}",
+        headers=other_headers,
+    )
+    assert other_delete.status_code == 200
+
+    owner_list = client.get("/g2b/bookmarks", headers=owner_headers)
+    owned = next(
+        bookmark
+        for bookmark in owner_list.json()["bookmarks"]
+        if bookmark["bid_number"] == bid_number
+    )
+    assert "_bookmark_owner" not in owned
+
+    cleanup = client.delete(
+        f"/g2b/bookmarks/{bid_number}",
+        headers=owner_headers,
+    )
+    assert cleanup.status_code == 200
