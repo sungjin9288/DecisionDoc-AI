@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `8e064d0` 기준 GitHub Actions CI `29388238274` success, CD `29388238234` success. CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `a916356` 기준 GitHub Actions CI `29435546009` success, CD `29435546487` success. CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3048 passed, 2 skipped, 4 deselected
+# 2026-07-16 실측: 3062 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -86,6 +86,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-16 `AuditStore`의 조회·통계·CSV API에서 중복 tenant 인자를 제거하고 생성 시점 tenant만 증빙 범위로 사용하도록 했다. 다른 tenant의 audit log append를 거부하고, persisted tenant가 다르거나 없는 record는 일반 조회·latest lookup·session/user activity·failed-login monitoring·통계·CSV에서 모두 제외한다. H18 회귀는 변조 record가 append-only 원본에는 남아도 어떤 tenant evidence에도 나타나지 않는지 확인한다.
   - 2026-07-16 `MeetingRecordingStore`가 metadata의 tenant·project·recording ID와 canonical audio path를 요청 scope에 다시 결속하도록 했다. 단건 조회와 프로젝트 목록은 네 값이 모두 일치하는 record만 반환하고, audio read는 외부 record 객체 대신 tenant·project·recording ID를 받아 내부 검증을 다시 거친다. H19 회귀는 foreign audio path로 변조된 metadata가 녹음 bytes, transcript lifecycle, approval 상태에 접근하거나 이를 변경하지 못하는지 확인한다.
   - 2026-07-16 feedback·eval·A/B test·prompt override·fine-tune candidate를 같은 tenant 품질 학습 체인으로 결속했다. 새 record는 store tenant를 직접 기록하고 명시적으로 drift된 record는 조회·집계·변경·export에서 제외한다. Generation context cache도 tenant와 request ID의 복합 key를 사용하며 dashboard, eval, feedback, fine-tune route와 background eval이 현재 request tenant store만 선택한다. A/B winner는 같은 tenant와 data root의 override로만 전달되고, fine-tune download는 metadata에 등록된 tenant export만 허용해 raw dataset 직접 조회를 차단한다. 기존 flat fine-tune directory는 system tenant로 copy migration하며 외부 provider 호출·dataset upload·training execution은 수행하지 않는다.
+  - 2026-07-16 freeform·sketch request pattern을 tenant별 JSONL에 결속하고 새 record에 store tenant를 기록했다. Explicit foreign drift는 조회와 unmatched clear 대상에서 제외하고 path별 shared lock과 atomic rewrite로 동시 요청의 누락·부분 쓰기를 막는다. `/admin/request-patterns`는 admin JWT 또는 Ops key만 허용하고 현재 request tenant 기록만 반환하며 기존 flat log는 system tenant로 copy migration한다. Auto-expander는 route가 전달한 data root만 사용하고 provider의 JSON object·boolean detection·유한 confidence·safe bundle/section ID·5~8개 section 계약을 검증한 뒤 registry와 review source를 atomic 저장한다. Path traversal, malformed provider output, quoted review source를 no-cost fake/mock provider로 검증했으며 외부 provider 호출은 수행하지 않았다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

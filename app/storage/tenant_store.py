@@ -212,6 +212,10 @@ def migrate_legacy_data(data_dir: Path) -> None:
             (Path(data_dir) / "prompt_overrides.json", system_dir / "prompt_overrides.json"),
             (Path(data_dir) / "ab_tests.json", system_dir / "ab_tests.json"),
             (Path(data_dir) / "eval_results.jsonl", system_dir / "eval_results.jsonl"),
+            (
+                Path(data_dir) / "request_patterns.jsonl",
+                system_dir / "request_patterns.jsonl",
+            ),
         ]
 
         for src, dst in legacy_pairs:

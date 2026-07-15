@@ -90,22 +90,33 @@ def test_export_my_data_requires_auth():
 
 # ── Feedback auth ────────────────────────────────────────────────────────────
 
-def test_feedback_endpoint_accessible():
-    """POST /feedback is publicly accessible (no auth required).
+def test_feedback_requires_auth_when_users_exist(tmp_path, monkeypatch):
+    """POST /feedback follows the authenticated-install middleware contract."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("JWT_SECRET_KEY", "feedback-test-secret-at-least-32-bytes")
+    from app.main import create_app
 
-    Feedback submission is intentionally open so users can rate documents
-    without needing to be logged in. A missing required field returns 422.
-    """
-    res = client.post("/feedback", json={
+    isolated_client = TestClient(create_app())
+    registered = isolated_client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@example.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert registered.status_code == 200
+
+    res = isolated_client.post("/feedback", json={
         "request_id": "test-req-id",
         "bundle_type": "proposal_kr",
         "rating": 5,
         "comment": "good",
     })
-    # 200 = saved, 422 = validation error (missing bundle_id field), 503 = maintenance
-    assert res.status_code in (200, 422, 503), (
-        f"Unexpected status {res.status_code}: {res.text[:200]}"
-    )
+    assert res.status_code == 401
 
 
 # ── Billing auth ─────────────────────────────────────────────────────────────

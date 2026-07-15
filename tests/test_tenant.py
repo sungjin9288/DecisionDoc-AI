@@ -193,6 +193,8 @@ def test_migrate_legacy_data_copies_files(tmp_path: Path) -> None:
     legacy_finetune = tmp_path / "finetune"
     legacy_finetune.mkdir()
     (legacy_finetune / "dataset.jsonl").write_text('{"messages": []}\n', encoding="utf-8")
+    legacy_patterns = tmp_path / "request_patterns.jsonl"
+    legacy_patterns.write_text('{"raw_input": "legacy"}\n', encoding="utf-8")
 
     migrate_legacy_data(tmp_path)
 
@@ -200,6 +202,7 @@ def test_migrate_legacy_data_copies_files(tmp_path: Path) -> None:
     assert (system_dir / "feedback.jsonl").exists()
     assert (system_dir / "prompt_overrides.json").exists()
     assert (system_dir / "finetune" / "dataset.jsonl").read_text(encoding="utf-8") == '{"messages": []}\n'
+    assert (system_dir / "request_patterns.jsonl").read_text(encoding="utf-8") == '{"raw_input": "legacy"}\n'
 
 
 def test_migrate_legacy_data_no_overwrite(tmp_path: Path) -> None:

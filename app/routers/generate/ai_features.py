@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.ai_profiles.catalog import ensure_bundle_access
 from app.auth.api_key import require_api_key
+from app.dependencies import get_tenant_id
 from app.maintenance.mode import require_not_maintenance
 from app.providers.factory import get_provider_for_bundle, get_provider_for_capability
 from app.schemas import FreeformRequest, GenerateRequest, SectionRewriteRequest
@@ -113,7 +114,7 @@ def generate_sketch_endpoint(
     # Record request for pattern analysis
     try:
         from app.storage.request_pattern_store import RequestPatternStore
-        pattern_store = RequestPatternStore(data_dir)
+        pattern_store = RequestPatternStore(data_dir, tenant_id=tenant_id)
         raw_input = f"{payload.title} {payload.goal}".strip()[:200]
         pattern_store.record_request(raw_input, bundle_id=payload.bundle_type, matched=True)
     except Exception:
@@ -346,7 +347,7 @@ def generate_freeform_endpoint(
     from app.storage.request_pattern_store import RequestPatternStore
 
     data_dir = request.app.state.data_dir
-    pattern_store = RequestPatternStore(data_dir)
+    pattern_store = RequestPatternStore(data_dir, tenant_id=get_tenant_id(request))
     raw_input = f"{payload.title} {payload.goal}".strip()[:200]
     pattern_store.record_request(raw_input, bundle_id=None, matched=False)
     return {

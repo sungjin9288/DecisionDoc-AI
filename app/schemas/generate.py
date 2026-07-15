@@ -59,9 +59,11 @@ class FreeformRequest(BaseModel):
     and potential future auto-bundle expansion.
     """
 
-    title: str = ""
-    goal: str = ""
-    context: str = ""
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    title: str = Field(..., min_length=1, max_length=200)
+    goal: str = Field(..., min_length=1, max_length=1000)
+    context: str = Field(default="", max_length=5000)
 
 
 class HealthResponse(BaseModel):

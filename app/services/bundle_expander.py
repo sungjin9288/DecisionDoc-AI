@@ -13,12 +13,23 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.storage.base import atomic_write_text
+
 _log = logging.getLogger("decisiondoc.bundle_expander")
+
+_BUNDLE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+_SECTION_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def is_safe_bundle_id(value: Any) -> bool:
+    return isinstance(value, str) and _BUNDLE_ID_PATTERN.fullmatch(value) is not None
 
 _PATTERN_PROMPT_TEMPLATE = """\
 당신은 문서 요구사항 분석 전문가입니다.
@@ -54,11 +65,17 @@ class BundleAutoExpander:
         provider: Any,
         override_store: Any | None = None,
         pattern_store: Any | None = None,
+        *,
+        data_dir: Path | None = None,
     ) -> None:
         self.provider = provider
         self.override_store = override_store
         self.pattern_store = pattern_store
-        self._data_dir = Path(os.getenv("DATA_DIR", "./data"))
+        self._data_dir = (
+            Path(data_dir)
+            if data_dir is not None
+            else Path(os.getenv("DATA_DIR", "./data"))
+        )
         self._auto_dir = self._data_dir / "auto_bundles"
         self._registry_path = self._auto_dir / "registry.json"
 
@@ -87,7 +104,19 @@ class BundleAutoExpander:
             return None
 
         # Step 1: Call LLM for pattern analysis
-        request_lines = "\n".join(f"- {r['raw_input']}" for r in unmatched[:50])
+        request_inputs: list[str] = []
+        for record in unmatched[:50]:
+            raw_input = record.get("raw_input") if isinstance(record, dict) else None
+            if isinstance(raw_input, str) and raw_input.strip():
+                request_inputs.append(raw_input.strip()[:200])
+        if len(request_inputs) < threshold:
+            _log.warning(
+                "[BundleExpander] 유효한 unmatched 입력=%d < threshold=%d",
+                len(request_inputs),
+                threshold,
+            )
+            return None
+        request_lines = "\n".join(f"- {raw_input}" for raw_input in request_inputs)
         prompt = _PATTERN_PROMPT_TEMPLATE.format(request_lines=request_lines)
 
         try:
@@ -101,21 +130,32 @@ class BundleAutoExpander:
         if detection is None:
             return None
 
-        if not detection.get("detected", False):
+        if detection.get("detected") is not True:
             _log.info(
-                "[BundleExpander] 패턴 미감지 (confidence=%.2f)",
+                "[BundleExpander] 패턴 미감지 (confidence=%r)",
                 detection.get("confidence", 0),
             )
             return None
 
-        confidence = float(detection.get("confidence", 0.0))
+        try:
+            confidence = float(detection.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            _log.warning("[BundleExpander] confidence가 숫자가 아닙니다")
+            return None
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            _log.warning("[BundleExpander] confidence 범위가 유효하지 않습니다")
+            return None
         if confidence < 0.7:
             _log.info("[BundleExpander] confidence %.2f < 0.7 — 번들 생성 건너뜀", confidence)
             return None
 
-        bundle_id = (detection.get("bundle_id") or "").strip()
-        if not bundle_id:
-            _log.warning("[BundleExpander] bundle_id가 비어 있음 — 건너뜀")
+        raw_bundle_id = detection.get("bundle_id")
+        bundle_id = raw_bundle_id.strip() if isinstance(raw_bundle_id, str) else ""
+        if not is_safe_bundle_id(bundle_id):
+            _log.warning(
+                "[BundleExpander] 안전하지 않은 bundle_id=%r — 건너뜀",
+                bundle_id,
+            )
             return None
 
         # Step 3: Check for conflict with built-in bundles
@@ -126,17 +166,21 @@ class BundleAutoExpander:
             )
             return None
 
+        sections = self._validate_sections(detection.get("sections"))
+        if sections is None:
+            return None
+
         # Step 4: Build and persist registry record
         record = {
             "bundle_id": bundle_id,
-            "name_ko": detection.get("bundle_name", bundle_id),
+            "name_ko": self._clean_text(detection.get("bundle_name"), bundle_id, 120),
             "name_en": bundle_id.replace("_", " ").title(),
-            "description_ko": detection.get("description", ""),
-            "icon": detection.get("icon", "📄"),
+            "description_ko": self._clean_text(detection.get("description"), "", 300),
+            "icon": self._clean_text(detection.get("icon"), "📄", 16),
             "confidence": confidence,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "source": "auto_expand",
-            "sections": detection.get("sections", []),
+            "sections": sections,
         }
 
         self._save_to_registry(bundle_id, record)
@@ -168,8 +212,11 @@ class BundleAutoExpander:
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
-    def _parse_json_response(self, raw: str) -> dict | None:
+    def _parse_json_response(self, raw: Any) -> dict | None:
         """Parse LLM JSON response, stripping markdown fences if present."""
+        if not isinstance(raw, str):
+            _log.warning("[BundleExpander] LLM 응답이 문자열이 아닙니다")
+            return None
         text = raw.strip()
         # Strip ```json ... ``` or ``` ... ``` fences
         if text.startswith("```"):
@@ -178,12 +225,56 @@ class BundleAutoExpander:
             if text.rstrip().endswith("```"):
                 text = text[: text.rfind("```")]
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except (json.JSONDecodeError, ValueError) as exc:
             _log.warning(
                 "[BundleExpander] LLM 응답 파싱 실패: %s | raw=%r", exc, raw[:300]
             )
             return None
+        if not isinstance(parsed, dict):
+            _log.warning("[BundleExpander] LLM 응답이 JSON object가 아닙니다")
+            return None
+        return parsed
+
+    @staticmethod
+    def _clean_text(value: Any, fallback: str, limit: int) -> str:
+        if not isinstance(value, str):
+            return fallback
+        cleaned = value.strip()
+        return cleaned[:limit] if cleaned else fallback
+
+    @staticmethod
+    def _validate_sections(value: Any) -> list[dict[str, Any]] | None:
+        if not isinstance(value, list) or not 5 <= len(value) <= 8:
+            _log.warning("[BundleExpander] sections는 5~8개여야 합니다")
+            return None
+
+        sections: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for item in value:
+            if not isinstance(item, dict):
+                _log.warning("[BundleExpander] section 항목이 object가 아닙니다")
+                return None
+            section_id = item.get("id")
+            title = item.get("title")
+            required = item.get("required", True)
+            if (
+                not isinstance(section_id, str)
+                or not _SECTION_ID_PATTERN.fullmatch(section_id)
+                or section_id in seen_ids
+                or not isinstance(title, str)
+                or not title.strip()
+                or not isinstance(required, bool)
+            ):
+                _log.warning("[BundleExpander] 유효하지 않은 section=%r", item)
+                return None
+            seen_ids.add(section_id)
+            sections.append({
+                "id": section_id,
+                "title": title.strip()[:120],
+                "required": required,
+            })
+        return sections
 
     def _save_to_registry(self, bundle_id: str, record: dict) -> None:
         """Append or update the auto-bundle registry JSON file."""
@@ -191,13 +282,17 @@ class BundleAutoExpander:
         existing: dict = {}
         if self._registry_path.exists():
             try:
-                existing = json.loads(self._registry_path.read_text(encoding="utf-8"))
+                loaded = json.loads(self._registry_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    existing = loaded
+                else:
+                    _log.warning("[BundleExpander] registry가 JSON object가 아닙니다")
             except (OSError, json.JSONDecodeError):
                 existing = {}
         existing[bundle_id] = record
-        self._registry_path.write_text(
+        atomic_write_text(
+            self._registry_path,
             json.dumps(existing, ensure_ascii=False, indent=2),
-            encoding="utf-8",
         )
 
     def _save_python_code(self, bundle_id: str, record: dict) -> None:
@@ -205,7 +300,7 @@ class BundleAutoExpander:
         self._auto_dir.mkdir(parents=True, exist_ok=True)
         code = self._generate_python_code(record)
         py_path = self._auto_dir / f"{bundle_id}.py"
-        py_path.write_text(code, encoding="utf-8")
+        atomic_write_text(py_path, code)
 
     @staticmethod
     def _generate_python_code(record: dict) -> str:
@@ -218,6 +313,13 @@ class BundleAutoExpander:
         sections = record.get("sections", [])
         created_at = record.get("created_at", "")
         const_name = bundle_id.upper()
+        prompt_hint = (
+            f"당신은 {name_ko} 문서 작성 전문가입니다.\n"
+            "각 섹션의 section_title 필드에 한국어 섹션명을 명확히 작성하세요.\n"
+            "summary는 해당 섹션의 핵심 내용을 2-3문장으로 작성하세요.\n"
+            "items는 구체적인 세부 사항을 5개 이상 작성하세요.\n"
+            "모든 내용을 한국어로 작성하세요."
+        )
 
         doc_parts = []
         for section in sections:
@@ -225,7 +327,7 @@ class BundleAutoExpander:
             stitle = section.get("title", sid)
             doc_parts.append(
                 f'        DocumentSpec(\n'
-                f'            key="{sid}",\n'
+                f"            key={sid!r},\n"
                 f'            template_file="auto_bundle/section.md.j2",\n'
                 f'            json_schema={{\n'
                 f'                "type": "object",\n'
@@ -237,7 +339,7 @@ class BundleAutoExpander:
                 f'                }},\n'
                 f'            }},\n'
                 f'            stabilizer_defaults={{\n'
-                f'                "section_title": "{stitle}",\n'
+                f'                "section_title": {stitle!r},\n'
                 f'                "summary": "",\n'
                 f'                "items": [],\n'
                 f'            }},\n'
@@ -253,19 +355,13 @@ class BundleAutoExpander:
             f"# Review and edit before promoting to app/bundle_catalog/bundles/\n"
             f"from app.bundle_catalog.spec import BundleSpec, DocumentSpec\n\n"
             f"{const_name} = BundleSpec(\n"
-            f'    id="{bundle_id}",\n'
-            f'    name_ko="{name_ko}",\n'
-            f'    name_en="{name_en}",\n'
-            f'    description_ko="{description_ko}",\n'
-            f'    icon="{icon}",\n'
+            f"    id={bundle_id!r},\n"
+            f"    name_ko={name_ko!r},\n"
+            f"    name_en={name_en!r},\n"
+            f"    description_ko={description_ko!r},\n"
+            f"    icon={icon!r},\n"
             f'    prompt_language="ko",\n'
-            f'    prompt_hint=(\n'
-            f'        "당신은 {name_ko} 문서 작성 전문가입니다.\\n"\n'
-            f'        "각 섹션의 section_title 필드에 한국어 섹션명을 명확히 작성하세요.\\n"\n'
-            f'        "summary는 해당 섹션의 핵심 내용을 2-3문장으로 작성하세요.\\n"\n'
-            f'        "items는 구체적인 세부 사항을 5개 이상 작성하세요.\\n"\n'
-            f'        "모든 내용을 한국어로 작성하세요."\n'
-            f'    ),\n'
+            f"    prompt_hint={prompt_hint!r},\n"
             f'    category="work",\n'
             f'    docs=[\n'
             f'{docs_str}\n'
