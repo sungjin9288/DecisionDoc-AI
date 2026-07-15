@@ -645,7 +645,7 @@ def test_generate_injects_ranked_knowledge_context(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "get_provider", lambda: InspectingMockProvider())
     client = _create_client(tmp_path, monkeypatch)
 
-    store = KnowledgeStore("proj-knowledge", data_dir=str(tmp_path))
+    store = KnowledgeStore("proj-knowledge", data_dir=str(tmp_path), tenant_id="system")
     store.add_document(
         "generic-guide.txt",
         "일반 참고문서 내용",

@@ -4,7 +4,7 @@ from __future__ import annotations
 def test_knowledge_store_builds_temporal_graph_from_metadata(tmp_path):
     from app.storage.knowledge_store import KnowledgeStore
 
-    store = KnowledgeStore("proj-graph", data_dir=str(tmp_path))
+    store = KnowledgeStore("proj-graph", data_dir=str(tmp_path), tenant_id="system")
     approved = store.add_document(
         "approved-slide.md",
         "승인된 장표 산출물",
@@ -51,7 +51,7 @@ def test_knowledge_store_builds_temporal_graph_from_metadata(tmp_path):
 def test_knowledge_temporal_graph_preserves_awarded_and_topic_relationships(tmp_path):
     from app.storage.knowledge_store import KnowledgeStore
 
-    store = KnowledgeStore("proj-awarded", data_dir=str(tmp_path))
+    store = KnowledgeStore("proj-awarded", data_dir=str(tmp_path), tenant_id="system")
     entry = store.add_document(
         "awarded-proposal.md",
         "수주 제안서",

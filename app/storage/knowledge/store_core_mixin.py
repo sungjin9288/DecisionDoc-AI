@@ -32,6 +32,7 @@ from app.storage.knowledge.normalizers import (
 )
 from app.storage.knowledge_search import KnowledgeSearchBackend, get_knowledge_search_backend
 from app.storage.base import atomic_write_text
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.knowledge")
 _DOC_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
@@ -66,10 +67,10 @@ class KnowledgeStoreCoreMixin:
         data_dir: str | None = None,
         search_backend: KnowledgeSearchBackend | None = None,
         *,
-        tenant_id: str = "system",
+        tenant_id: str,
     ) -> None:
         self.project_id = _storage_component(project_id, "project_id")
-        self.tenant_id = _storage_component(tenant_id, "tenant_id")
+        self.tenant_id = require_tenant_id(tenant_id)
         self._search_backend = search_backend or get_knowledge_search_backend()
         base = Path(data_dir or os.getenv("DATA_DIR", "data"))
         self._dir = base / "tenants" / self.tenant_id / "knowledge" / self.project_id

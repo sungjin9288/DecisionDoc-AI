@@ -24,9 +24,9 @@
 | Static PWA CSP nonce 확인 | 완료 | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Static PWA console warning/error 확인 | 완료 | `evidence/cli-logs/playwright_console.log` |
 | 로그인 이후 전체 UI flow | 완료 | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3111 passed, 2 skipped, 4 deselected` (2026-07-16 실측) |
-| GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `385b233`, CI `29447357594` success |
-| GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `385b233`, CD `29447357584` success. image build/push는 통과했고 staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3120 passed, 2 skipped, 4 deselected` (2026-07-16 실측) |
+| GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `73a5d5d`, CI `29449254838` success |
+| GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `73a5d5d`, CD `29449254755` success. image build/push는 통과했고 staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 | OpenAI live provider 호출 | 완료 | 2026-07-13 `tests/test_live_providers.py::test_live_openai_generate_ok` -> `1 passed in 23.26s`; local JUnit receipt는 gitignored `reports/completion-readiness/m1-openai-junit.xml` |
 

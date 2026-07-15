@@ -85,7 +85,7 @@ class FineTuneOrchestrator:
         from app.storage.model_registry import ModelRegistry
 
         finetune_store = FineTuneStore(self._data_dir, tenant_id=tenant_id)
-        registry = ModelRegistry(self._data_dir)
+        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
 
         # Check data threshold
         stats = finetune_store.get_stats()
@@ -103,7 +103,7 @@ class FineTuneOrchestrator:
             return None
 
         # Check if training already in progress
-        if registry.has_active_training(bundle_id, tenant_id):
+        if registry.has_active_training(bundle_id):
             _log.info(
                 "[FineTune] Training already in progress for bundle=%s tenant=%s",
                 bundle_id, tenant_id,
@@ -152,7 +152,6 @@ class FineTuneOrchestrator:
                 model_id=placeholder_model_id,
                 base_model=base_model,
                 bundle_id=bundle_id,
-                tenant_id=tenant_id,
                 training_file_id=file_id,
                 record_count=count,
                 avg_score_before=avg_score_before,
@@ -294,7 +293,7 @@ class FineTuneOrchestrator:
             return
 
         from app.storage.model_registry import ModelRegistry
-        registry = ModelRegistry(self._data_dir)
+        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
 
         for attempt in range(self.MAX_POLL_ATTEMPTS):
             await asyncio.sleep(self.POLL_INTERVAL_SECONDS)
@@ -319,7 +318,6 @@ class FineTuneOrchestrator:
                 registry.update_status(
                     openai_job_id,
                     "ready",
-                    tenant_id=tenant_id,
                     model_id=fine_tuned_model,
                     ready_at=ready_at,
                 )
@@ -339,7 +337,7 @@ class FineTuneOrchestrator:
                     "[FineTune] Job %s: job_id=%s error=%s",
                     status, openai_job_id, error_info,
                 )
-                registry.update_status(openai_job_id, "failed", tenant_id=tenant_id)
+                registry.update_status(openai_job_id, "failed")
                 return
 
         # Max attempts exceeded
@@ -347,7 +345,7 @@ class FineTuneOrchestrator:
             "[FineTune] Polling timed out after %d attempts for job_id=%s",
             self.MAX_POLL_ATTEMPTS, openai_job_id,
         )
-        registry.update_status(openai_job_id, "failed", tenant_id=tenant_id)
+        registry.update_status(openai_job_id, "failed")
 
     # ── Evaluate & Promote ────────────────────────────────────────────────────
 
@@ -363,11 +361,11 @@ class FineTuneOrchestrator:
         from app.eval.eval_store import get_eval_store
         from app.config import get_finetune_promotion_threshold
 
-        registry = ModelRegistry(self._data_dir)
+        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
         promotion_threshold = get_finetune_promotion_threshold()
 
         # Get existing model record for avg_score_before
-        model_record = registry.get_model(new_model_id, tenant_id)
+        model_record = registry.get_model(new_model_id)
         avg_score_before = (model_record or {}).get("avg_score_before", 0.0) or 0.0
 
         # Get last 10 eval records for this bundle
@@ -382,7 +380,6 @@ class FineTuneOrchestrator:
             # Promote anyway (no baseline to compare against)
             registry.update_eval_result(
                 new_model_id,
-                tenant_id=tenant_id,
                 avg_score_after=avg_score_before,
                 eval_result={"promoted": True, "reason": "no_baseline"},
             )
@@ -417,7 +414,6 @@ class FineTuneOrchestrator:
         }
         registry.update_eval_result(
             new_model_id,
-            tenant_id=tenant_id,
             avg_score_after=avg_score_after,
             eval_result=eval_result,
         )
@@ -428,7 +424,7 @@ class FineTuneOrchestrator:
                 new_model_id, avg_score_before, avg_score_after,
             )
         else:
-            registry.deprecate_model(new_model_id, tenant_id)
+            registry.deprecate_model(new_model_id)
             _log.info(
                 "[ModelRegistry] Model %s not promoted: %.2f vs base %.2f",
                 new_model_id, avg_score_after, avg_score_before,

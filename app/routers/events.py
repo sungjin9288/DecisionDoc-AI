@@ -6,8 +6,11 @@ import json
 import queue
 import time
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+
+from app.services.auth_service import verify_token
+from app.tenant import require_tenant_id
 
 router = APIRouter(tags=["events"])
 
@@ -25,22 +28,9 @@ async def sse_stream(request: Request, token: str = Query(default="")):
       event: message_posted
       : heartbeat   (every 15s to keep connection alive)
     """
-    tenant_id = "system"
-    try:
-        if token:
-            from app.services.auth_service import verify_token
-            payload = verify_token(token)
-            if payload:
-                tenant_id = payload.get("tenant_id") or payload.get("tid") or "system"
-    except Exception:
-        pass
+    tenant_id = _resolve_event_tenant_id(token)
 
-    bus = _get_event_bus()
-    try:
-        bus = request.app.state.event_bus
-    except AttributeError:
-        pass
-
+    bus = getattr(request.app.state, "event_bus", None) or _get_event_bus()
     q = bus.subscribe(tenant_id)
 
     async def generator():
@@ -52,7 +42,7 @@ async def sse_stream(request: Request, token: str = Query(default="")):
                 try:
                     item = q.get_nowait()
                     etype = item["event_type"]
-                    data  = json.dumps(item["data"], ensure_ascii=False)
+                    data = json.dumps(item["data"], ensure_ascii=False)
                     yield f"event: {etype}\ndata: {data}\n\n"
                     last_hb = time.monotonic()
                 except queue.Empty:
@@ -72,6 +62,29 @@ async def sse_stream(request: Request, token: str = Query(default="")):
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
+    )
+
+
+def _resolve_event_tenant_id(token: str) -> str:
+    """Resolve an SSE subscription tenant from a valid access token."""
+    if not token:
+        raise _event_auth_error()
+
+    payload = verify_token(token)
+    if not payload or payload.get("type") != "access":
+        raise _event_auth_error()
+
+    try:
+        return require_tenant_id(payload.get("tenant_id"))
+    except ValueError as exc:
+        raise _event_auth_error() from exc
+
+
+def _event_auth_error() -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail="A valid access token is required for realtime events.",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 

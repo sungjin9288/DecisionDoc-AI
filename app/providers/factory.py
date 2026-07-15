@@ -143,8 +143,8 @@ def get_provider_for_bundle(bundle_id: str | None, tenant_id: str) -> Provider:
     """
     try:
         from app.storage.model_registry import ModelRegistry
-        registry = ModelRegistry()
-        active_model = registry.get_active_model(bundle_id, tenant_id)
+        registry = ModelRegistry(tenant_id=tenant_id)
+        active_model = registry.get_active_model(bundle_id)
         if active_model and active_model.get("status") == "ready":
             model_id = active_model.get("model_id", "")
             if model_id and not model_id.startswith("pending:"):

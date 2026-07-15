@@ -153,8 +153,8 @@ class GenerationProviderCallMixin:
         tenant_id = require_tenant_id(tenant_id)
         try:
             from app.storage.model_registry import ModelRegistry
-            registry = ModelRegistry()
-            active_model = registry.get_active_model(bundle_type, tenant_id)
+            registry = ModelRegistry(tenant_id=tenant_id)
+            active_model = registry.get_active_model(bundle_type)
             if active_model and active_model.get("status") == "ready":
                 model_id = active_model.get("model_id", "")
                 if model_id and not model_id.startswith("pending:"):

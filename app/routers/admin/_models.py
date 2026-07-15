@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.ops_key import require_ops_key
+from app.dependencies import get_tenant_id
 
 router = APIRouter()
 
@@ -22,18 +23,18 @@ def list_models(
 ) -> list[dict]:
     """List fine-tuned models for the current tenant."""
     from app.storage.model_registry import ModelRegistry
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    registry = ModelRegistry(request.app.state.data_dir)
-    return registry.list_models(tenant_id=tenant_id, bundle_id=bundle_id, status=status)
+    tenant_id = get_tenant_id(request)
+    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    return registry.list_models(bundle_id=bundle_id, status=status)
 
 
 @router.get("/models/{model_id:path}")
 def get_model(model_id: str, request: Request) -> dict:
     """Get details for a specific fine-tuned model."""
     from app.storage.model_registry import ModelRegistry
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    registry = ModelRegistry(request.app.state.data_dir)
-    model = registry.get_model(model_id, tenant_id)
+    tenant_id = get_tenant_id(request)
+    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    model = registry.get_model(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     return model
@@ -43,7 +44,7 @@ def get_model(model_id: str, request: Request) -> dict:
 async def admin_trigger_training(request: Request, payload: dict) -> dict:
     """Manually trigger fine-tune check for a bundle+tenant. Requires OPS key."""
     from app.services.finetune_orchestrator import FineTuneOrchestrator
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    tenant_id = get_tenant_id(request)
     bundle_id_val: str | None = payload.get("bundle_id") or None
     orch = FineTuneOrchestrator(request.app.state.data_dir)
     result = await orch.check_and_trigger(bundle_id_val, tenant_id)
@@ -56,13 +57,13 @@ async def admin_trigger_training(request: Request, payload: dict) -> dict:
 def admin_promote_model(model_id: str, request: Request) -> dict:
     """Manually promote a model to 'ready' status. Requires OPS key."""
     from app.storage.model_registry import ModelRegistry
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    registry = ModelRegistry(request.app.state.data_dir)
-    model = registry.get_model(model_id, tenant_id)
+    tenant_id = get_tenant_id(request)
+    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    model = registry.get_model(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     job_id = model.get("openai_job_id", "")
-    if not registry.update_status(job_id, "ready", tenant_id=tenant_id, model_id=model_id):
+    if not registry.update_status(job_id, "ready", model_id=model_id):
         raise HTTPException(status_code=500, detail="Failed to update model status.")
     return {"promoted": True, "model_id": model_id, "status": "ready"}
 
@@ -71,9 +72,9 @@ def admin_promote_model(model_id: str, request: Request) -> dict:
 def admin_deprecate_model(model_id: str, request: Request) -> dict:
     """Deprecate a model. Requires OPS key."""
     from app.storage.model_registry import ModelRegistry
-    tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    registry = ModelRegistry(request.app.state.data_dir)
-    if not registry.deprecate_model(model_id, tenant_id):
+    tenant_id = get_tenant_id(request)
+    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    if not registry.deprecate_model(model_id):
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     return {"deprecated": True, "model_id": model_id}
 

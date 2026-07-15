@@ -367,28 +367,38 @@ def test_report_workflow_store_get_requires_tenant_scope(tmp_path):
 
 
 def test_model_registry_list_requires_tenant_scope(tmp_path):
-    """Model listings never fall back to an all-tenant directory scan."""
+    """A model registry cannot read or write another tenant's lifecycle state."""
     from app.storage.model_registry import ModelRegistry
 
-    registry = ModelRegistry(tmp_path)
-    for tenant_id in ("tenant_a", "tenant_b"):
-        registry.register_model(
-            model_id=f"model-{tenant_id}",
-            base_model="test-model",
-            bundle_id=None,
-            tenant_id=tenant_id,
-            training_file_id=f"file-{tenant_id}",
-            record_count=3,
-            avg_score_before=0.5,
-            openai_job_id=f"job-{tenant_id}",
-        )
+    tenant_a = ModelRegistry(tmp_path, tenant_id="tenant_a")
+    tenant_b = ModelRegistry(tmp_path, tenant_id="tenant_b")
+    tenant_a.register_model(
+        model_id="model-shared",
+        base_model="test-model",
+        bundle_id=None,
+        training_file_id="file-tenant-a",
+        record_count=3,
+        avg_score_before=0.5,
+        openai_job_id="job-shared",
+    )
+    tenant_b.register_model(
+        model_id="model-shared",
+        base_model="test-model",
+        bundle_id=None,
+        training_file_id="file-tenant-b",
+        record_count=4,
+        avg_score_before=0.6,
+        openai_job_id="job-shared",
+    )
 
     with pytest.raises(TypeError, match="tenant_id"):
-        registry.list_models()
+        ModelRegistry(tmp_path)
 
-    assert [model["tenant_id"] for model in registry.list_models(tenant_id="tenant_a")] == [
-        "tenant_a"
-    ]
+    assert tenant_a.get_model("model-shared")["training_file_id"] == "file-tenant-a"
+    assert tenant_b.get_model("model-shared")["training_file_id"] == "file-tenant-b"
+    assert tenant_a.update_status("job-shared", "ready") is True
+    assert tenant_a.get_model("model-shared")["status"] == "ready"
+    assert tenant_b.get_model("model-shared")["status"] == "training"
 
 
 def test_billing_store_is_bound_to_one_tenant(tmp_path, monkeypatch):

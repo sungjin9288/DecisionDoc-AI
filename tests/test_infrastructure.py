@@ -2639,6 +2639,112 @@ def test_production_knowledge_store_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_knowledge_and_model_registry_require_tenant_bound_construction():
+    root = Path(__file__).resolve().parents[1]
+    targets = {
+        "app/storage/knowledge/store_core_mixin.py": ("KnowledgeStoreCoreMixin", None),
+        "app/storage/model_registry.py": ("ModelRegistry", "get_model_registry"),
+    }
+    discovered: set[str] = set()
+
+    for relative_path, (class_name, factory_name) in targets.items():
+        path = root / relative_path
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        class_node = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == class_name
+        )
+        constructor = next(
+            node
+            for node in class_node.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+        )
+        keyword_names = [argument.arg for argument in constructor.args.kwonlyargs]
+        tenant_index = keyword_names.index("tenant_id")
+        assert constructor.args.kw_defaults[tenant_index] is None
+        discovered.add(class_name)
+
+        if factory_name is None:
+            continue
+        factory = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == factory_name
+        )
+        positional_names = [argument.arg for argument in factory.args.args]
+        tenant_index = positional_names.index("tenant_id")
+        first_default_index = len(positional_names) - len(factory.args.defaults)
+        assert tenant_index < first_default_index
+        discovered.add(factory_name)
+
+    assert discovered == {
+        "KnowledgeStoreCoreMixin",
+        "ModelRegistry",
+        "get_model_registry",
+    }
+
+
+def test_model_registry_public_api_uses_constructor_tenant_only():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "storage" / "model_registry.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    expected_methods = {
+        "deprecate_model",
+        "get_active_model",
+        "get_model",
+        "get_model_by_job",
+        "has_active_training",
+        "list_models",
+        "register_model",
+        "update_eval_result",
+        "update_status",
+    }
+    registry = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ModelRegistry"
+    )
+    methods = {
+        node.name: node
+        for node in registry.body
+        if isinstance(node, ast.FunctionDef) and node.name in expected_methods
+    }
+
+    assert set(methods) == expected_methods
+    for method in methods.values():
+        argument_names = {
+            argument.arg
+            for argument in (*method.args.args, *method.args.kwonlyargs)
+        }
+        assert "tenant_id" not in argument_names
+
+
+def test_production_model_registry_calls_bind_tenant_explicitly():
+    root = Path(__file__).resolve().parents[1]
+    missing_tenant: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call_name = ""
+            if isinstance(node.func, ast.Name):
+                call_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                call_name = node.func.attr
+            if call_name not in {"ModelRegistry", "get_model_registry"}:
+                continue
+            has_keyword = any(keyword.arg == "tenant_id" for keyword in node.keywords)
+            factory_positional = call_name == "get_model_registry" and bool(node.args)
+            if not has_keyword and not factory_positional:
+                relative_path = path.relative_to(root).as_posix()
+                missing_tenant.append(f"{relative_path}:{node.lineno}:{call_name}")
+
+    assert missing_tenant == []
+
+
 def test_trajectory_store_contract_requires_explicit_tenant_binding():
     root = Path(__file__).resolve().parents[1]
     expected_methods = {

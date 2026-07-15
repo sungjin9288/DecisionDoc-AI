@@ -199,7 +199,7 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
     assert imported.status_code == 200
 
     from app.storage.knowledge_store import KnowledgeStore
-    KnowledgeStore(project_id, data_dir=str(tmp_path)).add_document(
+    KnowledgeStore(project_id, data_dir=str(tmp_path), tenant_id="system").add_document(
         "capability.txt",
         (
             "공공 AI 서비스 구축 레퍼런스 2건, 클라우드 전환 경험, "

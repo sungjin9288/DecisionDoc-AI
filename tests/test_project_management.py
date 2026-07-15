@@ -938,7 +938,7 @@ class TestProjectProcurementApi:
             )
         assert imported.status_code == 200
 
-        KnowledgeStore(pid, data_dir=str(client.app.state.data_dir)).add_document(
+        KnowledgeStore(pid, data_dir=str(client.app.state.data_dir), tenant_id="system").add_document(
             "capability.txt",
             (
                 "공공 AI 서비스 구축 레퍼런스 2건, 클라우드 전환 경험, "
@@ -987,7 +987,7 @@ class TestProjectProcurementApi:
             )
         assert imported.status_code == 200
 
-        KnowledgeStore(pid, data_dir=str(client.app.state.data_dir)).add_document(
+        KnowledgeStore(pid, data_dir=str(client.app.state.data_dir), tenant_id="system").add_document(
             "capability.txt",
             (
                 "공공 AI 서비스 구축 레퍼런스 2건, 클라우드 전환 경험, "

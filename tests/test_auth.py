@@ -266,6 +266,44 @@ def test_events_endpoint_is_public_even_when_users_exist(tmp_path, monkeypatch):
     assert "/events" in PUBLIC_PATHS
 
 
+def test_events_endpoint_rejects_missing_and_invalid_query_tokens(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+
+    missing = client.get("/events")
+    invalid = client.get("/events?token=invalid")
+
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert invalid.headers["www-authenticate"] == "Bearer"
+
+
+def test_events_query_token_requires_access_scope_and_valid_tenant(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import events
+    from app.services.auth_service import create_access_token, create_refresh_token
+
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-events-32chars!")
+    access_token = create_access_token(
+        user_id="user-a",
+        tenant_id="tenant-a",
+        role="viewer",
+        username="user-a",
+    )
+    refresh_token = create_refresh_token(user_id="user-a", tenant_id="tenant-a")
+
+    assert events._resolve_event_tenant_id(access_token) == "tenant-a"
+    with pytest.raises(HTTPException) as refresh_error:
+        events._resolve_event_tenant_id(refresh_token)
+    assert refresh_error.value.status_code == 401
+
+    monkeypatch.setattr(events, "verify_token", lambda token: {"type": "access"})
+    with pytest.raises(HTTPException) as missing_tenant_error:
+        events._resolve_event_tenant_id("signed-without-tenant")
+    assert missing_tenant_error.value.status_code == 401
+
+
 def test_missing_token_returns_401_when_users_exist(tmp_path, monkeypatch):
     """After users are registered, requests without JWT are rejected."""
     client = _make_client(tmp_path, monkeypatch)

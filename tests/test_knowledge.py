@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 class TestKnowledgeStore:
     def test_add_and_list(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj1", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("report.pdf", "분기 실적 보고서 내용입니다.")
         docs = store.list_documents()
         assert len(docs) == 1
@@ -23,7 +23,7 @@ class TestKnowledgeStore:
 
     def test_get_document(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj1", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("spec.docx", "제품 스펙 문서", tags=["spec"])
         fetched = store.get_document(entry.doc_id)
         assert fetched is not None
@@ -32,7 +32,7 @@ class TestKnowledgeStore:
 
     def test_delete_document(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj1", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("old.txt", "오래된 문서")
         assert store.delete_document(entry.doc_id) is True
         assert store.get_document(entry.doc_id) is None
@@ -40,17 +40,17 @@ class TestKnowledgeStore:
 
     def test_delete_nonexistent(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj1", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         assert store.delete_document("nonexistent") is False
 
     def test_build_context_empty(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("empty_proj", data_dir=str(tmp_path))
+        store = KnowledgeStore("empty_proj", data_dir=str(tmp_path), tenant_id="system")
         assert store.build_context() == ""
 
     def test_build_context_with_docs(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj2", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj2", data_dir=str(tmp_path), tenant_id="system")
         store.add_document("guide.md", "개발 가이드라인 문서")
         store.add_document("arch.md", "아키텍처 설계서")
         ctx = store.build_context()
@@ -60,7 +60,7 @@ class TestKnowledgeStore:
 
     def test_update_style(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj3", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj3", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("report.txt", "보고서")
         style = {"formality": "합쇼체", "density": "간결", "sentence_endings": ["입니다", "합니다"]}
         result = store.update_style(entry.doc_id, style)
@@ -70,13 +70,13 @@ class TestKnowledgeStore:
 
     def test_build_style_context_no_styles(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj4", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj4", data_dir=str(tmp_path), tenant_id="system")
         store.add_document("doc.txt", "내용")
         assert store.build_style_context() == ""
 
     def test_build_style_context_with_styles(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj5", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj5", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("doc.txt", "내용")
         store.update_style(entry.doc_id, {
             "formality": "합쇼체",
@@ -90,7 +90,7 @@ class TestKnowledgeStore:
 
     def test_max_docs_eviction(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore, MAX_DOCS_PER_PROJECT
-        store = KnowledgeStore("proj_evict", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj_evict", data_dir=str(tmp_path), tenant_id="system")
         for i in range(MAX_DOCS_PER_PROJECT + 2):
             store.add_document(f"doc{i}.txt", f"내용 {i}")
         docs = store.list_documents()
@@ -98,7 +98,7 @@ class TestKnowledgeStore:
 
     def test_context_respects_max_chars(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
-        store = KnowledgeStore("proj_big", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj_big", data_dir=str(tmp_path), tenant_id="system")
         # 대용량 텍스트
         big_text = "가" * 5000
         store.add_document("big1.txt", big_text)
@@ -109,7 +109,7 @@ class TestKnowledgeStore:
     def test_add_document_persists_learning_metadata(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj_meta", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj_meta", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document(
             "award-proposal.docx",
             "수주 완료 제안서 본문",
@@ -140,7 +140,7 @@ class TestKnowledgeStore:
     def test_update_metadata_and_rank_documents_for_context(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj_rank", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj_rank", data_dir=str(tmp_path), tenant_id="system")
         generic = store.add_document(
             "generic-reference.pdf",
             "일반 참고문서",
@@ -222,7 +222,7 @@ class TestKnowledgeStore:
         from app.storage.knowledge_store import KnowledgeStore
 
         monkeypatch.setenv("DECISIONDOC_KNOWLEDGE_SEARCH_BACKEND", "sqlite_fts")
-        store = KnowledgeStore("proj-fts", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj-fts", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document(
             "smart-safety-reference.pdf",
             "본문",
@@ -243,7 +243,7 @@ class TestKnowledgeStore:
     def test_report_workflow_scope_can_prioritize_matching_approved_artifact(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj-rw-scope", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj-rw-scope", data_dir=str(tmp_path), tenant_id="system")
         other_workflow = store.add_document(
             "other-approved.md",
             "다른 workflow 승인본",
@@ -287,7 +287,7 @@ class TestKnowledgeStore:
     def test_find_promoted_document_by_source_request_and_doc_type(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj-dedupe", data_dir=str(tmp_path))
+        store = KnowledgeStore("proj-dedupe", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document(
             "approved-reference.md",
             "# 승인본\n본문",
@@ -431,6 +431,22 @@ class TestKnowledgeStore:
 
         with pytest.raises(ValueError, match="Invalid project_id"):
             KnowledgeStore(project_id, data_dir=str(tmp_path), tenant_id="tenant-a")
+
+    def test_requires_valid_tenant_before_creating_project_paths(self, tmp_path):
+        from app.storage.knowledge_store import KnowledgeStore
+
+        with pytest.raises(TypeError):
+            KnowledgeStore("project-a", data_dir=str(tmp_path))
+
+        invalid_root = tmp_path / "invalid"
+        for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+            with pytest.raises(ValueError, match="Invalid tenant_id"):
+                KnowledgeStore(
+                    "project-a",
+                    data_dir=str(invalid_root),
+                    tenant_id=tenant_id,
+                )
+        assert not (invalid_root / "tenants").exists()
 
 
 # ── attachment_service PPTX 테스트 ────────────────────────────────────────────

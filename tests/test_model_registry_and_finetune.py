@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -63,7 +65,7 @@ for _mod in [
 
 def _make_registry(tmp_path: Path):
     from app.storage.model_registry import ModelRegistry
-    return ModelRegistry(tmp_path)
+    return ModelRegistry(tmp_path, tenant_id="system")
 
 
 def _reg_model(registry, **overrides) -> dict[str, Any]:
@@ -72,7 +74,6 @@ def _reg_model(registry, **overrides) -> dict[str, Any]:
         model_id="ft:gpt-4o-mini:org:test:abc123",
         base_model="gpt-4o-mini",
         bundle_id="business_plan_kr",
-        tenant_id="system",
         training_file_id="file-abc123",
         record_count=55,
         avg_score_before=0.72,
@@ -128,8 +129,8 @@ def test_02_register_model_persisted(tmp_path: Path) -> None:
 
     # Create a brand-new instance pointing to the same directory
     from app.storage.model_registry import ModelRegistry
-    registry2 = ModelRegistry(tmp_path)
-    models = registry2.list_models(tenant_id="system")
+    registry2 = ModelRegistry(tmp_path, tenant_id="system")
+    models = registry2.list_models()
 
     assert len(models) == 1
     assert models[0]["model_id"] == "ft:gpt-4o-mini:org:test:abc123"
@@ -143,12 +144,11 @@ def test_03_update_status_ready(tmp_path: Path) -> None:
     updated = registry.update_status(
         "ftjob-abc123",
         "ready",
-        tenant_id="system",
         ready_at="2026-03-17T12:00:00+00:00",
     )
 
     assert updated is True
-    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123", "system")
+    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123")
     assert model is not None
     assert model["status"] == "ready"
     assert model["ready_at"] == "2026-03-17T12:00:00+00:00"
@@ -159,10 +159,10 @@ def test_04_update_status_failed(tmp_path: Path) -> None:
     registry = _make_registry(tmp_path)
     _reg_model(registry)
 
-    updated = registry.update_status("ftjob-abc123", "failed", tenant_id="system")
+    updated = registry.update_status("ftjob-abc123", "failed")
 
     assert updated is True
-    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123", "system")
+    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123")
     assert model is not None
     assert model["status"] == "failed"
 
@@ -171,18 +171,17 @@ def test_05_update_eval_result(tmp_path: Path) -> None:
     """update_eval_result stores avg_score_after and eval_result dict."""
     registry = _make_registry(tmp_path)
     _reg_model(registry)
-    registry.update_status("ftjob-abc123", "ready", tenant_id="system")
+    registry.update_status("ftjob-abc123", "ready")
 
     eval_data = {"sample_count": 10, "promoted": True}
     updated = registry.update_eval_result(
         "ft:gpt-4o-mini:org:test:abc123",
-        tenant_id="system",
         avg_score_after=0.81,
         eval_result=eval_data,
     )
 
     assert updated is True
-    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123", "system")
+    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123")
     assert model is not None
     assert model["avg_score_after"] == pytest.approx(0.81)
     assert model["eval_result"] == eval_data
@@ -191,7 +190,7 @@ def test_05_update_eval_result(tmp_path: Path) -> None:
 def test_06_get_active_model_none(tmp_path: Path) -> None:
     """An empty registry returns None for get_active_model."""
     registry = _make_registry(tmp_path)
-    result = registry.get_active_model("business_plan_kr", "system")
+    result = registry.get_active_model("business_plan_kr")
     assert result is None
 
 
@@ -199,9 +198,9 @@ def test_07_get_active_model_returns_ready(tmp_path: Path) -> None:
     """get_active_model returns a model once it is promoted to 'ready'."""
     registry = _make_registry(tmp_path)
     _reg_model(registry)
-    registry.update_status("ftjob-abc123", "ready", tenant_id="system")
+    registry.update_status("ftjob-abc123", "ready")
 
-    active = registry.get_active_model("business_plan_kr", "system")
+    active = registry.get_active_model("business_plan_kr")
     assert active is not None
     assert active["status"] == "ready"
     assert active["model_id"] == "ft:gpt-4o-mini:org:test:abc123"
@@ -218,7 +217,7 @@ def test_08_get_active_model_bundle_specific_preferred(tmp_path: Path) -> None:
         bundle_id=None,
         openai_job_id="ftjob-general",
     )
-    registry.update_status("ftjob-general", "ready", tenant_id="system")
+    registry.update_status("ftjob-general", "ready")
 
     # Register a bundle-specific model
     _reg_model(
@@ -227,9 +226,9 @@ def test_08_get_active_model_bundle_specific_preferred(tmp_path: Path) -> None:
         bundle_id="business_plan_kr",
         openai_job_id="ftjob-specific",
     )
-    registry.update_status("ftjob-specific", "ready", tenant_id="system")
+    registry.update_status("ftjob-specific", "ready")
 
-    active = registry.get_active_model("business_plan_kr", "system")
+    active = registry.get_active_model("business_plan_kr")
     assert active is not None
     assert active["model_id"] == "ft:gpt-4o-mini:org:test:specific"
 
@@ -238,16 +237,16 @@ def test_09_deprecate_model(tmp_path: Path) -> None:
     """deprecate_model sets status to 'deprecated' and get_active_model returns None."""
     registry = _make_registry(tmp_path)
     _reg_model(registry)
-    registry.update_status("ftjob-abc123", "ready", tenant_id="system")
+    registry.update_status("ftjob-abc123", "ready")
 
-    result = registry.deprecate_model("ft:gpt-4o-mini:org:test:abc123", "system")
+    result = registry.deprecate_model("ft:gpt-4o-mini:org:test:abc123")
     assert result is True
 
-    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123", "system")
+    model = registry.get_model("ft:gpt-4o-mini:org:test:abc123")
     assert model is not None
     assert model["status"] == "deprecated"
 
-    active = registry.get_active_model("business_plan_kr", "system")
+    active = registry.get_active_model("business_plan_kr")
     assert active is None
 
 
@@ -256,10 +255,10 @@ def test_10_has_active_training(tmp_path: Path) -> None:
     registry = _make_registry(tmp_path)
     _reg_model(registry)
 
-    assert registry.has_active_training("business_plan_kr", "system") is True
+    assert registry.has_active_training("business_plan_kr") is True
 
-    registry.update_status("ftjob-abc123", "ready", tenant_id="system")
-    assert registry.has_active_training("business_plan_kr", "system") is False
+    registry.update_status("ftjob-abc123", "ready")
+    assert registry.has_active_training("business_plan_kr") is False
 
 
 def test_11_list_models_filter(tmp_path: Path) -> None:
@@ -278,22 +277,22 @@ def test_11_list_models_filter(tmp_path: Path) -> None:
         openai_job_id="ftjob-b",
     )
 
-    bundle_a_models = registry.list_models(tenant_id="system", bundle_id="bundle_a")
+    bundle_a_models = registry.list_models(bundle_id="bundle_a")
     assert len(bundle_a_models) == 1
     assert bundle_a_models[0]["bundle_id"] == "bundle_a"
 
-    bundle_b_models = registry.list_models(tenant_id="system", bundle_id="bundle_b")
+    bundle_b_models = registry.list_models(bundle_id="bundle_b")
     assert len(bundle_b_models) == 1
     assert bundle_b_models[0]["bundle_id"] == "bundle_b"
 
-    all_models = registry.list_models(tenant_id="system")
+    all_models = registry.list_models()
     assert len(all_models) == 2
 
 
 def test_12_get_model_not_found(tmp_path: Path) -> None:
     """get_model returns None for an unknown model_id."""
     registry = _make_registry(tmp_path)
-    result = registry.get_model("ft:gpt-4o-mini:org:test:nonexistent", "system")
+    result = registry.get_model("ft:gpt-4o-mini:org:test:nonexistent")
     assert result is None
 
 
@@ -303,7 +302,78 @@ def test_13_invalid_status_raises(tmp_path: Path) -> None:
     _reg_model(registry)
 
     with pytest.raises(ValueError, match="Invalid status"):
-        registry.update_status("ftjob-abc123", "unknown", tenant_id="system")
+        registry.update_status("ftjob-abc123", "unknown")
+
+
+def test_model_registry_rejects_invalid_tenant_before_creating_paths(tmp_path: Path) -> None:
+    from app.storage.model_registry import ModelRegistry
+
+    with pytest.raises(TypeError):
+        ModelRegistry(tmp_path)
+
+    invalid_root = tmp_path / "invalid"
+    for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+        with pytest.raises(ValueError, match="Invalid tenant_id"):
+            ModelRegistry(invalid_root, tenant_id=tenant_id)
+
+    assert not (invalid_root / "tenants").exists()
+
+
+def test_model_registry_hides_foreign_drift_and_preserves_original_record(tmp_path: Path) -> None:
+    registry = _make_registry(tmp_path)
+    own_model = _reg_model(registry)
+    registry_path = tmp_path / "tenants" / "system" / "model_registry.json"
+    foreign_model = {
+        **own_model,
+        "model_id": "foreign-model",
+        "openai_job_id": "foreign-job",
+        "tenant_id": "tenant-b",
+    }
+    registry_path.write_text(
+        json.dumps([own_model, foreign_model], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    assert [model["model_id"] for model in registry.list_models()] == [own_model["model_id"]]
+    assert registry.get_model("foreign-model") is None
+    assert registry.get_model_by_job("foreign-job") is None
+    assert registry.update_status("foreign-job", "ready") is False
+    assert registry.update_eval_result("foreign-model", avg_score_after=0.9) is False
+    assert registry.deprecate_model("foreign-model") is False
+    assert registry.update_status("ftjob-abc123", "ready") is True
+
+    persisted = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert persisted[1] == foreign_model
+    assert persisted[0]["status"] == "ready"
+
+
+def test_model_registry_concurrent_instances_preserve_all_models(tmp_path: Path) -> None:
+    from app.storage.model_registry import ModelRegistry
+
+    registries = [
+        ModelRegistry(tmp_path, tenant_id="tenant-a")
+        for _ in range(20)
+    ]
+
+    def register(index: int) -> None:
+        registries[index].register_model(
+            model_id=f"model-{index}",
+            base_model="test-model",
+            bundle_id="proposal_kr",
+            training_file_id=f"file-{index}",
+            record_count=index + 1,
+            avg_score_before=0.5,
+            openai_job_id=f"job-{index}",
+        )
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(executor.map(register, range(20)))
+
+    models = registries[0].list_models()
+    assert len(models) == 20
+    assert {model["model_id"] for model in models} == {
+        f"model-{index}" for index in range(20)
+    }
 
 
 # ── Group 2: Config functions ───────────────────────────────────────────────────
