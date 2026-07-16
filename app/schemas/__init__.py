@@ -105,6 +105,7 @@ from app.schemas.messages_styles import (
     UpdateKnowledgeMetadataRequest,
     UpdateToneGuideRequest,
 )
+from app.schemas.sso import LDAPLoginRequest, UpdateSSOConfigRequest
 from app.schemas.ops import (
     OpsInvestigateRequest,
     OpsInvestigateResponse,
@@ -218,6 +219,8 @@ __all__ = [
     "CreateStyleProfileRequest",
     "UpdateToneGuideRequest",
     "UpdateKnowledgeMetadataRequest",
+    "LDAPLoginRequest",
+    "UpdateSSOConfigRequest",
     "OpsInvestigateRequest",
     "OpsInvestigateResponse",
     "PostDeployReportSummary",

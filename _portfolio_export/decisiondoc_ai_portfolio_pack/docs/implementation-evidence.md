@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-16 기준 non-live 전체 게이트는 `3634 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 기준 non-live 전체 게이트는 `3677 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -29,6 +29,7 @@
 | 회의 녹음 상태 무결성 | 검증 완료 | `app/storage/meeting_recording_store.py`, `app/services/meeting_recording_service.py`, `tests/test_meeting_recording_store_integrity.py` | local/fake-S3 metadata/audio unit·concurrency·API 회귀와 mock/offline HTTP lifecycle | distributed S3 CAS와 실제 OpenAI transcription은 범위 밖 |
 | 결제 권한 상태 무결성 | 검증 완료 | `app/storage/billing_store.py`, `app/middleware/billing.py`, `app/routers/billing.py`, `tests/test_billing_store_integrity.py` | local/fake-S3 unit·concurrency·middleware/API 회귀와 mock/local webhook lifecycle | distributed S3 CAS와 실제 Stripe API는 범위 밖 |
 | 스타일 프로필 상태 무결성 | 검증 완료 | `app/storage/style_store.py`, `app/routers/styles.py`, `app/domain/schema.py`, `tests/test_style_store_integrity.py` | local/fake-S3 unit·concurrency·prompt/API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 실제 provider style analysis는 범위 밖 |
+| SSO 설정 상태 무결성 | 검증 완료 | `app/storage/sso_store.py`, `app/routers/sso.py`, `app/services/sso/saml_auth.py`, `tests/test_sso_store_integrity.py` | local/fake-S3 unit·concurrency·secret/SAML/API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 실제 LDAP/SAML/GCloud 로그인은 범위 밖. 기본 requirements에서는 SAML ACS fail closed |
 | 공개 공유 상태 무결성 | 검증 완료 | `app/storage/share_store.py`, `app/routers/history.py`, `tests/test_share_store_integrity.py` | local/fake-S3 unit·concurrency·public/auth API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 운영 URL 접근성은 범위 밖 |
 | Procurement decision package local evidence contract | 재현 가능 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `contract_version` 기준 stdout JSON contract |
 | Procurement decision package persisted receipt check | 재현 가능 | `/tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | repo 밖 receipt 검증 |
@@ -67,7 +68,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `3634 passed, 2 skipped, 4 deselected` (2026-07-16 실측).
+결과: `3677 passed, 2 skipped, 4 deselected` (2026-07-17 실측).
 
 ### CI advisory lint / security scan
 

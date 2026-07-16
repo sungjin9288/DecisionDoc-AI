@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone SSO configuration state integrity hardening
+
+- `SSOStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/sso_config.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않고 disabled 기본 설정을 반환한다.
+- Malformed·non-object JSON, duplicate key, unknown provider, exact nested schema/type·timestamp·암호문 형식 drift는 조회와 후속 save/update를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign 설정은 disabled로 숨긴 채 덮어쓰지 않고 tenant 필드 없는 기존 파일은 path-owned compatibility를 유지한다.
+- Partial update는 같은 state object의 process-local shared lock 안에서 read-modify-write한다. Route는 app data root/backend를 사용하고 strict request schema를 적용한다. Masked secret은 기존 암호문을 보존하며 복호화 실패는 평문 fallback 없이 중단한다. GCloud state와 SAML RelayState는 constant-time 비교하고 서명 없는 SAML assertion은 거부한다.
+- H45 focused integrity gate는 `40 passed`, SSO/security 관련 gate는 `82 passed`, SSO/state/security/infrastructure/PWA 확장 gate는 `359 passed`, full no-cost regression은 `3677 passed, 2 skipped, 4 deselected`다. 실제 mock/local uvicorn에서 public status, disabled gate, LDAP/SAML/GCloud 전환, 설정·secret 마스킹 보존, SAML RelayState cookie와 SAML/GCloud callback 사전 차단을 확인했다. Playwright 비로그인 화면에서는 LDAP form 표시와 console error 0건을 확인했다. 실제 LDAP/SAML IdP/GCloud provider, distributed S3 CAS, provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다. 현재 기본 requirements에는 `python3-saml` verifier가 없으므로 SAML ACS는 fail closed 상태다.
+
 ## Post-milestone style profile state integrity hardening
 
 - `StyleStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/style_profiles.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

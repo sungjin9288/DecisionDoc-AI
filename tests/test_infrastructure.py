@@ -1851,11 +1851,17 @@ def test_index_html_sso_billing_dynamic_controls_use_event_listeners():
     ):
         assert marker in block
 
+    assert "fetch('/auth/sso-status')" in block
+    assert "if (!getAuthHeaders().Authorization) return;" not in block
+    assert "if ($id('login-screen')) addSSOLoginButtons();" in block
+    assert "if (typeof window.addSSOLoginButtons === 'function') window.addSSOLoginButtons();" in content
+
 
 def test_index_html_sso_billing_dynamic_action_wiring_exists():
     content = open("app/static/index.html", encoding="utf-8").read()
 
-    assert "container.querySelector('[data-sso-ldap-login]')?.addEventListener('click', submitLDAPLogin)" in content
+    assert "container.querySelector('#ldap-login-form')?.addEventListener('submit', event =>" in content
+    assert "event.preventDefault();" in content
     ldap_start = content.index("async function submitLDAPLogin()")
     ldap_end = content.index("// ── SSO Config", ldap_start)
     ldap_block = content[ldap_start:ldap_end]

@@ -308,7 +308,7 @@ project detail 문서 목록에서 기존 workflow를 그대로 재사용할 수
 ### 7.2 SSO 설정
 **ops 패널 → SSO 설정**
 - LDAP/AD: 기관 내부망 계정 연동
-- SAML 2.0: 기관 SSO 연동
+- SAML 2.0: 기관 SSO 연동. Signed assertion 검증을 위한 `python3-saml` verifier와 IdP certificate가 모두 필요하며, 하나라도 없으면 로그인을 거부합니다.
 - G-Cloud IAM: 정부통합전산센터 연동
 
 ### 7.3 감사 로그

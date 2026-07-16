@@ -17097,11 +17097,7 @@
       submitLogin();
     });
     screen.querySelector('[data-auth-register]')?.addEventListener('click', showRegisterScreen);
-    window.setTimeout(() => {
-      if (typeof window.addSSOLoginButtons === 'function') {
-        window.addSSOLoginButtons();
-      }
-    }, 0);
+    if (typeof window.addSSOLoginButtons === 'function') window.addSSOLoginButtons();
   }
 
   function showRegisterScreen(e) {
@@ -29121,13 +29117,12 @@ window.loadOpsPostDeployReports = loadOpsPostDeployReports;
 
 // ── SSO Login Buttons ───────────────────────────────────────────────────────
 async function addSSOLoginButtons() {
-  if (!getAuthHeaders().Authorization) return;
   try {
-    const res = await fetch('/admin/sso/config', { headers: getAuthHeaders() });
+    const res = await fetch('/auth/sso-status');
     if (!res.ok) return;
     const cfg = await res.json();
     const provider = cfg.provider;
-    if (!provider || provider === 'disabled') return;
+    if (!cfg.enabled || !provider || provider === 'disabled') return;
     const section = $id('sso-login-section');
     const container = $id('sso-login-buttons');
     if (!section || !container) return;
@@ -29135,12 +29130,15 @@ async function addSSOLoginButtons() {
     container.innerHTML = '';
     if (provider === 'ldap') {
       container.innerHTML = `
-        <div id="ldap-login-form" style="display:flex;flex-direction:column;gap:.5rem">
+        <form id="ldap-login-form" style="display:flex;flex-direction:column;gap:.5rem">
           <input type="text" id="ldap-username" placeholder="LDAP 사용자명" autocomplete="username" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
           <input type="password" id="ldap-password" placeholder="비밀번호" autocomplete="current-password" style="padding:.5rem .75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.9rem">
-          <button type="button" class="btn btn-primary" data-sso-ldap-login style="width:100%">🔐 LDAP 로그인</button>
-        </div>`;
-      container.querySelector('[data-sso-ldap-login]')?.addEventListener('click', submitLDAPLogin);
+          <button type="submit" class="btn btn-primary" data-sso-ldap-login style="width:100%">🔐 LDAP 로그인</button>
+        </form>`;
+      container.querySelector('#ldap-login-form')?.addEventListener('submit', event => {
+        event.preventDefault();
+        submitLDAPLogin();
+      });
     } else if (provider === 'saml') {
       container.innerHTML = `<a href="/saml/login" class="btn btn-outline" style="text-align:center;text-decoration:none;display:block;padding:.6rem">🏢 기관 계정으로 로그인 (SAML)</a>`;
     } else if (provider === 'gcloud') {
@@ -29148,6 +29146,8 @@ async function addSSOLoginButtons() {
     }
   } catch(e) { /* SSO not available */ }
 }
+
+if ($id('login-screen')) addSSOLoginButtons();
 
 async function submitLDAPLogin() {
   const username = ($id('ldap-username') || {}).value || '';

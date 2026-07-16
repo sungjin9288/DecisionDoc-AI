@@ -26,9 +26,9 @@
 | 항목 | 구현 상태 | 비고 |
 |------|-----------|------|
 | 인증/인가 | ✅ JWT + RBAC | app/middleware/auth.py |
-| SSO 지원 | ✅ LDAP/SAML/G-Cloud | app/services/sso/ |
+| SSO 지원 | ⚠️ LDAP/G-Cloud 구현, SAML signed assertion verifier 별도 필요 | app/services/sso/ |
 | 감사 로그 | ✅ Append-only JSONL | app/storage/audit_store.py |
-| 데이터 암호화 | ✅ AES-256 (SSO secrets) | app/storage/sso_store.py |
+| 데이터 암호화 | ✅ Fernet authenticated encryption (SSO secrets) | app/storage/sso_store.py |
 | SQL Injection 방어 | ✅ N/A (NoSQL) | JSONL/JSON 사용 |
 | XSS 방어 | ✅ escapeHtml() | app/static/index.html |
 | CSRF 방어 | ✅ SameSite=Lax | auth_service.py |

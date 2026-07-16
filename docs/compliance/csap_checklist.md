@@ -21,7 +21,7 @@
 | 비밀번호 정책 | ✅ 8자+숫자+문자 | user_store.py |
 | 접근 기록 | ✅ 감사 로그 | audit_store.py |
 | 세션 관리 | ✅ JWT 8h 만료 | auth_service.py |
-| SSO 지원 | ✅ LDAP/SAML | sso/ |
+| SSO 지원 | ⚠️ LDAP/GCloud 구현, SAML signed assertion verifier 별도 필요 | sso/ |
 
 ---
 
@@ -31,7 +31,7 @@
 | 통제항목 | 현황 | 구현 |
 |---------|------|------|
 | 전송 암호화 | ✅ TLS 1.2+ (Nginx) | nginx/nginx.conf |
-| 저장 암호화 | ✅ AES-256 (SSO secrets) | sso_store.py |
+| 저장 암호화 | ✅ Fernet authenticated encryption (SSO secrets) | sso_store.py |
 | 비밀번호 해시 | ✅ bcrypt rounds=12 | user_store.py |
 | JWT 서명 | ✅ HS256 | auth_service.py |
 

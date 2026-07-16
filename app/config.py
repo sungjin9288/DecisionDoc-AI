@@ -339,7 +339,7 @@ def get_jwt_secret_key() -> str:
 
 
 def get_sso_encryption_key() -> str:
-    """Return the key used for SSO secret encryption (Fernet/AES-256).
+    """Return the input key used to derive the SSO Fernet key.
 
     Derived from JWT_SECRET_KEY by default. In production, set a separate
     SSO_ENCRYPTION_KEY env var for key rotation independence.

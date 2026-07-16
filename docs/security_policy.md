@@ -21,7 +21,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 ## 5. 암호화 기준
 - 전송: TLS 1.2 이상
 - 비밀번호: bcrypt (rounds=12)
-- SSO 시크릿: AES-256 (PBKDF2 키 유도)
+- SSO 시크릿: Fernet authenticated encryption (PBKDF2 키 유도)
 - JWT: HS256 (최소 32바이트 키)
 
 ## 6. 로그 보존
@@ -60,6 +60,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - tenant와 exact account schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, tenant/plan/status/timestamp drift는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Metered request는 tenant/auth context 확정 뒤 상태를 확인하고 검증 실패 시 `503`으로 차단한다.
   - `DECISIONDOC_ENV=prod` 또는 production 환경에서는 `STRIPE_WEBHOOK_SECRET`이 없으면 webhook 처리를 거부한다. Secret이 설정된 webhook만 JWT 예외로 진입하며 원본 payload HMAC, 5분 timestamp와 복수 `v1` 서명을 검증한다.
   - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 Stripe checkout, cancel, provider-delivered webhook 성공은 현재 보장 범위가 아니다.
+- SSO 설정 상태
+  - LDAP, SAML, GCloud, OAuth2 설정은 local `data/tenants/<tenant_id>/sso_config.json` 또는 같은 relative path의 S3 state object에 저장한다. Secret은 PBKDF2로 유도한 Fernet key로 암호화하며 복호화 실패를 암호문 평문 fallback으로 처리하지 않는다.
+  - Tenant와 exact nested schema를 검증한다. Malformed JSON, duplicate key, unknown provider, type/timestamp drift와 올바르지 않은 암호문 형식은 조회와 후속 변경을 중단하고 원본 bytes를 보존한다. Explicit foreign 설정은 현재 tenant에 노출하거나 덮어쓰지 않고, tenant 필드 없는 기존 파일은 path ownership으로 읽는다.
+  - Admin update는 strict Pydantic schema를 사용하고 masked secret 재전송은 기존 암호문을 유지한다. GCloud state와 SAML RelayState는 constant-time 비교하며 SAML ACS는 IdP certificate와 signed assertion 검증을 요구한다. Verifier가 없으면 인증을 거부한다.
+  - 독립 store 인스턴스의 partial update는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 LDAP/SAML/GCloud 로그인 성공은 현재 보장 범위가 아니다.
 - 스타일 프로필 상태
   - tone guide, bundle override, 분석 예시와 default/system metadata는 local `data/tenants/<tenant_id>/style_profiles.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant와 owned profile의 exact schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, identity/timestamp drift, duplicate example ID와 multiple default는 조회·prompt build와 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존한다.

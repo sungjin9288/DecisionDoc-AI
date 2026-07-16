@@ -28,6 +28,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
 | 계정·초대 상태 무결성 | 사용자 계정과 초대 lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리 |
+| SSO 설정 상태 무결성 | LDAP·SAML·GCloud·OAuth2 설정과 암호화된 secret을 tenant별 local/S3 state에 결속하고 손상·unknown provider·foreign ownership·복호화 실패를 fail closed 처리 |
 | 사용자 템플릿 상태 무결성 | 재사용 문서 입력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
 | 생성 이력 상태 무결성 | 문서 생성·재열기·즐겨찾기·시각자료·지식 승격 이력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
 | 회의 녹음 상태 무결성 | 녹음 metadata와 audio SHA-256·크기를 tenant/project/recording 경로에 결속하고 손상·identity drift·UUID 충돌·audio 변조를 fail closed 처리 |
@@ -72,7 +73,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 구성 (9개 파일): request_id / observability / security_headers
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 265): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 266): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -150,10 +151,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 93
 
 ## API / Usage
 
-FastAPI 라우트는 **265개**입니다.
+FastAPI 라우트는 **266개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 265
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 266
 ```
 
 대표 도메인:
@@ -254,11 +255,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,070개**, **243개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,095개**, **244개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3070
-python3 scripts/count_readme_metrics.py --field test_files      # → 243
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3095
+python3 scripts/count_readme_metrics.py --field test_files      # → 244
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -287,7 +288,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,634 passed, 2 skipped, 4 deselected, 2026-07-16 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,677 passed, 2 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -327,6 +328,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. 동시성 보장은 한 프로세스 안의 shared lock 범위이며 distributed S3 compare-and-swap은 구현·검증하지 않았습니다.
 - 메시지·알림 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 외부 SMTP·Slack 전달 성공과 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap은 이 검증 범위가 아닙니다.
 - 사용자·초대 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap과 실제 초대 메일 전달은 구현·검증 범위가 아닙니다.
+- SSO 설정 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Secret은 Fernet authenticated encryption과 PBKDF2 key derivation을 사용하며 복호화 실패를 평문 fallback으로 처리하지 않습니다. 서명 없는 SAML assertion과 RelayState 불일치는 거부하지만, 현재 기본 requirements에 `python3-saml` verifier가 없어 SAML ACS는 fail closed 상태이며 실제 LDAP·SAML IdP·GCloud 로그인과 distributed S3 compare-and-swap은 검증 범위가 아닙니다.
 - 사용자 템플릿 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 생성 이력 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 회의 녹음 metadata/audio는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Audio SHA-256·크기는 읽기 전에 다시 확인하지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 이 검증 범위가 아닙니다.
@@ -347,4 +349,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 3,070 · env 키 93 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,095 · env 키 93 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

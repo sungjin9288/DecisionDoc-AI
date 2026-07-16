@@ -3,15 +3,14 @@
 Coverage (20+ tests):
   Storage       : SSOStore get/save/is_enabled, encrypt/decrypt
   LDAP          : _determine_role, test_ldap_connection (no server), ldap_auth error handling
-  SAML          : build_authn_request (basic), parse_saml_response (basic), sp_metadata
+  SAML          : build_authn_request, signed-response enforcement, sp_metadata
   GCloud        : build_gcloud_auth_url URL params, exchange_gcloud_code (mock)
   API endpoints : GET/PUT /admin/sso/config, POST /admin/sso/test-ldap,
-                  GET /saml/metadata, GET /saml/login (redirect),
-                  POST /auth/ldap-login (no ldap → 400), GET /sso/gcloud (redirect)
+                  GET /saml/metadata, provider-gated SAML/GCloud redirects,
+                  POST /auth/ldap-login (no ldap → 400), public SSO status
 """
 from __future__ import annotations
-import json
-import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -240,7 +239,7 @@ def test_parse_saml_response_invalid_returns_none():
     assert result is None
 
 
-def test_parse_saml_response_basic_success_returns_user():
+def test_parse_saml_response_rejects_unsigned_basic_response():
     from app.services.sso.saml_auth import parse_saml_response
     from app.storage.sso_store import SAMLConfig
     import base64
@@ -277,11 +276,7 @@ def test_parse_saml_response_basic_success_returns_user():
 
     result = parse_saml_response(cfg, base64.b64encode(xml.encode()).decode())
 
-    assert result is not None
-    assert result.username == "user@example.com"
-    assert result.display_name == "홍길동"
-    assert result.email == "user@example.com"
-    assert result.role == "admin"
+    assert result is None
 
 
 def test_parse_saml_response_basic_doctype_is_rejected():
@@ -296,6 +291,18 @@ def test_parse_saml_response_basic_doctype_is_rejected():
     result = parse_saml_response(SAMLConfig(), base64.b64encode(xml.encode()).decode())
 
     assert result is None
+
+
+def test_onelogin_settings_require_signed_valid_assertions():
+    from app.services.sso.saml_auth import _onelogin_settings
+    from app.storage.sso_store import SAMLConfig
+
+    settings = _onelogin_settings(SAMLConfig(idp_certificate="certificate"))
+
+    assert settings["strict"] is True
+    assert settings["security"]["wantAssertionsSigned"] is True
+    assert settings["security"]["wantXMLValidation"] is True
+    assert settings["security"]["rejectDeprecatedAlgorithm"] is True
 
 
 def test_build_sp_metadata_contains_entity_id():
@@ -396,8 +403,16 @@ def test_saml_metadata_endpoint(client):
 
 
 def test_saml_login_redirects(client):
+    from app.storage.sso_store import SSOProvider, get_sso_store
+
+    store = get_sso_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    store.update(lambda config: setattr(config, "provider", SSOProvider.SAML))
+
     res = client.get("/saml/login", follow_redirects=False)
-    # Should redirect to IdP (or return 307 if config empty)
     assert res.status_code in (302, 307)
 
 
@@ -408,8 +423,41 @@ def test_ldap_login_not_enabled(client):
 
 
 def test_gcloud_login_redirects(client):
+    from app.storage.sso_store import SSOProvider, get_sso_store
+
+    store = get_sso_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    store.update(lambda config: setattr(config, "provider", SSOProvider.GCLOUD))
+
     res = client.get("/sso/gcloud", follow_redirects=False)
     assert res.status_code in (302, 307)
+
+
+def test_disabled_sso_provider_blocks_login_entrypoints(client):
+    assert client.get("/saml/login", follow_redirects=False).status_code == 400
+    assert client.get("/sso/gcloud", follow_redirects=False).status_code == 400
+
+
+def test_public_sso_status_exposes_only_login_provider_state(client):
+    from app.storage.sso_store import SSOProvider, get_sso_store
+
+    disabled = client.get("/auth/sso-status")
+    assert disabled.status_code == 200
+    assert disabled.json() == {"provider": "disabled", "enabled": False}
+
+    store = get_sso_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    store.update(lambda config: setattr(config, "provider", SSOProvider.LDAP))
+
+    enabled = client.get("/auth/sso-status")
+    assert enabled.status_code == 200
+    assert enabled.json() == {"provider": "ldap", "enabled": True}
 
 
 def test_sso_config_requires_admin(client):

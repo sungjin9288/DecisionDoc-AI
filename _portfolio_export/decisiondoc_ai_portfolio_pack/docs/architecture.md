@@ -137,6 +137,8 @@ SAML 2.0: GET /saml/login → IdP Redirect → POST /saml/acs → JWT 발급
 G-Cloud:  GET /sso/gcloud → Google OAuth → GET /sso/gcloud/callback → JWT 발급
 ```
 
+SSO 설정은 `tenants/{tenant_id}/sso_config.json` relative path를 local/S3 shared state backend에서 공통으로 사용한다. Secret은 PBKDF2로 유도한 Fernet key로 암호화하며 admin 응답에서는 마스킹한다. Partial update는 process-local shared lock 안에서 수행한다. SAML ACS는 RelayState cookie, IdP certificate, signed assertion verifier를 요구하고 verifier가 없으면 인증을 거부한다. 실제 IdP 연동과 distributed S3 compare-and-swap은 별도 검증 범위다.
+
 ## 평가 파이프라인
 
 ```

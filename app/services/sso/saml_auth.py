@@ -2,18 +2,15 @@
 
 Tries onelogin/python3-saml first; falls back to basic XML parsing if unavailable.
 """
+
 from __future__ import annotations
 
 import base64
-import html
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.storage.sso_store import SAMLConfig
-
-_MAX_SAML_RESPONSE_BYTES = 1024 * 1024
 
 
 @dataclass
@@ -39,11 +36,13 @@ def build_authn_request(config: SAMLConfig) -> tuple[str, str]:
 
 
 def parse_saml_response(config: SAMLConfig, saml_response_b64: str) -> SAMLUser | None:
-    """Parse and validate SAML response. Returns SAMLUser or None."""
+    """Validate a signed SAML response with python3-saml when available."""
+    if not config.idp_certificate.strip():
+        return None
     try:
         return _parse_with_onelogin(config, saml_response_b64)
     except ImportError:
-        return _parse_basic(config, saml_response_b64)
+        return None
 
 
 def build_sp_metadata(config: SAMLConfig) -> str:
@@ -56,11 +55,19 @@ def build_sp_metadata(config: SAMLConfig) -> str:
 
 # ── onelogin implementation ────────────────────────────────────────────────────
 
+
 def _build_with_onelogin(config: SAMLConfig, relay_state: str) -> tuple[str, str]:
     from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
     settings = _onelogin_settings(config)
-    req = {"https": "on", "http_host": "", "script_name": "/saml/acs",
-           "server_port": "443", "get_data": {}, "post_data": {}}
+    req = {
+        "https": "on",
+        "http_host": "",
+        "script_name": "/saml/acs",
+        "server_port": "443",
+        "get_data": {},
+        "post_data": {},
+    }
     auth = OneLogin_Saml2_Auth(req, settings)
     redirect_url = auth.login(return_to=relay_state)
     return redirect_url, relay_state
@@ -68,10 +75,16 @@ def _build_with_onelogin(config: SAMLConfig, relay_state: str) -> tuple[str, str
 
 def _parse_with_onelogin(config: SAMLConfig, saml_response_b64: str) -> SAMLUser | None:
     from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
     settings = _onelogin_settings(config)
-    req = {"https": "on", "http_host": "", "script_name": "/saml/acs",
-           "server_port": "443", "get_data": {},
-           "post_data": {"SAMLResponse": saml_response_b64}}
+    req = {
+        "https": "on",
+        "http_host": "",
+        "script_name": "/saml/acs",
+        "server_port": "443",
+        "get_data": {},
+        "post_data": {"SAMLResponse": saml_response_b64},
+    }
     auth = OneLogin_Saml2_Auth(req, settings)
     auth.process_response()
     if not auth.is_authenticated():
@@ -81,11 +94,14 @@ def _parse_with_onelogin(config: SAMLConfig, saml_response_b64: str) -> SAMLUser
     display_name = _first_attr(attrs, config.attribute_display_name) or username
     email = _first_attr(attrs, "email") or username
     role = _first_attr(attrs, config.attribute_role) or "member"
-    return SAMLUser(username=username, display_name=display_name, email=email, role=role)
+    return SAMLUser(
+        username=username, display_name=display_name, email=email, role=role
+    )
 
 
 def _sp_metadata_onelogin(config: SAMLConfig) -> str:
     from onelogin.saml2.metadata import OneLogin_Saml2_Metadata
+
     settings = _onelogin_settings(config)
     metadata = OneLogin_Saml2_Metadata.builder(settings["sp"])
     return metadata
@@ -93,7 +109,7 @@ def _sp_metadata_onelogin(config: SAMLConfig) -> str:
 
 def _onelogin_settings(config: SAMLConfig) -> dict:
     return {
-        "strict": False,
+        "strict": True,
         "debug": False,
         "sp": {
             "entityId": config.sp_entity_id,
@@ -101,10 +117,18 @@ def _onelogin_settings(config: SAMLConfig) -> dict:
                 "url": config.sp_acs_url,
                 "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
             },
-            "privateKey": config.sp_private_key.replace("-----BEGIN RSA PRIVATE KEY-----", "")
-                         .replace("-----END RSA PRIVATE KEY-----", "").replace("\n", "") if config.sp_private_key else "",
+            "privateKey": config.sp_private_key.replace(
+                "-----BEGIN RSA PRIVATE KEY-----", ""
+            )
+            .replace("-----END RSA PRIVATE KEY-----", "")
+            .replace("\n", "")
+            if config.sp_private_key
+            else "",
             "x509cert": config.sp_certificate.replace("-----BEGIN CERTIFICATE-----", "")
-                       .replace("-----END CERTIFICATE-----", "").replace("\n", "") if config.sp_certificate else "",
+            .replace("-----END CERTIFICATE-----", "")
+            .replace("\n", "")
+            if config.sp_certificate
+            else "",
         },
         "idp": {
             "entityId": config.idp_entity_id,
@@ -112,13 +136,25 @@ def _onelogin_settings(config: SAMLConfig) -> dict:
                 "url": config.idp_sso_url,
                 "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
             },
-            "x509cert": config.idp_certificate.replace("-----BEGIN CERTIFICATE-----", "")
-                       .replace("-----END CERTIFICATE-----", "").replace("\n", "") if config.idp_certificate else "",
+            "x509cert": config.idp_certificate.replace(
+                "-----BEGIN CERTIFICATE-----", ""
+            )
+            .replace("-----END CERTIFICATE-----", "")
+            .replace("\n", "")
+            if config.idp_certificate
+            else "",
+        },
+        "security": {
+            "wantAssertionsSigned": True,
+            "wantMessagesSigned": False,
+            "wantXMLValidation": True,
+            "rejectDeprecatedAlgorithm": True,
         },
     }
 
 
 # ── Basic XML fallback ─────────────────────────────────────────────────────────
+
 
 def _build_basic_authn_request(config: SAMLConfig, relay_state: str) -> tuple[str, str]:
     import urllib.parse
@@ -133,65 +169,19 @@ def _build_basic_authn_request(config: SAMLConfig, relay_state: str) -> tuple[st
         f'Destination="{config.idp_sso_url}" '
         f'AssertionConsumerServiceURL="{config.sp_acs_url}" '
         f'ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">'
-        f'<saml:Issuer>{config.sp_entity_id}</saml:Issuer>'
-        f'</samlp:AuthnRequest>'
+        f"<saml:Issuer>{config.sp_entity_id}</saml:Issuer>"
+        f"</samlp:AuthnRequest>"
     )
     deflated = zlib.compress(xml.encode("utf-8"))[2:-4]
     encoded = base64.b64encode(deflated).decode("utf-8")
-    params = urllib.parse.urlencode({
-        "SAMLRequest": encoded,
-        "RelayState": relay_state,
-    })
+    params = urllib.parse.urlencode(
+        {
+            "SAMLRequest": encoded,
+            "RelayState": relay_state,
+        }
+    )
     redirect_url = f"{config.idp_sso_url}?{params}"
     return redirect_url, relay_state
-
-
-def _parse_basic(config: SAMLConfig, saml_response_b64: str) -> SAMLUser | None:
-    try:
-        xml_bytes = base64.b64decode(saml_response_b64, validate=True)
-        if len(xml_bytes) > _MAX_SAML_RESPONSE_BYTES:
-            return None
-        xml_text = xml_bytes.decode("utf-8", errors="replace")
-        if "<" not in xml_text or ">" not in xml_text:
-            return None
-        upper_xml = xml_text.upper()
-        if "<!DOCTYPE" in upper_xml or "<!ENTITY" in upper_xml:
-            return None
-
-        # Check status
-        status_code = re.search(
-            r"<(?:\w+:)?StatusCode\b[^>]*\bValue=(['\"])(.*?)\1",
-            xml_text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if status_code is not None and "Success" not in status_code.group(2):
-            return None
-
-        username = _extract_xml_text(
-            xml_text,
-            r"<(?:\w+:)?NameID\b[^>]*>(.*?)</(?:\w+:)?NameID>",
-        )
-
-        attrs: dict[str, str] = {}
-        for attr_match in re.finditer(
-            r"<(?:\w+:)?Attribute\b[^>]*\bName=(['\"])(.*?)\1[^>]*>(.*?)</(?:\w+:)?Attribute>",
-            xml_text,
-            re.IGNORECASE | re.DOTALL,
-        ):
-            attr_name = attr_match.group(2).strip()
-            attr_value = _extract_xml_text(
-                attr_match.group(3),
-                r"<(?:\w+:)?AttributeValue\b[^>]*>(.*?)</(?:\w+:)?AttributeValue>",
-            )
-            if attr_name and attr_value:
-                attrs[attr_name] = attr_value
-
-        display_name = attrs.get(config.attribute_display_name) or attrs.get("displayName") or username
-        email = attrs.get(config.attribute_username) or attrs.get("email") or username
-        role = attrs.get(config.attribute_role) or "member"
-        return SAMLUser(username=username or email, display_name=display_name, email=email, role=role)
-    except Exception:
-        return None
 
 
 def _sp_metadata_basic(config: SAMLConfig) -> str:
@@ -203,8 +193,8 @@ def _sp_metadata_basic(config: SAMLConfig) -> str:
         f'protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">'
         f'<md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" '
         f'Location="{config.sp_acs_url}" index="1"/>'
-        f'</md:SPSSODescriptor>'
-        f'</md:EntityDescriptor>'
+        f"</md:SPSSODescriptor>"
+        f"</md:EntityDescriptor>"
     )
 
 
@@ -213,11 +203,3 @@ def _first_attr(attrs: dict, key: str) -> str:
     if isinstance(val, list):
         return val[0] if val else ""
     return str(val)
-
-
-def _extract_xml_text(xml_fragment: str, pattern: str) -> str:
-    match = re.search(pattern, xml_fragment, re.IGNORECASE | re.DOTALL)
-    if not match:
-        return ""
-    raw = re.sub(r"<[^>]+>", "", match.group(1))
-    return html.unescape(raw).strip()

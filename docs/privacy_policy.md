@@ -88,7 +88,7 @@
 
 | 조치 | 내용 |
 |------|------|
-| 암호화 | 비밀번호 bcrypt 해시, SSO 시크릿 AES-256 |
+| 암호화 | 비밀번호 bcrypt 해시, SSO 시크릿 Fernet authenticated encryption |
 | 전송 보안 | TLS 1.2 이상 |
 | 접근 제어 | 역할 기반 접근 통제 (RBAC) |
 | 감사 추적 | 모든 접근 기록 (변경 불가) |
