@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone reusable template state integrity hardening
+
+- `TemplateStore`는 tenant ID를 JSONL path 선택 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/templates.jsonl`을 사용한다. Missing-state read는 파일이나 object를 만들지 않으며 마지막 template 삭제 뒤의 빈 JSONL은 유효한 빈 lifecycle 상태로 읽는다.
+- Malformed JSON, duplicate JSON key, non-object·owned malformed record와 duplicate template ID는 조회와 후속 write를 fail closed로 중단하고 원본 bytes를 보존한다. Caller가 만든 invalid template도 write 전에 거부한다.
+- Explicit foreign record는 현재 tenant의 조회·삭제·use-count 변경에서 제외하되 원본에 보존한다. Tenant 필드가 없는 기존 record는 path ownership으로 읽으며, 같은 data root의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 add/delete/use-count 변경을 직렬화한다. Distributed S3 compare-and-swap을 주장하지 않는다.
+- Template route는 앱이 선택한 data root와 backend를 명시적으로 사용하고 non-object `form_data`를 `422`로 거부한다. H39 focused integrity gate는 `30 passed`, template/security/state/generation/error/infrastructure 확장 gate는 `307 passed`, full no-cost regression은 `3434 passed, 2 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+- 임시 mock/local uvicorn HTTP QA에서 template 생성, 목록, 상세 조회에 따른 persisted use count 1, 삭제, 최종 빈 목록과 0-byte JSONL을 확인했다. 서버와 임시 data root는 검증 직후 정리했다.
+
 ## Post-milestone identity state integrity hardening
 
 - `UserStore`와 `InviteStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/{users,invites}.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

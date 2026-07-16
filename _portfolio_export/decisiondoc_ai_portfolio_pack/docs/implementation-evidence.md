@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-16 기준 non-live 전체 게이트는 `3404 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-16 기준 non-live 전체 게이트는 `3434 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -24,6 +24,7 @@
 | API key 보호된 문서 생성 | 검증 완료 | `evidence/api-responses/generate-tech-decision.json` | curl `POST /generate` | mock provider |
 | Markdown export 생성 | 검증 완료 | `evidence/api-responses/generate-export-tech-decision.json`, `evidence/output-artifacts/export_adr.md`, `evidence/output-artifacts/export_onepager.md` | curl `POST /generate/export` | local storage |
 | 생성/인증/스토리지 테스트 | 검증 완료 | `evidence/cli-logs/pytest_generate_auth_storage.log` | `pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_storage.py -q` | 60 passed |
+| 사용자 템플릿 상태 무결성 | 검증 완료 | `app/storage/template_store.py`, `app/routers/templates.py`, `tests/test_template_store_integrity.py` | local/fake-S3 unit·concurrency·API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS는 범위 밖 |
 | Procurement decision package local evidence contract | 재현 가능 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `contract_version` 기준 stdout JSON contract |
 | Procurement decision package persisted receipt check | 재현 가능 | `/tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | repo 밖 receipt 검증 |
 | Static PWA 화면 제공 | 검증 완료 | `evidence/screenshots/web-ui-home.png` | Playwright screenshot | 2026-07-08 기준 로그인 화면 확인 |
@@ -61,7 +62,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `3404 passed, 2 skipped, 4 deselected` (2026-07-16 실측).
+결과: `3434 passed, 2 skipped, 4 deselected` (2026-07-16 실측).
 
 ### CI advisory lint / security scan
 

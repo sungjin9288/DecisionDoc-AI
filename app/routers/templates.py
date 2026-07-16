@@ -1,8 +1,8 @@
 """app/routers/templates.py — Document template CRUD endpoints.
 
-Extracted from app/main.py. TemplateStore instances are created internally
-per request — no app.state dependency required.
+Extracted from app/main.py.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,23 +23,38 @@ def create_template_endpoint(payload: dict, request: Request) -> dict:
 
     name = (payload.get("name") or "").strip()
     bundle_id = (payload.get("bundle_id") or "").strip()
-    form_data = payload.get("form_data") or {}
+    form_data = payload.get("form_data")
+    if form_data is None:
+        form_data = {}
 
     errors = []
     if not name:
         errors.append({"field": "name", "message": "템플릿 이름은 필수입니다."})
     elif len(name) > 100:
-        errors.append({"field": "name", "message": "템플릿 이름은 100자 이하여야 합니다."})
+        errors.append(
+            {"field": "name", "message": "템플릿 이름은 100자 이하여야 합니다."}
+        )
     if not bundle_id:
         errors.append({"field": "bundle_id", "message": "번들 ID는 필수입니다."})
+    if not isinstance(form_data, dict):
+        errors.append({"field": "form_data", "message": "입력값은 객체여야 합니다."})
 
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
 
     from app.bundle_catalog.registry import BUNDLE_REGISTRY
-    bundle_name = BUNDLE_REGISTRY[bundle_id].name_ko if bundle_id in BUNDLE_REGISTRY else bundle_id
 
-    store = TemplateStore(tenant_id)
+    bundle_name = (
+        BUNDLE_REGISTRY[bundle_id].name_ko
+        if bundle_id in BUNDLE_REGISTRY
+        else bundle_id
+    )
+
+    store = TemplateStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     entry = TemplateEntry(
         template_id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -50,7 +65,12 @@ def create_template_endpoint(payload: dict, request: Request) -> dict:
         form_data=form_data,
     )
     store.add(entry)
-    return {"template_id": entry.template_id, "name": name, "bundle_id": bundle_id, "created_at": entry.created_at}
+    return {
+        "template_id": entry.template_id,
+        "name": name,
+        "bundle_id": bundle_id,
+        "created_at": entry.created_at,
+    }
 
 
 @router.get("/templates", dependencies=[Depends(require_api_key)])
@@ -60,7 +80,11 @@ def list_templates_endpoint(request: Request) -> list:
 
     user_id = getattr(request.state, "user_id", "anonymous")
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    store = TemplateStore(tenant_id)
+    store = TemplateStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     templates = store.list_for_user(user_id)
     return sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)
 
@@ -72,10 +96,16 @@ def get_template_endpoint(template_id: str, request: Request) -> dict:
 
     user_id = getattr(request.state, "user_id", "anonymous")
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    store = TemplateStore(tenant_id)
+    store = TemplateStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     tmpl = store.get(template_id, user_id)
     if not tmpl:
-        raise HTTPException(status_code=404, detail={"message": "템플릿을 찾을 수 없습니다."})
+        raise HTTPException(
+            status_code=404, detail={"message": "템플릿을 찾을 수 없습니다."}
+        )
     store.increment_use_count(template_id, user_id)
     return tmpl
 
@@ -87,8 +117,14 @@ def delete_template_endpoint(template_id: str, request: Request) -> dict:
 
     user_id = getattr(request.state, "user_id", "anonymous")
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    store = TemplateStore(tenant_id)
+    store = TemplateStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     deleted = store.delete(template_id, user_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail={"message": "템플릿을 찾을 수 없습니다."})
+        raise HTTPException(
+            status_code=404, detail={"message": "템플릿을 찾을 수 없습니다."}
+        )
     return {"deleted": True, "template_id": template_id}
