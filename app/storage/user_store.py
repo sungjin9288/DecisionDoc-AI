@@ -1,17 +1,19 @@
 """app/storage/user_store.py — Tenant-scoped user account storage.
 
 Storage: data/tenants/{tenant_id}/users.json
-Thread-safe via threading.Lock per store instance.
+Thread-safe within one process across stores that share a data root.
 """
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import bcrypt
 
@@ -19,8 +21,30 @@ from app.ai_profiles.catalog import (
     default_ai_profiles_for_role,
     normalize_ai_profile_keys,
 )
-from app.storage.base import BaseJsonStore
 from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
+
+
+_user_locks: dict[Path, threading.RLock] = {}
+_user_locks_guard = threading.Lock()
+
+
+class UserStoreError(ValueError):
+    """Raised when persisted user state cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _user_locks_guard:
+        return _user_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise UserStoreError(f"Duplicate key in user state: {key!r}")
+        result[key] = value
+    return result
 
 
 class UserRole(str, Enum):
@@ -74,6 +98,8 @@ def _check_password(plain: str, hashed: str) -> bool:
 
 
 def _validate_password(password: str) -> None:
+    if not isinstance(password, str):
+        raise ValueError("비밀번호는 문자열이어야 합니다.")
     if len(password) < 8:
         raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
     if not any(c.isdigit() for c in password):
@@ -82,40 +108,105 @@ def _validate_password(password: str) -> None:
         raise ValueError("비밀번호에 문자가 포함되어야 합니다.")
 
 
-class UserStore(BaseJsonStore):
-    """Thread-safe, file-backed user store scoped to a single tenant."""
+class UserStore:
+    """Thread-safe user state scoped to a single tenant."""
 
     def __init__(self, tenant_dir: Path, *, backend: StateBackend | None = None) -> None:
-        super().__init__()
         self._tenant_dir = Path(tenant_dir)
-        self._tenant_id = self._tenant_dir.name
+        self._tenant_id = require_tenant_id(self._tenant_dir.name)
         self._path = self._tenant_dir / "users.json"
-        self._relative_path = f"tenants/{self._tenant_id}/users.json"
-        self._backend = backend
-        if self._backend is None:
-            self._tenant_dir.mkdir(parents=True, exist_ok=True)
-        if self._backend is None and not self._path.exists():
-            self._save({})
+        if self._tenant_dir.parent.name == "tenants":
+            data_dir = self._tenant_dir.parent.parent
+        else:
+            data_dir = self._tenant_dir.parent
+        self._relative_path = self._path.relative_to(data_dir).as_posix()
+        self._backend = backend or get_state_backend(data_dir=data_dir)
+        self._lock = _lock_for_path(self._path)
 
-    def _get_path(self) -> Path:
-        return self._path
+    def _validate_record(self, user_id: str, record: object) -> None:
+        if not isinstance(record, dict):
+            raise UserStoreError("Invalid user record")
+        stored_tenant_id = record.get("tenant_id")
+        if not isinstance(stored_tenant_id, str) or not stored_tenant_id:
+            raise UserStoreError("Invalid user identity")
+        if stored_tenant_id != self._tenant_id:
+            return
 
-    def _load(self, *, strict: bool = False) -> dict:
-        if self._backend is None:
-            return super()._load()
+        required_strings = (
+            "user_id",
+            "tenant_id",
+            "username",
+            "display_name",
+            "email",
+            "password_hash",
+            "created_at",
+            "avatar_color",
+        )
+        if any(not isinstance(record.get(field), str) for field in required_strings):
+            raise UserStoreError("Invalid user record")
+        if (
+            not user_id
+            or record["user_id"] != user_id
+            or not record["username"]
+            or not record["password_hash"]
+            or not record["created_at"]
+        ):
+            raise UserStoreError("Invalid user identity")
         try:
-            raw = self._backend.read_text(self._relative_path)
-            if raw is None or not raw.strip():
-                return {}
-            return dict(json.loads(raw))
-        except Exception:
-            if strict:
-                raise
-            return {}
+            UserRole(record.get("role"))
+        except ValueError as exc:
+            raise UserStoreError("Invalid user role") from exc
+        if not isinstance(record.get("is_active"), bool):
+            raise UserStoreError("Invalid user active state")
+        last_login = record.get("last_login")
+        if last_login is not None and not isinstance(last_login, str):
+            raise UserStoreError("Invalid user login timestamp")
+        try:
+            datetime.fromisoformat(record["created_at"])
+            if last_login is not None:
+                datetime.fromisoformat(last_login)
+        except ValueError as exc:
+            raise UserStoreError("Invalid user timestamp") from exc
+        job_title = record.get("job_title", "")
+        if not isinstance(job_title, str):
+            raise UserStoreError("Invalid user job title")
+        profiles = record.get("assigned_ai_profiles", [])
+        if not isinstance(profiles, list) or any(
+            not isinstance(profile, str) for profile in profiles
+        ):
+            raise UserStoreError("Invalid user AI profiles")
 
-    def _save(self, data: dict) -> None:
-        if self._backend is None:
-            return super()._save(data)
+    def _validate_state(self, data: object) -> dict[str, dict]:
+        if not isinstance(data, dict):
+            raise UserStoreError("Invalid user state document")
+
+        usernames: set[str] = set()
+        for user_id, record in data.items():
+            if not isinstance(user_id, str) or not isinstance(record, dict):
+                raise UserStoreError("Invalid user record")
+            self._validate_record(user_id, record)
+            if record.get("tenant_id") != self._tenant_id:
+                continue
+            username = record["username"]
+            if username in usernames:
+                raise UserStoreError("Duplicate username in user state")
+            usernames.add(username)
+        return data
+
+    def _load(self) -> dict[str, dict]:
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None:
+            return {}
+        if not raw.strip():
+            raise UserStoreError("Invalid user state document")
+        try:
+            data = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise UserStoreError("Invalid user state document") from exc
+        return self._validate_state(data)
+
+    def _save(self, data: dict[str, dict]) -> None:
+        self._validate_state(data)
         self._backend.write_text(
             self._relative_path,
             json.dumps(data, ensure_ascii=False, indent=2),
@@ -124,11 +215,21 @@ class UserStore(BaseJsonStore):
     # ── internal helpers ──────────────────────────────────────────────────
 
     def _to_user(self, d: dict) -> User:
-        d = dict(d)
-        d["role"] = UserRole(d["role"])
-        d.setdefault("job_title", "")
-        d.setdefault("assigned_ai_profiles", [])
-        return User(**d)
+        return User(
+            user_id=d["user_id"],
+            tenant_id=d["tenant_id"],
+            username=d["username"],
+            display_name=d["display_name"],
+            email=d["email"],
+            password_hash=d["password_hash"],
+            role=UserRole(d["role"]),
+            is_active=d["is_active"],
+            created_at=d["created_at"],
+            last_login=d.get("last_login"),
+            avatar_color=d["avatar_color"],
+            job_title=d.get("job_title", ""),
+            assigned_ai_profiles=d.get("assigned_ai_profiles", []),
+        )
 
     def _owns(self, record: dict | None) -> bool:
         return bool(record and record.get("tenant_id") == self._tenant_id)
@@ -146,6 +247,19 @@ class UserStore(BaseJsonStore):
         assigned_ai_profiles: list[str] | None = None,
     ) -> User:
         """Create a new user. Raises ValueError if username already exists."""
+        if (
+            not isinstance(username, str)
+            or not username
+            or not isinstance(display_name, str)
+            or not isinstance(email, str)
+            or not isinstance(job_title, str)
+        ):
+            raise UserStoreError("Invalid user record")
+        if assigned_ai_profiles is not None and (
+            not isinstance(assigned_ai_profiles, list)
+            or any(not isinstance(profile, str) for profile in assigned_ai_profiles)
+        ):
+            raise UserStoreError("Invalid user AI profiles")
         _validate_password(password)
         if isinstance(role, str):
             role = UserRole(role)
@@ -157,7 +271,7 @@ class UserStore(BaseJsonStore):
         with self._lock:
             data = self._load()
             for u in data.values():
-                if u["username"] == username:
+                if self._owns(u) and u["username"] == username:
                     raise ValueError(f"사용자 이름 '{username}'이(가) 이미 존재합니다.")
             user_id = str(uuid.uuid4())
             user = User(
@@ -175,6 +289,7 @@ class UserStore(BaseJsonStore):
                 job_title=(job_title or "").strip(),
                 assigned_ai_profiles=normalized_profiles,
             )
+            self._validate_record(user_id, asdict(user))
             data[user_id] = asdict(user)
             self._save(data)
             return user
@@ -245,14 +360,12 @@ class UserStore(BaseJsonStore):
 
     def change_password(self, user_id: str, old_password: str, new_password: str) -> bool:
         """Returns False if old_password is wrong; raises ValueError if new_password weak."""
-        if not self.verify_password(user_id, old_password):
-            return False
-        _validate_password(new_password)
         with self._lock:
             data = self._load()
             rec = data.get(user_id)
-            if not rec:
+            if not self._owns(rec) or not _check_password(old_password, rec["password_hash"]):
                 return False
+            _validate_password(new_password)
             rec["password_hash"] = _hash_password(new_password)
             data[user_id] = rec
             self._save(data)
@@ -271,27 +384,46 @@ class UserStore(BaseJsonStore):
     def has_any_users(self) -> bool:
         """Return True when the tenant has at least one registered user.
 
-        Uses a strict load path so auth bootstrap can fail closed on corrupted
-        state instead of silently treating it as an empty tenant.
+        Corrupted state fails closed instead of looking like an empty tenant.
         """
         with self._lock:
-            data = self._load(strict=True)
-        return bool(data)
+            data = self._load()
+        return any(self._owns(record) for record in data.values())
 
 
 # ── per-tenant factory ─────────────────────────────────────────────────────────
 
-_user_stores: dict[tuple[str, str, str], UserStore] = {}
+_user_stores: dict[tuple[str, str, str, str, str], UserStore] = {}
 _us_lock = threading.Lock()
 
 
-def get_user_store(tenant_id: str) -> UserStore:
+def get_user_store(
+    tenant_id: str,
+    *,
+    data_dir: str | Path | None = None,
+    backend: StateBackend | None = None,
+) -> UserStore:
     """Return a shared UserStore instance for the given tenant."""
+    tenant_id = require_tenant_id(tenant_id)
+    resolved_data_dir = Path(
+        data_dir or os.getenv("DATA_DIR", "./data")
+    ).resolve()
+    tenant_dir = resolved_data_dir / "tenants" / tenant_id
+    if backend is not None:
+        return UserStore(tenant_dir, backend=backend)
+
+    state_backend = get_state_backend(data_dir=resolved_data_dir)
+    storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv(
+        "DECISIONDOC_STORAGE", "local"
+    )
+    bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv(
+        "DECISIONDOC_S3_BUCKET", ""
+    )
+    prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX") or os.getenv(
+        "DECISIONDOC_S3_PREFIX", ""
+    )
+    cache_key = (tenant_id, str(resolved_data_dir), storage_kind, bucket, prefix)
     with _us_lock:
-        data_dir = Path(__import__("os").getenv("DATA_DIR", "./data"))
-        backend = get_state_backend(data_dir=data_dir)
-        cache_key = (tenant_id, backend.kind, str(data_dir))
         if cache_key not in _user_stores:
-            tenant_dir = data_dir / "tenants" / tenant_id
-            _user_stores[cache_key] = UserStore(tenant_dir, backend=backend)
+            _user_stores[cache_key] = UserStore(tenant_dir, backend=state_backend)
         return _user_stores[cache_key]

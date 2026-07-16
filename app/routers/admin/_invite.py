@@ -4,9 +4,7 @@ Extracted from app/routers/admin.py (moved verbatim; no behavior changes).
 """
 from __future__ import annotations
 
-import os
 import secrets as _secrets
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -118,7 +116,11 @@ async def admin_invite_user(body: InviteUserRequest, request: Request) -> dict:
         else default_ai_profiles_for_role(body.role)
     )
     invite_id = _secrets.token_urlsafe(20)
-    store = InviteStore(tenant_id)
+    store = InviteStore(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     store.create(
         invite_id=invite_id,
         email=body.email,
@@ -147,7 +149,11 @@ async def view_invite(invite_id: str, request: Request):
     tenant_store = request.app.state.tenant_store
     from app.storage.invite_store import InviteStore
     for tenant in tenant_store.list_tenants():
-        store = InviteStore(tenant.tenant_id)
+        store = InviteStore(
+            tenant.tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        )
         invite = store.get(invite_id)
         if invite:
             if not invite.get("is_active"):
@@ -164,10 +170,14 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
     from app.services.auth_service import create_access_token, create_refresh_token
     tenant_store = request.app.state.tenant_store
     for tenant in tenant_store.list_tenants():
-        store = InviteStore(tenant.tenant_id)
-        invite = store.get(invite_id)
-        if invite and invite.get("is_active"):
-            data_dir = Path(os.getenv("DATA_DIR", "./data"))
+        store = InviteStore(
+            tenant.tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        )
+
+        def create_account(invite: dict):
+            data_dir = request.app.state.data_dir
             user_store = UserStore(
                 data_dir / "tenants" / tenant.tenant_id,
                 backend=request.app.state.state_backend,
@@ -184,7 +194,10 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                 job_title=invite.get("job_title", ""),
                 assigned_ai_profiles=invite.get("assigned_ai_profiles") or [],
             )
-            store.mark_used(invite_id)
+            return user
+
+        user = store.accept(invite_id, create_account)
+        if user is not None:
             return {
                 "message": "계정이 생성되었습니다.",
                 "access_token": create_access_token(

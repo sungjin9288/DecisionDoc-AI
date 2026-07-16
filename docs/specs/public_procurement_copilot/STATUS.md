@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone identity state integrity hardening
+
+- `UserStore`와 `InviteStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/{users,invites}.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Invalid·blank·non-object JSON, duplicate JSON key, owned malformed identity·role·timestamp와 duplicate username은 인증·등록·초대 수락 및 후속 write를 fail closed로 중단하고 원본 bytes를 보존한다. Caller가 만든 invalid account/invite record도 write 전에 거부한다.
+- Explicit foreign record는 현재 tenant의 조회·인증·비밀번호 변경·초대 사용에서 제외하되 원본에 보존한다. 같은 data root의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 계정·초대 lifecycle을 직렬화하고 concurrent duplicate username/invite ID는 하나만 성공시킨다. Distributed S3 compare-and-swap을 주장하지 않는다.
+- 초대 route는 앱이 선택한 data root와 backend를 명시적으로 사용하고 account creation과 invite 소비를 같은 process-local lock에 묶어 동시 수락 중 하나만 성공시킨다. H38 focused identity gate는 `34 passed`, 인증·초대·보안·state·infrastructure 확장 gate는 `397 passed`, full no-cost regression은 `3404 passed, 2 skipped, 4 deselected`다. 실제 초대 메일, provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+- 임시 mock/local uvicorn HTTP QA에서 최초 admin 등록, member 초대 발급, 공개 invite page 200, 초대 수락과 member login을 확인했다. 두 사용자는 같은 `system` tenant에 저장됐고 수락된 invite는 `is_active=false`, `used_at` 보존, 재조회 410으로 전환됐다. 서버와 임시 data root는 검증 직후 정리했다.
+
 ## Post-milestone collaboration state integrity hardening
 
 - `MessageStore`와 `NotificationStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/{messages,notifications}.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

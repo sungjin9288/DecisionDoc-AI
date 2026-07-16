@@ -39,6 +39,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - `/admin/tenants`를 포함한 admin endpoint는 인증된 admin JWT 또는 설정된 Ops key 중 하나를 요구한다. Ops UI는 공통 인증 header 조합을 사용해 로그인 세션을 보존하며 두 자격 증명을 동시에 요구하지 않는다.
   - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다.
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
+- 계정·초대 상태
+  - 사용자와 초대 record는 local `data/tenants/<tenant_id>/{users,invites}.json` 또는 같은 relative path의 S3 state object에 저장한다.
+  - tenant를 path 선택 전에 검증하고 손상 document, duplicate key, owned identity·role·timestamp drift와 duplicate username은 인증·등록·초대 수락과 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 인증에 사용하지 않고 원본에 보존한다.
+  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 초대 메일 전달은 현재 보장 범위가 아니다.
 - 감사 로그 저장
   - 저장 위치: local `data/tenants/<tenant_id>/audit_logs.jsonl` 또는 같은 relative path의 S3 state object
   - tenant와 log identity를 append 전에 검증하고 기존 JSONL byte prefix를 보존한다. 손상·foreign·중복 evidence는 자동 복구하거나 건너뛰지 않고 read와 append를 중단한다.
