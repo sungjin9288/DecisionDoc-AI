@@ -8,6 +8,16 @@ from app.storage.default_styles import DEFAULT_STYLE_PROFILES
 client = TestClient(app)
 
 
+def _app_style_store(tenant_id: str):
+    from app.storage.style_store import StyleStore
+
+    return StyleStore(
+        tenant_id,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+
+
 def test_default_styles_defined():
     """3 default profiles must be defined."""
     assert len(DEFAULT_STYLE_PROFILES) == 3
@@ -48,10 +58,9 @@ def test_all_profiles_are_system():
 def test_system_profiles_not_deletable():
     """System profiles should return 400 on delete attempt."""
     from app.services.auth_service import create_access_token
-    from app.storage.style_store import StyleStore
 
     # Ensure defaults are present (lifespan not called in test client)
-    StyleStore("system").initialize_defaults()
+    _app_style_store("system").initialize_defaults()
 
     token = create_access_token("user1", "system", "admin", "admin")
     res = client.delete(
@@ -103,10 +112,9 @@ def test_initialize_defaults_adds_correct_fields():
 def test_style_profiles_listed_include_system_flag():
     """GET /styles response should include is_system field."""
     from app.services.auth_service import create_access_token
-    from app.storage.style_store import StyleStore
 
     # Ensure defaults are present (lifespan not called in test client)
-    StyleStore("system").initialize_defaults()
+    _app_style_store("system").initialize_defaults()
 
     token = create_access_token("user1", "system", "member", "user1")
     res = client.get(
