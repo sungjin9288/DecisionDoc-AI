@@ -96,6 +96,7 @@ def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackRespo
         eval_store=eval_store,
         tenant_id=tenant_id,
         data_dir=request.app.state.data_dir,
+        state_backend=request.app.state.state_backend,
     )
 
     # ── Trigger A: high user rating → collect fine-tune record ───────────

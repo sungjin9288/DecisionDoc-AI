@@ -334,19 +334,19 @@ class GenerationCoreMixin:
             ab_variant: str | None = None
             ab_store_instance: Any | None = None
             if not cache_hit:
-                try:
-                    from app.domain.schema import _ab_selected
-                    sel_variant = getattr(_ab_selected, "variant", None)
-                    sel_bundle_id = getattr(_ab_selected, "bundle_id", None)
-                    if sel_variant and sel_bundle_id == bundle_type:
-                        ab_variant = sel_variant
-                        from app.storage.ab_test_store import ABTestStore
-                        ab_store_instance = ABTestStore(
-                            self.data_dir,
-                            tenant_id=tenant_id,
-                        )
-                except Exception:
-                    pass
+                from app.domain.schema import _ab_selected
+
+                sel_variant = getattr(_ab_selected, "variant", None)
+                sel_bundle_id = getattr(_ab_selected, "bundle_id", None)
+                if sel_variant and sel_bundle_id == bundle_type:
+                    from app.storage.ab_test_store import get_ab_test_store
+
+                    ab_variant = sel_variant
+                    ab_store_instance = get_ab_test_store(
+                        tenant_id,
+                        data_dir=self.data_dir,
+                        backend=self.state_backend,
+                    )
 
             from app.eval.eval_store import get_eval_store
 

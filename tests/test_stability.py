@@ -77,9 +77,9 @@ def test_llm_retry_backoff_invalid_env(monkeypatch) -> None:
 
 # ─── C-3: JSON corruption backup ──────────────────────────────────────────────
 
-def test_ab_test_store_corruption_backup(tmp_path: Path) -> None:
-    """손상된 ab_tests.json → 백업 파일 생성 + 빈 dict 반환."""
-    from app.storage.ab_test_store import ABTestStore
+def test_ab_test_store_corruption_fails_closed(tmp_path: Path) -> None:
+    """손상된 A/B 원본은 이동하거나 빈 상태로 바꾸지 않는다."""
+    from app.storage.ab_test_store import ABTestStore, ABTestStoreError
 
     # ABTestStore now stores under tenants/system/
     tenant_dir = tmp_path / "tenants" / "system"
@@ -88,13 +88,11 @@ def test_ab_test_store_corruption_backup(tmp_path: Path) -> None:
     store_path.write_text("{invalid json!!}", encoding="utf-8")
 
     store = ABTestStore(tmp_path, tenant_id="system")
-    with store._lock:
-        data = store._load()
+    with pytest.raises(ABTestStoreError, match="Invalid A/B test state document"):
+        store.list_active_tests()
 
-    assert data == {}
-    # The corrupted file should have been renamed within the tenant dir
-    backups = list(tenant_dir.glob("ab_tests.corrupted.*.json"))
-    assert len(backups) == 1
+    assert store_path.read_text(encoding="utf-8") == "{invalid json!!}"
+    assert list(tenant_dir.glob("ab_tests.corrupted.*.json")) == []
 
 
 def test_prompt_override_store_corruption_fails_closed(tmp_path: Path) -> None:
@@ -123,8 +121,8 @@ def test_prompt_override_store_corruption_fails_closed(tmp_path: Path) -> None:
 
 # ─── H-3: A/B winner silent drop fix ─────────────────────────────────────────
 
-def test_ab_test_store_winner_exception_logged(tmp_path: Path) -> None:
-    """evaluate_and_conclude에서 PromptOverrideStore 예외 → re-raise 없이 _log.error."""
+def test_ab_test_store_winner_failure_leaves_experiment_active(tmp_path: Path) -> None:
+    """Winner override를 저장하지 못하면 conclusion을 확정하지 않는다."""
     from app.storage.ab_test_store import ABTestStore
 
     store = ABTestStore(tmp_path, tenant_id="system")
@@ -140,13 +138,13 @@ def test_ab_test_store_winner_exception_logged(tmp_path: Path) -> None:
         "app.storage.prompt_override_store.PromptOverrideStore"
     ) as MockStore:
         MockStore.return_value.save_override.side_effect = RuntimeError("disk full")
-        with patch("app.storage.ab_test_store._log") as mock_log:
-            winner = store.evaluate_and_conclude("bundle_x")
+        with pytest.raises(RuntimeError, match="disk full"):
+            store.evaluate_and_conclude("bundle_x")
 
-    assert winner is not None  # Function still returns winner
-    mock_log.error.assert_called_once()
-    error_msg = mock_log.error.call_args[0][0]
-    assert "Failed to save winner hint" in error_msg
+    active = store.get_active_test("bundle_x")
+    assert active is not None
+    assert active["status"] == "active"
+    assert active["winner"] is None
 
 
 # ─── H-2: LLM retry ───────────────────────────────────────────────────────────

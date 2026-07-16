@@ -157,14 +157,19 @@ def generate_sketch_endpoint(
             bundle_id=f"ai.sketch.{payload.bundle_type}",
         )
 
-    # Record request for pattern analysis
-    try:
-        from app.storage.request_pattern_store import RequestPatternStore
-        pattern_store = RequestPatternStore(data_dir, tenant_id=tenant_id)
-        raw_input = f"{payload.title} {payload.goal}".strip()[:200]
-        pattern_store.record_request(raw_input, bundle_id=payload.bundle_type, matched=True)
-    except Exception:
-        pass
+    from app.storage.request_pattern_store import RequestPatternStore
+
+    pattern_store = RequestPatternStore(
+        data_dir,
+        tenant_id=tenant_id,
+        backend=request.app.state.state_backend,
+    )
+    raw_input = f"{payload.title} {payload.goal}".strip()[:200]
+    pattern_store.record_request(
+        raw_input,
+        bundle_id=payload.bundle_type,
+        matched=True,
+    )
 
     return dataclasses.asdict(result)
 
@@ -413,7 +418,11 @@ def generate_freeform_endpoint(
     from app.storage.request_pattern_store import RequestPatternStore
 
     data_dir = request.app.state.data_dir
-    pattern_store = RequestPatternStore(data_dir, tenant_id=get_tenant_id(request))
+    pattern_store = RequestPatternStore(
+        data_dir,
+        tenant_id=get_tenant_id(request),
+        backend=request.app.state.state_backend,
+    )
     raw_input = f"{payload.title} {payload.goal}".strip()[:200]
     pattern_store.record_request(raw_input, bundle_id=None, matched=False)
     return {

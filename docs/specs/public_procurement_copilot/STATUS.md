@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone quality experiment state authority hardening
+
+- `ABTestStore`와 `RequestPatternStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{ab_tests.json,request_patterns.jsonl}`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Malformed/invalid UTF-8 JSON/JSONL, blank line, duplicate key·identity, non-object와 owned field/type/timestamp drift는 조회와 후속 create/assign/result/conclude/append/clear를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 tenant 필드 없는 기존 record는 path-owned compatibility를 유지한다.
+- 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 local/fake-S3에서 직렬화한다. A/B winner override 저장이 실패하면 experiment는 active로 남고, generation/eval/dashboard/admin/freeform·sketch caller는 앱 data root/backend를 사용하며 손상 state를 조용히 생략하지 않는다.
+- 임시 mock/local uvicorn HTTP QA에서 health, freeform request-pattern 기록, admin tenant-scoped 조회, 빈 A/B 목록을 모두 `200`으로 확인했다. 서버와 임시 data root는 검증 직후 정리했다.
+- H49 targeted gate는 `136 passed`, integrity/infrastructure gate는 `283 passed`, 확장 no-cost gate는 `500 passed, 1 skipped`, full no-cost regression은 `3876 passed, 1 skipped, 4 deselected`다. 모든 provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Provider API, Stripe API, G2B live API, AWS runtime, distributed S3 CAS, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone usage metering authority hardening
 
 - `UsageStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{usage.jsonl,usage_summary.json}`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

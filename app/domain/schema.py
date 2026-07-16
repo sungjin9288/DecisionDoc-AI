@@ -355,21 +355,19 @@ def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
         return
 
     # 1. Check for active A/B test first
-    try:
-        from app.storage.ab_test_store import get_ab_test_store
-        ab_store = get_ab_test_store(tid)
-        test = ab_store.get_active_test(bundle_id)
-        if test:
-            variant = ab_store.get_next_variant(bundle_id)
-            if variant:
-                hint = test.get(f"{variant}_hint", "")
-                if hint:
-                    _ab_selected.bundle_id = bundle_id
-                    _ab_selected.variant = variant
-                    out.append(f"\n\n[품질 개선 지시]\n{hint}")
-                    return
-    except Exception:
-        pass
+    from app.storage.ab_test_store import get_ab_test_store
+
+    ab_store = get_ab_test_store(tid, **_quality_store_context())
+    test = ab_store.get_active_test(bundle_id)
+    if test:
+        variant = ab_store.get_next_variant(bundle_id)
+        if variant:
+            hint = test.get(f"{variant}_hint", "")
+            if hint:
+                _ab_selected.bundle_id = bundle_id
+                _ab_selected.variant = variant
+                out.append(f"\n\n[품질 개선 지시]\n{hint}")
+                return
 
     # 2. Fall back to PromptOverrideStore
     from app.storage.prompt_override_store import get_override_store

@@ -3223,6 +3223,39 @@ def test_production_quality_learning_store_calls_bind_tenant_explicitly():
     assert missing_tenant == []
 
 
+def test_quality_experiment_state_callers_bind_application_backend():
+    root = Path(__file__).resolve().parents[1]
+    guarded_calls = {
+        "ABTestStore",
+        "RequestPatternStore",
+        "get_ab_test_store",
+    }
+    missing_backend: list[str] = []
+
+    for path in (root / "app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                call_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                call_name = node.func.attr
+            else:
+                continue
+            if call_name not in guarded_calls:
+                continue
+            binds_backend = any(
+                keyword.arg in {None, "backend"}
+                for keyword in node.keywords
+            )
+            if not binds_backend:
+                relative_path = path.relative_to(root).as_posix()
+                missing_backend.append(f"{relative_path}:{node.lineno}:{call_name}")
+
+    assert missing_backend == []
+
+
 def test_document_ops_service_binds_agent_run_to_request_tenant():
     root = Path(__file__).resolve().parents[1]
     path = root / "app" / "services" / "document_ops_service.py"

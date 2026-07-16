@@ -152,6 +152,8 @@ EvalPipeline.run()
          └─ GET /eval/report
 ```
 
+Quality learning state는 feedback·eval·prompt override뿐 아니라 A/B prompt experiment와 freeform·sketch request pattern까지 `tenants/{tenant_id}/` 아래의 동일 local/S3 `StateBackend`에 저장한다. 모든 request-path caller는 `app.state.data_dir`와 `app.state.state_backend`를 전달한다. Persisted schema, identity, timestamp 또는 UTF-8/JSON 무결성이 깨지면 빈 품질 상태로 fallback하지 않고 요청을 중단하며 원본을 보존한다. 같은 process의 독립 store 인스턴스는 shared lock으로 read-modify-write를 직렬화하고, A/B winner override가 저장된 뒤에만 conclusion을 확정한다. Distributed S3 compare-and-swap과 실제 provider 품질은 별도 검증 범위다.
+
 ## 파일 형식 서비스
 
 | 형식 | 서비스 | 의존성 |

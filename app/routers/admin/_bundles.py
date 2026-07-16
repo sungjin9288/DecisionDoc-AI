@@ -37,7 +37,11 @@ def expand_bundles(request: Request) -> dict:
         backend=request.app.state.state_backend,
     )
     provider = get_provider()
-    pattern_store = RequestPatternStore(data_dir, tenant_id=tenant_id)
+    pattern_store = RequestPatternStore(
+        data_dir,
+        tenant_id=tenant_id,
+        backend=request.app.state.state_backend,
+    )
     expander = BundleAutoExpander(
         provider=provider,
         override_store=prompt_override_store,
@@ -134,6 +138,7 @@ def get_request_patterns(request: Request) -> dict:
     pattern_store = RequestPatternStore(
         data_dir,
         tenant_id=get_tenant_id(request),
+        backend=request.app.state.state_backend,
     )
     all_records = pattern_store.get_all(limit=200)
     unmatched = [r for r in all_records if not r.get("matched", True)]

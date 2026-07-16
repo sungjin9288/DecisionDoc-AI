@@ -43,7 +43,7 @@ def dashboard_overview(request: Request) -> dict:
     if all_feedback:
         avg_rating = round(sum(f.get("rating", 0) for f in all_feedback) / total_feedback, 2)
 
-    ab_store = get_ab_test_store(tenant_id)
+    ab_store = get_ab_test_store(tenant_id, **store_context)
     active_ab_tests = len(ab_store.list_active_tests())
 
     auto_registry_path = data_dir / "auto_bundles" / "registry.json"
@@ -84,7 +84,7 @@ def dashboard_bundle_performance(request: Request) -> list[dict]:
     prompt_override_store = get_override_store(tenant_id, **store_context)
 
     per_bundle = eval_store.get_per_bundle_stats()
-    ab_store = get_ab_test_store(tenant_id)
+    ab_store = get_ab_test_store(tenant_id, **store_context)
     overrides = {o["bundle_id"]: o for o in prompt_override_store.list_overrides()}
 
     all_feedback = feedback_store.get_all()
@@ -148,7 +148,10 @@ def dashboard_improvement_history(request: Request) -> list[dict]:
         tenant_id,
         **_quality_store_context(request),
     )
-    ab_store = get_ab_test_store(tenant_id)
+    ab_store = get_ab_test_store(
+        tenant_id,
+        **_quality_store_context(request),
+    )
     data_dir = request.app.state.data_dir
 
     events: list[dict] = []

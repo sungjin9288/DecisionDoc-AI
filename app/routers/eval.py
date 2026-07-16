@@ -64,7 +64,11 @@ def list_active_ab_tests(request: Request) -> list[dict]:
     """Return all active A/B prompt variant tests."""
     require_admin(request)
     from app.storage.ab_test_store import get_ab_test_store
-    ab_store = get_ab_test_store(get_tenant_id(request))
+    ab_store = get_ab_test_store(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     return ab_store.list_active_tests()
 
 
@@ -73,7 +77,11 @@ def list_concluded_ab_tests(request: Request) -> list[dict]:
     """Return all concluded A/B prompt variant tests."""
     require_admin(request)
     from app.storage.ab_test_store import get_ab_test_store
-    ab_store = get_ab_test_store(get_tenant_id(request))
+    ab_store = get_ab_test_store(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     return ab_store.list_concluded_tests()
 
 
@@ -82,6 +90,10 @@ def reset_ab_test(bundle_id: str, request: Request) -> dict:
     """Delete the A/B test for a bundle (reset for fresh start)."""
     require_admin(request)
     from app.storage.ab_test_store import get_ab_test_store
-    ab_store = get_ab_test_store(get_tenant_id(request))
+    ab_store = get_ab_test_store(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     ab_store.delete_test(bundle_id)
     return {"deleted": True, "bundle_id": bundle_id}

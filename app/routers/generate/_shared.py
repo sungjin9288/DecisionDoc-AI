@@ -341,6 +341,7 @@ def _auto_improve_if_needed(
     *,
     tenant_id: str,
     data_dir: Path,
+    state_backend: Any,
 ) -> None:
     """저평점(≤2) 피드백이 임계값 이상 누적되면 패턴 분석 후 PromptOverrideStore에 저장.
 
@@ -399,7 +400,11 @@ def _auto_improve_if_needed(
             from dataclasses import replace as _dc_replace
             from app.storage.ab_test_store import ABTestStore
 
-            ab_store = ABTestStore(data_dir=data_dir, tenant_id=tenant_id)
+            ab_store = ABTestStore(
+                data_dir=data_dir,
+                tenant_id=tenant_id,
+                backend=state_backend,
+            )
             if ab_store.get_active_test(bundle_type) is None:
                 # Variant A = the override hint we just generated
                 variant_a_hint = override_hint
