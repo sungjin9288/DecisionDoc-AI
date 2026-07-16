@@ -10,6 +10,7 @@ import concurrent.futures
 import logging
 import threading
 import time
+from pathlib import Path
 
 from app.tenant import require_tenant_id
 
@@ -26,6 +27,7 @@ def _record_usage_sync(
     model: str,
     tokens_input: int,
     tokens_output: int,
+    data_dir: Path,
 ) -> None:
     """Record a usage event to the billing/metering store (fire-and-forget)."""
     from app.storage.usage_store import UsageStore, UsageEvent
@@ -33,7 +35,7 @@ def _record_usage_sync(
     import uuid as _uuid
     from datetime import datetime as _datetime, timezone as _timezone
 
-    plan = get_billing_store(tenant_id).get_plan()
+    plan = get_billing_store(tenant_id, data_dir=data_dir).get_plan()
     tokens_total = tokens_input + tokens_output
     cost = (tokens_total / 1000) * plan.price_per_1k_tokens if tokens_total > 0 else 0.0
 
@@ -51,7 +53,7 @@ def _record_usage_sync(
         model=model,
         request_id=request_id,
     )
-    UsageStore(tenant_id=tenant_id).record(event)
+    UsageStore(data_dir, tenant_id=tenant_id).record(event)
 
 
 # ── Fine-tune context capture ─────────────────────────────────────────────────

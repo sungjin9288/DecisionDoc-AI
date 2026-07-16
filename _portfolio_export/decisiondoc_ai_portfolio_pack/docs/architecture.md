@@ -65,9 +65,9 @@
     ▼
 POST /generate/stream (SSE)
     │
-    ├─ 1. 요청 검증 (Pydantic)
-    ├─ 2. 인증/인가 확인 (JWT + RBAC)
-    ├─ 3. 사용량 한도 확인 (BillingMiddleware)
+    ├─ 1. 인증/인가와 tenant 확인 (JWT + RBAC)
+    ├─ 2. 결제 상태와 사용량 한도 확인 (BillingMiddleware)
+    ├─ 3. 요청 검증 (Pydantic)
     ├─ 4. 번들 스펙 로드 (BundleRegistry)
     ├─ 5. 프롬프트 빌드 (build_bundle_prompt)
     │     ├─ 스타일 가이드 주입
@@ -125,8 +125,8 @@ POST /projects/{project_id}/imports/voice-brief
 ## 보안 계층
 
 ```
-요청 → SecurityHeaders → RateLimit → Auth(JWT) → Audit → Billing → 라우터
-         (HSTS/CSP)      (429)       (401/403)   (로그)  (402)
+요청 → SecurityHeaders → RateLimit → Audit → Auth(JWT) → Tenant → Billing → 라우터
+         (HSTS/CSP)      (429)       (로그)   (401/403)    (격리)    (402/503)
 ```
 
 ## SSO 연동 흐름

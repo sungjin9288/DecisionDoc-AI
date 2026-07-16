@@ -252,13 +252,13 @@ def create_app() -> FastAPI:
     install_observability_middleware(app)
     install_request_id_middleware(app)
     install_exception_handlers(app)
+    from app.middleware.billing import install_billing_middleware
+    install_billing_middleware(app)
     install_tenant_middleware(app, _tenant_store)
     from app.middleware.auth import install_auth_middleware
     install_auth_middleware(app)
     from app.middleware.audit import install_audit_middleware
     install_audit_middleware(app)
-    from app.middleware.billing import install_billing_middleware
-    install_billing_middleware(app)
     from app.middleware.rate_limit import install_rate_limit_middleware
     install_rate_limit_middleware(app)
     from app.middleware.security_headers import install_security_headers_middleware

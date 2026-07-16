@@ -6,6 +6,8 @@ except for an allowlist of paths.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -59,6 +61,10 @@ _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
 
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
+    signed_billing_webhook = (
+        path == "/billing/webhook"
+        and bool(os.getenv("STRIPE_WEBHOOK_SECRET", "").strip())
+    )
 
     def _attach_user_state(user_payload: dict) -> None:
         request.state.user_id = user_payload["sub"]
@@ -69,6 +75,7 @@ async def auth_middleware(request: Request, call_next):
     # shared document views must be reachable before a JWT session exists.
     if (
         path in PUBLIC_PATHS
+        or signed_billing_webhook
         or path.startswith("/static")
         or path.startswith("/shared/")
         or path.startswith("/invite/")

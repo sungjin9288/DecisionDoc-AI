@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone billing authority state integrity hardening
+
+- `BillingStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/billing.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않고 임시 free account를 반환한다.
+- Blank·malformed·non-object JSON, duplicate JSON key, tenant/field/plan/status/timestamp drift는 조회와 후속 plan·status·Stripe identity 변경을 fail closed로 중단하고 원본 bytes를 보존한다. Caller의 unknown plan/status와 invalid Stripe/card 입력도 write 전에 거부한다.
+- Webhook subscription 변경은 plan·status·Stripe identity를 하나의 lock 안에서 갱신한다. 같은 state object의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 read-modify-write를 직렬화하며 distributed S3 compare-and-swap을 주장하지 않는다.
+- Request-path billing caller는 앱이 선택한 data root와 backend를 명시적으로 사용하고 generation usage 기록도 generation service의 data root를 전달해 환경 설정 backend를 선택한다. Billing middleware는 tenant/auth resolution 뒤에 실행되며 상태 검증 실패를 `503 BILLING_STATE_UNAVAILABLE`로 차단한다. Checkout은 `STRIPE_PRO_PRICE_ID` 또는 `STRIPE_ENTERPRISE_PRICE_ID`를 사용하고 tenant/plan metadata를 session과 subscription에 함께 결속한다. H43 focused integrity gate는 `49 passed`, billing/auth/tenant/state/generation/security/infrastructure 확장 gate는 `485 passed`, full no-cost regression은 `3603 passed, 1 skipped, 4 deselected`다.
+- Mock/local HTTP 회귀에서 webhook `free -> pro/active -> free/canceled`, local HMAC valid/invalid/malformed 계약, current tenant usage 초과 `402`, corrupt state의 metered request `503`과 billing read/write/webhook/checkout `500`을 확인했다. Fake HTTP client로 checkout Price ID와 subscription metadata를 검증했으며 Stripe API, provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone meeting recording state integrity hardening
 
 - `MeetingRecordingStore`는 tenant/project/recording path component를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/meeting_recordings/{project_id}/{recording_id}/`를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

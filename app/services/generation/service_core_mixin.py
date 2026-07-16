@@ -360,6 +360,7 @@ class GenerationCoreMixin:
                 model=provider.name,
                 tokens_input=_tokens.get("prompt_tokens", 0) or 0,
                 tokens_output=_tokens.get("output_tokens", 0) or 0,
+                data_dir=self.data_dir,
             )
         except Exception:
             pass

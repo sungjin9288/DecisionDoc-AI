@@ -1,4 +1,5 @@
 """app/middleware/billing.py — Usage limit enforcement middleware."""
+
 from __future__ import annotations
 
 import logging
@@ -32,11 +33,16 @@ async def billing_middleware(request: Request, call_next):
         from app.storage.billing_store import get_billing_store
         from app.storage.usage_store import UsageStore
 
-        billing = get_billing_store(tenant_id)
-        usage = UsageStore(tenant_id=tenant_id)
+        data_dir = getattr(request.app.state, "data_dir", None)
+        state_backend = getattr(request.app.state, "state_backend", None)
+        billing = get_billing_store(
+            tenant_id,
+            data_dir=data_dir,
+            backend=state_backend,
+        )
+        usage = UsageStore(data_dir, tenant_id=tenant_id)
 
-        account = billing.get_account()
-        plan = billing.get_plan()
+        account, plan = billing.get_account_and_plan()
         limit_check = usage.check_limit(plan)
 
         # Enterprise + trialing: always pass
@@ -62,16 +68,25 @@ async def billing_middleware(request: Request, call_next):
             request.state.usage_warning = {
                 "percent_used": limit_check["percent_used"],
                 "generations_remaining": max(
-                    0, limit_check["generations_limit"] - limit_check["generations_used"]
+                    0,
+                    limit_check["generations_limit"] - limit_check["generations_used"],
                 ),
             }
 
     except Exception as exc:
-        _log.warning("[BillingMiddleware] Error checking limits: %s", exc)
+        _log.error("[BillingMiddleware] Unable to verify billing state: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "결제 상태를 확인할 수 없습니다.",
+                "code": "BILLING_STATE_UNAVAILABLE",
+            },
+        )
 
     return await call_next(request)
 
 
 def install_billing_middleware(app) -> None:
     from starlette.middleware.base import BaseHTTPMiddleware
+
     app.add_middleware(BaseHTTPMiddleware, dispatch=billing_middleware)

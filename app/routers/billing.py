@@ -2,6 +2,7 @@
 
 Extracted from app/main.py.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -21,10 +22,13 @@ async def get_billing_status(request: Request):
     from app.storage.billing_store import get_billing_store
     from app.storage.usage_store import UsageStore
 
-    billing = get_billing_store(tenant_id)
-    usage = UsageStore(tenant_id=tenant_id)
-    account = billing.get_account()
-    plan = billing.get_plan()
+    billing = get_billing_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
+    usage = UsageStore(request.app.state.data_dir, tenant_id=tenant_id)
+    account, plan = billing.get_account_and_plan()
     summary = usage.get_current_month()
     limit_check = usage.check_limit(plan)
     return {
@@ -53,7 +57,7 @@ async def get_usage_history(request: Request, days: int = 30):
     from app.storage.usage_store import UsageStore
 
     tenant_id = get_tenant_id(request)
-    store = UsageStore(tenant_id=tenant_id)
+    store = UsageStore(request.app.state.data_dir, tenant_id=tenant_id)
     summary = store.get_current_month()
     return {
         "daily": store.get_daily_usage(days=days),
@@ -87,6 +91,7 @@ async def create_checkout(request: Request, body: CheckoutRequest):
     require_auth(request)
     tenant_id = get_tenant_id(request)
     from app.services.billing_service import create_checkout_session
+    from app.storage.billing_store import BillingStoreError
 
     base_url = str(request.base_url).rstrip("/")
     try:
@@ -95,8 +100,12 @@ async def create_checkout(request: Request, body: CheckoutRequest):
             plan_id=body.plan_id,
             success_url=f"{base_url}/billing/success?plan={body.plan_id}",
             cancel_url=f"{base_url}/?billing=canceled",
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
         )
         return {"checkout_url": url}
+    except BillingStoreError:
+        raise
     except (RuntimeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -108,7 +117,12 @@ async def stripe_webhook(request: Request):
     try:
         from app.services.billing_service import handle_webhook
 
-        result = await handle_webhook(payload, signature)
+        result = await handle_webhook(
+            payload,
+            signature,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        )
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -120,7 +134,11 @@ async def cancel_billing(request: Request):
     tenant_id = get_tenant_id(request)
     from app.services.billing_service import cancel_subscription
 
-    success = await cancel_subscription(tenant_id)
+    success = await cancel_subscription(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     if not success:
         raise HTTPException(status_code=400, detail="구독 취소 중 오류가 발생했습니다.")
     return {"message": "구독이 현재 기간 종료 시 해지됩니다."}
@@ -133,5 +151,12 @@ async def override_plan(request: Request, body: PlanOverrideRequest):
     tenant_id = get_tenant_id(request)
     from app.storage.billing_store import get_billing_store
 
-    get_billing_store(tenant_id).update_plan(body.plan_id)
+    try:
+        get_billing_store(
+            tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        ).update_plan(body.plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"message": f"플랜이 {body.plan_id}로 변경되었습니다."}
