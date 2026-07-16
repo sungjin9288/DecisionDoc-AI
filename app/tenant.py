@@ -15,7 +15,7 @@ def require_tenant_id(tenant_id: object) -> str:
         or tenant_id in {".", ".."}
         or "/" in tenant_id
         or "\\" in tenant_id
-        or "\x00" in tenant_id
+        or any(ord(character) < 32 or ord(character) == 127 for character in tenant_id)
     ):
         raise ValueError("Invalid tenant_id")
     return tenant_id

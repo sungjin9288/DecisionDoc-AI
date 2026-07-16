@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone procurement decision and snapshot integrity hardening
+
+- `ProcurementDecisionStore`는 tenant, project, snapshot ID를 persistence path 사용 전에 검증하고 local/S3 decision 및 source snapshot을 shared `StateBackend`로만 읽고 쓴다. 공통 tenant validator도 모든 control character를 path 선택 전에 거부한다.
+- Invalid JSON, non-list top-level state와 duplicate JSON key는 빈 decision state나 missing snapshot으로 복구되지 않는다. Explicit foreign decision은 tenant 조회·변경에서 제외하되 원본에 보존하고, owned malformed record, duplicate project/decision ID와 source snapshot storage path drift는 fail closed로 중단한다.
+- 같은 tenant decision file을 쓰는 독립 store 인스턴스는 process-local shared lock으로 read-modify-write를 직렬화한다. Snapshot은 caller tenant·project·snapshot ID의 canonical path로만 읽으며 다른 tenant나 project의 같은 snapshot ID를 노출하지 않는다. Distributed S3 compare-and-swap을 주장하지 않는다.
+- Focused procurement/state/tenant 회귀는 `75 passed`, procurement/project/decision-council/tenant/security/audit/observability/infrastructure 확장 gate는 `1016 passed`다. Full no-cost regression은 `3286 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone project and approval state integrity hardening
 
 - `ProjectStore`와 `ApprovalStore`는 tenant ID를 persistence path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`를 통해 읽고 쓴다. Local mode의 별도 direct-write branch와 사용하지 않는 base-store inheritance는 제거했다.

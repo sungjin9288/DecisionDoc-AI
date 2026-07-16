@@ -22,7 +22,19 @@ class _SlowLocalBackend(LocalStateBackend):
 
 @pytest.mark.parametrize(
     "tenant_id",
-    ["", " ", " tenant-a", "tenant-a ", ".", "..", "tenant/a", "tenant\\a", "tenant\x00a"],
+    [
+        "",
+        " ",
+        " tenant-a",
+        "tenant-a ",
+        ".",
+        "..",
+        "tenant/a",
+        "tenant\\a",
+        "tenant\x00a",
+        "tenant\na",
+        "tenant\x7fa",
+    ],
 )
 def test_rejects_unsafe_tenant_id_before_registry_write(
     tmp_path: Path,
