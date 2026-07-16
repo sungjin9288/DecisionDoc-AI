@@ -21,6 +21,8 @@ _ft_last_prompt: threading.local = threading.local()
 # Per-thread current tenant ID for multi-tenant store isolation.
 # Set by GenerationService.generate_documents() at request start.
 _current_tenant_id: threading.local = threading.local()
+_current_generation_data_dir: threading.local = threading.local()
+_current_generation_state_backend: threading.local = threading.local()
 
 
 def _current_generation_tenant_id() -> str | None:
@@ -29,6 +31,18 @@ def _current_generation_tenant_id() -> str | None:
         return require_tenant_id(tenant_id)
     except ValueError:
         return None
+
+
+def _quality_store_context() -> dict[str, Any]:
+    """Return the state binding for the active generation call."""
+    context: dict[str, Any] = {}
+    data_dir = getattr(_current_generation_data_dir, "value", None)
+    backend = getattr(_current_generation_state_backend, "value", None)
+    if data_dir is not None:
+        context["data_dir"] = data_dir
+    if backend is not None:
+        context["backend"] = backend
+    return context
 
 if TYPE_CHECKING:
     from app.bundle_catalog.spec import BundleSpec
@@ -326,7 +340,7 @@ def build_bundle_prompt(
 
 
 def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
-    """A/B 활성 테스트 variant 힌트 또는 PromptOverrideStore 힌트를 주입. 실패 시 무시.
+    """Inject an active A/B variant or the tenant's saved prompt override.
 
     Priority:
     1. Active A/B test → inject the next round-robin variant's hint,
@@ -358,37 +372,33 @@ def _inject_prompt_override(out: list[str], bundle_id: str) -> None:
         pass
 
     # 2. Fall back to PromptOverrideStore
-    try:
-        from app.storage.prompt_override_store import get_override_store
-        store = get_override_store(tid)
-        record = store.get_override(bundle_id)
-        if record and record.get("override_hint"):
-            out.append(f"\n\n[품질 개선 지시]\n{record['override_hint']}")
-            store.increment_applied(bundle_id)
-    except Exception:
-        pass
+    from app.storage.prompt_override_store import get_override_store
+
+    store = get_override_store(tid, **_quality_store_context())
+    record = store.get_override(bundle_id)
+    if record and record.get("override_hint"):
+        out.append(f"\n\n[품질 개선 지시]\n{record['override_hint']}")
+        store.increment_applied(bundle_id)
 
 
 def _inject_llm_feedbacks(out: list[str], bundle_id: str) -> None:
-    """EvalStore에서 최근 LLM judge 피드백을 읽어 out에 추가. 실패 시 무시."""
+    """Inject recent trusted LLM-judge feedback for this tenant and bundle."""
     tid = _current_generation_tenant_id()
     if tid is None:
         return
-    try:
-        from app.eval.eval_store import get_eval_store
-        store = get_eval_store(tid)
-        records = store.load_all()
-        feedbacks = [
-            fb
-            for r in sorted(records, key=lambda x: x.timestamp, reverse=True)
-            if r.bundle_id == bundle_id and r.llm_score is not None
-            for fb in r.llm_feedbacks
-        ][:3]
-        if feedbacks:
-            lines = "\n".join(f"- {fb}" for fb in feedbacks)
-            out.append(f"\n\n[이전 LLM 평가 피드백 — 개선 참고용]\n{lines}")
-    except Exception:
-        pass
+    from app.eval.eval_store import get_eval_store
+
+    store = get_eval_store(tid, **_quality_store_context())
+    records = store.load_all()
+    feedbacks = [
+        feedback
+        for record in sorted(records, key=lambda item: item.timestamp, reverse=True)
+        if record.bundle_id == bundle_id and record.llm_score is not None
+        for feedback in record.llm_feedbacks
+    ][:3]
+    if feedbacks:
+        lines = "\n".join(f"- {feedback}" for feedback in feedbacks)
+        out.append(f"\n\n[이전 LLM 평가 피드백 — 개선 참고용]\n{lines}")
 
 
 def build_sketch_prompt(

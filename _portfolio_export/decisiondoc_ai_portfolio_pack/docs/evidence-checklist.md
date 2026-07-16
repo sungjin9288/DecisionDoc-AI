@@ -36,9 +36,10 @@
 | 스타일 프로필 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create/tone/bundle override/detail/list/default/delete/final empty 확인; provider API 호출 없음 |
 | SSO 설정 상태 무결성 | 완료 | `pytest -q tests/test_sso_store_integrity.py --tb=short` -> `40 passed`; local/fake-S3 손상 보존·동시 partial update·route backend 결속·secret/SAML/API 오류 경계 검증 |
 | SSO 설정 HTTP/UI lifecycle | 완료 | mock provider와 임시 local state의 실제 uvicorn에서 public status, disabled gate, LDAP/SAML/GCloud 전환, secret 마스킹 보존, SAML/GCloud callback 사전 차단 확인. Playwright 비로그인 화면에서 LDAP form 표시와 console error 0건 확인; LDAP·IdP·GCloud 외부 호출 없음 |
+| 품질 학습 상태 무결성 | 완료 | `pytest -q tests/test_quality_learning_store_integrity.py` -> `43 passed`; feedback/eval/prompt override local/fake-S3 손상 원본 보존, foreign/legacy 경계, 독립 store 동시 쓰기, app backend 결속, API·generation context·prompt build fail-closed 검증 |
 | 공개 공유 상태 무결성 | 완료 | `pytest -q tests/test_share_store_integrity.py --tb=short` -> `36 passed`; local/fake-S3 손상 보존·동시 생성/접근·route backend 결속과 public/auth API 오류 경계 검증 |
 | 공개 공유 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create 200/public view 200/access count 1/revoke 200/post-revoke 404 확인; 외부 API 호출 없음 |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3677 passed, 2 skipped, 4 deselected` (2026-07-17 실측) |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3720 passed, 2 skipped, 4 deselected` (2026-07-17 실측) |
 | GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

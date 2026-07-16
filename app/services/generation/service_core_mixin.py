@@ -36,6 +36,7 @@ from app.tenant import require_tenant_id
 if TYPE_CHECKING:
     from app.storage.feedback_store import FeedbackStore
     from app.storage.finetune_store import FineTuneStore
+    from app.storage.state_backend import StateBackend
 
 
 class GenerationCoreMixin:
@@ -55,6 +56,7 @@ class GenerationCoreMixin:
         eval_store: Any | None = None,
         search_service: Any | None = None,
         finetune_store: "FineTuneStore | None" = None,
+        state_backend: "StateBackend | None" = None,
     ) -> None:
         self.provider_factory = provider_factory
         self.feedback_store = feedback_store
@@ -65,6 +67,7 @@ class GenerationCoreMixin:
         self._decision_council_store = decision_council_store
         self._procurement_copilot_enabled = procurement_copilot_enabled
         self._finetune_store = finetune_store
+        self.state_backend = state_backend
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = self.data_dir / "cache"
@@ -92,12 +95,20 @@ class GenerationCoreMixin:
         tenant_id: str,
     ) -> dict[str, Any]:
         """Generate one bundle while binding tenant customizations to this call."""
-        from app.domain.schema import _current_tenant_id
+        from app.domain.schema import (
+            _current_generation_data_dir,
+            _current_generation_state_backend,
+            _current_tenant_id,
+        )
 
         tenant_id = require_tenant_id(tenant_id)
         had_previous_tenant = hasattr(_current_tenant_id, "value")
         previous_tenant = getattr(_current_tenant_id, "value", None)
+        previous_data_dir = getattr(_current_generation_data_dir, "value", None)
+        previous_backend = getattr(_current_generation_state_backend, "value", None)
         _current_tenant_id.value = tenant_id
+        _current_generation_data_dir.value = self.data_dir
+        _current_generation_state_backend.value = self.state_backend
         try:
             return self._generate_documents_for_tenant(
                 requirements,
@@ -109,6 +120,16 @@ class GenerationCoreMixin:
                 _current_tenant_id.value = previous_tenant
             else:
                 del _current_tenant_id.value
+            if previous_data_dir is None:
+                if hasattr(_current_generation_data_dir, "value"):
+                    del _current_generation_data_dir.value
+            else:
+                _current_generation_data_dir.value = previous_data_dir
+            if previous_backend is None:
+                if hasattr(_current_generation_state_backend, "value"):
+                    del _current_generation_state_backend.value
+            else:
+                _current_generation_state_backend.value = previous_backend
 
     def _generate_documents_for_tenant(
         self,
@@ -297,18 +318,14 @@ class GenerationCoreMixin:
                 except Exception:
                     pass
 
-            # Use tenant-scoped eval store for isolation
-            try:
-                from app.eval.eval_store import get_eval_store
-                active_eval_store = get_eval_store(tenant_id)
-            except Exception as exc:
-                active_eval_store = None
-                _log.warning(
-                    "[Eval] Tenant eval store unavailable; background eval skipped "
-                    "tenant=%s: %s",
-                    tenant_id,
-                    exc,
-                )
+            from app.eval.eval_store import get_eval_store
+
+            active_eval_store = get_eval_store(
+                tenant_id,
+                data_dir=self.data_dir,
+                backend=self.state_backend,
+            )
+            active_eval_store.load_all()
 
             try:
                 from app.storage.finetune_store import get_finetune_store
@@ -322,31 +339,31 @@ class GenerationCoreMixin:
                     exc,
                 )
 
-            if active_eval_store is not None:
-                from app.eval.pipeline import run_eval_pipeline
-                try:
-                    _future = _eval_executor.submit(
-                        run_eval_pipeline,
-                        request_id,
-                        bundle_type,
-                        docs,
-                        active_eval_store,
-                        title=payload.get("title", ""),
-                        goal=payload.get("goal", ""),
-                        context=payload.get("context", ""),
-                        ab_store=ab_store_instance,
-                        ab_variant=ab_variant,
-                        finetune_store=active_finetune_store,
-                        ft_system_prompt=ft_system_prompt,
-                        ft_output=ft_output,
-                        tenant_id=tenant_id,
-                    )
-                    _future.add_done_callback(_eval_done_callback)
-                except RuntimeError as exc:
-                    _log.warning(
-                        "[Eval] Background eval skipped because executor is unavailable: %s",
-                        exc,
-                    )
+            from app.eval.pipeline import run_eval_pipeline
+
+            try:
+                _future = _eval_executor.submit(
+                    run_eval_pipeline,
+                    request_id,
+                    bundle_type,
+                    docs,
+                    active_eval_store,
+                    title=payload.get("title", ""),
+                    goal=payload.get("goal", ""),
+                    context=payload.get("context", ""),
+                    ab_store=ab_store_instance,
+                    ab_variant=ab_variant,
+                    finetune_store=active_finetune_store,
+                    ft_system_prompt=ft_system_prompt,
+                    ft_output=ft_output,
+                    tenant_id=tenant_id,
+                )
+                _future.add_done_callback(_eval_done_callback)
+            except RuntimeError as exc:
+                _log.warning(
+                    "[Eval] Background eval skipped because executor is unavailable: %s",
+                    exc,
+                )
 
         # Record usage (fire-and-forget — don't fail generation on billing errors)
         try:

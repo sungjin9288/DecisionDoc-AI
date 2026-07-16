@@ -30,7 +30,11 @@ def expand_bundles(request: Request) -> dict:
     from app.storage.prompt_override_store import get_override_store
 
     tenant_id = get_tenant_id(request)
-    prompt_override_store = get_override_store(tenant_id)
+    prompt_override_store = get_override_store(
+        tenant_id,
+        data_dir=data_dir,
+        backend=request.app.state.state_backend,
+    )
     provider = get_provider()
     pattern_store = RequestPatternStore(data_dir, tenant_id=tenant_id)
     expander = BundleAutoExpander(

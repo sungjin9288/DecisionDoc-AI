@@ -97,9 +97,12 @@ def test_ab_test_store_corruption_backup(tmp_path: Path) -> None:
     assert len(backups) == 1
 
 
-def test_prompt_override_store_corruption_backup(tmp_path: Path) -> None:
-    """손상된 prompt_overrides.json → 백업 파일 생성 + 빈 dict 반환."""
-    from app.storage.prompt_override_store import PromptOverrideStore
+def test_prompt_override_store_corruption_fails_closed(tmp_path: Path) -> None:
+    """손상된 prompt override 원본을 보존하고 읽기를 중단한다."""
+    from app.storage.prompt_override_store import (
+        PromptOverrideStore,
+        PromptOverrideStoreError,
+    )
 
     # PromptOverrideStore now stores under tenants/system/
     tenant_dir = tmp_path / "tenants" / "system"
@@ -108,12 +111,14 @@ def test_prompt_override_store_corruption_backup(tmp_path: Path) -> None:
     store_path.write_text("<<<broken>>>", encoding="utf-8")
 
     store = PromptOverrideStore(tmp_path, tenant_id="system")
-    with store._lock:
-        data = store._load()
+    with pytest.raises(
+        PromptOverrideStoreError,
+        match="Invalid prompt override state document",
+    ):
+        store.list_overrides()
 
-    assert data == {}
-    backups = list(tenant_dir.glob("prompt_overrides.corrupted.*.json"))
-    assert len(backups) == 1
+    assert store_path.read_text(encoding="utf-8") == "<<<broken>>>"
+    assert list(tenant_dir.glob("prompt_overrides.corrupted.*.json")) == []
 
 
 # ─── H-3: A/B winner silent drop fix ─────────────────────────────────────────

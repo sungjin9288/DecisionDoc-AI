@@ -143,13 +143,22 @@ def create_app() -> FastAPI:
     _tenant_store.ensure_system_tenant()
     migrate_legacy_data(data_dir)
 
-    feedback_store = FeedbackStore(data_dir=data_dir, tenant_id=SYSTEM_TENANT_ID)
+    feedback_store = FeedbackStore(
+        data_dir=data_dir,
+        tenant_id=SYSTEM_TENANT_ID,
+        backend=state_backend,
+    )
     _prompt_override_store = PromptOverrideStore(
         data_dir=data_dir,
         tenant_id=SYSTEM_TENANT_ID,
+        backend=state_backend,
     )
     from app.eval.eval_store import EvalStore as _EvalStore
-    _eval_store = _EvalStore(data_dir, tenant_id=SYSTEM_TENANT_ID)
+    _eval_store = _EvalStore(
+        data_dir,
+        tenant_id=SYSTEM_TENANT_ID,
+        backend=state_backend,
+    )
     _search_service = SearchService()
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
     _finetune_store = _FineTuneStore(data_dir, tenant_id=SYSTEM_TENANT_ID)
@@ -176,6 +185,7 @@ def create_app() -> FastAPI:
         eval_store=_eval_store,
         search_service=_search_service,
         finetune_store=_finetune_store,
+        state_backend=state_backend,
     )
     decision_council_service = DecisionCouncilService(
         decision_council_store=decision_council_store,

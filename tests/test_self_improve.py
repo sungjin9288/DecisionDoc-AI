@@ -342,7 +342,10 @@ def test_build_feedback_hints_empty_when_no_feedback(tmp_path, monkeypatch):
     assert svc._build_feedback_hints("tech_decision", tenant_id="system") == ""
 
 
-def test_feedback_hint_lookup_does_not_fall_back_to_system_store(tmp_path, monkeypatch):
+def test_feedback_hint_lookup_does_not_hide_unavailable_tenant_store(
+    tmp_path,
+    monkeypatch,
+):
     from app.services.generation_service import GenerationService
     from app.storage.feedback_store import FeedbackStore
     from unittest.mock import MagicMock
@@ -363,7 +366,8 @@ def test_feedback_hint_lookup_does_not_fall_back_to_system_store(tmp_path, monke
         data_dir=tmp_path,
         feedback_store=system_store,
     )
-    def unavailable_store(tenant_id: str):
+    def unavailable_store(tenant_id: str, *args, **kwargs):
+        _ = args, kwargs
         raise RuntimeError(tenant_id)
 
     monkeypatch.setattr(
@@ -371,4 +375,5 @@ def test_feedback_hint_lookup_does_not_fall_back_to_system_store(tmp_path, monke
         unavailable_store,
     )
 
-    assert service._build_feedback_hints("tech_decision", tenant_id="alpha") == ""
+    with pytest.raises(RuntimeError, match="alpha"):
+        service._build_feedback_hints("tech_decision", tenant_id="alpha")

@@ -22,7 +22,7 @@ from app.services.generation.context_store import (
 from app.services.procurement_review_handoff import (
     PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
 )
-from app.tenant import SYSTEM_TENANT_ID, require_tenant_id
+from app.tenant import require_tenant_id
 from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_NAME,
     verify_procurement_review_packet,
@@ -426,22 +426,19 @@ class GenerationContextInjectionMixin:
         section heading + first 800 chars for all doc types.
         """
         tenant_id = require_tenant_id(tenant_id)
-        try:
-            from app.storage.feedback_store import get_feedback_store
-            feedback_store = get_feedback_store(tenant_id)
-        except Exception:
-            feedback_store = self.feedback_store if tenant_id == SYSTEM_TENANT_ID else None
-        if not feedback_store:
-            return ""
-        try:
-            examples = feedback_store.get_high_rated_examples(
-                bundle_type=bundle_type,
-                min_rating=4,
-                limit=3,
-                doc_content_limit=800,
-            )
-        except Exception:
-            return ""
+        from app.storage.feedback_store import get_feedback_store
+
+        feedback_store = get_feedback_store(
+            tenant_id,
+            data_dir=self.data_dir,
+            backend=self.state_backend,
+        )
+        examples = feedback_store.get_high_rated_examples(
+            bundle_type=bundle_type,
+            min_rating=4,
+            limit=3,
+            doc_content_limit=800,
+        )
 
         if not examples:
             return ""

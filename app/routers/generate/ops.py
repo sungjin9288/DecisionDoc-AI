@@ -69,9 +69,13 @@ def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackRespo
     from app.storage.finetune_store import get_finetune_store
     from app.storage.prompt_override_store import get_override_store
 
-    feedback_store = get_feedback_store(tenant_id)
-    prompt_override_store = get_override_store(tenant_id)
-    eval_store = get_eval_store(tenant_id)
+    store_context = {
+        "data_dir": request.app.state.data_dir,
+        "backend": request.app.state.state_backend,
+    }
+    feedback_store = get_feedback_store(tenant_id, **store_context)
+    prompt_override_store = get_override_store(tenant_id, **store_context)
+    eval_store = get_eval_store(tenant_id, **store_context)
     finetune_store = get_finetune_store(tenant_id)
 
     feedback_id = feedback_store.save(payload.model_dump())

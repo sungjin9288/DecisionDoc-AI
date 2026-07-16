@@ -25,7 +25,13 @@ def get_eval_report(request: Request) -> dict:
     from app.eval.report import generate_report
     from app.eval.eval_store import get_eval_store
 
-    return generate_report(get_eval_store(get_tenant_id(request)))
+    return generate_report(
+        get_eval_store(
+            get_tenant_id(request),
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        )
+    )
 
 
 @router.post("/eval/run", dependencies=[Depends(require_api_key)])
@@ -39,7 +45,11 @@ def run_eval_now(payload: dict, request: Request) -> dict:
         request_id=payload.get("request_id", "manual"),
         bundle_id=payload.get("bundle_id", "tech_decision"),
         docs=payload.get("docs", []),
-        eval_store=get_eval_store(tenant_id),
+        eval_store=get_eval_store(
+            tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        ),
         tenant_id=tenant_id,
     )
     return asdict(record)

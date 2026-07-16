@@ -117,12 +117,20 @@ def admin_tenant_stats(tenant_id_path: str, request: Request) -> dict:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id_path}' not found.")
     try:
         from app.eval.eval_store import get_eval_store
-        eval_stats = get_eval_store(tenant_id_path).get_all_stats()
+        eval_stats = get_eval_store(
+            tenant_id_path,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        ).get_all_stats()
     except Exception:
         eval_stats = {}
     try:
         from app.storage.feedback_store import get_feedback_store
-        all_fb = get_feedback_store(tenant_id_path).get_all()
+        all_fb = get_feedback_store(
+            tenant_id_path,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        ).get_all()
         fb_count = len(all_fb)
         avg_rating: float | None = (
             round(sum(f.get("rating", 0) for f in all_fb) / fb_count, 2)

@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone quality learning state integrity hardening
+
+- `FeedbackStore`, `EvalStore`, `PromptOverrideStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` quality state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Malformed JSON/JSONL, blank line, duplicate key, owned field/type/timestamp/score drift는 조회와 후속 append/update를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 tenant 필드 없는 기존 record는 path-owned compatibility를 유지한다.
+- 같은 state object의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 read-modify-write를 직렬화한다. Feedback/eval/dashboard/admin route와 generation feedback context, prompt override·eval feedback injection은 앱 data root/backend를 사용하며 손상 state를 조용히 생략하지 않는다.
+- H46 focused integrity gate는 `43 passed`, quality/security/infrastructure 확장 gate는 `310 passed`, full no-cost regression은 `3720 passed, 2 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, distributed S3 CAS, FineTuneStore·ModelRegistry hardening, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone SSO configuration state integrity hardening
 
 - `SSOStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/sso_config.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않고 disabled 기본 설정을 반환한다.

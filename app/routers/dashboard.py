@@ -13,6 +13,13 @@ from app.dependencies import get_tenant_id
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def _quality_store_context(request: Request) -> dict:
+    return {
+        "data_dir": request.app.state.data_dir,
+        "backend": request.app.state.state_backend,
+    }
+
+
 @router.get("/overview")
 def dashboard_overview(request: Request) -> dict:
     """AI 성능 대시보드 — 전체 요약 지표."""
@@ -22,9 +29,10 @@ def dashboard_overview(request: Request) -> dict:
     from app.storage.prompt_override_store import get_override_store
 
     tenant_id = get_tenant_id(request)
-    eval_store = get_eval_store(tenant_id)
-    feedback_store = get_feedback_store(tenant_id)
-    prompt_override_store = get_override_store(tenant_id)
+    store_context = _quality_store_context(request)
+    eval_store = get_eval_store(tenant_id, **store_context)
+    feedback_store = get_feedback_store(tenant_id, **store_context)
+    prompt_override_store = get_override_store(tenant_id, **store_context)
     data_dir = request.app.state.data_dir
 
     eval_stats = eval_store.get_all_stats()
@@ -70,9 +78,10 @@ def dashboard_bundle_performance(request: Request) -> list[dict]:
     from app.storage.prompt_override_store import get_override_store
 
     tenant_id = get_tenant_id(request)
-    eval_store = get_eval_store(tenant_id)
-    feedback_store = get_feedback_store(tenant_id)
-    prompt_override_store = get_override_store(tenant_id)
+    store_context = _quality_store_context(request)
+    eval_store = get_eval_store(tenant_id, **store_context)
+    feedback_store = get_feedback_store(tenant_id, **store_context)
+    prompt_override_store = get_override_store(tenant_id, **store_context)
 
     per_bundle = eval_store.get_per_bundle_stats()
     ab_store = get_ab_test_store(tenant_id)
@@ -135,7 +144,10 @@ def dashboard_improvement_history(request: Request) -> list[dict]:
     from app.storage.prompt_override_store import get_override_store
 
     tenant_id = get_tenant_id(request)
-    prompt_override_store = get_override_store(tenant_id)
+    prompt_override_store = get_override_store(
+        tenant_id,
+        **_quality_store_context(request),
+    )
     ab_store = get_ab_test_store(tenant_id)
     data_dir = request.app.state.data_dir
 
@@ -197,8 +209,9 @@ def dashboard_score_history(bundle_id: str, request: Request) -> list[dict]:
     from app.storage.prompt_override_store import get_override_store
 
     tenant_id = get_tenant_id(request)
-    eval_store = get_eval_store(tenant_id)
-    prompt_override_store = get_override_store(tenant_id)
+    store_context = _quality_store_context(request)
+    eval_store = get_eval_store(tenant_id, **store_context)
+    prompt_override_store = get_override_store(tenant_id, **store_context)
 
     records = eval_store.get_bundle_history(bundle_id, limit=50)
     overrides = {o["bundle_id"]: o for o in prompt_override_store.list_overrides()}

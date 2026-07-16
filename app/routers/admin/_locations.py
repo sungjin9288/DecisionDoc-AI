@@ -44,7 +44,11 @@ def admin_list_locations(request: Request, include_procurement: bool = False) ->
 
         try:
             from app.eval.eval_store import get_eval_store
-            eval_stats = get_eval_store(tenant.tenant_id).get_all_stats()
+            eval_stats = get_eval_store(
+                tenant.tenant_id,
+                data_dir=data_dir,
+                backend=request.app.state.state_backend,
+            ).get_all_stats()
             gen_count = eval_stats.get("total_count", 0)
         except Exception:
             gen_count = 0
