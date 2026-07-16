@@ -47,6 +47,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 재사용 문서 입력은 local `data/tenants/<tenant_id>/templates.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record와 duplicate template identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
   - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
+- 생성 이력 상태
+  - 생성 문서의 재열기·즐겨찾기·시각자료·지식 승격 이력은 local `data/tenants/<tenant_id>/history.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
+  - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record와 duplicate entry identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
+  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
 - 공개 공유 상태
   - share link는 local `data/tenants/<tenant_id>/shares.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant를 path 선택 전에 검증하고 blank·malformed·non-object JSON, duplicate key, owned malformed record와 storage key/share ID drift는 공개 조회와 후속 생성·접근 횟수·취소 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.

@@ -1,19 +1,38 @@
 """Tests for Phase 2 features: onboarding, deadline alerts, ZIP export, empty state."""
+
 import io
 import zipfile
 
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
 
 
+@pytest.fixture
+def history_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_STORAGE", "local")
+    monkeypatch.setenv("DECISIONDOC_STATE_STORAGE", "local")
+    monkeypatch.setenv("JWT_SECRET_KEY", "phase2-history-test-secret-key-32")
+    monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    from app.main import create_app
+
+    return TestClient(create_app())
+
+
 def _token(user="u1", tenant="system", role="member"):
     from app.services.auth_service import create_access_token
+
     return create_access_token(user, tenant, role, user)
 
 
 # ── Feature 3: /generate/export-zip ──────────────────────────────────────────
+
 
 def test_export_zip_requires_auth():
     res = client.get("/generate/export-zip?request_id=test")
@@ -33,7 +52,10 @@ def test_export_zip_invalid_format():
     token = _token()
     # nonexistent-id will 404 before format validation, so seed the cache first
     from app.routers.generate import _store_zip_docs
-    _store_zip_docs("zip-fmt-test", [{"doc_type": "adr", "markdown": "# Test"}], "테스트")
+
+    _store_zip_docs(
+        "zip-fmt-test", [{"doc_type": "adr", "markdown": "# Test"}], "테스트"
+    )
     res = client.get(
         "/generate/export-zip?request_id=zip-fmt-test&formats=invalid",
         headers={"Authorization": f"Bearer {token}"},
@@ -45,6 +67,7 @@ def test_export_zip_invalid_format():
 def test_export_zip_returns_zip_with_valid_cache():
     """When docs are cached and format is valid, endpoint returns application/zip."""
     from app.routers.generate import _store_zip_docs
+
     _store_zip_docs(
         "zip-valid-test",
         [{"doc_type": "onepager", "markdown": "# 제목\n본문 내용"}],
@@ -63,6 +86,7 @@ def test_export_zip_returns_zip_with_valid_cache():
 def test_export_zip_content_disposition():
     """Content-Disposition header should contain the title and .zip."""
     from app.routers.generate import _store_zip_docs
+
     _store_zip_docs(
         "zip-cd-test",
         [{"doc_type": "onepager", "markdown": "# 내용"}],
@@ -103,6 +127,7 @@ def test_export_zip_hwp_uses_hwpx_extension():
 def test_zip_cache_store_and_retrieve():
     """_store_zip_docs / _get_zip_docs round-trip."""
     from app.routers.generate import _store_zip_docs, _get_zip_docs
+
     docs = [{"doc_type": "adr", "markdown": "# ADR"}]
     _store_zip_docs("cache-roundtrip", docs, "타이틀")
     result = _get_zip_docs("cache-roundtrip")
@@ -114,10 +139,12 @@ def test_zip_cache_store_and_retrieve():
 
 def test_zip_cache_missing_returns_none():
     from app.routers.generate import _get_zip_docs
+
     assert _get_zip_docs("definitely-not-stored-id") is None
 
 
 # ── Feature 2: G2B deadline alerts ───────────────────────────────────────────
+
 
 def test_g2b_bookmark_deadline_stored():
     """Bookmarks with imminent deadlines should be retrievable."""
@@ -129,12 +156,15 @@ def test_g2b_bookmark_deadline_stored():
     store = BookmarkStore(tenant_id=tenant)
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
     bid = f"URGENT-{uuid.uuid4().hex[:6]}"
-    store.add("user1", {
-        "bid_number": bid,
-        "title": "마감 임박 공고",
-        "issuer": "테스트",
-        "deadline": tomorrow,
-    })
+    store.add(
+        "user1",
+        {
+            "bid_number": bid,
+            "title": "마감 임박 공고",
+            "issuer": "테스트",
+            "deadline": tomorrow,
+        },
+    )
     bookmarks = store.get_for_user("user1")
     urgent = [b for b in bookmarks if b.get("bid_number") == bid]
     assert len(urgent) == 1
@@ -151,49 +181,58 @@ def test_g2b_bookmark_past_deadline():
     store = BookmarkStore(tenant_id=tenant)
     past = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
     bid = f"PAST-{uuid.uuid4().hex[:6]}"
-    store.add("user2", {
-        "bid_number": bid,
-        "title": "마감된 공고",
-        "issuer": "기관",
-        "deadline": past,
-    })
+    store.add(
+        "user2",
+        {
+            "bid_number": bid,
+            "title": "마감된 공고",
+            "issuer": "기관",
+            "deadline": past,
+        },
+    )
     bookmarks = store.get_for_user("user2")
     assert any(b["bid_number"] == bid for b in bookmarks)
 
 
 # ── History store ordering ────────────────────────────────────────────────────
 
-def test_history_store_ordering():
+
+def test_history_store_ordering(tmp_path):
     """Most recent history entry should come first."""
     from app.storage.history_store import HistoryStore, HistoryEntry
     import uuid
 
-    store = HistoryStore("test-order-tenant")
+    store = HistoryStore("test-order-tenant", base_dir=tmp_path)
     for i, title in enumerate(["첫번째", "두번째", "세번째"]):
-        store.add(HistoryEntry(
-            entry_id=str(uuid.uuid4()),
-            tenant_id="test-order-tenant",
-            user_id="user_order",
-            bundle_id="proposal_kr",
-            bundle_name="제안서",
-            title=title,
-            request_id=str(uuid.uuid4()),
-            created_at=f"2025-03-0{i+1}T00:00:00",
-        ))
+        store.add(
+            HistoryEntry(
+                entry_id=str(uuid.uuid4()),
+                tenant_id="test-order-tenant",
+                user_id="user_order",
+                bundle_id="proposal_kr",
+                bundle_name="제안서",
+                title=title,
+                request_id=str(uuid.uuid4()),
+                created_at=f"2025-03-0{i + 1}T00:00:00",
+            )
+        )
 
     results = store.get_for_user("user_order")
     titles = [r["title"] for r in results]
     assert titles[0] == "세번째"
 
 
-def test_history_endpoint_requires_auth():
-    res = client.get("/history")
+def test_history_endpoint_requires_auth(history_client):
+    res = history_client.get("/history")
     assert res.status_code in (401, 403)
 
 
-def test_history_endpoint_returns_list():
+def test_history_endpoint_returns_list(history_client):
     token = _token()
-    res = client.get("/history", headers={"Authorization": f"Bearer {token}"})
+    res = history_client.get(
+        "/history",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert res.status_code == 200
     data = res.json()
     assert "history" in data

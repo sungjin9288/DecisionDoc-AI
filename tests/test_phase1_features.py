@@ -1,4 +1,5 @@
 """Tests for Phase 1 features: server-side history, G2B bookmarks, endpoints."""
+
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -6,17 +7,30 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.storage.history_store import HistoryEntry, HistoryStore
 from app.storage.bookmark_store import BookmarkStore
 
-client = TestClient(app)
+
+@pytest.fixture
+def api_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_STORAGE", "local")
+    monkeypatch.setenv("DECISIONDOC_STATE_STORAGE", "local")
+    monkeypatch.setenv("JWT_SECRET_KEY", "phase1-api-test-secret-key-32-chars")
+    monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    from app.main import create_app
+
+    return TestClient(create_app())
+
 
 # ── HistoryStore unit tests ────────────────────────────────────────────────────
 
-def test_history_store_add_and_get(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+
+def test_history_store_add_and_get(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     entry = HistoryEntry(
         entry_id=str(uuid.uuid4()),
         tenant_id="t1",
@@ -26,7 +40,12 @@ def test_history_store_add_and_get(tmp_path, monkeypatch):
         title="Test ADR",
         request_id="req-001",
         created_at="2026-03-01T00:00:00",
-        applied_references=[{"filename": "winning-proposal.docx", "selection_reason": "bundle `proposal_kr` 일치"}],
+        applied_references=[
+            {
+                "filename": "winning-proposal.docx",
+                "selection_reason": "bundle `proposal_kr` 일치",
+            }
+        ],
     )
     store.add(entry)
     items = store.get_for_user("u1")
@@ -36,9 +55,8 @@ def test_history_store_add_and_get(tmp_path, monkeypatch):
     assert "docs" not in items[0]
 
 
-def test_history_store_get_entry_returns_docs_for_promotion(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_get_entry_returns_docs_for_promotion(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     entry = HistoryEntry(
         entry_id=str(uuid.uuid4()),
         tenant_id="t1",
@@ -61,9 +79,10 @@ def test_history_store_get_entry_returns_docs_for_promotion(tmp_path, monkeypatc
     assert detail["docs"][0]["doc_type"] == "business_understanding"
 
 
-def test_history_store_visual_assets_hidden_in_list_and_available_in_detail(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_visual_assets_hidden_in_list_and_available_in_detail(
+    tmp_path,
+):
+    store = HistoryStore("t1", base_dir=tmp_path)
     entry = HistoryEntry(
         entry_id=str(uuid.uuid4()),
         tenant_id="t1",
@@ -74,20 +93,22 @@ def test_history_store_visual_assets_hidden_in_list_and_available_in_detail(tmp_
         title="시각자료 포함 이력",
         request_id="req-history-visual-001",
         created_at="2026-03-01T00:00:00",
-        visual_assets=[{
-            "asset_id": "asset-1",
-            "doc_type": "business_understanding",
-            "slide_title": "사업 추진 배경",
-            "visual_type": "timeline",
-            "visual_brief": "핵심 일정 도식",
-            "layout_hint": "우측 40%",
-            "source_kind": "svg",
-            "source_model": "",
-            "prompt": "",
-            "media_type": "image/svg+xml",
-            "encoding": "base64",
-            "content_base64": "PHN2Zy8+",
-        }],
+        visual_assets=[
+            {
+                "asset_id": "asset-1",
+                "doc_type": "business_understanding",
+                "slide_title": "사업 추진 배경",
+                "visual_type": "timeline",
+                "visual_brief": "핵심 일정 도식",
+                "layout_hint": "우측 40%",
+                "source_kind": "svg",
+                "source_model": "",
+                "prompt": "",
+                "media_type": "image/svg+xml",
+                "encoding": "base64",
+                "content_base64": "PHN2Zy8+",
+            }
+        ],
     )
     store.add(entry)
 
@@ -100,9 +121,8 @@ def test_history_store_visual_assets_hidden_in_list_and_available_in_detail(tmp_
     assert detail["visual_assets"][0]["asset_id"] == "asset-1"
 
 
-def test_history_store_update_visual_assets(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_update_visual_assets(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     entry = HistoryEntry(
         entry_id="history-visual-update-001",
         tenant_id="t1",
@@ -115,20 +135,26 @@ def test_history_store_update_visual_assets(tmp_path, monkeypatch):
     )
     store.add(entry)
 
-    updated = store.update_visual_assets("history-visual-update-001", "u1", [{
-        "asset_id": "asset-2",
-        "doc_type": "execution_plan",
-        "slide_title": "수행 일정",
-        "visual_type": "timeline",
-        "visual_brief": "일정 도식",
-        "layout_hint": "우측 배치",
-        "source_kind": "provider_image",
-        "source_model": "gpt-image-1",
-        "prompt": "timeline",
-        "media_type": "image/png",
-        "encoding": "base64",
-        "content_base64": "ZmFrZQ==",
-    }])
+    updated = store.update_visual_assets(
+        "history-visual-update-001",
+        "u1",
+        [
+            {
+                "asset_id": "asset-2",
+                "doc_type": "execution_plan",
+                "slide_title": "수행 일정",
+                "visual_type": "timeline",
+                "visual_brief": "일정 도식",
+                "layout_hint": "우측 배치",
+                "source_kind": "provider_image",
+                "source_model": "gpt-image-1",
+                "prompt": "timeline",
+                "media_type": "image/png",
+                "encoding": "base64",
+                "content_base64": "ZmFrZQ==",
+            }
+        ],
+    )
 
     assert updated is True
     detail = store.get_entry("history-visual-update-001", "u1")
@@ -136,9 +162,8 @@ def test_history_store_update_visual_assets(tmp_path, monkeypatch):
     assert detail["visual_assets"][0]["source_kind"] == "provider_image"
 
 
-def test_history_store_delete(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_delete(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     eid = str(uuid.uuid4())
     entry = HistoryEntry(
         entry_id=eid,
@@ -155,9 +180,8 @@ def test_history_store_delete(tmp_path, monkeypatch):
     assert store.get_for_user("u1") == []
 
 
-def test_history_store_mark_promoted_updates_matching_request(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_mark_promoted_updates_matching_request(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     entry = HistoryEntry(
         entry_id=str(uuid.uuid4()),
         tenant_id="t1",
@@ -178,8 +202,16 @@ def test_history_store_mark_promoted_updates_matching_request(tmp_path, monkeypa
         success_state="approved",
         promoted_at="2026-04-16T12:00:00+00:00",
         knowledge_documents=[
-            {"doc_id": "kdoc-1", "doc_type": "business_understanding", "filename": "승인본-사업이해.md"},
-            {"doc_id": "kdoc-2", "doc_type": "execution_plan", "filename": "승인본-수행계획.md"},
+            {
+                "doc_id": "kdoc-1",
+                "doc_type": "business_understanding",
+                "filename": "승인본-사업이해.md",
+            },
+            {
+                "doc_id": "kdoc-2",
+                "doc_type": "execution_plan",
+                "filename": "승인본-수행계획.md",
+            },
         ],
         user_id="u1",
     )
@@ -195,43 +227,46 @@ def test_history_store_mark_promoted_updates_matching_request(tmp_path, monkeypa
     assert item["knowledge_documents"][0]["doc_id"] == "kdoc-1"
 
 
-def test_history_store_cap_at_50(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_cap_at_50(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     for i in range(55):
-        store.add(HistoryEntry(
-            entry_id=str(uuid.uuid4()),
-            tenant_id="t1",
-            user_id="u1",
-            bundle_id="adr",
-            bundle_name="ADR",
-            title=f"Entry {i}",
-            request_id=f"req-{i:03d}",
-            created_at="2026-03-01T00:00:00",
-        ))
+        store.add(
+            HistoryEntry(
+                entry_id=str(uuid.uuid4()),
+                tenant_id="t1",
+                user_id="u1",
+                bundle_id="adr",
+                bundle_name="ADR",
+                title=f"Entry {i}",
+                request_id=f"req-{i:03d}",
+                created_at="2026-03-01T00:00:00",
+            )
+        )
     items = store.get_for_user("u1", limit=100)
     assert len(items) == 50
 
 
-def test_history_store_user_isolation(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    store = HistoryStore("t1")
+def test_history_store_user_isolation(tmp_path):
+    store = HistoryStore("t1", base_dir=tmp_path)
     for uid in ("alice", "bob"):
-        store.add(HistoryEntry(
-            entry_id=str(uuid.uuid4()),
-            tenant_id="t1",
-            user_id=uid,
-            bundle_id="adr",
-            bundle_name="ADR",
-            title=f"Entry by {uid}",
-            request_id=f"req-{uid}",
-            created_at="2026-03-01T00:00:00",
-        ))
+        store.add(
+            HistoryEntry(
+                entry_id=str(uuid.uuid4()),
+                tenant_id="t1",
+                user_id=uid,
+                bundle_id="adr",
+                bundle_name="ADR",
+                title=f"Entry by {uid}",
+                request_id=f"req-{uid}",
+                created_at="2026-03-01T00:00:00",
+            )
+        )
     assert len(store.get_for_user("alice")) == 1
     assert len(store.get_for_user("bob")) == 1
 
 
 # ── BookmarkStore unit tests ───────────────────────────────────────────────────
+
 
 def test_bookmark_store_add_and_get(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -347,8 +382,7 @@ def test_bookmark_store_rejects_invalid_user_without_writing(tmp_path):
 
 def test_bookmark_store_concurrent_instances_preserve_every_bookmark(tmp_path):
     stores = [
-        BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a")
-        for _ in range(20)
+        BookmarkStore(base_dir=str(tmp_path), tenant_id="tenant-a") for _ in range(20)
     ]
 
     def add_bookmark(index: int) -> None:
@@ -368,28 +402,30 @@ def test_bookmark_store_concurrent_instances_preserve_every_bookmark(tmp_path):
 
 # ── History API endpoint tests ────────────────────────────────────────────────
 
+
 def _auth_headers(*, user_id: str = "testuser", tenant_id: str = "system"):
     """Create a test JWT token for API calls."""
     from app.services.auth_service import create_access_token
+
     token = create_access_token(
         user_id=user_id, tenant_id=tenant_id, role="admin", username=user_id
     )
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_history_get_returns_history_key():
-    res = client.get("/history", headers=_auth_headers())
+def test_history_get_returns_history_key(api_client):
+    res = api_client.get("/history", headers=_auth_headers())
     assert res.status_code == 200
     data = res.json()
     assert "history" in data
     assert isinstance(data["history"], list)
 
 
-def test_history_get_entry_returns_docs_payload(tmp_path, monkeypatch):
+def test_history_get_entry_returns_docs_payload(api_client):
     store = HistoryStore(
         "system",
-        base_dir=str(client.app.state.data_dir),
-        backend=client.app.state.state_backend,
+        base_dir=str(api_client.app.state.data_dir),
+        backend=api_client.app.state.state_backend,
     )
     entry = HistoryEntry(
         entry_id="history-detail-001",
@@ -406,7 +442,7 @@ def test_history_get_entry_returns_docs_payload(tmp_path, monkeypatch):
     )
     store.add(entry)
 
-    res = client.get("/history/history-detail-001", headers=_auth_headers())
+    res = api_client.get("/history/history-detail-001", headers=_auth_headers())
     assert res.status_code == 200
     data = res.json()
     assert data["project_id"] == "proj-history-1"
@@ -414,11 +450,11 @@ def test_history_get_entry_returns_docs_payload(tmp_path, monkeypatch):
     assert data["docs"][0]["doc_type"] == "business_understanding"
 
 
-def test_history_update_visual_assets_endpoint():
+def test_history_update_visual_assets_endpoint(api_client):
     store = HistoryStore(
         "system",
-        base_dir=str(client.app.state.data_dir),
-        backend=client.app.state.state_backend,
+        base_dir=str(api_client.app.state.data_dir),
+        backend=api_client.app.state.state_backend,
     )
     entry = HistoryEntry(
         entry_id="history-visual-api-001",
@@ -435,74 +471,86 @@ def test_history_update_visual_assets_endpoint():
     store.add(entry)
 
     payload = {
-        "visual_assets": [{
-            "asset_id": "asset-api-1",
-            "doc_type": "business_understanding",
-            "slide_title": "사업 추진 배경",
-            "visual_type": "timeline",
-            "visual_brief": "핵심 일정",
-            "layout_hint": "우측 40%",
-            "source_kind": "svg",
-            "source_model": "",
-            "prompt": "",
-            "media_type": "image/svg+xml",
-            "encoding": "base64",
-            "content_base64": "PHN2Zy8+",
-        }]
+        "visual_assets": [
+            {
+                "asset_id": "asset-api-1",
+                "doc_type": "business_understanding",
+                "slide_title": "사업 추진 배경",
+                "visual_type": "timeline",
+                "visual_brief": "핵심 일정",
+                "layout_hint": "우측 40%",
+                "source_kind": "svg",
+                "source_model": "",
+                "prompt": "",
+                "media_type": "image/svg+xml",
+                "encoding": "base64",
+                "content_base64": "PHN2Zy8+",
+            }
+        ]
     }
-    res = client.put("/history/history-visual-api-001/visual-assets", json=payload, headers=_auth_headers())
+    res = api_client.put(
+        "/history/history-visual-api-001/visual-assets",
+        json=payload,
+        headers=_auth_headers(),
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["visual_asset_count"] == 1
 
-    detail = client.get("/history/history-visual-api-001", headers=_auth_headers())
+    detail = api_client.get(
+        "/history/history-visual-api-001",
+        headers=_auth_headers(),
+    )
     assert detail.status_code == 200
     detail_data = detail.json()
     assert detail_data["visual_assets"][0]["asset_id"] == "asset-api-1"
 
 
-def test_history_delete_nonexistent_returns_200():
-    res = client.delete("/history/nonexistent-id", headers=_auth_headers())
+def test_history_delete_nonexistent_returns_200(api_client):
+    res = api_client.delete("/history/nonexistent-id", headers=_auth_headers())
     assert res.status_code == 200  # delete is idempotent
 
 
 # ── Bookmark API endpoint tests ───────────────────────────────────────────────
 
-def test_g2b_bookmarks_get_returns_bookmarks_key():
-    res = client.get("/g2b/bookmarks", headers=_auth_headers())
+
+def test_g2b_bookmarks_get_returns_bookmarks_key(api_client):
+    res = api_client.get("/g2b/bookmarks", headers=_auth_headers())
     assert res.status_code == 200
     data = res.json()
     assert "bookmarks" in data
     assert isinstance(data["bookmarks"], list)
 
 
-def test_g2b_bookmarks_post_and_delete():
+def test_g2b_bookmarks_post_and_delete(api_client):
     headers = _auth_headers()
     ann = {"bid_number": "TEST-BID-001", "title": "테스트 공고", "issuer": "테스트기관"}
     # Add
-    res = client.post("/g2b/bookmarks", json=ann, headers=headers)
+    res = api_client.post("/g2b/bookmarks", json=ann, headers=headers)
     assert res.status_code == 200
     data = res.json()
     assert "bookmark" in data
     assert data["bookmark"]["bid_number"] == "TEST-BID-001"
     # Verify appears in list
-    res2 = client.get("/g2b/bookmarks", headers=headers)
+    res2 = api_client.get("/g2b/bookmarks", headers=headers)
     bids = [b["bid_number"] for b in res2.json()["bookmarks"]]
     assert "TEST-BID-001" in bids
     # bookmarked_at should be in the stored list entry
-    stored = next(b for b in res2.json()["bookmarks"] if b["bid_number"] == "TEST-BID-001")
+    stored = next(
+        b for b in res2.json()["bookmarks"] if b["bid_number"] == "TEST-BID-001"
+    )
     assert "bookmarked_at" in stored
     # Delete
-    res3 = client.delete("/g2b/bookmarks/TEST-BID-001", headers=headers)
+    res3 = api_client.delete("/g2b/bookmarks/TEST-BID-001", headers=headers)
     assert res3.status_code == 200
 
 
-def test_g2b_bookmark_api_keeps_user_ownership_private_and_isolated():
+def test_g2b_bookmark_api_keeps_user_ownership_private_and_isolated(api_client):
     owner_headers = _auth_headers(user_id="bookmark-owner")
     other_headers = _auth_headers(user_id="bookmark-other")
     bid_number = f"TEST-OWNER-{uuid.uuid4().hex}"
 
-    created = client.post(
+    created = api_client.post(
         "/g2b/bookmarks",
         json={
             "bid_number": bid_number,
@@ -517,19 +565,19 @@ def test_g2b_bookmark_api_keeps_user_ownership_private_and_isolated():
     assert created.status_code == 200
     assert "_bookmark_owner" not in created.json()["bookmark"]
 
-    other_list = client.get("/g2b/bookmarks", headers=other_headers)
+    other_list = api_client.get("/g2b/bookmarks", headers=other_headers)
     assert other_list.status_code == 200
     assert bid_number not in {
         bookmark["bid_number"] for bookmark in other_list.json()["bookmarks"]
     }
 
-    other_delete = client.delete(
+    other_delete = api_client.delete(
         f"/g2b/bookmarks/{bid_number}",
         headers=other_headers,
     )
     assert other_delete.status_code == 200
 
-    owner_list = client.get("/g2b/bookmarks", headers=owner_headers)
+    owner_list = api_client.get("/g2b/bookmarks", headers=owner_headers)
     owned = next(
         bookmark
         for bookmark in owner_list.json()["bookmarks"]
@@ -537,7 +585,7 @@ def test_g2b_bookmark_api_keeps_user_ownership_private_and_isolated():
     )
     assert "_bookmark_owner" not in owned
 
-    cleanup = client.delete(
+    cleanup = api_client.delete(
         f"/g2b/bookmarks/{bid_number}",
         headers=owner_headers,
     )
