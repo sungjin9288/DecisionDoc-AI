@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.agents.document_ops_agent import DocumentOpsAgent
 from app.agents.schemas import DocumentOpsRequest, DocumentOpsResult
+from app.providers.base import Provider
 from app.services.document_ops_training_adapter import (
     training_adapter_contract_summary,
     training_execution_rehearsal_summary,
@@ -74,9 +75,15 @@ class DocumentOpsService:
         *,
         tenant_id: str,
         request_id: str,
+        record_provider_usage: Callable[[Provider], None] | None = None,
     ) -> dict[str, Any]:
         req = DocumentOpsRequest.model_validate(payload)
-        result = self._agent.run(req, request_id=request_id, tenant_id=tenant_id)
+        result = self._agent.run(
+            req,
+            request_id=request_id,
+            tenant_id=tenant_id,
+            record_provider_usage=record_provider_usage,
+        )
         body = self._serialize_result(result)
         trajectory_id = ""
         trajectory_saved = False

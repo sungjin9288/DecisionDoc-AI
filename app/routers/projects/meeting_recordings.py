@@ -20,13 +20,18 @@ from app.services.meeting_recording_service import (
     MeetingRecordingStateError,
     MeetingRecordingTranscriptionError,
     MeetingRecordingUploadError,
+    TRANSCRIPTION_FAILED_MESSAGE,
 )
+from app.services.generation.context_store import record_named_provider_usage
 from app.services.voice_brief_import_service import (
     VoiceBriefImportBlockedError,
     VoiceBriefRemoteError,
 )
 
-from app.routers.projects._shared import _serialize_meeting_recording_summary
+from app.routers.projects._shared import (
+    _serialize_meeting_recording,
+    _serialize_meeting_recording_summary,
+)
 
 router = APIRouter()
 
@@ -63,7 +68,9 @@ def _apply_meeting_recording_observability(
         request.state.meeting_recording_approval_status = recording.approval_status
         request.state.meeting_recording_transcript_language = recording.transcript_language
         request.state.meeting_recording_transcript_model = recording.transcript_model
-        request.state.meeting_recording_transcript_error = recording.transcript_error
+        request.state.meeting_recording_transcript_error = (
+            TRANSCRIPTION_FAILED_MESSAGE if recording.transcript_error else None
+        )
 
     if generated_documents is not None:
         bundle_types = [
@@ -299,7 +306,7 @@ def get_project_meeting_recording_endpoint(
     )
     return {
         "project_id": project_id,
-        "recording": asdict(recording),
+        "recording": _serialize_meeting_recording(recording),
     }
 
 
@@ -332,6 +339,11 @@ def transcribe_project_meeting_recording_endpoint(
             project_id=project_id,
             recording_id=recording_id,
             language=payload.language,
+            record_provider_usage=lambda model: record_named_provider_usage(
+                request,
+                model=model,
+                bundle_id="meeting-recording.transcription",
+            ),
         )
     except KeyError as exc:
         _set_error_code(request, "meeting_recording_not_found")
@@ -362,7 +374,10 @@ def transcribe_project_meeting_recording_endpoint(
         _set_error_code(request, "meeting_recording_transcription_failed")
         raise HTTPException(
             status_code=502,
-            detail={"code": "meeting_recording_transcription_failed", "message": str(exc)},
+            detail={
+                "code": "meeting_recording_transcription_failed",
+                "message": TRANSCRIPTION_FAILED_MESSAGE,
+            },
         ) from exc
     _apply_meeting_recording_observability(
         request,
@@ -372,7 +387,7 @@ def transcribe_project_meeting_recording_endpoint(
     )
     return {
         "project_id": project_id,
-        "recording": asdict(recording),
+        "recording": _serialize_meeting_recording(recording),
     }
 
 
@@ -430,7 +445,7 @@ def approve_project_meeting_recording_endpoint(
     )
     return {
         "project_id": project_id,
-        "recording": asdict(recording),
+        "recording": _serialize_meeting_recording(recording),
     }
 
 

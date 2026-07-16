@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.dependencies import get_tenant_id, require_auth
 from app.schemas import CheckoutRequest, PlanOverrideRequest
@@ -27,7 +27,11 @@ async def get_billing_status(request: Request):
         data_dir=request.app.state.data_dir,
         backend=request.app.state.state_backend,
     )
-    usage = UsageStore(request.app.state.data_dir, tenant_id=tenant_id)
+    usage = UsageStore(
+        request.app.state.data_dir,
+        tenant_id=tenant_id,
+        backend=request.app.state.state_backend,
+    )
     account, plan = billing.get_account_and_plan()
     summary = usage.get_current_month()
     limit_check = usage.check_limit(plan)
@@ -53,11 +57,19 @@ async def get_billing_status(request: Request):
 
 
 @router.get("/billing/usage")
-async def get_usage_history(request: Request, days: int = 30):
+async def get_usage_history(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=366),
+):
     from app.storage.usage_store import UsageStore
 
+    require_auth(request)
     tenant_id = get_tenant_id(request)
-    store = UsageStore(request.app.state.data_dir, tenant_id=tenant_id)
+    store = UsageStore(
+        request.app.state.data_dir,
+        tenant_id=tenant_id,
+        backend=request.app.state.state_backend,
+    )
     summary = store.get_current_month()
     return {
         "daily": store.get_daily_usage(days=days),

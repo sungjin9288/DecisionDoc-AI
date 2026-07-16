@@ -18,7 +18,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.storage.base import atomic_write_text
 
@@ -81,13 +81,19 @@ class BundleAutoExpander:
 
     # ── Main entry point ──────────────────────────────────────────────────
 
-    def analyze_and_expand(self) -> dict | None:
+    def analyze_and_expand(
+        self,
+        *,
+        record_provider_usage: Callable[[Any], None] | None = None,
+    ) -> dict | None:
         """Analyse unmatched request patterns and auto-generate a bundle if detected.
 
         Returns:
             Bundle info dict if a new bundle was created, else None.
         """
         from app.config import get_auto_expand_threshold
+
+        self.last_provider_called = False
 
         if self.pattern_store is None:
             _log.warning("[BundleExpander] pattern_store가 없음 — 분석 건너뜀")
@@ -119,11 +125,15 @@ class BundleAutoExpander:
         request_lines = "\n".join(f"- {raw_input}" for raw_input in request_inputs)
         prompt = _PATTERN_PROMPT_TEMPLATE.format(request_lines=request_lines)
 
+        self.last_provider_called = True
         try:
             raw = self.provider.generate_raw(prompt, request_id="bundle-expander")
         except Exception as exc:
             _log.warning("[BundleExpander] LLM 호출 실패: %s", exc)
             return None
+        finally:
+            if record_provider_usage is not None:
+                record_provider_usage(self.provider)
 
         # Step 2: Parse JSON response
         detection = self._parse_json_response(raw)

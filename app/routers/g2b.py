@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth.api_key import require_api_key
 from app.config import get_g2b_api_key, get_g2b_max_results
 from app.maintenance.mode import require_not_maintenance
+from app.middleware.billing import acquire_billing_admission
 from app.schemas import G2BFetchRequest
 
 router = APIRouter(prefix="/g2b", tags=["g2b"])
@@ -77,6 +78,7 @@ async def fetch_g2b_announcement(
     Returns structured fields for RFP auto-fill.
     """
     from app.providers.factory import get_provider_for_bundle
+    from app.services.generation.context_store import record_direct_provider_usage
     from app.services.g2b_collector import fetch_announcement_detail
     from app.services.rfp_parser import parse_rfp_fields
 
@@ -92,8 +94,20 @@ async def fetch_g2b_announcement(
 
     rfp_fields: dict = {}
     if announcement.raw_text:
-        provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
-        rfp_fields = parse_rfp_fields(announcement.raw_text, provider=provider)
+        admission_lock, rejection = await acquire_billing_admission(request)
+        if rejection is not None:
+            return rejection
+        try:
+            provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
+            rfp_fields = parse_rfp_fields(announcement.raw_text, provider=provider)
+            record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="g2b.rfp-analysis",
+            )
+        finally:
+            if admission_lock is not None:
+                admission_lock.release()
 
     return {
         "announcement": {

@@ -23,6 +23,7 @@ async def analyze_document_style(
     raw: bytes,
     bundle_id: str | None,
     provider,
+    usage_totals: dict[str, int] | None = None,
 ) -> dict:
     """Extract style patterns from an uploaded document using an LLM.
 
@@ -38,6 +39,7 @@ async def analyze_document_style(
             raw,
             provider=provider,
             request_id="style-analysis",
+            usage_totals=usage_totals,
         )
     except Exception as exc:
         raise ValueError(f"{filename}: 텍스트를 추출할 수 없습니다. ({exc})")
@@ -74,8 +76,10 @@ async def analyze_document_style(
 }}
     반드시 유효한 JSON만 반환하세요."""
 
+    provider_attempted = False
     try:
         try:
+            provider_attempted = True
             result = provider.generate_raw(
                 prompt,
                 request_id="style-analysis",
@@ -101,6 +105,9 @@ async def analyze_document_style(
             "avoid_expressions": [],
             "summary": "분석 실패",
         }
+    finally:
+        if provider_attempted and usage_totals is not None:
+            usage_totals["provider_calls"] = usage_totals.get("provider_calls", 0) + 1
 
 
 def build_style_prompt(

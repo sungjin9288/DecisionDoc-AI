@@ -30,6 +30,9 @@ from app.schemas import (
     SelectReportSlideVisualAssetRequest,
     UpdateReportSlideVisualAssetsRequest,
 )
+from app.services.generation.context_store import (
+    record_direct_provider_usage,
+)
 
 collection_router = APIRouter()
 workflow_router = APIRouter()
@@ -95,7 +98,7 @@ def preview_report_workflow_develop_quality(
 ) -> dict:
     tenant_id = get_tenant_id(request)
     try:
-        return get_service(request).preview_develop_quality_improvement(
+        result = get_service(request).preview_develop_quality_improvement(
             report_workflow_id,
             tenant_id=tenant_id,
             request_id=request.state.request_id,
@@ -103,10 +106,15 @@ def preview_report_workflow_develop_quality(
             focus=payload.focus,
             additional_notes=payload.additional_notes,
             capture_trajectory=payload.capture_trajectory,
+            record_provider_usage=lambda provider: record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="report-workflow.develop-quality-preview",
+            ),
         )
     except (KeyError, ValueError) as exc:
         handle_store_error(exc)
-    raise HTTPException(status_code=500, detail="develop quality preview failed")
+    return result
 
 
 @workflow_router.post(
@@ -120,6 +128,11 @@ def generate_report_planning(report_workflow_id: str, request: Request) -> dict:
             report_workflow_id,
             tenant_id=tenant_id,
             request_id=request.state.request_id,
+            record_provider_usage=lambda provider: record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="report-workflow.planning",
+            ),
         )
     except (KeyError, ValueError) as exc:
         handle_store_error(exc)
@@ -185,6 +198,11 @@ def generate_report_slides(
             report_workflow_id,
             tenant_id=tenant_id,
             request_id=request.state.request_id,
+            record_provider_usage=lambda provider: record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="report-workflow.slides",
+            ),
         )
     except (KeyError, ValueError) as exc:
         handle_store_error(exc)
@@ -308,6 +326,12 @@ def generate_report_workflow_visual_assets(
             author=actor(request, payload.username),
             max_assets=payload.max_assets,
             select_first=payload.select_first,
+            record_provider_usage=lambda provider, usage: record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="report-workflow.visual-assets",
+                extra_tokens=usage,
+            ),
         )
     except (KeyError, ValueError) as exc:
         handle_store_error(exc)

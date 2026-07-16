@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone usage metering authority hardening
+
+- `UsageStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{usage.jsonl,usage_summary.json}`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Event log를 권위 원본으로 두고 monthly summary의 month coverage, generation/token/cost total과 bundle/user/model bucket을 매 read/write마다 다시 대조한다. Malformed JSON/JSONL, blank line, duplicate key/event ID, owned field/type/token/timestamp drift, summary mismatch와 event-only partial write는 조회·한도 검사·후속 기록을 fail closed로 중단하고 원본 bytes를 보존한다.
+- Explicit foreign event와 충돌하지 않는 foreign month summary는 숨긴 채 보존하며 current-month foreign summary collision은 빈 사용량으로 축소하지 않는다. 독립 store 인스턴스의 event/summary read-modify-write는 하나의 process-local shared lock으로 local/fake-S3에서 직렬화한다.
+- Billing middleware/API, overage 계산과 generation/direct/composite-provider usage recording은 앱 data root/backend를 사용한다. Generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion provider route는 tenant별 process-local admission lock 안에서 상태와 한도를 먼저 검사하고 `/billing/usage`는 인증 user만 조회한다. DocumentOps는 provider를 요청별로 분리하고 provider 호출 직후 usage를 확정한 뒤 trajectory를 저장한다. 실제 provider를 호출한 OCR·visual 작업은 실패 token까지 보존하며 local parse는 auxiliary event를 만들지 않는다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업 완료 전 lock을 반환하지 않는다. Core generation은 bundle/cache/render/eval보다 usage를 먼저 확정하고 provider 오류 원문은 public response·상태·로그에 남기지 않는다. Provider가 필요 없는 edited export와 실제 생성 범위 밖 provider image는 admission·provider 초기화에서 제외한다.
+- H48 focused provider/admission gate는 `175 passed`, usage/billing/provider-surface/generation/export/attachment/tenant/infrastructure 확장 gate는 `1136 passed`, full no-cost regression은 `3853 passed, 1 skipped, 4 deselected`다. 모든 provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Provider API, Stripe API, G2B live API, AWS runtime, distributed S3 transaction/CAS·exact reservation, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone fine-tune dataset and model authority hardening
 
 - `FineTuneStore`와 `ModelRegistry`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

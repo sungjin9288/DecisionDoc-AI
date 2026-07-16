@@ -5,7 +5,6 @@ then calls the LLM to rewrite just that one section (no full regeneration).
 """
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -89,8 +88,8 @@ def test_rewrite_section_long_content(tmp_path, monkeypatch):
 
 # ── 5. provider error ─────────────────────────────────────────────────────────
 
-def test_rewrite_section_provider_error_returns_500(tmp_path, monkeypatch):
-    """If the provider raises an exception, the endpoint must return 500."""
+def test_rewrite_section_provider_error_returns_public_503(tmp_path, monkeypatch):
+    """Provider failures use the public error contract without internal details."""
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
@@ -108,7 +107,9 @@ def test_rewrite_section_provider_error_returns_500(tmp_path, monkeypatch):
     from app.main import create_app
     client = TestClient(create_app(), raise_server_exceptions=False)
     res = client.post("/generate/rewrite-section", json=_VALID_BODY)
-    assert res.status_code == 500
+    assert res.status_code == 503
+    assert res.json()["detail"] == "AI provider 요청에 실패했습니다."
+    assert "simulated LLM failure" not in res.text
 
 
 # ── 6. missing required field ─────────────────────────────────────────────────

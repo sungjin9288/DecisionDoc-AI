@@ -23,6 +23,7 @@ from app.observability.logging import log_event
 from app.providers.factory import get_provider_for_capability
 from app.schemas import GenerateRequest, GenerateResponse
 from app.services.attachment_service import AttachmentError
+from app.services.generation.context_store import record_direct_provider_usage
 
 from app.routers.generate._shared import (
     _build_procurement_attachment_context,
@@ -90,11 +91,22 @@ def generate_with_attachments(
             file_data.append((upload.filename, raw))
         if file_data:
             from app.services.rfp_parser import build_rfp_context
+            attachment_provider = get_provider_for_capability("attachment")
+            attachment_usage: dict[str, int] = {}
             combined = _facade().extract_multiple(
                 file_data,
-                provider=get_provider_for_capability("attachment"),
+                provider=attachment_provider,
                 request_id=request.state.request_id,
+                usage_totals=attachment_usage,
             )
+            if attachment_usage.get("provider_calls", 0) > 0:
+                record_direct_provider_usage(
+                    request,
+                    attachment_provider,
+                    bundle_id="generation.attachment",
+                    event_type="api.call",
+                    extra_tokens=attachment_usage,
+                )
             procurement_context = _build_procurement_attachment_context(file_data)
             rfp_context = build_rfp_context(combined, normalized_context=procurement_context)
             existing = req.context or ""
@@ -129,11 +141,24 @@ def generate_from_documents(
     from app.schemas import GenerateRequest as _GenerateRequest
 
     _raise_if_legacy_binary_hwp_uploads(files)
-    combined_text, parsed_filenames, procurement_context = _extract_uploaded_documents(
-        files,
-        provider=get_provider_for_capability("attachment"),
-        request_id=request.state.request_id,
-    )
+    attachment_provider = get_provider_for_capability("attachment")
+    attachment_usage: dict[str, int] = {}
+    try:
+        combined_text, parsed_filenames, procurement_context = _extract_uploaded_documents(
+            files,
+            provider=attachment_provider,
+            request_id=request.state.request_id,
+            usage_totals=attachment_usage,
+        )
+    finally:
+        if attachment_usage.get("provider_calls", 0) > 0:
+            record_direct_provider_usage(
+                request,
+                attachment_provider,
+                bundle_id="generation.attachment",
+                event_type="api.call",
+                extra_tokens=attachment_usage,
+            )
     doc_types_list = [dt.strip() for dt in doc_types.split(",") if dt.strip()]
     merged_parts = [part for part in [procurement_context, combined_text, context] if part]
     merged_context = "\n\n".join(merged_parts)

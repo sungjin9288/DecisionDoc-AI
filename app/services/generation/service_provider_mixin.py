@@ -35,8 +35,10 @@ class GenerationProviderCallMixin:
         bundle_spec: BundleSpec,
         *,
         tenant_id: str,
+        usage_totals: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Call the provider, stabilize, strip internal fields, and validate schema."""
+        usage_totals = usage_totals if usage_totals is not None else {}
         with timer.measure("provider_ms"):
             bundle = self._call_provider_with_retry(
                 provider,
@@ -44,6 +46,7 @@ class GenerationProviderCallMixin:
                 request_id,
                 bundle_spec,
                 tenant_id=tenant_id,
+                usage_totals=usage_totals,
             )
         bundle = stabilize_bundle(bundle, structure=bundle_spec.stabilizer_structure())
         bundle = strip_internal_bundle_fields(bundle)
@@ -83,22 +86,31 @@ class GenerationProviderCallMixin:
         bundle_spec: BundleSpec,
         *,
         tenant_id: str,
+        usage_totals: dict[str, int] | None = None,
     ) -> dict[str, Any]:
+        usage_totals = usage_totals if usage_totals is not None else {}
         feedback_hints = self._build_feedback_hints(
             bundle_spec.id,
             title=payload.get("title", ""),
             tenant_id=tenant_id,
         )
         try:
-            return provider.generate_bundle(
-                payload,
-                schema_version=SCHEMA_VERSION,
-                request_id=request_id,
-                bundle_spec=bundle_spec,
-                feedback_hints=feedback_hints,
-            )
-        except Exception as exc:
-            raise ProviderFailedError("Provider failed.") from exc
+            try:
+                return provider.generate_bundle(
+                    payload,
+                    schema_version=SCHEMA_VERSION,
+                    request_id=request_id,
+                    bundle_spec=bundle_spec,
+                    feedback_hints=feedback_hints,
+                )
+            except Exception as exc:
+                raise ProviderFailedError("Provider failed.") from exc
+        finally:
+            usage = provider.consume_usage_tokens() or {}
+            for key in ("prompt_tokens", "output_tokens"):
+                usage_totals[key] = usage_totals.get(key, 0) + int(
+                    usage.get(key, 0) or 0
+                )
 
     def _call_provider_with_retry(
         self,
@@ -108,8 +120,10 @@ class GenerationProviderCallMixin:
         bundle_spec: BundleSpec,
         *,
         tenant_id: str,
+        usage_totals: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Call provider with exponential backoff retry on ProviderFailedError."""
+        usage_totals = usage_totals if usage_totals is not None else {}
         from app.config import get_llm_retry_attempts, get_llm_retry_backoff_seconds
         attempts = get_llm_retry_attempts()
         backoffs = get_llm_retry_backoff_seconds()
@@ -122,6 +136,7 @@ class GenerationProviderCallMixin:
                     request_id,
                     bundle_spec,
                     tenant_id=tenant_id,
+                    usage_totals=usage_totals,
                 )
             except ProviderFailedError as exc:
                 last_exc = exc

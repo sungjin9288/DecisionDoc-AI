@@ -7,7 +7,10 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.observability.logging import JsonLineFormatter
-from app.services.meeting_recording_service import MeetingRecordingService
+from app.services.meeting_recording_service import (
+    MeetingRecordingService,
+    TRANSCRIPTION_FAILED_MESSAGE,
+)
 
 
 def _create_client(tmp_path, monkeypatch, provider="mock", procurement_enabled=False):
@@ -666,7 +669,8 @@ def test_meeting_recording_logs_capture_transcription_failures(tmp_path, monkeyp
     caplog.set_level(logging.INFO)
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     client = _create_client(tmp_path, monkeypatch)
-    _install_transcription_failure_transport(client, error_message="upstream transcription failed")
+    provider_error = "secret response body http://127.0.0.1"
+    _install_transcription_failure_transport(client, error_message=provider_error)
     project_id = _create_project(client)
 
     upload = client.post(
@@ -693,7 +697,11 @@ def test_meeting_recording_logs_capture_transcription_failures(tmp_path, monkeyp
     assert transcribe_events[-1]["error_code"] == "meeting_recording_transcription_failed"
     assert transcribe_events[-1]["meeting_recording_transcription_status"] == "failed"
     assert transcribe_events[-1]["meeting_recording_approval_status"] == "pending"
-    assert transcribe_events[-1]["meeting_recording_transcript_error"] == "upstream transcription failed"
+    assert (
+        transcribe_events[-1]["meeting_recording_transcript_error"]
+        == TRANSCRIPTION_FAILED_MESSAGE
+    )
+    assert provider_error not in json.dumps(events, ensure_ascii=False)
 
 
 def test_meeting_recording_logs_capture_empty_transcription_failures(tmp_path, monkeypatch, caplog, capsys):
@@ -728,7 +736,7 @@ def test_meeting_recording_logs_capture_empty_transcription_failures(tmp_path, m
     assert transcribe_events[-1]["meeting_recording_approval_status"] == "pending"
     assert (
         transcribe_events[-1]["meeting_recording_transcript_error"]
-        == "OpenAI transcription response did not include transcript text."
+        == TRANSCRIPTION_FAILED_MESSAGE
     )
 
 

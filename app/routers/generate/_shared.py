@@ -102,6 +102,7 @@ def _extract_uploaded_documents(
     *,
     provider: Any | None = None,
     request_id: str = "",
+    usage_totals: dict[str, int] | None = None,
 ) -> tuple[str, list[str], str]:
     """Extract uploaded files into one generation-ready context block.
 
@@ -128,11 +129,11 @@ def _extract_uploaded_documents(
                 raw,
                 provider=provider,
                 request_id=request_id,
+                usage_totals=usage_totals,
             )
         except AttachmentError as exc:
             errors.append(str(exc))
             continue
-
         remaining = MAX_TOTAL_CHARS - total
         if remaining <= 0:
             break
@@ -181,21 +182,50 @@ def _generate_visual_assets_for_docs(
     bundle_type: str,
     tenant_id: str,
     request_id: str,
+    provider: Any | None = None,
+    request: Any | None = None,
+    record_usage: bool = True,
+    max_assets: int = 6,
+    usage_totals: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     if not any(isinstance(doc, dict) and isinstance(doc.get("slide_outline"), list) and doc.get("slide_outline") for doc in docs):
         return []
+    from app.services.visual_asset_service import requires_provider_visuals
+
+    provider_required = requires_provider_visuals(docs, max_assets=max_assets)
+    selected_provider = provider
+    if provider_required and selected_provider is None:
+        selected_provider = get_provider_for_capability("visual")
+    captured_usage = usage_totals if usage_totals is not None else {}
     try:
-        return _facade().generate_visual_assets_from_docs(
+        assets = _facade().generate_visual_assets_from_docs(
             docs,
             title=title,
             goal=goal,
-            provider=get_provider_for_capability("visual"),
+            provider=selected_provider,
             request_id=request_id,
-            max_assets=6,
+            max_assets=max_assets,
+            usage_totals=captured_usage,
         )
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("[VisualAssets] Export visual asset generation failed: %s", exc)
-        return []
+        assets = []
+    if (
+        request is not None
+        and record_usage
+        and selected_provider is not None
+        and captured_usage.get("provider_calls", 0) > 0
+    ):
+        from app.services.generation.context_store import record_direct_provider_usage
+
+        record_direct_provider_usage(
+            request,
+            selected_provider,
+            bundle_id=f"generation.visual-assets.{bundle_type}",
+            event_type="api.call",
+            extra_tokens=captured_usage,
+        )
+    return assets
 
 
 # ── ZIP export in-memory cache ────────────────────────────────────────────────

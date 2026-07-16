@@ -10,7 +10,7 @@ import hashlib
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from pydantic import ValidationError
 
@@ -49,13 +49,21 @@ class DocumentOpsAgent:
 
     @property
     def provider(self) -> Provider:
-        if self._provider is None:
-            from app.providers.factory import get_provider_for_capability
+        if self._provider is not None:
+            return self._provider
 
-            self._provider = get_provider_for_capability("generation")
-        return self._provider
+        from app.providers.factory import get_provider_for_capability
 
-    def run(self, request: DocumentOpsRequest, *, request_id: str, tenant_id: str) -> DocumentOpsResult:
+        return get_provider_for_capability("generation")
+
+    def run(
+        self,
+        request: DocumentOpsRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+        record_provider_usage: Callable[[Provider], None] | None = None,
+    ) -> DocumentOpsResult:
         """Execute a single DocumentOps task.
 
         The current Phase 1 loop is deliberately narrow:
@@ -63,12 +71,31 @@ class DocumentOpsAgent:
         provider JSON -> apply local QA -> optionally emit a compact trajectory.
         """
         tenant_id = require_tenant_id(tenant_id)
+        provider = self.provider
         skill = self._skill_registry.select(request.task_type, preferred_name=request.skill_name)
         prompt = self._build_prompt(request, skill)
-        draft = self._generate_draft(prompt, request=request, skill=skill, request_id=request_id)
+        draft = self._generate_draft(
+            prompt,
+            provider=provider,
+            request=request,
+            skill=skill,
+            request_id=request_id,
+            record_provider_usage=record_provider_usage,
+        )
         qa = self._merge_qa(draft.qa, self._local_qa(draft, task_type=request.task_type))
         quality_warnings = list(qa.get("warnings", []))
-        trajectory = self._build_trajectory(request, skill, draft, qa, request_id=request_id) if request.capture_trajectory else None
+        trajectory = (
+            self._build_trajectory(
+                request,
+                skill,
+                draft,
+                qa,
+                provider=provider,
+                request_id=request_id,
+            )
+            if request.capture_trajectory
+            else None
+        )
         if trajectory is not None and self._trajectory_store is not None:
             trajectory_id = self._trajectory_store.save(trajectory, tenant_id=tenant_id)
             trajectory["trajectory_id"] = trajectory_id
@@ -77,7 +104,7 @@ class DocumentOpsAgent:
             task_type=request.task_type,
             skill_name=skill.name,
             skill_version=skill.version,
-            provider_name=self.provider.name,
+            provider_name=provider.name,
             plan=draft.plan,
             critique=draft.critique,
             revision_tasks=draft.revision_tasks,
@@ -123,12 +150,18 @@ class DocumentOpsAgent:
         self,
         prompt: str,
         *,
+        provider: Provider,
         request: DocumentOpsRequest,
         skill: DocumentOpsSkill,
         request_id: str,
+        record_provider_usage: Callable[[Provider], None] | None = None,
     ) -> DocumentOpsDraftOutput:
         try:
-            raw = self.provider.generate_raw(prompt, request_id=request_id)
+            try:
+                raw = provider.generate_raw(prompt, request_id=request_id)
+            finally:
+                if record_provider_usage is not None:
+                    record_provider_usage(provider)
             return _parse_draft_output(raw)
         except ProviderError:
             raise
@@ -228,6 +261,7 @@ class DocumentOpsAgent:
         draft: DocumentOpsDraftOutput,
         qa: dict[str, Any],
         *,
+        provider: Provider,
         request_id: str,
     ) -> dict[str, Any]:
         return {
@@ -237,7 +271,7 @@ class DocumentOpsAgent:
             "request_id": request_id,
             "task_type": request.task_type,
             "skill": {"name": skill.name, "version": skill.version},
-            "provider": self.provider.name,
+            "provider": provider.name,
             "input": _redact_for_trajectory(
                 {
                     "requirements": request.requirements,

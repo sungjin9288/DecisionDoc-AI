@@ -22,7 +22,12 @@ from tests.async_helper import run_async
 
 # ── Test client helper ────────────────────────────────────────────────────────
 
-def _make_client(tmp_path, monkeypatch) -> TestClient:
+def _make_client(
+    tmp_path,
+    monkeypatch,
+    *,
+    raise_server_exceptions: bool = True,
+) -> TestClient:
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
@@ -32,7 +37,10 @@ def _make_client(tmp_path, monkeypatch) -> TestClient:
     # Tests that need it set explicitly via monkeypatch.setenv AFTER this call.
     monkeypatch.delenv("G2B_API_KEY", raising=False)
     from app.main import create_app
-    return TestClient(create_app())
+    return TestClient(
+        create_app(),
+        raise_server_exceptions=raise_server_exceptions,
+    )
 
 
 # ── _extract_bid_number ───────────────────────────────────────────────────────
@@ -661,6 +669,51 @@ class TestG2BFetch:
         assert "extracted_fields" in data
         assert "structured_context" in data
         assert "행정안전부" in data["structured_context"]
+
+    def test_provider_factory_failure_releases_conditional_admission_lock(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        from app.middleware.billing import _admission_lock
+        from app.services.g2b_collector import G2BAnnouncement
+
+        fake = G2BAnnouncement(
+            bid_number="20250317001-00",
+            title="Admission lock test",
+            issuer="행정안전부",
+            budget="5억원",
+            announcement_date="2025-03-17",
+            deadline="2025-04-17 18:00",
+            bid_type="일반경쟁",
+            category="용역",
+            detail_url="https://www.g2b.go.kr/...",
+            attachments=[],
+            raw_text="provider parsing required",
+            source="scrape",
+        )
+        client = _make_client(
+            tmp_path,
+            monkeypatch,
+            raise_server_exceptions=False,
+        )
+
+        with patch(
+            "app.services.g2b_collector.fetch_announcement_detail",
+            new=AsyncMock(return_value=fake),
+        ), patch(
+            "app.providers.factory.get_provider_for_bundle",
+            side_effect=RuntimeError("provider configuration unavailable"),
+        ):
+            response = client.post(
+                "/g2b/fetch",
+                json={"url_or_number": "https://www.g2b.go.kr/something"},
+            )
+
+        assert response.status_code == 500
+        lock = _admission_lock("system")
+        assert lock.acquire(blocking=False) is True
+        lock.release()
 
     def test_missing_body_returns_422(self, tmp_path, monkeypatch):
         client = _make_client(tmp_path, monkeypatch)

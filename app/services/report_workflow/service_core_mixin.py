@@ -56,6 +56,7 @@ class ReportWorkflowCoreMixin:
         *,
         tenant_id: str,
         request_id: str,
+        record_provider_usage: Callable[[Any], None] | None = None,
     ) -> ReportWorkflowRecord:
         rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
         provider = self._provider_factory()
@@ -68,6 +69,8 @@ class ReportWorkflowCoreMixin:
             logger.warning("report planning provider output fallback: %s", exc)
             data = {}
             warnings.append(f"planning_json_fallback:{exc.__class__.__name__}")
+        if record_provider_usage is not None:
+            record_provider_usage(provider)
         planning = self._planning_from_provider_data(data, rec)
         return self.store.save_planning(
             report_workflow_id,
@@ -82,6 +85,7 @@ class ReportWorkflowCoreMixin:
         *,
         tenant_id: str,
         request_id: str,
+        record_provider_usage: Callable[[Any], None] | None = None,
     ) -> ReportWorkflowRecord:
         rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
         if rec.planning is None or rec.planning.status != "approved":
@@ -96,6 +100,8 @@ class ReportWorkflowCoreMixin:
             logger.warning("report slides provider output fallback: %s", exc)
             data = {}
             warnings.append(f"slides_json_fallback:{exc.__class__.__name__}")
+        if record_provider_usage is not None:
+            record_provider_usage(provider)
         slides = self._slides_from_provider_data(data, rec)
         return self.store.save_slides(
             report_workflow_id,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Callable
 
 from app.services.report_workflow.helpers import _dedupe_strings, _now_iso
 from app.services.visual_asset_service import generate_visual_assets_from_docs, index_visual_assets_by_slide_title
@@ -171,6 +171,7 @@ class ReportWorkflowExportMixin:
         author: str = "",
         max_assets: int = 6,
         select_first: bool = True,
+        record_provider_usage: Callable[[Any, dict[str, int]], None] | None = None,
     ) -> dict[str, Any]:
         rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
         if not rec.slides:
@@ -178,6 +179,7 @@ class ReportWorkflowExportMixin:
         if rec.status in {"final_approved", "delivered"}:
             raise ValueError("최종 승인된 보고서 워크플로우는 수정할 수 없습니다.")
         provider = self._visual_provider_factory()
+        visual_usage: dict[str, int] = {}
         slide_outline = [
             {
                 "page": slide.page,
@@ -198,7 +200,13 @@ class ReportWorkflowExportMixin:
             provider=provider,
             request_id=request_id,
             max_assets=max(1, min(int(max_assets or 6), 12)),
+            usage_totals=visual_usage,
         )
+        if (
+            record_provider_usage is not None
+            and visual_usage.get("provider_calls", 0) > 0
+        ):
+            record_provider_usage(provider, visual_usage)
         if assets:
             rec = self.store.add_visual_assets(report_workflow_id, assets, tenant_id=tenant_id)
         assets_by_title = index_visual_assets_by_slide_title(assets)

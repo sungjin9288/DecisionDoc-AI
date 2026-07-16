@@ -68,6 +68,18 @@ def _visual_request_kind(item: dict[str, Any]) -> str:
     return "chart"
 
 
+def requires_provider_visuals(
+    docs: list[dict[str, Any]],
+    *,
+    max_assets: int = 6,
+) -> bool:
+    """Return whether any slide requests a provider-generated image asset."""
+    return any(
+        _visual_request_kind(entry["item"]) == "provider_image"
+        for entry in _normalize_slide_docs(docs)[: max(0, int(max_assets))]
+    )
+
+
 def _svg_escape(value: Any) -> str:
     return html.escape(_clean_text(value))
 
@@ -231,9 +243,10 @@ def generate_visual_assets_from_docs(
     *,
     title: str,
     goal: str,
-    provider: Provider,
+    provider: Provider | None,
     request_id: str,
     max_assets: int = 6,
+    usage_totals: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     assets: list[dict[str, Any]] = []
     provider_image_count = 0
@@ -244,7 +257,11 @@ def generate_visual_assets_from_docs(
         slide_title = slide["slide_title"]
         item = slide["item"]
         kind = _visual_request_kind(item)
-        if kind == "provider_image" and provider_image_count < _MAX_PROVIDER_IMAGE_ASSETS:
+        if (
+            kind == "provider_image"
+            and provider is not None
+            and provider_image_count < _MAX_PROVIDER_IMAGE_ASSETS
+        ):
             prompt = _build_image_prompt(
                 slide_title=slide_title,
                 title=title,
@@ -252,12 +269,27 @@ def generate_visual_assets_from_docs(
                 item=item,
             )
             try:
-                generated = provider.generate_visual_asset(
-                    prompt,
-                    request_id=request_id,
-                    size="1536x1024",
-                    style="natural",
-                )
+                try:
+                    generated = provider.generate_visual_asset(
+                        prompt,
+                        request_id=request_id,
+                        size="1536x1024",
+                        style="natural",
+                    )
+                finally:
+                    if usage_totals is not None:
+                        usage = provider.consume_usage_tokens() or {}
+                        usage_totals["provider_calls"] = (
+                            usage_totals.get("provider_calls", 0) + 1
+                        )
+                        for key in (
+                            "prompt_tokens",
+                            "output_tokens",
+                            "total_tokens",
+                        ):
+                            usage_totals[key] = usage_totals.get(key, 0) + int(
+                                usage.get(key, 0) or 0
+                            )
                 raw = generated.get("data", b"")
                 media_type = str(generated.get("media_type", "image/png") or "image/png")
                 if isinstance(raw, bytes) and raw:

@@ -11,8 +11,15 @@ import logging
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.tenant import require_tenant_id
+
+if TYPE_CHECKING:
+    from fastapi import Request
+
+    from app.providers.base import Provider
+    from app.storage.state_backend import StateBackend
 
 _log = logging.getLogger("decisiondoc.generate")
 _DECISION_COUNCIL_APPLIED_BUNDLE_IDS = {
@@ -28,14 +35,20 @@ def _record_usage_sync(
     tokens_input: int,
     tokens_output: int,
     data_dir: Path,
+    state_backend: "StateBackend | None" = None,
+    event_type: str = "doc.generate",
 ) -> None:
-    """Record a usage event to the billing/metering store (fire-and-forget)."""
+    """Record a usage event against the same state authority as the request."""
     from app.storage.usage_store import UsageStore, UsageEvent
     from app.storage.billing_store import get_billing_store
     import uuid as _uuid
     from datetime import datetime as _datetime, timezone as _timezone
 
-    plan = get_billing_store(tenant_id, data_dir=data_dir).get_plan()
+    plan = get_billing_store(
+        tenant_id,
+        data_dir=data_dir,
+        backend=state_backend,
+    ).get_plan()
     tokens_total = tokens_input + tokens_output
     cost = (tokens_total / 1000) * plan.price_per_1k_tokens if tokens_total > 0 else 0.0
 
@@ -44,7 +57,7 @@ def _record_usage_sync(
         tenant_id=tenant_id,
         user_id=user_id,
         timestamp=_datetime.now(_timezone.utc).isoformat(),
-        event_type="doc.generate",
+        event_type=event_type,
         bundle_id=bundle_id,
         tokens_input=tokens_input,
         tokens_output=tokens_output,
@@ -53,7 +66,62 @@ def _record_usage_sync(
         model=model,
         request_id=request_id,
     )
-    UsageStore(data_dir, tenant_id=tenant_id).record(event)
+    UsageStore(
+        data_dir,
+        tenant_id=tenant_id,
+        backend=state_backend,
+    ).record(event)
+
+
+def record_direct_provider_usage(
+    request: "Request",
+    provider: "Provider",
+    *,
+    bundle_id: str,
+    event_type: str = "doc.generate",
+    extra_tokens: dict[str, int] | None = None,
+) -> None:
+    """Persist usage for a route that calls a provider outside GenerationService."""
+    consume_usage = getattr(provider, "consume_usage_tokens", None)
+    tokens = consume_usage() if callable(consume_usage) else {}
+    tokens = tokens or {}
+    extra_tokens = extra_tokens or {}
+    _record_usage_sync(
+        tenant_id=getattr(request.state, "tenant_id", "system") or "system",
+        user_id=getattr(request.state, "user_id", "") or "",
+        bundle_id=bundle_id,
+        request_id=request.state.request_id,
+        model=provider.name,
+        tokens_input=(tokens.get("prompt_tokens", 0) or 0)
+        + (extra_tokens.get("prompt_tokens", 0) or 0),
+        tokens_output=(tokens.get("output_tokens", 0) or 0)
+        + (extra_tokens.get("output_tokens", 0) or 0),
+        data_dir=request.app.state.data_dir,
+        state_backend=request.app.state.state_backend,
+        event_type=event_type,
+    )
+
+
+def record_named_provider_usage(
+    request: "Request",
+    *,
+    model: str,
+    bundle_id: str,
+    event_type: str = "doc.generate",
+) -> None:
+    """Persist a zero-token event when a service owns the provider instance."""
+    _record_usage_sync(
+        tenant_id=getattr(request.state, "tenant_id", "system") or "system",
+        user_id=getattr(request.state, "user_id", "") or "",
+        bundle_id=bundle_id,
+        request_id=request.state.request_id,
+        model=model,
+        tokens_input=0,
+        tokens_output=0,
+        data_dir=request.app.state.data_dir,
+        state_backend=request.app.state.state_backend,
+        event_type=event_type,
+    )
 
 
 # ── Fine-tune context capture ─────────────────────────────────────────────────

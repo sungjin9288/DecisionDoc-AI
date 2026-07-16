@@ -25,8 +25,10 @@ from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
 from app.dependencies import get_tenant_id
+from app.middleware.billing import acquire_billing_admission
 from app.providers.factory import get_provider_for_capability
 from app.schemas import PromoteKnowledgeReferenceRequest, UpdateKnowledgeMetadataRequest
+from app.services.generation.context_store import record_direct_provider_usage
 
 router = APIRouter(tags=["knowledge"])
 _log = logging.getLogger("decisiondoc.knowledge.router")
@@ -151,26 +153,72 @@ async def upload_knowledge_document(
         text = extract_text_with_ai_fallback(
             filename,
             raw,
-            provider=get_provider_for_capability("attachment"),
+            provider=None,
             request_id=getattr(request.state, "request_id", ""),
         )
-    except AttachmentError as exc:
-        raise HTTPException(422, detail=str(exc)) from exc
+    except AttachmentError:
+        attachment_provider = get_provider_for_capability("attachment")
+        admission_lock, rejection = await acquire_billing_admission(request)
+        if rejection is not None:
+            return rejection
+        attachment_usage: dict[str, int] = {}
+        try:
+            text = extract_text_with_ai_fallback(
+                filename,
+                raw,
+                provider=attachment_provider,
+                request_id=getattr(request.state, "request_id", ""),
+                usage_totals=attachment_usage,
+            )
+        except AttachmentError as provider_exc:
+            raise HTTPException(422, detail=str(provider_exc)) from provider_exc
+        finally:
+            try:
+                if attachment_usage.get("provider_calls", 0) > 0:
+                    record_direct_provider_usage(
+                        request,
+                        attachment_provider,
+                        bundle_id="knowledge.attachment",
+                        extra_tokens=attachment_usage,
+                    )
+            finally:
+                if admission_lock is not None:
+                    admission_lock.release()
 
     # 스타일 분석 (옵션)
     style_profile: dict = {}
+    style_provider = None
     if analyze_style.strip() in ("1", "true", "yes"):
+        style_lock, rejection = await acquire_billing_admission(request)
+        if rejection is not None:
+            return rejection
+        style_usage: dict[str, int] = {}
         try:
             from app.services.style_analyzer import analyze_document_style
-            provider = get_provider_for_capability("generation")
+            style_provider = get_provider_for_capability("generation")
             style_profile = await analyze_document_style(
                 filename=filename,
                 raw=raw,
                 bundle_id="",
-                provider=provider,
+                provider=style_provider,
+                usage_totals=style_usage,
             )
         except Exception as exc:
             _log.warning("[Knowledge] Style analysis failed for %s: %s", filename, exc)
+        try:
+            if (
+                style_provider is not None
+                and style_usage.get("provider_calls", 0) > 0
+            ):
+                record_direct_provider_usage(
+                    request,
+                    style_provider,
+                    bundle_id="knowledge.style-analysis",
+                    extra_tokens=style_usage,
+                )
+        finally:
+            if style_lock is not None:
+                style_lock.release()
 
     # 저장
     tag_list = _parse_csv_list(tags)

@@ -196,6 +196,8 @@ class GenerationCoreMixin:
         timer = Timer()
         cache_enabled = env_is_enabled("DECISIONDOC_CACHE_ENABLED")
         cache_hit = False
+        provider_attempted = False
+        usage_totals: dict[str, int] = {}
 
         bundle: dict[str, Any]
         cache_path = self._cache_path(
@@ -204,18 +206,48 @@ class GenerationCoreMixin:
             payload,
             tenant_id=tenant_id,
         )
-        if cache_enabled and cache_path.exists() and self._is_cache_fresh(cache_path):
-            cached = self._try_read_cache(cache_path)
-            if cached is not None:
-                bundle = cached
-                cache_hit = True
-                self._validate_bundle_schema(bundle, bundle_spec)
+        try:
+            if cache_enabled and cache_path.exists() and self._is_cache_fresh(cache_path):
+                cached = self._try_read_cache(cache_path)
+                if cached is not None:
+                    bundle = cached
+                    cache_hit = True
+                    self._validate_bundle_schema(bundle, bundle_spec)
+                else:
+                    # Cache file is corrupt or unreadable — remove it before re-generating.
+                    try:
+                        cache_path.unlink()
+                    except OSError:
+                        pass
+                    provider_attempted = True
+                    bundle = self._call_and_prepare_bundle(
+                        provider,
+                        payload,
+                        request_id,
+                        timer,
+                        bundle_spec,
+                        tenant_id=tenant_id,
+                        usage_totals=usage_totals,
+                    )
             else:
-                # Cache file is corrupt or unreadable — remove it before re-generating.
-                try:
-                    cache_path.unlink()
-                except OSError:
-                    pass
+                # Inject web search context if available
+                if self._search_service is not None and self._search_service.is_available():
+                    query_parts = [
+                        str(payload.get("title", "")),
+                        str(payload.get("goal", "")),
+                        str(payload.get("industry", "")),
+                    ]
+                    query = " ".join(p for p in query_parts if p).strip()
+                    if query:
+                        search_results = self._search_service.search(query, num=5)
+                        if search_results:
+                            snippets = "\n".join(
+                                f"{i+1}. [{r.title}] {r.snippet}"
+                                for i, r in enumerate(search_results[:5])
+                            )
+                            payload["_search_context"] = snippets
+
+                provider_attempted = True
                 bundle = self._call_and_prepare_bundle(
                     provider,
                     payload,
@@ -223,36 +255,36 @@ class GenerationCoreMixin:
                     timer,
                     bundle_spec,
                     tenant_id=tenant_id,
+                    usage_totals=usage_totals,
                 )
-                self._write_cache_atomic(cache_path, bundle)
-        else:
-            # Inject web search context if available
-            if self._search_service is not None and self._search_service.is_available():
-                query_parts = [
-                    str(payload.get("title", "")),
-                    str(payload.get("goal", "")),
-                    str(payload.get("industry", "")),
-                ]
-                query = " ".join(p for p in query_parts if p).strip()
-                if query:
-                    search_results = self._search_service.search(query, num=5)
-                    if search_results:
-                        snippets = "\n".join(
-                            f"{i+1}. [{r.title}] {r.snippet}"
-                            for i, r in enumerate(search_results[:5])
-                        )
-                        payload["_search_context"] = snippets
+        finally:
+            if provider_attempted:
+                _record_usage_sync(
+                    tenant_id=tenant_id,
+                    user_id=payload.get("user_id", "") or "",
+                    bundle_id=bundle_type,
+                    request_id=request_id,
+                    model=provider.name,
+                    tokens_input=usage_totals.get("prompt_tokens", 0),
+                    tokens_output=usage_totals.get("output_tokens", 0),
+                    data_dir=self.data_dir,
+                    state_backend=self.state_backend,
+                )
 
-            bundle = self._call_and_prepare_bundle(
-                provider,
-                payload,
-                request_id,
-                timer,
-                bundle_spec,
+        if cache_hit:
+            _record_usage_sync(
                 tenant_id=tenant_id,
+                user_id=payload.get("user_id", "") or "",
+                bundle_id=bundle_type,
+                request_id=request_id,
+                model=provider.name,
+                tokens_input=0,
+                tokens_output=0,
+                data_dir=self.data_dir,
+                state_backend=self.state_backend,
             )
-            if cache_enabled:
-                self._write_cache_atomic(cache_path, bundle)
+        if cache_enabled and not cache_hit:
+            self._write_cache_atomic(cache_path, bundle)
 
         if self.storage is not None:
             self.storage.save_bundle(bundle_id, bundle)
@@ -268,8 +300,6 @@ class GenerationCoreMixin:
             raise EvalLintFailedError(lint_errors)
         with timer.measure("validator_ms"):
             validate_docs(docs, headings_override=bundle_spec.validator_headings_map())
-        usage_tokens = provider.consume_usage_tokens() if not cache_hit else None
-
         # ── Capture generation context for fine-tune collection ──────────────
         # system_prompt was captured in thread-local by build_bundle_prompt().
         # Collect it now (before spawning background thread) to avoid data races.
@@ -361,23 +391,6 @@ class GenerationCoreMixin:
                     exc,
                 )
 
-        # Record usage (fire-and-forget — don't fail generation on billing errors)
-        try:
-            _tokens = usage_tokens or {}
-            _user_id = payload.get("user_id", "") or ""
-            _record_usage_sync(
-                tenant_id=tenant_id,
-                user_id=_user_id,
-                bundle_id=bundle_type,
-                request_id=request_id,
-                model=provider.name,
-                tokens_input=_tokens.get("prompt_tokens", 0) or 0,
-                tokens_output=_tokens.get("output_tokens", 0) or 0,
-                data_dir=self.data_dir,
-            )
-        except Exception:
-            pass
-
         return {
             "docs": docs,
             "raw_bundle": bundle,
@@ -408,9 +421,14 @@ class GenerationCoreMixin:
                 "decision_council_target_bundle": decision_council_target_bundle,
                 "decision_council_applied_bundle": decision_council_applied_bundle,
                 "timings_ms": timer.durations_ms,
-                "llm_prompt_tokens": (usage_tokens or {}).get("prompt_tokens"),
-                "llm_output_tokens": (usage_tokens or {}).get("output_tokens"),
-                "llm_total_tokens": (usage_tokens or {}).get("total_tokens"),
+                "llm_prompt_tokens": usage_totals.get("prompt_tokens"),
+                "llm_output_tokens": usage_totals.get("output_tokens"),
+                "llm_total_tokens": (
+                    usage_totals.get("prompt_tokens", 0)
+                    + usage_totals.get("output_tokens", 0)
+                    if provider_attempted
+                    else None
+                ),
                 "applied_references": payload.get("_knowledge_ranked_documents", [])[:3],
             },
         }

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -30,6 +30,7 @@ ALLOWED_RECORDING_EXTENSIONS = {
     ".webm",
 }
 DEFAULT_GENERATION_BUNDLES = ["meeting_minutes_kr", "project_report_kr"]
+TRANSCRIPTION_FAILED_MESSAGE = "Meeting transcription provider request failed."
 
 
 class MeetingRecordingError(Exception):
@@ -119,6 +120,7 @@ class MeetingRecordingService:
         project_id: str,
         recording_id: str,
         language: str | None = None,
+        record_provider_usage: Callable[[str], None] | None = None,
     ) -> MeetingRecording:
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         if not api_key:
@@ -141,30 +143,47 @@ class MeetingRecordingService:
             recording_id=recording_id,
         )
 
+        provider_attempted = False
         try:
-            with self._create_client() as client:
-                response = client.post(
-                    f"{get_openai_api_base_url()}/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    data={
-                        "model": model,
-                        **({"language": language} if language else {}),
-                    },
-                    files={
-                        "file": (
-                            recording.filename,
-                            raw,
-                            recording.content_type or "application/octet-stream",
+            try:
+                with self._create_client() as client:
+                    provider_attempted = True
+                    response = client.post(
+                        f"{get_openai_api_base_url()}/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        data={
+                            "model": model,
+                            **({"language": language} if language else {}),
+                        },
+                        files={
+                            "file": (
+                                recording.filename,
+                                raw,
+                                recording.content_type or "application/octet-stream",
+                            )
+                        },
+                    )
+            finally:
+                if provider_attempted and record_provider_usage is not None:
+                    try:
+                        record_provider_usage(model)
+                    except Exception:
+                        self._recording_store.mark_transcription_failed(
+                            tenant_id=tenant_id,
+                            project_id=project_id,
+                            recording_id=recording_id,
+                            error_message=TRANSCRIPTION_FAILED_MESSAGE,
                         )
-                    },
-                )
+                        raise
             if response.status_code >= 400:
-                raise MeetingRecordingTranscriptionError(self._extract_openai_error(response))
+                raise MeetingRecordingTranscriptionError(TRANSCRIPTION_FAILED_MESSAGE)
 
             payload = response.json()
+            if not isinstance(payload, dict):
+                raise MeetingRecordingTranscriptionError(TRANSCRIPTION_FAILED_MESSAGE)
             transcript_text = str(payload.get("text") or "").strip()
             if not transcript_text:
-                raise MeetingRecordingTranscriptionError("OpenAI transcription response did not include transcript text.")
+                raise MeetingRecordingTranscriptionError(TRANSCRIPTION_FAILED_MESSAGE)
             return self._recording_store.save_transcript(
                 tenant_id=tenant_id,
                 project_id=project_id,
@@ -174,16 +193,15 @@ class MeetingRecordingService:
                 transcript_model=model,
             )
         except (httpx.HTTPError, json.JSONDecodeError, MeetingRecordingTranscriptionError) as exc:
-            message = str(exc) or "OpenAI transcription request failed."
             self._recording_store.mark_transcription_failed(
                 tenant_id=tenant_id,
                 project_id=project_id,
                 recording_id=recording_id,
-                error_message=message,
+                error_message=TRANSCRIPTION_FAILED_MESSAGE,
             )
-            if isinstance(exc, MeetingRecordingTranscriptionError):
-                raise
-            raise MeetingRecordingTranscriptionError(message) from exc
+            raise MeetingRecordingTranscriptionError(
+                TRANSCRIPTION_FAILED_MESSAGE
+            ) from exc
 
     def approve_recording(
         self,
@@ -297,19 +315,6 @@ class MeetingRecordingService:
         if bundle_type == "project_report_kr":
             return "회의 녹음 전사본을 바탕으로 경영진 또는 발주처 공유용 프로젝트 보고서를 작성한다."
         return "회의 녹음 전사본을 바탕으로 프로젝트 문서를 작성한다."
-
-    @staticmethod
-    def _extract_openai_error(response: httpx.Response) -> str:
-        try:
-            payload = response.json()
-        except json.JSONDecodeError:
-            return f"OpenAI transcription request failed with status {response.status_code}."
-        error = payload.get("error")
-        if isinstance(error, dict):
-            message = str(error.get("message") or "").strip()
-            if message:
-                return message
-        return f"OpenAI transcription request failed with status {response.status_code}."
 
     def _build_generation_context(self, recording: MeetingRecording, *, context_note: str = "") -> str:
         transcript_text = recording.transcript_text.strip()

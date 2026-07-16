@@ -25,6 +25,7 @@ from app.schemas import (
     DocumentOpsTrainingExecutionRequest,
 )
 from app.services.document_ops_service import DocumentOpsReviewConflictError
+from app.services.generation.context_store import record_direct_provider_usage
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
 
@@ -51,6 +52,11 @@ def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request
             payload.model_dump(),
             tenant_id=tenant_id,
             request_id=request.state.request_id,
+            record_provider_usage=lambda provider: record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="document-ops.agent-run",
+            ),
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

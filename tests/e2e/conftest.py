@@ -170,10 +170,18 @@ def live_server(tmp_path_factory):
     os.environ.pop("DECISIONDOC_API_KEY", None)
 
     from app.main import create_app
+    from app.storage.billing_store import get_billing_store
+
+    app = create_app()
+    get_billing_store(
+        "system",
+        data_dir=app.state.data_dir,
+        backend=app.state.state_backend,
+    ).update_plan("enterprise")
 
     port = _reserve_local_port()
     config = uvicorn.Config(
-        create_app(),
+        app,
         host="127.0.0.1",
         port=port,
         log_level="error",

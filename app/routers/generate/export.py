@@ -34,9 +34,10 @@ from app.ai_profiles.catalog import ensure_bundle_access
 from app.auth.api_key import require_api_key
 from app.dependencies import require_auth as _require_auth
 from app.maintenance.mode import require_not_maintenance
+from app.middleware.billing import acquire_billing_admission
 from app.observability.logging import log_event
 from app.observability.timing import Timer
-from app.providers.factory import get_provider_for_bundle
+from app.providers.factory import get_provider_for_bundle, get_provider_for_capability
 from app.schemas import (
     EditedExportRequest,
     GenerateExportResponse,
@@ -49,6 +50,9 @@ from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx_from_docs
+from app.services.generation.context_store import record_direct_provider_usage
+from app.services.visual_asset_service import requires_provider_visuals
+from app.storage.usage_store import UsageStoreError
 
 from app.routers.generate._shared import (
     _apply_generate_state,
@@ -171,22 +175,45 @@ def generate_pptx_endpoint(
         structured_slide_data = _build_structured_slide_data(result["raw_bundle"], payload.goal)
 
     if structured_slide_data is not None:
+        visual_docs = [
+            {
+                "doc_type": payload.bundle_type,
+                "slide_outline": structured_slide_data.get("slide_outline", []),
+            }
+        ]
+        max_visual_assets = min(
+            6,
+            max(1, len(structured_slide_data.get("slide_outline", []) or [])),
+        )
+        visual_provider = (
+            get_provider_for_bundle(payload.bundle_type, tenant_id)
+            if requires_provider_visuals(visual_docs, max_assets=max_visual_assets)
+            else None
+        )
+        visual_usage: dict[str, int] = {}
         try:
             visual_assets = _facade().generate_visual_assets_from_docs(
-                [
-                    {
-                        "doc_type": payload.bundle_type,
-                        "slide_outline": structured_slide_data.get("slide_outline", []),
-                    }
-                ],
+                visual_docs,
                 title=payload.title,
                 goal=payload.goal,
-                provider=get_provider_for_bundle(payload.bundle_type, tenant_id),
+                provider=visual_provider,
                 request_id=request_id,
-                max_assets=min(6, max(1, len(structured_slide_data.get("slide_outline", []) or []))),
+                max_assets=max_visual_assets,
+                usage_totals=visual_usage,
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("[VisualAssets] PPT visual asset generation failed: %s", exc)
+        if (
+            visual_provider is not None
+            and visual_usage.get("provider_calls", 0) > 0
+        ):
+            record_direct_provider_usage(
+                request,
+                visual_provider,
+                bundle_id=f"generation.visual-assets.{payload.bundle_type}",
+                event_type="api.call",
+                extra_tokens=visual_usage,
+            )
         pptx_bytes = _facade().build_pptx(
             structured_slide_data,
             title=payload.title,
@@ -219,14 +246,24 @@ def generate_visual_assets_endpoint(
 ) -> GenerateVisualAssetsResponse:
     """Generate reusable visual assets from slide_outline metadata."""
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+    provider = get_provider_for_bundle(payload.bundle_type, tenant_id)
+    visual_usage: dict[str, int] = {}
     assets = _facade().generate_visual_assets_from_docs(
         [doc.model_dump() for doc in payload.docs],
         title=payload.title,
         goal=payload.goal,
-        provider=get_provider_for_bundle(payload.bundle_type, tenant_id),
+        provider=provider,
         request_id=request.state.request_id,
         max_assets=payload.max_assets,
+        usage_totals=visual_usage,
     )
+    if visual_usage.get("provider_calls", 0) > 0:
+        record_direct_provider_usage(
+            request,
+            provider,
+            bundle_id=f"visual-assets.{payload.bundle_type}",
+            extra_tokens=visual_usage,
+        )
     return GenerateVisualAssetsResponse(
         title=payload.title,
         bundle_type=payload.bundle_type,
@@ -256,6 +293,8 @@ async def generate_stream(
     _mark_decision_council_handoff_context(payload, request, tenant_id=tenant_id)
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
+    worker_done = threading.Event()
+    request.state.billing_stream_worker_done = worker_done
 
     def _worker() -> None:
         try:
@@ -263,9 +302,12 @@ async def generate_stream(
             loop.call_soon_threadsafe(q.put_nowait, ("done", result))
         except Exception as exc:  # noqa: BLE001
             loop.call_soon_threadsafe(q.put_nowait, ("error", exc))
+        finally:
+            worker_done.set()
+
+    threading.Thread(target=_worker, daemon=True).start()
 
     async def _event_stream():
-        threading.Thread(target=_worker, daemon=True).start()
         _STEPS = [
             "AI가 문서를 생성하는 중...",
             "번들 스키마를 검증하는 중...",
@@ -360,7 +402,14 @@ async def generate_stream(
                         pass  # project link is non-critical
                 return
             else:  # error
-                err = json.dumps({"code": type(data).__name__, "message": str(data)})
+                if isinstance(data, UsageStoreError):
+                    error_payload = {
+                        "code": "USAGE_STATE_UNAVAILABLE",
+                        "message": "Usage state could not be verified.",
+                    }
+                else:
+                    error_payload = {"code": type(data).__name__, "message": str(data)}
+                err = json.dumps(error_payload)
                 yield f"event: error\ndata: {err}\n\n"
                 return
 
@@ -401,6 +450,7 @@ def generate_docx_endpoint(
         bundle_type=payload.bundle_type,
         tenant_id=tenant_id,
         request_id=request_id,
+        request=request,
     )
     docx_bytes = _facade().build_docx(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
@@ -447,6 +497,7 @@ async def generate_pdf_endpoint(
         bundle_type=payload.bundle_type,
         tenant_id=tenant_id,
         request_id=request_id,
+        request=request,
     )
     pdf_bytes = await build_pdf(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
@@ -529,6 +580,7 @@ def generate_hwp_endpoint(
         bundle_type=payload.bundle_type,
         tenant_id=tenant_id,
         request_id=request_id,
+        request=request,
     )
     hwp_bytes = build_hwp(result["docs"], title=payload.title, gov_options=None, visual_assets=visual_assets)
 
@@ -573,14 +625,47 @@ async def generate_export_edited_endpoint(
     encoded_title = urllib.parse.quote(safe_title, safe="")
     fmt = payload.format.lower().lstrip(".")
     gov_opts = _resolve_gov_options(payload.gov_options)
-    visual_assets = [asset.model_dump() for asset in payload.visual_assets] if payload.visual_assets else _generate_visual_assets_for_docs(
-        docs,
-        title=title,
-        goal="",
-        bundle_type=payload.bundle_type,
-        tenant_id=tenant_id,
-        request_id=request_id,
-    )
+    visual_provider = None
+    if payload.visual_assets:
+        visual_assets = [asset.model_dump() for asset in payload.visual_assets]
+    else:
+        provider_visuals_required = requires_provider_visuals(docs, max_assets=6)
+        admission_lock = None
+        visual_usage: dict[str, int] = {}
+        if provider_visuals_required:
+            admission_lock, rejection = await acquire_billing_admission(request)
+            if rejection is not None:
+                return rejection
+        try:
+            visual_provider = (
+                get_provider_for_capability("visual") if provider_visuals_required else None
+            )
+            visual_assets = _generate_visual_assets_for_docs(
+                docs,
+                title=title,
+                goal="",
+                bundle_type=payload.bundle_type,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                provider=visual_provider,
+                request=request,
+                record_usage=False,
+                max_assets=6,
+                usage_totals=visual_usage,
+            )
+            if (
+                visual_provider is not None
+                and visual_usage.get("provider_calls", 0) > 0
+            ):
+                record_direct_provider_usage(
+                    request,
+                    visual_provider,
+                    bundle_id=f"visual-assets.edited-export.{payload.bundle_type}",
+                    extra_tokens=visual_usage,
+                )
+        finally:
+            if admission_lock is not None:
+                admission_lock.release()
 
     if fmt == "docx":
         content = _facade().build_docx(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)

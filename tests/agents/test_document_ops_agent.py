@@ -42,6 +42,11 @@ class StaticJsonProvider(Provider):
         return {}
 
 
+class NamedRawProvider(RawTextProvider):
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
 def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     agent = DocumentOpsAgent(provider=MockProvider())
     result = agent.run(
@@ -65,6 +70,58 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     assert result.qa["hard_gate_pass"] is True
     assert result.trajectory is not None
     assert result.trajectory["skill"]["name"] == "policy-planning"
+
+
+def test_document_ops_agent_records_provider_attempt_before_propagating_failure() -> None:
+    provider = FailingProvider()
+    recorded: list[str] = []
+    agent = DocumentOpsAgent(provider=provider)
+
+    with pytest.raises(ProviderError, match="provider unavailable"):
+        agent.run(
+            DocumentOpsRequest(
+                task_type="decision_brief",
+                requirements={"title": "Provider failure metering"},
+            ),
+            request_id="agent-provider-failure",
+            tenant_id="system",
+            record_provider_usage=lambda used_provider: recorded.append(used_provider.name),
+        )
+
+    assert recorded == ["failing"]
+
+
+def test_document_ops_agent_resolves_lazy_provider_for_each_run(monkeypatch) -> None:
+    providers = [NamedRawProvider("provider-one"), NamedRawProvider("provider-two")]
+
+    def _next_provider(capability: str) -> Provider:
+        assert capability == "generation"
+        return providers.pop(0)
+
+    monkeypatch.setattr(
+        "app.providers.factory.get_provider_for_capability",
+        _next_provider,
+    )
+    agent = DocumentOpsAgent()
+    request = DocumentOpsRequest(
+        task_type="decision_brief",
+        requirements={"title": "Per-run provider isolation"},
+    )
+
+    first = agent.run(
+        request,
+        request_id="agent-provider-one",
+        tenant_id="tenant-one",
+    )
+    second = agent.run(
+        request,
+        request_id="agent-provider-two",
+        tenant_id="tenant-two",
+    )
+
+    assert first.provider_name == "provider-one"
+    assert second.provider_name == "provider-two"
+    assert providers == []
 
 
 def test_document_ops_agent_persists_trajectory_when_store_is_configured(tmp_path) -> None:

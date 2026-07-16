@@ -535,6 +535,7 @@ class BillingStore:
         summary = UsageStore(
             self._data_dir,
             tenant_id=self._tenant_id,
+            backend=self._backend,
         ).get_current_month()
         if summary is None:
             return 0.0

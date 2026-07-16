@@ -144,6 +144,7 @@ async def analyze_style_document(
 ):
     """Upload documents and extract style patterns via LLM analysis."""
     from app.providers.factory import get_provider_for_bundle
+    from app.services.generation.context_store import record_direct_provider_usage
     from app.services.style_analyzer import analyze_document_style
     from app.storage.style_store import StyleExample
 
@@ -158,12 +159,25 @@ async def analyze_style_document(
 
     for f in files:
         raw = await f.read()
+        usage_totals: dict[str, int] = {}
         try:
             analysis = await analyze_document_style(
-                f.filename, raw, bundle_id, provider
+                f.filename,
+                raw,
+                bundle_id,
+                provider,
+                usage_totals=usage_totals,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+        finally:
+            if usage_totals.get("provider_calls", 0) > 0:
+                record_direct_provider_usage(
+                    request,
+                    provider,
+                    bundle_id=f"style.analyze.{bundle_id or 'proposal_kr'}",
+                    extra_tokens=usage_totals,
+                )
 
         example = StyleExample(
             example_id=str(_uuid.uuid4()),

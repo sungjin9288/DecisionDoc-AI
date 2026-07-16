@@ -257,11 +257,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,132개**, **246개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,176개**, **247개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3132
-python3 scripts/count_readme_metrics.py --field test_files      # → 246
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3176
+python3 scripts/count_readme_metrics.py --field test_files      # → 247
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -290,7 +290,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,720 passed, 2 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,853 passed, 1 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -335,6 +335,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 생성 이력 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 회의 녹음 metadata/audio는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Audio SHA-256·크기는 읽기 전에 다시 확인하지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 이 검증 범위가 아닙니다.
 - 결제 권한 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 metered request를 `503`으로 차단하고 local HMAC 서명 계약을 검증했지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 Stripe checkout·cancel·provider-delivered webhook은 구현·검증 범위가 아닙니다.
+- 사용량 event log와 monthly summary는 local/S3 공통 backend에서 process-local lock으로 검증합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. 여러 프로세스의 distributed S3 transaction/CAS, exact reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
 - 스타일 프로필 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 style API와 prompt build를 중단하지만, mock provider는 LLM prompt builder를 호출하지 않으며 여러 프로세스의 distributed S3 compare-and-swap과 실제 provider 기반 style analysis는 구현·검증 범위가 아닙니다.
 - Feedback, eval evidence, runtime prompt override, fine-tune dataset/export와 model registry state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 provider selection을 중단하고 export bytes는 size/SHA-256을 다시 확인합니다. 자동 provider training은 기본 비활성이고 명시적 execution authority를 요구합니다. 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아니며 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
 - 공개 공유 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap과 운영 URL의 외부 접근성은 구현·검증 범위가 아닙니다.
@@ -352,4 +353,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,132 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,176 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

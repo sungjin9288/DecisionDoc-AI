@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any
+from typing import Any, Callable
 
 from app.services.report_quality_learning import (
     build_correction_artifact_from_snapshot,
@@ -110,6 +110,7 @@ class ReportWorkflowQualityMixin:
         focus: str = "보고서 품질 개선",
         additional_notes: str = "",
         capture_trajectory: bool = False,
+        record_provider_usage: Callable[[Any], None] | None = None,
     ) -> dict[str, Any]:
         rec = self._require_record(report_workflow_id, tenant_id=tenant_id)
         if rec.planning is None and not rec.slides:
@@ -124,6 +125,7 @@ class ReportWorkflowQualityMixin:
             payload,
             tenant_id=tenant_id,
             request_id=request_id,
+            record_provider_usage=record_provider_usage,
         )
         return {
             "report_type": "report_workflow_develop_quality_preview",

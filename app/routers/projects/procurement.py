@@ -206,6 +206,8 @@ async def import_project_procurement_g2b_endpoint(
 ) -> dict:
     """Attach a G2B opportunity to project-scoped procurement decision state."""
     from app.providers.factory import get_provider_for_bundle
+    from app.middleware.billing import acquire_billing_admission
+    from app.services.generation.context_store import record_direct_provider_usage
     from app.services.g2b_collector import fetch_announcement_detail
     from app.services.rfp_parser import parse_rfp_fields
 
@@ -234,8 +236,20 @@ async def import_project_procurement_g2b_endpoint(
 
     parsed_rfp_fields = payload.parsed_rfp_fields
     if parsed_rfp_fields is None and announcement.raw_text:
-        provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
-        parsed_rfp_fields = parse_rfp_fields(announcement.raw_text, provider=provider)
+        admission_lock, rejection = await acquire_billing_admission(request)
+        if rejection is not None:
+            return rejection
+        try:
+            provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
+            parsed_rfp_fields = parse_rfp_fields(announcement.raw_text, provider=provider)
+            record_direct_provider_usage(
+                request,
+                provider,
+                bundle_id="procurement.g2b-rfp-analysis",
+            )
+        finally:
+            if admission_lock is not None:
+                admission_lock.release()
     if parsed_rfp_fields is None:
         parsed_rfp_fields = {}
 

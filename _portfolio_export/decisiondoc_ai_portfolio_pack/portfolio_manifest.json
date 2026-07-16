@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "a39c3d9ed14e70ef4f432453285e375e78636a4c849bad1a36314bcedb79d1fa",
-      "size_bytes": 38808
+      "sha256": "70a1ebab367cae06ff1679e792d4f138f7f142d6289e149f4980946c1390900a",
+      "size_bytes": 39901
     },
     {
       "path": "docs/architecture.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "6aac359e73907d69bc12915f4b712db34804cc0fd4fbe53f399709adf61462a1",
-      "size_bytes": 17663
+      "sha256": "8ebfcd5f07632fc9baba1f77af49e03f78e835c6efc82338a248d1a307b9f5d9",
+      "size_bytes": 18261
     },
     {
       "path": "docs/interview-story.md",
@@ -80,8 +80,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "ebbbb3c453036cf704137c86efd2dc8ec8de07e09497fec00379193deaf01fcb",
-      "size_bytes": 67219
+      "sha256": "978d0894b8ec1a8c66cc81d86fc888f8fefd8e626756351b8ebfbcbea2f23bc5",
+      "size_bytes": 68783
     },
     {
       "path": "evidence/api-responses/bundles.json",

@@ -3,7 +3,32 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.providers.mock_provider import MockProvider
-from app.services.visual_asset_service import generate_visual_assets_from_docs
+from app.services.visual_asset_service import (
+    generate_visual_assets_from_docs,
+    requires_provider_visuals,
+)
+
+
+class _VisualUsageProvider(MockProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.visual_calls = 0
+        self.pending_usage: dict[str, int] | None = None
+
+    def generate_visual_asset(self, *args, **kwargs):
+        result = super().generate_visual_asset(*args, **kwargs)
+        self.visual_calls += 1
+        self.pending_usage = {
+            "prompt_tokens": self.visual_calls,
+            "output_tokens": self.visual_calls + 1,
+            "total_tokens": (self.visual_calls * 2) + 1,
+        }
+        return result
+
+    def consume_usage_tokens(self) -> dict[str, int] | None:
+        usage = self.pending_usage
+        self.pending_usage = None
+        return usage
 
 
 def _create_client(tmp_path, monkeypatch):
@@ -90,12 +115,15 @@ def test_generate_visual_assets_limits_provider_images_to_two():
         }
     ]
 
+    provider = _VisualUsageProvider()
+    usage_totals: dict[str, int] = {}
     assets = generate_visual_assets_from_docs(
         docs,
         title="이미지 캡 테스트",
         goal="provider image 상한을 확인한다.",
-        provider=MockProvider(),
+        provider=provider,
         request_id="req-visual-2",
+        usage_totals=usage_totals,
     )
 
     assert len(assets) == 3
@@ -104,6 +132,50 @@ def test_generate_visual_assets_limits_provider_images_to_two():
         "provider_image",
         "generated_svg",
     ]
+    assert provider.visual_calls == 2
+    assert usage_totals == {
+        "provider_calls": 2,
+        "prompt_tokens": 3,
+        "output_tokens": 5,
+        "total_tokens": 8,
+    }
+
+
+def test_generate_local_visual_assets_without_provider():
+    docs = [
+        {
+            "doc_type": "proposal_kr",
+            "slide_outline": [
+                {"title": "추진 일정", "visual_type": "타임라인"},
+            ],
+        }
+    ]
+
+    assets = generate_visual_assets_from_docs(
+        docs,
+        title="로컬 시각자료",
+        goal="외부 provider 없이 생성",
+        provider=None,
+        request_id="req-local-visual",
+    )
+
+    assert len(assets) == 1
+    assert assets[0]["source_kind"] == "generated_svg"
+
+
+def test_provider_visual_requirement_only_scans_assets_that_will_be_generated():
+    docs = [
+        {
+            "doc_type": "proposal_kr",
+            "slide_outline": [
+                {"title": "추진 일정", "visual_type": "타임라인"},
+                {"title": "현장 이미지", "visual_type": "현장 사진"},
+            ],
+        }
+    ]
+
+    assert requires_provider_visuals(docs, max_assets=1) is False
+    assert requires_provider_visuals(docs, max_assets=2) is True
 
 
 def test_generate_visual_assets_endpoint_returns_mixed_assets(tmp_path, monkeypatch):

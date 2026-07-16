@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.storage.usage_store import UsageEvent
+from app.storage.usage_store import UsageEvent, UsageStoreError
 from tests.async_helper import run_async
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -268,8 +268,9 @@ def test_usage_store_preserves_foreign_summary_and_stops_update(tmp_path):
     )
     source_before = summary_path.read_bytes()
 
-    assert store.get_current_month() is None
-    with pytest.raises(ValueError, match="summary tenant ownership mismatch"):
+    with pytest.raises(UsageStoreError, match="owned by another tenant"):
+        store.get_current_month()
+    with pytest.raises(UsageStoreError, match="owned by another tenant"):
         store.record(_make_event("tenant-a"))
 
     assert summary_path.read_bytes() == source_before

@@ -18,6 +18,7 @@ from app.services.generation_service import (
     provider_failure_retry_after_seconds,
 )
 from app.storage.base import StorageFailedError
+from app.storage.usage_store import UsageStoreError
 from app.services.validator import DocumentValidationError
 
 _log = logging.getLogger("decisiondoc.api.errors")
@@ -45,6 +46,15 @@ def _error_response(
 
 
 def install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(UsageStoreError)
+    async def usage_store_handler(request: Request, exc: UsageStoreError):  # noqa: ARG001
+        return _error_response(
+            request,
+            code="USAGE_STATE_UNAVAILABLE",
+            message="Usage state could not be verified.",
+            status_code=503,
+        )
+
     @app.exception_handler(MaintenanceModeError)
     async def maintenance_mode_handler(request: Request, exc: MaintenanceModeError):  # noqa: ARG001
         return _error_response(

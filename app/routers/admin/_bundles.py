@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id, require_admin
 from app.providers.factory import get_provider
+from app.services.generation.context_store import record_direct_provider_usage
 from app.storage.base import atomic_write_text
 
 router = APIRouter()
@@ -43,7 +44,13 @@ def expand_bundles(request: Request) -> dict:
         pattern_store=pattern_store,
         data_dir=data_dir,
     )
-    result = expander.analyze_and_expand()
+    result = expander.analyze_and_expand(
+        record_provider_usage=lambda active_provider: record_direct_provider_usage(
+            request,
+            active_provider,
+            bundle_id="admin.bundle-expansion",
+        )
+    )
     if result is None:
         unmatched_count = len(pattern_store.get_unmatched(limit=50))
         threshold = get_auto_expand_threshold()

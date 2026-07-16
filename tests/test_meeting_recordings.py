@@ -4,7 +4,11 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.meeting_recording_service import MeetingRecordingService
+from app.services.meeting_recording_service import (
+    MeetingRecordingService,
+    TRANSCRIPTION_FAILED_MESSAGE,
+)
+from app.storage.usage_store import UsageStore
 
 
 HEADERS = {"X-DecisionDoc-Api-Key": "test-key"}
@@ -199,6 +203,10 @@ def test_recording_can_be_transcribed_approved_and_generate_documents(tmp_path, 
     assert transcribe.status_code == 200
     assert transcribe.json()["recording"]["transcription_status"] == "completed"
     assert "일정 조정" in transcribe.json()["recording"]["transcript_text"]
+    usage = UsageStore(tmp_path, tenant_id="system").get_current_month()
+    assert usage is not None
+    assert usage.total_generations == 1
+    assert usage.by_bundle["meeting-recording.transcription"]["count"] == 1
 
     approve = client.post(
         f"/projects/{project_id}/recordings/{recording_id}/approve",
@@ -321,10 +329,11 @@ def test_generate_documents_rejects_unknown_bundle_type(tmp_path, monkeypatch):
     assert response.json()["detail"]["code"] == "meeting_recording_bundle_invalid"
 
 
-def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, monkeypatch):
+def test_transcribe_failure_marks_recording_failed_without_provider_details(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     client = _build_client(tmp_path, monkeypatch)
-    _install_transcription_failure_transport(client, error_message="upstream transcription failed")
+    provider_error = "secret response body http://127.0.0.1"
+    _install_transcription_failure_transport(client, error_message=provider_error)
     project_id = _create_project(client)
     upload = client.post(
         f"/projects/{project_id}/recordings",
@@ -341,6 +350,8 @@ def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, m
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "meeting_recording_transcription_failed"
+    assert response.json()["detail"]["message"] == TRANSCRIPTION_FAILED_MESSAGE
+    assert provider_error not in response.text
 
     detail = client.get(
         f"/projects/{project_id}/recordings/{recording_id}",
@@ -350,7 +361,21 @@ def test_transcribe_failure_marks_recording_failed_and_exposes_error(tmp_path, m
     payload = detail.json()["recording"]
     assert payload["transcription_status"] == "failed"
     assert payload["approval_status"] == "pending"
-    assert payload["transcript_error"] == "upstream transcription failed"
+    assert payload["transcript_error"] == TRANSCRIPTION_FAILED_MESSAGE
+    assert provider_error not in detail.text
+
+    client.app.state.meeting_recording_store.mark_transcription_failed(
+        tenant_id="system",
+        project_id=project_id,
+        recording_id=recording_id,
+        error_message=provider_error,
+    )
+    legacy_detail = client.get(
+        f"/projects/{project_id}/recordings/{recording_id}",
+        headers=HEADERS,
+    )
+    assert legacy_detail.json()["recording"]["transcript_error"] == TRANSCRIPTION_FAILED_MESSAGE
+    assert provider_error not in legacy_detail.text
 
 
 def test_transcribe_rejects_empty_transcript(tmp_path, monkeypatch):
@@ -381,7 +406,7 @@ def test_transcribe_rejects_empty_transcript(tmp_path, monkeypatch):
     payload = detail.json()["recording"]
     assert payload["transcription_status"] == "failed"
     assert payload["approval_status"] == "pending"
-    assert payload["transcript_error"] == "OpenAI transcription response did not include transcript text."
+    assert payload["transcript_error"] == TRANSCRIPTION_FAILED_MESSAGE
 
 
 def test_get_recording_endpoint_returns_404_for_missing_recording(tmp_path, monkeypatch):

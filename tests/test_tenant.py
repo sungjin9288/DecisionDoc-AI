@@ -3096,8 +3096,18 @@ def test_current_tenant_id_thread_local_set_by_generate_documents(tmp_path: Path
 
     captured_tid: list[str] = []
 
-    def _fake_cap(provider, payload, request_id, timer, bundle_spec, *, tenant_id):
+    def _fake_cap(
+        provider,
+        payload,
+        request_id,
+        timer,
+        bundle_spec,
+        *,
+        tenant_id,
+        usage_totals=None,
+    ):
         assert tenant_id == "acme-tenant"
+        assert usage_totals == {}
         captured_tid.append(getattr(_current_tenant_id, "value", "NOT_SET"))
         return mock_bundle
 

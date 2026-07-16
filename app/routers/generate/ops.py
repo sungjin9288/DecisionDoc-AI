@@ -36,6 +36,7 @@ from app.schemas import (
     OpsPostDeployRunRequest,
     OpsPostDeployRunResponse,
 )
+from app.services.generation.context_store import record_direct_provider_usage
 from app.routers.generate._shared import (
     _auto_improve_if_needed,
     _build_procurement_attachment_context,
@@ -255,15 +256,23 @@ async def parse_rfp_endpoint(
         raise HTTPException(status_code=422, detail="파일이 없거나 비어 있습니다.")
 
     provider = get_provider_for_bundle("rfp_analysis_kr", tenant_id)
+    attachment_usage: dict[str, int] = {}
     combined = _facade().extract_multiple(
         file_data,
         provider=provider,
         request_id=request_id,
+        usage_totals=attachment_usage,
     )
     procurement_context = _build_procurement_attachment_context(file_data)
     parse_input = procurement_context + "\n\n" + combined if procurement_context else combined
     fields = parse_rfp_fields(parse_input, provider=provider, request_id=request_id)
     structured_context = build_rfp_context(combined[:6_000], normalized_context=procurement_context)
+    record_direct_provider_usage(
+        request,
+        provider,
+        bundle_id="ai.attachments.parse-rfp",
+        extra_tokens=attachment_usage,
+    )
 
     return {
         "extracted_fields": fields,

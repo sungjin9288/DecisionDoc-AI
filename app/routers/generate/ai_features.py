@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,6 +31,8 @@ from app.dependencies import get_tenant_id
 from app.maintenance.mode import require_not_maintenance
 from app.providers.factory import get_provider_for_bundle, get_provider_for_capability
 from app.schemas import FreeformRequest, GenerateRequest, SectionRewriteRequest
+from app.services.generation.context_store import record_direct_provider_usage
+from app.storage.usage_store import UsageStoreError
 
 from app.routers.generate._shared import (
     _ensure_procurement_bundle_enabled,
@@ -70,15 +73,41 @@ async def rewrite_section_endpoint(
         "Keep the same language (Korean) as the original."
     )
 
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: provider.generate_raw(
-            prompt,
-            request_id=request_id,
-            max_output_tokens=1500,
-        ),
-    )
+    worker_done = threading.Event()
+    request.state.billing_provider_worker_done = worker_done
+
+    def _rewrite_and_record() -> str:
+        try:
+            return provider.generate_raw(
+                prompt,
+                request_id=request_id,
+                max_output_tokens=1500,
+            )
+        finally:
+            try:
+                record_direct_provider_usage(
+                    request,
+                    provider,
+                    bundle_id=f"ai.rewrite-section.{body.bundle_id}",
+                )
+            finally:
+                worker_done.set()
+
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(None, _rewrite_and_record)
+    except UsageStoreError:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Section rewrite provider request failed request_id=%s provider=%s",
+            request_id,
+            provider.name,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider 요청에 실패했습니다.",
+        ) from exc
     return {"rewritten": result}
 
 
@@ -103,13 +132,30 @@ def generate_sketch_endpoint(
     ensure_bundle_access(request, payload.bundle_type)
     bundle_spec = get_bundle_spec(payload.bundle_type)
     provider = get_provider_for_bundle(payload.bundle_type, tenant_id)
-    result = generate_sketch(
-        payload.model_dump(),
-        provider,
-        bundle_spec,
-        search_service=search_service,
-        request_id=request_id,
-    )
+    try:
+        result = generate_sketch(
+            payload.model_dump(),
+            provider,
+            bundle_spec,
+            search_service=search_service,
+            request_id=request_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Sketch provider request failed request_id=%s provider=%s",
+            request_id,
+            provider.name,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider 요청에 실패했습니다.",
+        ) from exc
+    finally:
+        record_direct_provider_usage(
+            request,
+            provider,
+            bundle_id=f"ai.sketch.{payload.bundle_type}",
+        )
 
     # Record request for pattern analysis
     try:
@@ -162,8 +208,18 @@ def generate_refine_endpoint(payload: dict, request: Request) -> dict:
     request_id = request.state.request_id
     try:
         refined = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=2000)
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"AI 처리 오류: {str(e)}")
+    except Exception as exc:
+        logger.warning(
+            "Refine provider request failed request_id=%s provider=%s",
+            request_id,
+            provider.name,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider 요청에 실패했습니다.",
+        ) from exc
+    finally:
+        record_direct_provider_usage(request, provider, bundle_id="ai.refine")
 
     return {
         "refined_content": refined.strip(),
@@ -271,8 +327,18 @@ def generate_summary_endpoint(payload: dict, request: Request) -> dict:
     request_id = request.state.request_id
     try:
         summary = provider.generate_raw(prompt, request_id=request_id, max_output_tokens=500)
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"AI 처리 오류: {str(e)}")
+    except Exception as exc:
+        logger.warning(
+            "Summary provider request failed request_id=%s provider=%s",
+            request_id,
+            provider.name,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider 요청에 실패했습니다.",
+        ) from exc
+    finally:
+        record_direct_provider_usage(request, provider, bundle_id="ai.summary")
 
     return {
         "summary": summary.strip(),
@@ -403,7 +469,7 @@ def generate_review_endpoint(payload: dict, request: Request) -> dict:
         data = json.loads(match.group())
         score = int(data.get("score", 75))
         score = max(0, min(100, score))
-        return {
+        result = {
             "score": score,
             "grade": data.get("grade", _score_to_grade(score)),
             "strengths": data.get("strengths", [])[:5],
@@ -414,9 +480,8 @@ def generate_review_endpoint(payload: dict, request: Request) -> dict:
         }
     except Exception as e:
         logger.warning(f"Review generation failed: {e}")
-        # Fallback: return heuristic review
         score = _heuristic_score(content)
-        return {
+        result = {
             "score": score,
             "grade": _score_to_grade(score),
             "strengths": ["구조화된 내용", "명확한 목적"],
@@ -425,6 +490,8 @@ def generate_review_endpoint(payload: dict, request: Request) -> dict:
             "content_length": len(content),
             "request_id": request_id,
         }
+    record_direct_provider_usage(request, provider, bundle_id="ai.review")
+    return result
 
 
 @router.post(
@@ -468,8 +535,18 @@ def generate_translate_endpoint(payload: dict, request: Request) -> dict:
         translated = provider.generate_raw(
             prompt, request_id=request_id, max_output_tokens=4000
         )
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"AI 처리 오류: {str(e)}")
+    except Exception as exc:
+        logger.warning(
+            "Translation provider request failed request_id=%s provider=%s",
+            request_id,
+            provider.name,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider 요청에 실패했습니다.",
+        ) from exc
+    finally:
+        record_direct_provider_usage(request, provider, bundle_id="ai.translate")
 
     return {
         "translated_content": translated.strip(),

@@ -14,6 +14,7 @@ from fastapi import HTTPException, Request
 from app.services.decision_council_service import (
     describe_procurement_council_document_status,
 )
+from app.services.meeting_recording_service import TRANSCRIPTION_FAILED_MESSAGE
 from app.services.procurement_review_handoff import (
     describe_procurement_review_document_status,
 )
@@ -40,8 +41,15 @@ def _load_pdf_builder():
     return _build_pdf
 
 
-def _serialize_meeting_recording_summary(recording) -> dict:
+def _serialize_meeting_recording(recording) -> dict:
     payload = asdict(recording)
+    if payload.get("transcript_error"):
+        payload["transcript_error"] = TRANSCRIPTION_FAILED_MESSAGE
+    return payload
+
+
+def _serialize_meeting_recording_summary(recording) -> dict:
+    payload = _serialize_meeting_recording(recording)
     transcript = payload.pop("transcript_text", "") or ""
     payload["transcript_preview"] = transcript[:400]
     payload["has_transcript"] = bool(transcript.strip())

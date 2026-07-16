@@ -89,6 +89,7 @@ def extract_text_with_ai_fallback(
     *,
     provider: Any | None = None,
     request_id: str = "",
+    usage_totals: dict[str, int] | None = None,
 ) -> str:
     """Extract text locally first, then fall back to provider OCR/vision when needed.
 
@@ -105,10 +106,25 @@ def extract_text_with_ai_fallback(
         if provider is None or not _should_try_provider_fallback(filename, exc):
             raise
         try:
-            text = provider.extract_attachment_text(filename, raw, request_id=request_id)
+            try:
+                text = provider.extract_attachment_text(
+                    filename,
+                    raw,
+                    request_id=request_id,
+                )
+            finally:
+                if usage_totals is not None:
+                    usage = provider.consume_usage_tokens() or {}
+                    usage_totals["provider_calls"] = (
+                        usage_totals.get("provider_calls", 0) + 1
+                    )
+                    for key in ("prompt_tokens", "output_tokens", "total_tokens"):
+                        usage_totals[key] = usage_totals.get(key, 0) + int(
+                            usage.get(key, 0) or 0
+                        )
         except Exception as provider_exc:
             raise AttachmentError(
-                f"{filename}: 이미지/PDF OCR·비전 추출 실패 ({provider_exc})"
+                f"{filename}: 이미지/PDF OCR·비전 추출 실패"
             ) from provider_exc
         if not text.strip():
             raise AttachmentError(f"{filename}: OCR/비전 추출 결과가 비어 있습니다")
@@ -214,6 +230,7 @@ def extract_multiple(
     *,
     provider: Any | None = None,
     request_id: str = "",
+    usage_totals: dict[str, int] | None = None,
 ) -> str:
     """Extract text from multiple files with a global character cap.
 
@@ -236,12 +253,12 @@ def extract_multiple(
                 raw,
                 provider=provider,
                 request_id=request_id,
+                usage_totals=usage_totals,
             )
         except AttachmentError as exc:
             parts.append(f"[첨부파일: {filename}]\n⚠️ {exc}")
             _log.warning("[Attachment] %s", exc)
             continue
-
         remaining = MAX_TOTAL_CHARS - total
         if remaining <= 0:
             _log.warning(
