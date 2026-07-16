@@ -55,6 +55,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 참고 문서 index, 본문과 style profile은 local `data/tenants/<tenant_id>/knowledge/<project_id>/` 또는 같은 relative path의 S3 state object에 저장한다.
   - Tenant/project identity와 exact metadata schema를 검증하고 본문·style bytes를 size와 SHA-256으로 index에 결속한다. Malformed/invalid UTF-8 JSON, duplicate key·identity, missing·unexpected·orphan object와 binding drift는 knowledge API, generation context, procurement 평가, report promotion을 중단하며 원본 bytes를 보존한다.
   - 동일 process의 read-modify-write는 logical index 기준 shared lock으로 직렬화한다. 여러 S3 object를 아우르는 distributed transaction/compare-and-swap은 현재 보장 범위가 아니다.
+- G2B 즐겨찾기 상태
+  - 공고 즐겨찾기는 local `data/tenants/<tenant_id>/g2b_bookmarks.json` 또는 같은 relative path의 S3 state object에 저장한다. 내부 owner metadata는 현재 tenant/user로 기록하고 API 응답에서는 제거한다.
+  - Tenant와 user bucket을 state 접근 전에 검증한다. Malformed/invalid UTF-8 JSON, duplicate key, invalid collection, owned record와 duplicate bid identity는 조회와 후속 추가·삭제를 중단하며 원본 bytes를 보존한다. Explicit foreign owner는 현재 user에게 노출하거나 변경하지 않는다.
+  - 독립 store 인스턴스의 read-modify-write는 process-local logical state lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 G2B API 성공은 현재 보장 범위가 아니다.
 - 회의 녹음 상태
   - 녹음 metadata와 audio는 local `data/tenants/<tenant_id>/meeting_recordings/<project_id>/<recording_id>/` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant/project/recording identity와 canonical audio path를 state 접근 전에 검증한다. Malformed metadata와 duplicate key는 조회·전사·승인을 중단하고 explicit foreign metadata는 현재 scope에 노출하지 않는다. Audio read는 persisted size와 SHA-256을 실제 bytes와 다시 대조한다.

@@ -98,6 +98,21 @@ KnowledgeStore(tenant_id, project_id, selected StateBackend)
 
 모든 consumer는 앱이 선택한 local/S3 `StateBackend`를 공유한다. Read는 index와 object를 함께 검증하고 malformed·partial·orphan state를 빈 지식으로 축소하지 않는다. 동일 process의 read-modify-write는 logical index lock으로 직렬화하지만 distributed S3 multi-object transaction/CAS는 현재 보장하지 않는다.
 
+## 데이터 흐름 — G2B 즐겨찾기
+
+```
+GET / POST / DELETE /g2b/bookmarks
+    │
+    ├─ signed tenant/user 확인
+    ▼
+BookmarkStore(tenant_id, selected StateBackend)
+    ├─ tenant별 g2b_bookmarks.json
+    ├─ user bucket과 bid_number identity 검증
+    └─ internal owner metadata는 저장하고 응답에서는 제거
+```
+
+Missing-state read는 object를 만들지 않는다. Malformed·invalid UTF-8 JSON, duplicate key·owned bid identity와 collection drift는 조회와 후속 변경을 중단하고 원본 bytes를 보존한다. Owner가 없는 기존 record는 tenant path와 user bucket 소유로 읽고, 다른 owner가 명시된 record는 숨긴 채 보존한다. 동일 process의 read-modify-write는 logical state lock으로 직렬화하지만 distributed S3 compare-and-swap은 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

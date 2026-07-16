@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone G2B bookmark state authority hardening
+
+- `BookmarkStore`는 tenant를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/g2b_bookmarks.json`을 사용한다. G2B bookmark route는 signed tenant/user와 앱 data root/backend를 명시적으로 전달한다.
+- Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-object JSON, duplicate key, invalid user collection, owned malformed record와 duplicate bid identity는 조회와 후속 add/remove를 fail closed로 중단하고 원본 bytes를 보존한다.
+- Owner 없는 기존 record는 path/user ownership으로 읽고 explicit foreign 또는 untrusted owner는 숨긴 채 보존한다. 독립 store/backend 인스턴스의 read-modify-write는 process-local logical state lock으로 local/fake-S3에서 직렬화한다.
+- H51 focused integrity gate는 `22 passed`, bookmark/state/infrastructure 확장 gate는 `219 passed`, full no-cost regression은 `3917 passed, 1 skipped, 4 deselected`다. 임시 mock/local uvicorn에서는 health, bookmark 생성·조회·삭제와 최종 빈 목록을 모두 `200`으로 확인하고 owner metadata가 응답에 없음을 확인했다. Provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Distributed S3 CAS, G2B live API, provider API, AWS runtime, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone project knowledge state authority hardening
 
 - `KnowledgeStore`는 tenant/project를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/knowledge/{project_id}/`를 사용한다. Knowledge API, generation context, procurement capability 평가와 report workflow promotion도 같은 backend를 명시적으로 전달한다.
