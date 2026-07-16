@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `a5de6ab` 기준 GitHub Actions CI `29460167062` success, CD `29460167052` success. CI는 `3198 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `492ae70` 기준 GitHub Actions CI `29462112767` success, CD `29462112731` success. CI는 `3227 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3226 passed, 2 skipped, 4 deselected
+# 2026-07-16 실측: 3249 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -98,6 +98,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-16 root-scoped `ProcurementReviewStore`의 packet/package read와 one-time completion을 caller tenant·project·packet SHA-256에 명시적으로 결속했다. Persisted record identity가 path scope와 다르거나 record가 malformed인 경우 direct lookup은 중단하고 tenant/project 목록에서는 원본을 보존한 채 제외한다. Project prefix는 canonical `{packet_sha256}/record.json`만 수용하며 중첩 alias를 노출하지 않는다. 같은 review path를 쓰는 독립 store 인스턴스는 process-local shared lock으로 idempotent prepare와 completion을 직렬화해 동시 completion 중 하나만 성공한다. H30 회귀는 unsafe tenant/project, forged record artifact access, tenant/project/hash drift, malformed record, local/fake-S3 재로드, concurrent prepare/completion과 production caller scope를 no-cost로 검증하며 distributed S3 CAS, provider API, G2B live API, AWS runtime, bid submission은 실행하지 않았다.
   - 2026-07-16 root-scoped `TenantStore`가 registry key와 persisted `tenant_id`를 다시 대조하고 unsafe tenant ID를 registry write와 middleware scope 선택 전에 거부하도록 했다. Foreign·malformed record는 tenant 조회·목록·custom hint·API-key 인증·변경에서 제외하고 원본을 보존하며, invalid top-level JSON과 duplicate key는 빈 registry로 복구하지 않고 모든 read-modify-write를 중단한다. 같은 `tenants.json`을 쓰는 독립 store 인스턴스는 process-local shared lock으로 create/update/system bootstrap을 직렬화하고, 중복 active API-key hash는 어느 tenant에도 인증하지 않는다. H31 회귀는 local/fake-S3 identity drift, 20-way concurrent create/bootstrap, admin·middleware·generation·security 계약을 no-cost로 검증하며 distributed S3 CAS, provider API, G2B live API, AWS runtime, 배포·학습·입찰 실행은 수행하지 않았다.
   - 2026-07-16 shared `StateBackend`가 빈 값, 절대경로, dot segment, 중복 separator, backslash와 control character를 canonical relative path로 수용하지 않도록 고정했다. Local backend는 configured root의 resolved boundary를 확인하고 경로 component와 prefix 아래 symlink를 거부한다. S3 backend는 adjacent prefix alias를 결과에서 제외하고 continuation token을 검증하며 전체 page를 순회한 뒤 canonical key만 정렬·중복 제거해 반환한다. H32 회귀는 local escape·symlink, fake-S3 alias·pagination·malformed key를 no-cost로 검증하며 distributed S3 CAS, provider API, G2B live API, AWS runtime과 배포·학습·입찰 실행은 수행하지 않았다.
+  - 2026-07-16 `ProjectStore`와 `ApprovalStore`가 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 같은 `StateBackend` read/write 경로를 사용하도록 정리했다. Invalid top-level JSON, non-list document와 duplicate JSON key는 빈 목록으로 복구하지 않고 이후 쓰기를 중단한다. Explicit foreign·identity-malformed record는 조회·목록·변경에서 제외하되 원본에는 남기고, 같은 tenant의 owned duplicate ID는 fail closed로 처리한다. 같은 data root를 쓰는 독립 store 인스턴스는 process-local shared lock으로 project/approval read-modify-write를 직렬화한다. H33 회귀는 local/fake-S3 forged identity, malformed·duplicate state 보존과 20-way concurrent create를 no-cost로 검증하며 distributed S3 CAS와 외부 운영 실행은 수행하지 않았다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

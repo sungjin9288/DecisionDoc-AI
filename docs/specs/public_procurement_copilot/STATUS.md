@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project and approval state integrity hardening
+
+- `ProjectStore`와 `ApprovalStore`는 tenant ID를 persistence path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`를 통해 읽고 쓴다. Local mode의 별도 direct-write branch와 사용하지 않는 base-store inheritance는 제거했다.
+- Invalid JSON, non-list top-level state와 duplicate JSON key는 더 이상 빈 목록으로 복구되지 않으며 다음 create/update가 원본을 덮어쓰지 못한다. Explicit foreign·identity-malformed record는 조회·목록·변경에서 제외하되 원본에 보존한다.
+- 같은 tenant state의 owned duplicate project/approval ID는 fail closed로 중단한다. 같은 data root를 쓰는 독립 store 인스턴스는 process-local shared lock으로 read-modify-write를 직렬화하며 distributed S3 compare-and-swap을 주장하지 않는다.
+- Focused project/approval/state 회귀는 `240 passed`, tenant/generation/procurement/audit/infrastructure 확장 gate는 `666 passed`다. Full no-cost regression은 `3249 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone shared state backend integrity hardening
 
 - `StateBackend`의 모든 public operation은 빈 값, 절대경로, dot segment, 중복 separator, trailing separator, backslash와 control character를 canonical relative path로 수용하지 않는다.

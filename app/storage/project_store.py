@@ -2,19 +2,42 @@
 
 Documents are grouped by project with fiscal year archiving.
 Storage: data/tenants/{tenant_id}/projects.json (one file per tenant).
-Thread-safe via threading.Lock.
+Thread-safe within one process across store instances that share a data root.
 """
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from app.storage.base import BaseJsonStore, atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
+
+
+_project_locks: dict[Path, threading.RLock] = {}
+_project_locks_guard = threading.Lock()
+
+
+class ProjectStoreError(ValueError):
+    """Raised when persisted project state cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _project_locks_guard:
+        return _project_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProjectStoreError(f"Duplicate key in project state: {key!r}")
+        result[key] = value
+    return result
 
 
 def _now_iso() -> str:
@@ -67,24 +90,16 @@ class Project:
     tags: list[str]
 
 
-class ProjectStore(BaseJsonStore):
+class ProjectStore:
     """Thread-safe, tenant-scoped JSON-backed project history store."""
 
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
-        super().__init__()
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
-
-    def _get_path(self) -> Path:  # multi-tenant: use tenant-specific path helpers below
-        return self._base / "tenants"
-
-    def _path(self, tenant_id: str) -> Path:
-        p = self._base / "tenants" / tenant_id
-        if self._backend.kind == "local":
-            p.mkdir(parents=True, exist_ok=True)
-        return p / "projects.json"
+        self._lock = _lock_for_path(self._base / "tenants")
 
     def _relative_path(self, tenant_id: str) -> str:
+        tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "projects.json")
 
     def _load(self, tenant_id: str) -> list[dict]:
@@ -92,21 +107,26 @@ class ProjectStore(BaseJsonStore):
         if raw is None:
             return []
         try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return []
+            records = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ProjectStoreError("Invalid project state document") from exc
+        if not isinstance(records, list):
+            raise ProjectStoreError("Invalid project state document")
+        return records
 
     def _save(self, tenant_id: str, records: list[dict]) -> None:
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        if self._backend.kind == "local":
-            atomic_write_text(self._path(tenant_id), payload)
-            return
         self._backend.write_text(self._relative_path(tenant_id), payload)
 
     @staticmethod
     def _doc_from_dict(d: dict) -> ProjectDocument:
+        if not isinstance(d, dict):
+            raise ProjectStoreError("Invalid project document record")
+        doc_id = d.get("doc_id")
+        if not isinstance(doc_id, str) or not doc_id:
+            raise ProjectStoreError("Invalid project document identity")
         return ProjectDocument(
-            doc_id=d["doc_id"],
+            doc_id=doc_id,
             request_id=d.get("request_id", ""),
             bundle_id=d.get("bundle_id", ""),
             title=d.get("title", ""),
@@ -142,21 +162,61 @@ class ProjectStore(BaseJsonStore):
 
     @staticmethod
     def _from_dict(d: dict) -> Project:
-        docs = [ProjectStore._doc_from_dict(doc) for doc in d.get("documents", [])]
+        if not isinstance(d, dict):
+            raise ProjectStoreError("Invalid project record")
+        project_id = d.get("project_id")
+        tenant_id = d.get("tenant_id")
+        created_at = d.get("created_at")
+        documents = d.get("documents", [])
+        if not isinstance(project_id, str) or not project_id:
+            raise ProjectStoreError("Invalid project identity")
+        if not isinstance(tenant_id, str) or not isinstance(created_at, str):
+            raise ProjectStoreError("Invalid project identity")
+        if not isinstance(documents, list):
+            raise ProjectStoreError("Invalid project documents")
+
+        docs = [ProjectStore._doc_from_dict(doc) for doc in documents]
+        doc_ids = [doc.doc_id for doc in docs]
+        if len(doc_ids) != len(set(doc_ids)):
+            raise ProjectStoreError("Duplicate project document records")
         return Project(
-            project_id=d["project_id"],
-            tenant_id=d["tenant_id"],
+            project_id=project_id,
+            tenant_id=tenant_id,
             name=d.get("name", ""),
             description=d.get("description", ""),
             client=d.get("client", ""),
             contract_number=d.get("contract_number", ""),
             fiscal_year=d.get("fiscal_year", datetime.now().year),
             status=d.get("status", "active"),
-            created_at=d["created_at"],
-            updated_at=d.get("updated_at", d["created_at"]),
+            created_at=created_at,
+            updated_at=d.get("updated_at", created_at),
             documents=docs,
             tags=d.get("tags", []),
         )
+
+    def _owned_records(
+        self,
+        records: list[Any],
+        *,
+        tenant_id: str,
+    ) -> list[tuple[int, Project]]:
+        tenant_id = require_tenant_id(tenant_id)
+        owned: list[tuple[int, Project]] = []
+        project_ids: set[str] = set()
+        for index, raw_record in enumerate(records):
+            if not isinstance(raw_record, dict):
+                continue
+            if raw_record.get("tenant_id") != tenant_id:
+                continue
+            try:
+                project = self._from_dict(raw_record)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if project.project_id in project_ids:
+                raise ProjectStoreError("Duplicate project records")
+            project_ids.add(project.project_id)
+            owned.append((index, project))
+        return owned
 
     def _find(
         self,
@@ -165,14 +225,11 @@ class ProjectStore(BaseJsonStore):
         tenant_id: str,
     ) -> tuple[str, list[dict], int, Project] | None:
         """Locate a project only within the caller's tenant."""
+        tenant_id = require_tenant_id(tenant_id)
         records = self._load(tenant_id)
-        for i, raw_record in enumerate(records):
-            if raw_record.get("project_id") != project_id:
-                continue
-            project = self._from_dict(raw_record)
-            if project.tenant_id != tenant_id:
-                return None
-            return tenant_id, records, i, project
+        for index, project in self._owned_records(records, tenant_id=tenant_id):
+            if project.project_id == project_id:
+                return tenant_id, records, index, project
         return None
 
     def _flush(self, tenant_id: str, records: list[dict], idx: int, proj: Project) -> Project:
@@ -192,8 +249,10 @@ class ProjectStore(BaseJsonStore):
         contract_number: str = "",
         fiscal_year: int | None = None,
     ) -> Project:
+        tenant_id = require_tenant_id(tenant_id)
         with self._lock:
             records = self._load(tenant_id)
+            self._owned_records(records, tenant_id=tenant_id)
             now = _now_iso()
             proj = Project(
                 project_id=str(uuid.uuid4()),
@@ -224,8 +283,15 @@ class ProjectStore(BaseJsonStore):
         status: str | None = None,
         fiscal_year: int | None = None,
     ) -> list[Project]:
+        tenant_id = require_tenant_id(tenant_id)
         with self._lock:
-            records = [self._from_dict(r) for r in self._load(tenant_id)]
+            records = [
+                project
+                for _, project in self._owned_records(
+                    self._load(tenant_id),
+                    tenant_id=tenant_id,
+                )
+            ]
         if status:
             records = [r for r in records if r.status == status]
         if fiscal_year:
