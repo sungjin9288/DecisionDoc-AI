@@ -4,20 +4,22 @@ Extracted from app/main.py to keep the main module lean.
 """
 from __future__ import annotations
 
-import os
-import re as _re
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id
+from app.schemas import FineTuneExportRequest
 from app.storage.finetune_store import FineTuneStore, get_finetune_store
 
 router = APIRouter(prefix="/finetune", tags=["finetune"])
 
 
 def _store(request: Request) -> FineTuneStore:
-    return get_finetune_store(get_tenant_id(request))
+    return get_finetune_store(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
 
 
 @router.get("/stats")
@@ -30,40 +32,40 @@ def finetune_stats(request: Request) -> dict:
 def finetune_records(
     request: Request,
     bundle_id: str | None = None,
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[dict]:
     """Fine-tune 레코드 목록 반환 (최대 limit 건)."""
     return _store(request).get_records(bundle_id=bundle_id, limit=limit)
 
 
 @router.post("/export", dependencies=[Depends(require_ops_key)])
-def finetune_export(request: Request, payload: dict | None = None) -> dict:
+def finetune_export(
+    request: Request,
+    payload: FineTuneExportRequest | None = None,
+) -> dict:
     """Fine-tune 데이터셋 JSONL 내보내기."""
-    body = payload or {}
-    bundle_id_filter = body.get("bundle_id")
-    min_records = int(body.get("min_records", 10))
+    body = payload or FineTuneExportRequest()
     finetune_store = _store(request)
-    export_path = finetune_store.export_for_training(
-        bundle_id=bundle_id_filter,
-        min_records=min_records,
+    export = finetune_store.export_for_training(
+        bundle_id=body.bundle_id,
+        min_records=body.min_records,
     )
-    filename = os.path.basename(export_path) if export_path else None
     return {
-        "exported": export_path is not None,
-        "filename": filename,
-        "bundle_id": bundle_id_filter,
+        "exported": export is not None,
+        "filename": export.filename if export else None,
+        "bundle_id": body.bundle_id,
+        "record_count": export.record_count if export else 0,
+        "sha256": export.sha256 if export else None,
+        "size_bytes": export.size_bytes if export else 0,
     }
 
 
 @router.get("/export/{filename}", dependencies=[Depends(require_ops_key)])
 def finetune_download_export(filename: str, request: Request) -> Response:
     """내보낸 JSONL 파일 다운로드."""
-    if not _re.match(r"^[\w.\-]+\.jsonl$", filename):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-    export_path = _store(request).get_export_path(filename)
-    if export_path is None:
+    content = _store(request).get_export_bytes(filename)
+    if content is None:
         raise HTTPException(status_code=404, detail="Export file not found.")
-    content = export_path.read_bytes()
     return Response(
         content=content,
         media_type="application/x-ndjson",

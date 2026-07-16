@@ -1,297 +1,555 @@
-"""finetune_store.py — OpenAI fine-tune 데이터셋 저장소.
+"""Tenant-scoped fine-tune dataset and export storage."""
 
-고품질 생성 결과를 OpenAI fine-tuning format으로 축적합니다.
-
-Storage layout:
-    data/tenants/{tenant_id}/finetune/dataset.jsonl   — JSONL records (one per line)
-    data/tenants/{tenant_id}/finetune/metadata.json   — stats and export history
-
-Record shape per line:
-    {
-      "messages": [
-        {"role": "system",    "content": "<bundle prompt>"},
-        {"role": "user",      "content": "<title>\\n목표: <goal>\\n컨텍스트: <context>"},
-        {"role": "assistant", "content": "<generated markdown>"},
-      ],
-      "metadata": {
-        "bundle_id": str,
-        "request_id": str,
-        "heuristic_score": float,
-        "llm_score": float | None,
-        "user_rating": int | None,
-        "collected_at": str,
-        "source": "high_rating" | "high_eval_score" | "ab_test_winner"
-      }
-    }
-"""
 from __future__ import annotations
 
+import hashlib
 import json
-import functools
-import logging
+import math
 import os
+import re
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_lock import state_backend_identity, state_lock
 from app.tenant import require_tenant_id
 
-_log = logging.getLogger("decisiondoc.storage.finetune")
+
+class FineTuneStoreError(RuntimeError):
+    """Raised when persisted fine-tune state cannot be trusted."""
+
+
+@dataclass(frozen=True)
+class FineTuneExport:
+    filename: str
+    record_count: int
+    sha256: str
+    size_bytes: int
+
+
+_finetune_stores: dict[tuple[Any, ...], "FineTuneStore"] = {}
+_finetune_stores_guard = threading.Lock()
+_EXPORT_FILENAME = re.compile(
+    r"^export(?:_[A-Za-z0-9_-]+)?_\d{8}T\d{6}(?:\d{6})?Z?\.jsonl$"
+)
+_SOURCE_VALUES = frozenset({"high_rating", "high_eval_score", "ab_test_winner"})
+_MESSAGE_ROLES = frozenset({"system", "user", "assistant"})
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise FineTuneStoreError(f"Duplicate key in fine-tune state: {key!r}")
+        result[key] = value
+    return result
+
+
+def _utc_timestamp(value: object, *, field_name: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise FineTuneStoreError(f"Invalid fine-tune {field_name}")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise FineTuneStoreError(f"Invalid fine-tune {field_name}") from exc
+    if timestamp.tzinfo is None or timestamp.utcoffset() != timezone.utc.utcoffset(timestamp):
+        raise FineTuneStoreError(f"Invalid fine-tune {field_name}")
+    return value
 
 
 class FineTuneStore:
-    """Thread-safe JSONL store for OpenAI fine-tuning dataset collection."""
+    """Read, collect, and export fine-tune examples for one tenant."""
 
-    def __init__(self, data_dir: Path, *, tenant_id: str) -> None:
+    _RECORD_FIELDS = {"messages", "metadata"}
+    _METADATA_FIELDS = {
+        "bundle_id",
+        "request_id",
+        "heuristic_score",
+        "llm_score",
+        "user_rating",
+        "collected_at",
+        "source",
+        "tenant_id",
+    }
+    _INPUT_METADATA_FIELDS = _METADATA_FIELDS - {"collected_at"}
+    _REQUIRED_METADATA_FIELDS = {
+        "bundle_id",
+        "request_id",
+        "heuristic_score",
+        "collected_at",
+        "source",
+    }
+    _META_FIELDS = {"export_count", "exports", "tenant_id"}
+    _EXPORT_FIELDS = {
+        "filename",
+        "bundle_id",
+        "record_count",
+        "exported_at",
+        "sha256",
+        "size_bytes",
+    }
+    _LEGACY_EXPORT_FIELDS = _EXPORT_FIELDS - {"sha256", "size_bytes"}
+
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        tenant_id: str,
+        backend: StateBackend | None = None,
+    ) -> None:
         self._tenant_id = require_tenant_id(tenant_id)
-        self._dir = Path(data_dir) / "tenants" / self._tenant_id / "finetune"
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._dataset_path = self._dir / "dataset.jsonl"
-        self._meta_path    = self._dir / "metadata.json"
-        self._lock = threading.Lock()
+        self._data_dir = Path(data_dir)
+        self._relative_dir = str(Path("tenants") / self._tenant_id / "finetune")
+        self._dataset_relative_path = f"{self._relative_dir}/dataset.jsonl"
+        self._meta_relative_path = f"{self._relative_dir}/metadata.json"
+        self._backend = backend or get_state_backend(data_dir=self._data_dir)
+        self._lock = state_lock(
+            self._backend,
+            data_dir=self._data_dir,
+            relative_path=f"{self._relative_dir}/authority",
+        )
 
-    # ── Internal helpers ──────────────────────────────────────────────────
+    @property
+    def data_dir(self) -> Path:
+        return self._data_dir
+
+    @property
+    def backend(self) -> StateBackend:
+        return self._backend
+
+    @staticmethod
+    def _text(value: object, *, field_name: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            raise FineTuneStoreError(f"Invalid fine-tune {field_name}")
+        return value
+
+    @staticmethod
+    def _score(
+        value: object,
+        *,
+        field_name: str,
+        minimum: float,
+        maximum: float,
+        allow_none: bool,
+    ) -> float | None:
+        if value is None and allow_none:
+            return None
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not minimum <= float(value) <= maximum
+        ):
+            raise FineTuneStoreError(f"Invalid fine-tune {field_name}")
+        return float(value)
+
+    def _validate_messages(self, messages: object) -> None:
+        if not isinstance(messages, list) or not messages:
+            raise FineTuneStoreError("Invalid fine-tune messages")
+        for message in messages:
+            if not isinstance(message, dict) or set(message) != {"role", "content"}:
+                raise FineTuneStoreError("Invalid fine-tune message fields")
+            if message.get("role") not in _MESSAGE_ROLES:
+                raise FineTuneStoreError("Invalid fine-tune message role")
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise FineTuneStoreError("Invalid fine-tune message content")
+
+    def _validate_metadata(self, metadata: dict[str, Any], *, legacy: bool) -> None:
+        expected_fields = self._METADATA_FIELDS - ({"tenant_id"} if legacy else set())
+        if not self._REQUIRED_METADATA_FIELDS.issubset(metadata) or not set(metadata).issubset(
+            expected_fields
+        ):
+            raise FineTuneStoreError("Invalid fine-tune metadata fields")
+
+        self._text(metadata.get("request_id"), field_name="request identity")
+        self._text(metadata.get("bundle_id"), field_name="bundle identity")
+        self._score(
+            metadata.get("heuristic_score"),
+            field_name="heuristic score",
+            minimum=0.0,
+            maximum=1.0,
+            allow_none=False,
+        )
+        if "llm_score" in metadata:
+            self._score(
+                metadata.get("llm_score"),
+                field_name="LLM score",
+                minimum=0.0,
+                maximum=5.0,
+                allow_none=True,
+            )
+        if "user_rating" in metadata:
+            rating = metadata.get("user_rating")
+            if rating is not None and (
+                isinstance(rating, bool)
+                or not isinstance(rating, int)
+                or not 1 <= rating <= 5
+            ):
+                raise FineTuneStoreError("Invalid fine-tune user rating")
+        if metadata.get("source") not in _SOURCE_VALUES:
+            raise FineTuneStoreError("Invalid fine-tune source")
+        _utc_timestamp(metadata.get("collected_at"), field_name="collection timestamp")
+        if not legacy and metadata.get("tenant_id") != self._tenant_id:
+            raise FineTuneStoreError("Fine-tune record tenant ownership mismatch")
+
+    def _validate_owned_record(self, record: dict[str, Any], *, legacy: bool) -> None:
+        if set(record) != self._RECORD_FIELDS:
+            raise FineTuneStoreError("Invalid fine-tune record fields")
+        self._validate_messages(record.get("messages"))
+        metadata = record.get("metadata")
+        if not isinstance(metadata, dict):
+            raise FineTuneStoreError("Invalid fine-tune metadata")
+        self._validate_metadata(metadata, legacy=legacy)
+
+    def _owns(self, record: object) -> bool:
+        if not isinstance(record, dict) or not isinstance(record.get("metadata"), dict):
+            return False
+        return record["metadata"].get("tenant_id") in {None, self._tenant_id}
+
+    def _load_records(self) -> list[dict[str, Any]]:
+        raw = self._backend.read_text(self._dataset_relative_path)
+        if raw is None or raw == "":
+            return []
+
+        records: list[dict[str, Any]] = []
+        for line_number, line in enumerate(raw.splitlines(), 1):
+            if not line.strip():
+                raise FineTuneStoreError(
+                    f"Invalid blank line in fine-tune state at line {line_number}"
+                )
+            try:
+                record = json.loads(line, object_pairs_hook=_unique_object)
+            except (json.JSONDecodeError, TypeError, FineTuneStoreError) as exc:
+                raise FineTuneStoreError(
+                    f"Invalid fine-tune state document at line {line_number}"
+                ) from exc
+            if not isinstance(record, dict) or not isinstance(record.get("metadata"), dict):
+                raise FineTuneStoreError(f"Invalid fine-tune record at line {line_number}")
+
+            stored_tenant_id = record["metadata"].get("tenant_id")
+            if stored_tenant_id is not None:
+                if not isinstance(stored_tenant_id, str) or not stored_tenant_id:
+                    raise FineTuneStoreError("Invalid fine-tune tenant identity")
+                if stored_tenant_id != self._tenant_id:
+                    records.append(record)
+                    continue
+            self._validate_owned_record(record, legacy=stored_tenant_id is None)
+            records.append(record)
+
+        request_ids = [
+            record["metadata"]["request_id"]
+            for record in records
+            if self._owns(record)
+        ]
+        if len(request_ids) != len(set(request_ids)):
+            raise FineTuneStoreError("Duplicate request identity in fine-tune state")
+        return records
+
+    def _save_records(self, records: list[dict[str, Any]]) -> None:
+        text = "".join(
+            f"{json.dumps(record, ensure_ascii=False)}\n"
+            for record in records
+        )
+        self._backend.write_text(
+            self._dataset_relative_path,
+            text,
+            content_type="application/x-ndjson; charset=utf-8",
+        )
+
+    def _validate_export_entry(self, entry: object) -> None:
+        if not isinstance(entry, dict) or set(entry) not in (
+            self._EXPORT_FIELDS,
+            self._LEGACY_EXPORT_FIELDS,
+        ):
+            raise FineTuneStoreError("Invalid fine-tune export metadata fields")
+        filename = entry.get("filename")
+        if not isinstance(filename, str) or _EXPORT_FILENAME.fullmatch(filename) is None:
+            raise FineTuneStoreError("Invalid fine-tune export filename")
+        bundle_id = entry.get("bundle_id")
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="export bundle identity")
+        record_count = entry.get("record_count")
+        if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 1:
+            raise FineTuneStoreError("Invalid fine-tune export record count")
+        _utc_timestamp(entry.get("exported_at"), field_name="export timestamp")
+        if "sha256" in entry:
+            digest = entry.get("sha256")
+            size_bytes = entry.get("size_bytes")
+            if (
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or isinstance(size_bytes, bool)
+                or not isinstance(size_bytes, int)
+                or size_bytes <= 0
+            ):
+                raise FineTuneStoreError("Invalid fine-tune export integrity metadata")
 
     def _load_meta(self) -> dict[str, Any]:
-        if not self._meta_path.exists():
-            return {"export_count": 0, "exports": []}
+        raw = self._backend.read_text(self._meta_relative_path)
+        if raw is None:
+            return {"export_count": 0, "exports": [], "tenant_id": self._tenant_id}
         try:
-            meta = json.loads(self._meta_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {"export_count": 0, "exports": []}
-        if not isinstance(meta, dict):
-            return {"export_count": 0, "exports": []}
-        stored_tenant_id = meta.get("tenant_id")
-        if stored_tenant_id is not None and stored_tenant_id != self._tenant_id:
-            return {"export_count": 0, "exports": []}
-        return meta
+            meta = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, TypeError, FineTuneStoreError) as exc:
+            raise FineTuneStoreError("Invalid fine-tune metadata document") from exc
+        if not isinstance(meta, dict) or not set(meta).issubset(self._META_FIELDS):
+            raise FineTuneStoreError("Invalid fine-tune metadata fields")
+        if meta.get("tenant_id") not in {None, self._tenant_id}:
+            raise FineTuneStoreError("Fine-tune metadata tenant ownership mismatch")
+        export_count = meta.get("export_count")
+        exports = meta.get("exports")
+        if (
+            isinstance(export_count, bool)
+            or not isinstance(export_count, int)
+            or export_count < 0
+            or not isinstance(exports, list)
+            or export_count != len(exports)
+        ):
+            raise FineTuneStoreError("Invalid fine-tune export history")
+        for entry in exports:
+            self._validate_export_entry(entry)
+        filenames = [entry["filename"] for entry in exports]
+        if len(filenames) != len(set(filenames)):
+            raise FineTuneStoreError("Duplicate fine-tune export filename")
+        return {**meta, "tenant_id": self._tenant_id}
 
     def _save_meta(self, meta: dict[str, Any]) -> None:
         payload = {**meta, "tenant_id": self._tenant_id}
-        atomic_write_text(
-            self._meta_path,
+        self._backend.write_text(
+            self._meta_relative_path,
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-
-    def _assert_meta_owned(self) -> None:
-        if not self._meta_path.exists():
-            return
-        try:
-            meta = json.loads(self._meta_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return
-        if not isinstance(meta, dict):
-            return
-        stored_tenant_id = meta.get("tenant_id")
-        if stored_tenant_id is not None and stored_tenant_id != self._tenant_id:
-            raise ValueError("Fine-tune metadata tenant does not match store tenant")
-
-    def _owns(self, record: Any) -> bool:
-        if not isinstance(record, dict):
-            return False
-        metadata = record.get("metadata")
-        if not isinstance(metadata, dict):
-            return False
-        stored_tenant_id = metadata.get("tenant_id")
-        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
-
-    def _read_records_raw(self) -> list[dict[str, Any]]:
-        """Return all raw records from dataset.jsonl (no lock — caller holds lock)."""
-        if not self._dataset_path.exists():
-            return []
-        records: list[dict[str, Any]] = []
-        for line in self._dataset_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                _log.warning("Skipping malformed fine-tune record: %s", exc)
-        return records
-
-    def _read_owned_records(self) -> list[dict[str, Any]]:
-        return [record for record in self._read_records_raw() if self._owns(record)]
-
-    def _seen_request_ids(self) -> set[str]:
-        """Collect already-stored request_ids for deduplication."""
-        ids: set[str] = set()
-        for rec in self._read_owned_records():
-            rid = rec.get("metadata", {}).get("request_id")
-            if rid:
-                ids.add(rid)
-        return ids
-
-    # ── Public API ────────────────────────────────────────────────────────
 
     def save_record(
         self,
         messages: list[dict[str, str]],
         metadata: dict[str, Any],
     ) -> bool:
-        """Append one fine-tune record.
-
-        Deduplicates by ``metadata['request_id']``.
-        Returns True if saved, False if skipped (duplicate or invalid).
-        """
-        request_id = metadata.get("request_id", "")
-        if not request_id:
-            return False
+        """Append one validated example, deduplicated by request ID."""
+        if not isinstance(metadata, dict) or not set(metadata).issubset(
+            self._INPUT_METADATA_FIELDS
+        ):
+            raise FineTuneStoreError("Invalid fine-tune metadata fields")
         supplied_tenant_id = metadata.get("tenant_id")
         if supplied_tenant_id is not None and supplied_tenant_id != self._tenant_id:
             raise ValueError("Fine-tune record tenant does not match store tenant")
 
-        with self._lock:
-            if request_id in self._seen_request_ids():
-                return False  # already stored
-
-            stored_metadata = {
+        record = {
+            "messages": messages,
+            "metadata": {
                 **metadata,
                 "tenant_id": self._tenant_id,
                 "collected_at": datetime.now(timezone.utc).isoformat(),
-            }
-            record = {"messages": messages, "metadata": stored_metadata}
-            line = json.dumps(record, ensure_ascii=False)
-            with self._dataset_path.open("a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            },
+        }
+        self._validate_owned_record(record, legacy=False)
+
+        with self._lock:
+            self._load_meta()
+            records = self._load_records()
+            request_id = record["metadata"]["request_id"]
+            if any(
+                self._owns(existing)
+                and existing["metadata"]["request_id"] == request_id
+                for existing in records
+            ):
+                return False
+            records.append(record)
+            self._save_records(records)
         return True
 
     def get_stats(self) -> dict[str, Any]:
-        """Return dataset statistics.
-
-        Keys: total_records, per_bundle_count, avg_heuristic,
-              last_collected, export_count.
-        """
         with self._lock:
-            records = self._read_owned_records()
             meta = self._load_meta()
+            records = [record for record in self._load_records() if self._owns(record)]
 
-        total = len(records)
         per_bundle: dict[str, int] = {}
-        h_scores: list[float] = []
+        scores: list[float] = []
         last_collected: str | None = None
-
-        for rec in records:
-            m = rec.get("metadata", {})
-            bid = m.get("bundle_id", "unknown")
-            per_bundle[bid] = per_bundle.get(bid, 0) + 1
-            hs = m.get("heuristic_score")
-            if hs is not None:
-                h_scores.append(float(hs))
-            ts = m.get("collected_at")
-            if ts and (last_collected is None or ts > last_collected):
-                last_collected = ts
-
-        avg_h: float | None = round(sum(h_scores) / len(h_scores), 3) if h_scores else None
+        for record in records:
+            metadata = record["metadata"]
+            bundle_id = metadata["bundle_id"]
+            per_bundle[bundle_id] = per_bundle.get(bundle_id, 0) + 1
+            scores.append(float(metadata["heuristic_score"]))
+            timestamp = metadata["collected_at"]
+            if last_collected is None or timestamp > last_collected:
+                last_collected = timestamp
 
         return {
-            "total_records":    total,
+            "total_records": len(records),
             "per_bundle_count": per_bundle,
-            "avg_heuristic":    avg_h,
-            "last_collected":   last_collected,
-            "export_count":     meta.get("export_count", 0),
+            "avg_heuristic": round(sum(scores) / len(scores), 3) if scores else None,
+            "last_collected": last_collected,
+            "export_count": meta["export_count"],
         }
 
     def export_for_training(
         self,
         bundle_id: str | None = None,
         min_records: int = 10,
-    ) -> str | None:
-        """Export filtered records to a timestamped JSONL file for training.
+    ) -> FineTuneExport | None:
+        """Write a messages-only JSONL snapshot and bind it to export metadata."""
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
+        if isinstance(min_records, bool) or not isinstance(min_records, int) or min_records < 1:
+            raise FineTuneStoreError("Invalid fine-tune minimum record count")
 
-        Writes only the ``messages`` field (strips ``metadata``).
-        Returns the file path on success, None if fewer than ``min_records``.
-        """
         with self._lock:
-            records = self._read_owned_records()
+            meta = self._load_meta()
+            records = [record for record in self._load_records() if self._owns(record)]
             filtered = [
                 record
                 for record in records
-                if bundle_id is None
-                or record.get("metadata", {}).get("bundle_id") == bundle_id
+                if bundle_id is None or record["metadata"]["bundle_id"] == bundle_id
             ]
             if len(filtered) < min_records:
                 return None
 
-            self._assert_meta_owned()
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-            suffix = f"_{bundle_id}" if bundle_id else ""
+            safe_bundle = re.sub(r"[^A-Za-z0-9_-]", "_", bundle_id or "")[:80]
+            suffix = f"_{safe_bundle}" if safe_bundle else ""
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             filename = f"export{suffix}_{timestamp}.jsonl"
-            export_path = self._dir / filename
-            lines = [
-                json.dumps({"messages": record["messages"]}, ensure_ascii=False)
+            raw = "".join(
+                f"{json.dumps({'messages': record['messages']}, ensure_ascii=False)}\n"
                 for record in filtered
-            ]
-            atomic_write_text(export_path, "\n".join(lines) + "\n")
+            ).encode("utf-8")
+            digest = hashlib.sha256(raw).hexdigest()
+            relative_path = f"{self._relative_dir}/{filename}"
+            self._backend.write_bytes(
+                relative_path,
+                raw,
+                content_type="application/x-ndjson",
+            )
 
-            meta = self._load_meta()
-            meta["export_count"] = meta.get("export_count", 0) + 1
-            meta.setdefault("exports", []).append({
+            entry = {
                 "filename": filename,
                 "bundle_id": bundle_id,
                 "record_count": len(filtered),
                 "exported_at": datetime.now(timezone.utc).isoformat(),
-            })
+                "sha256": digest,
+                "size_bytes": len(raw),
+            }
+            meta["exports"].append(entry)
+            meta["export_count"] = len(meta["exports"])
             self._save_meta(meta)
+            return FineTuneExport(filename, len(filtered), digest, len(raw))
 
-        return str(export_path)
+    def _validate_export_content(self, raw: bytes, *, record_count: int) -> None:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise FineTuneStoreError("Invalid fine-tune export encoding") from exc
+        lines = text.splitlines()
+        if len(lines) != record_count or any(not line.strip() for line in lines):
+            raise FineTuneStoreError("Fine-tune export record count mismatch")
+        for line in lines:
+            try:
+                item = json.loads(line, object_pairs_hook=_unique_object)
+            except (json.JSONDecodeError, TypeError, FineTuneStoreError) as exc:
+                raise FineTuneStoreError("Invalid fine-tune export document") from exc
+            if not isinstance(item, dict) or set(item) != {"messages"}:
+                raise FineTuneStoreError("Invalid fine-tune export fields")
+            self._validate_messages(item["messages"])
+
+    def get_export_bytes(self, filename: str) -> bytes | None:
+        if not isinstance(filename, str) or _EXPORT_FILENAME.fullmatch(filename) is None:
+            return None
+        with self._lock:
+            meta = self._load_meta()
+            entry = next(
+                (item for item in meta["exports"] if item["filename"] == filename),
+                None,
+            )
+            if entry is None:
+                return None
+            raw = self._backend.read_bytes(f"{self._relative_dir}/{filename}")
+            if raw is None:
+                return None
+            if "sha256" in entry and (
+                len(raw) != entry["size_bytes"]
+                or hashlib.sha256(raw).hexdigest() != entry["sha256"]
+            ):
+                raise FineTuneStoreError("Fine-tune export integrity mismatch")
+            self._validate_export_content(raw, record_count=entry["record_count"])
+            return raw
 
     def get_export_path(self, filename: str) -> Path | None:
-        """Return an existing export owned by this tenant."""
-        with self._lock:
-            exports = self._load_meta().get("exports", [])
-        if not isinstance(exports, list):
+        """Return a verified local export path for legacy local callers."""
+        if self._backend.kind != "local" or self.get_export_bytes(filename) is None:
             return None
-        declared_filenames = {
-            item.get("filename")
-            for item in exports
-            if isinstance(item, dict)
-        }
-        if filename not in declared_filenames:
-            return None
-        path = self._dir / filename
-        return path if path.is_file() else None
+        root = Path(getattr(self._backend, "root", self._data_dir))
+        return root / self._relative_dir / filename
 
     def get_records(
         self,
         bundle_id: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Return up to ``limit`` records, optionally filtered by bundle_id."""
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise FineTuneStoreError("Invalid fine-tune record limit")
         with self._lock:
-            records = self._read_owned_records()
-        if bundle_id:
+            records = [record for record in self._load_records() if self._owns(record)]
+        if bundle_id is not None:
             records = [
-                r for r in records
-                if r.get("metadata", {}).get("bundle_id") == bundle_id
+                record
+                for record in records
+                if record["metadata"]["bundle_id"] == bundle_id
             ]
         return records[-limit:]
 
     def clear_dataset(self) -> int:
-        """Delete all records. Returns count of removed records."""
+        """Remove owned records while preserving explicit foreign records."""
         with self._lock:
-            records = self._read_records_raw()
+            self._load_meta()
+            records = self._load_records()
             owned = [record for record in records if self._owns(record)]
             remaining = [record for record in records if not self._owns(record)]
-            if remaining:
-                payload = "".join(
-                    json.dumps(record, ensure_ascii=False) + "\n"
-                    for record in remaining
-                )
-                atomic_write_text(self._dataset_path, payload)
-            elif self._dataset_path.exists():
-                self._dataset_path.unlink()
+            self._save_records(remaining)
         return len(owned)
 
 
-@functools.lru_cache(maxsize=50)
-def get_finetune_store(tenant_id: str) -> FineTuneStore:
-    """Return a cached FineTuneStore for the given tenant."""
-    return FineTuneStore(Path(os.getenv("DATA_DIR", "./data")), tenant_id=tenant_id)
+def get_finetune_store(
+    tenant_id: str,
+    data_dir: str | Path | None = None,
+    *,
+    backend: StateBackend | None = None,
+) -> FineTuneStore:
+    """Return a cached store for one tenant and one state backend."""
+    tenant_id = require_tenant_id(tenant_id)
+    root = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+    explicit_backend = backend is not None
+    selected_backend = backend or get_state_backend(data_dir=root)
+    key = (
+        tenant_id,
+        root.resolve(),
+        *state_backend_identity(
+            selected_backend,
+            data_dir=root,
+            explicit_backend=explicit_backend,
+        ),
+    )
+    with _finetune_stores_guard:
+        store = _finetune_stores.get(key)
+        if store is None:
+            store = FineTuneStore(root, tenant_id=tenant_id, backend=selected_backend)
+            _finetune_stores[key] = store
+        return store
 
 
 def clear_finetune_store_cache() -> None:
-    """Invalidate the store factory cache after tenant or data-dir changes."""
-    get_finetune_store.cache_clear()
+    with _finetune_stores_guard:
+        _finetune_stores.clear()
+
+
+get_finetune_store.cache_clear = clear_finetune_store_cache  # type: ignore[attr-defined]

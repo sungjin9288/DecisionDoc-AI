@@ -327,17 +327,13 @@ class GenerationCoreMixin:
             )
             active_eval_store.load_all()
 
-            try:
-                from app.storage.finetune_store import get_finetune_store
-                active_finetune_store = get_finetune_store(tenant_id)
-            except Exception as exc:
-                active_finetune_store = None
-                _log.warning(
-                    "[FineTune] Tenant store unavailable; collection skipped "
-                    "tenant=%s: %s",
-                    tenant_id,
-                    exc,
-                )
+            from app.storage.finetune_store import get_finetune_store
+
+            active_finetune_store = get_finetune_store(
+                tenant_id,
+                data_dir=self.data_dir,
+                backend=self.state_backend,
+            )
 
             from app.eval.pipeline import run_eval_pipeline
 

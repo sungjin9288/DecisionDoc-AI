@@ -90,13 +90,15 @@ def test_export_for_training_writes_messages_only(tmp_path: Path) -> None:
     for i in range(12):
         store.save_record(_sample_messages(), _sample_metadata(f"req-{i}"))
 
-    export_path = store.export_for_training()
-    assert export_path is not None
-    path = Path(export_path)
-    assert path.exists()
+    export = store.export_for_training()
+    assert export is not None
+    raw = store.get_export_bytes(export.filename)
+    assert raw is not None
 
-    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    lines = [line for line in raw.decode("utf-8").splitlines() if line.strip()]
     assert len(lines) == 12
+    assert export.record_count == 12
+    assert export.size_bytes == len(raw)
     for line in lines:
         obj = json.loads(line)
         assert "messages" in obj

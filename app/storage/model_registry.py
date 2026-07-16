@@ -1,95 +1,209 @@
-"""model_registry.py — 파인튜닝 모델 레지스트리.
+"""Tenant-scoped fine-tuned model lifecycle registry."""
 
-학습된 OpenAI 파인튜닝 모델을 테넌트별로 추적하고 관리합니다.
-
-Storage layout:
-    data/tenants/{tenant_id}/model_registry.json  — list of model records
-
-Record shape:
-    {
-      "model_id": str,           # e.g. "ft:gpt-4o-mini:org:decisiondoc:abc123"
-      "base_model": str,         # "gpt-4o-mini" | "gpt-4o"
-      "bundle_id": str | None,   # None = general model, str = bundle-specific
-      "tenant_id": str,
-      "status": "training" | "ready" | "failed" | "deprecated",
-      "training_file_id": str,   # OpenAI file ID
-      "record_count": int,
-      "avg_score_before": float,
-      "avg_score_after": float | None,
-      "openai_job_id": str,
-      "created_at": str,         # ISO 8601
-      "ready_at": str | None,
-      "eval_result": dict | None
-    }
-"""
 from __future__ import annotations
 
-import functools
 import json
-import logging
+import math
 import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_lock import state_backend_identity, state_lock
 from app.tenant import require_tenant_id
 
-_log = logging.getLogger("decisiondoc.storage.model_registry")
+
+class ModelRegistryError(RuntimeError):
+    """Raised when persisted model authority cannot be trusted."""
+
 
 _VALID_STATUSES = frozenset({"training", "ready", "failed", "deprecated"})
-_path_locks: dict[Path, threading.Lock] = {}
-_path_locks_guard = threading.Lock()
+_model_registries: dict[tuple[Any, ...], "ModelRegistry"] = {}
+_model_registries_guard = threading.Lock()
 
 
-def _lock_for_path(path: Path) -> threading.Lock:
-    with _path_locks_guard:
-        return _path_locks.setdefault(path.resolve(), threading.Lock())
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ModelRegistryError(f"Duplicate key in model registry: {key!r}")
+        result[key] = value
+    return result
 
 
 class ModelRegistry:
-    """Thread-safe JSON store for fine-tuned model lifecycle management."""
+    """Read and update model lifecycle authority for one tenant."""
 
-    def __init__(self, data_dir: Path | None = None, *, tenant_id: str) -> None:
-        if data_dir is None:
-            data_dir = Path(os.getenv("DATA_DIR", "./data"))
+    _RECORD_FIELDS = {
+        "model_id",
+        "base_model",
+        "bundle_id",
+        "tenant_id",
+        "status",
+        "training_file_id",
+        "record_count",
+        "avg_score_before",
+        "avg_score_after",
+        "openai_job_id",
+        "created_at",
+        "ready_at",
+        "eval_result",
+    }
+
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        *,
+        tenant_id: str,
+        backend: StateBackend | None = None,
+    ) -> None:
         self._tenant_id = require_tenant_id(tenant_id)
-        self._path = Path(data_dir) / "tenants" / self._tenant_id / "model_registry.json"
-        self._lock = _lock_for_path(self._path)
+        self._data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+        self._relative_path = str(
+            Path("tenants") / self._tenant_id / "model_registry.json"
+        )
+        self._backend = backend or get_state_backend(data_dir=self._data_dir)
+        self._lock = state_lock(
+            self._backend,
+            data_dir=self._data_dir,
+            relative_path=self._relative_path,
+        )
 
-    def _owns(self, model: Any) -> bool:
-        if not isinstance(model, dict):
-            return False
-        stored_tenant_id = model.get("tenant_id")
-        return stored_tenant_id is None or stored_tenant_id == self._tenant_id
+    @staticmethod
+    def _text(value: object, *, field_name: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            raise ModelRegistryError(f"Invalid model {field_name}")
+        return value
+
+    @staticmethod
+    def _timestamp(
+        value: object,
+        *,
+        field_name: str,
+        allow_none: bool,
+    ) -> str | None:
+        if value is None and allow_none:
+            return None
+        if not isinstance(value, str) or not value or value != value.strip():
+            raise ModelRegistryError(f"Invalid model {field_name}")
+        try:
+            timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ModelRegistryError(f"Invalid model {field_name}") from exc
+        if timestamp.tzinfo is None or timestamp.utcoffset() != timezone.utc.utcoffset(timestamp):
+            raise ModelRegistryError(f"Invalid model {field_name}")
+        return value
+
+    @staticmethod
+    def _score(
+        value: object,
+        *,
+        field_name: str,
+        allow_none: bool,
+    ) -> float | None:
+        if value is None and allow_none:
+            return None
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not 0.0 <= float(value) <= 1.0
+        ):
+            raise ModelRegistryError(f"Invalid model {field_name}")
+        return float(value)
+
+    def _owns(self, model: object) -> bool:
+        return isinstance(model, dict) and model.get("tenant_id") in {
+            None,
+            self._tenant_id,
+        }
+
+    def _validate_owned(self, model: dict[str, Any], *, legacy: bool) -> None:
+        expected_fields = self._RECORD_FIELDS - ({"tenant_id"} if legacy else set())
+        if set(model) != expected_fields:
+            raise ModelRegistryError("Invalid model registry fields")
+
+        self._text(model.get("model_id"), field_name="identity")
+        self._text(model.get("base_model"), field_name="base model")
+        bundle_id = model.get("bundle_id")
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
+        if not legacy and model.get("tenant_id") != self._tenant_id:
+            raise ModelRegistryError("Model registry tenant ownership mismatch")
+        if model.get("status") not in _VALID_STATUSES:
+            raise ModelRegistryError("Invalid model status")
+        self._text(model.get("training_file_id"), field_name="training file identity")
+        record_count = model.get("record_count")
+        if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 1:
+            raise ModelRegistryError("Invalid model training record count")
+        self._score(
+            model.get("avg_score_before"),
+            field_name="baseline score",
+            allow_none=False,
+        )
+        self._score(
+            model.get("avg_score_after"),
+            field_name="evaluation score",
+            allow_none=True,
+        )
+        self._text(model.get("openai_job_id"), field_name="provider job identity")
+        self._timestamp(model.get("created_at"), field_name="creation timestamp", allow_none=False)
+        self._timestamp(model.get("ready_at"), field_name="ready timestamp", allow_none=True)
+        if model.get("eval_result") is not None and not isinstance(model.get("eval_result"), dict):
+            raise ModelRegistryError("Invalid model evaluation result")
+        if model.get("status") == "ready":
+            if model["model_id"].startswith("pending:"):
+                raise ModelRegistryError("Invalid ready model authority")
 
     def _read_all(self) -> list[dict[str, Any]]:
-        if not self._path.exists():
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None:
             return []
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            _log.warning(
-                "Failed to load model registry for tenant %s: %s",
-                self._tenant_id,
-                exc,
-            )
-            return []
+            data = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, TypeError, ModelRegistryError) as exc:
+            raise ModelRegistryError("Invalid model registry document") from exc
         if not isinstance(data, list):
-            return []
-        return [model for model in data if isinstance(model, dict)]
+            raise ModelRegistryError("Invalid model registry collection")
+
+        models: list[dict[str, Any]] = []
+        for model in data:
+            if not isinstance(model, dict):
+                raise ModelRegistryError("Invalid model registry record")
+            stored_tenant_id = model.get("tenant_id")
+            if stored_tenant_id is not None:
+                if not isinstance(stored_tenant_id, str) or not stored_tenant_id:
+                    raise ModelRegistryError("Invalid model registry tenant identity")
+                if stored_tenant_id != self._tenant_id:
+                    models.append(model)
+                    continue
+            self._validate_owned(model, legacy=stored_tenant_id is None)
+            models.append(model)
+
+        owned = [model for model in models if self._owns(model)]
+        model_ids = [model["model_id"] for model in owned]
+        job_ids = [model["openai_job_id"] for model in owned]
+        if len(model_ids) != len(set(model_ids)):
+            raise ModelRegistryError("Duplicate model identity in registry")
+        if len(job_ids) != len(set(job_ids)):
+            raise ModelRegistryError("Duplicate provider job identity in registry")
+        return models
 
     def _read_owned(self) -> list[dict[str, Any]]:
         return [model for model in self._read_all() if self._owns(model)]
 
     def _save(self, models: list[dict[str, Any]]) -> None:
-        atomic_write_text(
-            self._path,
+        self._backend.write_text(
+            self._relative_path,
             json.dumps(models, ensure_ascii=False, indent=2),
         )
-
-    # ── Public API ────────────────────────────────────────────────────────────
 
     def register_model(
         self,
@@ -102,10 +216,7 @@ class ModelRegistry:
         avg_score_before: float,
         openai_job_id: str,
     ) -> dict[str, Any]:
-        """Register a new model in the registry with status='training'.
-
-        Returns the created model record.
-        """
+        """Register a unique provider job with status ``training``."""
         record: dict[str, Any] = {
             "model_id": model_id,
             "base_model": base_model,
@@ -121,14 +232,16 @@ class ModelRegistry:
             "ready_at": None,
             "eval_result": None,
         }
+        self._validate_owned(record, legacy=False)
         with self._lock:
             models = self._read_all()
+            owned = [model for model in models if self._owns(model)]
+            if any(model["model_id"] == model_id for model in owned):
+                raise ModelRegistryError("Model identity is already registered")
+            if any(model["openai_job_id"] == openai_job_id for model in owned):
+                raise ModelRegistryError("Provider job identity is already registered")
             models.append(record)
             self._save(models)
-        _log.info(
-            "[ModelRegistry] Registered model_id=%s bundle=%s tenant=%s status=training",
-            model_id, bundle_id, self._tenant_id,
-        )
         return record
 
     def update_status(
@@ -139,27 +252,47 @@ class ModelRegistry:
         model_id: str | None = None,
         ready_at: str | None = None,
     ) -> bool:
-        """Update status (and optionally model_id, ready_at) by OpenAI job ID.
-
-        Returns True if a record was found and updated, False otherwise.
-        """
         if status not in _VALID_STATUSES:
             raise ValueError(f"Invalid status '{status}'. Must be one of {_VALID_STATUSES}")
+        self._text(openai_job_id, field_name="provider job identity")
+        if model_id is not None:
+            self._text(model_id, field_name="identity")
+        if ready_at is not None:
+            self._timestamp(ready_at, field_name="ready timestamp", allow_none=False)
+
         with self._lock:
             models = self._read_all()
-            updated = False
-            for m in models:
-                if self._owns(m) and m.get("openai_job_id") == openai_job_id:
-                    m["status"] = status
-                    if model_id is not None:
-                        m["model_id"] = model_id
-                    if ready_at is not None:
-                        m["ready_at"] = ready_at
-                    updated = True
-                    break
-            if updated:
-                self._save(models)
-        return updated
+            target = next(
+                (
+                    model
+                    for model in models
+                    if self._owns(model) and model["openai_job_id"] == openai_job_id
+                ),
+                None,
+            )
+            if target is None:
+                return False
+            candidate_model_id = model_id or target["model_id"]
+            if status == "ready" and candidate_model_id.startswith("pending:"):
+                raise ModelRegistryError("A pending model identity cannot be promoted")
+            if model_id is not None and any(
+                self._owns(existing)
+                and existing is not target
+                and existing["model_id"] == model_id
+                for existing in models
+            ):
+                raise ModelRegistryError("Model identity is already registered")
+
+            target["status"] = status
+            if model_id is not None:
+                target["model_id"] = model_id
+            if status == "ready":
+                target["ready_at"] = ready_at or datetime.now(timezone.utc).isoformat()
+            elif ready_at is not None:
+                target["ready_at"] = ready_at
+            self._validate_owned(target, legacy=target.get("tenant_id") is None)
+            self._save(models)
+            return True
 
     def update_eval_result(
         self,
@@ -168,73 +301,76 @@ class ModelRegistry:
         avg_score_after: float,
         eval_result: dict[str, Any] | None = None,
     ) -> bool:
-        """Update avg_score_after and eval_result for a model.
-
-        Returns True if found and updated.
-        """
+        self._text(model_id, field_name="identity")
+        score = self._score(
+            avg_score_after,
+            field_name="evaluation score",
+            allow_none=False,
+        )
+        if eval_result is not None and not isinstance(eval_result, dict):
+            raise ModelRegistryError("Invalid model evaluation result")
         with self._lock:
             models = self._read_all()
-            updated = False
-            for m in models:
-                if self._owns(m) and m.get("model_id") == model_id:
-                    m["avg_score_after"] = avg_score_after
-                    if eval_result is not None:
-                        m["eval_result"] = eval_result
-                    updated = True
-                    break
-            if updated:
-                self._save(models)
-        return updated
+            target = next(
+                (
+                    model
+                    for model in models
+                    if self._owns(model) and model["model_id"] == model_id
+                ),
+                None,
+            )
+            if target is None:
+                return False
+            target["avg_score_after"] = score
+            if eval_result is not None:
+                target["eval_result"] = eval_result
+            self._validate_owned(target, legacy=target.get("tenant_id") is None)
+            self._save(models)
+            return True
 
     def get_active_model(self, bundle_id: str | None) -> dict[str, Any] | None:
-        """Return the best 'ready' model for a bundle in this registry's tenant.
-
-        Selection priority:
-          1. Bundle-specific model (bundle_id matches) over general (bundle_id=None)
-          2. Highest avg_score_after (or most-recently created if no eval)
-        Returns None if no ready model exists.
-        """
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
         with self._lock:
             models = self._read_owned()
-
         ready = [
-            m for m in models
-            if m.get("status") == "ready"
-            and (m.get("bundle_id") == bundle_id or m.get("bundle_id") is None)
+            model
+            for model in models
+            if model["status"] == "ready"
+            and (model["bundle_id"] == bundle_id or model["bundle_id"] is None)
         ]
-        if not ready:
+        bundle_specific = [model for model in ready if model["bundle_id"] == bundle_id]
+        candidates = bundle_specific or ready
+        if not candidates:
             return None
-
-        # Prefer bundle-specific over general
-        bundle_specific = [m for m in ready if m.get("bundle_id") == bundle_id]
-        candidates = bundle_specific if bundle_specific else ready
-
-        # Sort: models with eval score first (desc), then by created_at (desc)
-        def sort_key(m: dict[str, Any]):
-            score = m.get("avg_score_after")
-            ts = m.get("created_at", "")
-            has_score = score is not None
-            return (has_score, score or 0.0, ts)
-
-        return sorted(candidates, key=sort_key, reverse=True)[0]
+        return max(
+            candidates,
+            key=lambda model: (
+                model["avg_score_after"] is not None,
+                model["avg_score_after"] or 0.0,
+                model["created_at"],
+            ),
+        )
 
     def get_model(self, model_id: str) -> dict[str, Any] | None:
-        """Return a single model record by model_id, or None."""
+        self._text(model_id, field_name="identity")
         with self._lock:
-            models = self._read_owned()
-        for m in models:
-            if m.get("model_id") == model_id:
-                return m
-        return None
+            return next(
+                (model for model in self._read_owned() if model["model_id"] == model_id),
+                None,
+            )
 
     def get_model_by_job(self, openai_job_id: str) -> dict[str, Any] | None:
-        """Return a model record by OpenAI job ID, or None."""
+        self._text(openai_job_id, field_name="provider job identity")
         with self._lock:
-            models = self._read_owned()
-        for m in models:
-            if m.get("openai_job_id") == openai_job_id:
-                return m
-        return None
+            return next(
+                (
+                    model
+                    for model in self._read_owned()
+                    if model["openai_job_id"] == openai_job_id
+                ),
+                None,
+            )
 
     def list_models(
         self,
@@ -242,49 +378,79 @@ class ModelRegistry:
         bundle_id: str | None = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List models for one tenant with optional bundle and status filters."""
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
+        if status is not None and status not in _VALID_STATUSES:
+            raise ModelRegistryError("Invalid model status filter")
         with self._lock:
             results = self._read_owned()
-
         if bundle_id is not None:
-            results = [m for m in results if m.get("bundle_id") == bundle_id]
+            results = [model for model in results if model["bundle_id"] == bundle_id]
         if status is not None:
-            results = [m for m in results if m.get("status") == status]
-
+            results = [model for model in results if model["status"] == status]
         return results
 
     def deprecate_model(self, model_id: str) -> bool:
-        """Set a model's status to 'deprecated'. Returns True if found."""
+        self._text(model_id, field_name="identity")
         with self._lock:
             models = self._read_all()
-            updated = False
-            for m in models:
-                if self._owns(m) and m.get("model_id") == model_id:
-                    m["status"] = "deprecated"
-                    updated = True
-                    break
-            if updated:
-                self._save(models)
-        return updated
+            target = next(
+                (
+                    model
+                    for model in models
+                    if self._owns(model) and model["model_id"] == model_id
+                ),
+                None,
+            )
+            if target is None:
+                return False
+            target["status"] = "deprecated"
+            self._validate_owned(target, legacy=target.get("tenant_id") is None)
+            self._save(models)
+            return True
 
     def has_active_training(self, bundle_id: str | None) -> bool:
-        """Return True if there is already a training job in progress."""
+        if bundle_id is not None:
+            self._text(bundle_id, field_name="bundle identity")
         with self._lock:
             models = self._read_owned()
         return any(
-            m.get("status") == "training"
-            and m.get("bundle_id") == bundle_id
-            for m in models
+            model["status"] == "training" and model["bundle_id"] == bundle_id
+            for model in models
         )
 
 
-@functools.lru_cache(maxsize=50)
-def get_model_registry(tenant_id: str) -> ModelRegistry:
-    """Return a cached ModelRegistry bound to one tenant."""
-    data_dir = Path(os.getenv("DATA_DIR", "./data"))
-    return ModelRegistry(data_dir, tenant_id=tenant_id)
+def get_model_registry(
+    tenant_id: str,
+    data_dir: str | Path | None = None,
+    *,
+    backend: StateBackend | None = None,
+) -> ModelRegistry:
+    """Return a cached registry for one tenant and one state backend."""
+    tenant_id = require_tenant_id(tenant_id)
+    root = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+    explicit_backend = backend is not None
+    selected_backend = backend or get_state_backend(data_dir=root)
+    key = (
+        tenant_id,
+        root.resolve(),
+        *state_backend_identity(
+            selected_backend,
+            data_dir=root,
+            explicit_backend=explicit_backend,
+        ),
+    )
+    with _model_registries_guard:
+        registry = _model_registries.get(key)
+        if registry is None:
+            registry = ModelRegistry(root, tenant_id=tenant_id, backend=selected_backend)
+            _model_registries[key] = registry
+        return registry
 
 
 def clear_model_registry_cache() -> None:
-    """Invalidate the registry cache."""
-    get_model_registry.cache_clear()
+    with _model_registries_guard:
+        _model_registries.clear()
+
+
+get_model_registry.cache_clear = clear_model_registry_cache  # type: ignore[attr-defined]

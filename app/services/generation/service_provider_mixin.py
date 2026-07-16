@@ -151,17 +151,18 @@ class GenerationProviderCallMixin:
         the injected ``provider_factory`` so that tests keep full DI control.
         """
         tenant_id = require_tenant_id(tenant_id)
-        try:
-            from app.storage.model_registry import ModelRegistry
-            registry = ModelRegistry(tenant_id=tenant_id)
-            active_model = registry.get_active_model(bundle_type)
-            if active_model and active_model.get("status") == "ready":
-                model_id = active_model.get("model_id", "")
-                if model_id and not model_id.startswith("pending:"):
-                    from app.providers.factory import get_provider
-                    return get_provider(model_override=model_id)
-        except Exception:
-            pass  # Fall through to injected factory
+        from app.storage.model_registry import get_model_registry
+
+        registry = get_model_registry(
+            tenant_id,
+            data_dir=self.data_dir,
+            backend=self.state_backend,
+        )
+        active_model = registry.get_active_model(bundle_type)
+        if active_model is not None:
+            from app.providers.factory import get_provider
+
+            return get_provider(model_override=active_model["model_id"])
 
         try:
             return self.provider_factory()

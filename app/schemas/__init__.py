@@ -98,6 +98,10 @@ from app.schemas.auth import (
     UpdateMyProfileRequest,
     UpdateUserRequest,
 )
+from app.schemas.finetune import (
+    FineTuneExportRequest,
+    FineTuneTrainingTriggerRequest,
+)
 from app.schemas.messages_styles import (
     CreateStyleProfileRequest,
     EditMessageRequest,
@@ -244,4 +248,6 @@ __all__ = [
     "DocumentOpsTrainingApprovalRequest",
     "DocumentOpsTrainingExecutionRequest",
     "DocumentOpsTrainingAuditExportRequest",
+    "FineTuneExportRequest",
+    "FineTuneTrainingTriggerRequest",
 ]

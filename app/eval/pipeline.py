@@ -17,12 +17,23 @@ from app.tenant import require_tenant_id
 _log = logging.getLogger("decisiondoc.eval.pipeline")
 
 
-def _run_auto_finetune_trigger(bundle_id: str, tenant_id: str) -> None:
+def _run_auto_finetune_trigger(
+    bundle_id: str,
+    tenant_id: str,
+    data_dir: Any,
+    state_backend: Any,
+) -> None:
     """Background helper: check data threshold and trigger fine-tuning if met."""
     try:
         from app.services.finetune_orchestrator import FineTuneOrchestrator
-        orch = FineTuneOrchestrator()
-        asyncio.run(orch.check_and_trigger(bundle_id, tenant_id))
+        orch = FineTuneOrchestrator(data_dir, state_backend=state_backend)
+        asyncio.run(
+            orch.check_and_trigger(
+                bundle_id,
+                tenant_id,
+                execution_authorized=True,
+            )
+        )
     except Exception as exc:
         _log.warning("[AutoFineTune] check_and_trigger failed (bundle=%s): %s", bundle_id, exc)
 
@@ -150,13 +161,24 @@ def run_eval_pipeline(
                 )
                 # Auto-trigger fine-tuning if threshold is reached
                 try:
-                    from app.config import get_finetune_auto_threshold
+                    from app.config import (
+                        get_finetune_auto_threshold,
+                        is_finetune_auto_enabled,
+                    )
                     stats = finetune_store.get_stats()
                     bundle_count = stats.get("per_bundle_count", {}).get(bundle_id, 0)
-                    if bundle_count >= get_finetune_auto_threshold():
+                    if (
+                        is_finetune_auto_enabled()
+                        and bundle_count >= get_finetune_auto_threshold()
+                    ):
                         t = threading.Thread(
                             target=_run_auto_finetune_trigger,
-                            args=(bundle_id, tenant_id),
+                            args=(
+                                bundle_id,
+                                tenant_id,
+                                finetune_store.data_dir,
+                                finetune_store.backend,
+                            ),
                             daemon=True,
                             name=f"finetune-{bundle_id[:20]}",
                         )

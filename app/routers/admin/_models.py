@@ -8,8 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id
+from app.schemas import FineTuneTrainingTriggerRequest
+from app.storage.model_registry import ModelRegistry, get_model_registry
 
 router = APIRouter()
+
+
+def _registry(request: Request) -> ModelRegistry:
+    return get_model_registry(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
 
 # ---------------------------------------------------------------------------
 # Model Registry
@@ -22,32 +32,35 @@ def list_models(
     status: str | None = None,
 ) -> list[dict]:
     """List fine-tuned models for the current tenant."""
-    from app.storage.model_registry import ModelRegistry
-    tenant_id = get_tenant_id(request)
-    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
-    return registry.list_models(bundle_id=bundle_id, status=status)
+    return _registry(request).list_models(bundle_id=bundle_id, status=status)
 
 
 @router.get("/models/{model_id:path}")
 def get_model(model_id: str, request: Request) -> dict:
     """Get details for a specific fine-tuned model."""
-    from app.storage.model_registry import ModelRegistry
-    tenant_id = get_tenant_id(request)
-    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
-    model = registry.get_model(model_id)
+    model = _registry(request).get_model(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     return model
 
 
 @router.post("/admin/models/trigger-training", dependencies=[Depends(require_ops_key)])
-async def admin_trigger_training(request: Request, payload: dict) -> dict:
+async def admin_trigger_training(
+    request: Request,
+    payload: FineTuneTrainingTriggerRequest,
+) -> dict:
     """Manually trigger fine-tune check for a bundle+tenant. Requires OPS key."""
     from app.services.finetune_orchestrator import FineTuneOrchestrator
     tenant_id = get_tenant_id(request)
-    bundle_id_val: str | None = payload.get("bundle_id") or None
-    orch = FineTuneOrchestrator(request.app.state.data_dir)
-    result = await orch.check_and_trigger(bundle_id_val, tenant_id)
+    orch = FineTuneOrchestrator(
+        request.app.state.data_dir,
+        state_backend=request.app.state.state_backend,
+    )
+    result = await orch.check_and_trigger(
+        payload.bundle_id,
+        tenant_id,
+        execution_authorized=True,
+    )
     if result is None:
         return {"triggered": False, "message": "Not enough data or training already in progress."}
     return {"triggered": True, **result}
@@ -56,9 +69,7 @@ async def admin_trigger_training(request: Request, payload: dict) -> dict:
 @router.post("/admin/models/{model_id:path}/promote", dependencies=[Depends(require_ops_key)])
 def admin_promote_model(model_id: str, request: Request) -> dict:
     """Manually promote a model to 'ready' status. Requires OPS key."""
-    from app.storage.model_registry import ModelRegistry
-    tenant_id = get_tenant_id(request)
-    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    registry = _registry(request)
     model = registry.get_model(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
@@ -71,9 +82,7 @@ def admin_promote_model(model_id: str, request: Request) -> dict:
 @router.post("/admin/models/{model_id:path}/deprecate", dependencies=[Depends(require_ops_key)])
 def admin_deprecate_model(model_id: str, request: Request) -> dict:
     """Deprecate a model. Requires OPS key."""
-    from app.storage.model_registry import ModelRegistry
-    tenant_id = get_tenant_id(request)
-    registry = ModelRegistry(request.app.state.data_dir, tenant_id=tenant_id)
+    registry = _registry(request)
     if not registry.deprecate_model(model_id):
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     return {"deprecated": True, "model_id": model_id}
@@ -83,7 +92,10 @@ def admin_deprecate_model(model_id: str, request: Request) -> dict:
 async def admin_list_jobs(request: Request) -> list[dict]:
     """List active OpenAI fine-tuning jobs with fresh status. Requires OPS key."""
     from app.services.finetune_orchestrator import FineTuneOrchestrator
-    orch = FineTuneOrchestrator(request.app.state.data_dir)
+    orch = FineTuneOrchestrator(
+        request.app.state.data_dir,
+        state_backend=request.app.state.state_backend,
+    )
     jobs = await orch.list_active_jobs()
     return [
         {

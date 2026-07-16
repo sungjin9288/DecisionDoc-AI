@@ -141,14 +141,12 @@ def get_provider_for_bundle(bundle_id: str | None, tenant_id: str) -> Provider:
     Returns:
         An OpenAI provider using the fine-tuned model_id, or the default provider.
     """
-    try:
-        from app.storage.model_registry import ModelRegistry
-        registry = ModelRegistry(tenant_id=tenant_id)
-        active_model = registry.get_active_model(bundle_id)
-        if active_model and active_model.get("status") == "ready":
-            model_id = active_model.get("model_id", "")
-            if model_id and not model_id.startswith("pending:"):
-                return get_provider_for_capability("generation", model_override=model_id)
-    except Exception:
-        pass  # Silently fall back to default provider
+    from app.storage.model_registry import get_model_registry
+
+    active_model = get_model_registry(tenant_id).get_active_model(bundle_id)
+    if active_model is not None:
+        return get_provider_for_capability(
+            "generation",
+            model_override=active_model["model_id"],
+        )
     return get_provider_for_capability("generation")

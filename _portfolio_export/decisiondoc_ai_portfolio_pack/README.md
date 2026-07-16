@@ -132,10 +132,10 @@ curl http://localhost:8000/health
 
 ### Environment (주요 그룹)
 
-`.env.example`에 **93개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+`.env.example`에 **94개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field env_keys  # → 93
+python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 ```
 
 | 그룹 | 대표 키 |
@@ -146,6 +146,7 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 93
 | Storage | `DECISIONDOC_STORAGE`, `DATA_DIR`, `EXPORT_DIR`, `DECISIONDOC_S3_BUCKET`, `AWS_REGION` |
 | Search/Retrieval | `DECISIONDOC_SEARCH_ENABLED`, `SERPER_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY` |
 | 공공조달(G2B) | `G2B_API_KEY`, `G2B_SEARCH_DAYS`, `G2B_MAX_RESULTS` |
+| Quality Learning | `FINETUNE_AUTO_ENABLED`, `FINETUNE_AUTO_THRESHOLD`, `FINETUNE_BASE_MODEL` |
 | 부가 기능 | `VOICE_BRIEF_*`, `MEETING_RECORDING_*`, `STRIPE_*`, `SMTP_*` |
 
 ---
@@ -256,11 +257,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,111개**, **245개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,132개**, **246개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3111
-python3 scripts/count_readme_metrics.py --field test_files      # → 245
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3132
+python3 scripts/count_readme_metrics.py --field test_files      # → 246
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -335,7 +336,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 회의 녹음 metadata/audio는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Audio SHA-256·크기는 읽기 전에 다시 확인하지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 이 검증 범위가 아닙니다.
 - 결제 권한 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 metered request를 `503`으로 차단하고 local HMAC 서명 계약을 검증했지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 Stripe checkout·cancel·provider-delivered webhook은 구현·검증 범위가 아닙니다.
 - 스타일 프로필 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 style API와 prompt build를 중단하지만, mock provider는 LLM prompt builder를 호출하지 않으며 여러 프로세스의 distributed S3 compare-and-swap과 실제 provider 기반 style analysis는 구현·검증 범위가 아닙니다.
-- Feedback, eval evidence와 runtime prompt override state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 prompt build를 중단하지만, 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아닙니다. Fine-tune dataset/export와 model registry/training authority는 별도 hardening 단계이며 실제 dataset upload·training execution·model promotion은 실행하지 않았습니다.
+- Feedback, eval evidence, runtime prompt override, fine-tune dataset/export와 model registry state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 provider selection을 중단하고 export bytes는 size/SHA-256을 다시 확인합니다. 자동 provider training은 기본 비활성이고 명시적 execution authority를 요구합니다. 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아니며 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
 - 공개 공유 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap과 운영 URL의 외부 접근성은 구현·검증 범위가 아닙니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결합니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. Project-linked share는 서버가 tenant/project/document/request/bundle binding을 검증하고 생성 시점 source fingerprint를 저장합니다. 공개 공유 페이지는 조회할 때마다 현재 원본을 다시 대조해 변경·삭제 상태를 경고하고 `share.view` audit evidence를 남기며, admin Locations의 외부 공유 review queue는 stale `share.create`와 drift `share.view`를 함께 보여주되 반복 조회를 영향받은 고유 링크 수로 중복 집계하지 않습니다. 이후 current 조회가 확인되면 해당 링크만 위험 queue에서 해소하고 복구 건수를 별도로 표시하며 기존 audit은 보존합니다. 공유 취소는 처리자·시각을 남기고 자연 만료와 구분하며, 같은 문서에 여러 링크가 있으면 닫힌 최신 링크보다 아직 활성인 링크를 먼저 보여줍니다. Generic legacy share는 기존 동작을 유지합니다. 연결된 결재는 요청 시점 상태를 보존하고 상세 조회와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 상태의 최종 승인은 명시적 acknowledgement를 approval record와 audit에 남겨야 진행됩니다. 승인 후 원본 source fingerprint가 달라진 경우에도 immutable 승인 스냅샷을 다운로드하기 전에 별도 확인이 필요하고 그 결과가 download audit에 남습니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
@@ -351,4 +352,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,111 · env 키 93 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,132 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

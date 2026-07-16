@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.storage.state_backend import StateBackend
+
 _log = logging.getLogger("decisiondoc.finetune.orchestrator")
 
 _OPENAI_FILES_URL   = "https://api.openai.com/v1/files"
@@ -33,16 +35,23 @@ class FineTuneOrchestrator:
     POLL_INTERVAL_SECONDS: int = 60
     MAX_POLL_ATTEMPTS: int = 120   # 2 hours max
 
-    def __init__(self, data_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        *,
+        state_backend: StateBackend | None = None,
+    ) -> None:
         if data_dir is None:
             data_dir = Path(os.getenv("DATA_DIR", "./data"))
         self._data_dir = Path(data_dir)
+        self._state_backend = state_backend
 
     # ── Provider guard ────────────────────────────────────────────────────────
 
     def _is_openai_provider(self) -> bool:
-        provider = os.getenv("DECISIONDOC_PROVIDER", "mock").lower()
-        return "openai" in provider
+        from app.providers.factory import configured_provider_names
+
+        return "openai" in configured_provider_names()
 
     def _get_api_key(self) -> str | None:
         key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -63,12 +72,25 @@ class FineTuneOrchestrator:
     # ── Main entry point ──────────────────────────────────────────────────────
 
     async def check_and_trigger(
-        self, bundle_id: str | None, tenant_id: str
+        self,
+        bundle_id: str | None,
+        tenant_id: str,
+        *,
+        execution_authorized: bool = False,
     ) -> dict[str, Any] | None:
         """Check data readiness and trigger fine-tuning if threshold is met.
 
         Returns job info dict if training was started, None if skipped.
         """
+        if not execution_authorized:
+            _log.info(
+                "[FineTune] Skipping: training execution is not authorized "
+                "(bundle=%s tenant=%s)",
+                bundle_id,
+                tenant_id,
+            )
+            return None
+
         if not self._is_openai_provider():
             _log.info(
                 "[FineTune] Skipping: provider is not openai (bundle=%s tenant=%s)",
@@ -81,11 +103,19 @@ class FineTuneOrchestrator:
             _log.warning("[FineTune] Skipping: OPENAI_API_KEY is not set")
             return None
 
-        from app.storage.finetune_store import FineTuneStore
-        from app.storage.model_registry import ModelRegistry
+        from app.storage.finetune_store import get_finetune_store
+        from app.storage.model_registry import get_model_registry
 
-        finetune_store = FineTuneStore(self._data_dir, tenant_id=tenant_id)
-        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
+        finetune_store = get_finetune_store(
+            tenant_id,
+            data_dir=self._data_dir,
+            backend=self._state_backend,
+        )
+        registry = get_model_registry(
+            tenant_id,
+            data_dir=self._data_dir,
+            backend=self._state_backend,
+        )
 
         # Check data threshold
         stats = finetune_store.get_stats()
@@ -111,33 +141,41 @@ class FineTuneOrchestrator:
             return None
 
         # Export training data
-        export_path = finetune_store.export_for_training(
+        export = finetune_store.export_for_training(
             bundle_id=bundle_id, min_records=min_records
         )
-        if not export_path:
+        if export is None:
             _log.warning("[FineTune] Export returned None (bundle=%s)", bundle_id)
             return None
+        export_bytes = finetune_store.get_export_bytes(export.filename)
+        if export_bytes is None:
+            raise RuntimeError("Fine-tune export disappeared before provider upload")
 
         # Compute avg score before training
         avg_score_before = stats.get("avg_heuristic") or 0.0
         if bundle_id:
             # Try to get bundle-specific average from eval store
-            try:
-                from app.eval.eval_store import get_eval_store
-                es = get_eval_store(tenant_id)
-                bundle_history = es.get_bundle_history(bundle_id, limit=50)
-                if bundle_history:
-                    avg_score_before = round(
-                        sum(r.heuristic_score for r in bundle_history) / len(bundle_history), 3
-                    )
-            except Exception:
-                pass
+            from app.eval.eval_store import get_eval_store
+
+            es = get_eval_store(
+                tenant_id,
+                data_dir=self._data_dir,
+                backend=self._state_backend,
+            )
+            bundle_history = es.get_bundle_history(bundle_id, limit=50)
+            if bundle_history:
+                avg_score_before = round(
+                    sum(r.heuristic_score for r in bundle_history) / len(bundle_history), 3
+                )
 
         base_model = self._get_base_model()
 
         try:
-            # Upload training file
-            file_id = await self._upload_training_file(export_path, api_key)
+            file_id = await self._upload_training_file(
+                export.filename,
+                export_bytes,
+                api_key,
+            )
             _log.info("[FineTune] Uploaded training file: file_id=%s", file_id)
 
             # Create fine-tuning job
@@ -145,65 +183,64 @@ class FineTuneOrchestrator:
                 file_id, base_model, bundle_id, api_key
             )
             _log.info("[FineTune] Created fine-tuning job: job_id=%s", job_id)
-
-            # Register in model registry (use job_id as placeholder model_id until ready)
-            placeholder_model_id = f"pending:{job_id}"
-            registry.register_model(
-                model_id=placeholder_model_id,
-                base_model=base_model,
-                bundle_id=bundle_id,
-                training_file_id=file_id,
-                record_count=count,
-                avg_score_before=avg_score_before,
-                openai_job_id=job_id,
-            )
-
-            # Start background polling
-            asyncio.ensure_future(
-                self._poll_with_guard(job_id, tenant_id, bundle_id)
-            )
-
-            job_info = {
-                "openai_job_id": job_id,
-                "training_file_id": file_id,
-                "base_model": base_model,
-                "bundle_id": bundle_id,
-                "tenant_id": tenant_id,
-                "record_count": count,
-                "avg_score_before": avg_score_before,
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }
-            _log.info(
-                "[FineTune] Training started: job_id=%s bundle=%s tenant=%s records=%d",
-                job_id, bundle_id, tenant_id, count,
-            )
-            return job_info
-
         except Exception as exc:
             _log.error(
-                "[FineTune] Failed to start training (bundle=%s tenant=%s): %s",
+                "[FineTune] Provider rejected training start (bundle=%s tenant=%s): %s",
                 bundle_id, tenant_id, exc,
             )
             return None
 
+        # A created provider job must have durable local authority. Registry
+        # failures propagate so the operator can reconcile the untracked job.
+        placeholder_model_id = f"pending:{job_id}"
+        registry.register_model(
+            model_id=placeholder_model_id,
+            base_model=base_model,
+            bundle_id=bundle_id,
+            training_file_id=file_id,
+            record_count=count,
+            avg_score_before=avg_score_before,
+            openai_job_id=job_id,
+        )
+
+        asyncio.ensure_future(self._poll_with_guard(job_id, tenant_id, bundle_id))
+        job_info = {
+            "openai_job_id": job_id,
+            "training_file_id": file_id,
+            "base_model": base_model,
+            "bundle_id": bundle_id,
+            "tenant_id": tenant_id,
+            "record_count": count,
+            "avg_score_before": avg_score_before,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _log.info(
+            "[FineTune] Training started: job_id=%s bundle=%s tenant=%s records=%d",
+            job_id, bundle_id, tenant_id, count,
+        )
+        return job_info
+
     # ── OpenAI API calls ──────────────────────────────────────────────────────
 
-    async def _upload_training_file(self, export_path: str, api_key: str) -> str:
+    async def _upload_training_file(
+        self,
+        filename: str,
+        content: bytes,
+        api_key: str,
+    ) -> str:
         """Upload JSONL to OpenAI Files API. Returns file_id."""
         try:
             import httpx
         except ImportError as exc:
             raise RuntimeError("httpx is required for fine-tuning. Run: pip install httpx") from exc
 
-        path = Path(export_path)
         async with httpx.AsyncClient(timeout=120.0) as client:
-            with path.open("rb") as f:
-                response = await client.post(
-                    _OPENAI_FILES_URL,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    files={"file": (path.name, f, "application/jsonl")},
-                    data={"purpose": "fine-tune"},
-                )
+            response = await client.post(
+                _OPENAI_FILES_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, content, "application/jsonl")},
+                data={"purpose": "fine-tune"},
+            )
         if response.status_code not in (200, 201):
             raise RuntimeError(
                 f"OpenAI file upload failed: {response.status_code} {response.text[:200]}"
@@ -284,7 +321,7 @@ class FineTuneOrchestrator:
     ) -> None:
         """Poll OpenAI for job completion. Intended to run as a background coroutine.
 
-        On completion: updates ModelRegistry status to 'ready', triggers evaluate_and_promote.
+        On completion: binds the provider model ID, then evaluates before promotion.
         On failure:    updates ModelRegistry status to 'failed'.
         """
         api_key = self._get_api_key()
@@ -292,8 +329,12 @@ class FineTuneOrchestrator:
             _log.warning("[FineTune] Cannot poll: OPENAI_API_KEY not set")
             return
 
-        from app.storage.model_registry import ModelRegistry
-        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
+        from app.storage.model_registry import get_model_registry
+        registry = get_model_registry(
+            tenant_id,
+            data_dir=self._data_dir,
+            backend=self._state_backend,
+        )
 
         for attempt in range(self.MAX_POLL_ATTEMPTS):
             await asyncio.sleep(self.POLL_INTERVAL_SECONDS)
@@ -314,21 +355,30 @@ class FineTuneOrchestrator:
 
             if status == "succeeded":
                 fine_tuned_model = job_data.get("fine_tuned_model", "")
-                ready_at = datetime.now(timezone.utc).isoformat()
-                registry.update_status(
+                if not isinstance(fine_tuned_model, str) or not fine_tuned_model:
+                    if not registry.update_status(openai_job_id, "failed"):
+                        raise RuntimeError("Completed fine-tune job is missing registry authority")
+                    _log.error(
+                        "[FineTune] Job succeeded without a model ID: job_id=%s",
+                        openai_job_id,
+                    )
+                    return
+                if not registry.update_status(
                     openai_job_id,
-                    "ready",
+                    "training",
                     model_id=fine_tuned_model,
-                    ready_at=ready_at,
-                )
+                ):
+                    raise RuntimeError("Completed fine-tune job is missing registry authority")
                 _log.info(
                     "[FineTune] Job succeeded: model_id=%s job_id=%s",
                     fine_tuned_model, openai_job_id,
                 )
-                if fine_tuned_model and bundle_id:
+                if bundle_id:
                     await self._evaluate_and_promote(
                         fine_tuned_model, bundle_id, tenant_id
                     )
+                elif not registry.update_status(openai_job_id, "ready"):
+                    raise RuntimeError("Fine-tune model promotion lost registry authority")
                 return
 
             elif status in ("failed", "cancelled"):
@@ -337,7 +387,8 @@ class FineTuneOrchestrator:
                     "[FineTune] Job %s: job_id=%s error=%s",
                     status, openai_job_id, error_info,
                 )
-                registry.update_status(openai_job_id, "failed")
+                if not registry.update_status(openai_job_id, "failed"):
+                    raise RuntimeError("Failed fine-tune job is missing registry authority")
                 return
 
         # Max attempts exceeded
@@ -345,7 +396,8 @@ class FineTuneOrchestrator:
             "[FineTune] Polling timed out after %d attempts for job_id=%s",
             self.MAX_POLL_ATTEMPTS, openai_job_id,
         )
-        registry.update_status(openai_job_id, "failed")
+        if not registry.update_status(openai_job_id, "failed"):
+            raise RuntimeError("Timed-out fine-tune job is missing registry authority")
 
     # ── Evaluate & Promote ────────────────────────────────────────────────────
 
@@ -357,19 +409,30 @@ class FineTuneOrchestrator:
         Promotes the new model if avg_score_after > avg_score_before + threshold.
         Otherwise deprecates it.
         """
-        from app.storage.model_registry import ModelRegistry
+        from app.storage.model_registry import get_model_registry
         from app.eval.eval_store import get_eval_store
         from app.config import get_finetune_promotion_threshold
 
-        registry = ModelRegistry(self._data_dir, tenant_id=tenant_id)
+        registry = get_model_registry(
+            tenant_id,
+            data_dir=self._data_dir,
+            backend=self._state_backend,
+        )
         promotion_threshold = get_finetune_promotion_threshold()
 
         # Get existing model record for avg_score_before
         model_record = registry.get_model(new_model_id)
-        avg_score_before = (model_record or {}).get("avg_score_before", 0.0) or 0.0
+        if model_record is None:
+            raise RuntimeError("Fine-tune evaluation is missing registry authority")
+        avg_score_before = model_record["avg_score_before"]
+        openai_job_id = model_record["openai_job_id"]
 
         # Get last 10 eval records for this bundle
-        eval_store = get_eval_store(tenant_id)
+        eval_store = get_eval_store(
+            tenant_id,
+            data_dir=self._data_dir,
+            backend=self._state_backend,
+        )
         history = eval_store.get_bundle_history(bundle_id, limit=10)
 
         if not history:
@@ -378,11 +441,14 @@ class FineTuneOrchestrator:
                 bundle_id,
             )
             # Promote anyway (no baseline to compare against)
-            registry.update_eval_result(
+            if not registry.update_eval_result(
                 new_model_id,
                 avg_score_after=avg_score_before,
                 eval_result={"promoted": True, "reason": "no_baseline"},
-            )
+            ):
+                raise RuntimeError("Fine-tune evaluation lost registry authority")
+            if not registry.update_status(openai_job_id, "ready"):
+                raise RuntimeError("Fine-tune model promotion lost registry authority")
             _log.info(
                 "[ModelRegistry] Promoted %s (no baseline): %.2f",
                 new_model_id, avg_score_before,
@@ -412,19 +478,23 @@ class FineTuneOrchestrator:
             "avg_score_after": avg_score_after,
             "promoted": avg_score_after > avg_score_before + promotion_threshold,
         }
-        registry.update_eval_result(
+        if not registry.update_eval_result(
             new_model_id,
             avg_score_after=avg_score_after,
             eval_result=eval_result,
-        )
+        ):
+            raise RuntimeError("Fine-tune evaluation lost registry authority")
 
         if avg_score_after > avg_score_before + promotion_threshold:
+            if not registry.update_status(openai_job_id, "ready"):
+                raise RuntimeError("Fine-tune model promotion lost registry authority")
             _log.info(
                 "[ModelRegistry] Promoted %s: %.2f → %.2f",
                 new_model_id, avg_score_before, avg_score_after,
             )
         else:
-            registry.deprecate_model(new_model_id)
+            if not registry.deprecate_model(new_model_id):
+                raise RuntimeError("Fine-tune deprecation lost registry authority")
             _log.info(
                 "[ModelRegistry] Model %s not promoted: %.2f vs base %.2f",
                 new_model_id, avg_score_after, avg_score_before,

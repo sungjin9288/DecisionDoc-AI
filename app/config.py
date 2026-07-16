@@ -85,6 +85,11 @@ def is_markitdown_enabled() -> bool:
     return env_is_enabled("DECISIONDOC_MARKITDOWN_ENABLED", "0")
 
 
+def is_finetune_auto_enabled() -> bool:
+    """Whether eval completion may start a paid provider training job."""
+    return env_is_enabled("FINETUNE_AUTO_ENABLED", "0")
+
+
 def is_markitdown_plugins_enabled() -> bool:
     """Whether optional MarkItDown plugins are enabled for upload conversion."""
     return env_is_enabled("DECISIONDOC_MARKITDOWN_PLUGINS_ENABLED", "0")

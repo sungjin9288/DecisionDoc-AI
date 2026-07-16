@@ -12,7 +12,6 @@ import importlib.util
 import json
 import os
 import sys
-import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -440,25 +439,22 @@ def test_18_get_provider_for_bundle_no_model(tmp_path: Path, monkeypatch) -> Non
     assert isinstance(provider, MockProvider)
 
 
-def test_19_get_provider_for_bundle_falls_back_on_error(monkeypatch) -> None:
-    """If ModelRegistry.__init__ raises, get_provider_for_bundle still returns a provider."""
+def test_19_get_provider_for_bundle_fails_closed_on_registry_error(monkeypatch) -> None:
+    """Model authority failure is not hidden as an empty registry."""
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
 
     # Patch ModelRegistry to raise on instantiation
     import app.storage.model_registry as reg_mod
-    original_init = reg_mod.ModelRegistry.__init__
-
     def _bad_init(self, *args, **kwargs):
         raise RuntimeError("simulated registry failure")
 
     monkeypatch.setattr(reg_mod.ModelRegistry, "__init__", _bad_init)
+    reg_mod.clear_model_registry_cache()
 
     from app.providers.factory import get_provider_for_bundle
-    from app.providers.base import Provider
 
-    # Should not raise — silently falls back
-    provider = get_provider_for_bundle("business_plan_kr", "system")
-    assert isinstance(provider, Provider)
+    with pytest.raises(RuntimeError, match="simulated registry failure"):
+        get_provider_for_bundle("business_plan_kr", "system")
 
 
 # ── Group 4: API endpoints ──────────────────────────────────────────────────────

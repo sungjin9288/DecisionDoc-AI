@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone fine-tune dataset and model authority hardening
+
+- `FineTuneStore`와 `ModelRegistry`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Malformed JSON/JSONL, blank line, duplicate key, owned schema/type/timestamp/score drift, duplicate request/model/provider-job identity는 조회와 후속 write를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 tenant 필드 없는 기존 record와 hash가 없던 legacy export metadata는 path-owned read compatibility를 유지한다.
+- Fine-tune export는 messages-only JSONL의 record count, size와 SHA-256을 metadata에 결속하고 download와 provider upload 직전에 다시 검증한다. 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 local/fake-S3에서 직렬화하며 route, generation provider selection과 orchestrator는 앱 data root/backend를 사용한다. 손상된 registry는 active model 없음으로 축소하지 않는다.
+- 자동 provider training은 기본값 `FINETUNE_AUTO_ENABLED=0`이며 opt-in과 threshold를 모두 요구한다. Orchestrator는 명시적 execution authority가 없는 호출에서 upload/job creation을 수행하지 않고, provider job 성공 모델은 promotion eval 동안 inactive 상태를 유지한 뒤 평가 종료 후에만 ready로 전환한다.
+- H47 focused integrity gate는 `39 passed`, fine-tune/model/security/infrastructure 확장 gate는 `281 passed`, full no-cost regression은 `3759 passed, 2 skipped, 4 deselected`다. 모든 provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Provider API, G2B live API, AWS runtime, actual dataset upload, training execution, external provider job polling, actual model promotion, distributed S3 CAS, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone quality learning state integrity hardening
 
 - `FeedbackStore`, `EvalStore`, `PromptOverrideStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` quality state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

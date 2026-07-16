@@ -76,7 +76,7 @@ def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackRespo
     feedback_store = get_feedback_store(tenant_id, **store_context)
     prompt_override_store = get_override_store(tenant_id, **store_context)
     eval_store = get_eval_store(tenant_id, **store_context)
-    finetune_store = get_finetune_store(tenant_id)
+    finetune_store = get_finetune_store(tenant_id, **store_context)
 
     feedback_id = feedback_store.save(payload.model_dump())
     log_event(logger, {

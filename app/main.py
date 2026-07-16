@@ -125,12 +125,14 @@ def create_app() -> FastAPI:
     from app.storage.ab_test_store import clear_ab_test_store_cache
     from app.storage.feedback_store import clear_feedback_store_cache
     from app.storage.finetune_store import clear_finetune_store_cache
+    from app.storage.model_registry import clear_model_registry_cache
     from app.storage.prompt_override_store import clear_override_store_cache
 
     clear_eval_store_cache()
     clear_ab_test_store_cache()
     clear_feedback_store_cache()
     clear_finetune_store_cache()
+    clear_model_registry_cache()
     clear_override_store_cache()
 
     storage = get_storage()
@@ -161,7 +163,11 @@ def create_app() -> FastAPI:
     )
     _search_service = SearchService()
     from app.storage.finetune_store import FineTuneStore as _FineTuneStore
-    _finetune_store = _FineTuneStore(data_dir, tenant_id=SYSTEM_TENANT_ID)
+    _finetune_store = _FineTuneStore(
+        data_dir,
+        tenant_id=SYSTEM_TENANT_ID,
+        backend=state_backend,
+    )
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
     procurement_review_store = ProcurementReviewStore(base_dir=str(data_dir), backend=state_backend)
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
