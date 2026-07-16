@@ -2627,9 +2627,10 @@ def test_app_python_modules_stay_within_800_line_guide():
     assert oversized_modules == {}
 
 
-def test_production_knowledge_store_calls_bind_tenant_explicitly():
+def test_production_knowledge_store_calls_bind_tenant_and_backend_explicitly():
     root = Path(__file__).resolve().parents[1]
     missing_tenant: list[str] = []
+    missing_backend: list[str] = []
 
     for path in (root / "app").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -2641,8 +2642,12 @@ def test_production_knowledge_store_calls_bind_tenant_explicitly():
             if not any(keyword.arg == "tenant_id" for keyword in node.keywords):
                 relative_path = path.relative_to(root).as_posix()
                 missing_tenant.append(f"{relative_path}:{node.lineno}")
+            if not any(keyword.arg == "backend" for keyword in node.keywords):
+                relative_path = path.relative_to(root).as_posix()
+                missing_backend.append(f"{relative_path}:{node.lineno}")
 
     assert missing_tenant == []
+    assert missing_backend == []
 
 
 def test_knowledge_and_model_registry_require_tenant_bound_construction():

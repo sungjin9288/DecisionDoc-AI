@@ -80,6 +80,24 @@ POST /generate/stream (SSE)
     └─ 10. SSE 스트림 반환
 ```
 
+## 데이터 흐름 — 프로젝트 지식
+
+```
+Knowledge API / Report promotion
+    │
+    ▼
+KnowledgeStore(tenant_id, project_id, selected StateBackend)
+    ├─ index.json: ownership, schema, duplicate identity, content binding
+    ├─ {doc_id}.txt: UTF-8, text length, size, SHA-256
+    └─ {doc_id}_style.json: exact JSON object, size, SHA-256
+    │
+    ├─ generation context ranking
+    ├─ procurement capability evaluation
+    └─ approved report artifact reuse
+```
+
+모든 consumer는 앱이 선택한 local/S3 `StateBackend`를 공유한다. Read는 index와 object를 함께 검증하고 malformed·partial·orphan state를 빈 지식으로 축소하지 않는다. 동일 process의 read-modify-write는 logical index lock으로 직렬화하지만 distributed S3 multi-object transaction/CAS는 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

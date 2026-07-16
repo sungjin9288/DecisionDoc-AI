@@ -6,7 +6,6 @@ temporal graph 조회(build_temporal_graph), 프롬프트 컨텍스트 문자열
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from app.storage.knowledge.constants import (
@@ -208,49 +207,47 @@ class KnowledgeStoreRankingMixin:
 
         최신 문서 순으로 max_chars 이내에서 최대한 포함.
         """
-        index = self.rank_documents_for_context(
-            bundle_type=bundle_type,
-            title=title,
-            goal=goal,
-            source_organization=source_organization,
-            report_workflow_id=report_workflow_id,
-        )
-        if not index:
-            return ""
-
-        parts: list[str] = []
-        total = 0
-        for meta in index:
-            txt_path = self._dir / f"{meta['doc_id']}.txt"
-            if not txt_path.exists():
-                continue
-            text = txt_path.read_text(encoding="utf-8")
-            snippet = text[:2_000]  # 문서당 최대 2000자
-            header_lines = [f"[참고문서: {meta['filename']}]"]
-            header_lines.append(
-                f"- 학습 분류: {meta['learning_mode_label']} | 품질 등급: {meta['quality_tier']} | 활용 상태: {meta['success_state']}"
+        with self._lock:
+            index = self.rank_documents_for_context(
+                bundle_type=bundle_type,
+                title=title,
+                goal=goal,
+                source_organization=source_organization,
+                report_workflow_id=report_workflow_id,
             )
-            if meta.get("bundle_match") and bundle_type:
-                header_lines.append(f"- 우선 적용 문서: {bundle_type}")
-            elif meta.get("applicable_bundles"):
-                header_lines.append(f"- 적용 문서: {', '.join(meta['applicable_bundles'])}")
-            if meta.get("selection_reason"):
-                header_lines.append(f"- 선정 이유: {meta['selection_reason']}")
-            if meta.get("source_organization") or meta.get("reference_year"):
-                org_bits = [meta.get("source_organization", "")]
-                if meta.get("reference_year"):
-                    org_bits.append(str(meta["reference_year"]))
-                header_lines.append(f"- 출처: {' / '.join(bit for bit in org_bits if bit)}")
-            if meta.get("notes"):
-                header_lines.append(f"- 활용 메모: {meta['notes']}")
-            block = "\n".join(header_lines) + f"\n{snippet}"
-            if total + len(block) > max_chars:
-                remaining = max_chars - total
-                if remaining > 200:
-                    parts.append(block[:remaining] + "\n...(생략)")
-                break
-            parts.append(block)
-            total += len(block)
+            if not index:
+                return ""
+
+            parts: list[str] = []
+            total = 0
+            for meta in index:
+                text = self._read_document_text(meta)
+                snippet = text[:2_000]
+                header_lines = [f"[참고문서: {meta['filename']}]"]
+                header_lines.append(
+                    f"- 학습 분류: {meta['learning_mode_label']} | 품질 등급: {meta['quality_tier']} | 활용 상태: {meta['success_state']}"
+                )
+                if meta.get("bundle_match") and bundle_type:
+                    header_lines.append(f"- 우선 적용 문서: {bundle_type}")
+                elif meta.get("applicable_bundles"):
+                    header_lines.append(f"- 적용 문서: {', '.join(meta['applicable_bundles'])}")
+                if meta.get("selection_reason"):
+                    header_lines.append(f"- 선정 이유: {meta['selection_reason']}")
+                if meta.get("source_organization") or meta.get("reference_year"):
+                    org_bits = [meta.get("source_organization", "")]
+                    if meta.get("reference_year"):
+                        org_bits.append(str(meta["reference_year"]))
+                    header_lines.append(f"- 출처: {' / '.join(bit for bit in org_bits if bit)}")
+                if meta.get("notes"):
+                    header_lines.append(f"- 활용 메모: {meta['notes']}")
+                block = "\n".join(header_lines) + f"\n{snippet}"
+                if total + len(block) > max_chars:
+                    remaining = max_chars - total
+                    if remaining > 200:
+                        parts.append(block[:remaining] + "\n...(생략)")
+                    break
+                parts.append(block)
+                total += len(block)
 
         if not parts:
             return ""
@@ -261,14 +258,13 @@ class KnowledgeStoreRankingMixin:
 
     def build_style_context(self) -> str:
         """누적 스타일 프로필을 합산해 프롬프트용 문자열 반환."""
-        index = self._load_index()
-        styles: list[dict[str, Any]] = []
-        for meta in index:
-            if not meta.get("has_style"):
-                continue
-            style_path = self._dir / f"{meta['doc_id']}_style.json"
-            if style_path.exists():
-                styles.append(json.loads(style_path.read_text()))
+        with self._lock:
+            index = self._load_index()
+            styles = [
+                self._read_style(meta)
+                for meta in index
+                if meta.get("has_style")
+            ]
 
         if not styles:
             return ""

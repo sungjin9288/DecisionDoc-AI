@@ -37,7 +37,7 @@
 | 알림/협업 | `tests/test_notifications.py`, `tests/test_collaboration_store_integrity.py`, `tests/test_history_favorites.py` | 알림·메시지 흐름, tenant/backend 결속, 손상·중복 차단, 동시 쓰기 |
 | DocumentOps 이력 | `tests/test_document_ops_agent_api.py`, `tests/storage/test_trajectory_store.py`, `tests/test_audit.py`, `tests/test_infrastructure.py`, `tests/e2e/test_main_flow.py` | explicit tenant contract, ownership drift·중복 ID 차단, shared-lock concurrent append, tenant/filter/search total, 양방향 pagination, summary/lazy detail, 열람·review audit, desktop/mobile 작업대 |
 | Auto bundle 입력 | `tests/test_bundle_expander.py` | tenant별 request pattern, admin/Ops 조회, concurrent atomic write, provider contract와 path-safe bundle publication |
-| 프로젝트 지식 | `tests/test_knowledge.py`, `tests/test_generate.py`, `tests/test_tenant.py`, `tests/test_infrastructure.py` | 같은 project ID의 tenant별 CRUD/context 격리, ownership drift·중복 ID 차단, concurrent atomic write, legacy system migration, production caller tenant binding |
+| 프로젝트 지식 | `tests/test_knowledge.py`, `tests/test_knowledge_store_integrity.py`, `tests/test_generate.py`, `tests/test_procurement_decision_service.py`, `tests/test_report_workflows_api.py`, `tests/test_infrastructure.py` | local/fake-S3 selected backend, tenant/project 격리, index/content/style hash·size binding, 손상·중복·orphan·partial write 차단, rollback·동시성·삭제, generation/procurement/report consumer wiring |
 
 ### 2.2 보안 시험
 | 시험 항목 | 대표 시험 파일 | 비고 |

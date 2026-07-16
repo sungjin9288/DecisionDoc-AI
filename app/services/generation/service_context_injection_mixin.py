@@ -72,13 +72,14 @@ class GenerationContextInjectionMixin:
         if not project_id:
             return
 
-        try:
-            from app.storage.knowledge_store import KnowledgeStore
+        from app.storage.knowledge_store import KnowledgeStore, KnowledgeStoreError
 
+        try:
             ks = KnowledgeStore(
                 project_id,
                 data_dir=str(self.data_dir),
                 tenant_id=tenant_id,
+                backend=self.state_backend,
             )
             ranked_documents = ks.rank_documents_for_context(
                 bundle_type=bundle_type,
@@ -106,6 +107,8 @@ class GenerationContextInjectionMixin:
                 )
             if style_ctx:
                 payload["_style_context"] = style_ctx
+        except KnowledgeStoreError:
+            raise
         except Exception as exc:
             _log.warning("[Knowledge] Failed to load context project=%s: %s", project_id, exc)
 

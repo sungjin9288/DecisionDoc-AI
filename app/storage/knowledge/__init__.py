@@ -3,8 +3,8 @@
 업로드된 파일에서 추출한 텍스트·스타일 프로필을 프로젝트 단위로 저장.
 이후 문서 생성 시 컨텍스트로 자동 주입된다.
 
-저장 구조 (로컬):
-    data/tenants/{tenant_id}/knowledge/{project_id}/
+저장 구조 (local 또는 S3 StateBackend):
+    tenants/{tenant_id}/knowledge/{project_id}/
         index.json          — 문서 목록 및 메타데이터
         {doc_id}.txt        — 추출된 원본 텍스트
         {doc_id}_style.json — 스타일 프로필 (선택)
@@ -16,8 +16,8 @@
     문서2: {filename} ...
 
 이 패키지는 constants/normalizers/scoring/entry 헬퍼 모듈과
-store_core_mixin(초기화·CRUD)/store_ranking_mixin(랭킹·컨텍스트 조립)
-두 mixin으로 구현을 분리하고, 이를 합성한 단일 공개 클래스
+store_core_mixin(초기화·CRUD)/store_state_mixin(검증·object I/O)/
+store_ranking_mixin(랭킹·컨텍스트 조립)으로 구현을 분리하고, 합성한 단일 공개 클래스
 ``KnowledgeStore``를 제공한다. ``app.storage.knowledge_store``는
 기존 import 경로(``from app.storage.knowledge_store import X``)를
 유지하기 위한 facade로 이 패키지의 심볼을 그대로 재노출한다.
@@ -65,9 +65,10 @@ from app.storage.knowledge.scoring import (
 from app.storage.knowledge.entry import KnowledgeEntry
 from app.storage.knowledge.store_core_mixin import KnowledgeStoreCoreMixin, _log
 from app.storage.knowledge.store_ranking_mixin import KnowledgeStoreRankingMixin
+from app.storage.knowledge.store_state_mixin import KnowledgeStoreError
 
-__all__ = ["KnowledgeEntry", "KnowledgeStore"]
+__all__ = ["KnowledgeEntry", "KnowledgeStore", "KnowledgeStoreError"]
 
 
 class KnowledgeStore(KnowledgeStoreCoreMixin, KnowledgeStoreRankingMixin):
-    """프로젝트별 문서 지식을 로컬 파일로 저장/조회."""
+    """프로젝트별 문서 지식을 선택된 StateBackend로 저장하고 조회."""

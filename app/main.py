@@ -225,6 +225,7 @@ def create_app() -> FastAPI:
         approval_store=approval_store,
         project_store=project_store,
         data_dir=str(data_dir),
+        state_backend=state_backend,
     )
     from app.agents.document_ops_agent import DocumentOpsAgent
     from app.services.document_ops_service import DocumentOpsService

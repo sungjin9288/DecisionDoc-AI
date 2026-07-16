@@ -14,6 +14,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
 - 최근 확인한 main 자동화 증적: commit `e1a5d65` 기준 GitHub Actions CI `29523291291` success, CD `29523290165` success. CI는 `3760 passed, 5 skipped`, CD image digest는 `sha256:dfc70921e493886a21ab4272be9c94c5ac7037acf14491390e2166eb0d31b098`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
+- 2026-07-17 H50 완료: project knowledge index와 content/style object를 tenant/project별 selected StateBackend에 결속하고 hash·size·ownership·duplicate·orphan을 fail closed로 검증한다. Knowledge API, generation context, procurement evaluator, report promotion도 같은 backend를 사용하며 local/fake-S3 rollback·동시성·API 회귀를 추가했다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -21,7 +22,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-17 실측: 3876 passed, 1 skipped, 4 deselected
+# 2026-07-17 실측: 3894 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

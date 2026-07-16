@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project knowledge state authority hardening
+
+- `KnowledgeStore`는 tenant/project를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/knowledge/{project_id}/`를 사용한다. Knowledge API, generation context, procurement capability 평가와 report workflow promotion도 같은 backend를 명시적으로 전달한다.
+- `index.json`은 exact metadata schema, ownership, duplicate identity와 content/style size·SHA-256 binding을 검증한다. Malformed/invalid UTF-8 JSON, duplicate key, partial binding, missing·unexpected·orphan object와 byte drift는 조회와 후속 add/update/delete를 fail closed로 중단하고 원본 bytes를 보존한다. Tenant/project가 없는 기존 record는 path-owned compatibility로 읽고 다음 해당-record mutation에서 binding을 보강한다.
+- 독립 store 인스턴스의 read-modify-write는 logical index 기준 process-local shared lock으로 local/fake-S3에서 직렬화한다. Index write 실패 시 새 content/style object를 rollback하고 삭제 뒤 object 정리가 실패하면 다음 read에서 orphan으로 탐지한다. Distributed S3 multi-object transaction/CAS는 현재 보장 범위가 아니다.
+- H50 knowledge focused gate는 `67 passed`, selected-backend consumer/infrastructure gate는 `21 passed`, 관련 확장 gate는 `352 passed`, full no-cost regression은 `3894 passed, 2 skipped, 4 deselected`다. 모든 provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Provider API, Stripe API, G2B live API, AWS runtime, distributed S3 CAS, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone quality experiment state authority hardening
 
 - `ABTestStore`와 `RequestPatternStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{ab_tests.json,request_patterns.jsonl}`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

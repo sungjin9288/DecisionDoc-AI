@@ -3,8 +3,8 @@
 업로드된 파일에서 추출한 텍스트·스타일 프로필을 프로젝트 단위로 저장.
 이후 문서 생성 시 컨텍스트로 자동 주입된다.
 
-저장 구조 (로컬):
-    data/tenants/{tenant_id}/knowledge/{project_id}/
+저장 구조 (local 또는 S3 StateBackend):
+    tenants/{tenant_id}/knowledge/{project_id}/
         index.json          — 문서 목록 및 메타데이터
         {doc_id}.txt        — 추출된 원본 텍스트
         {doc_id}_style.json — 스타일 프로필 (선택)
@@ -17,7 +17,7 @@
 
 구현은 ``app.storage.knowledge`` 패키지로 분리되었다 (constants,
 normalizers, scoring, entry 헬퍼 모듈 + store_core_mixin/
-store_ranking_mixin 두 mixin). 이 모듈은 기존
+store_state_mixin/store_ranking_mixin). 이 모듈은 기존
 ``from app.storage.knowledge_store import X`` import 경로를 그대로
 유지하기 위한 backward-compatible facade로, 전체 공개·내부 API를
 재노출한다.
@@ -60,6 +60,7 @@ from app.storage.knowledge import (
     _reference_recency_score,
     KnowledgeEntry,
     KnowledgeStore,
+    KnowledgeStoreError,
 )
 
-__all__ = ["KnowledgeEntry", "KnowledgeStore"]
+__all__ = ["KnowledgeEntry", "KnowledgeStore", "KnowledgeStoreError"]

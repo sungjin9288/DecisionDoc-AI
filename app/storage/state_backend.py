@@ -70,6 +70,10 @@ class StateBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete(self, relative_path: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def list_prefix(self, relative_prefix: str) -> list[str]:
         raise NotImplementedError
 
@@ -145,6 +149,17 @@ class LocalStateBackend(StateBackend):
         path = self._path(relative_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_bytes(path, raw)
+
+    def delete(self, relative_path: str) -> None:
+        path = self._path(relative_path)
+        if not path.exists():
+            return
+        if not path.is_file():
+            raise StateBackendError(f"State path is not a file: {path}")
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise StateBackendError(f"Failed to delete state file: {path}") from exc
 
     def list_prefix(self, relative_prefix: str) -> list[str]:
         prefix_path = self._path(relative_prefix)
@@ -269,6 +284,13 @@ class S3StateBackend(StateBackend):
             )
         except Exception as exc:
             raise StateBackendError(f"Failed to write state bytes: {relative_path}") from exc
+
+    def delete(self, relative_path: str) -> None:
+        key = self._key(relative_path)
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            raise StateBackendError(f"Failed to delete state object: {relative_path}") from exc
 
     def list_prefix(self, relative_prefix: str) -> list[str]:
         canonical_prefix = _canonical_relative_path(relative_prefix)

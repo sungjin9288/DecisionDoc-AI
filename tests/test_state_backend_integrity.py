@@ -55,6 +55,9 @@ def test_local_state_backend_round_trips_canonical_paths(tmp_path: Path):
         "tenants/alpha/logo.bin",
         "tenants/alpha/profile.json",
     ]
+    backend.delete("tenants/alpha/logo.bin")
+    backend.delete("tenants/alpha/logo.bin")
+    assert backend.read_bytes("tenants/alpha/logo.bin") is None
 
 
 @pytest.mark.parametrize(
@@ -84,6 +87,7 @@ def test_local_state_backend_rejects_noncanonical_paths(
         lambda: backend.read_bytes(unsafe_path),
         lambda: backend.write_text(unsafe_path, "unsafe"),
         lambda: backend.write_bytes(unsafe_path, b"unsafe"),
+        lambda: backend.delete(unsafe_path),
         lambda: backend.list_prefix(unsafe_path),
     )
 
@@ -104,6 +108,8 @@ def test_local_state_backend_rejects_file_symlink_escape(tmp_path: Path):
 
     with pytest.raises(StateBackendError, match="symbolic link"):
         backend.read_text("linked.json")
+    with pytest.raises(StateBackendError, match="symbolic link"):
+        backend.delete("linked.json")
 
 
 def test_local_state_backend_rejects_directory_symlink_write_escape(tmp_path: Path):
@@ -160,6 +166,7 @@ def test_s3_state_backend_rejects_noncanonical_paths_before_client_call(
         lambda: backend.read_bytes(unsafe_path),
         lambda: backend.write_text(unsafe_path, "unsafe"),
         lambda: backend.write_bytes(unsafe_path, b"unsafe"),
+        lambda: backend.delete(unsafe_path),
         lambda: backend.list_prefix(unsafe_path),
     )
 

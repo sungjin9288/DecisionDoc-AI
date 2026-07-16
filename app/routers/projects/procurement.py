@@ -371,6 +371,7 @@ def evaluate_project_procurement_endpoint(project_id: str, request: Request) -> 
     service = ProcurementDecisionService(
         procurement_store=request.app.state.procurement_store,
         data_dir=str(request.app.state.data_dir),
+        state_backend=request.app.state.state_backend,
     )
     try:
         record = service.evaluate_project(project_id=project_id, tenant_id=tenant_id)
@@ -429,6 +430,7 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
     service = ProcurementDecisionService(
         procurement_store=request.app.state.procurement_store,
         data_dir=str(request.app.state.data_dir),
+        state_backend=request.app.state.state_backend,
     )
     try:
         record = service.recommend_project(project_id=project_id, tenant_id=tenant_id)

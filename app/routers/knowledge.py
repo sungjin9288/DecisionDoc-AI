@@ -84,6 +84,7 @@ def _knowledge_store(request: Request, project_id: str):
             project_id,
             data_dir=str(request.app.state.data_dir),
             tenant_id=get_tenant_id(request),
+            backend=request.app.state.state_backend,
         )
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from exc

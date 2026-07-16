@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 from dataclasses import asdict
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from app.services.report_workflow.helpers import (
     _as_list,
@@ -23,6 +23,9 @@ from app.storage.report_workflow_store import (
     SlideDraft,
     SlidePlan,
 )
+
+if TYPE_CHECKING:
+    from app.storage.state_backend import StateBackend
 
 logger = logging.getLogger("decisiondoc.report_workflows")
 
@@ -42,6 +45,7 @@ class ReportWorkflowCoreMixin:
         approval_store: ApprovalStore | None = None,
         project_store: ProjectStore | None = None,
         data_dir: str = "data",
+        state_backend: StateBackend | None = None,
     ) -> None:
         self.store = store
         self._provider_factory = provider_factory
@@ -49,6 +53,7 @@ class ReportWorkflowCoreMixin:
         self._approval_store = approval_store
         self._project_store = project_store
         self._data_dir = data_dir
+        self._state_backend = state_backend
 
     def generate_planning(
         self,

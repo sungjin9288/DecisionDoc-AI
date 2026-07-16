@@ -6,7 +6,7 @@ move, no behavior changes).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from app.schemas import (
     CapabilityProfileReference,
@@ -18,12 +18,16 @@ from app.services.procurement_decision.text_utils import _now_utc, _unique
 from app.storage.knowledge_store import KnowledgeStore
 from app.storage.procurement_store import ProcurementDecisionStore
 
+if TYPE_CHECKING:
+    from app.storage.state_backend import StateBackend
+
 
 class ServiceCoreMixin:
     """Init, top-level evaluate/recommend entry points, and input assembly."""
 
     _procurement_store: ProcurementDecisionStore
     _data_dir: str
+    _state_backend: StateBackend | None
     _now_provider: Callable[[], datetime]
 
     def __init__(
@@ -31,10 +35,12 @@ class ServiceCoreMixin:
         *,
         procurement_store: ProcurementDecisionStore,
         data_dir: str = "data",
+        state_backend: StateBackend | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._procurement_store = procurement_store
         self._data_dir = data_dir
+        self._state_backend = state_backend
         self._now_provider = now_provider or _now_utc
 
     def evaluate_project(self, *, project_id: str, tenant_id: str) -> ProcurementDecisionRecord:
@@ -132,6 +138,7 @@ class ServiceCoreMixin:
             project_id,
             data_dir=self._data_dir,
             tenant_id=tenant_id,
+            backend=self._state_backend,
         )
         docs = store.list_documents()
         if not docs:

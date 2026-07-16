@@ -281,6 +281,7 @@ class ReportWorkflowApprovalMixin:
             project_id,
             data_dir=self._data_dir,
             tenant_id=tenant_id,
+            backend=self._state_backend,
         )
         source_request_id = self._approval_request_id(rec)
         promoted: list[dict[str, Any]] = []

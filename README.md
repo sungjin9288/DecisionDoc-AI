@@ -31,6 +31,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | SSO 설정 상태 무결성 | LDAP·SAML·GCloud·OAuth2 설정과 암호화된 secret을 tenant별 local/S3 state에 결속하고 손상·unknown provider·foreign ownership·복호화 실패를 fail closed 처리 |
 | 사용자 템플릿 상태 무결성 | 재사용 문서 입력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
 | 생성 이력 상태 무결성 | 문서 생성·재열기·즐겨찾기·시각자료·지식 승격 이력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
+| 프로젝트 지식 상태 무결성 | 참고 문서 index와 본문·style object를 tenant/project별 local/S3 state에 결속하고 SHA-256·크기·ownership·중복·orphan을 검증. 생성 context, procurement 평가, report promotion도 같은 backend를 사용 |
 | 회의 녹음 상태 무결성 | 녹음 metadata와 audio SHA-256·크기를 tenant/project/recording 경로에 결속하고 손상·identity drift·UUID 충돌·audio 변조를 fail closed 처리 |
 | 결제 권한 상태 무결성 | plan·status·Stripe identity를 tenant별 local/S3 state에 결속하고 손상·unknown value를 원본 보존 상태로 fail closed 처리. Tenant/auth 확정 뒤 metered request 한도를 검사 |
 | 스타일 프로필 상태 무결성 | tone guide·bundle override·분석 예시·기본 스타일을 tenant별 local/S3 state에 결속하고 손상·중복 identity·다중 default를 원본 보존 상태로 fail closed 처리 |
@@ -90,7 +91,7 @@ Services (42) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (37 스토어)    Ops
+Providers (5)    Storage (38 스토어)    Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock/openai/     (atomic write 공통)   eval / eval_live
@@ -258,11 +259,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,189개**, **248개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,204개**, **249개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3189
-python3 scripts/count_readme_metrics.py --field test_files      # → 248
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3204
+python3 scripts/count_readme_metrics.py --field test_files      # → 249
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -291,7 +292,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,876 passed, 1 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,894 passed, 2 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -334,6 +335,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - SSO 설정 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Secret은 Fernet authenticated encryption과 PBKDF2 key derivation을 사용하며 복호화 실패를 평문 fallback으로 처리하지 않습니다. 서명 없는 SAML assertion과 RelayState 불일치는 거부하지만, 현재 기본 requirements에 `python3-saml` verifier가 없어 SAML ACS는 fail closed 상태이며 실제 LDAP·SAML IdP·GCloud 로그인과 distributed S3 compare-and-swap은 검증 범위가 아닙니다.
 - 사용자 템플릿 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 생성 이력 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
+- 프로젝트 지식 index와 본문·style object는 local/S3 공통 backend에서 tenant/project에 결속하고 SHA-256·크기·ownership·중복·orphan을 fail closed로 검증합니다. generation, procurement, report promotion caller도 앱이 선택한 backend를 사용합니다. 여러 프로세스가 같은 S3 object set을 동시에 변경하는 distributed transaction/compare-and-swap은 구현·검증 범위가 아닙니다.
 - 회의 녹음 metadata/audio는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Audio SHA-256·크기는 읽기 전에 다시 확인하지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 이 검증 범위가 아닙니다.
 - 결제 권한 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 metered request를 `503`으로 차단하고 local HMAC 서명 계약을 검증했지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 Stripe checkout·cancel·provider-delivered webhook은 구현·검증 범위가 아닙니다.
 - 사용량 event log와 monthly summary는 local/S3 공통 backend에서 process-local lock으로 검증합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. 여러 프로세스의 distributed S3 transaction/CAS, exact reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
@@ -354,4 +356,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,189 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,204 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

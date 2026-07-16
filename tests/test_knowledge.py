@@ -371,7 +371,7 @@ class TestKnowledgeStore:
         assert persisted[0]["notes"] == "owned update"
 
     def test_duplicate_doc_identity_fails_closed(self, tmp_path):
-        from app.storage.knowledge_store import KnowledgeStore
+        from app.storage.knowledge_store import KnowledgeStore, KnowledgeStoreError
 
         store = KnowledgeStore(
             "project-a",
@@ -390,10 +390,14 @@ class TestKnowledgeStore:
         })
         index_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
 
-        assert store.list_documents() == []
-        assert store.get_document(owned.doc_id) is None
-        assert store.update_metadata(owned.doc_id, notes="changed") is False
-        assert store.delete_document(owned.doc_id) is False
+        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+            store.list_documents()
+        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+            store.get_document(owned.doc_id)
+        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+            store.update_metadata(owned.doc_id, notes="changed")
+        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+            store.delete_document(owned.doc_id)
         assert json.loads(index_path.read_text(encoding="utf-8")) == records
 
     def test_concurrent_instances_preserve_all_documents(self, tmp_path):
