@@ -281,18 +281,21 @@ def build_bundle_prompt(
 
     # User style profile injection — default tenant profile overrides global style
     try:
-        from app.storage.style_store import StyleStore
+        from app.storage.state_backend import StateBackendError
+        from app.storage.style_store import StyleStoreError, get_style_store
         from app.services.style_analyzer import build_style_prompt as _build_style_prompt
 
         _tid = _current_generation_tenant_id()
         if _tid:
-            _sp = StyleStore(_tid).get_default()
+            _sp = get_style_store(_tid).get_default()
             if _sp:
                 _style_block = _build_style_prompt(
                     _sp, bundle_id=bundle_spec.id if bundle_spec is not None else None
                 )
                 if _style_block:
                     prompt += f"\n\n{_style_block}"
+    except (StyleStoreError, StateBackendError):
+        raise
     except Exception as _style_exc:
         import logging as _logging
         _logging.getLogger("decisiondoc.schema").warning(

@@ -28,8 +28,8 @@
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐ │
 │  │                   Storage Layer                      │ │
-│  │  UserStore │ ApprovalStore │ ProjectStore │ ...     │ │
-│  │  (JSONL/JSON, Append-only Audit, Thread-safe)       │ │
+│  │  UserStore │ ApprovalStore │ StyleStore │ ...       │ │
+│  │  (local/S3 JSONL/JSON, shared process lock)         │ │
 │  └─────────────────────────────────────────────────────┘ │
 └──────────┬──────────────────────────┬──────────────────┘
            │                          │

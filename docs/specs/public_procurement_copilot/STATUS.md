@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone style profile state integrity hardening
+
+- `StyleStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/style_profiles.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Blank·malformed·non-object JSON, duplicate JSON key, owned profile/tone/example schema drift, storage identity 불일치, duplicate example ID와 multiple default는 조회·prompt build와 후속 create/tone/override/example/default 변경을 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 caller의 invalid profile/tone/example도 write 전에 거부한다.
+- 같은 state object의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 create와 bundle override를 직렬화한다. Style route는 앱이 선택한 data root/backend를 사용하고 공개 API만 호출하며 prompt build는 손상 state를 조용히 생략하지 않는다.
+- H44 focused integrity gate는 `32 passed`, style/default/security/state/generation/infrastructure 확장 gate는 `363 passed`, full no-cost regression은 `3634 passed, 2 skipped, 4 deselected`다. 임시 mock/local uvicorn HTTP QA에서 create, tone·bundle override 변경, detail/list/default, delete와 final empty lifecycle을 확인했다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone billing authority state integrity hardening
 
 - `BillingStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/billing.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않고 임시 free account를 반환한다.

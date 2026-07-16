@@ -16,14 +16,21 @@ from app.schemas import CreateStyleProfileRequest, UpdateToneGuideRequest
 router = APIRouter(tags=["styles"])
 
 
+def _get_style_store(request: Request):
+    from app.storage.style_store import get_style_store
+
+    return get_style_store(
+        get_tenant_id(request),
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
+
+
 @router.post("/styles")
 async def create_style_profile(request: Request, body: CreateStyleProfileRequest):
     """Create a new (empty) style profile for the tenant."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     profile = style_store.create(
         name=body.name,
         description=body.description,
@@ -35,12 +42,8 @@ async def create_style_profile(request: Request, body: CreateStyleProfileRequest
 @router.get("/styles")
 async def list_style_profiles(request: Request):
     """List all style profiles for the current tenant."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     profiles = style_store.list_profiles()
-    raw_data = style_store._load()
     return {
         "profiles": [
             {
@@ -48,10 +51,8 @@ async def list_style_profiles(request: Request):
                 "name": p.name,
                 "description": p.description,
                 "is_default": p.is_default,
-                "is_system": raw_data.get(p.profile_id, {}).get("is_system", False),
-                "avatar_color": raw_data.get(p.profile_id, {}).get(
-                    "avatar_color", ""
-                ),
+                "is_system": p.is_system,
+                "avatar_color": p.avatar_color,
                 "example_count": len(p.examples),
                 "bundle_override_count": len(p.bundle_overrides),
                 "created_at": p.created_at,
@@ -64,10 +65,7 @@ async def list_style_profiles(request: Request):
 @router.get("/styles/{profile_id}")
 async def get_style_profile(request: Request, profile_id: str):
     """Get full details of a style profile."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     profile = style_store.get(profile_id)
     if not profile:
         raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
@@ -77,10 +75,7 @@ async def get_style_profile(request: Request, profile_id: str):
 @router.post("/styles/{profile_id}/set-default")
 async def set_default_style(request: Request, profile_id: str):
     """Mark a profile as the default for this tenant."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     if not style_store.get(profile_id):
         raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
     style_store.set_default(profile_id)
@@ -92,10 +87,9 @@ async def update_tone_guide(
     request: Request, profile_id: str, body: UpdateToneGuideRequest
 ):
     """Update the global tone guide for a style profile."""
-    from app.storage.style_store import StyleStore, ToneGuide
+    from app.storage.style_store import ToneGuide
 
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     tone = ToneGuide(
         formality=body.formality,
         density=body.density,
@@ -119,10 +113,9 @@ async def set_bundle_tone(
     body: UpdateToneGuideRequest,
 ):
     """Set a bundle-specific tone override inside a style profile."""
-    from app.storage.style_store import StyleStore, ToneGuide
+    from app.storage.style_store import ToneGuide
 
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     tone = ToneGuide(**body.model_dump())
     try:
         style_store.set_bundle_override(profile_id, bundle_id, tone)
@@ -134,10 +127,7 @@ async def set_bundle_tone(
 @router.delete("/styles/{profile_id}/bundles/{bundle_id}")
 async def remove_bundle_tone(request: Request, profile_id: str, bundle_id: str):
     """Remove a bundle-specific tone override."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     try:
         style_store.remove_bundle_override(profile_id, bundle_id)
     except ValueError as exc:
@@ -155,11 +145,11 @@ async def analyze_style_document(
     """Upload documents and extract style patterns via LLM analysis."""
     from app.providers.factory import get_provider_for_bundle
     from app.services.style_analyzer import analyze_document_style
-    from app.storage.style_store import StyleExample, StyleStore
+    from app.storage.style_store import StyleExample
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     if not style_store.get(profile_id):
         raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
 
@@ -199,10 +189,7 @@ async def analyze_style_document(
 @router.delete("/styles/{profile_id}/examples/{example_id}")
 async def remove_style_example(request: Request, profile_id: str, example_id: str):
     """Remove a style example from a profile."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
     try:
         style_store.remove_example(profile_id, example_id)
     except ValueError as exc:
@@ -213,10 +200,7 @@ async def remove_style_example(request: Request, profile_id: str, example_id: st
 @router.delete("/styles/{profile_id}")
 async def delete_style_profile(request: Request, profile_id: str):
     """Delete a custom style profile (system profiles cannot be deleted)."""
-    from app.storage.style_store import StyleStore
-
-    tenant_id = get_tenant_id(request)
-    style_store = StyleStore(tenant_id)
+    style_store = _get_style_store(request)
 
     if style_store.get(profile_id) is None:
         raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")

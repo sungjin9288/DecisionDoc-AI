@@ -1,6 +1,6 @@
 """Messaging, style profile, and knowledge metadata schemas."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Message schemas ────────────────────────────────────────────────────────────
@@ -16,17 +16,30 @@ class EditMessageRequest(BaseModel):
 
 
 class CreateStyleProfileRequest(BaseModel):
-    name: str
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str = Field(min_length=1)
     description: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        if value != value.strip() or any(
+            ord(character) < 32 or ord(character) == 127 for character in value
+        ):
+            raise ValueError("name must be a canonical non-empty string")
+        return value
 
 
 class UpdateToneGuideRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     formality: str = ""
     density: str = ""
     perspective: str = ""
-    custom_rules: list[str] = []
-    forbidden_words: list[str] = []
-    preferred_words: list[str] = []
+    custom_rules: list[str] = Field(default_factory=list)
+    forbidden_words: list[str] = Field(default_factory=list)
+    preferred_words: list[str] = Field(default_factory=list)
 
 
 class UpdateKnowledgeMetadataRequest(BaseModel):

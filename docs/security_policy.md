@@ -60,6 +60,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - tenant와 exact account schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, tenant/plan/status/timestamp drift는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Metered request는 tenant/auth context 확정 뒤 상태를 확인하고 검증 실패 시 `503`으로 차단한다.
   - `DECISIONDOC_ENV=prod` 또는 production 환경에서는 `STRIPE_WEBHOOK_SECRET`이 없으면 webhook 처리를 거부한다. Secret이 설정된 webhook만 JWT 예외로 진입하며 원본 payload HMAC, 5분 timestamp와 복수 `v1` 서명을 검증한다.
   - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 Stripe checkout, cancel, provider-delivered webhook 성공은 현재 보장 범위가 아니다.
+- 스타일 프로필 상태
+  - tone guide, bundle override, 분석 예시와 default/system metadata는 local `data/tenants/<tenant_id>/style_profiles.json` 또는 같은 relative path의 S3 state object에 저장한다.
+  - tenant와 owned profile의 exact schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, identity/timestamp drift, duplicate example ID와 multiple default는 조회·prompt build와 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존한다.
+  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 provider 기반 style analysis 성공은 현재 보장 범위가 아니다.
 - 공개 공유 상태
   - share link는 local `data/tenants/<tenant_id>/shares.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant를 path 선택 전에 검증하고 blank·malformed·non-object JSON, duplicate key, owned malformed record와 storage key/share ID drift는 공개 조회와 후속 생성·접근 횟수·취소 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
