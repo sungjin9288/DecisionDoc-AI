@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone public share state integrity hardening
+
+- `ShareStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/shares.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Blank·malformed·non-object JSON, duplicate JSON key, owned malformed record와 storage key/share ID drift는 public/auth 조회와 후속 create/access/revoke를 fail closed로 중단하고 원본 bytes를 보존한다. Caller가 만든 invalid share input과 generated ID collision도 write 전에 거부한다.
+- Explicit foreign record는 현재 tenant의 public/auth 조회·접근 횟수·취소에서 제외하되 원본에 보존한다. Tenant 필드가 없는 기존 record는 path ownership으로 읽으며, 같은 data root의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 create/access/revoke를 직렬화한다. Distributed S3 compare-and-swap을 주장하지 않는다.
+- 모든 share route는 앱이 선택한 data root와 backend를 명시적으로 사용한다. H40 focused integrity gate는 `36 passed`, share/security/state/project/tenant/audit/infrastructure 확장 gate는 `541 passed`, full no-cost regression은 `3470 passed, 2 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+- 임시 mock/local uvicorn HTTP QA에서 authenticated create 200, unauthenticated public view 200, persisted access count 1, creator revoke 200과 post-revoke public 404를 확인했다. 서버와 임시 data root는 검증 직후 정리했다.
+
 ## Post-milestone reusable template state integrity hardening
 
 - `TemplateStore`는 tenant ID를 JSONL path 선택 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/templates.jsonl`을 사용한다. Missing-state read는 파일이나 object를 만들지 않으며 마지막 template 삭제 뒤의 빈 JSONL은 유효한 빈 lifecycle 상태로 읽는다.

@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "11650f47f9ebd1daac256995c75eb2e82452ffb2f56cba1a3db299a98ab3428e",
-      "size_bytes": 34358
+      "sha256": "874543923c0a8c9624ff988343d8e5ce0b779aaf42e3df43f46d96abd29509cd",
+      "size_bytes": 34855
     },
     {
       "path": "docs/architecture.md",
@@ -35,13 +35,13 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "ffe62a42ecbb5cd6963501393bb7bae9732e7bb047f9ddd28f321ed49d885b3a",
-      "size_bytes": 12060
+      "sha256": "04bed4e0605611348079c6b6bac8825ee3e7934f146e990a36ba78fd4bdcaad8",
+      "size_bytes": 12425
     },
     {
       "path": "docs/evidence-checklist.md",
-      "sha256": "11ab4c2dc51850c15044fd0d67e61d6d2349cadf521b319eabc4ecfae6b7ce09",
-      "size_bytes": 7554
+      "sha256": "8be7b8fe3e5b14907d9d641e5ae21080435803d784b4f5f9c50d22bc4d7f3a12",
+      "size_bytes": 7975
     },
     {
       "path": "docs/evidence-gallery.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "005f446336c35f8e754305499bad963be1f96291b4b06525323cb33f40b7d879",
-      "size_bytes": 14936
+      "sha256": "47ac3bd8fb5040a4cef988882b8956bf9b05be9df024433bebb2357df3e04b7a",
+      "size_bytes": 15229
     },
     {
       "path": "docs/interview-story.md",
@@ -80,8 +80,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "3fb914890a5c81653d1ce99b256c322e6da40015e08dfcb1c6aff2936c87f5a2",
-      "size_bytes": 58096
+      "sha256": "7104c74dbdd2ff1dd1a53315bf9a3ace8a7ce2a0070691d2f7e8e49f500f70db",
+      "size_bytes": 59112
     },
     {
       "path": "evidence/api-responses/bundles.json",
