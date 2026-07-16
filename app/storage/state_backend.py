@@ -13,6 +13,24 @@ class StateBackendError(Exception):
     """Raised when the shared state backend cannot read or write data."""
 
 
+def _canonical_relative_path(relative_path: str) -> str:
+    if not isinstance(relative_path, str) or not relative_path:
+        raise StateBackendError("State path must be a non-empty relative path.")
+    if relative_path != relative_path.strip():
+        raise StateBackendError("State path must not contain leading or trailing whitespace.")
+    has_control_character = any(
+        ord(character) < 32 or ord(character) == 127
+        for character in relative_path
+    )
+    if has_control_character or "\\" in relative_path or relative_path.startswith("/"):
+        raise StateBackendError("State path must be a canonical relative path.")
+
+    parts = relative_path.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise StateBackendError("State path must be a canonical relative path.")
+    return relative_path
+
+
 class StateBackend(ABC):
     @property
     @abstractmethod
@@ -59,13 +77,25 @@ class StateBackend(ABC):
 class LocalStateBackend(StateBackend):
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
+        self._resolved_root = self.root.resolve()
 
     @property
     def kind(self) -> str:
         return "local"
 
     def _path(self, relative_path: str) -> Path:
-        return self.root / relative_path
+        canonical_path = _canonical_relative_path(relative_path)
+        candidate = self._resolved_root / canonical_path
+        current = self._resolved_root
+        for part in canonical_path.split("/"):
+            current /= part
+            if current.is_symlink():
+                raise StateBackendError("State path contains a symbolic link.")
+
+        path = candidate.resolve()
+        if not path.is_relative_to(self._resolved_root):
+            raise StateBackendError("State path escapes the configured local root.")
+        return path
 
     def exists(self, relative_path: str) -> bool:
         return self._path(relative_path).exists()
@@ -119,14 +149,17 @@ class LocalStateBackend(StateBackend):
     def list_prefix(self, relative_prefix: str) -> list[str]:
         prefix_path = self._path(relative_prefix)
         if prefix_path.is_file():
-            return [relative_prefix.rstrip("/")]
+            return [_canonical_relative_path(relative_prefix)]
         if not prefix_path.exists():
             return []
-        return [
-            str(path.relative_to(self.root))
-            for path in prefix_path.rglob("*")
-            if path.is_file()
-        ]
+
+        results: list[str] = []
+        for path in prefix_path.rglob("*"):
+            if path.is_symlink():
+                raise StateBackendError("State prefix contains a symbolic link.")
+            if path.is_file():
+                results.append(path.relative_to(self._resolved_root).as_posix())
+        return sorted(results)
 
 
 class S3StateBackend(StateBackend):
@@ -157,11 +190,12 @@ class S3StateBackend(StateBackend):
         return self._s3_client
 
     def _key(self, relative_path: str) -> str:
-        return f"{self.prefix}{relative_path.lstrip('/')}"
+        return f"{self.prefix}{_canonical_relative_path(relative_path)}"
 
     def exists(self, relative_path: str) -> bool:
+        key = self._key(relative_path)
         try:
-            self.client.head_object(Bucket=self.bucket, Key=self._key(relative_path))
+            self.client.head_object(Bucket=self.bucket, Key=key)
             return True
         except Exception as exc:
             response = getattr(exc, "response", None)
@@ -173,8 +207,9 @@ class S3StateBackend(StateBackend):
             raise StateBackendError(f"Failed to stat state object: {relative_path}") from exc
 
     def read_text(self, relative_path: str) -> str | None:
+        key = self._key(relative_path)
         try:
-            obj = self.client.get_object(Bucket=self.bucket, Key=self._key(relative_path))
+            obj = self.client.get_object(Bucket=self.bucket, Key=key)
             return obj["Body"].read().decode("utf-8")
         except Exception as exc:
             response = getattr(exc, "response", None)
@@ -186,8 +221,9 @@ class S3StateBackend(StateBackend):
             raise StateBackendError(f"Failed to read state object: {relative_path}") from exc
 
     def read_bytes(self, relative_path: str) -> bytes | None:
+        key = self._key(relative_path)
         try:
-            obj = self.client.get_object(Bucket=self.bucket, Key=self._key(relative_path))
+            obj = self.client.get_object(Bucket=self.bucket, Key=key)
             return obj["Body"].read()
         except Exception as exc:
             response = getattr(exc, "response", None)
@@ -205,10 +241,11 @@ class S3StateBackend(StateBackend):
         *,
         content_type: str = "application/json; charset=utf-8",
     ) -> None:
+        key = self._key(relative_path)
         try:
             self.client.put_object(
                 Bucket=self.bucket,
-                Key=self._key(relative_path),
+                Key=key,
                 Body=text.encode("utf-8"),
                 ContentType=content_type,
             )
@@ -222,10 +259,11 @@ class S3StateBackend(StateBackend):
         *,
         content_type: str = "application/octet-stream",
     ) -> None:
+        key = self._key(relative_path)
         try:
             self.client.put_object(
                 Bucket=self.bucket,
-                Key=self._key(relative_path),
+                Key=key,
                 Body=raw,
                 ContentType=content_type,
             )
@@ -233,19 +271,52 @@ class S3StateBackend(StateBackend):
             raise StateBackendError(f"Failed to write state bytes: {relative_path}") from exc
 
     def list_prefix(self, relative_prefix: str) -> list[str]:
-        prefix = self._key(relative_prefix)
-        try:
-            response = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
-        except Exception as exc:
-            raise StateBackendError(f"Failed to list state prefix: {relative_prefix}") from exc
-        contents = response.get("Contents", []) or []
-        results: list[str] = []
-        for item in contents:
-            key = item.get("Key")
-            if not key or not key.startswith(self.prefix):
-                continue
-            results.append(key[len(self.prefix):])
-        return results
+        canonical_prefix = _canonical_relative_path(relative_prefix)
+        object_prefix = self._key(canonical_prefix)
+        continuation_token: str | None = None
+        seen_tokens: set[str] = set()
+        results: set[str] = set()
+
+        while True:
+            request: dict[str, Any] = {
+                "Bucket": self.bucket,
+                "Prefix": object_prefix,
+            }
+            if continuation_token is not None:
+                request["ContinuationToken"] = continuation_token
+            try:
+                response = self.client.list_objects_v2(**request)
+            except Exception as exc:
+                raise StateBackendError(
+                    f"Failed to list state prefix: {relative_prefix}"
+                ) from exc
+
+            for item in response.get("Contents", []) or []:
+                key = item.get("Key")
+                if not isinstance(key, str) or not key.startswith(self.prefix):
+                    continue
+                if key.endswith("/"):
+                    continue
+                relative_path = _canonical_relative_path(key[len(self.prefix):])
+                if (
+                    relative_path == canonical_prefix
+                    or relative_path.startswith(f"{canonical_prefix}/")
+                ):
+                    results.add(relative_path)
+
+            if not response.get("IsTruncated"):
+                break
+            next_token = response.get("NextContinuationToken")
+            if (
+                not isinstance(next_token, str)
+                or not next_token
+                or next_token in seen_tokens
+            ):
+                raise StateBackendError("S3 state listing returned an invalid continuation token.")
+            seen_tokens.add(next_token)
+            continuation_token = next_token
+
+        return sorted(results)
 
 
 def get_state_backend(*, data_dir: Path | None = None) -> StateBackend:

@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone shared state backend integrity hardening
+
+- `StateBackend`의 모든 public operation은 빈 값, 절대경로, dot segment, 중복 separator, trailing separator, backslash와 control character를 canonical relative path로 수용하지 않는다.
+- Local backend는 configured root의 resolved boundary 안에서만 파일을 읽고 쓰며, 경로 component 또는 listing prefix 아래 symbolic link를 만나면 원본 외부 파일을 읽거나 변경하지 않고 중단한다.
+- S3 backend listing은 요청 경로와 exact match 또는 그 자식만 반환해 adjacent prefix alias를 제외한다. `IsTruncated` 응답은 continuation token을 검증하면서 끝까지 순회하고 canonical key를 정렬·중복 제거하며, malformed key나 반복·누락 token은 fail closed로 처리한다.
+- Focused state/storage/tenant/project/approval/procurement 회귀는 `449 passed`다. Full no-cost regression은 `3226 passed, 2 skipped, 4 deselected`이며 provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone tenant registry integrity hardening
 
 - Root-scoped `TenantStore`는 모든 public tenant ID를 공통 validator로 확인하고 registry key와 persisted `tenant_id`가 정확히 일치하는 record만 tenant 조회, 목록, custom hint, API-key 인증, 변경 대상으로 사용한다. Admin 생성은 leading/trailing whitespace와 path-like ID를 422로 거부하고 middleware도 unsafe header를 tenant scope로 채택하지 않는다.
