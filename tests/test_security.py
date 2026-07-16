@@ -901,20 +901,26 @@ def test_audit_store_is_bound_to_one_tenant(tmp_path, monkeypatch):
 
     with pytest.raises(TypeError):
         store.query("tenant_b")
-    assert store.query() == []
-    assert store.query_all() == []
-    assert store.find_latest_entry(actions={"user.login_fail"}) is None
-    assert store.get_session_activity("session-a") == []
-    assert store.get_user_activity("user-1") == []
-    assert store.get_failed_logins() == []
-    assert store.get_stats()["total_actions"] == 0
-    assert "audit-a" not in store.export_csv("2000-01-01", "2999-12-31")
+    evidence_reads = (
+        store.query,
+        store.query_all,
+        lambda: store.find_latest_entry(actions={"user.login_fail"}),
+        lambda: store.get_session_activity("session-a"),
+        lambda: store.get_user_activity("user-1"),
+        store.get_failed_logins,
+        store.get_stats,
+        lambda: store.export_csv("2000-01-01", "2999-12-31"),
+    )
+    for read in evidence_reads:
+        with pytest.raises(ValueError, match="Invalid audit log entry at line 1"):
+            read()
 
     persisted = json.loads(path.read_text(encoding="utf-8"))
     assert persisted["tenant_id"] == "tenant_b"
     persisted.pop("tenant_id")
     path.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
-    assert store.query() == []
+    with pytest.raises(ValueError, match="Invalid audit log entry at line 1"):
+        store.query()
 
 
 def test_meeting_recording_store_validates_metadata_and_audio_scope(tmp_path):

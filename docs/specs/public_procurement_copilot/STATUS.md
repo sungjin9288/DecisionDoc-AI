@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone audit evidence integrity hardening
+
+- `AuditStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/audit_logs.jsonl`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Append는 기존 JSONL byte prefix를 그대로 보존하고 새 line만 덧붙인다. Persisted malformed JSON, duplicate JSON key, non-object entry, foreign tenant, invalid required field와 duplicate log ID는 read와 append를 fail closed로 중단하며 읽기 중 자동 corruption event를 추가하지 않는다.
+- Caller가 전달한 빈 log ID, invalid result, non-object detail과 foreign tenant도 write 전에 거부한다. 같은 audit path를 쓰는 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 append를 직렬화하며 distributed S3 compare-and-swap을 주장하지 않는다.
+- H36 focused audit/security gate는 `152 passed`, tenant/project/report/DocumentOps/storage/infrastructure 확장 gate는 `524 passed`, full no-cost regression은 `3330 passed, 2 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone report workflow review-state integrity hardening
 
 - `ReportWorkflowStore`는 tenant ID를 state path 사용 전에 검증하고 local/S3 모두 shared `StateBackend`를 통해 기획안, 장표, 댓글, 승인 단계, 학습 증적과 시각자료 이력을 읽고 쓴다.

@@ -40,7 +40,9 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다.
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
 - 감사 로그 저장
-  - 파일 저장 위치: `data/tenants/<tenant_id>/audit_logs.jsonl`
+  - 저장 위치: local `data/tenants/<tenant_id>/audit_logs.jsonl` 또는 같은 relative path의 S3 state object
+  - tenant와 log identity를 append 전에 검증하고 기존 JSONL byte prefix를 보존한다. 손상·foreign·중복 evidence는 자동 복구하거나 건너뛰지 않고 read와 append를 중단한다.
+  - 독립 store 인스턴스의 동시 append는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
   - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
   - 조회와 CSV 내보내기는 tenant와 action/result/기간 filter를 공유한다. 조회는 검증된 offset/limit과 전체 건수·다음 페이지 여부를 반환하고, CSV는 전체 detail JSON을 보존하며 spreadsheet formula injection이 가능한 문자열을 text cell로 처리
 - 운영 로그

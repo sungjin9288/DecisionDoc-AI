@@ -27,6 +27,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 TEST_JWT_SECRET_KEY = "test-secret-key-audit-tests-32chars!!"
@@ -167,13 +168,9 @@ def test_audit_store_query_filter_by_date(tmp_path):
     new_ts = datetime.now(timezone.utc).isoformat()
 
     def _log_at(ts):
-        from dataclasses import asdict
         log = _make_audit_log(tenant_id="t1")
-        d = asdict(log)
-        d["timestamp"] = ts
-        line = json.dumps(d) + "\n"
-        with store._path.open("a") as f:
-            f.write(line)
+        log.timestamp = ts
+        store.append(log)
 
     _log_at(old_ts)
     _log_at(new_ts)
@@ -336,22 +333,23 @@ def test_audit_store_export_csv_applies_action_and_result_filters(tmp_path):
     ]
 
 
-def test_audit_store_corrupted_line_recovery(tmp_path):
-    """Corrupted JSONL lines are skipped; a corruption event is appended."""
+def test_audit_store_corrupted_line_stops_read_and_append(tmp_path):
+    """Corrupted JSONL evidence is preserved and never repaired during reads."""
     os.environ["DATA_DIR"] = str(tmp_path)
-    from app.storage.audit_store import AuditStore
+    from app.storage.audit_store import AuditStore, AuditStoreError
     store = AuditStore("t1")
-    # Write a valid line then a corrupt line
     log = _make_audit_log(tenant_id="t1", action="user.login")
-    from dataclasses import asdict
-    store._path.write_text(
-        json.dumps(asdict(log)) + "\n" + "NOT VALID JSON{{{\n"
-    )
-    entries = store._read_all()
-    # Only the valid entry plus the auto-appended corruption event
-    assert len(entries) >= 1
-    actions = [e["action"] for e in entries]
-    assert "user.login" in actions
+    store.append(log)
+    with store._path.open("a", encoding="utf-8") as stream:
+        stream.write("NOT VALID JSON{{{\n")
+    corrupted_bytes = store._path.read_bytes()
+
+    with pytest.raises(AuditStoreError, match="Invalid audit log entry at line 2"):
+        store._read_all()
+    with pytest.raises(AuditStoreError, match="Invalid audit log entry at line 2"):
+        store.append(_make_audit_log(tenant_id="t1"))
+
+    assert store._path.read_bytes() == corrupted_bytes
 
 
 def test_audit_store_find_latest_entry_bypasses_query_cap(tmp_path):

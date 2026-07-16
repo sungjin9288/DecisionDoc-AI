@@ -4,27 +4,43 @@ Storage: data/tenants/{tenant_id}/audit_logs.jsonl
 Format: one JSON object per line (JSONL), append-only.
 
 CRITICAL: entries are NEVER deleted or modified — only appended.
-Thread-safe via per-store file lock on append.
+Thread-safe within one process across stores that share a data root.
 """
 from __future__ import annotations
 
 import csv
 import io
 import json
-import logging
 import os
 import threading
-import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-_log = logging.getLogger("decisiondoc.audit")
+from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
+
+_audit_locks: dict[Path, threading.RLock] = {}
+_audit_locks_guard = threading.Lock()
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+class AuditStoreError(ValueError):
+    """Raised when persisted audit evidence cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _audit_locks_guard:
+        return _audit_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AuditStoreError(f"Duplicate key in audit log entry: {key!r}")
+        result[key] = value
+    return result
 
 
 def _inclusive_date_end(value: str) -> str:
@@ -131,73 +147,106 @@ class AuditLog:
 class AuditStore:
     """Append-only, thread-safe JSONL audit log store scoped to a single tenant."""
 
-    def __init__(self, tenant_id: str) -> None:
-        data_dir = Path(os.getenv("DATA_DIR", "./data"))
-        tenant_dir = data_dir / "tenants" / tenant_id
-        tenant_dir.mkdir(parents=True, exist_ok=True)
-        self._path = tenant_dir / "audit_logs.jsonl"
-        self._tenant_id = tenant_id
-        self._lock = threading.Lock()
-        # Ensure file exists
-        if not self._path.exists():
-            self._path.touch()
+    def __init__(
+        self,
+        tenant_id: str,
+        *,
+        data_dir: str | Path | None = None,
+        backend: StateBackend | None = None,
+    ) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
+        self._base = Path(data_dir or os.getenv("DATA_DIR", "./data"))
+        self._backend = backend or get_state_backend(data_dir=self._base)
+        self._relative_path = str(
+            Path("tenants") / self._tenant_id / "audit_logs.jsonl"
+        )
+        self._path = self._base / self._relative_path
+        self._lock = _lock_for_path(self._path)
 
     # ── internal helpers ───────────────────────────────────────────────────
 
-    def _read_all(self) -> list[dict]:
-        """Read all log entries, skipping corrupt lines."""
-        entries: list[dict] = []
-        try:
-            content = self._path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return entries
+    def _validate_entry(self, entry: object) -> dict[str, Any]:
+        if not isinstance(entry, dict):
+            raise AuditStoreError("Invalid audit log entry")
 
-        corrupted = False
-        for line in content.splitlines():
+        required_nonempty = (
+            "log_id",
+            "tenant_id",
+            "timestamp",
+            "action",
+            "resource_type",
+            "result",
+        )
+        if any(
+            not isinstance(entry.get(field), str) or not entry[field]
+            for field in required_nonempty
+        ):
+            raise AuditStoreError("Invalid audit log identity")
+        if entry["tenant_id"] != self._tenant_id:
+            raise AuditStoreError("Audit log tenant does not match store tenant")
+        if entry["result"] not in {"success", "failure", "blocked"}:
+            raise AuditStoreError("Invalid audit log result")
+        if not isinstance(entry.get("detail"), dict):
+            raise AuditStoreError("Invalid audit log detail")
+
+        string_fields = (
+            "user_id",
+            "username",
+            "user_role",
+            "ip_address",
+            "user_agent",
+            "resource_id",
+            "resource_name",
+            "session_id",
+        )
+        if any(not isinstance(entry.get(field), str) for field in string_fields):
+            raise AuditStoreError("Invalid audit log field")
+        return entry
+
+    def _parse(self, raw: str) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        log_ids: set[str] = set()
+        for line_number, line in enumerate(raw.splitlines(), start=1):
             line = line.strip()
             if not line:
                 continue
             try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                corrupted = True
-                _log.warning("[AuditStore] Skipping corrupt line in %s", self._path)
-
-        if corrupted:
-            # Log a corruption event (best-effort, non-recursive)
-            try:
-                self.append(AuditLog(
-                    log_id=str(uuid.uuid4()),
-                    tenant_id=self._tenant_id,
-                    timestamp=_now_iso(),
-                    user_id="system",
-                    username="system",
-                    user_role="system",
-                    ip_address="",
-                    user_agent="",
-                    action="system.config_change",
-                    resource_type="system",
-                    resource_id="",
-                    resource_name="audit_log",
-                    result="failure",
-                    detail={"event": "audit_log_corruption_detected", "path": str(self._path)},
-                    session_id="",
-                ))
-            except Exception:
-                pass
+                entry = json.loads(line, object_pairs_hook=_unique_object)
+                entry = self._validate_entry(entry)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise AuditStoreError(
+                    f"Invalid audit log entry at line {line_number}"
+                ) from exc
+            if entry["log_id"] in log_ids:
+                raise AuditStoreError("Duplicate audit log identity")
+            log_ids.add(entry["log_id"])
+            entries.append(entry)
 
         return entries
+
+    def _read_all(self) -> list[dict[str, Any]]:
+        """Read all owned log entries without mutating audit evidence."""
+        with self._lock:
+            raw = self._backend.read_text(self._relative_path)
+            return self._parse(raw or "")
 
     # ── public API ─────────────────────────────────────────────────────────
 
     def append(self, log: AuditLog) -> None:
         """Thread-safe append of a single audit log entry."""
-        if log.tenant_id != self._tenant_id:
-            raise ValueError("Audit log tenant does not match store tenant")
-        line = json.dumps(asdict(log), ensure_ascii=False) + "\n"
+        entry = self._validate_entry(asdict(log))
         with self._lock:
-            with self._path.open("a", encoding="utf-8") as f:
-                f.write(line)
+            raw = self._backend.read_text(self._relative_path) or ""
+            existing = self._parse(raw)
+            if any(item["log_id"] == entry["log_id"] for item in existing):
+                raise AuditStoreError("Duplicate audit log identity")
+            separator = "" if not raw or raw.endswith("\n") else "\n"
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            self._backend.write_text(
+                self._relative_path,
+                f"{raw}{separator}{line}",
+                content_type="application/x-ndjson; charset=utf-8",
+            )
 
     def _owns(self, entry: dict[str, Any]) -> bool:
         return entry.get("tenant_id") == self._tenant_id
