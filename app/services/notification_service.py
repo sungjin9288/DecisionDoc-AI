@@ -12,10 +12,11 @@ import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from app.storage.state_backend import StateBackend
 
 _log = logging.getLogger("decisiondoc.notification")
 
@@ -145,12 +146,24 @@ def _build_slack_payload(
 class NotificationService:
     """Dispatch in-app, email, and Slack notifications for a tenant."""
 
-    def __init__(self, tenant_id: str) -> None:
+    def __init__(
+        self,
+        tenant_id: str,
+        *,
+        data_dir: str | Path | None = None,
+        backend: StateBackend | None = None,
+    ) -> None:
         self._tenant_id = tenant_id
+        self._data_dir = data_dir
+        self._backend = backend
 
     def _store(self):
         from app.storage.notification_store import get_notification_store
-        return get_notification_store(self._tenant_id)
+        return get_notification_store(
+            self._tenant_id,
+            data_dir=self._data_dir,
+            backend=self._backend,
+        )
 
     def _user_store(self):
         from app.storage.user_store import get_user_store

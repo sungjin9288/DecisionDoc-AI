@@ -1,7 +1,7 @@
 """app/storage/notification_store.py — Per-tenant notification storage.
 
 Storage: data/tenants/{tenant_id}/notifications.json  (list of dicts)
-Thread-safe via threading.Lock per store instance.
+Thread-safe within one process across stores that share a data root.
 """
 from __future__ import annotations
 
@@ -13,11 +13,35 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
+from typing import Any
 
-from app.storage.base import atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.notification_store")
+
+_notification_locks: dict[Path, threading.RLock] = {}
+_notification_locks_guard = threading.Lock()
+
+
+class NotificationStoreError(ValueError):
+    """Raised when persisted notification state cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _notification_locks_guard:
+        return _notification_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise NotificationStoreError(
+                f"Duplicate key in notification state: {key!r}"
+            )
+        result[key] = value
+    return result
 
 
 def _now_iso() -> str:
@@ -61,19 +85,47 @@ class Notification:
 
 
 def _notif_from_dict(d: dict) -> Notification:
+    required_strings = (
+        "notification_id",
+        "tenant_id",
+        "recipient_id",
+        "event_type",
+        "title",
+        "body",
+        "context_type",
+        "context_id",
+        "created_at",
+    )
+    if any(not isinstance(d.get(field), str) for field in required_strings):
+        raise NotificationStoreError("Invalid notification record")
+    if any(
+        not d[field]
+        for field in (
+            "notification_id",
+            "tenant_id",
+            "recipient_id",
+            "event_type",
+            "context_type",
+            "created_at",
+        )
+    ):
+        raise NotificationStoreError("Invalid notification identity")
+    boolean_fields = ("is_read", "sent_email", "sent_slack")
+    if any(not isinstance(d.get(field), bool) for field in boolean_fields):
+        raise NotificationStoreError("Invalid notification delivery state")
     return Notification(
         notification_id=d["notification_id"],
-        tenant_id=d.get("tenant_id", ""),
-        recipient_id=d.get("recipient_id", ""),
-        event_type=d.get("event_type", "system"),
-        title=d.get("title", ""),
-        body=d.get("body", ""),
-        context_type=d.get("context_type", "system"),
-        context_id=d.get("context_id", ""),
-        is_read=d.get("is_read", False),
-        created_at=d.get("created_at", ""),
-        sent_email=d.get("sent_email", False),
-        sent_slack=d.get("sent_slack", False),
+        tenant_id=d["tenant_id"],
+        recipient_id=d["recipient_id"],
+        event_type=d["event_type"],
+        title=d["title"],
+        body=d["body"],
+        context_type=d["context_type"],
+        context_id=d["context_id"],
+        is_read=d["is_read"],
+        created_at=d["created_at"],
+        sent_email=d["sent_email"],
+        sent_slack=d["sent_slack"],
     )
 
 
@@ -81,43 +133,53 @@ def _notif_from_dict(d: dict) -> Notification:
 
 
 class NotificationStore:
-    """Thread-safe, file-backed notification store scoped to a single tenant."""
+    """Thread-safe notification state scoped to a single tenant."""
 
     def __init__(
         self,
         tenant_id: str,
         *,
-        data_dir: Path | None = None,
+        data_dir: str | Path | None = None,
         backend: StateBackend | None = None,
     ) -> None:
         resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data"))
-        self._tenant_id = tenant_id
+        self._tenant_id = require_tenant_id(tenant_id)
         self._backend = backend or get_state_backend(data_dir=resolved_data_dir)
-        tenant_dir = resolved_data_dir / "tenants" / tenant_id
-        self._path = tenant_dir / "notifications.json"
-        self._relative_path = str(Path("tenants") / tenant_id / "notifications.json")
-        self._lock = threading.Lock()
-        if self._backend.kind == "local":
-            tenant_dir.mkdir(parents=True, exist_ok=True)
-        if not self._backend.exists(self._relative_path):
-            self._write([])
+        self._relative_path = str(
+            Path("tenants") / self._tenant_id / "notifications.json"
+        )
+        self._path = resolved_data_dir / self._relative_path
+        self._lock = _lock_for_path(self._path)
 
     # ── internal helpers ───────────────────────────────────────────────────
 
     def _read(self) -> list[dict]:
-        try:
-            raw = self._backend.read_text(self._relative_path)
-            if raw is None or not raw.strip():
-                return []
-            return json.loads(raw)
-        except (json.JSONDecodeError, FileNotFoundError, ValueError):
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None:
             return []
+        if not raw.strip():
+            raise NotificationStoreError("Invalid notification state document")
+        try:
+            records = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise NotificationStoreError("Invalid notification state document") from exc
+        if not isinstance(records, list):
+            raise NotificationStoreError("Invalid notification state document")
+
+        notification_ids: set[str] = set()
+        for record in records:
+            if not isinstance(record, dict):
+                raise NotificationStoreError("Invalid notification record")
+            if record.get("tenant_id") != self._tenant_id:
+                continue
+            notification = _notif_from_dict(record)
+            if notification.notification_id in notification_ids:
+                raise NotificationStoreError("Duplicate notification identity")
+            notification_ids.add(notification.notification_id)
+        return records
 
     def _write(self, data: list[dict]) -> None:
         payload = json.dumps(data, ensure_ascii=False, indent=2)
-        if self._backend.kind == "local":
-            atomic_write_text(self._path, payload)
-            return
         self._backend.write_text(self._relative_path, payload)
 
     def _owns(self, record: dict) -> bool:
@@ -149,6 +211,7 @@ class NotificationStore:
             sent_email=False,
             sent_slack=False,
         )
+        _notif_from_dict(asdict(notif))
         with self._lock:
             data = self._read()
             data.append(asdict(notif))
@@ -293,10 +356,11 @@ class NotificationStore:
 
 # ── per-tenant singleton factory ───────────────────────────────────────────────
 
+
 def get_notification_store(
     tenant_id: str,
     *,
-    data_dir: Path | None = None,
+    data_dir: str | Path | None = None,
     backend: StateBackend | None = None,
 ) -> NotificationStore:
     """Return a notification store for the given tenant."""
@@ -304,15 +368,27 @@ def get_notification_store(
         return NotificationStore(tenant_id, data_dir=data_dir, backend=backend)
 
     resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data")).resolve()
-    storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv("DECISIONDOC_STORAGE", "local")
-    bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv("DECISIONDOC_S3_BUCKET", "")
-    prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX") or os.getenv("DECISIONDOC_S3_PREFIX", "")
-    cache_key = (tenant_id, str(resolved_data_dir), storage_kind, bucket, prefix)
+    storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv(
+        "DECISIONDOC_STORAGE", "local"
+    )
+    bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv(
+        "DECISIONDOC_S3_BUCKET", ""
+    )
+    prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX") or os.getenv(
+        "DECISIONDOC_S3_PREFIX", ""
+    )
+    cache_key = (
+        require_tenant_id(tenant_id),
+        str(resolved_data_dir),
+        storage_kind,
+        bucket,
+        prefix,
+    )
 
     with _ns_lock:
         store = _notification_stores.get(cache_key)
         if store is None:
-            store = NotificationStore(tenant_id, data_dir=resolved_data_dir)
+            store = NotificationStore(cache_key[0], data_dir=resolved_data_dir)
             _notification_stores[cache_key] = store
         return store
 

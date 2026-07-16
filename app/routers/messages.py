@@ -23,7 +23,11 @@ async def post_message(request: Request, body: PostMessageRequest):
     tenant_id = get_tenant_id(request)
     author_id = get_user_id(request)
     author_name = get_username(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     msg = msg_store.post(
         author_id=author_id,
         author_name=author_name,
@@ -52,9 +56,11 @@ async def post_message(request: Request, body: PostMessageRequest):
 
             mentioned_ids = [uid for uid in msg.mentions if uid != author_id]
             if mentioned_ids:
-                await NotificationService(tenant_id).notify_mention(
-                    msg, mentioned_ids, author_name
-                )
+                await NotificationService(
+                    tenant_id,
+                    data_dir=request.app.state.data_dir,
+                    backend=request.app.state.state_backend,
+                ).notify_mention(msg, mentioned_ids, author_name)
         except Exception:
             pass
     return {"message": asdict(msg)}
@@ -71,7 +77,11 @@ async def get_thread(
     from app.storage.message_store import get_message_store
 
     tenant_id = get_tenant_id(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     msgs = msg_store.get_thread(context_type, context_id, limit=limit)
     return {"messages": [asdict(m) for m in msgs]}
 
@@ -83,7 +93,11 @@ async def get_my_mentions(request: Request, limit: int = 20):
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     msgs = msg_store.get_mentions(user_id, limit=limit)
     return {"messages": [asdict(m) for m in msgs]}
 
@@ -98,7 +112,11 @@ async def get_messages_unread_count(request: Request, since: str = ""):
 
     tenant_id = get_tenant_id(request)
     user_id = get_user_id(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     count = msg_store.get_unread_count(user_id, since)
     return {"unread_count": count}
 
@@ -106,13 +124,19 @@ async def get_messages_unread_count(request: Request, since: str = ""):
 @router.patch("/messages/{message_id}")
 async def edit_message(request: Request, message_id: str, body: EditMessageRequest):
     """Edit a message (author only)."""
-    from app.storage.message_store import get_message_store
+    from app.storage.message_store import MessageStoreError, get_message_store
 
     tenant_id = get_tenant_id(request)
     author_id = get_user_id(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     try:
         msg = msg_store.edit(message_id, author_id, body.content)
+    except MessageStoreError:
+        raise
     except PermissionError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -123,13 +147,19 @@ async def edit_message(request: Request, message_id: str, body: EditMessageReque
 @router.delete("/messages/{message_id}")
 async def delete_message(request: Request, message_id: str):
     """Soft-delete a message (author only)."""
-    from app.storage.message_store import get_message_store
+    from app.storage.message_store import MessageStoreError, get_message_store
 
     tenant_id = get_tenant_id(request)
     author_id = get_user_id(request)
-    msg_store = get_message_store(tenant_id)
+    msg_store = get_message_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
     try:
         msg_store.delete(message_id, author_id)
+    except MessageStoreError:
+        raise
     except PermissionError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:

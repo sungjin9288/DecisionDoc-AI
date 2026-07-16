@@ -45,6 +45,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 독립 store 인스턴스의 동시 append는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
   - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
   - 조회와 CSV 내보내기는 tenant와 action/result/기간 filter를 공유한다. 조회는 검증된 offset/limit과 전체 건수·다음 페이지 여부를 반환하고, CSV는 전체 detail JSON을 보존하며 spreadsheet formula injection이 가능한 문자열을 text cell로 처리
+- 협업 상태 저장
+  - 메시지와 알림은 local `data/tenants/<tenant_id>/{messages,notifications}.json` 또는 같은 relative path의 S3 state object에 저장한다.
+  - tenant를 path 선택 전에 검증하고 손상 document, duplicate JSON key와 owned duplicate identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 원본에 보존한다.
+  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 외부 SMTP·Slack 전달 성공은 현재 보장 범위가 아니다.
 - 운영 로그
   - 애플리케이션 구조화 로그는 stdout 기준 (Docker는 `docker logs`, AWS는 CloudWatch)
 

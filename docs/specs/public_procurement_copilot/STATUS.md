@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone collaboration state integrity hardening
+
+- `MessageStore`와 `NotificationStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/{messages,notifications}.json`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Invalid·blank·non-list JSON, duplicate JSON key, owned malformed record와 duplicate message/notification ID는 조회와 후속 write를 fail closed로 중단하고 원본 bytes를 보존한다. Caller가 만든 invalid record도 write 전에 거부한다.
+- Explicit foreign record는 현재 tenant의 조회·변경에서 제외하되 원본에 보존한다. 같은 data root의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 post/create/update를 직렬화하며 distributed S3 compare-and-swap을 주장하지 않는다.
+- Message API와 mention notification service는 앱이 선택한 data root와 backend를 명시적으로 사용한다. H37 focused integrity gate는 `40 passed`, 협업·결재·인증·state·infrastructure 확장 gate는 `397 passed`, full no-cost regression은 `3370 passed, 2 skipped, 4 deselected`다. 외부 SMTP·Slack, provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+- 임시 mock/local uvicorn HTTP QA에서 admin이 `@bob` 메시지를 게시한 뒤 Bob의 알림 조회가 같은 tenant의 `mention` event 1건을 반환했다. Notification `context_id`는 저장된 message ID와 일치했고 message/notification JSON 모두 같은 app data root의 `system` tenant에 기록됐다. 서버와 임시 data root는 검증 직후 정리했다.
+
 ## Post-milestone audit evidence integrity hardening
 
 - `AuditStore`는 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 shared `StateBackend`의 `tenants/{tenant_id}/audit_logs.jsonl`을 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.

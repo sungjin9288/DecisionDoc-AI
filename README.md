@@ -32,6 +32,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
 | 보고서 검토 이력 무결성 | 기획안·장표·댓글·승인 단계·시각자료 이력을 tenant에 결속하고, 손상·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
+| 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고, 손상 문서·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
 | 재현 가능한 제출형 export | 같은 runtime과 입력에서 DOCX·PDF·PPTX·XLSX·HWPX 반복 생성 bytes와 SHA-256을 안정적으로 유지 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory를 검색·필터·정렬하고 summary 목록에서 선택한 기록만 상세 조회한다. 사람 검토는 메모와 품질 점수를 export/freeze/governance 증적으로 연결하고, expected review version을 storage lock 안에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단한다. 작성 중인 검토 초안은 사용자·tenant·trajectory를 함께 묶은 현재 페이지 메모리에 보존되어 같은 인증 문맥에서만 복원되고 logout 또는 세션 무효화 시 폐기된다. Signed token의 tenant와 browser header context를 동기화하되 JWT tenant mismatch는 우회하지 않으며, 상세 열람, review 결정, version conflict는 본문·메모를 제외한 append-only audit으로 추적한다. |
 
@@ -245,11 +246,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **2,934개**, **235개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **2,949개**, **236개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 2934
-python3 scripts/count_readme_metrics.py --field test_files      # → 235
+python3 scripts/count_readme_metrics.py --field test_functions  # → 2949
+python3 scripts/count_readme_metrics.py --field test_files      # → 236
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -278,7 +279,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,330 passed, 2 skipped, 4 deselected, 2026-07-16 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,370 passed, 2 skipped, 4 deselected, 2026-07-16 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -316,6 +317,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 - 보고서 워크플로우 이력은 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. 동시성 보장은 한 프로세스 안의 shared lock 범위이며 distributed S3 compare-and-swap은 구현·검증하지 않았습니다.
+- 메시지·알림 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 외부 SMTP·Slack 전달 성공과 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap은 이 검증 범위가 아닙니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결합니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. Project-linked share는 서버가 tenant/project/document/request/bundle binding을 검증하고 생성 시점 source fingerprint를 저장합니다. 공개 공유 페이지는 조회할 때마다 현재 원본을 다시 대조해 변경·삭제 상태를 경고하고 `share.view` audit evidence를 남기며, admin Locations의 외부 공유 review queue는 stale `share.create`와 drift `share.view`를 함께 보여주되 반복 조회를 영향받은 고유 링크 수로 중복 집계하지 않습니다. 이후 current 조회가 확인되면 해당 링크만 위험 queue에서 해소하고 복구 건수를 별도로 표시하며 기존 audit은 보존합니다. 공유 취소는 처리자·시각을 남기고 자연 만료와 구분하며, 같은 문서에 여러 링크가 있으면 닫힌 최신 링크보다 아직 활성인 링크를 먼저 보여줍니다. Generic legacy share는 기존 동작을 유지합니다. 연결된 결재는 요청 시점 상태를 보존하고 상세 조회와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 상태의 최종 승인은 명시적 acknowledgement를 approval record와 audit에 남겨야 진행됩니다. 승인 후 원본 source fingerprint가 달라진 경우에도 immutable 승인 스냅샷을 다운로드하기 전에 별도 확인이 필요하고 그 결과가 download audit에 남습니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
@@ -330,4 +332,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,934 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 265 · 테스트 2,949 · env 키 91 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

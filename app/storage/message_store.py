@@ -1,7 +1,7 @@
 """app/storage/message_store.py — Tenant-scoped team messaging with @mention support.
 
 Storage: data/tenants/{tenant_id}/messages.json
-Thread-safe via threading.Lock per store instance.
+Thread-safe within one process across stores that share a data root.
 """
 from __future__ import annotations
 
@@ -13,8 +13,32 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
+
+
+_message_locks: dict[Path, threading.RLock] = {}
+_message_locks_guard = threading.Lock()
+
+
+class MessageStoreError(ValueError):
+    """Raised when persisted message state cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _message_locks_guard:
+        return _message_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise MessageStoreError(f"Duplicate key in message state: {key!r}")
+        result[key] = value
+    return result
 
 
 def _now_iso() -> str:
@@ -45,31 +69,100 @@ def _parse_mention_names(content: str) -> list[str]:
 
 
 class MessageStore:
-    """Thread-safe, file-backed message store scoped to a single tenant."""
+    """Thread-safe message state scoped to a single tenant."""
 
-    def __init__(self, tenant_id: str, *, data_dir: Path | None = None) -> None:
-        self._tenant_id = tenant_id
+    def __init__(
+        self,
+        tenant_id: str,
+        *,
+        data_dir: str | Path | None = None,
+        backend: StateBackend | None = None,
+    ) -> None:
+        self._tenant_id = require_tenant_id(tenant_id)
         root = Path(data_dir or os.getenv("DATA_DIR", "./data"))
-        tenant_dir = root / "tenants" / tenant_id
-        self._path = tenant_dir / "messages.json"
-        self._lock = threading.Lock()
-        tenant_dir.mkdir(parents=True, exist_ok=True)
-        if not self._path.exists():
-            self._write([])
+        self._backend = backend or get_state_backend(data_dir=root)
+        self._relative_path = str(Path("tenants") / self._tenant_id / "messages.json")
+        self._path = root / self._relative_path
+        self._lock = _lock_for_path(self._path)
 
     # ── internal helpers ──────────────────────────────────────────────────
 
     def _read(self) -> list[dict]:
-        try:
-            return json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, FileNotFoundError):
+        raw = self._backend.read_text(self._relative_path)
+        if raw is None:
             return []
+        if not raw.strip():
+            raise MessageStoreError("Invalid message state document")
+        try:
+            records = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise MessageStoreError("Invalid message state document") from exc
+        if not isinstance(records, list):
+            raise MessageStoreError("Invalid message state document")
+
+        message_ids: set[str] = set()
+        for record in records:
+            if not isinstance(record, dict):
+                raise MessageStoreError("Invalid message record")
+            if record.get("tenant_id") != self._tenant_id:
+                continue
+            message = self._to_message(record)
+            if message.message_id in message_ids:
+                raise MessageStoreError("Duplicate message identity")
+            message_ids.add(message.message_id)
+        return records
 
     def _write(self, data: list[dict]) -> None:
-        atomic_write_text(self._path, json.dumps(data, ensure_ascii=False, indent=2))
+        self._backend.write_text(
+            self._relative_path,
+            json.dumps(data, ensure_ascii=False, indent=2),
+        )
 
     def _to_message(self, d: dict) -> Message:
-        return Message(**d)
+        required_strings = (
+            "message_id",
+            "tenant_id",
+            "author_id",
+            "author_name",
+            "content",
+            "context_type",
+            "context_id",
+            "created_at",
+        )
+        if any(not isinstance(d.get(field), str) for field in required_strings):
+            raise MessageStoreError("Invalid message record")
+        identity_fields = (
+            "message_id",
+            "tenant_id",
+            "author_id",
+            "context_type",
+            "created_at",
+        )
+        if any(not d[field] for field in identity_fields):
+            raise MessageStoreError("Invalid message identity")
+        mentions = d.get("mentions")
+        if not isinstance(mentions, list) or any(
+            not isinstance(mention, str) for mention in mentions
+        ):
+            raise MessageStoreError("Invalid message mentions")
+        edited_at = d.get("edited_at")
+        if edited_at is not None and not isinstance(edited_at, str):
+            raise MessageStoreError("Invalid message edit timestamp")
+        if not isinstance(d.get("is_deleted"), bool):
+            raise MessageStoreError("Invalid message deletion state")
+        return Message(
+            message_id=d["message_id"],
+            tenant_id=d["tenant_id"],
+            author_id=d["author_id"],
+            author_name=d["author_name"],
+            content=d["content"],
+            mentions=mentions,
+            context_type=d["context_type"],
+            context_id=d["context_id"],
+            created_at=d["created_at"],
+            edited_at=edited_at,
+            is_deleted=d["is_deleted"],
+        )
 
     def _owns(self, record: dict) -> bool:
         return record.get("tenant_id") == self._tenant_id
@@ -124,6 +217,7 @@ class MessageStore:
             edited_at=None,
             is_deleted=False,
         )
+        self._to_message(asdict(msg))
         with self._lock:
             data = self._read()
             data.append(asdict(msg))
@@ -140,7 +234,8 @@ class MessageStore:
         with self._lock:
             data = self._read()
         msgs = [
-            self._to_message(m) for m in data
+            self._to_message(m)
+            for m in data
             if self._owns(m)
             and m["context_type"] == context_type
             and m["context_id"] == context_id
@@ -153,21 +248,24 @@ class MessageStore:
         with self._lock:
             data = self._read()
         msgs = [
-            self._to_message(m) for m in data
-            if self._owns(m)
-            and user_id in m["mentions"]
-            and not m["is_deleted"]
+            self._to_message(m)
+            for m in data
+            if self._owns(m) and user_id in m["mentions"] and not m["is_deleted"]
         ]
         return msgs[-limit:]
 
     def edit(self, message_id: str, author_id: str, new_content: str) -> Message:
         """Edit a message. Only the original author may edit."""
+        if not isinstance(new_content, str):
+            raise MessageStoreError("Invalid message content")
         with self._lock:
             data = self._read()
             for i, m in enumerate(data):
                 if self._owns(m) and m["message_id"] == message_id:
                     if m["author_id"] != author_id:
-                        raise PermissionError("본인이 작성한 메시지만 수정할 수 있습니다.")
+                        raise PermissionError(
+                            "본인이 작성한 메시지만 수정할 수 있습니다."
+                        )
                     data[i]["content"] = new_content
                     data[i]["edited_at"] = _now_iso()
                     self._write(data)
@@ -181,7 +279,9 @@ class MessageStore:
             for i, m in enumerate(data):
                 if self._owns(m) and m["message_id"] == message_id:
                     if m["author_id"] != author_id:
-                        raise PermissionError("본인이 작성한 메시지만 삭제할 수 있습니다.")
+                        raise PermissionError(
+                            "본인이 작성한 메시지만 삭제할 수 있습니다."
+                        )
                     data[i]["is_deleted"] = True
                     self._write(data)
                     return
@@ -192,7 +292,8 @@ class MessageStore:
         with self._lock:
             data = self._read()
         return sum(
-            1 for m in data
+            1
+            for m in data
             if self._owns(m)
             and user_id in m["mentions"]
             and not m["is_deleted"]
@@ -202,13 +303,41 @@ class MessageStore:
 
 # ── per-tenant factory ─────────────────────────────────────────────────────────
 
-_msg_stores: dict[str, MessageStore] = {}
+_msg_stores: dict[tuple[str, str, str, str, str], MessageStore] = {}
 _ms_lock = threading.Lock()
 
 
-def get_message_store(tenant_id: str) -> MessageStore:
+def get_message_store(
+    tenant_id: str,
+    *,
+    data_dir: str | Path | None = None,
+    backend: StateBackend | None = None,
+) -> MessageStore:
     """Return a shared MessageStore instance for the given tenant."""
+    if backend is not None:
+        return MessageStore(tenant_id, data_dir=data_dir, backend=backend)
+
+    resolved_data_dir = Path(data_dir or os.getenv("DATA_DIR", "./data")).resolve()
+    storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv(
+        "DECISIONDOC_STORAGE", "local"
+    )
+    bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv(
+        "DECISIONDOC_S3_BUCKET", ""
+    )
+    prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX") or os.getenv(
+        "DECISIONDOC_S3_PREFIX", ""
+    )
+    cache_key = (
+        require_tenant_id(tenant_id),
+        str(resolved_data_dir),
+        storage_kind,
+        bucket,
+        prefix,
+    )
+
     with _ms_lock:
-        if tenant_id not in _msg_stores:
-            _msg_stores[tenant_id] = MessageStore(tenant_id)
-        return _msg_stores[tenant_id]
+        store = _msg_stores.get(cache_key)
+        if store is None:
+            store = MessageStore(cache_key[0], data_dir=resolved_data_dir)
+            _msg_stores[cache_key] = store
+        return store
