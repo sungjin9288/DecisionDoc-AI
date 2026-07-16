@@ -14,8 +14,6 @@ unchanged.
 """
 from __future__ import annotations
 
-from app.storage.base import BaseJsonStore
-
 from app.storage.report_workflow.models import (
     ApprovalStep,
     PlanningVersion,
@@ -54,6 +52,5 @@ class ReportWorkflowStore(
     ReportWorkflowSlideMixin,
     ReportWorkflowApprovalMixin,
     ReportWorkflowPromotionMixin,
-    BaseJsonStore,
 ):
     """Thread-safe, tenant-scoped JSON-backed report workflow store."""

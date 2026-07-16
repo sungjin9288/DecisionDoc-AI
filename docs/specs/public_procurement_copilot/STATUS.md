@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone report workflow review-state integrity hardening
+
+- `ReportWorkflowStore`는 tenant ID를 state path 사용 전에 검증하고 local/S3 모두 shared `StateBackend`를 통해 기획안, 장표, 댓글, 승인 단계, 학습 증적과 시각자료 이력을 읽고 쓴다.
+- Invalid JSON, non-list top-level state와 duplicate JSON key는 빈 workflow 목록으로 복구되지 않는다. Explicit foreign record는 owned workflow를 숨기지 않고 조회·변경에서 제외하되 원본에 보존하며, owned malformed record와 duplicate workflow ID는 mutation 전에 fail closed로 중단한다.
+- Persisted workflow, planning, slide plan, slide, comment와 approval step은 기존 identity와 timestamp를 재로드 때 생성하거나 기본값으로 바꾸지 않는다. Duplicate nested slide/comment/approval identity와 approval stage, invalid in-memory planning identity도 저장 전에 거부한다.
+- 같은 data root를 쓰는 독립 store 인스턴스는 process-local shared lock으로 create와 update를 직렬화한다. H35 focused report workflow gate는 `36 passed`, report/knowledge/state/security/infrastructure 확장 gate는 `506 passed`, full no-cost regression은 `3307 passed, 2 skipped, 4 deselected`다. Distributed S3 compare-and-swap, provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+
 ## Post-milestone procurement decision and snapshot integrity hardening
 
 - `ProcurementDecisionStore`는 tenant, project, snapshot ID를 persistence path 사용 전에 검증하고 local/S3 decision 및 source snapshot을 shared `StateBackend`로만 읽고 쓴다. 공통 tenant validator도 모든 control character를 path 선택 전에 거부한다.

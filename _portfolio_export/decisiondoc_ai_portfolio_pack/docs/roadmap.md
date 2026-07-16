@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 최근 확인한 main 자동화 증적: commit `d8e1553` 기준 GitHub Actions CI `29463836462` success, CD `29463836573` success. CI는 `3250 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 최근 확인한 main 자동화 증적: commit `c433bf1` 기준 GitHub Actions CI `29465484592` success, CD `29465484561` success. CI는 `3287 passed, 5 skipped`, CD는 image build/push까지만 수행했고 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
@@ -21,7 +21,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-16 실측: 3286 passed, 2 skipped, 4 deselected
+# 2026-07-16 실측: 3307 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -100,6 +100,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-16 shared `StateBackend`가 빈 값, 절대경로, dot segment, 중복 separator, backslash와 control character를 canonical relative path로 수용하지 않도록 고정했다. Local backend는 configured root의 resolved boundary를 확인하고 경로 component와 prefix 아래 symlink를 거부한다. S3 backend는 adjacent prefix alias를 결과에서 제외하고 continuation token을 검증하며 전체 page를 순회한 뒤 canonical key만 정렬·중복 제거해 반환한다. H32 회귀는 local escape·symlink, fake-S3 alias·pagination·malformed key를 no-cost로 검증하며 distributed S3 CAS, provider API, G2B live API, AWS runtime과 배포·학습·입찰 실행은 수행하지 않았다.
   - 2026-07-16 `ProjectStore`와 `ApprovalStore`가 tenant ID를 state path 선택 전에 검증하고 local/S3 모두 같은 `StateBackend` read/write 경로를 사용하도록 정리했다. Invalid top-level JSON, non-list document와 duplicate JSON key는 빈 목록으로 복구하지 않고 이후 쓰기를 중단한다. Explicit foreign·identity-malformed record는 조회·목록·변경에서 제외하되 원본에는 남기고, 같은 tenant의 owned duplicate ID는 fail closed로 처리한다. 같은 data root를 쓰는 독립 store 인스턴스는 process-local shared lock으로 project/approval read-modify-write를 직렬화한다. H33 회귀는 local/fake-S3 forged identity, malformed·duplicate state 보존과 20-way concurrent create를 no-cost로 검증하며 distributed S3 CAS와 외부 운영 실행은 수행하지 않았다.
   - 2026-07-16 `ProcurementDecisionStore`가 tenant, project, snapshot path component를 persistence 전에 검증하고 decision과 source snapshot을 local/S3 모두 같은 `StateBackend` 경로로 읽고 쓰도록 정리했다. Invalid JSON, non-list state와 duplicate JSON key는 빈 상태나 missing snapshot으로 취급하지 않는다. Tenant path 안의 foreign decision은 조회·변경에서 제외하고, owned malformed record, duplicate project/decision ID, source snapshot storage path drift는 원본을 덮어쓰지 않고 중단한다. 같은 tenant decision file을 쓰는 독립 store 인스턴스는 process-local shared lock으로 upsert를 직렬화한다. H34 회귀는 local/fake-S3 경로·소유권·손상 보존, cross-project snapshot 격리와 20-way concurrent create/update를 no-cost로 검증하며 distributed S3 CAS, G2B live API와 외부 운영 실행은 수행하지 않았다.
+  - 2026-07-16 `ReportWorkflowStore`의 기획안·장표·댓글·승인 단계·학습 증적·시각자료 identity를 저장과 재로드에서 동일하게 검증하고 local/S3 모두 shared `StateBackend`를 사용하도록 정리했다. Invalid JSON, non-list state와 duplicate JSON key, owned malformed record, duplicate workflow/nested review identity는 원본을 덮어쓰지 않고 중단하며 explicit foreign record는 조회·변경에서 제외하되 보존한다. 같은 data root의 독립 store 인스턴스는 process-local shared lock으로 create/update를 직렬화한다. H35 회귀는 local/fake-S3 forged state, 손상 보존과 20-way concurrent create/asset update를 no-cost로 검증하며 distributed S3 CAS와 외부 운영 실행은 수행하지 않았다.
   - report quality learning과 correction artifact 계열은 계속 개발 중이다.
   - 2026-07-13 report quality UI의 자동 통과 score/rationale를 제거하고, accepted artifact의 dimension rationale를 server gate로 강제했다.
   - 2026-07-13 mock provider와 임시 local storage만 사용하는 report workflow 생성·승인·correction artifact 저장·JSONL export 데모를 연결했다.

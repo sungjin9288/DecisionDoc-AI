@@ -4,12 +4,14 @@ record lookup (``_find``/``_flush``), and the ``create``/``get``/
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
-from app.storage.base import atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
+from app.tenant import require_tenant_id
 
 from app.storage.report_workflow.models import (
     ReportWorkflowRecord,
@@ -18,66 +20,117 @@ from app.storage.report_workflow.models import (
 )
 
 
+_workflow_locks: dict[Path, threading.RLock] = {}
+_workflow_locks_guard = threading.Lock()
+
+
+class ReportWorkflowStoreError(ValueError):
+    """Raised when persisted report workflow state cannot be trusted."""
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    with _workflow_locks_guard:
+        return _workflow_locks.setdefault(path.resolve(), threading.RLock())
+
+
+def _require_workflow_id(report_workflow_id: object) -> str:
+    if not isinstance(report_workflow_id, str) or not report_workflow_id.strip():
+        raise ValueError("Invalid report_workflow_id")
+    return report_workflow_id
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ReportWorkflowStoreError(
+                f"Duplicate key in report workflow state: {key!r}"
+            )
+        result[key] = value
+    return result
+
+
 class ReportWorkflowCoreMixin:
     """Init, tenant-scoped file plumbing, and basic CRUD."""
 
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
-        super().__init__()
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
-
-    def _get_path(self) -> Path:
-        return self._base / "tenants"
-
-    def _path(self, tenant_id: str) -> Path:
-        p = self._base / "tenants" / tenant_id
-        if self._backend.kind == "local":
-            p.mkdir(parents=True, exist_ok=True)
-        return p / "report_workflows.json"
+        self._lock = _lock_for_path(self._base / "tenants" / "report_workflows")
 
     def _relative_path(self, tenant_id: str) -> str:
+        tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "report_workflows.json")
 
-    def _load(self, tenant_id: str) -> list[dict]:
+    def _load(self, tenant_id: str) -> list[Any]:
         raw = self._backend.read_text(self._relative_path(tenant_id))
         if raw is None:
             return []
         try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return []
+            records = json.loads(raw, object_pairs_hook=_unique_object)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ReportWorkflowStoreError(
+                "Invalid report workflow state document"
+            ) from exc
+        if not isinstance(records, list):
+            raise ReportWorkflowStoreError(
+                "Invalid report workflow state document"
+            )
+        return records
 
-    def _save(self, tenant_id: str, records: list[dict]) -> None:
+    def _save(self, tenant_id: str, records: list[Any]) -> None:
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        if self._backend.kind == "local":
-            atomic_write_text(self._path(tenant_id), payload)
-            return
         self._backend.write_text(self._relative_path(tenant_id), payload)
+
+    def _owned_records(
+        self,
+        records: list[Any],
+        *,
+        tenant_id: str,
+    ) -> list[tuple[int, ReportWorkflowRecord]]:
+        tenant_id = require_tenant_id(tenant_id)
+        owned: list[tuple[int, ReportWorkflowRecord]] = []
+        workflow_ids: set[str] = set()
+        for index, raw_record in enumerate(records):
+            if not isinstance(raw_record, dict):
+                continue
+            if raw_record.get("tenant_id") != tenant_id:
+                continue
+            try:
+                record = self._from_dict(raw_record)
+            except (TypeError, ValueError) as exc:
+                raise ReportWorkflowStoreError(
+                    "Invalid owned report workflow record"
+                ) from exc
+            if record.report_workflow_id in workflow_ids:
+                raise ReportWorkflowStoreError("Duplicate report workflow records")
+            workflow_ids.add(record.report_workflow_id)
+            owned.append((index, record))
+        return owned
 
     def _find(
         self,
         report_workflow_id: str,
         *,
         tenant_id: str,
-    ) -> tuple[str, list[dict], int, ReportWorkflowRecord] | None:
+    ) -> tuple[str, list[Any], int, ReportWorkflowRecord] | None:
+        tenant_id = require_tenant_id(tenant_id)
+        report_workflow_id = _require_workflow_id(report_workflow_id)
         records = self._load(tenant_id)
-        for idx, raw_record in enumerate(records):
-            if raw_record.get("report_workflow_id") != report_workflow_id:
-                continue
-            record = self._from_dict(raw_record)
-            if record.tenant_id != tenant_id:
-                return None
-            return tenant_id, records, idx, record
+        for index, record in self._owned_records(records, tenant_id=tenant_id):
+            if record.report_workflow_id == report_workflow_id:
+                return tenant_id, records, index, record
         return None
 
     def _flush(
         self,
         tenant_id: str,
-        records: list[dict],
+        records: list[Any],
         idx: int,
         rec: ReportWorkflowRecord,
     ) -> ReportWorkflowRecord:
         rec.updated_at = _now_iso()
+        self._validate_record(rec)
         records[idx] = asdict(rec)
         self._save(tenant_id, records)
         return rec
@@ -101,8 +154,10 @@ class ReportWorkflowCoreMixin:
         source_refs: list[str] | None = None,
         learning_opt_in: bool = False,
     ) -> ReportWorkflowRecord:
+        tenant_id = require_tenant_id(tenant_id)
         with self._lock:
             records = self._load(tenant_id)
+            self._owned_records(records, tenant_id=tenant_id)
             now = _now_iso()
             rec = ReportWorkflowRecord(
                 report_workflow_id=str(uuid.uuid4()),
@@ -125,6 +180,7 @@ class ReportWorkflowCoreMixin:
                 created_at=now,
                 updated_at=now,
             )
+            self._validate_record(rec)
             records.append(asdict(rec))
             self._save(tenant_id, records)
             return rec
@@ -135,8 +191,15 @@ class ReportWorkflowCoreMixin:
             return result[3] if result else None
 
     def list_by_tenant(self, tenant_id: str, status: str | None = None) -> list[ReportWorkflowRecord]:
+        tenant_id = require_tenant_id(tenant_id)
         with self._lock:
-            records = [self._from_dict(raw) for raw in self._load(tenant_id)]
+            records = [
+                record
+                for _, record in self._owned_records(
+                    self._load(tenant_id),
+                    tenant_id=tenant_id,
+                )
+            ]
         if status:
             records = [rec for rec in records if rec.status == status]
         return sorted(records, key=lambda rec: rec.created_at, reverse=True)

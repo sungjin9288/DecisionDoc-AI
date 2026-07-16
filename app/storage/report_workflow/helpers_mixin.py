@@ -24,6 +24,7 @@ from app.storage.report_workflow.models import (
     WorkflowComment,
     _now_iso,
 )
+from app.tenant import require_tenant_id
 
 
 class ReportWorkflowHelpersMixin:
@@ -31,20 +32,33 @@ class ReportWorkflowHelpersMixin:
 
     @staticmethod
     def _comment_from_dict(data: dict) -> WorkflowComment:
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow comment")
+        comment_id = data.get("comment_id")
+        created_at = data.get("created_at")
+        if not isinstance(comment_id, str) or not comment_id:
+            raise ValueError("Invalid report workflow comment identity")
+        if not isinstance(created_at, str) or not created_at:
+            raise ValueError("Invalid report workflow comment identity")
         return WorkflowComment(
-            comment_id=data.get("comment_id") or str(uuid.uuid4()),
+            comment_id=comment_id,
             target_type=data.get("target_type", ""),
             target_id=data.get("target_id", ""),
             author=data.get("author", ""),
             content=data.get("content", ""),
-            created_at=data.get("created_at", _now_iso()),
+            created_at=created_at,
             is_change_request=bool(data.get("is_change_request", False)),
         )
 
     @classmethod
     def _slide_plan_from_dict(cls, data: dict) -> SlidePlan:
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow slide plan")
+        slide_id = data.get("slide_id")
+        if not isinstance(slide_id, str) or not slide_id:
+            raise ValueError("Invalid report workflow slide plan identity")
         return SlidePlan(
-            slide_id=data.get("slide_id", ""),
+            slide_id=slide_id,
             page=int(data.get("page") or 0),
             title=data.get("title", ""),
             purpose=data.get("purpose", ""),
@@ -63,21 +77,32 @@ class ReportWorkflowHelpersMixin:
 
     @classmethod
     def _planning_from_dict(cls, data: dict | None) -> PlanningVersion | None:
-        if not data:
+        if data is None:
             return None
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow planning record")
+        plan_id = data.get("plan_id")
+        created_at = data.get("created_at")
+        slide_plans = data.get("slide_plans", [])
+        if not isinstance(plan_id, str) or not plan_id:
+            raise ValueError("Invalid report workflow planning identity")
+        if not isinstance(created_at, str) or not created_at:
+            raise ValueError("Invalid report workflow planning identity")
+        if not isinstance(slide_plans, list):
+            raise ValueError("Invalid report workflow slide plans")
         return PlanningVersion(
-            plan_id=data.get("plan_id") or str(uuid.uuid4()),
+            plan_id=plan_id,
             version=int(data.get("version") or 1),
             status=data.get("status", "draft"),
             objective=data.get("objective", ""),
             audience=data.get("audience", ""),
             executive_message=data.get("executive_message", ""),
             table_of_contents=list(data.get("table_of_contents") or []),
-            slide_plans=[cls._slide_plan_from_dict(item) for item in data.get("slide_plans", [])],
+            slide_plans=[cls._slide_plan_from_dict(item) for item in slide_plans],
             open_questions=list(data.get("open_questions") or []),
             risk_notes=list(data.get("risk_notes") or []),
             created_by=data.get("created_by", "ai"),
-            created_at=data.get("created_at", _now_iso()),
+            created_at=created_at,
             planning_brief=data.get("planning_brief", ""),
             audience_decision_needs=list(data.get("audience_decision_needs") or []),
             narrative_arc=list(data.get("narrative_arc") or []),
@@ -90,8 +115,16 @@ class ReportWorkflowHelpersMixin:
 
     @classmethod
     def _slide_from_dict(cls, data: dict) -> SlideDraft:
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow slide")
+        slide_id = data.get("slide_id")
+        comments = data.get("comments", [])
+        if not isinstance(slide_id, str) or not slide_id:
+            raise ValueError("Invalid report workflow slide identity")
+        if not isinstance(comments, list):
+            raise ValueError("Invalid report workflow slide comments")
         return SlideDraft(
-            slide_id=data.get("slide_id", ""),
+            slide_id=slide_id,
             page=int(data.get("page") or 0),
             title=data.get("title", ""),
             body=data.get("body", ""),
@@ -102,7 +135,7 @@ class ReportWorkflowHelpersMixin:
             draft_version=int(data.get("draft_version") or 1),
             approved_by=data.get("approved_by"),
             approved_at=data.get("approved_at"),
-            comments=[cls._comment_from_dict(item) for item in data.get("comments", [])],
+            comments=[cls._comment_from_dict(item) for item in comments],
             visual_prompt=data.get("visual_prompt", ""),
             reference_refs=list(data.get("reference_refs") or []),
             generated_asset_ids=list(data.get("generated_asset_ids") or []),
@@ -112,9 +145,17 @@ class ReportWorkflowHelpersMixin:
 
     @staticmethod
     def _approval_step_from_dict(data: dict) -> ApprovalStep:
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow approval step")
+        step_id = data.get("step_id")
+        stage = data.get("stage")
+        if not isinstance(step_id, str) or not step_id:
+            raise ValueError("Invalid report workflow approval identity")
+        if not isinstance(stage, str) or not stage:
+            raise ValueError("Invalid report workflow approval identity")
         return ApprovalStep(
-            step_id=data.get("step_id") or str(uuid.uuid4()),
-            stage=data.get("stage", ""),
+            step_id=step_id,
+            stage=stage,
             label=data.get("label", ""),
             assignee=data.get("assignee", ""),
             status=data.get("status", "pending"),
@@ -125,9 +166,39 @@ class ReportWorkflowHelpersMixin:
 
     @classmethod
     def _from_dict(cls, data: dict) -> ReportWorkflowRecord:
-        return ReportWorkflowRecord(
-            report_workflow_id=data["report_workflow_id"],
-            tenant_id=data["tenant_id"],
+        if not isinstance(data, dict):
+            raise ValueError("Invalid report workflow record")
+        report_workflow_id = data.get("report_workflow_id")
+        tenant_id = data.get("tenant_id")
+        created_at = data.get("created_at")
+        updated_at = data.get("updated_at")
+        status = data.get("status")
+        if not isinstance(report_workflow_id, str) or not report_workflow_id:
+            raise ValueError("Invalid report workflow identity")
+        require_tenant_id(tenant_id)
+        if not isinstance(created_at, str) or not created_at:
+            raise ValueError("Invalid report workflow identity")
+        if not isinstance(updated_at, str) or not updated_at:
+            raise ValueError("Invalid report workflow identity")
+        if status not in {item.value for item in ReportWorkflowStatus}:
+            raise ValueError("Invalid report workflow status")
+
+        list_fields = (
+            "source_refs",
+            "slides",
+            "comments",
+            "approval_steps",
+            "quality_warnings",
+            "learning_artifacts",
+            "visual_assets",
+            "knowledge_documents",
+        )
+        if any(not isinstance(data.get(field, []), list) for field in list_fields):
+            raise ValueError("Invalid report workflow list field")
+
+        record = ReportWorkflowRecord(
+            report_workflow_id=report_workflow_id,
+            tenant_id=tenant_id,
             title=data.get("title", ""),
             goal=data.get("goal", ""),
             client=data.get("client", ""),
@@ -136,15 +207,15 @@ class ReportWorkflowHelpersMixin:
             owner=data.get("owner", ""),
             pm_reviewer=data.get("pm_reviewer", ""),
             executive_approver=data.get("executive_approver", ""),
-            status=data.get("status", ReportWorkflowStatus.PLANNING_REQUIRED.value),
+            status=status,
             source_bundle_id=data.get("source_bundle_id", "presentation_kr"),
             source_request_id=data.get("source_request_id", ""),
             slide_count=int(data.get("slide_count") or 6),
             attachments_context=data.get("attachments_context", ""),
             source_refs=list(data.get("source_refs") or []),
             learning_opt_in=bool(data.get("learning_opt_in", False)),
-            created_at=data.get("created_at", _now_iso()),
-            updated_at=data.get("updated_at", _now_iso()),
+            created_at=created_at,
+            updated_at=updated_at,
             current_plan_version=int(data.get("current_plan_version") or 0),
             current_slide_version=int(data.get("current_slide_version") or 0),
             planning=cls._planning_from_dict(data.get("planning")),
@@ -167,6 +238,82 @@ class ReportWorkflowHelpersMixin:
             knowledge_document_count=int(data.get("knowledge_document_count") or 0),
             knowledge_documents=list(data.get("knowledge_documents") or []),
             knowledge_promoted_at=data.get("knowledge_promoted_at"),
+        )
+        cls._validate_record(record)
+        return record
+
+    @staticmethod
+    def _require_unique_ids(values: list[str], *, label: str) -> None:
+        if any(not isinstance(value, str) or not value for value in values):
+            raise ValueError(f"Invalid {label} identity")
+        if len(values) != len(set(values)):
+            raise ValueError(f"Duplicate {label} identity")
+
+    @classmethod
+    def _validate_record(cls, record: ReportWorkflowRecord) -> None:
+        if not record.report_workflow_id or not record.created_at or not record.updated_at:
+            raise ValueError("Invalid report workflow identity")
+        require_tenant_id(record.tenant_id)
+        if record.status not in {item.value for item in ReportWorkflowStatus}:
+            raise ValueError("Invalid report workflow status")
+        if not 1 <= record.slide_count <= 40:
+            raise ValueError("Invalid report workflow slide_count")
+        if record.current_plan_version < 0 or record.current_slide_version < 0:
+            raise ValueError("Invalid report workflow version")
+
+        if record.planning is not None:
+            if not record.planning.plan_id or not record.planning.created_at:
+                raise ValueError("Invalid report workflow planning identity")
+            if record.planning.status not in {"draft", "changes_requested", "approved"}:
+                raise ValueError("Invalid report workflow planning status")
+            cls._require_unique_ids(
+                [slide.slide_id for slide in record.planning.slide_plans],
+                label="report workflow slide plan",
+            )
+
+        if any(slide.status not in {item.value for item in SlideStatus} for slide in record.slides):
+            raise ValueError("Invalid report workflow slide status")
+        cls._require_unique_ids(
+            [slide.slide_id for slide in record.slides],
+            label="report workflow slide",
+        )
+
+        comments = [*record.comments]
+        for slide in record.slides:
+            comments.extend(slide.comments)
+        if any(not comment.created_at for comment in comments):
+            raise ValueError("Invalid report workflow comment identity")
+        cls._require_unique_ids(
+            [comment.comment_id for comment in comments],
+            label="report workflow comment",
+        )
+
+        if any(
+            step.status not in {"pending", "approved", "changes_requested"}
+            for step in record.approval_steps
+        ):
+            raise ValueError("Invalid report workflow approval status")
+        cls._require_unique_ids(
+            [step.step_id for step in record.approval_steps],
+            label="report workflow approval step",
+        )
+        cls._require_unique_ids(
+            [step.stage for step in record.approval_steps],
+            label="report workflow approval stage",
+        )
+
+        if any(not isinstance(artifact, dict) for artifact in record.learning_artifacts):
+            raise ValueError("Invalid report workflow learning artifact")
+        cls._require_unique_ids(
+            [artifact.get("artifact_id") for artifact in record.learning_artifacts],
+            label="report workflow learning artifact",
+        )
+
+        if any(not isinstance(asset, dict) for asset in record.visual_assets):
+            raise ValueError("Invalid report workflow visual asset")
+        cls._require_unique_ids(
+            [asset.get("asset_id") for asset in record.visual_assets],
+            label="report workflow visual asset",
         )
 
     @staticmethod
