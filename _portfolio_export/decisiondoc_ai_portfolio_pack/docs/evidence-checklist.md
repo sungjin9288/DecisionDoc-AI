@@ -28,11 +28,13 @@
 | 사용자 템플릿 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create/list/get(use count 1)/delete/final empty JSONL 확인; 외부 API 호출 없음 |
 | 생성 이력 상태 무결성 | 완료 | `pytest -q tests/test_history_store_integrity.py --tb=short` -> `36 passed`; local/fake-S3 손상 보존·동시 add/favorite·caller backend 결속과 API 오류 경계 검증 |
 | 생성 이력 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 register/generate/list/detail(문서 4개)/favorite/delete/final empty 확인; 외부 API 호출 없음 |
+| 회의 녹음 상태 무결성 | 완료 | `pytest -q tests/test_meeting_recording_store_integrity.py --tb=short` -> `47 passed`; local/fake-S3 metadata 손상 보존·audio digest/size·UUID 충돌·동시 전사/승인·API 오류 경계 검증 |
+| 회의 녹음 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 upload/list/detail, offline transcript/approval, 2개 bundle 생성과 source recording provenance 확인; OpenAI transcription 호출 없음 |
 | 공개 공유 상태 무결성 | 완료 | `pytest -q tests/test_share_store_integrity.py --tb=short` -> `36 passed`; local/fake-S3 손상 보존·동시 생성/접근·route backend 결속과 public/auth API 오류 경계 검증 |
 | 공개 공유 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create 200/public view 200/access count 1/revoke 200/post-revoke 404 확인; 외부 API 호출 없음 |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3507 passed, 1 skipped, 4 deselected` (2026-07-16 실측) |
-| GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `c214383`, CI `29491858979` success (`3471 passed, 5 skipped`) |
-| GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `c214383`, CD `29491859049` success. image digest `sha256:ce2a3979001234bb9ca40f64e8cf9b9b9ecf9ae3054137c28dae8925d527c254`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3554 passed, 1 skipped, 4 deselected` (2026-07-16 실측) |
+| GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `0aa443c`, CI `29499720332` success (`3507 passed, 5 skipped`) |
+| GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `0aa443c`, CD `29499720294` success. image digest `sha256:f9c1deafa149c137462838360fd818274bc0ba2d5c13f62d15c9ea4926f354a1`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 | OpenAI live provider 호출 | 완료 | 2026-07-13 `tests/test_live_providers.py::test_live_openai_generate_ok` -> `1 passed in 23.26s`; local JUnit receipt는 gitignored `reports/completion-readiness/m1-openai-junit.xml` |
 

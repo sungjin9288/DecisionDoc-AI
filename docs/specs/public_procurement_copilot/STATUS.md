@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone meeting recording state integrity hardening
+
+- `MeetingRecordingStore`는 tenant/project/recording path component를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/meeting_recordings/{project_id}/{recording_id}/`를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
+- Malformed JSON, duplicate JSON key, owned malformed metadata와 canonical audio path drift는 조회·목록·전사·승인 변경을 fail closed로 중단하고 metadata/audio 원본 bytes를 보존한다. Explicit foreign metadata는 현재 scope에서 숨기며 caller의 invalid 입력과 generated UUID collision도 write 전에 거부한다.
+- Audio read는 persisted size와 SHA-256을 실제 bytes와 다시 대조한다. 같은 recording path의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 create와 transcript/approval 변경을 직렬화한다. Distributed S3 compare-and-swap을 주장하지 않는다.
+- 앱 bootstrap은 recording store에 선택한 data root와 backend를 명시적으로 전달한다. H42 focused integrity gate는 `47 passed`, meeting-recording/observability/security/state/project/infrastructure/error 확장 gate는 `437 passed`, full no-cost regression은 `3554 passed, 1 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
+- 임시 mock/local uvicorn HTTP QA에서 project create, recording upload/list/detail, offline transcript/approval, `meeting_minutes_kr`·`project_report_kr` 생성과 source recording provenance 2건을 확인했다. OpenAI transcription은 호출하지 않았고 서버와 임시 data root는 검증 직후 정리했다.
+
 ## Post-milestone generation history state integrity hardening
 
 - `HistoryStore`는 tenant ID를 JSONL path 선택 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/history.jsonl`을 사용한다. Missing-state read는 파일이나 object를 만들지 않으며 마지막 entry 삭제 뒤의 빈 JSONL은 유효한 빈 lifecycle 상태로 읽는다.
