@@ -3,6 +3,12 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project state cross-worker authority completion
+
+- `ProjectStore`의 create·update·delete·archive·document add/remove·voice brief upsert·approval sync mutation은 tenant별 `projects.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. Project/document operation identity는 재시도 동안 유지하고 충돌하면 최신 state의 ownership·schema를 다시 검증한다. Project `updated_at`은 최신 state에 mutation을 다시 적용하는 시점에 갱신해 늦게 확정된 변경이 이전 timestamp로 되돌아가지 않게 한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. Project record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 record가 남아 있는 후속 CAS가 완료돼도 원래 operation의 성공을 조정한다. Receipt가 손상되면 조회·후속 mutation을 fail closed 처리한다. Delete와 update가 경쟁할 때 delete가 먼저 확정되면 update는 missing project로 끝나고, update가 먼저 확정되면 delete가 최신 state를 제거하므로 stale write가 project를 되살리지 않는다.
+- H58 focused project/approval gate는 `176 passed`, project/approval/report/security/state/infrastructure 확장 gate는 `546 passed`, full no-cost regression은 `4007 passed, 2 skipped, 4 deselected`다. Process lock을 제거한 fake-S3에서 20-way project/document 생성 보존, disjoint field update와 approval sync, delete/update 경쟁, project/document commit-then-error 뒤 후속 CAS reconciliation을 확인했다. 실제 mock/local uvicorn에서도 health·project create/update·document add·approval create/sync·stats·admin delete를 확인했고 외부 provider 호출은 0건이었다. 검증은 local/mock/fake-S3만 사용했다. Tenant별 단일 project state object를 넘는 distributed transaction, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone approval state cross-worker authority completion
 
 - `ApprovalStore`의 create·submit·review·comment·document update·final decision mutation은 tenant별 `approvals.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 state의 ownership·schema·transition을 다시 검증하며 operation ID와 timestamp는 재시도 동안 유지한다.

@@ -7,6 +7,7 @@ import time
 from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -95,6 +96,7 @@ class _MemoryS3Client:
         self._read_barrier: threading.Barrier | None = None
         self._coordinated_reads = 0
         self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
 
     @staticmethod
     def _etag(data: bytes) -> str:
@@ -110,8 +112,13 @@ class _MemoryS3Client:
         self._read_barrier = threading.Barrier(count)
         self._coordinated_reads = count
 
-    def fail_after_next_conditional_write(self) -> None:
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
         self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
 
     def put_object(
         self,
@@ -139,7 +146,13 @@ class _MemoryS3Client:
             )
             if fail_after_write:
                 self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
         if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
             raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
@@ -400,6 +413,38 @@ def test_identity_bearing_owned_corruption_fails_closed(
     assert path.read_bytes() == corrupted
 
 
+def test_project_mutation_receipts_are_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore(base_dir=str(tmp_path))
+    project = store.create("alpha", name="Receipt bounded")
+    path = _state_path(tmp_path, "project")
+
+    for index in range(70):
+        store.update(
+            project.project_id,
+            tenant_id="alpha",
+            description=f"Revision {index}",
+        )
+
+    records = json.loads(path.read_text(encoding="utf-8"))
+    assert len(records[0]["_mutation_ids"]) == 64
+    records[0]["_mutation_ids"][0] = records[0]["_mutation_ids"][1]
+    path.write_text(json.dumps(records), encoding="utf-8")
+    corrupted = path.read_bytes()
+
+    with pytest.raises(ProjectStoreError, match="Invalid owned project record"):
+        store.get(project.project_id, tenant_id="alpha")
+    with pytest.raises(ProjectStoreError, match="Invalid owned project record"):
+        store.update(
+            project.project_id,
+            tenant_id="alpha",
+            description="Blocked",
+        )
+
+    assert path.read_bytes() == corrupted
+
+
 @pytest.mark.parametrize("store_kind", ["project", "approval"])
 def test_duplicate_owned_record_stops_mutation_without_replacement(
     tmp_path: Path,
@@ -461,6 +506,286 @@ def test_independent_project_store_instances_preserve_concurrent_creates(
     assert len(local_created) == len(s3_created) == 20
     assert {project.project_id for project in persisted} == local_created
     assert {project.project_id for project in remote} == s3_created
+
+
+def test_s3_project_cas_preserves_cross_worker_creates_and_documents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ProjectStore(base_dir="/virtual/bootstrap", backend=backend)
+    project = bootstrap.create("alpha", name="Shared project")
+    monkeypatch.setattr(
+        "app.storage.project_store.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    stores = [
+        ProjectStore(
+            base_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client)[0],
+        )
+        for index in range(20)
+    ]
+
+    def create(store: ProjectStore, index: int) -> str:
+        return store.create("alpha", name=f"Project {index}").project_id
+
+    def add_document(store: ProjectStore, index: int) -> str:
+        return store.add_document(
+            project.project_id,
+            f"request-{index}",
+            "proposal_kr",
+            f"Document {index}",
+            [{"doc_type": "proposal", "markdown": f"# Document {index}"}],
+            tenant_id="alpha",
+        ).doc_id
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        created_ids = set(executor.map(create, stores, range(20)))
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        document_ids = set(executor.map(add_document, stores, range(20)))
+
+    reloaded = ProjectStore(
+        base_dir="/virtual/reload",
+        backend=_s3_backend(client)[0],
+    )
+    projects = reloaded.list_by_tenant("alpha")
+    persisted = reloaded.get(project.project_id, tenant_id="alpha")
+
+    assert len(created_ids) == 20
+    assert {item.project_id for item in projects} == {
+        project.project_id,
+        *created_ids,
+    }
+    assert persisted is not None
+    assert {document.doc_id for document in persisted.documents} == document_ids
+
+
+def test_s3_project_cas_preserves_disjoint_updates_and_approval_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ProjectStore(base_dir="/virtual/bootstrap", backend=backend)
+    project = bootstrap.create("alpha", name="Original", description="Original")
+    first_document = bootstrap.add_document(
+        project.project_id,
+        "request-existing",
+        "proposal_kr",
+        "Existing document",
+        [{"doc_type": "proposal", "markdown": "# Existing"}],
+        tenant_id="alpha",
+    )
+    monkeypatch.setattr(
+        "app.storage.project_store.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    first_worker = ProjectStore(
+        base_dir="/virtual/first-worker",
+        backend=_s3_backend(client)[0],
+    )
+    second_worker = ProjectStore(
+        base_dir="/virtual/second-worker",
+        backend=_s3_backend(client)[0],
+    )
+
+    client.coordinate_next_reads(2)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        field_updates = list(
+            executor.map(
+                lambda action: action(),
+                (
+                    lambda: first_worker.update(
+                        project.project_id,
+                        tenant_id="alpha",
+                        name="Updated name",
+                    ),
+                    lambda: second_worker.update(
+                        project.project_id,
+                        tenant_id="alpha",
+                        description="Updated description",
+                    ),
+                ),
+            )
+        )
+
+    after_field_updates = bootstrap.get(project.project_id, tenant_id="alpha")
+    assert after_field_updates is not None
+    assert after_field_updates.name == "Updated name"
+    assert after_field_updates.description == "Updated description"
+    assert after_field_updates.updated_at == max(
+        update.updated_at for update in field_updates
+    )
+
+    role = threading.local()
+    clock_lock = threading.Lock()
+    clock_calls = {"approval": 0, "document": 0}
+    approval_first_attempt = threading.Event()
+    document_committed = threading.Event()
+    first_approval_timestamp = "9999-01-01T00:00:00.000001+00:00"
+    document_timestamp = "9999-01-01T00:00:00.000002+00:00"
+    retry_approval_timestamp = "9999-01-01T00:00:00.000003+00:00"
+
+    def controlled_now() -> str:
+        current_role = getattr(role, "name", "")
+        with clock_lock:
+            clock_calls[current_role] += 1
+            call_number = clock_calls[current_role]
+        if current_role == "approval":
+            if call_number == 1:
+                approval_first_attempt.set()
+                assert document_committed.wait(timeout=2)
+                return first_approval_timestamp
+            return retry_approval_timestamp
+        if current_role == "document":
+            if call_number > 1:
+                assert approval_first_attempt.wait(timeout=2)
+            return document_timestamp
+        raise AssertionError("unexpected project clock caller")
+
+    monkeypatch.setattr("app.storage.project_store._now_iso", controlled_now)
+    client.coordinate_next_reads(2)
+
+    def add_document() -> None:
+        role.name = "document"
+        first_worker.add_document(
+            project.project_id,
+            "request-new",
+            "proposal_kr",
+            "New document",
+            [{"doc_type": "proposal", "markdown": "# New"}],
+            tenant_id="alpha",
+        )
+        document_committed.set()
+
+    def sync_approval() -> None:
+        role.name = "approval"
+        second_worker.update_document_approval(
+            project.project_id,
+            "request-existing",
+            "approval-1",
+            "approved",
+            tenant_id="alpha",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(lambda action: action(), (add_document, sync_approval)))
+
+    persisted = bootstrap.get(project.project_id, tenant_id="alpha")
+
+    assert persisted is not None
+    assert persisted.name == "Updated name"
+    assert persisted.description == "Updated description"
+    assert clock_calls["approval"] == 2
+    assert persisted.updated_at == retry_approval_timestamp
+    assert {document.request_id for document in persisted.documents} == {
+        "request-existing",
+        "request-new",
+    }
+    existing = next(
+        document
+        for document in persisted.documents
+        if document.doc_id == first_document.doc_id
+    )
+    assert existing.approval_id == "approval-1"
+    assert existing.approval_status == "approved"
+
+
+def test_s3_project_cas_does_not_resurrect_a_deleted_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ProjectStore(base_dir="/virtual/bootstrap", backend=backend)
+    project = bootstrap.create("alpha", name="Delete me")
+    monkeypatch.setattr(
+        "app.storage.project_store.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    delete_store = ProjectStore(
+        base_dir="/virtual/delete-worker",
+        backend=_s3_backend(client)[0],
+    )
+    update_store = ProjectStore(
+        base_dir="/virtual/update-worker",
+        backend=_s3_backend(client)[0],
+    )
+    client.coordinate_next_reads(2)
+
+    def delete() -> str:
+        delete_store.delete(project.project_id, tenant_id="alpha")
+        return "deleted"
+
+    def update() -> str:
+        try:
+            update_store.update(
+                project.project_id,
+                tenant_id="alpha",
+                name="Updated before delete",
+            )
+        except KeyError:
+            return "missing"
+        return "updated"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda action: action(), (delete, update)))
+
+    assert outcomes[0] == "deleted"
+    assert outcomes[1] in {"missing", "updated"}
+    assert bootstrap.get(project.project_id, tenant_id="alpha") is None
+
+
+def test_s3_project_store_reconciles_commit_then_error() -> None:
+    backend, client = _s3_backend()
+    store = ProjectStore(base_dir="/virtual/data", backend=backend)
+    successor = ProjectStore(
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    successor_projects = []
+    successor_documents = []
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor_projects.append(
+            successor.create("alpha", name="Successor project")
+        )
+    )
+    project = store.create("alpha", name="Committed project")
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor_documents.append(
+            successor.add_document(
+                project.project_id,
+                "request-successor",
+                "proposal_kr",
+                "Successor document",
+                [{"doc_type": "proposal", "markdown": "# Successor"}],
+                tenant_id="alpha",
+            )
+        )
+    )
+    document = store.add_document(
+        project.project_id,
+        "request-1",
+        "proposal_kr",
+        "Committed document",
+        [{"doc_type": "proposal", "markdown": "# Committed"}],
+        tenant_id="alpha",
+    )
+
+    persisted = store.get(project.project_id, tenant_id="alpha")
+    projects = store.list_by_tenant("alpha")
+
+    assert persisted is not None
+    assert persisted.name == "Committed project"
+    assert {item.project_id for item in projects} == {
+        project.project_id,
+        successor_projects[0].project_id,
+    }
+    assert {item.doc_id for item in persisted.documents} == {
+        document.doc_id,
+        successor_documents[0].doc_id,
+    }
 
 
 def test_independent_approval_store_instances_preserve_concurrent_creates(

@@ -2,7 +2,7 @@
 
 Documents are grouped by project with fiscal year archiving.
 Storage: data/tenants/{tenant_id}/projects.json (one file per tenant).
-Thread-safe within one process across stores that share a logical state object.
+Concurrent changes use process-local locking plus backend conditional writes.
 """
 from __future__ import annotations
 
@@ -11,24 +11,18 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal, TypeVar
 
-from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
+from app.storage.project_state_mutation import (
+    ProjectStateMutationMixin,
+    ProjectStoreError,
+)
+from app.storage.state_backend import StateBackend, get_state_backend
 from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
 
 
-class ProjectStoreError(RuntimeError):
-    """Raised when persisted project state cannot be trusted."""
-
-
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ProjectStoreError(f"Duplicate key in project state: {key!r}")
-        result[key] = value
-    return result
+_MutationResult = TypeVar("_MutationResult")
 
 
 def _now_iso() -> str:
@@ -81,7 +75,7 @@ class Project:
     tags: list[str]
 
 
-class ProjectStore:
+class ProjectStore(ProjectStateMutationMixin):
     """Thread-safe, tenant-scoped JSON-backed project history store."""
 
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
@@ -99,32 +93,6 @@ class ProjectStore:
             data_dir=self._base,
             relative_path=relative_path,
         )
-
-    def _load(self, tenant_id: str) -> list[dict]:
-        tenant_id = require_tenant_id(tenant_id)
-        try:
-            raw = self._backend.read_text(self._relative_path(tenant_id))
-        except (StateBackendError, UnicodeError) as exc:
-            raise ProjectStoreError("Invalid project state document") from exc
-        if raw is None:
-            return []
-        if not raw.strip():
-            raise ProjectStoreError("Invalid project state document")
-        try:
-            records = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ProjectStoreError) as exc:
-            raise ProjectStoreError("Invalid project state document") from exc
-        if not isinstance(records, list):
-            raise ProjectStoreError("Invalid project state document")
-        return records
-
-    def _save(self, tenant_id: str, records: list[dict]) -> None:
-        self._owned_records(records, tenant_id=tenant_id)
-        payload = json.dumps(records, ensure_ascii=False, indent=2)
-        try:
-            self._backend.write_text(self._relative_path(tenant_id), payload)
-        except StateBackendError as exc:
-            raise ProjectStoreError("Failed to persist project state") from exc
 
     @staticmethod
     def _doc_from_dict(d: dict) -> ProjectDocument:
@@ -221,6 +189,7 @@ class ProjectStore:
             if not isinstance(project_id, str) or not project_id:
                 continue
             try:
+                self._mutation_ids(raw_record)
                 project = self._from_dict(raw_record)
             except (KeyError, TypeError, ValueError, ProjectStoreError) as exc:
                 raise ProjectStoreError("Invalid owned project record") from exc
@@ -235,20 +204,73 @@ class ProjectStore:
         project_id: str,
         *,
         tenant_id: str,
-    ) -> tuple[str, list[dict], int, Project] | None:
+    ) -> tuple[int, Project] | None:
         """Locate a project only within the caller's tenant."""
         tenant_id = require_tenant_id(tenant_id)
-        records = self._load(tenant_id)
+        return self._find_in_records(
+            project_id,
+            records=self._load(tenant_id),
+            tenant_id=tenant_id,
+        )
+
+    def _find_in_records(
+        self,
+        project_id: str,
+        *,
+        records: list[dict],
+        tenant_id: str,
+    ) -> tuple[int, Project] | None:
         for index, project in self._owned_records(records, tenant_id=tenant_id):
             if project.project_id == project_id:
-                return tenant_id, records, index, project
+                return index, project
         return None
 
-    def _flush(self, tenant_id: str, records: list[dict], idx: int, proj: Project) -> Project:
-        proj.updated_at = _now_iso()
-        records[idx] = asdict(proj)
-        self._save(tenant_id, records)
-        return proj
+    def _mutate_project(
+        self,
+        project_id: str,
+        *,
+        tenant_id: str,
+        change: Callable[[Project], tuple[_MutationResult, bool]],
+    ) -> _MutationResult:
+        tenant_id = require_tenant_id(tenant_id)
+        mutation_id = uuid.uuid4().hex
+
+        def apply(records: list[dict]) -> tuple[_MutationResult, bool]:
+            found = self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
+            index, project = found
+            result, changed = change(project)
+            if changed:
+                project.updated_at = _now_iso()
+                records[index] = self._record_project(
+                    project,
+                    previous=records[index],
+                    mutation_id=mutation_id,
+                )
+            return result, changed
+
+        def mutation_committed(records: list[dict]) -> bool:
+            found = self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                return False
+            index, _ = found
+            return mutation_id in self._mutation_ids(records[index])
+
+        with self._lock(tenant_id):
+            return self._mutate_state(
+                tenant_id,
+                apply,
+                committed=mutation_committed,
+            )
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -262,32 +284,55 @@ class ProjectStore:
         fiscal_year: int | None = None,
     ) -> Project:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock(tenant_id):
-            records = self._load(tenant_id)
-            self._owned_records(records, tenant_id=tenant_id)
-            now = _now_iso()
-            proj = Project(
-                project_id=str(uuid.uuid4()),
-                tenant_id=tenant_id,
-                name=name,
-                description=description,
-                client=client,
-                contract_number=contract_number,
-                fiscal_year=fiscal_year or datetime.now().year,
-                status="active",
-                created_at=now,
-                updated_at=now,
-                documents=[],
-                tags=[],
+        now = _now_iso()
+        project = Project(
+            project_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            description=description,
+            client=client,
+            contract_number=contract_number,
+            fiscal_year=fiscal_year or datetime.now().year,
+            status="active",
+            created_at=now,
+            updated_at=now,
+            documents=[],
+            tags=[],
+        )
+        mutation_id = uuid.uuid4().hex
+
+        def append_project(records: list[dict]) -> tuple[Project, bool]:
+            records.append(
+                self._record_project(
+                    project,
+                    previous=None,
+                    mutation_id=mutation_id,
+                )
             )
-            records.append(asdict(proj))
-            self._save(tenant_id, records)
-            return proj
+            return project, True
+
+        def mutation_committed(records: list[dict]) -> bool:
+            found = self._find_in_records(
+                project.project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                return False
+            index, _ = found
+            return mutation_id in self._mutation_ids(records[index])
+
+        with self._lock(tenant_id):
+            return self._mutate_state(
+                tenant_id,
+                append_project,
+                committed=mutation_committed,
+            )
 
     def get(self, project_id: str, *, tenant_id: str) -> Project | None:
         with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
-            return result[3] if result else None
+            return result[1] if result else None
 
     def list_by_tenant(
         self,
@@ -312,26 +357,49 @@ class ProjectStore:
 
     def update(self, project_id: str, *, tenant_id: str, **kwargs: Any) -> Project:
         """Update allowed fields: name, description, client, contract_number, status, tags, fiscal_year."""
-        ALLOWED = {"name", "description", "client", "contract_number", "status", "tags", "fiscal_year"}
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
-            tenant_id, records, idx, proj = result
-            for k, v in kwargs.items():
-                if k in ALLOWED and v is not None:
-                    setattr(proj, k, v)
-            return self._flush(tenant_id, records, idx, proj)
+        allowed = {"name", "description", "client", "contract_number", "status", "tags", "fiscal_year"}
+
+        def update_fields(project: Project) -> tuple[Project, bool]:
+            for key, value in kwargs.items():
+                if key in allowed and value is not None:
+                    setattr(project, key, value)
+            return project, True
+
+        return self._mutate_project(
+            project_id,
+            tenant_id=tenant_id,
+            change=update_fields,
+        )
 
     def delete(self, project_id: str, *, tenant_id: str) -> None:
         """Permanently delete a project (documents are unlinked, not deleted)."""
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
+        tenant_id = require_tenant_id(tenant_id)
+
+        def delete_project(records: list[dict]) -> tuple[None, bool]:
+            found = self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
-            tid, records, idx, _ = result
-            del records[idx]
-            self._save(tid, records)
+            index, _ = found
+            del records[index]
+            return None, True
+
+        def mutation_committed(records: list[dict]) -> bool:
+            return self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            ) is None
+
+        with self._lock(tenant_id):
+            self._mutate_state(
+                tenant_id,
+                delete_project,
+                committed=mutation_committed,
+            )
 
     def archive(self, project_id: str, *, tenant_id: str) -> Project:
         return self.update(project_id, tenant_id=tenant_id, status="archived")
@@ -398,14 +466,16 @@ class ProjectStore:
                 source_procurement_review_operational_approval
             ),
         )
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
-            tenant_id, records, idx, proj = result
-            proj.documents.append(doc)
-            self._flush(tenant_id, records, idx, proj)
-        return doc
+
+        def append_document(project: Project) -> tuple[ProjectDocument, bool]:
+            project.documents.append(doc)
+            return doc, True
+
+        return self._mutate_project(
+            project_id,
+            tenant_id=tenant_id,
+            change=append_document,
+        )
 
     def upsert_voice_brief_document(
         self,
@@ -427,15 +497,33 @@ class ProjectStore:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
         resolved_generated_at = generated_at or _now_iso()
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
+        new_document = ProjectDocument(
+            doc_id=str(uuid.uuid4()),
+            request_id=request_id,
+            bundle_id="voice_brief_import",
+            title=title,
+            generated_at=resolved_generated_at,
+            approval_id=None,
+            approval_status=None,
+            tags=tags or [],
+            doc_snapshot=docs_json,
+            gov_options=None,
+            file_size_chars=file_size,
+            source_kind="voice_brief",
+            source_recording_id=source_recording_id,
+            source_summary_revision_id=source_summary_revision_id,
+            source_review_status=source_review_status,
+            source_sync_status=source_sync_status,
+            source_use_case=source_use_case,
+            source_audio_url=source_audio_url,
+        )
 
-            tenant_id, records, idx, proj = result
+        def upsert(
+            project: Project,
+        ) -> tuple[tuple[ProjectDocument, Literal["created", "updated"]], bool]:
             existing = next(
                 (
-                    doc for doc in proj.documents
+                    doc for doc in project.documents
                     if doc.source_kind == "voice_brief"
                     and doc.source_recording_id == source_recording_id
                     and doc.source_summary_revision_id == source_summary_revision_id
@@ -445,7 +533,7 @@ class ProjectStore:
             if existing is None:
                 existing = next(
                     (
-                        doc for doc in reversed(proj.documents)
+                        doc for doc in reversed(project.documents)
                         if doc.source_kind == "voice_brief"
                         and doc.source_recording_id == source_recording_id
                     ),
@@ -453,51 +541,33 @@ class ProjectStore:
                 )
 
             if existing is None:
-                doc = ProjectDocument(
-                    doc_id=str(uuid.uuid4()),
-                    request_id=request_id,
-                    bundle_id="voice_brief_import",
-                    title=title,
-                    generated_at=resolved_generated_at,
-                    approval_id=None,
-                    approval_status=None,
-                    tags=tags or [],
-                    doc_snapshot=docs_json,
-                    gov_options=None,
-                    file_size_chars=file_size,
-                    source_kind="voice_brief",
-                    source_recording_id=source_recording_id,
-                    source_summary_revision_id=source_summary_revision_id,
-                    source_review_status=source_review_status,
-                    source_sync_status=source_sync_status,
-                    source_use_case=source_use_case,
-                    source_audio_url=source_audio_url,
-                )
-                proj.documents.append(doc)
-                operation = "created"
-            else:
-                existing.request_id = request_id
-                existing.bundle_id = "voice_brief_import"
-                existing.title = title
-                existing.generated_at = resolved_generated_at
-                existing.approval_id = None
-                existing.approval_status = None
-                existing.tags = tags or []
-                existing.doc_snapshot = docs_json
-                existing.gov_options = None
-                existing.file_size_chars = file_size
-                existing.source_kind = "voice_brief"
-                existing.source_recording_id = source_recording_id
-                existing.source_summary_revision_id = source_summary_revision_id
-                existing.source_review_status = source_review_status
-                existing.source_sync_status = source_sync_status
-                existing.source_use_case = source_use_case
-                existing.source_audio_url = source_audio_url
-                doc = existing
-                operation = "updated"
+                project.documents.append(new_document)
+                return (new_document, "created"), True
 
-            self._flush(tenant_id, records, idx, proj)
-            return doc, operation
+            existing.request_id = request_id
+            existing.bundle_id = "voice_brief_import"
+            existing.title = title
+            existing.generated_at = resolved_generated_at
+            existing.approval_id = None
+            existing.approval_status = None
+            existing.tags = tags or []
+            existing.doc_snapshot = docs_json
+            existing.gov_options = None
+            existing.file_size_chars = file_size
+            existing.source_kind = "voice_brief"
+            existing.source_recording_id = source_recording_id
+            existing.source_summary_revision_id = source_summary_revision_id
+            existing.source_review_status = source_review_status
+            existing.source_sync_status = source_sync_status
+            existing.source_use_case = source_use_case
+            existing.source_audio_url = source_audio_url
+            return (existing, "updated"), True
+
+        return self._mutate_project(
+            project_id,
+            tenant_id=tenant_id,
+            change=upsert,
+        )
 
     def remove_document(
         self,
@@ -506,13 +576,19 @@ class ProjectStore:
         *,
         tenant_id: str,
     ) -> None:
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
-            tenant_id, records, idx, proj = result
-            proj.documents = [d for d in proj.documents if d.doc_id != doc_id]
-            self._flush(tenant_id, records, idx, proj)
+        def remove(project: Project) -> tuple[None, bool]:
+            project.documents = [
+                document
+                for document in project.documents
+                if document.doc_id != doc_id
+            ]
+            return None, True
+
+        self._mutate_project(
+            project_id,
+            tenant_id=tenant_id,
+            change=remove,
+        )
 
     def update_document_approval(
         self,
@@ -524,19 +600,50 @@ class ProjectStore:
         tenant_id: str,
     ) -> None:
         """Update approval_id and approval_status on document(s) matching request_id."""
-        with self._lock(tenant_id):
-            result = self._find(project_id, tenant_id=tenant_id)
-            if result is None:
-                return  # silently ignore missing project
-            tenant_id, records, idx, proj = result
+        tenant_id = require_tenant_id(tenant_id)
+        mutation_id = uuid.uuid4().hex
+
+        def update_approval(records: list[dict]) -> tuple[None, bool]:
+            found = self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                return None, False
+            index, project = found
             updated = False
-            for doc in proj.documents:
-                if doc.request_id == request_id:
-                    doc.approval_id = approval_id
-                    doc.approval_status = approval_status
+            for document in project.documents:
+                if document.request_id == request_id:
+                    document.approval_id = approval_id
+                    document.approval_status = approval_status
                     updated = True
             if updated:
-                self._flush(tenant_id, records, idx, proj)
+                project.updated_at = _now_iso()
+                records[index] = self._record_project(
+                    project,
+                    previous=records[index],
+                    mutation_id=mutation_id,
+                )
+            return None, updated
+
+        def mutation_committed(records: list[dict]) -> bool:
+            found = self._find_in_records(
+                project_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                return False
+            index, _ = found
+            return mutation_id in self._mutation_ids(records[index])
+
+        with self._lock(tenant_id):
+            self._mutate_state(
+                tenant_id,
+                update_approval,
+                committed=mutation_committed,
+            )
 
     def search(
         self,
