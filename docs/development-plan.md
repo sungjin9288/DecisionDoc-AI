@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,036 passed, 2 skipped, 4 deselected, 2026-07-17 H62) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,056 passed, 2 skipped, 4 deselected, 2026-07-17 H63) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-17 H62 실측: 4036 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-17 H63 실측: 4056 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -93,6 +93,7 @@ Providers (5)    Storage (40 스토어)    Ops
 7. Project/approval mutation은 각 tenant별 단일 state object의 검증된 원문을 expected value로 사용하고, conditional create/CAS 충돌마다 최신 ownership·schema를 다시 검증한다. Approval은 상태 transition도 다시 검증한다.
 8. Report workflow mutation은 tenant별 단일 state object에서 conditional create/CAS를 사용하고, 충돌마다 최신 workflow state와 domain transition을 재검증한다. Bounded mutation receipt는 public schema와 분리하고 손상 시 fail closed 처리한다.
 9. Audit append는 기존 JSONL byte prefix를 보존한 채 conditional create/CAS로 확정하고, 충돌마다 최신 evidence를 다시 검증한다. 불확실 commit은 `log_id`와 exact entry read-back으로 조정한다.
+10. Template/history/share mutation은 각각 tenant별 단일 state object에서 conditional create/CAS를 사용하고, 충돌마다 최신 ownership·schema·lifecycle 위에 변경을 재적용한다. Bounded private receipt와 target identity read-back은 public schema와 분리하고 손상 시 fail closed 처리한다.
 
 ---
 

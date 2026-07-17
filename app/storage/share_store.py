@@ -6,20 +6,25 @@ import json
 import os
 import secrets
 import threading
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
 _share_locks: dict[Path, threading.RLock] = {}
 _share_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
-class ShareStoreError(ValueError):
+class ShareStoreError(RuntimeError):
     """Raised when persisted share-link state cannot be trusted."""
 
 
@@ -172,6 +177,7 @@ class ShareStore:
                     datetime.fromisoformat(timestamp)
         except ValueError as exc:
             raise ShareStoreError("Invalid share timestamp") from exc
+        self._mutation_ids(link)
         return link
 
     def _validate_state(self, data: object) -> dict[str, dict[str, Any]]:
@@ -189,23 +195,121 @@ class ShareStore:
             share_ids.add(share_id)
         return data
 
-    def _load(self) -> dict[str, dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
+    def _read_state(self) -> tuple[str | None, dict[str, dict[str, Any]]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise ShareStoreError("Invalid share state document") from exc
         if raw is None:
-            return {}
+            return None, {}
+        return raw, self._decode_state(raw)
+
+    def _decode_state(self, raw: str) -> dict[str, dict[str, Any]]:
         if not raw.strip():
             raise ShareStoreError("Invalid share state document")
         try:
             data = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ShareStoreError, ValueError) as exc:
             raise ShareStoreError("Invalid share state document") from exc
         return self._validate_state(data)
 
-    def _save(self, data: dict[str, dict[str, Any]]) -> None:
+    def _load(self) -> dict[str, dict[str, Any]]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict[str, Any]) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise ShareStoreError("Invalid share mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict[str, Any],
+        *,
+        previous: dict[str, Any] | None,
+        mutation_id: str,
+    ) -> dict[str, Any]:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    @staticmethod
+    def _public_link(link: dict[str, Any]) -> dict[str, Any]:
+        public_link = dict(link)
+        public_link.pop(_MUTATION_IDS_FIELD, None)
+        return public_link
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        data: dict[str, dict[str, Any]],
+        committed: Callable[[dict[str, dict[str, Any]]], bool],
+    ) -> bool:
         self._validate_state(data)
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(data, ensure_ascii=False, indent=2),
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_data = self._decode_state(observed)
+                except ShareStoreError:
+                    pass
+                else:
+                    if committed(observed_data):
+                        return True
+            raise ShareStoreError("Failed to persist share state") from exc
+
+    def _mutate(
+        self,
+        change: Callable[
+            [dict[str, dict[str, Any]]],
+            tuple[_MutationResult, bool],
+        ],
+        *,
+        committed: Callable[[dict[str, dict[str, Any]]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, data = self._read_state()
+            result, changed = change(data)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                data=data,
+                committed=committed,
+            ):
+                return result
+        raise ShareStoreError(
+            "Share state changed too many times to persist safely"
         )
 
     def create(
@@ -228,7 +332,7 @@ class ShareStore:
         procurement_review_document_status_summary: str = "",
     ) -> ShareLink:
         if isinstance(expires_days, bool) or not isinstance(expires_days, int):
-            raise ShareStoreError("Invalid share expiry")
+            raise ValueError("Invalid share expiry")
 
         created_at = datetime.now()
         link = ShareLink(
@@ -252,15 +356,33 @@ class ShareStore:
             procurement_review_document_status_copy=procurement_review_document_status_copy,
             procurement_review_document_status_summary=procurement_review_document_status_summary,
         )
-        record = self._validate_record(link.share_id, asdict(link))
+        try:
+            record = self._validate_record(link.share_id, asdict(link))
+        except ShareStoreError as exc:
+            raise ValueError(str(exc)) from exc
+        mutation_id = uuid.uuid4().hex
+        persisted = self._record_mutation(
+            record,
+            previous=None,
+            mutation_id=mutation_id,
+        )
 
-        with self._lock:
-            data = self._load()
+        def apply(data: dict[str, dict[str, Any]]) -> tuple[ShareLink, bool]:
             if link.share_id in data:
                 raise ShareStoreError("Duplicate share identity")
-            data[link.share_id] = record
-            self._save(data)
-        return link
+            data[link.share_id] = persisted
+            return link, True
+
+        def was_committed(data: dict[str, dict[str, Any]]) -> bool:
+            stored = data.get(link.share_id)
+            return bool(
+                stored
+                and self._owns(stored)
+                and mutation_id in self._mutation_ids(stored)
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def get(self, share_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -269,7 +391,7 @@ class ShareStore:
         if not stored_link or not self._owns(stored_link):
             return None
 
-        link = dict(stored_link)
+        link = self._public_link(stored_link)
         if link["is_active"] is False:
             link["lifecycle_status"] = (
                 "revoked" if link.get("revoked_at") else "inactive"
@@ -282,14 +404,34 @@ class ShareStore:
         return link
 
     def increment_access(self, share_id: str) -> None:
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+
+        def apply(data: dict[str, dict[str, Any]]) -> tuple[None, bool]:
             link = data.get(share_id)
             if not link or not self._owns(link):
-                return
-            link["access_count"] += 1
-            link["last_accessed_at"] = datetime.now().isoformat()
-            self._save(data)
+                return None, False
+            if mutation_id in self._mutation_ids(link):
+                return None, False
+            updated = dict(link)
+            updated["access_count"] += 1
+            updated["last_accessed_at"] = datetime.now().isoformat()
+            data[share_id] = self._record_mutation(
+                updated,
+                previous=link,
+                mutation_id=mutation_id,
+            )
+            return None, True
+
+        def was_committed(data: dict[str, dict[str, Any]]) -> bool:
+            link = data.get(share_id)
+            return bool(
+                link
+                and self._owns(link)
+                and mutation_id in self._mutation_ids(link)
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def revoke(
         self,
@@ -299,26 +441,46 @@ class ShareStore:
         allow_admin_override: bool = False,
         actor_name: str = "",
     ) -> bool:
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+        revoked_at = datetime.now().isoformat()
+
+        def apply(data: dict[str, dict[str, Any]]) -> tuple[bool, bool]:
             link = data.get(share_id)
             if not link or not self._owns(link):
-                return False
+                return False, False
             if link["created_by"] != user_id and not allow_admin_override:
-                return False
-            link["is_active"] = False
+                return False, False
+            if not link["is_active"] and link.get("revoked_at"):
+                return True, False
+            updated = dict(link)
+            updated["is_active"] = False
             if not link.get("revoked_at"):
-                link["revoked_at"] = datetime.now().isoformat()
-                link["revoked_by"] = user_id
-                link["revoked_by_username"] = actor_name or user_id
-            self._save(data)
-            return True
+                updated["revoked_at"] = revoked_at
+                updated["revoked_by"] = user_id
+                updated["revoked_by_username"] = actor_name or user_id
+            data[share_id] = self._record_mutation(
+                updated,
+                previous=link,
+                mutation_id=mutation_id,
+            )
+            return True, True
+
+        def was_committed(data: dict[str, dict[str, Any]]) -> bool:
+            link = data.get(share_id)
+            return bool(
+                link
+                and self._owns(link)
+                and mutation_id in self._mutation_ids(link)
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def list_by_user(self, user_id: str) -> list[dict[str, Any]]:
         with self._lock:
             data = self._load()
         return [
-            link
+            self._public_link(link)
             for link in data.values()
             if self._owns(link) and link["created_by"] == user_id
         ]

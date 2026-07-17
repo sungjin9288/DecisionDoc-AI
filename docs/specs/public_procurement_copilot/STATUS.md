@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone reusable artifact cross-worker authority completion
+
+- `TemplateStore`, `HistoryStore`, `ShareStore`의 mutation은 tenant별 `templates.jsonl`, `history.jsonl`, `shares.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema·lifecycle 위에 template add/delete/use-count, history add/delete/favorite/visual-asset/promotion, share create/access/revoke를 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존한다. Commit 응답 유실 뒤 successor CAS가 이어져도 receipt로 원래 operation을 조정한다. Template/history 대상 mutation과 delete는 private immutable incarnation token에 결속해 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않으며, history retention은 제거된 record의 receipt를 남은 최신 record로 전달한다.
+- H63 focused reusable artifact gate는 `122 passed`, lifecycle API·favorites·security·tenant·audit·knowledge·infrastructure 확장 gate는 `491 passed, 1 warning`, provider API key를 process에서 제거한 full no-cost regression은 `4056 passed, 2 skipped, 4 deselected`다. Mock/local uvicorn에서는 health·register·generate·history list/star/detail·template create/list/get/delete·share create/view/revoke가 모두 `200`, revoke 뒤 public view가 `404`였고 history receipt 2개와 share receipt 3개의 persisted private/public 비노출을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. 객체별 CAS는 template, history, share state를 함께 묶는 distributed transaction이 아니며 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone account and invitation cross-worker authority completion
 
 - `UserStore`와 `InviteStore`의 mutation은 tenant별 `users.json` 또는 `invites.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema·username uniqueness를 다시 검증하고 account create/profile/password/login 및 invite create/use 변경을 재적용한다.

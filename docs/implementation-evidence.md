@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 H62 기준 non-live 전체 게이트는 `4036 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 H63 기준 non-live 전체 게이트는 `4056 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -24,8 +24,8 @@
 | API key 보호된 문서 생성 | 검증 완료 | `evidence/api-responses/generate-tech-decision.json` | curl `POST /generate` | mock provider |
 | Markdown export 생성 | 검증 완료 | `evidence/api-responses/generate-export-tech-decision.json`, `evidence/output-artifacts/export_adr.md`, `evidence/output-artifacts/export_onepager.md` | curl `POST /generate/export` | local storage |
 | 생성/인증/스토리지 테스트 | 검증 완료 | `evidence/cli-logs/pytest_generate_auth_storage.log` | `pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_storage.py -q` | 60 passed |
-| 사용자 템플릿 상태 무결성 | 검증 완료 | `app/storage/template_store.py`, `app/routers/templates.py`, `tests/test_template_store_integrity.py` | local/fake-S3 unit·concurrency·API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS는 범위 밖 |
-| 생성 이력 상태 무결성 | 검증 완료 | `app/storage/history_store.py`, `app/routers/history.py`, `app/routers/generate/_shared.py`, `tests/test_history_store_integrity.py` | local/fake-S3 unit·concurrency·API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS는 범위 밖 |
+| 사용자 템플릿 상태 무결성 | 검증 완료 | `app/storage/template_store.py`, `app/routers/templates.py`, `tests/test_template_store_integrity.py` | process lock 없는 local/fake-S3 20-way conditional create/CAS, use-count, bounded private receipt, successor mutation·immutable incarnation reconciliation, API 회귀와 mock/local HTTP lifecycle | CAS는 단일 template JSONL object 범위. 실제 AWS runtime은 범위 밖 |
+| 생성 이력 상태 무결성 | 검증 완료 | `app/storage/history_store.py`, `app/routers/history.py`, `app/routers/generate/_shared.py`, `tests/test_history_store_integrity.py` | process lock 없는 local/fake-S3 20-way conditional create/CAS, favorite parity, disjoint visual/promotion update, bounded private receipt, retention carry-forward·immutable incarnation reconciliation, API 회귀와 mock/local HTTP lifecycle | CAS는 단일 history JSONL object 범위. 실제 AWS runtime은 범위 밖 |
 | 프로젝트 지식 상태 무결성 | 검증 완료 | `app/storage/knowledge/`, `app/routers/knowledge.py`, generation/procurement/report workflow caller, `tests/test_knowledge_store_integrity.py` | local/fake-S3 index·content·style hash/size/ownership/duplicate/orphan·rollback·동시성·API·consumer 회귀 | distributed S3 multi-object transaction/CAS는 범위 밖 |
 | G2B 즐겨찾기 상태 무결성 | 검증 완료 | `app/storage/bookmark_store.py`, `app/routers/history.py`, `tests/test_bookmark_store_integrity.py` | local/fake-S3 missing-state·손상 보존·owner/identity·동시성·API 회귀 | distributed S3 CAS와 실제 G2B API는 범위 밖 |
 | 공공조달 판단 상태 무결성 | 검증 완료 | `app/storage/procurement_store.py`, procurement project/generation/Decision Council caller, `tests/test_procurement_store_integrity.py` | local/fake-S3 missing-state·판단/snapshot 손상 보존·identity/path·입력 검증·logical lock 동시성·API/downstream 회귀와 mock/local uvicorn lifecycle | 외부 원천 진위, distributed S3 CAS와 실제 G2B/provider API는 범위 밖 |
@@ -43,7 +43,7 @@
 | SSO 설정 상태 무결성 | 검증 완료 | `app/storage/sso_store.py`, `app/routers/sso.py`, `app/services/sso/saml_auth.py`, `tests/test_sso_store_integrity.py` | local/fake-S3 unit·concurrency·secret/SAML/API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 실제 LDAP/SAML/GCloud 로그인은 범위 밖. 기본 requirements에서는 SAML ACS fail closed |
 | 품질 학습·실험 상태 무결성 | 검증 완료 | `app/storage/feedback_store.py`, `app/eval/eval_store.py`, `app/storage/prompt_override_store.py`, `app/storage/ab_test_store.py`, `app/storage/request_pattern_store.py`, `app/domain/schema.py`, `tests/test_quality_learning_store_integrity.py`, `tests/test_quality_experiment_state_integrity.py` | local/fake-S3 unit·concurrency·API·prompt/A-B/request-pattern authority 회귀 | distributed S3 CAS와 실제 provider API는 범위 밖 |
 | Fine-tune dataset와 model authority 무결성 | 검증 완료 | `app/storage/finetune_store.py`, `app/storage/model_registry.py`, `app/services/finetune_orchestrator.py`, `tests/test_finetune_model_state_integrity.py` | local/fake-S3 unit·concurrency·API·provider-selection·mocked execution guard 회귀 | provider API, dataset upload, training execution, external polling, model promotion과 distributed S3 CAS는 범위 밖 |
-| 공개 공유 상태 무결성 | 검증 완료 | `app/storage/share_store.py`, `app/routers/history.py`, `tests/test_share_store_integrity.py` | local/fake-S3 unit·concurrency·public/auth API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 운영 URL 접근성은 범위 밖 |
+| 공개 공유 상태 무결성 | 검증 완료 | `app/storage/share_store.py`, `app/routers/history.py`, `tests/test_share_store_integrity.py` | process lock 없는 local/fake-S3 20-way conditional create/CAS, access/revoke disjoint update, bounded private receipt, successor mutation reconciliation, public/auth API 회귀와 mock/local HTTP lifecycle | CAS는 단일 share JSON object 범위. 실제 AWS runtime과 운영 URL 접근성은 범위 밖 |
 | Procurement decision package local evidence contract | 재현 가능 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json` | `python3 scripts/validate_procurement_decision_package_cli_contract_manifest.py --write-result --result-path /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `contract_version` 기준 stdout JSON contract |
 | Procurement decision package persisted receipt check | 재현 가능 | `/tmp/decisiondoc-cli-contract-manifest-validation-result.json` | `python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.py /tmp/decisiondoc-cli-contract-manifest-validation-result.json` | repo 밖 receipt 검증 |
 | Static PWA 화면 제공 | 검증 완료 | `evidence/screenshots/web-ui-home.png` | Playwright screenshot | 2026-07-08 기준 로그인 화면 확인 |
@@ -81,7 +81,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `4036 passed, 2 skipped, 4 deselected` (2026-07-17 H62 실측, provider API key를 process에서 제거).
+결과: `4056 passed, 2 skipped, 4 deselected` (2026-07-17 H63 실측, provider API key를 process에서 제거).
 
 ### CI advisory lint / security scan
 

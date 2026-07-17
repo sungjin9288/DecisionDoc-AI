@@ -45,6 +45,7 @@
   - report workflow state의 local/S3 backend 결속, 손상 원본 보존과 transition-aware conditional create/CAS
   - tenant audit JSONL의 byte-prefix 보존, conditional append CAS와 `log_id` 기반 uncertain commit reconciliation
   - message·notification object의 conditional create/CAS, bounded private receipt와 worker update 유실 방지
+  - template·history·share object의 conditional create/CAS, bounded private receipt, disjoint lifecycle update와 immutable-incarnation reconciliation
   - local procurement decision package evidence path with versioned CLI stdout contract and receipt checking
   - tenant/project/packet SHA-256-bound procurement review state, fail-closed artifact integrity, reviewer inbox, downstream freshness and share/approval drift safeguards
   - DOCX, PDF, HWP, XLSX, PPTX 관련 service와 endpoint 테스트 파일

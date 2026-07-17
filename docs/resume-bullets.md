@@ -21,6 +21,7 @@
 - 문서 유형별 품질 편차를 줄이기 위해 `BundleSpec`/`DocumentSpec`, Jinja2 template, stabilizer, lint/validation 단계를 결합한 생성 파이프라인 설계
 - 업로드 문서와 PDF에서 추출한 맥락을 기반으로 문서를 생성할 수 있도록 `/generate/from-documents`, `/generate/from-pdf`, attachment parsing 흐름을 구현
 - 생성 결과를 단발성 응답에 그치지 않도록 project, knowledge, approval, history/share, export API와 연결해 후속 검토/공유 흐름을 지원
+- 템플릿·생성 이력·공유 링크의 tenant state를 local/S3 conditional create/CAS에 결속하고 bounded private receipt, uncertain commit read-back과 immutable incarnation token으로 재생성 record를 보존해 worker 간 update 유실을 방지
 - 공공조달 decision package의 review record·packet·content-addressed reviewed-package를 tenant/project/packet SHA-256별 local/S3 authority에 결속하고 conditional write/ETag CAS, uncertain commit read-back과 semantic fail-closed를 적용한 뒤 reviewer inbox, downstream freshness, share/approval drift acknowledgement와 실제 입찰·법적 승인 분리 경계를 연결
 - live provider, G2B 실데이터, 배포 smoke를 readiness check와 no-secret proof receipt로 분리하고, M2/M6 runner가 preflight와 실제 pass/fail receipt를 atomic 기록하도록 구현
 - static PWA의 inline handler를 제거하고 CSP nonce 기본 적용 및 브라우저 screenshot/console/CSP evidence를 갱신

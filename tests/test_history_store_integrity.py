@@ -1,17 +1,30 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.storage.history_store import HistoryEntry, HistoryStore, HistoryStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.history_store import (
+    MAX_HISTORY_PER_USER,
+    HistoryEntry,
+    HistoryStore,
+    HistoryStoreError,
+)
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -21,6 +34,35 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
+
+
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
+
+
+class _FailingConditionalBackend(LocalStateBackend):
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        raise StateBackendError("simulated conditional write failure")
 
 
 class _Body:
@@ -35,6 +77,27 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
 
     def put_object(
         self,
@@ -43,25 +106,49 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        time.sleep(self.read_delay)
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -286,7 +373,7 @@ def test_invalid_caller_history_is_rejected_before_write(
     entry = replace(_entry("invalid"), **{field: value})
     store = HistoryStore("alpha", base_dir=tmp_path)
 
-    with pytest.raises(HistoryStoreError, match=error):
+    with pytest.raises(ValueError, match=error):
         store.add(entry)
 
     assert not store._path.exists()
@@ -324,7 +411,7 @@ def test_missing_and_invalid_history_mutations_do_not_rewrite_state(
         )
         == 0
     )
-    with pytest.raises(HistoryStoreError, match="Invalid history identity"):
+    with pytest.raises(ValueError, match="Invalid history identity"):
         store.mark_promoted(
             "request-entry-1",
             project_id="project-1",
@@ -349,6 +436,8 @@ def test_independent_local_history_stores_preserve_concurrent_adds(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def add(index: int) -> None:
         stores[index].add(_entry(f"entry-{index}"))
@@ -375,6 +464,8 @@ def test_independent_local_history_stores_preserve_favorite_toggles(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -417,11 +508,17 @@ def test_untrusted_fake_s3_history_state_is_preserved() -> None:
 
 
 def test_independent_fake_s3_history_stores_preserve_concurrent_mutations() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
+    client = _MemoryS3Client(read_delay=0.005)
     stores = [
-        HistoryStore("alpha", base_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        HistoryStore(
+            "alpha",
+            base_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def add(index: int) -> None:
         stores[index].add(_entry(f"entry-{index}"))
@@ -436,12 +533,302 @@ def test_independent_fake_s3_history_stores_preserve_concurrent_mutations() -> N
             )
         )
 
-    reloaded = HistoryStore("alpha", base_dir="/virtual/data", backend=backend)
+    reloaded = HistoryStore(
+        "alpha",
+        base_dir="/virtual/reload",
+        backend=_s3_backend(client=client)[0],
+    )
     entries = reloaded.get_for_user("user-1")
     assert {entry["entry_id"] for entry in entries} == {
         f"entry-{index}" for index in range(20)
     }
     assert reloaded.get_entry("entry-0", "user-1")["starred"] is False
+
+
+def test_history_mutation_reconciles_commit_then_successor_add() -> None:
+    client = _MemoryS3Client()
+    bootstrap = HistoryStore(
+        "alpha",
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.add(_entry("shared"))
+    primary = HistoryStore(
+        "alpha",
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = HistoryStore(
+        "alpha",
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.add(_entry("successor"))
+    )
+
+    assert primary.toggle_favorite("shared", "user-1") is True
+
+    assert bootstrap.get_entry("shared", "user-1")["starred"] is True
+    assert bootstrap.get_entry("successor", "user-1") is not None
+
+
+def test_history_mutation_does_not_apply_to_recreated_identity() -> None:
+    client = _MemoryS3Client()
+    bootstrap = HistoryStore(
+        "alpha",
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.add(_entry("shared"))
+    primary = HistoryStore(
+        "alpha",
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = HistoryStore(
+        "alpha",
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    def recreate() -> None:
+        successor.delete("shared", "user-1")
+        successor.add(replace(_entry("shared"), title="Replacement"))
+
+    client.fail_after_next_conditional_write(after_write=recreate)
+
+    with pytest.raises(
+        HistoryStoreError,
+        match="Failed to persist history state",
+    ):
+        primary.toggle_favorite("shared", "user-1")
+
+    replacement = bootstrap.get_entry("shared", "user-1")
+    assert replacement is not None
+    assert replacement["title"] == "Replacement"
+    assert replacement.get("starred", False) is False
+
+
+def test_history_add_reconciles_after_retention_removes_original_entry() -> None:
+    client = _MemoryS3Client()
+    primary = HistoryStore(
+        "alpha",
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = HistoryStore(
+        "alpha",
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    def add_successors() -> None:
+        for index in range(MAX_HISTORY_PER_USER):
+            successor.add(_entry(f"successor-{index}"))
+
+    client.fail_after_next_conditional_write(after_write=add_successors)
+
+    primary.add(_entry("original"))
+
+    entries = primary.get_for_user("user-1", limit=100)
+    assert len(entries) == MAX_HISTORY_PER_USER
+    assert all(entry["entry_id"] != "original" for entry in entries)
+
+
+def test_history_delete_reconciliation_preserves_recreated_identity() -> None:
+    client = _MemoryS3Client()
+    bootstrap = HistoryStore(
+        "alpha",
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.add(_entry("shared"))
+    primary = HistoryStore(
+        "alpha",
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = HistoryStore(
+        "alpha",
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    replacement = replace(
+        _entry("shared"),
+        title="Replacement",
+    )
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.add(replacement)
+    )
+
+    primary.delete("shared", "user-1")
+
+    recreated = bootstrap.get_entry("shared", "user-1")
+    assert recreated is not None
+    assert recreated["title"] == "Replacement"
+
+
+def test_history_disjoint_visual_asset_and_favorite_updates_are_preserved() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = HistoryStore(
+        "alpha",
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.add(_entry("shared"))
+    visual_store = HistoryStore(
+        "alpha",
+        base_dir="/virtual/visual",
+        backend=_s3_backend(client=client)[0],
+    )
+    favorite_store = HistoryStore(
+        "alpha",
+        base_dir="/virtual/favorite",
+        backend=_s3_backend(client=client)[0],
+    )
+    visual_store._lock = nullcontext()
+    favorite_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        visual_result, favorite_result = executor.map(
+            lambda action: action(),
+            (
+                lambda: visual_store.update_visual_assets(
+                    "shared",
+                    "user-1",
+                    [{"asset_id": "asset-2", "doc_type": "adr"}],
+                ),
+                lambda: favorite_store.toggle_favorite("shared", "user-1"),
+            ),
+        )
+
+    reloaded = bootstrap.get_entry("shared", "user-1")
+    assert visual_result is True
+    assert favorite_result is True
+    assert reloaded is not None
+    assert reloaded["starred"] is True
+    assert reloaded["visual_assets"][0]["asset_id"] == "asset-2"
+
+
+def test_history_disjoint_promotion_and_visual_asset_updates_are_preserved() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = HistoryStore(
+        "alpha",
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.add(_entry("shared"))
+    promotion_store = HistoryStore(
+        "alpha",
+        base_dir="/virtual/promotion",
+        backend=_s3_backend(client=client)[0],
+    )
+    visual_store = HistoryStore(
+        "alpha",
+        base_dir="/virtual/visual",
+        backend=_s3_backend(client=client)[0],
+    )
+    promotion_store._lock = nullcontext()
+    visual_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        promoted_count, visual_result = executor.map(
+            lambda action: action(),
+            (
+                lambda: promotion_store.mark_promoted(
+                    "request-shared",
+                    project_id="project-2",
+                    document_count=1,
+                    quality_tier="reviewed",
+                    success_state="promoted",
+                    promoted_at="2026-07-17T01:00:00+00:00",
+                    knowledge_documents=[
+                        {
+                            "doc_id": "knowledge-1",
+                            "doc_type": "adr",
+                            "filename": "decision.md",
+                        }
+                    ],
+                    user_id="user-1",
+                ),
+                lambda: visual_store.update_visual_assets(
+                    "shared",
+                    "user-1",
+                    [{"asset_id": "asset-2", "doc_type": "adr"}],
+                ),
+            ),
+        )
+
+    reloaded = bootstrap.get_entry("shared", "user-1")
+    assert promoted_count == 1
+    assert visual_result is True
+    assert reloaded is not None
+    assert reloaded["knowledge_promoted"] is True
+    assert reloaded["knowledge_project_id"] == "project-2"
+    assert reloaded["visual_assets"][0]["asset_id"] == "asset-2"
+
+
+def test_history_mutation_stops_after_bounded_conflicts(tmp_path: Path) -> None:
+    backend = _ConflictingLocalBackend(tmp_path)
+    store = HistoryStore("alpha", base_dir=tmp_path, backend=backend)
+
+    with pytest.raises(
+        HistoryStoreError,
+        match="History state changed too many times to persist safely",
+    ):
+        store.add(_entry("entry-1"))
+
+    assert backend.attempts == 32
+
+
+def test_history_mutation_wraps_backend_failure(tmp_path: Path) -> None:
+    store = HistoryStore(
+        "alpha",
+        base_dir=tmp_path,
+        backend=_FailingConditionalBackend(tmp_path),
+    )
+
+    with pytest.raises(HistoryStoreError, match="Failed to persist history state"):
+        store.add(_entry("entry-1"))
+
+
+def test_history_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = HistoryStore("alpha", base_dir=tmp_path)
+    store.add(_entry("entry-1"))
+    for _ in range(70):
+        store.toggle_favorite("entry-1", "user-1")
+
+    public = store.get_entry("entry-1", "user-1")
+    listed = store.get_for_user("user-1")
+    persisted = json.loads(store._path.read_text(encoding="utf-8").splitlines()[0])
+    assert public is not None
+    assert "_mutation_ids" not in public
+    assert "_incarnation_id" not in public
+    assert all("_mutation_ids" not in entry for entry in listed)
+    assert all("_incarnation_id" not in entry for entry in listed)
+    assert isinstance(persisted["_incarnation_id"], str)
+    assert len(persisted["_mutation_ids"]) == 64
+
+    persisted["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    store._path.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
+    original_bytes = store._path.read_bytes()
+
+    with pytest.raises(HistoryStoreError):
+        store.get_for_user("user-1")
+    with pytest.raises(HistoryStoreError):
+        store.toggle_favorite("entry-1", "user-1")
+    assert store._path.read_bytes() == original_bytes
 
 
 def test_history_callers_pass_the_application_state_backend() -> None:

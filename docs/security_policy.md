@@ -46,12 +46,12 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - CAS는 각각 tenant별 단일 user 또는 invite state object 범위다. 두 object를 함께 묶는 distributed transaction, process crash 뒤 남은 claim의 자동 recovery, 실제 AWS runtime과 초대 메일 전달 성공은 현재 보장 범위가 아니다.
 - 사용자 템플릿 상태
   - 재사용 문서 입력은 local `data/tenants/<tenant_id>/templates.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
-  - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record와 duplicate template identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
+  - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record, duplicate template identity와 손상 private receipt는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
+  - Worker mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema 위에 add/delete/use-count를 재적용한다. 최근 mutation receipt는 64개로 제한하고 public 응답에서는 제거한다. 대상 mutation과 delete reconciliation은 private immutable incarnation token에 결속해 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않는다. 이 보장은 단일 template state object 범위이며 실제 AWS runtime은 현재 보장 범위가 아니다.
 - 생성 이력 상태
   - 생성 문서의 재열기·즐겨찾기·시각자료·지식 승격 이력은 local `data/tenants/<tenant_id>/history.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
-  - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record와 duplicate entry identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
+  - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record, duplicate entry identity와 손상 private receipt는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
+  - Worker mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema 위에 add/delete/favorite/visual-asset/promotion을 재적용한다. 최근 mutation receipt는 64개로 제한하고 public 응답에서는 제거한다. 대상 mutation과 delete reconciliation은 private immutable incarnation token에 결속해 같은 ID로 재생성된 후속 record를 변경하지 않으며, retention은 제거된 record의 receipt를 남은 최신 record로 전달한다. 이 보장은 단일 history state object 범위이며 실제 AWS runtime은 현재 보장 범위가 아니다.
 - 프로젝트 지식 상태
   - 참고 문서 index, 본문과 style profile은 local `data/tenants/<tenant_id>/knowledge/<project_id>/` 또는 같은 relative path의 S3 state object에 저장한다.
   - Tenant/project identity와 exact metadata schema를 검증하고 본문·style bytes를 size와 SHA-256으로 index에 결속한다. Malformed/invalid UTF-8 JSON, duplicate key·identity, missing·unexpected·orphan object와 binding drift는 knowledge API, generation context, procurement 평가, report promotion을 중단하며 원본 bytes를 보존한다.
@@ -114,8 +114,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니며 실제 provider API, dataset upload, training execution, external job polling과 model promotion은 별도 운영 승인 범위다.
 - 공개 공유 상태
   - share link는 local `data/tenants/<tenant_id>/shares.json` 또는 같은 relative path의 S3 state object에 저장한다.
-  - tenant를 path 선택 전에 검증하고 blank·malformed·non-object JSON, duplicate key, owned malformed record와 storage key/share ID drift는 공개 조회와 후속 생성·접근 횟수·취소 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 운영 URL의 외부 접근성은 현재 보장 범위가 아니다.
+  - tenant를 path 선택 전에 검증하고 blank·malformed·non-object JSON, duplicate key, owned malformed record, storage key/share ID drift와 손상 private receipt는 공개 조회와 후속 생성·접근 횟수·취소 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.
+  - Worker mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema·lifecycle 위에 create/access/revoke를 재적용한다. 최근 mutation receipt는 64개로 제한하고 public 응답에서는 제거하며 최초 취소자와 시각을 보존한다. 이 보장은 단일 share state object 범위이며 실제 AWS runtime과 운영 URL의 외부 접근성은 현재 보장 범위가 아니다.
 - 감사 로그 저장
   - 저장 위치: local `data/tenants/<tenant_id>/audit_logs.jsonl` 또는 같은 relative path의 S3 state object
   - tenant와 log identity를 append 전에 검증하고 기존 JSONL byte prefix를 보존한다. 손상·foreign·중복 evidence는 자동 복구하거나 건너뛰지 않고 read와 append를 중단한다.

@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,298개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,318개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3298
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3318
 python3 scripts/count_readme_metrics.py --field test_files      # → 251
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,036 passed, 2 skipped, 4 deselected, 2026-07-17 H62 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,056 passed, 2 skipped, 4 deselected, 2026-07-17 H63 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -339,8 +339,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 메시지·알림 state는 tenant별 `messages.json`과 `notifications.json`에 각각 conditional create/CAS를 적용합니다. 충돌할 때마다 최신 state의 ownership·schema를 다시 검증하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 후속 CAS도 조정합니다. Local conditional lock 초기화의 동시 create도 재시도하며 receipt 손상은 원본 보존 상태로 fail closed 처리합니다. 이 보장은 각 단일 state object 범위이고 메시지 저장과 mention 알림 생성을 함께 묶는 distributed transaction, 실제 AWS runtime, 외부 SMTP·Slack 전달 성공은 검증 범위가 아닙니다.
 - 사용자·초대 state는 tenant별 `users.json`과 `invites.json`에 각각 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 username uniqueness를 다시 검증하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 첫 관리자 생성은 빈 tenant 확인과 create를 한 CAS mutation으로 처리하고, 초대 수락은 invite를 먼저 claim한 worker 하나만 account callback을 실행하며 callback 실패 시 claim을 되돌립니다. 이 보장은 각 단일 state object 범위이고 user와 invite object를 함께 묶는 distributed transaction이나 process crash 뒤 claim 자동 복구는 제공하지 않습니다. 실제 AWS runtime과 초대 메일 전달 성공도 검증 범위가 아닙니다.
 - SSO 설정 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Secret은 Fernet authenticated encryption과 PBKDF2 key derivation을 사용하며 복호화 실패를 평문 fallback으로 처리하지 않습니다. 서명 없는 SAML assertion과 RelayState 불일치는 거부하지만, 현재 기본 requirements에 `python3-saml` verifier가 없어 SAML ACS는 fail closed 상태이며 실제 LDAP·SAML IdP·GCloud 로그인과 distributed S3 compare-and-swap은 검증 범위가 아닙니다.
-- 사용자 템플릿 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
-- 생성 이력 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
+- 사용자 템플릿과 생성 이력 state는 tenant별 `templates.jsonl`과 `history.jsonl`에 각각 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema 위에 add/delete/use-count 또는 add/favorite/visual-asset/promotion 변경을 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 대상 mutation과 delete는 API에 노출하지 않는 immutable incarnation token에 결속하므로 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않습니다. History retention으로 원본 record가 제거될 때는 receipt를 남은 최신 record로 넘겨 불확실 commit을 조정합니다. 이 보장은 각 단일 state object 범위이며 64개를 넘는 successor mutation의 불확실 commit 조정, 32회 즉시 재시도의 backoff·fairness, 실제 AWS runtime과 두 object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 프로젝트 지식 index와 본문·style object는 local/S3 공통 backend에서 tenant/project에 결속하고 SHA-256·크기·ownership·중복·orphan을 fail closed로 검증합니다. generation, procurement, report promotion caller도 앱이 선택한 backend를 사용합니다. 여러 프로세스가 같은 S3 object set을 동시에 변경하는 distributed transaction/compare-and-swap은 구현·검증 범위가 아닙니다.
 - G2B 즐겨찾기 state는 local/S3 공통 backend에서 tenant/user ownership과 공고 identity를 검증하고 손상 원본을 보존합니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap과 실제 G2B API 호출은 구현·검증 범위가 아닙니다.
 - 공공조달 판단 state와 source snapshot은 local/S3 공통 backend에서 tenant/project ownership, snapshot storage path와 JSON 구조를 검증하고 손상 원본을 보존합니다. 이 검증은 저장된 snapshot의 경로·JSON 무결성 범위이며 외부 원천 데이터의 의미적 진위, 여러 프로세스의 distributed S3 compare-and-swap, 실제 G2B/provider 호출은 보장하지 않습니다.
@@ -351,7 +350,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 사용량 event log와 monthly summary는 local/S3 공통 backend에서 process-local lock으로 검증합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. 여러 프로세스의 distributed S3 transaction/CAS, exact reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
 - 스타일 프로필 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 style API와 prompt build를 중단하지만, mock provider는 LLM prompt builder를 호출하지 않으며 여러 프로세스의 distributed S3 compare-and-swap과 실제 provider 기반 style analysis는 구현·검증 범위가 아닙니다.
 - Feedback, eval evidence, runtime prompt override, A/B prompt experiment, request pattern, fine-tune dataset/export와 model registry state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 provider selection을 중단하고, A/B winner override 저장에 실패하면 experiment를 concluded로 기록하지 않으며, export bytes는 size/SHA-256을 다시 확인합니다. 자동 provider training은 기본 비활성이고 명시적 execution authority를 요구합니다. 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아니며 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
-- 공개 공유 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap과 운영 URL의 외부 접근성은 구현·검증 범위가 아닙니다.
+- 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
 - Procurement review record·원본 packet·reviewed-package는 local/S3 공통 backend의 tenant/project/packet SHA-256 경로에 함께 결속합니다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조와 backend failure는 빈 검토함, 새 packet 또는 사용자 입력 충돌로 축소하지 않고 `500 INTERNAL_ERROR`로 중단하며 원본 bytes를 보존합니다. Pending receipt와 완료 package의 embedded receipt/manifest까지 semantic하게 다시 대조합니다. Packet은 exact orphan bytes만 재사용하고 reviewed-package는 content-addressed 경로에 immutable하게 쓴 뒤 record를 CAS로 전환합니다. S3는 `If-None-Match`/`If-Match`, local은 conditional file lock과 atomic write를 사용하며 commit 결과가 불확실하면 read-back으로 조정합니다. 여러 artifact를 한 번에 commit하는 distributed transaction과 실제 AWS S3 runtime 검증은 범위 밖입니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결합니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. Project-linked share는 서버가 tenant/project/document/request/bundle binding을 검증하고 생성 시점 source fingerprint를 저장합니다. 공개 공유 페이지는 조회할 때마다 현재 원본을 다시 대조해 변경·삭제 상태를 경고하고 `share.view` audit evidence를 남기며, admin Locations의 외부 공유 review queue는 stale `share.create`와 drift `share.view`를 함께 보여주되 반복 조회를 영향받은 고유 링크 수로 중복 집계하지 않습니다. 이후 current 조회가 확인되면 해당 링크만 위험 queue에서 해소하고 복구 건수를 별도로 표시하며 기존 audit은 보존합니다. 공유 취소는 처리자·시각을 남기고 자연 만료와 구분하며, 같은 문서에 여러 링크가 있으면 닫힌 최신 링크보다 아직 활성인 링크를 먼저 보여줍니다. Generic legacy share는 기존 동작을 유지합니다. 연결된 결재는 요청 시점 상태를 보존하고 상세 조회와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 상태의 최종 승인은 명시적 acknowledgement를 approval record와 audit에 남겨야 진행됩니다. 승인 후 원본 source fingerprint가 달라진 경우에도 immutable 승인 스냅샷을 다운로드하기 전에 별도 확인이 필요하고 그 결과가 download audit에 남습니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
@@ -367,4 +366,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,298 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,318 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

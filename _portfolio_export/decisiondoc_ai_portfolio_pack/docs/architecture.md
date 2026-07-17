@@ -29,7 +29,7 @@
 │  ┌─────────────────────────────────────────────────────┐ │
 │  │                   Storage Layer                      │ │
 │  │  UserStore │ ApprovalStore │ StyleStore │ ...       │ │
-│  │  (local/S3 JSONL/JSON, shared process lock)         │ │
+│  │  (local/S3 JSONL/JSON, fail-closed + CAS where set) │ │
 │  └─────────────────────────────────────────────────────┘ │
 └──────────┬──────────────────────────┬──────────────────┘
            │                          │
@@ -197,6 +197,14 @@ ReportWorkflowStore
 Workflow의 모든 read-modify-write는 앱이 선택한 local/S3 `StateBackend`와 tenant별 relative path로 계산한 logical lock 안에서 실행한다. 같은 S3 bucket/prefix/object를 가리키는 독립 store가 서로 다른 virtual base를 사용해도 한 process 안에서는 같은 lock을 공유한다. Worker 간 권위는 lock에 의존하지 않고, missing state에는 conditional create, existing state에는 검증된 원문을 expected value로 사용하는 compare-and-swap을 적용한다. 충돌하면 최신 state의 ownership·schema와 planning·slide·approval transition을 다시 검증한 뒤 mutation을 재적용한다.
 
 Missing-state만 빈 목록으로 읽는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/workflow/nested identity, owned schema drift와 backend read/write failure는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Persisted state 오류는 planning·approval 같은 domain `ValueError`와 분리된 `ReportWorkflowStoreError`로 전달되어 API의 400 응답으로 축소되지 않는다. 각 workflow record에는 API에 노출하지 않는 최근 mutation ID를 최대 64개 보존한다. Conditional write가 commit된 뒤 응답이 유실되고 후속 CAS가 발생해 exact payload가 달라져도 receipt로 원래 operation을 조정하며, receipt schema가 손상되면 fail closed 처리한다. 이 보장은 tenant별 단일 report workflow state object 범위이고 실제 AWS runtime 및 다른 state object와의 multi-object transaction은 현재 보장하지 않는다.
+
+## 데이터 흐름 — 재사용 산출물 상태
+
+`TemplateStore`, `HistoryStore`, `ShareStore`는 tenant별 `templates.jsonl`, `history.jsonl`, `shares.json`을 앱이 선택한 local/S3 `StateBackend`에 저장한다. Missing-state만 빈 상태로 읽고 malformed JSON, duplicate key·owned identity와 손상된 private mutation receipt는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않은 채 남긴다.
+
+세 store의 mutation은 검증한 원문을 expected value로 유지하고 missing state에는 conditional create, existing state에는 compare-and-swap을 적용한다. 충돌하면 최신 ownership·schema와 lifecycle 위에 template add/delete/use-count, history add/delete/favorite/visual-asset/promotion, share create/access/revoke를 최대 32회 재적용한다. Record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor CAS가 이어져도 원래 operation을 조정한다. Template과 history의 대상 mutation 및 delete reconciliation은 private immutable incarnation token에 결속해 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않는다. History retention이 원래 add record를 제거하면 해당 receipt를 남은 최신 record로 넘겨 uncertain commit read-back을 유지한다.
+
+CAS 보장은 tenant별 단일 template, history 또는 share state object 범위다. 이 object들을 하나의 commit으로 묶는 distributed transaction과 실제 AWS runtime은 현재 보장하지 않는다.
 
 ## 데이터 흐름 — 감사 로그 상태
 

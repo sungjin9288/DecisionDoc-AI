@@ -6,12 +6,13 @@ import json
 import math
 import os
 import threading
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
@@ -19,9 +20,14 @@ MAX_HISTORY_PER_USER = 50
 
 _history_locks: dict[Path, threading.RLock] = {}
 _history_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_INCARNATION_ID_FIELD = "_incarnation_id"
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
-class HistoryStoreError(ValueError):
+class HistoryStoreError(RuntimeError):
     """Raised when persisted generation history cannot be trusted."""
 
 
@@ -170,6 +176,8 @@ class HistoryStore:
                 datetime.fromisoformat(promoted_at)
         except ValueError as exc:
             raise HistoryStoreError("Invalid history timestamp") from exc
+        self._incarnation_id(entry)
+        self._mutation_ids(entry)
         return entry
 
     def _validate_entries(self, entries: object) -> list[dict[str, Any]]:
@@ -187,9 +195,17 @@ class HistoryStore:
             entry_ids.add(entry_id)
         return entries
 
-    def _load(self) -> list[dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
-        if raw is None or not raw.strip():
+    def _read_state(self) -> tuple[str | None, list[dict[str, Any]]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise HistoryStoreError("Invalid history state document") from exc
+        if raw is None:
+            return None, []
+        return raw, self._decode_entries(raw)
+
+    def _decode_entries(self, raw: str) -> list[dict[str, Any]]:
+        if not raw.strip():
             return []
 
         entries: list[dict[str, Any]] = []
@@ -199,22 +215,138 @@ class HistoryStore:
             try:
                 entry = json.loads(line, object_pairs_hook=_unique_object)
                 self._validate_record(entry)
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            except (
+                json.JSONDecodeError,
+                HistoryStoreError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 raise HistoryStoreError(
                     f"Invalid history state at line {line_number}"
                 ) from exc
             entries.append(entry)
         return self._validate_entries(entries)
 
-    def _save(self, entries: list[dict[str, Any]]) -> None:
+    def _load(self) -> list[dict[str, Any]]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _incarnation_id(record: dict[str, Any]) -> str | None:
+        incarnation_id = record.get(_INCARNATION_ID_FIELD)
+        if incarnation_id is not None and (
+            not isinstance(incarnation_id, str) or not incarnation_id
+        ):
+            raise HistoryStoreError("Invalid history incarnation")
+        return incarnation_id
+
+    @staticmethod
+    def _mutation_ids(record: dict[str, Any]) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise HistoryStoreError("Invalid history mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict[str, Any],
+        *,
+        previous: dict[str, Any] | None,
+        mutation_id: str,
+    ) -> dict[str, Any]:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _carry_mutation_ids(
+        self,
+        record: dict[str, Any],
+        *,
+        removed: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        mutation_ids: list[str] = []
+        for source in (*removed, record):
+            for mutation_id in self._mutation_ids(source):
+                if mutation_id not in mutation_ids:
+                    mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        entries: list[dict[str, Any]],
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> bool:
         self._validate_entries(entries)
         payload = "".join(
             f"{json.dumps(entry, ensure_ascii=False)}\n" for entry in entries
         )
-        self._backend.write_text(
-            self._relative_path,
-            payload,
-            content_type="application/x-ndjson; charset=utf-8",
+        content_type = "application/x-ndjson; charset=utf-8"
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                    content_type=content_type,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+                content_type=content_type,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_entries = self._decode_entries(observed)
+                except HistoryStoreError:
+                    pass
+                else:
+                    if committed(observed_entries):
+                        return True
+            raise HistoryStoreError("Failed to persist history state") from exc
+
+    def _mutate(
+        self,
+        change: Callable[
+            [list[dict[str, Any]]],
+            tuple[_MutationResult, bool],
+        ],
+        *,
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, entries = self._read_state()
+            result, changed = change(entries)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                entries=entries,
+                committed=committed,
+            ):
+                return result
+        raise HistoryStoreError(
+            "History state changed too many times to persist safely"
         )
 
     @staticmethod
@@ -225,6 +357,8 @@ class HistoryStore:
         include_visual_assets: bool = False,
     ) -> dict[str, Any]:
         item = dict(entry)
+        item.pop(_MUTATION_IDS_FIELD, None)
+        item.pop(_INCARNATION_ID_FIELD, None)
         if not include_docs:
             item.pop("docs", None)
         if not include_visual_assets:
@@ -264,34 +398,64 @@ class HistoryStore:
         for field in ("tags", *self._record_list_fields):
             if record[field] is None:
                 record[field] = []
-        self._validate_record(record)
-        record["visual_assets"] = self._sanitize_visual_assets(record["visual_assets"])
-        return self._validate_record(record)
+        try:
+            self._validate_record(record)
+            record["visual_assets"] = self._sanitize_visual_assets(
+                record["visual_assets"]
+            )
+            return self._validate_record(record)
+        except HistoryStoreError as exc:
+            raise ValueError(str(exc)) from exc
 
     def add(self, entry: HistoryEntry) -> None:
         if entry.tenant_id != self.tenant_id:
             raise ValueError("History entry tenant does not match store tenant")
         record = self._record_from_entry(entry)
+        mutation_id = uuid.uuid4().hex
+        persisted = self._record_mutation(
+            record,
+            previous=None,
+            mutation_id=mutation_id,
+        )
+        persisted[_INCARNATION_ID_FIELD] = uuid.uuid4().hex
 
-        with self._lock:
-            entries = self._load()
+        def apply(entries: list[dict[str, Any]]) -> tuple[None, bool]:
             if any(
                 self._owns(item) and item["entry_id"] == entry.entry_id
                 for item in entries
             ):
                 raise HistoryStoreError("Duplicate history identity")
-            entries.insert(0, record)
-            user_entries = [
+            entries.insert(0, dict(persisted))
+            all_user_entries = [
                 item
                 for item in entries
                 if self._owns(item) and item["user_id"] == entry.user_id
-            ][:MAX_HISTORY_PER_USER]
+            ]
+            user_entries = all_user_entries[:MAX_HISTORY_PER_USER]
+            removed_user_entries = all_user_entries[MAX_HISTORY_PER_USER:]
+            if removed_user_entries:
+                user_entries[0] = self._carry_mutation_ids(
+                    user_entries[0],
+                    removed=removed_user_entries,
+                )
             other_entries = [
                 item
                 for item in entries
                 if not self._owns(item) or item["user_id"] != entry.user_id
             ]
-            self._save(other_entries + user_entries)
+            entries[:] = other_entries + user_entries
+            return None, True
+
+        def was_committed(entries: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(item)
+                and item.get("user_id") == entry.user_id
+                and mutation_id in self._mutation_ids(item)
+                for item in entries
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def get_for_user(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
@@ -328,50 +492,129 @@ class HistoryStore:
             not isinstance(visual_assets, list)
             or any(not isinstance(asset, dict) for asset in visual_assets)
         ):
-            raise HistoryStoreError("Invalid history document list")
+            raise ValueError("Invalid history document list")
         sanitized_assets = self._sanitize_visual_assets(visual_assets)
-        with self._lock:
-            entries = self._load()
-            for entry in entries:
+        mutation_id = uuid.uuid4().hex
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(entries: list[dict[str, Any]]) -> tuple[bool, bool]:
+            nonlocal target_bound, target_incarnation
+            for index, entry in enumerate(entries):
                 if (
                     self._owns(entry)
                     and entry["entry_id"] == entry_id
                     and entry["user_id"] == user_id
                 ):
-                    entry["visual_assets"] = sanitized_assets
-                    self._save(entries)
-                    return True
-        return False
+                    incarnation_id = self._incarnation_id(entry)
+                    if not target_bound:
+                        target_incarnation = incarnation_id
+                        target_bound = True
+                    elif incarnation_id != target_incarnation:
+                        return False, False
+                    if mutation_id in self._mutation_ids(entry):
+                        return True, False
+                    updated = dict(entry)
+                    updated["visual_assets"] = sanitized_assets
+                    entries[index] = self._record_mutation(
+                        updated,
+                        previous=entry,
+                        mutation_id=mutation_id,
+                    )
+                    return True, True
+            return False, False
+
+        def was_committed(entries: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(entry)
+                and entry.get("entry_id") == entry_id
+                and entry.get("user_id") == user_id
+                and self._incarnation_id(entry) == target_incarnation
+                and mutation_id in self._mutation_ids(entry)
+                for entry in entries
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def delete(self, entry_id: str, user_id: str) -> None:
-        with self._lock:
-            entries = self._load()
-            remaining = [
-                entry
-                for entry in entries
-                if not (
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(entries: list[dict[str, Any]]) -> tuple[None, bool]:
+            nonlocal target_bound, target_incarnation
+            for index, entry in enumerate(entries):
+                if (
                     self._owns(entry)
                     and entry["entry_id"] == entry_id
                     and entry["user_id"] == user_id
-                )
-            ]
-            if len(remaining) != len(entries):
-                self._save(remaining)
+                ):
+                    incarnation_id = self._incarnation_id(entry)
+                    if not target_bound:
+                        target_incarnation = incarnation_id
+                        target_bound = True
+                    elif incarnation_id != target_incarnation:
+                        return None, False
+                    entries.pop(index)
+                    return None, True
+            return None, False
+
+        def was_committed(entries: list[dict[str, Any]]) -> bool:
+            return not any(
+                self._owns(entry)
+                and entry.get("entry_id") == entry_id
+                and entry.get("user_id") == user_id
+                and self._incarnation_id(entry) == target_incarnation
+                for entry in entries
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def toggle_favorite(self, entry_id: str, user_id: str) -> bool:
         """Toggle and return the favorite state of an owned history entry."""
-        with self._lock:
-            entries = self._load()
-            for entry in entries:
+        mutation_id = uuid.uuid4().hex
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(entries: list[dict[str, Any]]) -> tuple[bool, bool]:
+            nonlocal target_bound, target_incarnation
+            for index, entry in enumerate(entries):
                 if (
                     self._owns(entry)
                     and entry["entry_id"] == entry_id
                     and entry["user_id"] == user_id
                 ):
-                    entry["starred"] = not entry.get("starred", False)
-                    self._save(entries)
-                    return entry["starred"]
-        return False
+                    incarnation_id = self._incarnation_id(entry)
+                    if not target_bound:
+                        target_incarnation = incarnation_id
+                        target_bound = True
+                    elif incarnation_id != target_incarnation:
+                        return False, False
+                    if mutation_id in self._mutation_ids(entry):
+                        return bool(entry.get("starred", False)), False
+                    updated = dict(entry)
+                    updated["starred"] = not entry.get("starred", False)
+                    entries[index] = self._record_mutation(
+                        updated,
+                        previous=entry,
+                        mutation_id=mutation_id,
+                    )
+                    return updated["starred"], True
+            return False, False
+
+        def was_committed(entries: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(entry)
+                and entry.get("entry_id") == entry_id
+                and entry.get("user_id") == user_id
+                and self._incarnation_id(entry) == target_incarnation
+                and mutation_id in self._mutation_ids(entry)
+                for entry in entries
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def mark_promoted(
         self,
@@ -387,31 +630,31 @@ class HistoryStore:
     ) -> int:
         """Mark matching history entries as promoted to the knowledge library."""
         if not isinstance(request_id, str):
-            raise HistoryStoreError("Invalid history identity")
+            raise ValueError("Invalid history identity")
         if not request_id:
             return 0
         if any(
             not isinstance(value, str)
             for value in (project_id, quality_tier, success_state, promoted_at)
         ):
-            raise HistoryStoreError("Invalid history promotion state")
+            raise ValueError("Invalid history promotion state")
         if user_id is not None and (not isinstance(user_id, str) or not user_id):
-            raise HistoryStoreError("Invalid history identity")
+            raise ValueError("Invalid history identity")
         if (
             isinstance(document_count, bool)
             or not isinstance(document_count, int)
             or document_count < 0
         ):
-            raise HistoryStoreError("Invalid history document count")
+            raise ValueError("Invalid history document count")
         if knowledge_documents is not None and (
             not isinstance(knowledge_documents, list)
             or any(not isinstance(document, dict) for document in knowledge_documents)
         ):
-            raise HistoryStoreError("Invalid history document list")
+            raise ValueError("Invalid history document list")
         try:
             datetime.fromisoformat(promoted_at)
         except ValueError as exc:
-            raise HistoryStoreError("Invalid history timestamp") from exc
+            raise ValueError("Invalid history timestamp") from exc
 
         documents = [
             {
@@ -425,25 +668,65 @@ class HistoryStore:
             if isinstance(document, dict) and str(document.get("doc_id") or "").strip()
         ]
 
-        updated = 0
+        mutation_id = uuid.uuid4().hex
+        target_incarnations: dict[str, str | None] | None = None
+
+        def apply(entries: list[dict[str, Any]]) -> tuple[int, bool]:
+            nonlocal target_incarnations
+            if target_incarnations is None:
+                target_incarnations = {
+                    entry["entry_id"]: self._incarnation_id(entry)
+                    for entry in entries
+                    if self._owns(entry)
+                    and entry["request_id"] == request_id
+                    and (not user_id or entry["user_id"] == user_id)
+                }
+            changed = False
+            matched_target_ids: set[str] = set()
+            for index, entry in enumerate(entries):
+                if not self._owns(entry):
+                    continue
+                expected_incarnation = target_incarnations.get(entry["entry_id"])
+                if (
+                    entry["entry_id"] not in target_incarnations
+                    or self._incarnation_id(entry) != expected_incarnation
+                ):
+                    continue
+                matched_target_ids.add(entry["entry_id"])
+                if mutation_id in self._mutation_ids(entry):
+                    continue
+                updated = dict(entry)
+                updated["knowledge_promoted"] = True
+                updated["knowledge_project_id"] = project_id
+                updated["knowledge_promoted_at"] = promoted_at
+                updated["knowledge_document_count"] = document_count
+                updated["knowledge_quality_tier"] = quality_tier
+                updated["knowledge_success_state"] = success_state
+                updated["knowledge_documents"] = documents
+                entries[index] = self._record_mutation(
+                    updated,
+                    previous=entry,
+                    mutation_id=mutation_id,
+                )
+                changed = True
+            return len(matched_target_ids), changed
+
+        def was_committed(entries: list[dict[str, Any]]) -> bool:
+            if not target_incarnations:
+                return False
+            committed_entry_ids = {
+                entry["entry_id"]
+                for entry in entries
+                if self._owns(entry)
+                and entry.get("entry_id") in target_incarnations
+                and self._incarnation_id(entry)
+                == target_incarnations[entry["entry_id"]]
+                and mutation_id in self._mutation_ids(entry)
+            }
+            return committed_entry_ids == set(target_incarnations)
+
         with self._lock:
-            entries = self._load()
-            for entry in entries:
-                if not self._owns(entry) or entry["request_id"] != request_id:
-                    continue
-                if user_id and entry["user_id"] != user_id:
-                    continue
-                entry["knowledge_promoted"] = True
-                entry["knowledge_project_id"] = project_id
-                entry["knowledge_promoted_at"] = promoted_at
-                entry["knowledge_document_count"] = document_count
-                entry["knowledge_quality_tier"] = quality_tier
-                entry["knowledge_success_state"] = success_state
-                entry["knowledge_documents"] = documents
-                updated += 1
-            if updated:
-                self._save(entries)
-        return updated
+            return self._mutate(apply, committed=was_committed)
 
     def get_favorites(self, user_id: str) -> list[dict[str, Any]]:
         with self._lock:

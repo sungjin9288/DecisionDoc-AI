@@ -26,6 +26,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -2034,12 +2035,17 @@ def test_admin_location_procurement_quality_summary_prioritizes_recently_accesse
         decision_council_document_status_copy="현재 procurement 대비 이전 council 기준",
         decision_council_document_status_summary="public 열람이 있었던 stale share입니다.",
     )
-    share_state = share_store._load()
+    expected_share_state, share_state = share_store._read_state()
+    assert expected_share_state is not None
     share_state[older_share.share_id]["access_count"] = 1
     share_state[older_share.share_id]["last_accessed_at"] = "2026-03-31T00:45:00+00:00"
     share_state[newer_share.share_id]["access_count"] = 1
     share_state[newer_share.share_id]["last_accessed_at"] = "2026-03-31T01:30:00+00:00"
-    share_store._save(share_state)
+    assert share_store._backend.replace_text_if_equal(
+        share_store._relative_path,
+        expected=expected_share_state,
+        replacement=json.dumps(share_state, ensure_ascii=False, indent=2),
+    )
 
     audit_store = AuditStore("t-proc-stale-share-order")
     audit_store.append(

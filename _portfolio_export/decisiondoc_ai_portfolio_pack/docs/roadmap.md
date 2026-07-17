@@ -27,6 +27,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-17 H60 완료: audit append를 tenant별 단일 JSONL object의 conditional create/CAS authority에 결속했다. Worker 충돌마다 최신 JSONL 무결성을 다시 검증하고 기존 byte prefix 위에 같은 entry를 재적용하며, `log_id`와 exact entry read-back으로 commit-then-error 뒤 successor append까지 조정한다.
 - 2026-07-17 H61 완료: message·notification mutation을 각각 tenant별 단일 JSON object의 conditional create/CAS authority에 결속했다. Worker 충돌마다 최신 ownership·schema 위에 게시·수정·삭제·읽음·전송·보존 변경을 재적용하고 bounded private receipt와 hard-delete target read-back으로 commit-then-error 뒤 successor mutation까지 조정한다. Local conditional lock의 최초 lock-file 동시 create 경계도 bounded retry로 보강했다.
 - 2026-07-17 H62 완료: user·invite mutation을 각각 tenant별 단일 JSON object의 conditional create/CAS authority에 결속했다. Worker 충돌마다 최신 ownership·schema·username uniqueness 위에 계정·profile·password·login·초대 변경을 재적용하고 bounded private receipt로 불확실 commit을 조정한다. 첫 관리자 등록은 empty precondition과 create를 한 mutation으로 처리하며 초대 수락은 claim winner 하나만 account callback을 실행한다.
+- 2026-07-17 H63 완료: template·history·share mutation을 각각 tenant별 단일 JSON/JSONL object의 conditional create/CAS authority에 결속했다. Worker 충돌마다 최신 ownership·schema·lifecycle 위에 add/delete/use-count, favorite/visual-asset/promotion, access/revoke 변경을 재적용하고 bounded private receipt로 불확실 commit을 조정한다. Template/history 대상 mutation과 delete는 private immutable incarnation token에 결속해 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않으며, history retention은 제거된 record의 receipt를 남은 최신 record로 전달한다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -34,7 +35,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-17 H62 실측: 4036 passed, 2 skipped, 4 deselected
+# 2026-07-17 H63 실측: 4056 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

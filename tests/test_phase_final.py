@@ -9,6 +9,8 @@ Coverage:
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -303,7 +305,7 @@ def test_shared_link_expiry(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.storage.share_store import ShareStore
     store = ShareStore("test-expiry-tenant")
-    data = store._load()
+    expected, data = store._read_state()
     data["expired-id"] = {
         "share_id": "expired-id",
         "tenant_id": "test-expiry-tenant",
@@ -316,6 +318,14 @@ def test_shared_link_expiry(tmp_path, monkeypatch):
         "is_active": True,
         "bundle_id": "",
     }
-    store._save(data)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    if expected is None:
+        assert store._backend.write_text_if_absent(store._relative_path, payload)
+    else:
+        assert store._backend.replace_text_if_equal(
+            store._relative_path,
+            expected=expected,
+            replacement=payload,
+        )
     link = store.get("expired-id")
     assert link["is_active"] is False

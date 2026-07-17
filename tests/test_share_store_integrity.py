@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.share_store import ShareStore, ShareStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -20,6 +28,35 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
+
+
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
+
+
+class _FailingConditionalBackend(LocalStateBackend):
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        raise StateBackendError("simulated conditional write failure")
 
 
 class _Body:
@@ -34,6 +71,27 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
 
     def put_object(
         self,
@@ -42,25 +100,49 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        time.sleep(self.read_delay)
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -220,7 +302,7 @@ def test_invalid_share_input_is_rejected_before_write(
     }
     store = ShareStore("alpha", data_dir=tmp_path)
 
-    with pytest.raises(ShareStoreError):
+    with pytest.raises(ValueError):
         store.create(**arguments)
 
     assert not store._path.exists()
@@ -285,6 +367,8 @@ def test_independent_local_share_stores_preserve_concurrent_creates(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> str:
         return (
@@ -317,6 +401,8 @@ def test_independent_local_share_stores_preserve_concurrent_access_counts(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(lambda store: store.increment_access(share.share_id), stores))
@@ -353,11 +439,17 @@ def test_untrusted_fake_s3_share_state_is_preserved() -> None:
 
 
 def test_independent_fake_s3_share_stores_preserve_concurrent_mutations() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
+    client = _MemoryS3Client(read_delay=0.005)
     stores = [
-        ShareStore("alpha", data_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        ShareStore(
+            "alpha",
+            data_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> str:
         return (
@@ -375,9 +467,141 @@ def test_independent_fake_s3_share_stores_preserve_concurrent_mutations() -> Non
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(lambda store: store.increment_access(share_ids[0]), stores))
 
-    reloaded = ShareStore("alpha", data_dir="/virtual/data", backend=backend)
+    reloaded = ShareStore(
+        "alpha",
+        data_dir="/virtual/reload",
+        backend=_s3_backend(client=client)[0],
+    )
     assert len(reloaded.list_by_user("user-1")) == 20
     assert reloaded.get(share_ids[0])["access_count"] == 20
+
+
+def test_share_mutation_reconciles_commit_then_successor_create() -> None:
+    client = _MemoryS3Client()
+    bootstrap = ShareStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    shared = bootstrap.create("request-1", "Shared", "user-1")
+    primary = ShareStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = ShareStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    successor_ids: list[str] = []
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor_ids.append(
+            successor.create("request-2", "Successor", "user-2").share_id
+        )
+    )
+
+    primary.increment_access(shared.share_id)
+
+    assert bootstrap.get(shared.share_id)["access_count"] == 1
+    assert len(successor_ids) == 1
+    assert bootstrap.get(successor_ids[0]) is not None
+
+
+def test_share_disjoint_access_and_revoke_updates_are_preserved() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = ShareStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    shared = bootstrap.create("request-1", "Shared", "user-1")
+    access_store = ShareStore(
+        "alpha",
+        data_dir="/virtual/access",
+        backend=_s3_backend(client=client)[0],
+    )
+    revoke_store = ShareStore(
+        "alpha",
+        data_dir="/virtual/revoke",
+        backend=_s3_backend(client=client)[0],
+    )
+    access_store._lock = nullcontext()
+    revoke_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        access_result, revoke_result = executor.map(
+            lambda action: action(),
+            (
+                lambda: access_store.increment_access(shared.share_id),
+                lambda: revoke_store.revoke(shared.share_id, "user-1"),
+            ),
+        )
+
+    reloaded = bootstrap.get(shared.share_id)
+    assert access_result is None
+    assert revoke_result is True
+    assert reloaded is not None
+    assert reloaded["access_count"] == 1
+    assert reloaded["is_active"] is False
+    assert reloaded["lifecycle_status"] == "revoked"
+
+
+def test_share_mutation_stops_after_bounded_conflicts(tmp_path: Path) -> None:
+    backend = _ConflictingLocalBackend(tmp_path)
+    store = ShareStore("alpha", data_dir=tmp_path, backend=backend)
+
+    with pytest.raises(
+        ShareStoreError,
+        match="Share state changed too many times to persist safely",
+    ):
+        store.create("request-1", "Shared", "user-1")
+
+    assert backend.attempts == 32
+
+
+def test_share_mutation_wraps_backend_failure(tmp_path: Path) -> None:
+    store = ShareStore(
+        "alpha",
+        data_dir=tmp_path,
+        backend=_FailingConditionalBackend(tmp_path),
+    )
+
+    with pytest.raises(ShareStoreError, match="Failed to persist share state"):
+        store.create("request-1", "Shared", "user-1")
+
+
+def test_share_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = ShareStore("alpha", data_dir=tmp_path)
+    shared = store.create("request-1", "Shared", "user-1")
+    for _ in range(70):
+        store.increment_access(shared.share_id)
+
+    public = store.get(shared.share_id)
+    listed = store.list_by_user("user-1")
+    persisted_state = json.loads(store._path.read_text(encoding="utf-8"))
+    persisted = persisted_state[shared.share_id]
+    assert public is not None
+    assert "_mutation_ids" not in public
+    assert all("_mutation_ids" not in link for link in listed)
+    assert len(persisted["_mutation_ids"]) == 64
+
+    persisted["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    store._path.write_text(
+        json.dumps(persisted_state, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    original_bytes = store._path.read_bytes()
+
+    with pytest.raises(ShareStoreError, match="Invalid share mutation history"):
+        store.get(shared.share_id)
+    with pytest.raises(ShareStoreError, match="Invalid share mutation history"):
+        store.increment_access(shared.share_id)
+    assert store._path.read_bytes() == original_bytes
 
 
 def test_share_routes_pass_the_application_state_backend() -> None:
