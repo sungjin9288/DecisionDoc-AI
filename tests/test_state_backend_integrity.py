@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +84,25 @@ def test_local_state_backend_conditional_writes_preserve_winner(
         replacement="completed",
     ) is True
     assert first.read_text("reviews/record.json") == "completed"
+
+
+def test_local_conditional_lock_initialization_is_thread_safe(tmp_path: Path) -> None:
+    relative_path = "tenants/alpha/concurrent-state.json"
+    backends = [LocalStateBackend(tmp_path) for _ in range(20)]
+
+    def create(index: int) -> bool:
+        return backends[index].write_text_if_absent(
+            relative_path,
+            json.dumps({"worker": index}),
+        )
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        outcomes = list(executor.map(create, range(20)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == 19
+    persisted = json.loads((tmp_path / relative_path).read_text(encoding="utf-8"))
+    assert persisted["worker"] in range(20)
 
 
 def test_local_state_backend_plain_write_uses_conditional_lock(

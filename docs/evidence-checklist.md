@@ -51,10 +51,13 @@
 | H59 report workflow CAS gate | 완료 | store focused gate -> `47 passed`; process lock 없는 fake-S3 20-way create/asset update, disjoint slide approval, competing final decision, commit-then-error 뒤 successor CAS와 bounded receipt 포함 |
 | 감사 로그 cross-worker 무결성 | 완료 | `pytest -q tests/test_audit_store_integrity.py --tb=short` -> `25 passed`; 손상·foreign·duplicate 보존, JSONL byte-prefix, process lock 없는 fake-S3 20-way conditional create/CAS, bounded conflict와 commit-then-successor reconciliation 검증 |
 | H60 감사 로그 확장 회귀 | 완료 | audit/API/security/state/infrastructure 묶음 -> `346 passed`; mock/local uvicorn에서 health·register·login·admin audit query 모두 `200`, 조회된 login `log_id`의 JSONL 보존과 query 자체 `doc.view` append 확인. Provider API와 외부 실행 없음 |
+| 협업 상태 cross-worker 무결성 | 완료 | `pytest -q tests/test_collaboration_store_integrity.py --tb=short` -> `49 passed`; process lock 없는 local/fake-S3 20-way conditional create/CAS, disjoint update, bounded private receipt, commit-then-successor update와 hard-delete reconciliation 검증 |
+| 협업 상태 HTTP lifecycle | 완료 | H61 mock/local uvicorn에서 health·admin 등록·Bob 초대 수락·`@bob` message·mention notification·read/edit/delete가 모두 `200`. Message receipt 3개, notification receipt 2개의 persisted private/public 비노출 확인. Provider·SMTP·Slack 호출 없음 |
+| H61 협업 상태 확장 회귀 | 완료 | collaboration/notification/approval/auth/security/state/infrastructure 묶음 -> `439 passed`; local lock-file 동시 초기화 회귀 포함, 외부 호출 없음 |
 | H56 procurement review 확장 회귀 | 완료 | review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 묶음 -> `610 passed`; provider API와 외부 실행 없음 |
 | H57 approval CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `541 passed`; process lock 없는 fake-S3 conditional create/CAS 포함, provider API와 외부 실행 없음 |
 | H58 project CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `546 passed`; process lock 없는 fake-S3 project conditional create/CAS, bounded mutation receipt, disjoint update와 delete 경쟁 포함, provider API와 외부 실행 없음 |
-| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4014 passed, 2 skipped, 4 deselected` (2026-07-17 H60 실측) |
+| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4024 passed, 2 skipped, 4 deselected` (2026-07-17 H61 실측) |
 | GitHub Actions CI | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

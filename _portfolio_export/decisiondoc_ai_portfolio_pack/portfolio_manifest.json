@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "acebedf283dcd17178f604a293e20bd5dbb607491c69768d30850c35fe8af2f8",
-      "size_bytes": 46871
+      "sha256": "8abbbed0b9e03a1749d98b2f5c31785f7dbcaecca871d34b23022d16adcd5c1a",
+      "size_bytes": 47372
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "22c5fddf93ac1ee5fabd272da4521b7bd783f54f9c8d76edd6f53c07c6eb0344",
-      "size_bytes": 21089
+      "sha256": "84dff833797b102397cc4a8c26612cc1e58d79a9361eb3df0eaedd2c4bdc6968",
+      "size_bytes": 22581
     },
     {
       "path": "docs/case-study.md",
@@ -35,13 +35,13 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "6495eca16abc3bf7fea0e9aca926bb68430aaf91b648d8fb775daf1d6b117cc7",
-      "size_bytes": 17287
+      "sha256": "11061859bfde52c651893e3bda5137eefe3ab2101d1da44ab9cb1c39e6609559",
+      "size_bytes": 17839
     },
     {
       "path": "docs/evidence-checklist.md",
-      "sha256": "520e836a434525e55478242b1bfac12e85edce56061acdafccdb322dbd36d18d",
-      "size_bytes": 15246
+      "sha256": "c1a09f5f0cc34c4d6cad90ac65c8d1734749094b0d607adf665fa09990584e72",
+      "size_bytes": 16081
     },
     {
       "path": "docs/evidence-gallery.md",
@@ -50,13 +50,13 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "67c12ae791a9a98bfceb61da10769d945c77ae338acebeb81ea579ad8a6d25f1",
-      "size_bytes": 22407
+      "sha256": "6778883a1351d604e82cf0f4d915d3b3d62817f259e3c5622c63ed29aa6c5b83",
+      "size_bytes": 23051
     },
     {
       "path": "docs/interview-story.md",
-      "sha256": "a425584c8a486215f8a8a9ef51e0d438fe651db916dc4234f95682c05fc1a0f4",
-      "size_bytes": 10000
+      "sha256": "86fc43b56dc5e18f096d9e40cc73cbe5cec3f11fa85976fe8ea853b977717f72",
+      "size_bytes": 10554
     },
     {
       "path": "docs/product_direction.md",
@@ -70,8 +70,8 @@
     },
     {
       "path": "docs/project-card.md",
-      "sha256": "e6579ebe6240ebfad69554ac52e94693ad1fe092a7fb1b45478eb914a6f70b46",
-      "size_bytes": 17451
+      "sha256": "0e58fcc7c4a1bf90fc282faf9b06f97f564d1c1c9c67cf193810ad53b52fb2f0",
+      "size_bytes": 17566
     },
     {
       "path": "docs/resume-bullets.md",
@@ -80,8 +80,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "28683171b8e50ec6d564bfa20f261009294a99246a7cf586b70fb6cfa940d633",
-      "size_bytes": 82580
+      "sha256": "5ef0d18a5649a932b07a935d5a47f14a84b7f77f8d7fb100e39f4720139a6698",
+      "size_bytes": 83876
     },
     {
       "path": "evidence/api-responses/bundles.json",

@@ -204,6 +204,14 @@ Missing-state만 빈 목록으로 읽는다. Blank·malformed·invalid UTF-8·no
 
 Worker 간 append 권위는 process-local lock에만 의존하지 않는다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 compare-and-swap으로 갱신한다. 충돌하면 최신 JSONL을 다시 읽고 전체 무결성을 검증한 뒤 같은 entry를 최대 32회 재적용한다. S3는 `If-None-Match`와 ETag `If-Match`, local은 conditional file lock과 atomic replace를 사용한다. Conditional commit 응답이 유실되고 다른 worker의 successor append가 이어져 exact payload가 달라져도 `log_id`와 exact entry read-back으로 원래 append의 성공을 조정한다. 보장 범위는 tenant별 단일 audit JSONL object이며 실제 AWS runtime은 별도 검증 범위다.
 
+## 데이터 흐름 — 협업 상태
+
+`MessageStore`와 `NotificationStore`는 tenant별 `tenants/{tenant_id}/{messages,notifications}.json`을 앱이 선택한 local/S3 `StateBackend`에 저장한다. Missing-state만 빈 목록으로 읽고 malformed document, duplicate key·owned identity와 손상된 mutation receipt는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않은 채 남긴다.
+
+각 store mutation은 검증한 원문을 expected value로 유지하고 missing state에는 conditional create, existing state에는 compare-and-swap을 적용한다. 충돌하면 최신 ownership·schema 위에 post/create/edit/delete/read/delivery/retention 변경을 최대 32회 재적용한다. Record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor CAS가 이어져도 원래 operation을 조정한다. Notification hard-delete는 해당 operation이 제거한 ID의 부재를 read-back한다. Local conditional lock은 최초 lock-file 동시 create의 일시적 실패를 bounded retry로 처리하고, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다.
+
+CAS 보장은 tenant별 단일 message 또는 notification object 범위다. 메시지 게시와 mention notification 생성을 하나의 commit으로 묶는 distributed transaction, 실제 AWS runtime, SMTP·Slack 전달 성공은 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

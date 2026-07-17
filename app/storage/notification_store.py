@@ -1,7 +1,7 @@
 """app/storage/notification_store.py — Per-tenant notification storage.
 
 Storage: data/tenants/{tenant_id}/notifications.json  (list of dicts)
-Thread-safe within one process across stores that share a data root.
+Process-local locks reduce contention; backend CAS preserves worker-safe updates.
 """
 from __future__ import annotations
 
@@ -13,15 +13,19 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.notification_store")
 
 _notification_locks: dict[Path, threading.RLock] = {}
 _notification_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
 class NotificationStoreError(ValueError):
@@ -153,10 +157,18 @@ class NotificationStore:
 
     # ── internal helpers ───────────────────────────────────────────────────
 
-    def _read(self) -> list[dict]:
-        raw = self._backend.read_text(self._relative_path)
+    def _read_state(self) -> tuple[str | None, list[dict]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise NotificationStoreError(
+                "Invalid notification state document"
+            ) from exc
         if raw is None:
-            return []
+            return None, []
+        return raw, self._decode_records(raw)
+
+    def _decode_records(self, raw: str) -> list[dict]:
         if not raw.strip():
             raise NotificationStoreError("Invalid notification state document")
         try:
@@ -165,22 +177,113 @@ class NotificationStore:
             raise NotificationStoreError("Invalid notification state document") from exc
         if not isinstance(records, list):
             raise NotificationStoreError("Invalid notification state document")
+        self._validate_records(records)
+        return records
 
+    def _read(self) -> list[dict]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise NotificationStoreError("Invalid notification mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict,
+        *,
+        previous: dict | None,
+        mutation_id: str,
+    ) -> dict:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _validate_records(self, records: list[dict]) -> None:
         notification_ids: set[str] = set()
         for record in records:
             if not isinstance(record, dict):
                 raise NotificationStoreError("Invalid notification record")
-            if record.get("tenant_id") != self._tenant_id:
+            if not self._owns(record):
                 continue
             notification = _notif_from_dict(record)
+            self._mutation_ids(record)
             if notification.notification_id in notification_ids:
                 raise NotificationStoreError("Duplicate notification identity")
             notification_ids.add(notification.notification_id)
-        return records
 
-    def _write(self, data: list[dict]) -> None:
-        payload = json.dumps(data, ensure_ascii=False, indent=2)
-        self._backend.write_text(self._relative_path, payload)
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        records: list[dict],
+        committed: Callable[[list[dict]], bool],
+    ) -> bool:
+        self._validate_records(records)
+        payload = json.dumps(records, ensure_ascii=False, indent=2)
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_records = self._decode_records(observed)
+                except NotificationStoreError:
+                    pass
+                else:
+                    if committed(observed_records):
+                        return True
+            raise NotificationStoreError(
+                "Failed to persist notification state"
+            ) from exc
+
+    def _mutate(
+        self,
+        change: Callable[[list[dict]], tuple[_MutationResult, bool]],
+        *,
+        committed: Callable[[list[dict]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, records = self._read_state()
+            result, changed = change(records)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                records=records,
+                committed=committed,
+            ):
+                return result
+        raise NotificationStoreError(
+            "Notification state changed too many times to persist safely"
+        )
 
     def _owns(self, record: dict) -> bool:
         return record.get("tenant_id") == self._tenant_id
@@ -212,11 +315,33 @@ class NotificationStore:
             sent_slack=False,
         )
         _notif_from_dict(asdict(notif))
+        mutation_id = uuid.uuid4().hex
+        persisted = self._record_mutation(
+            asdict(notif),
+            previous=None,
+            mutation_id=mutation_id,
+        )
+
+        def apply(records: list[dict]) -> tuple[Notification, bool]:
+            if any(
+                self._owns(record)
+                and record.get("notification_id") == notif.notification_id
+                for record in records
+            ):
+                raise NotificationStoreError("Duplicate notification identity")
+            records.append(persisted)
+            return notif, True
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("notification_id") == notif.notification_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
         with self._lock:
-            data = self._read()
-            data.append(asdict(notif))
-            self._write(data)
-        return notif
+            return self._mutate(apply, committed=was_committed)
 
     def get_for_user(
         self,
@@ -253,81 +378,144 @@ class NotificationStore:
 
     def mark_read(self, notification_id: str, recipient_id: str) -> bool:
         """Mark a single notification as read. Returns True if found."""
-        with self._lock:
-            data = self._read()
-            found = False
-            for record in data:
+        mutation_id = uuid.uuid4().hex
+
+        def apply(records: list[dict]) -> tuple[bool, bool]:
+            for index, record in enumerate(records):
                 if (
                     self._owns(record)
                     and record.get("notification_id") == notification_id
                     and record.get("recipient_id") == recipient_id
                 ):
-                    record["is_read"] = True
-                    found = True
-                    break
-            if found:
-                self._write(data)
-        return found
+                    updated = dict(record)
+                    updated["is_read"] = True
+                    records[index] = self._record_mutation(
+                        updated,
+                        previous=record,
+                        mutation_id=mutation_id,
+                    )
+                    return True, True
+            return False, False
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("notification_id") == notification_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def mark_all_read(self, recipient_id: str) -> int:
         """Mark all notifications for a user as read. Returns count updated."""
-        with self._lock:
-            data = self._read()
-            count = 0
-            for record in data:
+        mutation_id = uuid.uuid4().hex
+        changed_ids: set[str] = set()
+
+        def apply(records: list[dict]) -> tuple[int, bool]:
+            changed_ids.clear()
+            for index, record in enumerate(records):
                 if (
                     self._owns(record)
                     and record.get("recipient_id") == recipient_id
                     and not record.get("is_read", False)
                 ):
-                    record["is_read"] = True
-                    count += 1
-            if count:
-                self._write(data)
-        return count
+                    notification_id = record["notification_id"]
+                    updated = dict(record)
+                    updated["is_read"] = True
+                    records[index] = self._record_mutation(
+                        updated,
+                        previous=record,
+                        mutation_id=mutation_id,
+                    )
+                    changed_ids.add(notification_id)
+            return len(changed_ids), bool(changed_ids)
+
+        def was_committed(records: list[dict]) -> bool:
+            committed_ids = {
+                record.get("notification_id")
+                for record in records
+                if self._owns(record)
+                and mutation_id in self._mutation_ids(record)
+            }
+            return changed_ids <= committed_ids
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def mark_email_sent(self, notification_id: str) -> None:
         """Record that an email was sent for this notification."""
-        with self._lock:
-            data = self._read()
-            for record in data:
-                if (
-                    self._owns(record)
-                    and record.get("notification_id") == notification_id
-                ):
-                    record["sent_email"] = True
-                    self._write(data)
-                    break
+        self._mark_delivery_sent(notification_id, field="sent_email")
 
     def mark_slack_sent(self, notification_id: str) -> None:
         """Record that a Slack message was sent for this notification."""
-        with self._lock:
-            data = self._read()
-            for record in data:
+        self._mark_delivery_sent(notification_id, field="sent_slack")
+
+    def _mark_delivery_sent(self, notification_id: str, *, field: str) -> None:
+        mutation_id = uuid.uuid4().hex
+
+        def apply(records: list[dict]) -> tuple[None, bool]:
+            for index, record in enumerate(records):
                 if (
                     self._owns(record)
                     and record.get("notification_id") == notification_id
                 ):
-                    record["sent_slack"] = True
-                    self._write(data)
-                    break
+                    updated = dict(record)
+                    updated[field] = True
+                    records[index] = self._record_mutation(
+                        updated,
+                        previous=record,
+                        mutation_id=mutation_id,
+                    )
+                    return None, True
+            return None, False
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("notification_id") == notification_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def delete_for_user(self, user_id: str) -> int:
         """Delete all notifications belonging to a withdrawn user.
 
         Returns the count of deleted notifications.
         """
-        with self._lock:
-            data = self._read()
-            original = len(data)
-            data = [
+        deleted_ids: set[str] = set()
+
+        def apply(records: list[dict]) -> tuple[int, bool]:
+            deleted_ids.clear()
+            deleted_ids.update(
+                record["notification_id"]
+                for record in records
+                if self._owns(record) and record.get("recipient_id") == user_id
+            )
+            if not deleted_ids:
+                return 0, False
+            records[:] = [
                 record
-                for record in data
+                for record in records
                 if not self._owns(record) or record.get("recipient_id") != user_id
             ]
-            deleted = original - len(data)
+            return len(deleted_ids), True
+
+        def was_committed(records: list[dict]) -> bool:
+            remaining_ids = {
+                record.get("notification_id")
+                for record in records
+                if self._owns(record)
+            }
+            return deleted_ids.isdisjoint(remaining_ids)
+
+        with self._lock:
+            deleted = self._mutate(apply, committed=was_committed)
             if deleted:
-                self._write(data)
                 _log.info(
                     "[NotificationStore] Deleted %d notifications for user %s",
                     deleted,
@@ -339,19 +527,36 @@ class NotificationStore:
         """Delete notifications older than *days*. Returns count deleted."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_iso = cutoff.isoformat()
-        with self._lock:
-            data = self._read()
-            original = len(data)
-            data = [
+        deleted_ids: set[str] = set()
+
+        def apply(records: list[dict]) -> tuple[int, bool]:
+            deleted_ids.clear()
+            deleted_ids.update(
+                record["notification_id"]
+                for record in records
+                if self._owns(record)
+                and record.get("created_at", "") < cutoff_iso
+            )
+            if not deleted_ids:
+                return 0, False
+            records[:] = [
                 record
-                for record in data
+                for record in records
                 if not self._owns(record)
-                or record.get("created_at", "") >= cutoff_iso
+                or record.get("notification_id") not in deleted_ids
             ]
-            deleted = original - len(data)
-            if deleted:
-                self._write(data)
-        return deleted
+            return len(deleted_ids), True
+
+        def was_committed(records: list[dict]) -> bool:
+            remaining_ids = {
+                record.get("notification_id")
+                for record in records
+                if self._owns(record)
+            }
+            return deleted_ids.isdisjoint(remaining_ids)
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
 
 # ── per-tenant singleton factory ───────────────────────────────────────────────

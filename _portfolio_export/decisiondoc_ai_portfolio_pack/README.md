@@ -49,7 +49,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
 | 보고서 검토 이력 무결성 | 기획안·장표·댓글·승인 단계·시각자료 이력을 tenant에 결속하고, 손상·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
-| 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고, 손상 문서·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
+| 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고 손상 문서·중복 identity를 fail closed 처리. 객체별 conditional create/CAS와 bounded private receipt로 worker 간 게시·수정·읽음·전송 상태 유실을 방지 |
 | 재현 가능한 제출형 export | 같은 runtime과 입력에서 DOCX·PDF·PPTX·XLSX·HWPX 반복 생성 bytes와 SHA-256을 안정적으로 유지 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory를 검색·필터·정렬하고 summary 목록에서 선택한 기록만 상세 조회한다. 사람 검토는 메모와 품질 점수를 export/freeze/governance 증적으로 연결하고, expected review version을 storage lock 안에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단한다. 작성 중인 검토 초안은 사용자·tenant·trajectory를 함께 묶은 현재 페이지 메모리에 보존되어 같은 인증 문맥에서만 복원되고 logout 또는 세션 무효화 시 폐기된다. Signed token의 tenant와 browser header context를 동기화하되 JWT tenant mismatch는 우회하지 않으며, 상세 열람, review 결정, version conflict는 본문·메모를 제외한 append-only audit으로 추적한다. |
 
@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,280개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,288개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3280
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3288
 python3 scripts/count_readme_metrics.py --field test_files      # → 251
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,014 passed, 2 skipped, 4 deselected, 2026-07-17 H60 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,024 passed, 2 skipped, 4 deselected, 2026-07-17 H61 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -336,7 +336,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 - 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. Mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌할 때마다 최신 state의 ownership·schema·transition을 다시 검증합니다. 최근 mutation receipt는 64개로 제한해 후속 CAS 뒤에도 불확실한 commit을 조정하며, 손상 receipt는 원본을 보존하고 fail closed 처리합니다. 이 보장은 tenant별 단일 report workflow state object에 한정되고 실제 AWS runtime과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 CAS를 적용하며, 충돌 시 최신 JSONL을 다시 검증하고 append를 재적용합니다. Commit 응답이 불확실하면 `log_id`와 exact entry를 read-back해 후속 append 뒤에도 성공을 조정합니다. 이 보장은 tenant별 단일 audit JSONL object 범위이며 실제 AWS runtime은 검증하지 않았습니다.
-- 메시지·알림 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 외부 SMTP·Slack 전달 성공과 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap은 이 검증 범위가 아닙니다.
+- 메시지·알림 state는 tenant별 `messages.json`과 `notifications.json`에 각각 conditional create/CAS를 적용합니다. 충돌할 때마다 최신 state의 ownership·schema를 다시 검증하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 후속 CAS도 조정합니다. Local conditional lock 초기화의 동시 create도 재시도하며 receipt 손상은 원본 보존 상태로 fail closed 처리합니다. 이 보장은 각 단일 state object 범위이고 메시지 저장과 mention 알림 생성을 함께 묶는 distributed transaction, 실제 AWS runtime, 외부 SMTP·Slack 전달 성공은 검증 범위가 아닙니다.
 - 사용자·초대 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap과 실제 초대 메일 전달은 구현·검증 범위가 아닙니다.
 - SSO 설정 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Secret은 Fernet authenticated encryption과 PBKDF2 key derivation을 사용하며 복호화 실패를 평문 fallback으로 처리하지 않습니다. 서명 없는 SAML assertion과 RelayState 불일치는 거부하지만, 현재 기본 requirements에 `python3-saml` verifier가 없어 SAML ACS는 fail closed 상태이며 실제 LDAP·SAML IdP·GCloud 로그인과 distributed S3 compare-and-swap은 검증 범위가 아닙니다.
 - 사용자 템플릿 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
@@ -367,4 +367,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,280 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,288 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

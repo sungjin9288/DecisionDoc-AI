@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.message_store import MessageStore, MessageStoreError, get_message_store
 from app.storage.notification_store import NotificationStore, NotificationStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -21,6 +30,35 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
+
+
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
+
+
+class _FailingConditionalBackend(LocalStateBackend):
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        raise StateBackendError("simulated conditional write failure")
 
 
 class _Body:
@@ -35,6 +73,27 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
 
     def put_object(
         self,
@@ -43,25 +102,49 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        time.sleep(self.read_delay)
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -277,6 +360,8 @@ def test_independent_local_message_stores_preserve_concurrent_posts(
         MessageStore("alpha", data_dir=tmp_path, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def post(index: int) -> None:
         stores[index].post("user-1", "Alice", f"Message {index}", "general", "global")
@@ -303,6 +388,8 @@ def test_independent_local_notification_stores_preserve_concurrent_creates(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> None:
         stores[index].create(
@@ -382,11 +469,17 @@ def test_untrusted_fake_s3_collaboration_state_is_preserved() -> None:
 
 
 def test_independent_fake_s3_message_stores_preserve_concurrent_posts() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
+    client = _MemoryS3Client(read_delay=0.005)
     stores = [
-        MessageStore("alpha", data_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        MessageStore(
+            "alpha",
+            data_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def post(index: int) -> None:
         stores[index].post("user-1", "Alice", f"Message {index}", "general", "global")
@@ -394,7 +487,9 @@ def test_independent_fake_s3_message_stores_preserve_concurrent_posts() -> None:
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(post, range(20)))
     messages = MessageStore(
-        "alpha", data_dir="/virtual/data", backend=backend
+        "alpha",
+        data_dir="/virtual/reload",
+        backend=_s3_backend(client=client)[0],
     ).get_thread("general", "global", limit=50)
     assert {message.content for message in messages} == {
         f"Message {index}" for index in range(20)
@@ -402,12 +497,17 @@ def test_independent_fake_s3_message_stores_preserve_concurrent_posts() -> None:
 
 
 def test_independent_fake_s3_notification_stores_preserve_concurrent_creates() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
-
+    client = _MemoryS3Client(read_delay=0.005)
     stores = [
-        NotificationStore("alpha", data_dir=Path("/virtual/data"), backend=backend)
-        for _ in range(20)
+        NotificationStore(
+            "alpha",
+            data_dir=Path(f"/virtual/worker-{index}"),
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> None:
         stores[index].create(
@@ -417,11 +517,369 @@ def test_independent_fake_s3_notification_stores_preserve_concurrent_creates() -
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(create, range(20)))
     notifications = NotificationStore(
-        "alpha", data_dir=Path("/virtual/data"), backend=backend
+        "alpha",
+        data_dir=Path("/virtual/reload"),
+        backend=_s3_backend(client=client)[0],
     ).get_for_user("user-1")
     assert {notification.title for notification in notifications} == {
         f"Notification {index}" for index in range(20)
     }
+
+
+def test_fake_s3_message_updates_preserve_disjoint_changes() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = MessageStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    first = bootstrap.post("user-1", "Alice", "First", "general", "global")
+    second = bootstrap.post("user-1", "Alice", "Second", "general", "global")
+    stores = [
+        MessageStore(
+            "alpha",
+            data_dir=f"/virtual/editor-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(2)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(
+            executor.map(
+                lambda args: args[0].edit(args[1], "user-1", args[2]),
+                (
+                    (stores[0], first.message_id, "First edited"),
+                    (stores[1], second.message_id, "Second edited"),
+                ),
+            )
+        )
+
+    messages = bootstrap.get_thread("general", "global")
+    assert {message.content for message in messages} == {
+        "First edited",
+        "Second edited",
+    }
+
+
+def test_fake_s3_notification_updates_preserve_disjoint_fields() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = NotificationStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    notification = bootstrap.create(
+        "user-1",
+        "system",
+        "Concurrent update",
+        "Body",
+        "system",
+        "context-1",
+    )
+    read_store = NotificationStore(
+        "alpha",
+        data_dir="/virtual/read-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    delivery_store = NotificationStore(
+        "alpha",
+        data_dir="/virtual/delivery-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    read_store._lock = nullcontext()
+    delivery_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(
+            executor.map(
+                lambda action: action(),
+                (
+                    lambda: read_store.mark_read(
+                        notification.notification_id,
+                        "user-1",
+                    ),
+                    lambda: delivery_store.mark_email_sent(
+                        notification.notification_id
+                    ),
+                ),
+            )
+        )
+
+    persisted = bootstrap.get_for_user("user-1")[0]
+    assert persisted.is_read is True
+    assert persisted.sent_email is True
+
+
+def test_fake_s3_collaboration_stores_reconcile_commit_then_successor_update() -> None:
+    client = _MemoryS3Client()
+    message_store = MessageStore(
+        "alpha",
+        data_dir="/virtual/message-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    message_successor = MessageStore(
+        "alpha",
+        data_dir="/virtual/message-successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    message_store._lock = nullcontext()
+    message_successor._lock = nullcontext()
+    successor_messages = []
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor_messages.append(
+            message_successor.post(
+                "user-2",
+                "Bob",
+                "Successor",
+                "general",
+                "global",
+            )
+        )
+    )
+    committed_message = message_store.post(
+        "user-1",
+        "Alice",
+        "Committed",
+        "general",
+        "global",
+    )
+
+    notification_store = NotificationStore(
+        "alpha",
+        data_dir="/virtual/notification-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    notification_successor = NotificationStore(
+        "alpha",
+        data_dir="/virtual/notification-successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    notification_store._lock = nullcontext()
+    notification_successor._lock = nullcontext()
+    committed_notification = notification_store.create(
+        "user-1",
+        "system",
+        "Committed",
+        "Body",
+        "system",
+        "context-1",
+    )
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: notification_successor.mark_email_sent(
+            committed_notification.notification_id
+        )
+    )
+    assert notification_store.mark_read(
+        committed_notification.notification_id,
+        "user-1",
+    )
+
+    messages = message_store.get_thread("general", "global")
+    notification = notification_store.get_for_user("user-1")[0]
+    assert {message.message_id for message in messages} == {
+        committed_message.message_id,
+        successor_messages[0].message_id,
+    }
+    assert notification.is_read is True
+    assert notification.sent_email is True
+
+
+def test_notification_delete_reconciles_commit_then_successor_create() -> None:
+    client = _MemoryS3Client()
+    store = NotificationStore(
+        "alpha",
+        data_dir="/virtual/delete-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = NotificationStore(
+        "alpha",
+        data_dir="/virtual/create-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    store._lock = nullcontext()
+    successor._lock = nullcontext()
+    store.create(
+        "user-1",
+        "system",
+        "Delete",
+        "Body",
+        "system",
+        "context-1",
+    )
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.create(
+            "user-2",
+            "system",
+            "Successor",
+            "Body",
+            "system",
+            "context-2",
+        )
+    )
+    assert store.delete_for_user("user-1") == 1
+
+    assert store.get_for_user("user-1") == []
+    assert [item.title for item in store.get_for_user("user-2")] == ["Successor"]
+
+
+@pytest.mark.parametrize(
+    ("store_type", "error", "expected_attempts"),
+    [
+        (
+            MessageStore,
+            "Message state changed too many times to persist safely",
+            32,
+        ),
+        (
+            NotificationStore,
+            "Notification state changed too many times to persist safely",
+            32,
+        ),
+    ],
+)
+def test_collaboration_mutation_stops_after_bounded_conflicts(
+    tmp_path: Path,
+    store_type: type[MessageStore] | type[NotificationStore],
+    error: str,
+    expected_attempts: int,
+) -> None:
+    backend = _ConflictingLocalBackend(tmp_path)
+    store = store_type("alpha", data_dir=tmp_path, backend=backend)
+
+    with pytest.raises((MessageStoreError, NotificationStoreError), match=error):
+        if isinstance(store, MessageStore):
+            store.post("user-1", "Alice", "Blocked", "general", "global")
+        else:
+            store.create(
+                "user-1",
+                "system",
+                "Blocked",
+                "Body",
+                "system",
+                "context-1",
+            )
+
+    assert backend.attempts == expected_attempts
+
+
+@pytest.mark.parametrize(
+    ("store_type", "error"),
+    [
+        (MessageStore, "Failed to persist message state"),
+        (NotificationStore, "Failed to persist notification state"),
+    ],
+)
+def test_collaboration_mutation_wraps_backend_failure(
+    tmp_path: Path,
+    store_type: type[MessageStore] | type[NotificationStore],
+    error: str,
+) -> None:
+    store = store_type(
+        "alpha",
+        data_dir=tmp_path,
+        backend=_FailingConditionalBackend(tmp_path),
+    )
+
+    with pytest.raises((MessageStoreError, NotificationStoreError), match=error):
+        if isinstance(store, MessageStore):
+            store.post("user-1", "Alice", "Blocked", "general", "global")
+        else:
+            store.create(
+                "user-1",
+                "system",
+                "Blocked",
+                "Body",
+                "system",
+                "context-1",
+            )
+
+    assert not store._path.exists()
+
+
+def test_collaboration_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    message_store = MessageStore("alpha", data_dir=tmp_path)
+    message = message_store.post(
+        "user-1",
+        "Alice",
+        "Original",
+        "general",
+        "global",
+    )
+    notification_store = NotificationStore("alpha", data_dir=tmp_path)
+    notification = notification_store.create(
+        "user-1",
+        "system",
+        "Notification",
+        "Body",
+        "system",
+        "context-1",
+    )
+
+    for index in range(70):
+        message_store.edit(
+            message.message_id,
+            "user-1",
+            f"Edit {index}",
+        )
+        notification_store.mark_email_sent(notification.notification_id)
+
+    message_records = json.loads(message_store._path.read_text(encoding="utf-8"))
+    notification_records = json.loads(
+        notification_store._path.read_text(encoding="utf-8")
+    )
+    assert len(message_records[0]["_mutation_ids"]) == 64
+    assert len(notification_records[0]["_mutation_ids"]) == 64
+    assert "_mutation_ids" not in asdict(
+        message_store.get_thread("general", "global")[0]
+    )
+    assert "_mutation_ids" not in asdict(
+        notification_store.get_for_user("user-1")[0]
+    )
+
+    message_records[0]["_mutation_ids"][0] = message_records[0]["_mutation_ids"][1]
+    notification_records[0]["_mutation_ids"][0] = notification_records[0][
+        "_mutation_ids"
+    ][1]
+    message_store._path.write_text(json.dumps(message_records), encoding="utf-8")
+    notification_store._path.write_text(
+        json.dumps(notification_records),
+        encoding="utf-8",
+    )
+    message_bytes = message_store._path.read_bytes()
+    notification_bytes = notification_store._path.read_bytes()
+
+    with pytest.raises(MessageStoreError, match="Invalid message mutation history"):
+        message_store.get_thread("general", "global")
+    with pytest.raises(
+        NotificationStoreError,
+        match="Invalid notification mutation history",
+    ):
+        notification_store.get_for_user("user-1")
+    with pytest.raises(MessageStoreError, match="Invalid message mutation history"):
+        message_store.post("user-2", "Bob", "Blocked", "general", "global")
+    with pytest.raises(
+        NotificationStoreError,
+        match="Invalid notification mutation history",
+    ):
+        notification_store.create(
+            "user-2",
+            "system",
+            "Blocked",
+            "Body",
+            "system",
+            "context-2",
+        )
+
+    assert message_store._path.read_bytes() == message_bytes
+    assert notification_store._path.read_bytes() == notification_bytes
 
 
 def test_message_store_factory_separates_data_roots(tmp_path: Path) -> None:

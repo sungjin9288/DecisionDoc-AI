@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone collaboration state cross-worker authority completion
+
+- `MessageStore`와 `NotificationStore`의 mutation은 tenant별 `messages.json` 또는 `notifications.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema를 다시 검증하고 post/create/edit/delete/read/delivery/retention 변경을 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존한다. Commit 응답 유실 뒤 successor CAS가 이어져도 receipt로 원래 operation을 조정하고 notification hard-delete는 제거 대상 ID의 부재를 read-back한다. Local lock-file 최초 동시 create의 일시적 실패도 bounded retry한다.
+- H61 focused collaboration integrity gate는 `49 passed`, collaboration·notification·approval·auth·security·state·infrastructure 확장 gate는 `439 passed`, provider API key를 process에서 제거한 full no-cost regression은 `4024 passed, 2 skipped, 4 deselected`다. Mock/local uvicorn에서는 health·admin 등록·초대 수락·mention message·notification read·message edit/delete가 모두 `200`이었고 persisted private receipt와 public 비노출을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. 객체별 CAS는 메시지와 mention notification을 함께 묶는 distributed transaction이 아니며 실제 AWS/provider/G2B/Stripe, SMTP·Slack 전달, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone audit log cross-worker authority completion
 
 - `AuditStore.append()`는 tenant별 `audit_logs.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 사용한다. 충돌하면 최신 JSONL의 tenant, required field, duplicate key와 `log_id`를 다시 검증하고 기존 raw byte prefix와 newline 경계 위에 같은 entry를 재적용한다.

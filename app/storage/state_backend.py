@@ -118,6 +118,8 @@ class StateBackend(ABC):
 
 
 class LocalStateBackend(StateBackend):
+    _LOCK_OPEN_ATTEMPTS = 8
+
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self._resolved_root = self.root.resolve()
@@ -158,12 +160,18 @@ class LocalStateBackend(StateBackend):
             try:
                 lock_flags = os.O_RDWR | os.O_CREAT
                 lock_flags |= getattr(os, "O_NOFOLLOW", 0)
-                lock_fd = os.open(
-                    f"{lock_name}.lock",
-                    lock_flags,
-                    0o600,
-                    dir_fd=lock_directory_fd,
-                )
+                for attempt in range(self._LOCK_OPEN_ATTEMPTS):
+                    try:
+                        lock_fd = os.open(
+                            f"{lock_name}.lock",
+                            lock_flags,
+                            0o600,
+                            dir_fd=lock_directory_fd,
+                        )
+                        break
+                    except FileNotFoundError:
+                        if attempt + 1 == self._LOCK_OPEN_ATTEMPTS:
+                            raise
                 try:
                     if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
                         raise StateBackendError(

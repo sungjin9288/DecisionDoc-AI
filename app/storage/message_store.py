@@ -1,7 +1,7 @@
 """app/storage/message_store.py — Tenant-scoped team messaging with @mention support.
 
 Storage: data/tenants/{tenant_id}/messages.json
-Thread-safe within one process across stores that share a data root.
+Process-local locks reduce contention; backend CAS preserves worker-safe updates.
 """
 from __future__ import annotations
 
@@ -13,14 +13,18 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
 _message_locks: dict[Path, threading.RLock] = {}
 _message_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
 class MessageStoreError(ValueError):
@@ -87,10 +91,16 @@ class MessageStore:
 
     # ── internal helpers ──────────────────────────────────────────────────
 
-    def _read(self) -> list[dict]:
-        raw = self._backend.read_text(self._relative_path)
+    def _read_state(self) -> tuple[str | None, list[dict]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise MessageStoreError("Invalid message state document") from exc
         if raw is None:
-            return []
+            return None, []
+        return raw, self._decode_records(raw)
+
+    def _decode_records(self, raw: str) -> list[dict]:
         if not raw.strip():
             raise MessageStoreError("Invalid message state document")
         try:
@@ -99,24 +109,111 @@ class MessageStore:
             raise MessageStoreError("Invalid message state document") from exc
         if not isinstance(records, list):
             raise MessageStoreError("Invalid message state document")
+        self._validate_records(records)
+        return records
 
+    def _read(self) -> list[dict]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise MessageStoreError("Invalid message mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict,
+        *,
+        previous: dict | None,
+        mutation_id: str,
+    ) -> dict:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        records: list[dict],
+        committed: Callable[[list[dict]], bool],
+    ) -> bool:
+        self._validate_records(records)
+        payload = json.dumps(records, ensure_ascii=False, indent=2)
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_records = self._decode_records(observed)
+                except MessageStoreError:
+                    pass
+                else:
+                    if committed(observed_records):
+                        return True
+            raise MessageStoreError("Failed to persist message state") from exc
+
+    def _mutate(
+        self,
+        change: Callable[[list[dict]], tuple[_MutationResult, bool]],
+        *,
+        committed: Callable[[list[dict]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, records = self._read_state()
+            result, changed = change(records)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                records=records,
+                committed=committed,
+            ):
+                return result
+        raise MessageStoreError(
+            "Message state changed too many times to persist safely"
+        )
+
+    def _validate_records(self, records: list[dict]) -> None:
         message_ids: set[str] = set()
         for record in records:
             if not isinstance(record, dict):
                 raise MessageStoreError("Invalid message record")
-            if record.get("tenant_id") != self._tenant_id:
+            if not self._owns(record):
                 continue
             message = self._to_message(record)
+            self._mutation_ids(record)
             if message.message_id in message_ids:
                 raise MessageStoreError("Duplicate message identity")
             message_ids.add(message.message_id)
-        return records
-
-    def _write(self, data: list[dict]) -> None:
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(data, ensure_ascii=False, indent=2),
-        )
 
     def _to_message(self, d: dict) -> Message:
         required_strings = (
@@ -218,11 +315,33 @@ class MessageStore:
             is_deleted=False,
         )
         self._to_message(asdict(msg))
+        mutation_id = uuid.uuid4().hex
+        persisted = self._record_mutation(
+            asdict(msg),
+            previous=None,
+            mutation_id=mutation_id,
+        )
+
+        def apply(records: list[dict]) -> tuple[Message, bool]:
+            if any(
+                self._owns(record)
+                and record.get("message_id") == msg.message_id
+                for record in records
+            ):
+                raise MessageStoreError("Duplicate message identity")
+            records.append(persisted)
+            return msg, True
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("message_id") == msg.message_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
         with self._lock:
-            data = self._read()
-            data.append(asdict(msg))
-            self._write(data)
-        return msg
+            return self._mutate(apply, committed=was_committed)
 
     def get_thread(
         self,
@@ -258,34 +377,69 @@ class MessageStore:
         """Edit a message. Only the original author may edit."""
         if not isinstance(new_content, str):
             raise MessageStoreError("Invalid message content")
-        with self._lock:
-            data = self._read()
-            for i, m in enumerate(data):
-                if self._owns(m) and m["message_id"] == message_id:
-                    if m["author_id"] != author_id:
+        mutation_id = uuid.uuid4().hex
+        edited_at = _now_iso()
+
+        def apply(records: list[dict]) -> tuple[Message, bool]:
+            for index, record in enumerate(records):
+                if self._owns(record) and record["message_id"] == message_id:
+                    if record["author_id"] != author_id:
                         raise PermissionError(
                             "본인이 작성한 메시지만 수정할 수 있습니다."
                         )
-                    data[i]["content"] = new_content
-                    data[i]["edited_at"] = _now_iso()
-                    self._write(data)
-                    return self._to_message(data[i])
-        raise ValueError(f"메시지를 찾을 수 없습니다: {message_id}")
+                    updated = dict(record)
+                    updated["content"] = new_content
+                    updated["edited_at"] = edited_at
+                    records[index] = self._record_mutation(
+                        updated,
+                        previous=record,
+                        mutation_id=mutation_id,
+                    )
+                    return self._to_message(records[index]), True
+            raise ValueError(f"메시지를 찾을 수 없습니다: {message_id}")
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("message_id") == message_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def delete(self, message_id: str, author_id: str) -> None:
         """Soft-delete a message. Only the original author may delete."""
-        with self._lock:
-            data = self._read()
-            for i, m in enumerate(data):
-                if self._owns(m) and m["message_id"] == message_id:
-                    if m["author_id"] != author_id:
+        mutation_id = uuid.uuid4().hex
+
+        def apply(records: list[dict]) -> tuple[None, bool]:
+            for index, record in enumerate(records):
+                if self._owns(record) and record["message_id"] == message_id:
+                    if record["author_id"] != author_id:
                         raise PermissionError(
                             "본인이 작성한 메시지만 삭제할 수 있습니다."
                         )
-                    data[i]["is_deleted"] = True
-                    self._write(data)
-                    return
-        raise ValueError(f"메시지를 찾을 수 없습니다: {message_id}")
+                    updated = dict(record)
+                    updated["is_deleted"] = True
+                    records[index] = self._record_mutation(
+                        updated,
+                        previous=record,
+                        mutation_id=mutation_id,
+                    )
+                    return None, True
+            raise ValueError(f"메시지를 찾을 수 없습니다: {message_id}")
+
+        def was_committed(records: list[dict]) -> bool:
+            return any(
+                self._owns(record)
+                and record.get("message_id") == message_id
+                and mutation_id in self._mutation_ids(record)
+                for record in records
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def get_unread_count(self, user_id: str, since: str) -> int:
         """Count unread mentions since the given ISO timestamp."""
