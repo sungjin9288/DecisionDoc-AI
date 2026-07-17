@@ -113,6 +113,21 @@ BookmarkStore(tenant_id, selected StateBackend)
 
 Missing-state read는 object를 만들지 않는다. Malformed·invalid UTF-8 JSON, duplicate key·owned bid identity와 collection drift는 조회와 후속 변경을 중단하고 원본 bytes를 보존한다. Owner가 없는 기존 record는 tenant path와 user bucket 소유로 읽고, 다른 owner가 명시된 record는 숨긴 채 보존한다. 동일 process의 read-modify-write는 logical state lock으로 직렬화하지만 distributed S3 compare-and-swap은 현재 보장하지 않는다.
 
+## 데이터 흐름 — Decision Council
+
+```
+GET / POST /projects/{project_id}/decision-council
+    │
+    ├─ signed tenant와 현재 procurement binding 확인
+    ▼
+DecisionCouncilStore(caller tenant, selected StateBackend)
+    ├─ tenant별 decision_council_sessions.json
+    ├─ canonical project/use-case/bundle session key 검증
+    └─ generation context에는 current session만 전달
+```
+
+Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key, canonical key drift와 owned session ID/key 중복은 조회·revision 갱신을 중단하고 원본 bytes를 보존한다. 기존 foreign·malformed record는 현재 tenant의 session으로 사용하지 않고 원본에 남긴다. Local/S3 write는 모두 선택된 `StateBackend`를 통하며 동일 process의 read-modify-write는 logical state object lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

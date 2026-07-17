@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone Decision Council state authority completion
+
+- `DecisionCouncilStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/decision_council_sessions.json`을 읽고 쓴다. Local 전용 atomic-write 분기와 local path 기준 lock을 제거하고 logical state object 기준 process-local lock을 사용한다.
+- Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key, canonical project/use-case/bundle key drift와 owned session ID/key 중복은 조회와 후속 revision upsert를 fail closed로 중단하고 원본 bytes를 보존한다.
+- Existing foreign·malformed record는 현재 tenant session으로 조회·갱신하지 않고 원본에 보존한다. App bootstrap은 data root/backend를 명시하고 손상 state의 project GET/run API는 not-found나 새 session으로 축소하지 않고 `500 INTERNAL_ERROR`로 끝난다.
+- H52 focused integrity gate는 `14 passed`, Decision Council/project/generation/audit/state/infrastructure 확장 gate는 `486 passed`, full no-cost regression은 `3931 passed, 1 skipped, 4 deselected`다. Mock/local uvicorn lifecycle에서 health·project create·council run/get과 session identity 일치도 확인했다. 검증은 mock/local 및 fake-S3만 사용했다. Distributed S3 CAS, G2B live API, provider API, AWS runtime, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone G2B bookmark state authority hardening
 
 - `BookmarkStore`는 tenant를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/g2b_bookmarks.json`을 사용한다. G2B bookmark route는 signed tenant/user와 앱 data root/backend를 명시적으로 전달한다.

@@ -39,7 +39,8 @@
 | 품질 학습 상태 무결성 | 완료 | `pytest -q tests/test_quality_learning_store_integrity.py` -> `43 passed`; feedback/eval/prompt override local/fake-S3 손상 원본 보존, foreign/legacy 경계, 독립 store 동시 쓰기, app backend 결속, API·generation context·prompt build fail-closed 검증 |
 | 공개 공유 상태 무결성 | 완료 | `pytest -q tests/test_share_store_integrity.py --tb=short` -> `36 passed`; local/fake-S3 손상 보존·동시 생성/접근·route backend 결속과 public/auth API 오류 경계 검증 |
 | 공개 공유 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create 200/public view 200/access count 1/revoke 200/post-revoke 404 확인; 외부 API 호출 없음 |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3917 passed, 1 skipped, 4 deselected` (2026-07-17 실측) |
+| Decision Council 상태 무결성 | 완료 | `pytest -q tests/test_decision_council_store_integrity.py` -> `14 passed`; local/fake-S3 missing-state·손상 원본·canonical identity·독립 backend 동시성·app backend 결속과 project API 오류 경계 검증. Mock/local uvicorn lifecycle에서 health·project create·council run/get과 session identity 일치 확인 |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3931 passed, 1 skipped, 4 deselected` (2026-07-17 실측) |
 | GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
