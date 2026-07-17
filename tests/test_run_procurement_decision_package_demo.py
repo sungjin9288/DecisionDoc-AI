@@ -38,7 +38,7 @@ DEMO_OUTPUT_DIR_NAME = "out"
 DEMO_REVIEWER_OWNER = "reviewer-a"
 DATA_DIR_FILE_NAME = "data-file"
 FILE_INSTEAD_OF_DIRECTORY_TEXT = "not a directory\n"
-DATA_DIR_FILE_ERROR_TYPES = {"FileExistsError", "NotADirectoryError"}
+DATA_DIR_FILE_ERROR_TYPE = "ProcurementDecisionStoreError"
 STALE_ARTIFACT_NAME = "stale_artifact.txt"
 STALE_ARTIFACT_TEXT = "stale\n"
 
@@ -247,4 +247,4 @@ def test_run_demo_cli_returns_failure_json_no_traceback(tmp_path: Path) -> None:
     assert demo_failure_result["status"] == "failed"
     assert demo_failure_result["data_dir"] == str(data_dir)
     assert demo_failure_result["output_dir"] == str(out_dir)
-    assert demo_failure_result["error_type"] in DATA_DIR_FILE_ERROR_TYPES
+    assert demo_failure_result["error_type"] == DATA_DIR_FILE_ERROR_TYPE

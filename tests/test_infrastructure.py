@@ -2978,9 +2978,9 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
                 incomplete_calls.append(f"{relative_path}:{node.lineno}:{method_name}")
 
     assert discovered == {
-        "read_packet": 3,
+        "read_packet": 6,
         "complete": 1,
-        "read_reviewed_package": 1,
+        "read_reviewed_package": 3,
     }
     assert incomplete_calls == []
 

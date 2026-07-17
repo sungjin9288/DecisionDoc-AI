@@ -28,6 +28,10 @@ from app.ops.factory import get_ops_service
 from app.services.search_service import SearchService
 from app.services.decision_council_service import DecisionCouncilService
 from app.services.meeting_recording_service import MeetingRecordingService
+from app.services.procurement_review_evidence import (
+    validate_persisted_procurement_review_packet,
+    validate_persisted_procurement_reviewed_package,
+)
 from app.services.voice_brief_import_service import VoiceBriefImportService
 from app.providers.factory import configured_provider_names, get_provider, get_provider_for_capability
 from app.services.generation_service import GenerationService
@@ -169,7 +173,14 @@ def create_app() -> FastAPI:
         backend=state_backend,
     )
     procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=state_backend)
-    procurement_review_store = ProcurementReviewStore(base_dir=str(data_dir), backend=state_backend)
+    procurement_review_store = ProcurementReviewStore(
+        base_dir=str(data_dir),
+        backend=state_backend,
+        packet_evidence_validator=validate_persisted_procurement_review_packet,
+        reviewed_package_evidence_validator=(
+            validate_persisted_procurement_reviewed_package
+        ),
+    )
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
 

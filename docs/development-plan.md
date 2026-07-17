@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 3,964 passed, 2 skipped, 4 deselected, 2026-07-17) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 3,999 passed, 2 skipped, 4 deselected, 2026-07-17) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-17 실측: 3964 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-17 실측: 3999 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -41,8 +41,8 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 42 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 38 (스토어)
+python3 scripts/count_readme_metrics.py --field service_files     # → 43 (서비스)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 39 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 266 (라우트)
 ```
@@ -63,7 +63,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (42) — 도메인 오케스트레이션
+Services (43) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -74,7 +74,7 @@ Services (42) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (38 스토어)    Ops
+Providers (5)    Storage (39 스토어)    Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock / openai    (atomic write 공통)   eval / eval_live
@@ -89,6 +89,7 @@ Providers (5)    Storage (38 스토어)    Ops
 3. 라우트 핸들러는 `request.app.state.*`로 의존성 접근, `os.getenv` 직접 호출 금지.
 4. 신규 Request 모델은 `ConfigDict(strict=True, extra="forbid")` 필수.
 5. mock provider는 결정론적 — CI/CD와 로컬 데모의 기준 경로.
+6. Persisted review evidence는 missing과 corrupt를 구분하고, immutable artifact를 먼저 검증한 뒤 record를 conditional create/CAS로 확정하며 domain conflict와 store failure를 다른 오류 경계로 전달한다.
 
 ---
 

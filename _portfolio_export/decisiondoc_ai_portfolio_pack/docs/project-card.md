@@ -1,6 +1,6 @@
 # Project Card
 
-분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review lifecycle과 reproducible portfolio pack까지 반영했다.
+분석 기준: 2026-07-17 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review state authority와 reproducible portfolio pack까지 반영했다.
 
 ## 1. Snapshot
 
@@ -44,7 +44,7 @@
   - project/approval state의 local/S3 backend 결속, 손상 원본 보존과 process-local logical object 동시성
   - report workflow state의 local/S3 backend logical object 결속, 손상 원본 보존과 process-local 동시성
   - local procurement decision package evidence path with versioned CLI stdout contract and receipt checking
-  - tenant/project-bound procurement review packet, reviewer inbox, downstream freshness and share/approval drift safeguards
+  - tenant/project/packet SHA-256-bound procurement review state, fail-closed artifact integrity, reviewer inbox, downstream freshness and share/approval drift safeguards
   - DOCX, PDF, HWP, XLSX, PPTX 관련 service와 endpoint 테스트 파일
 - 개발 중인 기능:
   - report quality learning, document ops agent, fine-tuning/training artifact workflow
@@ -135,7 +135,7 @@ User / Team
 | 구현 완료 | bundle catalog/schema/template 구조 | 구현 완료 | `app/bundle_catalog/spec.py`, `app/bundle_catalog/registry.py`, `app/templates/` | 가능 |
 | 구현 완료 | local/S3 storage abstraction | 구현 완료 | `app/storage/base.py`, `app/storage/factory.py`, `app/storage/local.py`, `app/storage/s3.py` | 가능 |
 | 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
-| 구현 완료 | procurement review/freshness/audit boundary | 구현 완료 | `app/routers/projects/procurement_reviews.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
+| 구현 완료 | procurement review state/freshness/audit boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
 | 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |
 | 구현 완료 | health/metrics/version | 구현 완료 | `app/routers/health.py` | 가능 |
 | 개발 중 | report workflow quality learning | 개발 중/고도화 중 | `app/routers/report_workflows.py`, `app/services/report_quality_learning.py` | 조건부 가능 |

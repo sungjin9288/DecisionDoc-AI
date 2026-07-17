@@ -17,6 +17,7 @@ from app.services.decision_council_service import (
 from app.services.meeting_recording_service import TRANSCRIPTION_FAILED_MESSAGE
 from app.services.procurement_review_handoff import (
     describe_procurement_review_document_status,
+    load_validated_procurement_review_evidence,
 )
 
 
@@ -114,7 +115,8 @@ def _serialize_project_detail(
         review_record = None
         if review_store is not None and packet_sha256:
             try:
-                review_record = review_store.get(
+                review_record = load_validated_procurement_review_evidence(
+                    review_store,
                     tenant_id=tenant_id,
                     project_id=project.project_id,
                     packet_sha256=packet_sha256,

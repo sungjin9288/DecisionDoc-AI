@@ -1,6 +1,6 @@
 # Case Study
 
-분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence를 기준으로 업데이트했다. 구현 완료 표현은 코드와 검증 경로가 있는 항목에만 사용했다.
+분석 기준: 2026-07-17 현재 저장소 코드, README, docs, local evidence를 기준으로 업데이트했다. 구현 완료 표현은 코드와 검증 경로가 있는 항목에만 사용했다.
 
 ## 1. 배경
 
@@ -68,7 +68,7 @@
 - project/approval tenant state의 local/S3 logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
 - report workflow tenant state의 backend-bound logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
-- tenant/project-bound procurement review packet, reviewer inbox, downstream evidence freshness, share/approval drift acknowledgement
+- tenant/project/packet SHA-256-bound procurement review record·packet·content-addressed reviewed-package의 selected-backend 결속, conditional write/CAS, fail-closed semantic integrity, reviewer inbox, downstream freshness, share/approval drift acknowledgement
 - Dockerfile, Docker Compose, AWS SAM 설정
 - pytest 테스트 suite와 smoke script
 - 대표 bundle의 local mock sample, canonical golden fingerprint, validator/lint 결과를 묶은 tracked quality evidence package

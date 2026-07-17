@@ -12,6 +12,31 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+
+def load_json_object_content(
+    content: str | bytes,
+    *,
+    label: str,
+) -> dict[str, Any]:
+    """Load one JSON object while rejecting duplicate fields at every depth."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{label} contains duplicate field: {key}")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(content, object_pairs_hook=unique_object)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    return value
+
+
 def load_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as file_obj:
         data = json.load(file_obj)

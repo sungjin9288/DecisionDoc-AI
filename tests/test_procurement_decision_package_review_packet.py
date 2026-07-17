@@ -136,6 +136,21 @@ def test_packet_verifier_rechecks_embedded_package_semantics(tmp_path: Path) -> 
         verify_procurement_review_packet(_rewrite_packet(entries))
 
 
+def test_packet_verifier_rejects_duplicate_manifest_authority(
+    tmp_path: Path,
+) -> None:
+    packet, _ = build_procurement_review_packet(_source_package(tmp_path))
+    entries = _packet_entries(packet)
+    manifest = entries[PACKET_MANIFEST_NAME]
+    entries[PACKET_MANIFEST_NAME] = manifest.replace(
+        b'  "operational_approval": false',
+        b'  "operational_approval": true,\n  "operational_approval": false',
+    )
+
+    with pytest.raises(ValueError, match="contains duplicate field"):
+        verify_procurement_review_packet(_rewrite_packet(entries))
+
+
 def test_packet_cli_creates_verifies_and_reports_failures(tmp_path: Path) -> None:
     source_dir = _source_package(tmp_path)
     packet_path = tmp_path / "procurement-review.zip"

@@ -11,6 +11,9 @@ from app.services.procurement_decision_package.constants import (
     EXCLUDED_ACTION_ORDER,
     EXPLICIT_AUTHORIZATION_BOUNDARY,
 )
+from app.services.procurement_decision_package.json_helpers import (
+    load_json_object_content,
+)
 from app.services.procurement_decision_package.review_packet import (
     MAX_PACKET_SIZE_BYTES,
     PACKET_SCHEMA_VERSION,
@@ -66,13 +69,7 @@ def _sha256(content: bytes) -> str:
 
 
 def _load_json_object(content: bytes, *, label: str) -> dict[str, Any]:
-    try:
-        value = json.loads(content)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{label} must be valid JSON") from exc
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be an object")
-    return value
+    return load_json_object_content(content, label=label)
 
 
 def _review_context(

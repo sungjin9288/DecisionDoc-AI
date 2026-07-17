@@ -128,6 +128,22 @@ G2B fixture/live collector 또는 operator input
 
 Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key, owned identity/path drift와 duplicate source snapshot metadata는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Snapshot payload는 JSON 직렬화 가능성과 finite number를 write 전에 확인하고, snapshot read도 blank·malformed·invalid UTF-8·duplicate key를 missing으로 축소하지 않는다. 이 경계는 persisted path와 JSON 구조의 무결성만 보장하며 외부 원천의 의미적 진위나 distributed S3 compare-and-swap은 보장하지 않는다.
 
+## 데이터 흐름 — 공공조달 검토 증빙 상태
+
+```text
+검증된 project review packet
+  -> ProcurementReviewStore.prepare()
+       -> tenants/{tenant_id}/procurement_reviews/{project_id}/{packet_sha256}/
+          ├─ record.json
+          ├─ packet.zip
+          └─ reviewed_packages/{reviewed_package_sha256}.zip
+  -> reviewer inbox / one-time completion / downstream provenance
+```
+
+Record·packet·reviewed-package는 앱이 선택한 local/S3 `StateBackend`와 tenant/project/packet SHA-256 scope를 공유한다. Record는 exact field·receipt·identity를 검증하며 blank·malformed·invalid UTF-8·duplicate key와 canonical path drift를 빈 review로 축소하지 않는다. Packet과 reviewed-package는 persisted size·SHA-256뿐 아니라 receipt·embedded receipt·manifest의 semantic binding도 다시 대조한다. 기존 `reviewed_package.zip`은 읽기 호환 경로로만 유지한다.
+
+Prepare는 packet을 `write-if-absent`로 확정하고 exact orphan packet만 재사용한 뒤 record를 create-if-absent로 만든다. Completion은 원본 packet을 다시 검증하고 reviewed-package를 content-addressed immutable object로 만든 뒤 pending record를 CAS로 completed record에 전환한다. Local backend는 conditional file lock과 atomic replace, S3 backend는 `If-None-Match`와 ETag `If-Match`를 사용한다. Commit 응답이 불확실하면 persisted bytes를 다시 읽어 성공 여부를 조정하며, record가 확정되지 않은 immutable artifact는 권위 상태로 사용하지 않는다. Persisted 오류는 review domain `ValueError`와 분리되어 API에서 `500 INTERNAL_ERROR`로 전달된다. 여러 object를 하나의 원자적 commit으로 묶는 distributed transaction은 보장하지 않는다.
+
 ## 데이터 흐름 — Decision Council
 
 ```

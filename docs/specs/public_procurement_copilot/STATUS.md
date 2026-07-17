@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone procurement review evidence state authority completion
+
+- `ProcurementReviewStore`의 record·원본 packet·content-addressed reviewed-package는 앱이 선택한 local/S3 `StateBackend`의 `tenants/{tenant_id}/procurement_reviews/{project_id}/{packet_sha256}/` scope를 공유한다. Local은 conditional file lock/atomic write, S3는 `If-None-Match`와 ETag `If-Match`를 사용해 worker 간 record overwrite를 차단한다.
+- Blank·malformed·invalid UTF-8·duplicate key/identity와 backend read/list/write failure는 빈 review나 domain conflict로 축소하지 않는다. Canonical owned record 손상은 inbox/project list/download를 `500 INTERNAL_ERROR`로 중단하고 원본 bytes를 보존하며, nested/noncanonical alias만 목록에서 제외한다.
+- Packet과 reviewed-package는 persisted size·SHA-256, exact receipt, embedded receipt·manifest semantic binding을 다시 검증한다. Prepare는 exact orphan packet만 재사용하고 completion은 immutable package를 먼저 만든 뒤 pending record를 CAS로 전환한다. Commit 응답이 불확실하면 read-back으로 성공 여부를 조정하며 record가 확정되지 않은 artifact는 권위로 사용하지 않는다.
+- H56 focused store gate는 `49 passed`, review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 확장 gate는 `610 passed`, full no-cost regression은 `3999 passed, 2 skipped, 4 deselected`다. 실제 mock/local uvicorn에서도 health `200`, corrupt review inbox `500 INTERNAL_ERROR`, 원본 bytes 보존을 확인했다. 검증은 local/mock/fake-S3만 사용했다. Multi-object distributed transaction, provider API, G2B live API, AWS runtime, Stripe API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone report workflow state authority completion
 
 - `ReportWorkflowStore`의 planning·slide·visual asset·approval·promotion mutation은 local base path가 아니라 selected `StateBackend`와 tenant별 `tenants/{tenant_id}/report_workflows.json` relative path로 계산한 process-local logical lock 안에서 실행한다. 서로 다른 virtual base를 쓰는 독립 store도 같은 S3 bucket/prefix/object를 가리키면 lock을 공유한다.

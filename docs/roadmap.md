@@ -20,6 +20,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-17 H53 완료: 공공조달 판단 record와 source snapshot을 tenant/project별 selected StateBackend에 결속하고 blank·malformed·invalid UTF-8·duplicate key/snapshot metadata·path drift·비직렬화 payload를 fail closed로 차단한다. Backend logical object lock, local/fake-S3 동시성, API와 Decision Council downstream lifecycle을 no-cost로 확인했다.
 - 2026-07-17 H54 완료: project/approval state를 tenant별 selected StateBackend에 결속하고 missing-state 무부작용, blank·malformed·invalid UTF-8, backend failure, owned schema/duplicate identity를 원본 보존 상태로 차단한다. 서로 다른 virtual base의 동일 S3 object 동시성, project/approval API 500 경계와 mock/local 최종 승인 lifecycle을 no-cost로 확인했다.
 - 2026-07-17 H55 완료: report workflow state의 planning·slide·visual asset·approval·promotion read-modify-write를 tenant별 backend logical object lock에 결속했다. Blank·malformed·invalid UTF-8와 backend read/write failure는 domain `ValueError`와 분리된 store error로 중단하고, 서로 다른 virtual base의 동일 S3 object 동시 create/asset update와 corrupt-state API 500 경계를 no-cost로 확인했다.
+- 2026-07-17 H56 완료: procurement review record·원본 packet·content-addressed reviewed-package를 tenant/project/packet SHA-256별 selected StateBackend authority에 결속했다. Exact receipt와 package semantic binding, local conditional write, S3 conditional create/ETag CAS, 불확실 commit read-back, 완료 직전 packet 재검증과 worker 간 동시성을 no-cost로 확인했다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -27,7 +28,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-17 실측: 3964 passed, 2 skipped, 4 deselected
+# 2026-07-17 실측: 3999 passed, 2 skipped, 4 deselected
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
@@ -78,6 +79,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
   - 2026-07-13 완료 receipt와 변경하지 않은 review packet을 `reviewed_package_manifest.json`과 함께 세 entry deterministic ZIP으로 묶는 `manage_procurement_reviewed_package.py create/verify` 경로를 추가했다. `review_completed`는 accepted, changes-requested, rejected 결과를 모두 보존하며 operational approval을 의미하지 않는다.
   - 2026-07-14 project procurement 상세 화면에서 reviewer를 지정하고 현재 tenant의 recommendation을 검증된 12-artifact review packet ZIP으로 내려받는 API/UI를 연결했다. Server는 injected procurement store를 재사용하고 packet SHA-256, package ID, artifact count, `operational_approval: false`를 응답 evidence로 제공하며 provider API, G2B live 수집, 입찰 제출은 실행하지 않는다.
   - 2026-07-14 tenant 전체의 pending/completed procurement review를 프로젝트 화면의 검토함에 모았다. 상태·reviewer 필터, 프로젝트 상세 이동, 검증된 completed package 재다운로드를 기존 lifecycle에 연결하고 검토함 조회 audit와 queue count observability를 남긴다.
+  - 2026-07-17 `ProcurementReviewStore`의 record와 두 ZIP artifact를 앱이 선택한 local/S3 backend의 동일 tenant/project/packet SHA-256 scope에 결속했다. Persisted record 오류는 사용자 review 입력 충돌과 분리해 API에서 `500 INTERNAL_ERROR`로 처리하고, canonical list는 record·packet·완료 package의 semantic binding까지 검증한다. Packet은 exact orphan만 재사용하고 reviewed-package는 content-addressed immutable object로 저장한 뒤 record를 CAS로 완료한다. Local conditional file lock/atomic write, S3 `If-None-Match`/ETag `If-Match`, commit-then-error read-back을 적용했으며 process lock을 제거한 fake-S3 동시 prepare/completion에서도 단일 record authority를 확인했다.
   - 2026-07-14 review-bound downstream 문서에 packet source timestamp를 보존하고, 프로젝트 상세 조회 때 현재 tenant의 review evidence와 procurement decision을 다시 대조한다. `current`, stale, missing, invalid 상태를 문서 badge와 후속 조치에 표시하며, stale 상태로 결재·공유를 계속하면 확인 경고를 거친다. Project-linked share는 생성 시점 source fingerprint를 보존하고 공개 조회마다 현재 tenant 원본을 다시 확인해 post-share drift 경고와 `share.view` audit evidence를 남긴다. Admin procurement summary와 Locations overview는 이 drift audit을 기존 stale-share queue에 연결하고, 반복 조회는 최신 위험 관측만 갱신하며 영향받은 고유 링크 수를 중복 증가시키지 않는다. 이후 current 관측이 들어오면 해당 링크만 queue에서 해소하고 recovered count를 별도로 유지해 audit history와 현재 노출 상태를 분리한다. 링크 취소는 최초 처리자·시각을 보존하고 자연 만료와 구분하며, 같은 문서의 최신 링크가 닫혀도 남아 있는 다른 활성 링크를 대표로 유지해 실제 노출을 숨기지 않는다.
   - 2026-07-14 project document에서 시작한 approval은 tenant-scoped project/document/request/bundle binding과 요청 시점 freshness snapshot을 저장한다. 결재 상세와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 또는 binding 불일치 상태는 명시적 acknowledgement 없이는 최종 승인되지 않는다. 성공한 acknowledgement는 확인자·시각과 함께 approval record 및 audit에 남는다.
   - 2026-07-15 `ProjectStore`와 `ApprovalStore`의 객체 ID 기반 조회·변경 계약에서 tenant 생략 시 전체 tenant를 탐색하던 fallback을 제거했다. Public read/write 메서드는 `tenant_id`를 필수 keyword-only 인자로 받고 현재 tenant 파일만 조회하며, 잘못된 tenant는 기존 route와 동일하게 리소스를 찾지 못한 것으로 처리한다. Generate stream의 project 자동 연결도 인증된 request tenant를 명시적으로 전달하고, 보안 회귀 테스트는 tenant 누락·교차 tenant 접근 거부와 소유 tenant 조회 성공을 함께 확인한다.

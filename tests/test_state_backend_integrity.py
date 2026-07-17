@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +63,93 @@ def test_local_state_backend_round_trips_canonical_paths(tmp_path: Path):
     assert backend.read_bytes("tenants/alpha/logo.bin") is None
 
 
+def test_local_state_backend_conditional_writes_preserve_winner(
+    tmp_path: Path,
+) -> None:
+    first = LocalStateBackend(tmp_path)
+    second = LocalStateBackend(tmp_path)
+
+    assert first.write_text_if_absent("reviews/record.json", "pending") is True
+    assert second.write_text_if_absent("reviews/record.json", "other") is False
+    assert second.replace_text_if_equal(
+        "reviews/record.json",
+        expected="other",
+        replacement="rejected",
+    ) is False
+    assert second.replace_text_if_equal(
+        "reviews/record.json",
+        expected="pending",
+        replacement="completed",
+    ) is True
+    assert first.read_text("reviews/record.json") == "completed"
+
+
+def test_local_state_backend_plain_write_uses_conditional_lock(
+    tmp_path: Path,
+) -> None:
+    backend = LocalStateBackend(tmp_path)
+    relative_path = "reviews/record.json"
+    path = backend._path(relative_path)
+    started = threading.Event()
+    finished = threading.Event()
+
+    def write() -> None:
+        started.set()
+        backend.write_text(relative_path, "completed")
+        finished.set()
+
+    with backend._conditional_write_lock(path):
+        worker = threading.Thread(target=write)
+        worker.start()
+        assert started.wait(timeout=1)
+        time.sleep(0.05)
+        assert finished.is_set() is False
+
+    worker.join(timeout=1)
+    assert finished.is_set() is True
+    assert backend.read_text(relative_path) == "completed"
+
+
+def test_local_state_backend_rejects_conditional_lock_symlink(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "state"
+    lock_root = root / ".decisiondoc-state-locks"
+    lock_root.mkdir(parents=True)
+    relative_path = "reviews/record.json"
+    lock_name = hashlib.sha256(relative_path.encode("utf-8")).hexdigest()
+    outside = tmp_path / "outside.lock"
+    outside.write_text("outside", encoding="utf-8")
+    (lock_root / f"{lock_name}.lock").symlink_to(outside)
+    backend = LocalStateBackend(root)
+
+    with pytest.raises(StateBackendError, match="conditional write"):
+        backend.write_text_if_absent(relative_path, "pending")
+
+    assert outside.read_text(encoding="utf-8") == "outside"
+    assert not (root / relative_path).exists()
+
+
+def test_local_state_backend_normalizes_atomic_write_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = LocalStateBackend(tmp_path)
+
+    def fail_write(_path: Path, _text: str) -> None:
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr("app.storage.base.atomic_write_text", fail_write)
+
+    with pytest.raises(StateBackendError, match="Failed to write state file"):
+        backend.write_text("reviews/record.json", "pending")
+    with pytest.raises(
+        StateBackendError,
+        match="Failed to conditionally write state file",
+    ):
+        backend.write_text_if_absent("reviews/conditional.json", "pending")
+
+
 @pytest.mark.parametrize(
     "unsafe_path",
     [
@@ -87,6 +177,13 @@ def test_local_state_backend_rejects_noncanonical_paths(
         lambda: backend.read_bytes(unsafe_path),
         lambda: backend.write_text(unsafe_path, "unsafe"),
         lambda: backend.write_bytes(unsafe_path, b"unsafe"),
+        lambda: backend.write_text_if_absent(unsafe_path, "unsafe"),
+        lambda: backend.write_bytes_if_absent(unsafe_path, b"unsafe"),
+        lambda: backend.replace_text_if_equal(
+            unsafe_path,
+            expected="before",
+            replacement="after",
+        ),
         lambda: backend.delete(unsafe_path),
         lambda: backend.list_prefix(unsafe_path),
     )
@@ -166,6 +263,13 @@ def test_s3_state_backend_rejects_noncanonical_paths_before_client_call(
         lambda: backend.read_bytes(unsafe_path),
         lambda: backend.write_text(unsafe_path, "unsafe"),
         lambda: backend.write_bytes(unsafe_path, b"unsafe"),
+        lambda: backend.write_text_if_absent(unsafe_path, "unsafe"),
+        lambda: backend.write_bytes_if_absent(unsafe_path, b"unsafe"),
+        lambda: backend.replace_text_if_equal(
+            unsafe_path,
+            expected="before",
+            replacement="after",
+        ),
         lambda: backend.delete(unsafe_path),
         lambda: backend.list_prefix(unsafe_path),
     )

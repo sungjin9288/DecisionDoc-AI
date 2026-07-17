@@ -11,6 +11,37 @@ PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS = {
 }
 
 
+def load_validated_procurement_review_evidence(
+    review_store: Any,
+    *,
+    tenant_id: str,
+    project_id: str,
+    packet_sha256: str,
+) -> Any | None:
+    """Load a review record only after its persisted artifacts still verify."""
+    record = review_store.get(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        packet_sha256=packet_sha256,
+    )
+    if record is None:
+        return None
+    review_store.read_packet(
+        record,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        packet_sha256=packet_sha256,
+    )
+    if record.review_status == "completed":
+        review_store.read_reviewed_package(
+            record,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+        )
+    return record
+
+
 def describe_procurement_review_document_status(
     *,
     bundle_id: str,

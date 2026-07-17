@@ -1134,6 +1134,267 @@ class TestProjectProcurementApi:
         assert repeated.status_code == 409
         assert repeated.json()["detail"]["code"] == "procurement_review_already_completed"
 
+    def test_semantically_invalid_reviewed_package_fails_closed_as_internal_error(
+        self,
+        client,
+    ):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "저장 증빙의 semantic 검증을 확인합니다.",
+            },
+            headers=HEADERS,
+        )
+        assert completed.status_code == 200
+
+        review_dir = (
+            Path(client.app.state.data_dir)
+            / "tenants"
+            / "system"
+            / "procurement_reviews"
+            / pid
+            / packet_sha256
+        )
+        record_path = review_dir / "record.json"
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        original_package_path = (
+            review_dir
+            / "reviewed_packages"
+            / f"{record['reviewed_package_sha256']}.zip"
+        )
+        original_package_path.unlink()
+        malformed_package = b"hash-matching but semantically invalid package"
+        malformed_sha256 = hashlib.sha256(malformed_package).hexdigest()
+        malformed_path = (
+            review_dir / "reviewed_packages" / f"{malformed_sha256}.zip"
+        )
+        malformed_path.write_bytes(malformed_package)
+        record["reviewed_package_sha256"] = malformed_sha256
+        record["reviewed_package_size_bytes"] = len(malformed_package)
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+
+        probe_client = TestClient(client.app, raise_server_exceptions=False)
+        responses = (
+            probe_client.get("/procurement/reviews", headers=HEADERS),
+            probe_client.get(
+                f"/projects/{pid}/procurement/reviews/{packet_sha256}/reviewed-package",
+                headers=HEADERS,
+            ),
+        )
+
+        assert all(response.status_code == 500 for response in responses)
+        assert all(response.json()["code"] == "INTERNAL_ERROR" for response in responses)
+        assert malformed_path.read_bytes() == malformed_package
+
+    def test_persisted_completed_receipt_drift_blocks_inbox_and_generation(
+        self,
+        client,
+    ):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "원래 검토 근거입니다.",
+            },
+            headers=HEADERS,
+        )
+        assert completed.status_code == 200
+
+        record_path = (
+            Path(client.app.state.data_dir)
+            / "tenants"
+            / "system"
+            / "procurement_reviews"
+            / pid
+            / packet_sha256
+            / "record.json"
+        )
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        record["receipt"]["rationale"] = "persisted record에서 위조된 검토 근거"
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+        original = record_path.read_bytes()
+
+        probe_client = TestClient(client.app, raise_server_exceptions=False)
+        inbox = probe_client.get("/procurement/reviews", headers=HEADERS)
+        generated = probe_client.post(
+            "/generate",
+            json={
+                "title": "위조 검토 근거 차단",
+                "goal": "persisted review authority를 검증한다",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        )
+
+        assert inbox.status_code == 500
+        assert inbox.json()["code"] == "INTERNAL_ERROR"
+        assert generated.status_code == 500
+        assert generated.json()["code"] == "INTERNAL_ERROR"
+        assert record_path.read_bytes() == original
+
+    def test_reviewed_package_loss_blocks_project_share_and_approval_freshness(
+        self,
+        client,
+    ):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        completed = client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "공유와 결재 freshness에 사용할 검토 근거입니다.",
+            },
+            headers=HEADERS,
+        )
+        assert completed.status_code == 200
+        generated = client.post(
+            "/generate/stream",
+            json={
+                "title": "증빙 손상 차단 제안서",
+                "goal": "완료된 검토 증빙의 downstream fail-closed를 확인한다",
+                "bundle_type": "proposal_kr",
+                "project_id": pid,
+            },
+            headers=HEADERS,
+        )
+        assert generated.status_code == 200
+        project = client.get(f"/projects/{pid}", headers=HEADERS).json()
+        proposal = next(
+            doc
+            for doc in reversed(project["documents"])
+            if doc["bundle_id"] == "proposal_kr"
+        )
+        shared = client.post(
+            "/share",
+            json={
+                "request_id": proposal["request_id"],
+                "title": proposal["title"],
+                "bundle_id": proposal["bundle_id"],
+                "project_id": pid,
+                "project_document_id": proposal["doc_id"],
+            },
+            headers=_auth_headers(client),
+        )
+        assert shared.status_code == 200
+        approval = client.post(
+            "/approvals",
+            json={
+                "request_id": proposal["request_id"],
+                "bundle_id": proposal["bundle_id"],
+                "title": proposal["title"],
+                "drafter": "기안자",
+                "docs": json.loads(proposal["doc_snapshot"]),
+                "project_id": pid,
+                "project_document_id": proposal["doc_id"],
+            },
+            headers=HEADERS,
+        )
+        assert approval.status_code == 200
+
+        review_dir = (
+            Path(client.app.state.data_dir)
+            / "tenants"
+            / "system"
+            / "procurement_reviews"
+            / pid
+            / packet_sha256
+        )
+        record = json.loads((review_dir / "record.json").read_text(encoding="utf-8"))
+        package_path = (
+            review_dir
+            / "reviewed_packages"
+            / f"{record['reviewed_package_sha256']}.zip"
+        )
+        package_path.unlink()
+
+        probe_client = TestClient(client.app, raise_server_exceptions=False)
+        responses = (
+            probe_client.get(f"/projects/{pid}", headers=HEADERS),
+            probe_client.get(f"/shared/{shared.json()['share_id']}"),
+            probe_client.get(
+                f"/approvals/{approval.json()['approval_id']}",
+                headers=HEADERS,
+            ),
+        )
+
+        assert all(response.status_code == 500 for response in responses)
+        assert all(response.json()["code"] == "INTERNAL_ERROR" for response in responses)
+        assert package_path.exists() is False
+
+    def test_review_record_disappearance_during_completion_is_internal_error(
+        self,
+        client,
+        monkeypatch,
+    ):
+        pid = self._pid(client)
+        self._ready_decision(client, pid)
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet",
+            json={"reviewer": "proposal-review-owner"},
+            headers=HEADERS,
+        )
+        packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
+        record_path = (
+            Path(client.app.state.data_dir)
+            / "tenants"
+            / "system"
+            / "procurement_reviews"
+            / pid
+            / packet_sha256
+            / "record.json"
+        )
+        review_store = client.app.state.procurement_review_store
+        original_get = review_store.get
+
+        def load_then_remove(**scope):
+            record = original_get(**scope)
+            if record is not None:
+                record_path.unlink(missing_ok=True)
+            return record
+
+        monkeypatch.setattr(review_store, "get", load_then_remove)
+        probe_client = TestClient(client.app, raise_server_exceptions=False)
+        response = probe_client.post(
+            f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
+            json={
+                "reviewer": "proposal-review-owner",
+                "decision": "accepted",
+                "rationale": "record 소실을 persisted state 오류로 확인합니다.",
+            },
+            headers=HEADERS,
+        )
+
+        assert response.status_code == 500
+        assert response.json()["code"] == "INTERNAL_ERROR"
+        assert record_path.exists() is False
+
     def test_completed_review_provenance_is_saved_on_downstream_project_document(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)

@@ -7,6 +7,9 @@ import json
 from fastapi import Request
 
 from app.routers.projects._shared import _serialize_project_detail
+from app.services.procurement_review_handoff import (
+    load_validated_procurement_review_evidence,
+)
 
 
 PROJECT_DOCUMENT_FRESHNESS_FIELDS = (
@@ -97,7 +100,8 @@ def project_document_source_fingerprint(
     review_store = getattr(request.app.state, "procurement_review_store", None)
     if review_store is not None and packet_sha256:
         try:
-            review_record = review_store.get(
+            review_record = load_validated_procurement_review_evidence(
+                review_store,
                 tenant_id=tenant_id,
                 project_id=project_id,
                 packet_sha256=packet_sha256,

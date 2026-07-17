@@ -63,6 +63,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 판단 record는 `data/tenants/<tenant_id>/procurement_decisions.json`, source snapshot은 `data/tenants/<tenant_id>/procurement_snapshots/<project_id>/<snapshot_id>.json` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant/project, snapshot metadata ID와 storage path를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key·snapshot metadata, 비직렬화 payload와 non-finite number는 조회나 write를 중단하며 기존 bytes를 덮어쓰지 않는다. Explicit foreign decision은 현재 tenant의 판단 근거로 노출하거나 변경하지 않는다.
   - 판단 record의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. Snapshot 검증은 persisted path와 JSON 구조의 무결성 범위이며 외부 원천 데이터의 의미적 진위, distributed S3 compare-and-swap과 실제 G2B/provider 성공은 현재 보장 범위가 아니다.
+- 공공조달 검토 증빙 상태
+  - Review record·원본 packet·reviewed-package는 local `data/tenants/<tenant_id>/procurement_reviews/<project_id>/<packet_sha256>/` 또는 같은 relative path의 S3 object에 저장한다.
+  - Tenant/project/packet SHA-256과 exact record/receipt schema, packet receipt, completed package의 embedded receipt·manifest를 다시 대조한다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조·semantic drift와 backend failure는 검토함 조회·완료·다운로드·downstream generation을 중단하며 원본 bytes를 보존한다.
+  - Prepare는 exact orphan packet만 재사용하고 completion은 content-addressed immutable package를 만든 뒤 record를 CAS로 전환한다. Local conditional file lock/atomic write와 S3 `If-None-Match`/ETag `If-Match`를 사용하고 불확실 commit은 read-back으로 조정한다. Persisted 오류는 domain 입력 충돌과 분리해 API에서 `500 INTERNAL_ERROR`로 처리한다. Multi-object distributed transaction, 실제 AWS/provider/G2B/입찰 실행은 현재 보장 범위가 아니다.
 - Decision Council 상태
   - 조달 의사결정 session은 local `data/tenants/<tenant_id>/decision_council_sessions.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - Caller tenant와 persisted tenant, project/use-case/bundle로 계산한 canonical session key를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key와 owned session ID/key 중복은 조회·revision 갱신을 중단하며 원본 bytes를 보존한다. 기존 foreign·malformed record는 현재 tenant의 의사결정 근거로 사용하지 않는다.

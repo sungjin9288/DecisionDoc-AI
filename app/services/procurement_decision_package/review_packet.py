@@ -22,6 +22,9 @@ from app.services.procurement_decision_package.constants import (
     EXPLICIT_AUTHORIZATION_BOUNDARY,
     INCLUDED_ARTIFACT_ORDER,
 )
+from app.services.procurement_decision_package.json_helpers import (
+    load_json_object_content,
+)
 from app.services.procurement_decision_package.package_builder import (
     build_decision_package_from_record,
     write_package_artifacts,
@@ -94,13 +97,10 @@ def _read_source_artifacts(source_dir: Path) -> dict[str, bytes]:
 
 
 def _load_package_document(content: bytes) -> dict[str, Any]:
-    try:
-        package_doc = json.loads(content)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("packet decision_package.json must be valid JSON") from exc
-    if not isinstance(package_doc, dict):
-        raise ValueError("packet decision_package.json must be an object")
-    return package_doc
+    return load_json_object_content(
+        content,
+        label="packet decision_package.json",
+    )
 
 
 def _build_packet_manifest(
@@ -288,10 +288,10 @@ def verify_procurement_review_packet(content: bytes) -> dict[str, Any]:
     except (OSError, zipfile.BadZipFile) as exc:
         raise ValueError(f"invalid procurement review packet: {exc}") from exc
 
-    try:
-        packet_manifest = json.loads(entries[PACKET_MANIFEST_NAME])
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("procurement review packet manifest must be valid JSON") from exc
+    packet_manifest = load_json_object_content(
+        entries[PACKET_MANIFEST_NAME],
+        label="procurement review packet manifest",
+    )
     packet_manifest = _validate_packet_manifest(packet_manifest, entries)
     package = _validate_packet_artifacts(entries)
 

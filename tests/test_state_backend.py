@@ -40,8 +40,34 @@ class _FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
+    ) -> None:
         _ = ContentType
+        current = self.objects.get((Bucket, Key))
+        if IfNoneMatch == "*" and current is not None:
+            raise self._error("PreconditionFailed")
+        if IfMatch is not None and (
+            current is None or self._etag(current) != IfMatch
+        ):
+            raise self._error("PreconditionFailed")
         self.objects[(Bucket, Key)] = Body
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
@@ -50,7 +76,7 @@ class _FakeS3Client:
             exc = Exception("NoSuchKey")
             exc.response = {"Error": {"Code": "NoSuchKey"}}
             raise exc
-        return {"Body": _FakeBody(data)}
+        return {"Body": _FakeBody(data), "ETag": self._etag(data)}
 
     def head_object(self, *, Bucket: str, Key: str) -> dict:
         if (Bucket, Key) not in self.objects:
@@ -271,14 +297,18 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
     packet_content = b"verified procurement packet"
     packet_sha256 = hashlib.sha256(packet_content).hexdigest()
     pending_receipt = {
+        "schema_version": "decisiondoc.procurement_review_receipt.v1",
         "status": "pending",
         "packet_sha256": packet_sha256,
         "packet_size_bytes": len(packet_content),
+        "packet_schema_version": "decisiondoc.procurement_review_packet.v1",
         "package_id": "pkg-1",
         "recommendation": "CONDITIONAL_GO",
         "reviewer": "review-owner",
         "decision": None,
+        "rationale": None,
         "reviewed_at": None,
+        "authorization_boundary": "explicit",
         "operational_approval": False,
     }
 
@@ -311,6 +341,7 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
         **pending_receipt,
         "status": "completed",
         "decision": "accepted",
+        "rationale": "Verified against the packet evidence.",
         "reviewed_at": "2026-07-14T00:02:00Z",
     }
     reviewed_package = b"verified reviewed package"

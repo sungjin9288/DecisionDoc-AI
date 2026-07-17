@@ -185,6 +185,26 @@ def test_reviewed_package_rejects_manifest_authority_drift(tmp_path: Path) -> No
         verify_procurement_reviewed_package(_rewrite(entries))
 
 
+def test_reviewed_package_rejects_duplicate_manifest_authority(
+    tmp_path: Path,
+) -> None:
+    packet_content, receipt, receipt_content = _review_sources(tmp_path)
+    package_content, _ = build_procurement_reviewed_package(
+        packet_content,
+        receipt,
+        receipt_content=receipt_content,
+    )
+    entries = _entries(package_content)
+    manifest = entries[REVIEWED_PACKAGE_MANIFEST_NAME]
+    entries[REVIEWED_PACKAGE_MANIFEST_NAME] = manifest.replace(
+        b'  "operational_approval": false',
+        b'  "operational_approval": true,\n  "operational_approval": false',
+    )
+
+    with pytest.raises(ValueError, match="contains duplicate field"):
+        verify_procurement_reviewed_package(_rewrite(entries))
+
+
 def test_reviewed_package_cli_creates_verifies_and_preserves_history(tmp_path: Path) -> None:
     packet_content, receipt, receipt_content = _review_sources(tmp_path)
     packet_path = tmp_path / "review-packet.zip"

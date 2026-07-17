@@ -256,6 +256,12 @@ class GenerationContextInjectionMixin:
                     project_id=project_id,
                     packet_sha256=review.packet_sha256,
                 )
+                self._procurement_review_store.read_reviewed_package(
+                    review,
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    packet_sha256=review.packet_sha256,
+                )
                 verify_procurement_review_packet(packet_content)
                 with zipfile.ZipFile(io.BytesIO(packet_content)) as archive:
                     packet_manifest = json.loads(archive.read(PACKET_MANIFEST_NAME))
