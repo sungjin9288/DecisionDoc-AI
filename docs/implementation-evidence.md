@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 H64 기준 non-live 전체 게이트는 `4063 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 H65 기준 non-live 전체 게이트는 `4067 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -37,7 +37,7 @@
 | 협업 상태 무결성 | 검증 완료 | `app/storage/message_store.py`, `app/storage/notification_store.py`, `app/storage/state_backend.py`, message/notification router/service, `tests/test_collaboration_store_integrity.py`, `tests/test_notifications.py` | local/fake-S3 손상·ownership·duplicate 검증, process lock 없는 20-way conditional create/CAS, disjoint update, bounded private receipt, successor mutation·hard-delete uncertain commit reconciliation, API·mock/local HTTP lifecycle | CAS는 각각 단일 message/notification object 범위. 두 object의 transaction, 실제 AWS runtime과 SMTP·Slack 전달은 범위 밖 |
 | 계정·초대 상태 무결성 | 검증 완료 | `app/storage/user_store.py`, `app/storage/invite_store.py`, auth/invite router, `tests/test_identity_store_integrity.py`, `tests/test_auth.py`, `tests/test_phase_final.py` | local/fake-S3 손상·ownership·duplicate 검증, process lock 없는 20-way conditional create/CAS, atomic first-admin, disjoint account/invite update, bounded private receipt, uncertain commit reconciliation, invite claim·rollback과 API·mock/local HTTP lifecycle | CAS는 각각 단일 user/invite object 범위. 두 object의 transaction, process crash claim recovery, 실제 AWS runtime과 초대 메일 전달은 범위 밖 |
 | 회의 녹음 상태 무결성 | 검증 완료 | `app/storage/meeting_recording_models.py`, `app/storage/meeting_recording_store.py`, `app/services/meeting_recording_service.py`, `tests/test_meeting_recording_store_integrity.py` | process lock 없는 local/fake-S3 metadata conditional create/CAS, concurrent transcript/approval, bounded private receipt, uncertain commit, immutable audio/orphan 경계, API 회귀와 mock/offline HTTP lifecycle | CAS는 recording별 단일 metadata object 범위. Metadata/audio transaction, 실제 AWS runtime과 실제 OpenAI transcription은 범위 밖 |
-| 결제 권한 상태 무결성 | 검증 완료 | `app/storage/billing_store.py`, `app/middleware/billing.py`, `app/routers/billing.py`, `tests/test_billing_store_integrity.py` | local/fake-S3 unit·concurrency·middleware/API 회귀와 mock/local webhook lifecycle | distributed S3 CAS와 실제 Stripe API는 범위 밖 |
+| 결제 권한 상태 무결성 | 검증 완료 | `app/storage/billing_store.py`, `app/middleware/billing.py`, `app/routers/billing.py`, `tests/test_billing_store_integrity.py`, `tests/test_billing_store_cas.py` | process lock 없는 local/fake-S3 conditional create/CAS, disjoint plan/status/Stripe identity update, bounded private receipt, uncertain commit, middleware/API 회귀와 mock/local webhook lifecycle | CAS는 tenant별 단일 billing object 범위. Billing/usage transaction, 실제 AWS runtime과 Stripe API는 범위 밖 |
 | 사용량 계량 상태 무결성 | 검증 완료 | `app/storage/usage_store.py`, `app/middleware/billing.py`, `app/services/generation/context_store.py`, `app/agents/document_ops_agent.py`, `tests/test_usage_store_integrity.py` | local/fake-S3 event·summary·partial-write·provider route admission·DocumentOps/meeting transcription/direct/composite metering·실패 token 보존·provider 오류 redaction·취소 안전 lock·process-local concurrency·auth/API 회귀와 mock generation lifecycle | distributed S3 transaction/CAS·exact reservation과 실제 provider usage는 범위 밖 |
 | 스타일 프로필 상태 무결성 | 검증 완료 | `app/storage/style_store.py`, `app/routers/styles.py`, `app/domain/schema.py`, `tests/test_style_store_integrity.py` | local/fake-S3 unit·concurrency·prompt/API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 실제 provider style analysis는 범위 밖 |
 | SSO 설정 상태 무결성 | 검증 완료 | `app/storage/sso_store.py`, `app/routers/sso.py`, `app/services/sso/saml_auth.py`, `tests/test_sso_store_integrity.py` | local/fake-S3 unit·concurrency·secret/SAML/API 회귀와 mock/local HTTP lifecycle | distributed S3 CAS와 실제 LDAP/SAML/GCloud 로그인은 범위 밖. 기본 requirements에서는 SAML ACS fail closed |
@@ -81,7 +81,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `4063 passed, 2 skipped, 4 deselected` (2026-07-17 H64 실측, provider API key를 process에서 제거).
+결과: `4067 passed, 2 skipped, 4 deselected` (2026-07-17 H65 실측, provider API key를 process에서 제거).
 
 ### CI advisory lint / security scan
 

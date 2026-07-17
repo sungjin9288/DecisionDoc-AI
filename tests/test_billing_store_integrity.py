@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,7 +17,11 @@ from app.storage.billing_store import (
     BillingStoreError,
     get_billing_store,
 )
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import LocalStateBackend
+from tests.billing_state_support import (
+    BillingMemoryS3Client,
+    billing_s3_backend,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -26,54 +31,6 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
-
-
-class _Body:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-
-class _MemoryS3Client:
-    def __init__(self, *, read_delay: float = 0.0) -> None:
-        self.objects: dict[tuple[str, str], bytes] = {}
-        self.read_delay = read_delay
-
-    def put_object(
-        self,
-        *,
-        Bucket: str,
-        Key: str,
-        Body: bytes,
-        ContentType: str,
-    ) -> None:
-        _ = ContentType
-        self.objects[(Bucket, Key)] = Body
-
-    def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
-        if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
-
-
-def _s3_backend(
-    client: _MemoryS3Client | None = None,
-    *,
-    read_delay: float = 0.0,
-) -> tuple[S3StateBackend, _MemoryS3Client]:
-    selected_client = client or _MemoryS3Client(read_delay=read_delay)
-    backend = S3StateBackend(
-        bucket="unit-bucket",
-        prefix="decisiondoc-ai/state/",
-        s3_client=selected_client,
-    )
-    return backend, selected_client
 
 
 def _record(tenant_id: str = "alpha") -> dict:
@@ -263,6 +220,8 @@ def test_independent_local_stores_preserve_concurrent_updates(tmp_path: Path) ->
         data_dir=tmp_path / "third-context",
         backend=_SlowLocalBackend(tmp_path),
     )
+    for store in (first, second, third):
+        store._lock = nullcontext()
 
     updates = (
         lambda: first.update_plan("pro"),
@@ -284,7 +243,7 @@ def test_independent_local_stores_preserve_concurrent_updates(tmp_path: Path) ->
 
 
 def test_billing_store_round_trips_through_s3_backend(tmp_path: Path) -> None:
-    backend, client = _s3_backend()
+    backend, client = billing_s3_backend()
     store = BillingStore("alpha", data_dir=tmp_path, backend=backend)
 
     assert store.get_account().plan_id == "free"
@@ -308,7 +267,7 @@ def test_billing_store_round_trips_through_s3_backend(tmp_path: Path) -> None:
 
 
 def test_corrupt_s3_billing_state_is_preserved(tmp_path: Path) -> None:
-    backend, client = _s3_backend()
+    backend, client = billing_s3_backend()
     key = ("unit-bucket", "decisiondoc-ai/state/tenants/alpha/billing.json")
     client.objects[key] = b"{not-json"
 
@@ -319,13 +278,15 @@ def test_corrupt_s3_billing_state_is_preserved(tmp_path: Path) -> None:
 
 
 def test_independent_s3_stores_preserve_concurrent_updates(tmp_path: Path) -> None:
-    client = _MemoryS3Client(read_delay=0.005)
-    first_backend, _ = _s3_backend(client)
-    second_backend, _ = _s3_backend(client)
-    third_backend, _ = _s3_backend(client)
+    client = BillingMemoryS3Client(read_delay=0.005)
+    first_backend, _ = billing_s3_backend(client)
+    second_backend, _ = billing_s3_backend(client)
+    third_backend, _ = billing_s3_backend(client)
     first = BillingStore("alpha", data_dir=tmp_path / "first", backend=first_backend)
     second = BillingStore("alpha", data_dir=tmp_path / "second", backend=second_backend)
     third = BillingStore("alpha", data_dir=tmp_path / "third", backend=third_backend)
+    for store in (first, second, third):
+        store._lock = nullcontext()
 
     updates = (
         lambda: first.update_plan("pro"),

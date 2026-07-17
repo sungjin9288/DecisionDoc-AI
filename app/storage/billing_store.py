@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
@@ -96,6 +97,9 @@ PREDEFINED_PLANS: dict[str, PlanConfig] = {
 }
 
 _ACCOUNT_STATUSES = {"active", "past_due", "canceled", "trialing"}
+_MAX_MUTATION_ATTEMPTS = 32
+_MAX_TRACKED_MUTATIONS = 64
+_MUTATION_IDS_FIELD = "_mutation_ids"
 
 _billing_locks: dict[tuple[Any, ...], threading.RLock] = {}
 _billing_locks_guard = threading.Lock()
@@ -293,7 +297,12 @@ class BillingStore:
             raise BillingStoreError("Invalid billing state")
 
         expected_fields = set(BillingAccount.__dataclass_fields__)
-        if set(payload) != expected_fields:
+        actual_fields = set(payload)
+        private_fields = actual_fields - expected_fields
+        if not expected_fields <= actual_fields or private_fields not in (
+            set(),
+            {_MUTATION_IDS_FIELD},
+        ):
             raise BillingStoreError("Invalid billing account fields")
         if payload.get("tenant_id") != self._tenant_id:
             raise BillingStoreError("Billing account tenant ownership mismatch")
@@ -374,21 +383,102 @@ class BillingStore:
             updated_at=updated_at,
         )
 
-    def _load_account(self) -> BillingAccount:
-        raw = self._backend.read_text(self._relative_path)
+    @staticmethod
+    def _mutation_ids(payload: dict[str, Any]) -> list[str]:
+        mutation_ids = payload.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise BillingStoreError("Invalid billing mutation history")
+        return list(mutation_ids)
+
+    def _read_account(self) -> tuple[str | None, BillingAccount, list[str]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise BillingStoreError("Failed to read billing state") from exc
         if raw is None:
-            return _default_account(self._tenant_id)
+            return None, _default_account(self._tenant_id), []
         try:
             payload = json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, TypeError, BillingStoreError) as exc:
             raise BillingStoreError("Invalid billing state document") from exc
-        return self._account_from_payload(payload)
+        account = self._account_from_payload(payload)
+        return raw, account, self._mutation_ids(payload)
 
-    def _save_account(self, account: BillingAccount) -> None:
+    def _load_account(self) -> BillingAccount:
+        return self._read_account()[1]
+
+    def _serialize_account(
+        self,
+        account: BillingAccount,
+        mutation_ids: list[str],
+    ) -> str:
         validated = self._account_from_payload(asdict(account))
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(asdict(validated), ensure_ascii=False, indent=2),
+        payload = asdict(validated)
+        payload[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        account: BillingAccount,
+        mutation_ids: list[str],
+        mutation_id: str,
+    ) -> BillingAccount | None:
+        replacement = self._serialize_account(account, mutation_ids)
+        try:
+            if expected is None:
+                written = self._backend.write_text_if_absent(
+                    self._relative_path,
+                    replacement,
+                )
+            else:
+                written = self._backend.replace_text_if_equal(
+                    self._relative_path,
+                    expected=expected,
+                    replacement=replacement,
+                )
+        except StateBackendError as exc:
+            try:
+                observed_raw, observed, observed_mutation_ids = self._read_account()
+            except BillingStoreError:
+                observed_raw = None
+            else:
+                if (
+                    observed_raw == replacement
+                    or mutation_id in observed_mutation_ids
+                ):
+                    return observed
+            raise BillingStoreError("Failed to persist billing state") from exc
+        return account if written else None
+
+    def _mutate(self, change: Callable[[BillingAccount], None]) -> BillingAccount:
+        mutation_id = uuid.uuid4().hex
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, account, mutation_ids = self._read_account()
+            if mutation_id in mutation_ids:
+                return account
+            change(account)
+            account.updated_at = datetime.now(timezone.utc).isoformat()
+            mutation_ids.append(mutation_id)
+            persisted = self._persist_if_current(
+                expected=expected,
+                account=account,
+                mutation_ids=mutation_ids,
+                mutation_id=mutation_id,
+            )
+            if persisted is not None:
+                return persisted
+        raise BillingStoreError(
+            "Billing state changed too many times to persist safely"
         )
 
     @staticmethod
@@ -436,15 +526,16 @@ class BillingStore:
             (stripe_data or {}).get("stripe_subscription_id"),
             field="Stripe subscription identity",
         )
-        with self._lock:
-            account = self._load_account()
+
+        def change(account: BillingAccount) -> None:
             account.plan_id = plan_id
-            account.updated_at = datetime.now(timezone.utc).isoformat()
             if customer_id is not None:
                 account.stripe_customer_id = customer_id
             if subscription_id is not None:
                 account.stripe_subscription_id = subscription_id
-            self._save_account(account)
+
+        with self._lock:
+            self._mutate(change)
 
     def update_stripe_info(
         self,
@@ -471,8 +562,7 @@ class BillingStore:
             raise ValueError("Invalid card last four digits")
         card_brand = _optional_input_string(card_brand, field="card brand")
 
-        with self._lock:
-            account = self._load_account()
+        def change(account: BillingAccount) -> None:
             if customer_id is not None:
                 account.stripe_customer_id = customer_id
             if subscription_id is not None:
@@ -481,16 +571,18 @@ class BillingStore:
                 account.card_last4 = card_last4
             if card_brand is not None:
                 account.card_brand = card_brand
-            account.updated_at = datetime.now(timezone.utc).isoformat()
-            self._save_account(account)
+
+        with self._lock:
+            self._mutate(change)
 
     def set_status(self, status: str) -> None:
         status = self._require_status(status)
-        with self._lock:
-            account = self._load_account()
+
+        def change(account: BillingAccount) -> None:
             account.status = status
-            account.updated_at = datetime.now(timezone.utc).isoformat()
-            self._save_account(account)
+
+        with self._lock:
+            self._mutate(change)
 
     def apply_subscription_update(
         self,
@@ -510,16 +602,17 @@ class BillingStore:
             subscription_id,
             field="Stripe subscription identity",
         )
-        with self._lock:
-            account = self._load_account()
+
+        def change(account: BillingAccount) -> None:
             account.plan_id = plan_id
             account.status = status
             if customer_id is not None:
                 account.stripe_customer_id = customer_id
             if subscription_id is not None:
                 account.stripe_subscription_id = subscription_id
-            account.updated_at = datetime.now(timezone.utc).isoformat()
-            self._save_account(account)
+
+        with self._lock:
+            self._mutate(change)
 
     def is_feature_enabled(self, feature: str) -> bool:
         if not isinstance(feature, str):

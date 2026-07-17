@@ -234,6 +234,12 @@ CAS 보장은 tenant별 단일 message 또는 notification object 범위다. 메
 
 최근 mutation ID는 metadata에 최대 64개까지 private receipt로 보존한다. Conditional commit 응답이 유실되고 다른 worker의 successor CAS가 이어져 exact payload가 달라져도 receipt read-back으로 원래 변경의 성공을 조정한다. 동일 경로의 orphan audio는 bytes가 정확히 일치할 때만 재사용하고 다른 bytes는 덮어쓰지 않는다. 이 보장은 단일 metadata object 범위이며 metadata와 audio를 하나로 묶는 distributed transaction, 실제 AWS runtime과 provider transcription은 별도 검증 범위다.
 
+## 데이터 흐름 — 결제 권한 상태
+
+`BillingStore`는 tenant별 `tenants/{tenant_id}/billing.json`을 앱이 선택한 local/S3 `StateBackend`에 저장한다. Missing-state read는 side effect 없는 free account를 반환하고 malformed document, duplicate key, tenant·account schema drift와 손상된 mutation receipt는 billing 조회·변경과 metered request를 중단하며 원본 bytes를 보존한다.
+
+Plan, status, Stripe customer/subscription/card identity mutation은 missing state에 conditional create, existing state에 검증된 원문을 expected value로 사용하는 compare-and-swap을 적용한다. 충돌하면 최신 tenant·account schema 위에 같은 변경을 최대 32회 재적용하고, public response에 포함하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor CAS도 조정한다. 이 보장은 단일 billing object 범위이며 billing과 usage를 함께 묶는 transaction, 실제 AWS runtime과 Stripe API는 별도 검증 범위다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

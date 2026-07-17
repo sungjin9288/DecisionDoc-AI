@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone billing account cross-worker authority completion
+
+- `BillingStore`는 tenant별 `tenants/{tenant_id}/billing.json`을 권위 객체로 사용한다. Plan, account status, Stripe customer/subscription/card identity mutation은 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 갱신하고 충돌하면 최신 tenant·account schema 위에 같은 변경을 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 billing object에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존한다. Commit 응답 유실 뒤 successor CAS가 이어져도 receipt로 원래 operation을 조정한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다.
+- H65 focused billing authority gate는 `53 passed`, billing·usage·state backend·security·infrastructure 확장 gate는 `425 passed, 1 warning`, provider API key를 process에서 제거한 full no-cost regression은 `4067 passed, 2 skipped, 4 deselected`다. Mock/local ASGI lifecycle에서는 free status, upgrade webhook, pro status, cancel webhook, final free status가 모두 `200`이었고 persisted private receipt 2개와 API 비노출, 외부 호출 0건을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. CAS는 tenant별 단일 billing object 범위이며 billing과 usage를 함께 묶는 transaction, 64개를 넘는 successor mutation 조정, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone meeting recording cross-worker authority completion
 
 - `MeetingRecordingStore`는 recording별 `tenants/{tenant_id}/meeting_recordings/{project_id}/{recording_id}/metadata.json`을 권위 객체로 사용한다. Create는 metadata를 conditional create하고 transcript·approval mutation은 검증된 원문을 expected value로 사용하는 CAS retry loop로 갱신한다. 충돌하면 최신 identity·schema·audio binding 위에 같은 변경을 재적용한다.

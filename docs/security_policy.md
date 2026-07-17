@@ -90,7 +90,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - plan, account status와 Stripe identity는 local `data/tenants/<tenant_id>/billing.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant와 exact account schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, tenant/plan/status/timestamp drift는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Metered request는 tenant/auth context 확정 뒤 상태를 확인하고 검증 실패 시 `503`으로 차단한다.
   - `DECISIONDOC_ENV=prod` 또는 production 환경에서는 `STRIPE_WEBHOOK_SECRET`이 없으면 webhook 처리를 거부한다. Secret이 설정된 webhook만 JWT 예외로 진입하며 원본 payload HMAC, 5분 timestamp와 복수 `v1` 서명을 검증한다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 Stripe checkout, cancel, provider-delivered webhook 성공은 현재 보장 범위가 아니다.
+  - Billing mutation은 local conditional write 또는 S3 conditional create/ETag CAS로 확정한다. Worker 충돌마다 최신 tenant·account schema 위에 plan·status·Stripe identity 변경을 최대 32회 재적용하고, API에 노출하지 않는 최근 mutation receipt를 최대 64개 보존해 commit 응답 유실 뒤 successor CAS도 조정한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다.
+  - CAS 보장은 tenant별 단일 billing object 범위다. Billing과 usage state를 함께 묶는 transaction, 64개를 넘는 successor mutation의 불확실 commit 조정, retry backoff·fairness, 실제 AWS runtime과 Stripe checkout, cancel, provider-delivered webhook 성공은 현재 보장 범위가 아니다.
 - 사용량 계량 상태
   - Tenant usage event는 local `data/tenants/<tenant_id>/usage.jsonl` 또는 같은 relative path의 S3 state object에 기록하고 monthly summary는 `usage_summary.json`에 저장한다. Event log가 권위 원본이고 summary는 event coverage와 aggregate가 일치해야 하는 파생 상태다.
   - Malformed/invalid UTF-8 JSON/JSONL, blank line, duplicate key/event ID, owned field/type/token/timestamp drift, summary coverage·aggregate 불일치와 event-only partial write는 한도 검사와 후속 기록을 중단하고 원본 bytes를 보존한다. Current-month foreign summary collision도 빈 사용량으로 축소하지 않는다.

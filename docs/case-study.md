@@ -68,6 +68,7 @@
 - project/approval tenant state의 local/S3 logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
 - report workflow tenant state의 backend-bound logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
 - template/history/share tenant state의 conditional create/CAS, bounded private receipt, uncertain commit와 immutable-incarnation reconciliation
+- billing account state의 per-tenant conditional create/CAS, bounded private receipt와 uncertain commit reconciliation
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
 - tenant/project/packet SHA-256-bound procurement review record·packet·content-addressed reviewed-package의 selected-backend 결속, conditional write/CAS, fail-closed semantic integrity, reviewer inbox, downstream freshness, share/approval drift acknowledgement
 - Dockerfile, Docker Compose, AWS SAM 설정
