@@ -42,7 +42,9 @@
 | 공공조달 판단 상태 무결성 | 완료 | `pytest -q tests/test_procurement_store_integrity.py` -> `47 passed`; local/fake-S3 missing-state·판단/snapshot 손상 원본·identity/path·입력 검증·logical lock 동시성·API 오류 경계 검증 |
 | 공공조달 판단 HTTP/downstream lifecycle | 완료 | mock provider와 임시 local state에서 health·project create·snapshot/decision seed·GET·override·Decision Council run/get 및 동일 procurement decision/session 결속 확인; 외부 API 호출 없음 |
 | Decision Council 상태 무결성 | 완료 | `pytest -q tests/test_decision_council_store_integrity.py` -> `14 passed`; local/fake-S3 missing-state·손상 원본·canonical identity·독립 backend 동시성·app backend 결속과 project API 오류 경계 검증. Mock/local uvicorn lifecycle에서 health·project create·council run/get과 session identity 일치 확인 |
-| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3943 passed, 1 skipped, 4 deselected` (2026-07-17 실측) |
+| 프로젝트·결재 상태 무결성 | 완료 | `pytest -q tests/test_project_approval_store_integrity.py` -> `39 passed`; local/fake-S3 missing-state·blank/invalid UTF-8·backend failure·owned schema/duplicate identity·서로 다른 virtual base 동시성·project/approval API 오류 경계 검증 |
+| 프로젝트·결재 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 health·project create·document add·approval create/submit/review/final approve를 모두 `200`으로 확인하고 project document의 approval ID/status가 최종 `approved` state와 일치함을 확인; 외부 API 호출 없음 |
+| Non-live 전체 pytest gate | 완료 | `pytest tests/ -m "not live" -q` -> `3959 passed, 1 skipped, 4 deselected` (2026-07-17 실측) |
 | GitHub Actions CI | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 최근 확인한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

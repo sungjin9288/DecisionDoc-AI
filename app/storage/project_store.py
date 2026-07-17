@@ -2,33 +2,24 @@
 
 Documents are grouped by project with fiscal year archiving.
 Storage: data/tenants/{tenant_id}/projects.json (one file per tenant).
-Thread-safe within one process across store instances that share a data root.
+Thread-safe within one process across stores that share a logical state object.
 """
 from __future__ import annotations
 
 import json
-import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
+from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
 
 
-_project_locks: dict[Path, threading.RLock] = {}
-_project_locks_guard = threading.Lock()
-
-
-class ProjectStoreError(ValueError):
+class ProjectStoreError(RuntimeError):
     """Raised when persisted project state cannot be trusted."""
-
-
-def _lock_for_path(path: Path) -> threading.RLock:
-    with _project_locks_guard:
-        return _project_locks.setdefault(path.resolve(), threading.RLock())
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -96,27 +87,44 @@ class ProjectStore:
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
-        self._lock = _lock_for_path(self._base / "tenants")
 
     def _relative_path(self, tenant_id: str) -> str:
         tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "projects.json")
 
+    def _lock(self, tenant_id: str):
+        relative_path = self._relative_path(tenant_id)
+        return state_lock(
+            self._backend,
+            data_dir=self._base,
+            relative_path=relative_path,
+        )
+
     def _load(self, tenant_id: str) -> list[dict]:
-        raw = self._backend.read_text(self._relative_path(tenant_id))
+        tenant_id = require_tenant_id(tenant_id)
+        try:
+            raw = self._backend.read_text(self._relative_path(tenant_id))
+        except (StateBackendError, UnicodeError) as exc:
+            raise ProjectStoreError("Invalid project state document") from exc
         if raw is None:
             return []
+        if not raw.strip():
+            raise ProjectStoreError("Invalid project state document")
         try:
             records = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ProjectStoreError) as exc:
             raise ProjectStoreError("Invalid project state document") from exc
         if not isinstance(records, list):
             raise ProjectStoreError("Invalid project state document")
         return records
 
     def _save(self, tenant_id: str, records: list[dict]) -> None:
+        self._owned_records(records, tenant_id=tenant_id)
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        self._backend.write_text(self._relative_path(tenant_id), payload)
+        try:
+            self._backend.write_text(self._relative_path(tenant_id), payload)
+        except StateBackendError as exc:
+            raise ProjectStoreError("Failed to persist project state") from exc
 
     @staticmethod
     def _doc_from_dict(d: dict) -> ProjectDocument:
@@ -172,6 +180,7 @@ class ProjectStore:
             raise ProjectStoreError("Invalid project identity")
         if not isinstance(tenant_id, str) or not isinstance(created_at, str):
             raise ProjectStoreError("Invalid project identity")
+        require_tenant_id(tenant_id)
         if not isinstance(documents, list):
             raise ProjectStoreError("Invalid project documents")
 
@@ -208,10 +217,13 @@ class ProjectStore:
                 continue
             if raw_record.get("tenant_id") != tenant_id:
                 continue
+            project_id = raw_record.get("project_id")
+            if not isinstance(project_id, str) or not project_id:
+                continue
             try:
                 project = self._from_dict(raw_record)
-            except (KeyError, TypeError, ValueError):
-                continue
+            except (KeyError, TypeError, ValueError, ProjectStoreError) as exc:
+                raise ProjectStoreError("Invalid owned project record") from exc
             if project.project_id in project_ids:
                 raise ProjectStoreError("Duplicate project records")
             project_ids.add(project.project_id)
@@ -250,7 +262,7 @@ class ProjectStore:
         fiscal_year: int | None = None,
     ) -> Project:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = self._load(tenant_id)
             self._owned_records(records, tenant_id=tenant_id)
             now = _now_iso()
@@ -273,7 +285,7 @@ class ProjectStore:
             return proj
 
     def get(self, project_id: str, *, tenant_id: str) -> Project | None:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             return result[3] if result else None
 
@@ -284,7 +296,7 @@ class ProjectStore:
         fiscal_year: int | None = None,
     ) -> list[Project]:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = [
                 project
                 for _, project in self._owned_records(
@@ -301,7 +313,7 @@ class ProjectStore:
     def update(self, project_id: str, *, tenant_id: str, **kwargs: Any) -> Project:
         """Update allowed fields: name, description, client, contract_number, status, tags, fiscal_year."""
         ALLOWED = {"name", "description", "client", "contract_number", "status", "tags", "fiscal_year"}
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
@@ -313,7 +325,7 @@ class ProjectStore:
 
     def delete(self, project_id: str, *, tenant_id: str) -> None:
         """Permanently delete a project (documents are unlinked, not deleted)."""
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
@@ -386,7 +398,7 @@ class ProjectStore:
                 source_procurement_review_operational_approval
             ),
         )
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
@@ -415,7 +427,7 @@ class ProjectStore:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
         resolved_generated_at = generated_at or _now_iso()
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
@@ -494,7 +506,7 @@ class ProjectStore:
         *,
         tenant_id: str,
     ) -> None:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
@@ -512,7 +524,7 @@ class ProjectStore:
         tenant_id: str,
     ) -> None:
         """Update approval_id and approval_status on document(s) matching request_id."""
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(project_id, tenant_id=tenant_id)
             if result is None:
                 return  # silently ignore missing project

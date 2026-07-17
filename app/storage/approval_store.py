@@ -2,12 +2,11 @@
 
 Documents go through: 기안(Draft) → 검토(Review) → 승인(Approval) stages.
 Storage: data/tenants/{tenant_id}/approvals.json (one file per tenant).
-Thread-safe within one process across store instances that share a data root.
+Thread-safe within one process across stores that share a logical state object.
 """
 from __future__ import annotations
 
 import json
-import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -15,21 +14,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
+from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
 
 
-_approval_locks: dict[Path, threading.RLock] = {}
-_approval_locks_guard = threading.Lock()
-
-
-class ApprovalStoreError(ValueError):
+class ApprovalStoreError(RuntimeError):
     """Raised when persisted approval state cannot be trusted."""
-
-
-def _lock_for_path(path: Path) -> threading.RLock:
-    with _approval_locks_guard:
-        return _approval_locks.setdefault(path.resolve(), threading.RLock())
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -106,7 +97,6 @@ class ApprovalStore:
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
-        self._lock = _lock_for_path(self._base / "tenants")
 
     # ── Persistence helpers ─────────────────────────────────────────────
 
@@ -114,21 +104,39 @@ class ApprovalStore:
         tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "approvals.json")
 
+    def _lock(self, tenant_id: str):
+        relative_path = self._relative_path(tenant_id)
+        return state_lock(
+            self._backend,
+            data_dir=self._base,
+            relative_path=relative_path,
+        )
+
     def _load(self, tenant_id: str) -> list[dict]:
-        raw = self._backend.read_text(self._relative_path(tenant_id))
+        tenant_id = require_tenant_id(tenant_id)
+        try:
+            raw = self._backend.read_text(self._relative_path(tenant_id))
+        except (StateBackendError, UnicodeError) as exc:
+            raise ApprovalStoreError("Invalid approval state document") from exc
         if raw is None:
             return []
+        if not raw.strip():
+            raise ApprovalStoreError("Invalid approval state document")
         try:
             records = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ApprovalStoreError) as exc:
             raise ApprovalStoreError("Invalid approval state document") from exc
         if not isinstance(records, list):
             raise ApprovalStoreError("Invalid approval state document")
         return records
 
     def _save(self, tenant_id: str, records: list[dict]) -> None:
+        self._owned_records(records, tenant_id=tenant_id)
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        self._backend.write_text(self._relative_path(tenant_id), payload)
+        try:
+            self._backend.write_text(self._relative_path(tenant_id), payload)
+        except StateBackendError as exc:
+            raise ApprovalStoreError("Failed to persist approval state") from exc
 
     @staticmethod
     def _to_dict(rec: ApprovalRecord) -> dict:
@@ -147,6 +155,7 @@ class ApprovalStore:
             raise ApprovalStoreError("Invalid approval identity")
         if not isinstance(tenant_id, str) or not isinstance(created_at, str):
             raise ApprovalStoreError("Invalid approval identity")
+        require_tenant_id(tenant_id)
         if status not in {item.value for item in ApprovalStatus}:
             raise ApprovalStoreError("Invalid approval status")
         if not isinstance(raw_comments, list):
@@ -218,10 +227,13 @@ class ApprovalStore:
                 continue
             if raw_record.get("tenant_id") != tenant_id:
                 continue
+            approval_id = raw_record.get("approval_id")
+            if not isinstance(approval_id, str) or not approval_id:
+                continue
             try:
                 record = self._from_dict(raw_record)
-            except (KeyError, TypeError, ValueError):
-                continue
+            except (KeyError, TypeError, ValueError, ApprovalStoreError) as exc:
+                raise ApprovalStoreError("Invalid owned approval record") from exc
             if record.approval_id in approval_ids:
                 raise ApprovalStoreError("Duplicate approval records")
             approval_ids.add(record.approval_id)
@@ -270,7 +282,7 @@ class ApprovalStore:
         procurement_review_document_status_summary: str = "",
     ) -> ApprovalRecord:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = self._load(tenant_id)
             self._owned_records(records, tenant_id=tenant_id)
             docs_json = json.dumps(docs, ensure_ascii=False)
@@ -310,7 +322,7 @@ class ApprovalStore:
             return rec
 
     def get(self, approval_id: str, *, tenant_id: str) -> ApprovalRecord | None:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             return result[3] if result else None
 
@@ -318,7 +330,7 @@ class ApprovalStore:
         self, tenant_id: str, status: str | None = None
     ) -> list[ApprovalRecord]:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = [
                 record
                 for _, record in self._owned_records(
@@ -347,7 +359,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -372,7 +384,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -398,7 +410,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -424,7 +436,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -442,7 +454,7 @@ class ApprovalStore:
         freshness_acknowledged: bool = False,
         approved_source_fingerprint: str = "",
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -478,7 +490,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -502,7 +514,7 @@ class ApprovalStore:
         Used primarily for cascade operations (e.g., user withdrawal).
         """
         _ALLOWED = {"drafter", "reviewer", "approver"}
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -520,7 +532,7 @@ class ApprovalStore:
         tenant_id: str,
     ) -> None:
         """Test-only helper — set status bypassing transition guards."""
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -535,7 +547,7 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
@@ -553,7 +565,7 @@ class ApprovalStore:
         tenant_id: str,
         is_change_request: bool = False,
     ) -> ApprovalRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")

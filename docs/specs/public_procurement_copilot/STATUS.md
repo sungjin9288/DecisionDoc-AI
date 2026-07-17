@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project and approval state authority completion
+
+- `ProjectStore`와 `ApprovalStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{projects,approvals}.json`을 사용한다. Read-modify-write는 local base path가 아니라 backend identity와 relative path로 계산한 process-local logical lock 안에서 직렬화하므로, 서로 다른 virtual base를 쓰는 독립 store도 같은 S3 object를 가리키면 lock을 공유한다.
+- Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/owned identity, backend read/write failure와 valid owned ID의 schema drift는 조회와 후속 mutation을 fail closed로 중단하고 원본 bytes를 보존한다. Existing explicit foreign record와 owned ID가 없는 legacy malformed record는 현재 tenant의 조회·변경에서 제외한 채 보존한다.
+- Persisted state error는 approval domain transition의 `ValueError`와 분리해 submit/review/final API에서 잘못된 400으로 축소되지 않고 `500 INTERNAL_ERROR`로 끝난다. Project read/create도 손상 state를 빈 목록이나 새 project로 교체하지 않는다.
+- H54 focused integrity gate는 `39 passed`, project/approval/security/infrastructure 확장 gate는 `477 passed, 1 skipped`, full no-cost regression은 `3959 passed, 1 skipped, 4 deselected`다. Mock/local uvicorn lifecycle에서 health·project create·document add·approval create/submit/review/final approve와 project document의 최종 approval ID/status 일치를 확인했다. 검증은 mock/local 및 fake-S3만 사용했다. Distributed S3 CAS, provider API, G2B live API, AWS runtime, Stripe API, production service resume, bid submission, legal approval과 contractual commitment는 검증·실행하지 않았다.
+
 ## Post-milestone procurement decision state authority completion
 
 - `ProcurementDecisionStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/procurement_decisions.json`과 tenant/project snapshot object를 사용한다. 판단 read-modify-write는 local base path가 아니라 backend bucket/prefix와 relative path로 계산한 process-local logical lock 안에서 직렬화한다.

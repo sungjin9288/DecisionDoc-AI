@@ -143,6 +143,23 @@ DecisionCouncilStore(caller tenant, selected StateBackend)
 
 Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key, canonical key drift와 owned session ID/key 중복은 조회·revision 갱신을 중단하고 원본 bytes를 보존한다. 기존 foreign·malformed record는 현재 tenant의 session으로 사용하지 않고 원본에 남긴다. Local/S3 write는 모두 선택된 `StateBackend`를 통하며 동일 process의 read-modify-write는 logical state object lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
 
+## 데이터 흐름 — 프로젝트와 결재 상태
+
+```
+/projects*                         /approvals*
+    │                                 │
+    ▼                                 ▼
+ProjectStore                      ApprovalStore
+    ├─ tenants/{tenant_id}/projects.json
+    └─ tenant/project/document identity 검증
+                                      ├─ tenants/{tenant_id}/approvals.json
+                                      └─ tenant/approval/status/comment 검증
+```
+
+두 store는 앱이 선택한 local/S3 `StateBackend`를 사용하고 tenant별 JSON object의 backend identity와 relative path로 process-local logical lock을 계산한다. 따라서 같은 S3 bucket/prefix/object를 가리키는 독립 store가 서로 다른 virtual base path를 사용해도 한 process 안에서는 같은 read-modify-write lock을 공유한다.
+
+Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/owned ID와 유효한 owned ID를 가진 schema drift는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 보존한다. Persisted state 오류는 domain transition의 `ValueError`와 분리된 store error로 전달되어 approval API의 잘못된 400 응답으로 축소되지 않는다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```
