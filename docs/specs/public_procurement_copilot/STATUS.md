@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone procurement decision state authority completion
+
+- `ProcurementDecisionStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/procurement_decisions.json`과 tenant/project snapshot object를 사용한다. 판단 read-modify-write는 local base path가 아니라 backend bucket/prefix와 relative path로 계산한 process-local logical lock 안에서 직렬화한다.
+- Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key·source snapshot metadata, owned tenant/project/path drift는 조회와 후속 mutation을 fail closed로 중단하고 원본 bytes를 보존한다. Snapshot payload는 JSON 직렬화 가능성과 finite number를 write 전에 검증하고 손상 snapshot도 missing으로 축소하지 않는다.
+- Existing foreign decision은 현재 tenant의 조회·변경 대상에서 제외한 채 보존한다. 손상 procurement state의 project GET/evaluate API는 빈 판단이나 새 평가로 진행하지 않고 `500 INTERNAL_ERROR`로 끝나며 generation과 Decision Council은 같은 persisted decision authority를 사용한다.
+- H53 focused integrity gate는 `47 passed`, procurement/state/downstream 확장 gate는 `546 passed`, full no-cost regression은 `3943 passed, 1 skipped, 4 deselected`다. Mock/local uvicorn lifecycle에서 health·project create·snapshot/decision seed·GET·override·Decision Council run/get 및 동일 decision/session 결속을 확인했다. 검증은 mock/local 및 fake-S3만 사용했다. Snapshot 외부 원천 진위, distributed S3 CAS, G2B live API, provider API, AWS runtime, production service resume, bid submission, legal approval과 contractual commitment는 검증·실행하지 않았다.
+
 ## Post-milestone Decision Council state authority completion
 
 - `DecisionCouncilStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/decision_council_sessions.json`을 읽고 쓴다. Local 전용 atomic-write 분기와 local path 기준 lock을 제거하고 logical state object 기준 process-local lock을 사용한다.

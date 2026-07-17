@@ -59,6 +59,10 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - 공고 즐겨찾기는 local `data/tenants/<tenant_id>/g2b_bookmarks.json` 또는 같은 relative path의 S3 state object에 저장한다. 내부 owner metadata는 현재 tenant/user로 기록하고 API 응답에서는 제거한다.
   - Tenant와 user bucket을 state 접근 전에 검증한다. Malformed/invalid UTF-8 JSON, duplicate key, invalid collection, owned record와 duplicate bid identity는 조회와 후속 추가·삭제를 중단하며 원본 bytes를 보존한다. Explicit foreign owner는 현재 user에게 노출하거나 변경하지 않는다.
   - 독립 store 인스턴스의 read-modify-write는 process-local logical state lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 G2B API 성공은 현재 보장 범위가 아니다.
+- 공공조달 판단 상태
+  - 판단 record는 `data/tenants/<tenant_id>/procurement_decisions.json`, source snapshot은 `data/tenants/<tenant_id>/procurement_snapshots/<project_id>/<snapshot_id>.json` 또는 같은 relative path의 S3 object에 저장한다.
+  - Tenant/project, snapshot metadata ID와 storage path를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key·snapshot metadata, 비직렬화 payload와 non-finite number는 조회나 write를 중단하며 기존 bytes를 덮어쓰지 않는다. Explicit foreign decision은 현재 tenant의 판단 근거로 노출하거나 변경하지 않는다.
+  - 판단 record의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. Snapshot 검증은 persisted path와 JSON 구조의 무결성 범위이며 외부 원천 데이터의 의미적 진위, distributed S3 compare-and-swap과 실제 G2B/provider 성공은 현재 보장 범위가 아니다.
 - Decision Council 상태
   - 조달 의사결정 session은 local `data/tenants/<tenant_id>/decision_council_sessions.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - Caller tenant와 persisted tenant, project/use-case/bundle로 계산한 canonical session key를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key와 owned session ID/key 중복은 조회·revision 갱신을 중단하며 원본 bytes를 보존한다. 기존 foreign·malformed record는 현재 tenant의 의사결정 근거로 사용하지 않는다.

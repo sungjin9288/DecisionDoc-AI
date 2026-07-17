@@ -113,6 +113,21 @@ BookmarkStore(tenant_id, selected StateBackend)
 
 Missing-state read는 object를 만들지 않는다. Malformed·invalid UTF-8 JSON, duplicate key·owned bid identity와 collection drift는 조회와 후속 변경을 중단하고 원본 bytes를 보존한다. Owner가 없는 기존 record는 tenant path와 user bucket 소유로 읽고, 다른 owner가 명시된 record는 숨긴 채 보존한다. 동일 process의 read-modify-write는 logical state lock으로 직렬화하지만 distributed S3 compare-and-swap은 현재 보장하지 않는다.
 
+## 데이터 흐름 — 공공조달 판단 상태
+
+```
+G2B fixture/live collector 또는 operator input
+  -> ProcurementDecisionService.evaluate()
+  -> ProcurementDecisionStore
+       -> tenants/{tenant_id}/procurement_decisions.json
+       -> tenants/{tenant_id}/procurement_snapshots/{project_id}/{snapshot_id}.json
+  -> project procurement API / generation context / Decision Council
+```
+
+`ProcurementDecisionStore`는 앱이 선택한 `StateBackend`와 data root를 사용한다. 판단 record의 read-modify-write는 backend의 bucket/prefix와 relative path로 계산한 logical state lock 안에서 직렬화하므로, 같은 S3 object를 가리키는 독립 store 인스턴스가 서로 다른 local base path를 사용해도 한 process 안에서는 동일 lock을 공유한다.
+
+Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key, owned identity/path drift와 duplicate source snapshot metadata는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Snapshot payload는 JSON 직렬화 가능성과 finite number를 write 전에 확인하고, snapshot read도 blank·malformed·invalid UTF-8·duplicate key를 missing으로 축소하지 않는다. 이 경계는 persisted path와 JSON 구조의 무결성만 보장하며 외부 원천의 의미적 진위나 distributed S3 compare-and-swap은 보장하지 않는다.
+
 ## 데이터 흐름 — Decision Council
 
 ```

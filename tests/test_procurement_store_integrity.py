@@ -6,9 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
-from app.schemas import ProcurementDecisionUpsert
-from app.storage.procurement_store import ProcurementDecisionStore
+from app.schemas import ProcurementDecisionUpsert, ProcurementSourceSnapshotMetadata
+from app.storage.procurement_store import (
+    ProcurementDecisionStore,
+    ProcurementDecisionStoreError,
+)
 from app.storage.state_backend import LocalStateBackend, S3StateBackend
 
 
@@ -30,14 +34,16 @@ class _Body:
 
 
 class _MemoryS3Client:
-    def __init__(self) -> None:
+    def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.read_delay = read_delay
 
     def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
         _ = ContentType
         self.objects[(Bucket, Key)] = Body
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
+        time.sleep(self.read_delay)
         data = self.objects.get((Bucket, Key))
         if data is None:
             error = Exception("NoSuchKey")
@@ -46,14 +52,16 @@ class _MemoryS3Client:
         return {"Body": _Body(data)}
 
 
-def _s3_backend() -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client()
+def _s3_backend(
+    client: _MemoryS3Client | None = None,
+) -> tuple[S3StateBackend, _MemoryS3Client]:
+    selected_client = client or _MemoryS3Client()
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
-        s3_client=client,
+        s3_client=selected_client,
     )
-    return backend, client
+    return backend, selected_client
 
 
 def _upsert(
@@ -70,6 +78,30 @@ def _upsert(
             notes=notes,
         )
     )
+
+
+def _decision_path(root: Path, tenant_id: str = "alpha") -> Path:
+    return root / f"tenants/{tenant_id}/procurement_decisions.json"
+
+
+def _decision_s3_key(tenant_id: str = "alpha") -> tuple[str, str]:
+    return (
+        "unit-bucket",
+        f"decisiondoc-ai/state/tenants/{tenant_id}/procurement_decisions.json",
+    )
+
+
+def test_missing_procurement_reads_do_not_create_local_or_s3_state(
+    tmp_path: Path,
+) -> None:
+    local = ProcurementDecisionStore(base_dir=str(tmp_path))
+    backend, client = _s3_backend()
+    remote = ProcurementDecisionStore(base_dir="/virtual/data", backend=backend)
+
+    assert local.get("project-missing", tenant_id="alpha") is None
+    assert remote.get("project-missing", tenant_id="alpha") is None
+    assert not (tmp_path / "tenants").exists()
+    assert client.objects == {}
 
 
 @pytest.mark.parametrize(
@@ -141,19 +173,21 @@ def test_store_rejects_unsafe_snapshot_before_state_access(
 @pytest.mark.parametrize(
     "raw",
     [
-        "{not-json",
-        '{"unexpected":"object"}',
-        '[{"tenant_id":"alpha","project_id":"first","project_id":"second"}]',
+        b"",
+        b"{not-json",
+        b'{"unexpected":"object"}',
+        b'[{"tenant_id":"alpha","project_id":"first","project_id":"second"}]',
+        b"\xff\xfe",
     ],
 )
 def test_invalid_decision_state_stops_read_and_write_without_replacement(
     tmp_path: Path,
-    raw: str,
+    raw: bytes,
 ) -> None:
     tenant_dir = tmp_path / "tenants/alpha"
     tenant_dir.mkdir(parents=True)
     path = tenant_dir / "procurement_decisions.json"
-    path.write_text(raw, encoding="utf-8")
+    path.write_bytes(raw)
     original_bytes = path.read_bytes()
     store = ProcurementDecisionStore(base_dir=str(tmp_path))
 
@@ -163,6 +197,26 @@ def test_invalid_decision_state_stops_read_and_write_without_replacement(
         _upsert(store)
 
     assert path.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize("raw", [b"{not-json", b"\xff\xfe"])
+def test_invalid_s3_decision_state_is_preserved(raw: bytes) -> None:
+    backend, client = _s3_backend()
+    client.objects[_decision_s3_key()] = raw
+    store = ProcurementDecisionStore(base_dir="/virtual/data", backend=backend)
+
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="Invalid procurement decision state document",
+    ):
+        store.list_by_tenant("alpha")
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="Invalid procurement decision state document",
+    ):
+        _upsert(store)
+
+    assert client.objects[_decision_s3_key()] == raw
 
 
 def test_foreign_record_does_not_hide_owned_record_and_is_preserved(
@@ -281,6 +335,27 @@ def test_independent_store_instances_keep_one_identity_for_concurrent_same_proje
     assert persisted[0].decision_id in decision_ids
 
 
+def test_independent_s3_stores_preserve_concurrent_project_upserts() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    stores = [
+        ProcurementDecisionStore(
+            base_dir=f"/virtual/data-{index}",
+            backend=_s3_backend(client)[0],
+        )
+        for index in range(20)
+    ]
+
+    def upsert(index: int) -> str:
+        return _upsert(stores[index], project_id=f"project-{index}").decision_id
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        created = set(executor.map(upsert, range(20)))
+
+    records = json.loads(client.objects[_decision_s3_key()])
+    assert len(created) == 20
+    assert {record["decision_id"] for record in records} == created
+
+
 def test_forged_s3_decision_identity_is_hidden_and_unmodifiable() -> None:
     backend, client = _s3_backend()
     store = ProcurementDecisionStore(base_dir="/virtual/data", backend=backend)
@@ -334,9 +409,14 @@ def test_snapshot_is_bound_to_tenant_and_project() -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    ["{not-json", '{"source":"first","source":"second"}'],
+    [
+        b"",
+        b"{not-json",
+        b'{"source":"first","source":"second"}',
+        b"\xff\xfe",
+    ],
 )
-def test_invalid_s3_snapshot_is_not_treated_as_missing(raw: str) -> None:
+def test_invalid_s3_snapshot_is_not_treated_as_missing(raw: bytes) -> None:
     backend, client = _s3_backend()
     store = ProcurementDecisionStore(base_dir="/virtual/data", backend=backend)
     snapshot = store.save_source_snapshot(
@@ -350,7 +430,7 @@ def test_invalid_s3_snapshot_is_not_treated_as_missing(raw: str) -> None:
         "decisiondoc-ai/state/tenants/alpha/procurement_snapshots/"
         f"project-1/{snapshot.snapshot_id}.json",
     )
-    client.objects[key] = raw.encode()
+    client.objects[key] = raw
     invalid_bytes = client.objects[key]
 
     with pytest.raises(ValueError, match="Invalid procurement source snapshot"):
@@ -361,6 +441,64 @@ def test_invalid_s3_snapshot_is_not_treated_as_missing(raw: str) -> None:
         )
 
     assert client.objects[key] == invalid_bytes
+
+
+def test_duplicate_snapshot_metadata_and_invalid_notes_do_not_mutate_state(
+    tmp_path: Path,
+) -> None:
+    store = ProcurementDecisionStore(base_dir=str(tmp_path))
+    existing = _upsert(store)
+    path = _decision_path(tmp_path)
+    original = path.read_bytes()
+    snapshot = ProcurementSourceSnapshotMetadata.model_validate(
+        {
+            "snapshot_id": "snapshot-1",
+            "source_kind": "fixture",
+            "captured_at": "2026-07-17T00:00:00+00:00",
+            "storage_path": "tenants/alpha/procurement_snapshots/project-2/snapshot-1.json",
+        }
+    )
+
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="Duplicate procurement source snapshot metadata",
+    ):
+        store.upsert(
+            ProcurementDecisionUpsert(
+                tenant_id="alpha",
+                project_id="project-2",
+                source_snapshots=[snapshot, snapshot],
+            )
+        )
+    with pytest.raises(ValueError):
+        store.update_notes(
+            project_id=existing.project_id,
+            tenant_id="alpha",
+            notes=123,
+        )
+
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", [{"invalid": object()}, {"invalid": float("nan")}])
+def test_invalid_snapshot_payload_is_rejected_before_state_write(
+    tmp_path: Path,
+    payload: object,
+) -> None:
+    store = ProcurementDecisionStore(base_dir=str(tmp_path))
+
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="Invalid procurement source snapshot payload",
+    ):
+        store.save_source_snapshot(
+            tenant_id="alpha",
+            project_id="project-1",
+            source_kind="fixture",
+            payload=payload,
+        )
+
+    assert not (tmp_path / "tenants").exists()
 
 
 def test_forged_snapshot_storage_path_stops_owned_decision_mutation(
@@ -394,3 +532,44 @@ def test_forged_snapshot_storage_path_stops_owned_decision_mutation(
         _upsert(store, project_id="project-2")
 
     assert path.read_bytes() == forged_bytes
+
+
+def test_procurement_api_reports_corrupt_state_without_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    project = client.post(
+        "/projects",
+        json={"name": "Procurement integrity project", "fiscal_year": 2026},
+        headers={"X-DecisionDoc-Api-Key": "test-key"},
+    )
+    assert project.status_code == 200
+    project_id = project.json()["project_id"]
+    path = _decision_path(tmp_path, "system")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"{not-json")
+    headers = {"X-DecisionDoc-Api-Key": "test-key"}
+
+    responses = (
+        client.get(f"/projects/{project_id}/procurement", headers=headers),
+        client.post(f"/projects/{project_id}/procurement/evaluate", headers=headers),
+    )
+
+    assert all(response.status_code == 500 for response in responses)
+    assert all(response.json()["code"] == "INTERNAL_ERROR" for response in responses)
+    assert path.read_bytes() == b"{not-json"
+
+
+def _client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.setenv("DECISIONDOC_STORAGE", "local")
+    monkeypatch.setenv("DECISIONDOC_STATE_STORAGE", "local")
+    monkeypatch.setenv("DECISIONDOC_API_KEY", "test-key")
+    monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    from app.main import create_app
+
+    return TestClient(create_app(), raise_server_exceptions=False)

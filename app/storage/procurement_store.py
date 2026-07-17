@@ -10,7 +10,6 @@ Storage:
 from __future__ import annotations
 
 import json
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,21 +20,17 @@ from app.schemas import (
     ProcurementDecisionUpsert,
     ProcurementSourceSnapshotMetadata,
 )
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import (
+    StateBackend,
+    StateBackendError,
+    get_state_backend,
+)
+from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
-
-
-_decision_locks: dict[Path, threading.RLock] = {}
-_decision_locks_guard = threading.Lock()
 
 
 class ProcurementDecisionStoreError(ValueError):
     """Raised when persisted procurement state cannot be trusted."""
-
-
-def _lock_for_path(path: Path) -> threading.RLock:
-    with _decision_locks_guard:
-        return _decision_locks.setdefault(path.resolve(), threading.RLock())
 
 
 def _require_path_segment(value: object, *, field: str) -> str:
@@ -90,13 +85,28 @@ class ProcurementDecisionStore:
             / f"{snapshot_id}.json"
         )
 
-    def _decision_lock(self, tenant_id: str) -> threading.RLock:
-        return _lock_for_path(self._base / self._relative_path(tenant_id))
+    def _decision_lock(self, tenant_id: str):
+        relative_path = self._relative_path(tenant_id)
+        return state_lock(
+            self._backend,
+            data_dir=self._base,
+            relative_path=relative_path,
+        )
 
     def _load(self, tenant_id: str) -> list[Any]:
-        raw = self._backend.read_text(self._relative_path(tenant_id))
+        tenant_id = require_tenant_id(tenant_id)
+        try:
+            raw = self._backend.read_text(self._relative_path(tenant_id))
+        except (StateBackendError, UnicodeError) as exc:
+            raise ProcurementDecisionStoreError(
+                "Invalid procurement decision state document"
+            ) from exc
         if raw is None:
             return []
+        if not raw.strip():
+            raise ProcurementDecisionStoreError(
+                "Invalid procurement decision state document"
+            )
         try:
             records = json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, ValueError) as exc:
@@ -110,14 +120,26 @@ class ProcurementDecisionStore:
         return records
 
     def _save(self, tenant_id: str, records: list[Any]) -> None:
+        self._owned_records(records, tenant_id=tenant_id)
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        self._backend.write_text(self._relative_path(tenant_id), payload)
+        try:
+            self._backend.write_text(self._relative_path(tenant_id), payload)
+        except StateBackendError as exc:
+            raise ProcurementDecisionStoreError(
+                "Failed to persist procurement decision state"
+            ) from exc
 
     def _from_dict(self, data: dict[str, Any]) -> ProcurementDecisionRecord:
         record = ProcurementDecisionRecord.model_validate(data)
         require_tenant_id(record.tenant_id)
         _require_path_segment(record.project_id, field="project_id")
+        snapshot_ids: set[str] = set()
         for snapshot in record.source_snapshots:
+            if snapshot.snapshot_id in snapshot_ids:
+                raise ProcurementDecisionStoreError(
+                    "Duplicate procurement source snapshot metadata"
+                )
+            snapshot_ids.add(snapshot.snapshot_id)
             expected_path = self._snapshot_relpath(
                 record.tenant_id,
                 record.project_id,
@@ -259,7 +281,9 @@ class ProcurementDecisionStore:
                 raise KeyError(f"프로젝트를 찾을 수 없습니다: {project_id}")
 
             idx, existing = result
-            record = existing.model_copy(update={"notes": notes})
+            record_data = existing.model_dump(mode="json")
+            record_data["notes"] = notes
+            record = self._from_dict(record_data)
             return self._flush(tenant_id, records, idx, record)
 
     def list_by_tenant(self, tenant_id: str) -> list[ProcurementDecisionRecord]:
@@ -288,7 +312,17 @@ class ProcurementDecisionStore:
         tenant_id = require_tenant_id(tenant_id)
         project_id = _require_path_segment(project_id, field="project_id")
         snapshot_id = str(uuid.uuid4())
-        snapshot_payload = json.dumps(payload, ensure_ascii=False, indent=2)
+        try:
+            snapshot_payload = json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ProcurementDecisionStoreError(
+                "Invalid procurement source snapshot payload"
+            ) from exc
         snapshot_relpath = self._snapshot_relpath(tenant_id, project_id, snapshot_id)
         metadata = ProcurementSourceSnapshotMetadata.model_validate(
             {
@@ -301,7 +335,12 @@ class ProcurementDecisionStore:
                 "content_type": content_type,
             }
         )
-        self._backend.write_text(snapshot_relpath, snapshot_payload)
+        try:
+            self._backend.write_text(snapshot_relpath, snapshot_payload)
+        except StateBackendError as exc:
+            raise ProcurementDecisionStoreError(
+                "Failed to persist procurement source snapshot"
+            ) from exc
         return metadata
 
     def load_source_snapshot(
@@ -312,9 +351,18 @@ class ProcurementDecisionStore:
         snapshot_id: str,
     ) -> Any | None:
         snapshot_relpath = self._snapshot_relpath(tenant_id, project_id, snapshot_id)
-        raw = self._backend.read_text(snapshot_relpath)
+        try:
+            raw = self._backend.read_text(snapshot_relpath)
+        except (StateBackendError, UnicodeError) as exc:
+            raise ProcurementDecisionStoreError(
+                "Invalid procurement source snapshot"
+            ) from exc
         if raw is None:
             return None
+        if not raw.strip():
+            raise ProcurementDecisionStoreError(
+                "Invalid procurement source snapshot"
+            )
         try:
             return json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, ValueError) as exc:
