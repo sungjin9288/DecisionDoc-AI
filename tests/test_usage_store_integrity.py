@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import hashlib
 import json
 import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from unittest.mock import MagicMock
 
 import httpx
@@ -40,6 +43,30 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
+        self._failed_key_suffix: str | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+        key_suffix: str | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
+        self._failed_key_suffix = key_suffix
 
     def put_object(
         self,
@@ -48,31 +75,145 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+                and (
+                    self._failed_key_suffix is None
+                    or Key.endswith(self._failed_key_suffix)
+                )
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+                self._failed_key_suffix = None
+            else:
+                after_failed_write = None
+
+        if not fail_after_write:
+            return
+        if after_failed_write is not None:
+            after_failed_write()
+        raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, _Body]:
         time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 class _FailingSummaryBackend(LocalStateBackend):
-    def write_text(
+    def write_text_if_absent(
         self,
         relative_path: str,
         text: str,
         *,
         content_type: str = "application/json; charset=utf-8",
-    ) -> None:
+    ) -> bool:
         if relative_path.endswith("usage_summary.json"):
             raise StateBackendError("simulated summary write failure")
-        super().write_text(relative_path, text, content_type=content_type)
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith("usage_summary.json"):
+            raise StateBackendError("simulated summary write failure")
+        return super().replace_text_if_equal(
+            relative_path,
+            expected=expected,
+            replacement=replacement,
+            content_type=content_type,
+        )
+
+
+class _ConflictingEventBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = text, content_type
+        if relative_path.endswith("usage.jsonl"):
+            self.attempts += 1
+            return False
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+
+class _ConflictingSummaryBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith("usage_summary.json"):
+            self.attempts += 1
+            return False
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+
+class _FailingEventBackend(LocalStateBackend):
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = text, content_type
+        if relative_path.endswith("usage.jsonl"):
+            raise StateBackendError("simulated event write failure")
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
 
 
 class _UsageReportingAttachmentProvider:
@@ -196,15 +337,16 @@ class _RetryUsageProvider:
 
 def _s3_backend(
     *,
+    client: _MemoryS3Client | None = None,
     read_delay: float = 0.0,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    selected_client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
-        s3_client=client,
+        s3_client=selected_client,
     )
-    return backend, client
+    return backend, selected_client
 
 
 def _event(
@@ -385,9 +527,12 @@ def test_usage_summary_corruption_fails_closed_and_preserves_source(
     assert path.read_bytes() == raw
 
 
-def test_usage_summary_missing_for_events_fails_closed(tmp_path: Path) -> None:
+def test_usage_summary_missing_for_multiple_events_fails_closed(
+    tmp_path: Path,
+) -> None:
     store = UsageStore(tmp_path, tenant_id="alpha")
-    store.record(_event())
+    store.record(_event("first"))
+    store.record(_event("second"))
     summary_path = tmp_path / "tenants/alpha/usage_summary.json"
     summary_path.unlink()
     event_bytes = (tmp_path / "tenants/alpha/usage.jsonl").read_bytes()
@@ -453,7 +598,7 @@ def test_foreign_summary_collision_blocks_record_without_mutation(tmp_path: Path
     assert not (path.parent / "usage.jsonl").exists()
 
 
-def test_partial_summary_write_leaves_detectable_fail_closed_state(
+def test_summary_write_failure_remains_visible_until_verified_repair(
     tmp_path: Path,
 ) -> None:
     backend = _FailingSummaryBackend(tmp_path)
@@ -464,8 +609,75 @@ def test_partial_summary_write_leaves_detectable_fail_closed_state(
     event_path = tmp_path / "tenants/alpha/usage.jsonl"
     assert event_path.exists()
     assert not (tmp_path / "tenants/alpha/usage_summary.json").exists()
-    with pytest.raises(UsageStoreError, match="summary is missing"):
+    with pytest.raises(UsageStoreError, match="could not be written"):
         store.get_current_month()
+
+    recovered = UsageStore(tmp_path, tenant_id="alpha")
+    summary = recovered.get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 1
+
+
+def test_read_repairs_exact_one_event_summary_gap(tmp_path: Path) -> None:
+    failed = UsageStore(
+        tmp_path,
+        tenant_id="alpha",
+        backend=_FailingSummaryBackend(tmp_path),
+    )
+    with pytest.raises(UsageStoreError, match="could not be written"):
+        failed.record(_event("first"))
+
+    recovered = UsageStore(tmp_path, tenant_id="alpha")
+    first_summary = recovered.get_current_month()
+    assert first_summary is not None
+    assert first_summary.total_generations == 1
+    assert recovered.record(_event("second")) is True
+
+    summary = recovered.get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 2
+    assert summary.total_tokens == 10
+
+
+def test_usage_record_stops_after_bounded_event_conflicts(tmp_path: Path) -> None:
+    backend = _ConflictingEventBackend(tmp_path)
+    store = UsageStore(tmp_path, tenant_id="alpha", backend=backend)
+
+    with pytest.raises(
+        UsageStoreError,
+        match="Usage state changed too many times to persist safely",
+    ):
+        store.record(_event())
+
+    assert backend.attempts == 32
+
+
+def test_usage_record_stops_after_bounded_summary_conflicts(
+    tmp_path: Path,
+) -> None:
+    backend = _ConflictingSummaryBackend(tmp_path)
+    store = UsageStore(tmp_path, tenant_id="alpha", backend=backend)
+
+    with pytest.raises(
+        UsageStoreError,
+        match="Usage state changed too many times to read safely",
+    ):
+        store.record(_event())
+
+    assert backend.attempts == 32
+    assert (tmp_path / "tenants/alpha/usage.jsonl").exists()
+    assert not (tmp_path / "tenants/alpha/usage_summary.json").exists()
+
+
+def test_usage_record_wraps_conditional_event_failure(tmp_path: Path) -> None:
+    store = UsageStore(
+        tmp_path,
+        tenant_id="alpha",
+        backend=_FailingEventBackend(tmp_path),
+    )
+
+    with pytest.raises(UsageStoreError, match="could not be written"):
+        store.record(_event())
 
 
 def test_usage_state_round_trips_through_fake_s3() -> None:
@@ -486,12 +698,52 @@ def test_usage_state_round_trips_through_fake_s3() -> None:
     assert not Path("/virtual/one/tenants").exists()
 
 
-def test_independent_fake_s3_usage_stores_preserve_concurrent_events() -> None:
-    backend, _ = _s3_backend(read_delay=0.002)
+def test_usage_read_retries_event_and_summary_snapshot_skew(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = UsageStore(tmp_path, tenant_id="alpha")
+    assert store.record(_event("first")) is True
+    stale_event_raw, stale_events, _stale_summary_raw = (
+        store._read_state_documents()
+    )
+
+    assert store.record(_event("second")) is True
+    _current_event_raw, _current_events, current_summary_raw = (
+        store._read_state_documents()
+    )
+    read_state_documents = store._read_state_documents
+    first_read = True
+
+    def read_with_snapshot_skew() -> tuple[
+        str | None,
+        list[dict[str, object]],
+        str | None,
+    ]:
+        nonlocal first_read
+        if first_read:
+            first_read = False
+            return stale_event_raw, stale_events, current_summary_raw
+        return read_state_documents()
+
+    monkeypatch.setattr(store, "_read_state_documents", read_with_snapshot_skew)
+
+    summary = store.get_current_month()
+
+    assert summary is not None
+    assert summary.total_generations == 2
+    assert summary.total_tokens == 10
+
+
+def test_independent_local_workers_preserve_concurrent_events(
+    tmp_path: Path,
+) -> None:
     stores = [
-        UsageStore("/virtual/data", tenant_id="alpha", backend=backend)
+        UsageStore(tmp_path, tenant_id="alpha")
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         results = list(
@@ -505,7 +757,126 @@ def test_independent_fake_s3_usage_stores_preserve_concurrent_events() -> None:
     summary = stores[0].get_current_month()
     assert summary is not None
     assert summary.total_generations == 20
+    assert summary.total_tokens == 100
+
+
+def test_independent_fake_s3_usage_stores_preserve_concurrent_events() -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    stores = [
+        UsageStore(
+            f"/virtual/data-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(
+            executor.map(
+                lambda item: item[1].record(_event(str(item[0]))),
+                enumerate(stores),
+            )
+        )
+
+    assert results == [True] * 20
+    summary = stores[0].get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 20
+    assert summary.total_tokens == 100
     assert len(stores[0].get_daily_usage()) == 1
+
+
+def test_usage_record_reconciles_commit_then_successor_append() -> None:
+    client = _MemoryS3Client()
+    primary = UsageStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = UsageStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    successor_event = _event("successor")
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.record(successor_event)
+    )
+
+    assert primary.record(_event("primary")) is True
+
+    summary = primary.get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 2
+    assert summary.total_tokens == 10
+    event_ids = {
+        event["event_id"]
+        for event in primary._parse_events(
+            primary._read_text(primary._event_relative_path)
+        )
+        if event.get("tenant_id") == "alpha"
+    }
+    assert event_ids == {"event-primary", "event-successor"}
+
+
+def test_usage_summary_reconciles_commit_then_successor_append() -> None:
+    client = _MemoryS3Client()
+    primary = UsageStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = UsageStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    successor_event = _event("successor")
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.record(successor_event),
+        key_suffix="usage_summary.json",
+    )
+
+    assert primary.record(_event("primary")) is True
+
+    summary = primary.get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 2
+    assert summary.total_tokens == 10
+
+
+def test_same_event_from_independent_workers_is_recorded_once() -> None:
+    client = _MemoryS3Client(read_delay=0.001)
+    stores = [
+        UsageStore(
+            f"/virtual/data-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+    event = _event("shared")
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(
+            executor.map(lambda store: store.record(event), stores)
+        )
+
+    assert results.count(True) == 1
+    assert results.count(False) == 19
+    summary = stores[0].get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 1
+    assert summary.total_tokens == 5
 
 
 def test_billing_api_reads_usage_from_application_s3_backend(

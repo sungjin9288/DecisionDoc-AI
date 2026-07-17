@@ -15,18 +15,18 @@
     },
     {
       "path": "README.md",
-      "sha256": "ae01ef85517f622405dff60c98615780c796ff089011dd48a82d0f68f4cba0a4",
-      "size_bytes": 49911
+      "sha256": "3436798896f04c7e05f7e7bb73e061ba1c05589a8e4d469d053887a115cd98f5",
+      "size_bytes": 50259
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "aa8591d4cb308ca7b94ce518f7fb14673c61f76aa2b6ec28bd18a1b40806d299",
-      "size_bytes": 27991
+      "sha256": "d725279b521405672fe48ff63d67e8370bf269cbe8df46310854c9a5876c7031",
+      "size_bytes": 29467
     },
     {
       "path": "docs/case-study.md",
-      "sha256": "1c9f96438bbdaacc02542aa29d79874ec82b0115333bf4cafb5dce855f693c47",
-      "size_bytes": 11845
+      "sha256": "238fa95e3bf721337cca41ca83f9c5b796c0e087d0cba4b1f45b99c59148585f",
+      "size_bytes": 11981
     },
     {
       "path": "docs/completion-readiness-runbook.md",
@@ -35,13 +35,13 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "0fb0e634a9e86ff3137dac718d7022e8781ff56dda56f688d9c95baa8fa0004d",
+      "sha256": "8b11e0ca2a13cdc2bacc2a619310388aa46d565af4f234781575599c1a79be58",
       "size_bytes": 19216
     },
     {
       "path": "docs/evidence-checklist.md",
-      "sha256": "2a5aba1b55c00183820c5bb4fdcbddaab4839d055d4003ae941fcefb1d863563",
-      "size_bytes": 18376
+      "sha256": "a04d36d606061ce3b40940447f18b4ea3a0ca411f27431042f7ef2b70ab68e2a",
+      "size_bytes": 19203
     },
     {
       "path": "docs/evidence-gallery.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "8c27c344d6fcbaba214d61b92b130408e64b0f3b48dada2db21fd65684bddc17",
-      "size_bytes": 24721
+      "sha256": "b57057665e7563554c89d0774f6a5b3e74c689ded88a91570962151059a4aae2",
+      "size_bytes": 24926
     },
     {
       "path": "docs/interview-story.md",
@@ -80,8 +80,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "e70bc41c99308e8866cc60c39226e0f9a23148dd3a02210729442f46809cd388",
-      "size_bytes": 86982
+      "sha256": "806b388be388eb44ae3e4540117300df69e46aa9c934ba90b0927a812256c6ef",
+      "size_bytes": 88168
     },
     {
       "path": "evidence/api-responses/bundles.json",

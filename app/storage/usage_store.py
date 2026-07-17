@@ -51,6 +51,9 @@ class UsageSummary:
 
 _EVENT_TYPES = frozenset({"doc.generate", "doc.download", "api.call", "storage.write"})
 _YEAR_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_MAX_RECORD_ATTEMPTS = 32
+_EVENT_CONTENT_TYPE = "application/x-ndjson; charset=utf-8"
+_SUMMARY_CONTENT_TYPE = "application/json; charset=utf-8"
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -63,7 +66,7 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 class UsageStore:
-    """Record usage events and verify their derived monthly summaries."""
+    """Record usage with conditional writes and verify derived summaries."""
 
     _EVENT_FIELDS = {
         "event_id",
@@ -387,12 +390,21 @@ class UsageStore:
     def _load_verified_state(
         self,
     ) -> tuple[str | None, list[dict[str, Any]], dict[str, Any], dict[str, UsageSummary]]:
+        for _ in range(_MAX_RECORD_ATTEMPTS):
+            state = self._load_or_repair_state()
+            if state is not None:
+                return state
+        raise UsageStoreError(
+            "Usage state changed too many times to read safely"
+        )
+
+    def _read_state_documents(
+        self,
+    ) -> tuple[str | None, list[dict[str, Any]], str | None]:
         event_raw = self._read_text(self._event_relative_path)
         events = self._parse_events(event_raw)
-        derived = self._derive_summaries(events)
         summary_raw = self._read_text(self._summary_relative_path)
-        summary_data, summaries = self._parse_and_verify_summaries(summary_raw, derived)
-        return event_raw, events, summary_data, summaries
+        return event_raw, events, summary_raw
 
     def _read_text(self, relative_path: str) -> str | None:
         try:
@@ -400,21 +412,182 @@ class UsageStore:
         except (StateBackendError, UnicodeError) as exc:
             raise UsageStoreError("Usage state could not be read") from exc
 
-    def _write_text(
+    def _state_documents_changed(
         self,
-        relative_path: str,
-        text: str,
         *,
-        content_type: str = "application/json; charset=utf-8",
-    ) -> None:
+        event_raw: str | None,
+        summary_raw: str | None,
+    ) -> bool:
+        """Distinguish a concurrent two-document read from stable corruption."""
+        current_event_raw = self._read_text(self._event_relative_path)
+        current_summary_raw = self._read_text(self._summary_relative_path)
+        return (
+            current_event_raw != event_raw
+            or current_summary_raw != summary_raw
+        )
+
+    def _summary_document(
+        self,
+        current: dict[str, Any],
+        derived: dict[str, UsageSummary],
+    ) -> str:
+        for year_month in derived:
+            existing = current.get(year_month)
+            if (
+                isinstance(existing, dict)
+                and existing.get("tenant_id") != self._tenant_id
+            ):
+                raise UsageStoreError(
+                    "Usage summary month is owned by another tenant"
+                )
+
+        updated = {
+            year_month: entry
+            for year_month, entry in current.items()
+            if not isinstance(entry, dict)
+            or entry.get("tenant_id") != self._tenant_id
+        }
+        updated.update(
+            {
+                year_month: asdict(summary)
+                for year_month, summary in derived.items()
+            }
+        )
+        return json.dumps(updated, ensure_ascii=False, indent=2)
+
+    def _event_exists(
+        self,
+        events: list[dict[str, Any]],
+        event: dict[str, Any],
+    ) -> bool:
+        for existing in self._owned_events(events):
+            if existing["event_id"] != event["event_id"]:
+                continue
+            if existing != event:
+                raise UsageStoreError(
+                    "Usage event identity is already registered"
+                )
+            return True
+        return False
+
+    def _append_event_if_current(
+        self,
+        *,
+        expected: str | None,
+        replacement: str,
+        event: dict[str, Any],
+    ) -> bool:
         try:
-            self._backend.write_text(
-                relative_path,
-                text,
-                content_type=content_type,
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._event_relative_path,
+                    replacement,
+                    content_type=_EVENT_CONTENT_TYPE,
+                )
+            return self._backend.replace_text_if_equal(
+                self._event_relative_path,
+                expected=expected,
+                replacement=replacement,
+                content_type=_EVENT_CONTENT_TYPE,
             )
         except StateBackendError as exc:
+            try:
+                observed = self._read_text(self._event_relative_path)
+                observed_events = self._parse_events(observed)
+            except UsageStoreError:
+                pass
+            else:
+                if self._event_exists(observed_events, event):
+                    return True
             raise UsageStoreError("Usage state could not be written") from exc
+
+    def _summary_is_current_for_event(self, event: dict[str, Any]) -> bool:
+        try:
+            _event_raw, events, summary_raw = self._read_state_documents()
+            if not self._event_exists(events, event):
+                return False
+            derived = self._derive_summaries(events)
+            self._parse_and_verify_summaries(summary_raw, derived)
+        except UsageStoreError:
+            return False
+        return True
+
+    def _replace_summary_if_current(
+        self,
+        *,
+        expected: str | None,
+        replacement: str,
+        event: dict[str, Any],
+    ) -> bool:
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._summary_relative_path,
+                    replacement,
+                    content_type=_SUMMARY_CONTENT_TYPE,
+                )
+            return self._backend.replace_text_if_equal(
+                self._summary_relative_path,
+                expected=expected,
+                replacement=replacement,
+                content_type=_SUMMARY_CONTENT_TYPE,
+            )
+        except StateBackendError as exc:
+            if self._summary_is_current_for_event(event):
+                return True
+            raise UsageStoreError("Usage state could not be written") from exc
+
+    def _load_or_repair_state(self) -> tuple[
+        str | None,
+        list[dict[str, Any]],
+        dict[str, Any],
+        dict[str, UsageSummary],
+    ] | None:
+        """Load verified state or finish one CAS-committed trailing event."""
+        event_raw, events, summary_raw = self._read_state_documents()
+        derived = self._derive_summaries(events)
+        try:
+            summary_data, summaries = self._parse_and_verify_summaries(
+                summary_raw,
+                derived,
+            )
+        except UsageStoreError as current_error:
+            if self._state_documents_changed(
+                event_raw=event_raw,
+                summary_raw=summary_raw,
+            ):
+                return None
+            if not events or events[-1].get("tenant_id") != self._tenant_id:
+                raise
+
+            prefix_derived = self._derive_summaries(events[:-1])
+            try:
+                summary_data, _prefix_summaries = (
+                    self._parse_and_verify_summaries(
+                        summary_raw,
+                        prefix_derived,
+                    )
+                )
+            except UsageStoreError:
+                raise current_error
+
+            replacement = self._summary_document(summary_data, derived)
+            self._replace_summary_if_current(
+                expected=summary_raw,
+                replacement=replacement,
+                event=events[-1],
+            )
+            return None
+
+        return event_raw, events, summary_data, summaries
+
+    def _finish_committed_event(self, event: dict[str, Any]) -> None:
+        _event_raw, events, _summary_data, _summaries = (
+            self._load_verified_state()
+        )
+        if self._event_exists(events, event):
+            return
+        raise UsageStoreError("Usage event was not persisted")
 
     def record(self, event: UsageEvent) -> bool:
         """Append one event and refresh all owned monthly summaries."""
@@ -425,46 +598,45 @@ class UsageStore:
         event_data = self._validate_event(asdict(event), owned=True)
 
         with self._lock:
-            event_raw, events, summary_data, _summaries = self._load_verified_state()
-            owned = self._owned_events(events)
-            for existing in owned:
-                if existing["event_id"] == event.event_id:
-                    if existing == event_data:
-                        return False
-                    raise UsageStoreError("Usage event identity is already registered")
+            for _ in range(_MAX_RECORD_ATTEMPTS):
+                event_raw, events, summary_data, _summaries = (
+                    self._load_verified_state()
+                )
+                if self._event_exists(events, event_data):
+                    return False
 
-            year_month = event.timestamp[:7]
-            existing_month = summary_data.get(year_month)
-            if (
-                isinstance(existing_month, dict)
-                and existing_month.get("tenant_id") != self._tenant_id
-            ):
-                raise UsageStoreError("Usage summary month is owned by another tenant")
+                year_month = event.timestamp[:7]
+                existing_month = summary_data.get(year_month)
+                if (
+                    isinstance(existing_month, dict)
+                    and existing_month.get("tenant_id") != self._tenant_id
+                ):
+                    raise UsageStoreError(
+                        "Usage summary month is owned by another tenant"
+                    )
 
-            separator = "" if event_raw is None or event_raw == "" or event_raw.endswith("\n") else "\n"
-            line = json.dumps(event_data, ensure_ascii=False) + "\n"
-            updated_event_raw = f"{event_raw or ''}{separator}{line}"
-            self._write_text(
-                self._event_relative_path,
-                updated_event_raw,
-                content_type="application/x-ndjson; charset=utf-8",
-            )
+                separator = (
+                    ""
+                    if event_raw is None
+                    or event_raw == ""
+                    or event_raw.endswith("\n")
+                    else "\n"
+                )
+                line = json.dumps(event_data, ensure_ascii=False) + "\n"
+                replacement = f"{event_raw or ''}{separator}{line}"
+                if not self._append_event_if_current(
+                    expected=event_raw,
+                    replacement=replacement,
+                    event=event_data,
+                ):
+                    continue
 
-            updated_events = [*events, event_data]
-            derived = self._derive_summaries(updated_events)
-            updated_summaries = {
-                month: entry
-                for month, entry in summary_data.items()
-                if not isinstance(entry, dict) or entry.get("tenant_id") != self._tenant_id
-            }
-            updated_summaries.update(
-                {month: asdict(summary) for month, summary in derived.items()}
-            )
-            self._write_text(
-                self._summary_relative_path,
-                json.dumps(updated_summaries, ensure_ascii=False, indent=2),
-            )
-        return True
+                self._finish_committed_event(event_data)
+                return True
+
+        raise UsageStoreError(
+            "Usage state changed too many times to persist safely"
+        )
 
     def get_current_month(self) -> UsageSummary | None:
         return self.get_month(datetime.now(timezone.utc).strftime("%Y-%m"))

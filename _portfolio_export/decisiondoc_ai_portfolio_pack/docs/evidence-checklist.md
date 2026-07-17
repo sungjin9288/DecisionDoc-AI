@@ -32,6 +32,8 @@
 | 회의 녹음 HTTP lifecycle | 완료 | H64 mock/local에서 project/upload/approve/list/detail 모두 `200`, persisted private receipt 3개와 API 비노출 확인. Transcript는 offline 직접 저장했고 provider 호출 0건 |
 | 결제 권한 상태 무결성 | 완료 | `pytest -q tests/test_billing_store_integrity.py tests/test_billing_store_cas.py --tb=short` -> `53 passed`; process lock 없는 local/fake-S3 conditional create/CAS, disjoint plan/status/Stripe identity update, 32회 conflict cap, 64개 private receipt, uncertain commit과 API 오류 경계 검증 |
 | 결제 권한 HTTP lifecycle | 완료 | H65 mock/local ASGI lifecycle에서 webhook `free -> pro/active -> free/canceled` 요청 5개가 모두 `200`, persisted private receipt 2개와 API 비노출, 외부 호출 0건을 확인. 기존 local HMAC valid/invalid/malformed, metered request 402, corrupt-state 503와 fake checkout 계약도 유지 |
+| 사용량 계량 cross-worker 무결성 | 완료 | `pytest -q tests/test_usage_store_integrity.py --tb=short` -> `97 passed, 1 warning`; process lock 없는 local/fake-S3 20-way event conditional create/CAS, summary CAS, same-event deduplication, 32회 conflict cap, exact one-event gap repair, two-document snapshot skew retry와 event·summary uncertain commit reconciliation 검증 |
+| 사용량 계량 HTTP lifecycle | 완료 | H66 mock/local ASGI lifecycle에서 `POST /generate`와 `GET /billing/status`가 모두 `200`, persisted/API generation count `1`, event/summary object 존재와 외부 provider 호출 0건을 확인 |
 | 스타일 프로필 상태 무결성 | 완료 | `pytest -q tests/test_style_store_integrity.py --tb=short` -> `32 passed`; local/fake-S3 손상 보존·동시 create/override·route backend 결속·prompt/API 오류 경계 검증 |
 | 스타일 프로필 HTTP lifecycle | 완료 | mock provider와 임시 local state에서 create/tone/bundle override/detail/list/default/delete/final empty 확인; provider API 호출 없음 |
 | SSO 설정 상태 무결성 | 완료 | `pytest -q tests/test_sso_store_integrity.py --tb=short` -> `40 passed`; local/fake-S3 손상 보존·동시 partial update·route backend 결속·secret/SAML/API 오류 경계 검증 |
@@ -61,10 +63,11 @@
 | H63 재사용 산출물 확장 회귀 | 완료 | template/history/share API·favorites·phase3·security·tenant·audit·knowledge·infrastructure 묶음 -> `491 passed, 1 warning`; provider API와 외부 실행 없음 |
 | H64 회의 녹음 CAS 확장 회귀 | 완료 | recording/API/smoke/state backend/usage/project/security/infrastructure 묶음 -> `587 passed, 1 warning`; provider API와 외부 실행 없음 |
 | H65 결제 권한 CAS 확장 회귀 | 완료 | billing/usage/state backend/security/infrastructure 묶음 -> `425 passed, 1 warning`; provider·Stripe API와 외부 실행 없음 |
+| H66 사용량 계량 CAS 확장 회귀 | 완료 | usage/billing/state backend/security/infrastructure 묶음 -> `434 passed, 1 warning`; provider·Stripe·AWS API와 외부 실행 없음 |
 | H56 procurement review 확장 회귀 | 완료 | review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 묶음 -> `610 passed`; provider API와 외부 실행 없음 |
 | H57 approval CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `541 passed`; process lock 없는 fake-S3 conditional create/CAS 포함, provider API와 외부 실행 없음 |
 | H58 project CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `546 passed`; process lock 없는 fake-S3 project conditional create/CAS, bounded mutation receipt, disjoint update와 delete 경쟁 포함, provider API와 외부 실행 없음 |
-| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4067 passed, 2 skipped, 4 deselected` (2026-07-17 H65 실측) |
+| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4076 passed, 2 skipped, 4 deselected` (2026-07-17 H66 실측) |
 | GitHub Actions CI | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

@@ -240,6 +240,12 @@ CAS 보장은 tenant별 단일 message 또는 notification object 범위다. 메
 
 Plan, status, Stripe customer/subscription/card identity mutation은 missing state에 conditional create, existing state에 검증된 원문을 expected value로 사용하는 compare-and-swap을 적용한다. 충돌하면 최신 tenant·account schema 위에 같은 변경을 최대 32회 재적용하고, public response에 포함하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor CAS도 조정한다. 이 보장은 단일 billing object 범위이며 billing과 usage를 함께 묶는 transaction, 실제 AWS runtime과 Stripe API는 별도 검증 범위다.
 
+## 데이터 흐름 — 사용량 계량 상태
+
+`UsageStore`는 tenant별 `tenants/{tenant_id}/usage.jsonl`을 권위 event log로, `usage_summary.json`을 event coverage와 aggregate가 일치해야 하는 파생 상태로 저장한다. Missing-state read는 파일이나 object를 만들지 않으며 malformed JSON/JSONL, duplicate event ID, owned schema drift와 summary 불일치는 조회·한도 검사·후속 기록을 중단하고 원본 bytes를 보존한다.
+
+Event append와 summary 갱신은 missing object에 conditional create, existing object에 검증된 원문을 expected value로 사용하는 compare-and-swap을 각각 적용한다. 충돌하면 최신 event log와 summary를 최대 32회 다시 검증하고, event ID와 exact payload로 불확실 event commit을 조정한다. 두 객체를 읽는 사이 다른 worker가 상태를 갱신한 snapshot skew는 변경 여부를 다시 확인해 재시도한다. Summary는 권위 event log에서 다시 계산하며 정확히 하나의 검증된 trailing event gap만 CAS로 보완한다. 안정적으로 재현되는 손상·변조·복수 gap은 fail closed 처리한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다. 이 보장은 두 객체 각각의 conditional write 범위이며 event와 summary를 함께 묶는 atomic transaction, 여러 worker 사이의 exact admission reservation, 실제 AWS runtime과 provider usage는 별도 검증 범위다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

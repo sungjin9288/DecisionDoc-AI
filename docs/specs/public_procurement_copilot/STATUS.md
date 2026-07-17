@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone usage metering cross-worker authority completion
+
+- `UsageStore`는 tenant별 `tenants/{tenant_id}/usage.jsonl`을 권위 event log로, `usage_summary.json`을 검증 가능한 파생 상태로 사용한다. Event append와 summary 갱신은 각각 conditional create/CAS retry loop로 확정하고 충돌하면 최신 event log와 summary coverage·aggregate를 다시 검증한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 event ID와 exact payload read-back으로 commit 응답 유실 뒤 successor append도 조정한다. Summary는 정확히 하나의 검증된 trailing event gap만 CAS로 보완하고 손상·변조·복수 gap은 원본 보존 상태로 차단한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다.
+- H66 focused usage gate는 `97 passed, 1 warning`, billing·usage·state backend·security·infrastructure 확장 gate는 `434 passed, 1 warning`, provider API key를 process에서 제거한 full no-cost regression은 `4076 passed, 2 skipped, 4 deselected`다. Mock/local ASGI lifecycle에서는 generate와 billing status가 모두 `200`, persisted/API generation count `1`, event/summary object 존재와 외부 호출 0건을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. Conditional authority는 event와 summary 각 객체 범위이며 두 객체를 함께 묶는 atomic transaction, 여러 worker 사이의 exact admission reservation, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone billing account cross-worker authority completion
 
 - `BillingStore`는 tenant별 `tenants/{tenant_id}/billing.json`을 권위 객체로 사용한다. Plan, account status, Stripe customer/subscription/card identity mutation은 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 갱신하고 충돌하면 최신 tenant·account schema 위에 같은 변경을 재적용한다.

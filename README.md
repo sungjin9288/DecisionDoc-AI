@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,329개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,338개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3329
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3338
 python3 scripts/count_readme_metrics.py --field test_files      # → 252
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,067 passed, 2 skipped, 4 deselected, 2026-07-17 H65 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,076 passed, 2 skipped, 4 deselected, 2026-07-17 H66 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -347,7 +347,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - Project/approval state는 local/S3 공통 backend에서 tenant와 record identity를 검증하고 손상 원본을 보존합니다. ID가 없는 기존 malformed record와 explicit foreign record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 유지하지만, 유효한 owned ID를 가진 schema drift는 fail closed 처리합니다. 두 store의 mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌마다 최신 state를 다시 검증합니다. Project는 create·field update·document add/remove·approval sync·delete overwrite를 방지하고, approval은 create·comment·terminal decision overwrite를 방지합니다. Project의 최근 mutation receipt는 64개로 제한해 record가 남아 있는 후속 CAS 뒤에도 불확실한 commit을 식별하고, approval은 exact persisted payload read-back으로 조정합니다. 이 보장은 각각 tenant별 단일 project 또는 approval state object에 한정되고 실제 AWS runtime과 두 object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 회의 녹음은 recording별 `metadata.json`을 local conditional write 또는 S3 conditional create/ETag CAS로 갱신합니다. 충돌마다 최신 metadata를 다시 검증하고 전사·승인 변경을 재적용하며, 최근 private mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. Audio는 content-bound immutable conditional create로 저장하고 동일 bytes의 orphan만 재사용합니다. 이 보장은 단일 metadata object 범위이며 audio와 metadata를 함께 묶는 distributed transaction, 64개를 넘는 successor mutation 조정, 32회 즉시 재시도의 backoff·fairness, 실제 AWS runtime과 실제 OpenAI transcription 성공은 검증 범위가 아닙니다.
 - 결제 권한 state는 tenant별 `billing.json`을 local conditional write 또는 S3 conditional create/ETag CAS로 갱신합니다. 충돌마다 최신 account schema·tenant identity 위에 plan·status·Stripe identity 변경을 재적용하며 최근 private mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 손상 state와 receipt는 metered request를 `503`으로 차단합니다. 이 보장은 단일 billing object 범위이며 billing과 usage를 함께 묶는 transaction, 64개를 넘는 successor mutation 조정, 32회 즉시 재시도의 backoff·fairness, 실제 AWS runtime과 Stripe checkout·cancel·provider-delivered webhook은 검증 범위가 아닙니다.
-- 사용량 event log와 monthly summary는 local/S3 공통 backend에서 process-local lock으로 검증합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. 여러 프로세스의 distributed S3 transaction/CAS, exact reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
+- 사용량 event log와 monthly summary는 local/S3 공통 backend에서 각각 conditional create/CAS로 갱신합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, 정확히 하나의 검증된 trailing event만 summary에서 빠진 경우에는 최신 event log 위에 summary를 CAS로 보완합니다. 손상·변조·둘 이상의 event gap은 원본 보존 상태로 fail closed 처리하고 process-local lock은 contention 완화에만 사용합니다. Generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. Event와 summary 두 객체를 함께 묶는 atomic transaction, 여러 worker 사이의 exact admission reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
 - 스타일 프로필 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 style API와 prompt build를 중단하지만, mock provider는 LLM prompt builder를 호출하지 않으며 여러 프로세스의 distributed S3 compare-and-swap과 실제 provider 기반 style analysis는 구현·검증 범위가 아닙니다.
 - Feedback, eval evidence, runtime prompt override, A/B prompt experiment, request pattern, fine-tune dataset/export와 model registry state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 provider selection을 중단하고, A/B winner override 저장에 실패하면 experiment를 concluded로 기록하지 않으며, export bytes는 size/SHA-256을 다시 확인합니다. 자동 provider training은 기본 비활성이고 명시적 execution authority를 요구합니다. 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아니며 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
 - 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
@@ -366,4 +366,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,329 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,338 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
