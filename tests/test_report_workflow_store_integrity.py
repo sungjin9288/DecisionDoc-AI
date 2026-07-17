@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +17,8 @@ from app.storage.report_workflow_store import (
     PlanningVersion,
     ReportWorkflowStore,
     ReportWorkflowStoreError,
+    SlideDraft,
+    SlidePlan,
 )
 from app.storage.state_backend import (
     LocalStateBackend,
@@ -50,6 +57,38 @@ class _FailingLocalBackend(LocalStateBackend):
             raise StateBackendError("simulated write failure")
         super().write_text(relative_path, text, content_type=content_type)
 
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if self._operation == "write":
+            raise StateBackendError("simulated write failure")
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if self._operation == "write":
+            raise StateBackendError("simulated write failure")
+        return super().replace_text_if_equal(
+            relative_path,
+            expected=expected,
+            replacement=replacement,
+            content_type=content_type,
+        )
+
 
 class _Body:
     def __init__(self, data: bytes) -> None:
@@ -63,19 +102,84 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self._read_delay = read_delay
+        self._lock = threading.Lock()
+        self._read_barrier: threading.Barrier | None = None
+        self._coordinated_reads = 0
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def coordinate_next_reads(self, count: int) -> None:
+        self._read_barrier = threading.Barrier(count)
+        self._coordinated_reads = count
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
+    ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        data = self.objects.get((Bucket, Key))
-        if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
+            if data is None:
+                raise self._error("NoSuchKey")
+            wait_at_barrier = self._coordinated_reads > 0
+            if wait_at_barrier:
+                self._coordinated_reads -= 1
+                barrier = self._read_barrier
+            else:
+                barrier = None
+        if barrier is not None:
+            barrier.wait(timeout=2)
         time.sleep(self._read_delay)
-        return {"Body": _Body(data)}
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
@@ -97,6 +201,76 @@ def _create(
     title: str = "Report workflow",
 ):
     return store.create(tenant_id=tenant_id, title=title)
+
+
+def _planning() -> PlanningVersion:
+    return PlanningVersion(
+        plan_id="plan-1",
+        version=0,
+        status="draft",
+        objective="Objective",
+        audience="Audience",
+        executive_message="Decision",
+        table_of_contents=["First", "Second"],
+        slide_plans=[
+            SlidePlan(slide_id="slide-1", page=1, title="First"),
+            SlidePlan(slide_id="slide-2", page=2, title="Second"),
+        ],
+        open_questions=[],
+        risk_notes=[],
+        created_by="planner",
+        created_at="2026-07-17T00:00:00+00:00",
+    )
+
+
+def _slides() -> list[SlideDraft]:
+    return [
+        SlideDraft(
+            slide_id=f"slide-{index}",
+            page=index,
+            title=f"Slide {index}",
+            body=f"Body {index}",
+            visual_spec="",
+            speaker_note="",
+            source_refs=[],
+        )
+        for index in (1, 2)
+    ]
+
+
+def _create_slides_draft(store: ReportWorkflowStore):
+    workflow = _create(store)
+    store.save_planning(
+        workflow.report_workflow_id,
+        _planning(),
+        tenant_id="alpha",
+    )
+    store.approve_planning(
+        workflow.report_workflow_id,
+        author="planner",
+        tenant_id="alpha",
+    )
+    return store.save_slides(
+        workflow.report_workflow_id,
+        _slides(),
+        tenant_id="alpha",
+    )
+
+
+def _create_final_review(store: ReportWorkflowStore):
+    workflow = _create_slides_draft(store)
+    for slide in workflow.slides:
+        store.approve_slide(
+            workflow.report_workflow_id,
+            slide.slide_id,
+            author="planner",
+            tenant_id="alpha",
+        )
+    return store.submit_final(
+        workflow.report_workflow_id,
+        author="owner",
+        tenant_id="alpha",
+    )
 
 
 @pytest.mark.parametrize(
@@ -468,6 +642,288 @@ def test_independent_s3_stores_preserve_concurrent_visual_asset_updates() -> Non
     assert {asset["asset_id"] for asset in reloaded.visual_assets} == {
         f"asset-{index}" for index in range(20)
     }
+
+
+def test_s3_workflow_cas_preserves_cross_worker_creates_and_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ReportWorkflowStore(
+        base_dir="/virtual/bootstrap",
+        backend=backend,
+    )
+    workflow = _create(bootstrap, title="Shared workflow")
+    monkeypatch.setattr(
+        "app.storage.report_workflow.core_mixin.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    stores = [
+        ReportWorkflowStore(
+            base_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client)[0],
+        )
+        for index in range(20)
+    ]
+
+    def create(store: ReportWorkflowStore, index: int) -> str:
+        return _create(
+            store,
+            title=f"Workflow {index}",
+        ).report_workflow_id
+
+    def add_asset(store: ReportWorkflowStore, index: int) -> str:
+        asset_id = f"asset-{index}"
+        store.add_visual_assets(
+            workflow.report_workflow_id,
+            [{"asset_id": asset_id}],
+            tenant_id="alpha",
+        )
+        return asset_id
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        created_ids = set(executor.map(create, stores, range(20)))
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        asset_ids = set(executor.map(add_asset, stores, range(20)))
+
+    reloaded = ReportWorkflowStore(
+        base_dir="/virtual/reload",
+        backend=_s3_backend(client)[0],
+    )
+    records = reloaded.list_by_tenant("alpha")
+    persisted = reloaded.get(workflow.report_workflow_id, tenant_id="alpha")
+
+    assert {record.report_workflow_id for record in records} == {
+        workflow.report_workflow_id,
+        *created_ids,
+    }
+    assert persisted is not None
+    assert {asset["asset_id"] for asset in persisted.visual_assets} == asset_ids
+
+
+def test_s3_workflow_cas_preserves_disjoint_slide_approvals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ReportWorkflowStore(
+        base_dir="/virtual/bootstrap",
+        backend=backend,
+    )
+    workflow = _create_slides_draft(bootstrap)
+    monkeypatch.setattr(
+        "app.storage.report_workflow.core_mixin.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    first_worker = ReportWorkflowStore(
+        base_dir="/virtual/first-worker",
+        backend=_s3_backend(client)[0],
+    )
+    second_worker = ReportWorkflowStore(
+        base_dir="/virtual/second-worker",
+        backend=_s3_backend(client)[0],
+    )
+    client.coordinate_next_reads(2)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        updates = list(
+            executor.map(
+                lambda action: action(),
+                (
+                    lambda: first_worker.approve_slide(
+                        workflow.report_workflow_id,
+                        "slide-1",
+                        author="first-reviewer",
+                        tenant_id="alpha",
+                    ),
+                    lambda: second_worker.approve_slide(
+                        workflow.report_workflow_id,
+                        "slide-2",
+                        author="second-reviewer",
+                        tenant_id="alpha",
+                    ),
+                ),
+            )
+        )
+
+    persisted = bootstrap.get(
+        workflow.report_workflow_id,
+        tenant_id="alpha",
+    )
+
+    assert persisted is not None
+    assert persisted.status == "slides_approved"
+    assert {slide.status for slide in persisted.slides} == {"approved"}
+    assert {slide.approved_by for slide in persisted.slides} == {
+        "first-reviewer",
+        "second-reviewer",
+    }
+    assert persisted.updated_at == max(update.updated_at for update in updates)
+
+
+def test_s3_workflow_cas_commits_one_competing_final_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ReportWorkflowStore(
+        base_dir="/virtual/bootstrap",
+        backend=backend,
+    )
+    workflow = _create_final_review(bootstrap)
+    bootstrap.approve_final_step(
+        workflow.report_workflow_id,
+        stage="pm_review",
+        author="pm",
+        comment="PM approved",
+        tenant_id="alpha",
+    )
+    monkeypatch.setattr(
+        "app.storage.report_workflow.core_mixin.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    approve_store = ReportWorkflowStore(
+        base_dir="/virtual/approve-worker",
+        backend=_s3_backend(client)[0],
+    )
+    change_store = ReportWorkflowStore(
+        base_dir="/virtual/change-worker",
+        backend=_s3_backend(client)[0],
+    )
+    client.coordinate_next_reads(2)
+
+    def approve() -> str | None:
+        try:
+            return approve_store.approve_final_step(
+                workflow.report_workflow_id,
+                stage="executive_review",
+                author="executive",
+                comment="Executive approved",
+                tenant_id="alpha",
+            ).status
+        except ValueError:
+            return None
+
+    def request_changes() -> str | None:
+        try:
+            return change_store.request_final_changes(
+                workflow.report_workflow_id,
+                author="executive",
+                comment="Changes required",
+                tenant_id="alpha",
+            ).status
+        except ValueError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        decisions = list(
+            executor.map(
+                lambda action: action(),
+                (approve, request_changes),
+            )
+        )
+
+    committed = [decision for decision in decisions if decision is not None]
+    persisted = bootstrap.get(
+        workflow.report_workflow_id,
+        tenant_id="alpha",
+    )
+
+    assert len(committed) == 1
+    assert persisted is not None
+    assert persisted.status == committed[0]
+    terminal_comments = [
+        comment.content
+        for comment in persisted.comments
+        if comment.content in {"Executive approved", "Changes required"}
+    ]
+    assert terminal_comments == [
+        "Executive approved"
+        if persisted.status == "final_approved"
+        else "Changes required"
+    ]
+
+
+def test_s3_workflow_store_reconciles_commit_then_successor_cas() -> None:
+    backend, client = _s3_backend()
+    store = ReportWorkflowStore(base_dir="/virtual/data", backend=backend)
+    successor = ReportWorkflowStore(
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    workflow = _create(store)
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.add_visual_assets(
+            workflow.report_workflow_id,
+            [{"asset_id": "successor-asset"}],
+            tenant_id="alpha",
+        )
+    )
+    committed = store.add_visual_assets(
+        workflow.report_workflow_id,
+        [{"asset_id": "committed-asset"}],
+        tenant_id="alpha",
+    )
+
+    persisted = store.get(
+        workflow.report_workflow_id,
+        tenant_id="alpha",
+    )
+
+    assert {asset["asset_id"] for asset in committed.visual_assets} == {
+        "committed-asset"
+    }
+    assert persisted is not None
+    assert {asset["asset_id"] for asset in persisted.visual_assets} == {
+        "committed-asset",
+        "successor-asset",
+    }
+
+
+def test_workflow_mutation_receipts_are_bounded_private_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = ReportWorkflowStore(base_dir=str(tmp_path))
+    workflow = _create(store)
+    path = tmp_path / "tenants/alpha/report_workflows.json"
+
+    for index in range(70):
+        store.add_visual_assets(
+            workflow.report_workflow_id,
+            [{"asset_id": f"asset-{index}"}],
+            tenant_id="alpha",
+        )
+
+    records = json.loads(path.read_text(encoding="utf-8"))
+    public_record = store.get(
+        workflow.report_workflow_id,
+        tenant_id="alpha",
+    )
+    assert public_record is not None
+    assert len(records[0]["_mutation_ids"]) == 64
+    assert "_mutation_ids" not in asdict(public_record)
+
+    records[0]["_mutation_ids"][0] = records[0]["_mutation_ids"][1]
+    path.write_text(json.dumps(records), encoding="utf-8")
+    corrupted = path.read_bytes()
+
+    with pytest.raises(
+        ReportWorkflowStoreError,
+        match="Invalid owned report workflow record",
+    ):
+        store.get(workflow.report_workflow_id, tenant_id="alpha")
+    with pytest.raises(
+        ReportWorkflowStoreError,
+        match="Invalid owned report workflow record",
+    ):
+        store.add_visual_assets(
+            workflow.report_workflow_id,
+            [{"asset_id": "blocked"}],
+            tenant_id="alpha",
+        )
+
+    assert path.read_bytes() == corrupted
 
 
 def test_s3_workflow_round_trip_preserves_owned_state() -> None:

@@ -3,6 +3,12 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone report workflow cross-worker authority completion
+
+- `ReportWorkflowStore`의 create와 planning·slide·visual asset·approval·promotion mutation은 tenant별 `report_workflows.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 state의 ownership·schema와 domain transition을 다시 검증하고 mutation을 재적용하며 `updated_at`은 재적용 시점에 갱신한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. Workflow record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 후속 CAS가 발생해도 원래 operation의 성공을 조정한다. Receipt가 손상되면 조회·후속 mutation을 fail closed 처리한다.
+- H59 focused report workflow gate는 `47 passed`, report workflow·quality learning·knowledge·project/approval·security·state·infrastructure 확장 gate는 `430 passed`, provider API key를 process에서 제거한 full no-cost regression은 `4012 passed, 2 skipped, 4 deselected`다. Process lock을 제거한 fake-S3에서 20-way create/asset update, disjoint slide approval, competing final approve/change request 중 단일 성공, commit-then-error 뒤 successor CAS reconciliation을 확인했다. 실제 mock/local uvicorn에서도 health·workflow create·planning/slide generate와 승인·linked approval·최종 승인을 확인했고 persisted private receipt 12개와 public 비노출, 외부 provider 호출 0건을 확인했다. 검증은 local/mock/fake-S3만 사용했다. Tenant별 단일 report workflow state object를 넘는 distributed transaction, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone project state cross-worker authority completion
 
 - `ProjectStore`의 create·update·delete·archive·document add/remove·voice brief upsert·approval sync mutation은 tenant별 `projects.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. Project/document operation identity는 재시도 동안 유지하고 충돌하면 최신 state의 ownership·schema를 다시 검증한다. Project `updated_at`은 최신 state에 mutation을 다시 적용하는 시점에 갱신해 늦게 확정된 변경이 이전 timestamp로 되돌아가지 않게 한다.

@@ -24,11 +24,7 @@ class ReportWorkflowApprovalMixin:
         author: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def submit(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             if not rec.slides or any(item.status != SlideStatus.APPROVED.value for item in rec.slides):
                 raise ValueError("모든 장표가 승인되어야 최종 검토로 이동할 수 있습니다.")
@@ -49,7 +45,13 @@ class ReportWorkflowApprovalMixin:
                 created_at=_now_iso(),
                 is_change_request=False,
             ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=submit,
+        )
 
     def link_final_approval(
         self,
@@ -59,11 +61,7 @@ class ReportWorkflowApprovalMixin:
         approval_status: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def link(rec: ReportWorkflowRecord) -> bool:
             if rec.status not in {
                 ReportWorkflowStatus.FINAL_REVIEW.value,
                 ReportWorkflowStatus.FINAL_APPROVED.value,
@@ -73,7 +71,13 @@ class ReportWorkflowApprovalMixin:
             rec.final_approval_id = approval_id
             rec.final_approval_status = approval_status
             rec.final_approval_synced_at = _now_iso()
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=link,
+        )
 
     def sync_final_approval_status(
         self,
@@ -82,16 +86,18 @@ class ReportWorkflowApprovalMixin:
         approval_status: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def sync(rec: ReportWorkflowRecord) -> bool:
             if not rec.final_approval_id:
-                return rec
+                return False
             rec.final_approval_status = approval_status
             rec.final_approval_synced_at = _now_iso()
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=sync,
+        )
 
     def approve_final_step(
         self,
@@ -102,11 +108,7 @@ class ReportWorkflowApprovalMixin:
         comment: str = "",
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def approve(rec: ReportWorkflowRecord) -> bool:
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 결재할 수 있습니다.")
             if not rec.approval_steps:
@@ -147,7 +149,13 @@ class ReportWorkflowApprovalMixin:
                     },
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )
 
     def request_final_changes(
         self,
@@ -157,11 +165,7 @@ class ReportWorkflowApprovalMixin:
         comment: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def request_changes(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 수정 요청할 수 있습니다.")
@@ -190,7 +194,13 @@ class ReportWorkflowApprovalMixin:
                     {"stage": pending_step.stage, "comment": comment},
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=request_changes,
+        )
 
     def approve_final(
         self,
@@ -199,11 +209,7 @@ class ReportWorkflowApprovalMixin:
         author: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def approve(rec: ReportWorkflowRecord) -> bool:
             if rec.status != ReportWorkflowStatus.FINAL_REVIEW.value:
                 raise ValueError("최종 검토 상태에서만 최종 승인할 수 있습니다.")
             if not rec.approval_steps:
@@ -230,4 +236,10 @@ class ReportWorkflowApprovalMixin:
                     },
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )

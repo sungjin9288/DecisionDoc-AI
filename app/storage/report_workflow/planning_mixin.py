@@ -24,11 +24,7 @@ class ReportWorkflowPlanningMixin:
         tenant_id: str,
         quality_warnings: list[str] | None = None,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def save(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             rec.current_plan_version += 1
             planning.version = rec.current_plan_version
@@ -53,7 +49,13 @@ class ReportWorkflowPlanningMixin:
             rec.approval_steps = []
             rec.status = ReportWorkflowStatus.PLANNING_DRAFT.value
             rec.quality_warnings.extend(quality_warnings or [])
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=save,
+        )
 
     def request_planning_changes(
         self,
@@ -63,11 +65,7 @@ class ReportWorkflowPlanningMixin:
         comment: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def request_changes(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             if rec.planning is None:
                 raise ValueError("수정 요청할 기획안이 없습니다.")
@@ -88,7 +86,13 @@ class ReportWorkflowPlanningMixin:
                     {"comment": comment, "plan_version": rec.planning.version},
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=request_changes,
+        )
 
     def approve_planning(
         self,
@@ -97,11 +101,7 @@ class ReportWorkflowPlanningMixin:
         author: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def approve(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             if rec.planning is None:
                 raise ValueError("승인할 기획안이 없습니다.")
@@ -115,4 +115,10 @@ class ReportWorkflowPlanningMixin:
                     asdict(rec.planning),
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )

@@ -79,7 +79,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 보고서 워크플로우 상태
   - 기획·장표·시각자료·승인·승격 state는 local `data/tenants/<tenant_id>/report_workflows.json` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant와 workflow/nested identity를 state 접근 전에 검증한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/identity, owned schema drift와 backend failure는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다.
-  - 독립 store 인스턴스의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. Persisted 오류는 domain 입력 오류와 구분해 API에서 `500 INTERNAL_ERROR`로 처리하며 distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
+  - 독립 store 인스턴스의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화하고, worker 간 mutation은 local conditional write 또는 S3 conditional create/ETag CAS로 확정한다. 충돌마다 최신 ownership·schema·transition을 다시 검증하며 최근 mutation receipt를 최대 64개 보존해 commit 응답 유실 뒤 후속 CAS도 조정한다. Persisted 오류와 손상 receipt는 domain 입력 오류와 구분해 API에서 `500 INTERNAL_ERROR`로 처리한다. 이 보장은 tenant별 단일 report workflow state object 범위이며 실제 AWS runtime과 multi-object transaction은 현재 보장 범위가 아니다.
 - 회의 녹음 상태
   - 녹음 metadata와 audio는 local `data/tenants/<tenant_id>/meeting_recordings/<project_id>/<recording_id>/` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant/project/recording identity와 canonical audio path를 state 접근 전에 검증한다. Malformed metadata와 duplicate key는 조회·전사·승인을 중단하고 explicit foreign metadata는 현재 scope에 노출하지 않는다. Audio read는 persisted size와 SHA-256을 실제 bytes와 다시 대조한다.

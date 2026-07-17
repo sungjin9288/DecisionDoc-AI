@@ -26,11 +26,7 @@ class ReportWorkflowSlideMixin:
         tenant_id: str,
         quality_warnings: list[str] | None = None,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def save(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             if rec.status != ReportWorkflowStatus.PLANNING_APPROVED.value and not (
                 rec.planning and rec.planning.status == "approved"
@@ -60,7 +56,13 @@ class ReportWorkflowSlideMixin:
             rec.visual_assets = []
             rec.approval_steps = []
             rec.quality_warnings.extend(quality_warnings or [])
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=save,
+        )
 
     def request_slide_changes(
         self,
@@ -71,11 +73,7 @@ class ReportWorkflowSlideMixin:
         comment: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def request_changes(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
             if slide is None:
@@ -99,7 +97,13 @@ class ReportWorkflowSlideMixin:
                     {"slide_id": slide_id, "comment": comment, "draft_version": slide.draft_version},
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=request_changes,
+        )
 
     def approve_slide(
         self,
@@ -109,11 +113,7 @@ class ReportWorkflowSlideMixin:
         author: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def approve(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
             if slide is None:
@@ -131,7 +131,13 @@ class ReportWorkflowSlideMixin:
                 rec.status = ReportWorkflowStatus.SLIDES_APPROVED.value
             else:
                 rec.status = ReportWorkflowStatus.SLIDES_DRAFT.value
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )
 
     def update_slide_visual_assets(
         self,
@@ -146,11 +152,7 @@ class ReportWorkflowSlideMixin:
         author: str = "",
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def update_assets(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
             if slide is None:
@@ -178,7 +180,13 @@ class ReportWorkflowSlideMixin:
                     },
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=update_assets,
+        )
 
     def add_visual_assets(
         self,
@@ -187,14 +195,16 @@ class ReportWorkflowSlideMixin:
         *,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def add(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             rec.visual_assets = self._merge_visual_assets(rec.visual_assets, assets)
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=add,
+        )
 
     def select_slide_visual_asset(
         self,
@@ -205,11 +215,7 @@ class ReportWorkflowSlideMixin:
         author: str = "",
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock(tenant_id):
-            result = self._find(report_workflow_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
-            tid, records, idx, rec = result
+        def select(rec: ReportWorkflowRecord) -> bool:
             self._ensure_mutable(rec)
             slide = next((item for item in rec.slides if item.slide_id == slide_id), None)
             if slide is None:
@@ -231,4 +237,10 @@ class ReportWorkflowSlideMixin:
                     {"slide_id": slide_id, "asset_id": normalized_asset_id},
                     actor=author,
                 ))
-            return self._flush(tid, records, idx, rec)
+            return True
+
+        return self._mutate_workflow(
+            report_workflow_id,
+            tenant_id=tenant_id,
+            change=select,
+        )

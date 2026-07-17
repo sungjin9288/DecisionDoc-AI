@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 기준 non-live 전체 게이트는 `4007 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 H59 기준 non-live 전체 게이트는 `4012 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -32,7 +32,7 @@
 | 공공조달 검토 증빙 상태 무결성 | 검증 완료 | `app/storage/procurement_review_store.py`, `app/storage/state_backend.py`, `app/services/procurement_review_evidence.py`, project review/generation caller, `tests/test_procurement_review_store.py` | local/fake-S3 record·packet·content-addressed package 손상/누락, exact orphan recovery, conditional create/ETag CAS, uncertain commit read-back, receipt/package semantic drift와 API 500 회귀 | multi-object distributed transaction과 실제 AWS/provider/G2B/입찰 실행은 범위 밖 |
 | Decision Council 상태 무결성 | 검증 완료 | `app/storage/decision_council_store.py`, `app/routers/projects/procurement.py`, generation context caller, `tests/test_decision_council_store_integrity.py` | local/fake-S3 missing-state·손상 보존·canonical identity·동시성·API 회귀와 mock/local uvicorn run/get lifecycle | distributed S3 CAS와 실제 provider/G2B API는 범위 밖 |
 | 프로젝트·결재 상태 무결성 | 검증 완료 | `app/storage/project_store.py`, `app/storage/project_state_mutation.py`, `app/storage/approval_store.py`, `app/storage/state_backend.py`, project/approval router, `tests/test_project_approval_store_integrity.py` | local/fake-S3 missing-state·blank/invalid UTF-8·backend failure·owned schema/duplicate identity·logical lock과 두 store의 conditional create/CAS·project bounded mutation receipt·disjoint mutation·delete 경쟁·competing approval terminal decision·uncertain commit reconciliation·API 회귀와 mock/local lifecycle | ID 없는 legacy malformed record는 숨긴 채 보존. CAS는 각각 단일 tenant project/approval state object 범위이며 multi-object transaction과 실제 AWS runtime은 범위 밖 |
-| 보고서 워크플로우 상태 무결성 | 검증 완료 | `app/storage/report_workflow/`, report workflow router/service, `tests/test_report_workflow_store_integrity.py` | local/fake-S3 blank/invalid UTF-8·backend failure·workflow/nested identity·cross-base logical lock 동시성·API 500 회귀 | lock은 process-local. Distributed S3 CAS와 provider-backed 생성은 범위 밖 |
+| 보고서 워크플로우 상태 무결성 | 검증 완료 | `app/storage/report_workflow/`, report workflow router/service, `tests/test_report_workflow_store_integrity.py` | local/fake-S3 blank/invalid UTF-8·backend failure·workflow/nested identity·conditional create/CAS·disjoint slide update·competing final decision·bounded receipt·uncertain commit reconciliation·API 500 회귀와 mock/local lifecycle | CAS는 tenant별 단일 state object 범위. 실제 AWS runtime, multi-object transaction과 provider-backed 생성은 범위 밖 |
 | 회의 녹음 상태 무결성 | 검증 완료 | `app/storage/meeting_recording_store.py`, `app/services/meeting_recording_service.py`, `tests/test_meeting_recording_store_integrity.py` | local/fake-S3 metadata/audio unit·concurrency·API 회귀와 mock/offline HTTP lifecycle | distributed S3 CAS와 실제 OpenAI transcription은 범위 밖 |
 | 결제 권한 상태 무결성 | 검증 완료 | `app/storage/billing_store.py`, `app/middleware/billing.py`, `app/routers/billing.py`, `tests/test_billing_store_integrity.py` | local/fake-S3 unit·concurrency·middleware/API 회귀와 mock/local webhook lifecycle | distributed S3 CAS와 실제 Stripe API는 범위 밖 |
 | 사용량 계량 상태 무결성 | 검증 완료 | `app/storage/usage_store.py`, `app/middleware/billing.py`, `app/services/generation/context_store.py`, `app/agents/document_ops_agent.py`, `tests/test_usage_store_integrity.py` | local/fake-S3 event·summary·partial-write·provider route admission·DocumentOps/meeting transcription/direct/composite metering·실패 token 보존·provider 오류 redaction·취소 안전 lock·process-local concurrency·auth/API 회귀와 mock generation lifecycle | distributed S3 transaction/CAS·exact reservation과 실제 provider usage는 범위 밖 |
@@ -78,7 +78,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `4007 passed, 2 skipped, 4 deselected` (2026-07-17 H58 실측).
+결과: `4012 passed, 2 skipped, 4 deselected` (2026-07-17 H59 실측, provider API key를 process에서 제거).
 
 ### CI advisory lint / security scan
 

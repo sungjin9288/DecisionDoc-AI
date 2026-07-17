@@ -26,7 +26,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 멀티 LLM Provider | `mock` / `openai` / `gemini` / `claude` / `local` — factory + fallback chain |
 | 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
 | 프로젝트·결재 상태 무결성 | 프로젝트와 결재 record를 tenant별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key/identity와 owned schema drift를 원본 보존 상태로 차단. 두 store의 mutation은 conditional create/CAS와 충돌 재시도로 worker 간 overwrite를 방지 |
-| 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. 서로 다른 virtual base도 같은 backend object lock을 공유 |
+| 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. Conditional create/CAS와 충돌 재시도로 worker 간 update 유실과 상충하는 최종 결정을 방지 |
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
 | 계정·초대 상태 무결성 | 사용자 계정과 초대 lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리 |
@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,273개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,278개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3273
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3278
 python3 scripts/count_readme_metrics.py --field test_files      # → 251
 ```
 
@@ -334,7 +334,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
-- 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. 같은 backend object를 가리키는 독립 store는 서로 다른 virtual base를 사용해도 process-local logical lock을 공유하지만, 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아닙니다.
+- 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. Mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌할 때마다 최신 state의 ownership·schema·transition을 다시 검증합니다. 최근 mutation receipt는 64개로 제한해 후속 CAS 뒤에도 불확실한 commit을 조정하며, 손상 receipt는 원본을 보존하고 fail closed 처리합니다. 이 보장은 tenant별 단일 report workflow state object에 한정되고 실제 AWS runtime과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. 동시성 보장은 한 프로세스 안의 shared lock 범위이며 distributed S3 compare-and-swap은 구현·검증하지 않았습니다.
 - 메시지·알림 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 외부 SMTP·Slack 전달 성공과 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap은 이 검증 범위가 아닙니다.
 - 사용자·초대 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap과 실제 초대 메일 전달은 구현·검증 범위가 아닙니다.
@@ -367,4 +367,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,273 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,278 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

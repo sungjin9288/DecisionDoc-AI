@@ -29,6 +29,7 @@
 | 공개 공유 | `tests/test_phase3_features.py`, `tests/test_share_store_integrity.py` | tenant/backend 결속, JSON 손상·identity drift 차단, local/fake-S3 동시 create/access, public view/revoke lifecycle |
 | Admin 테넌트 인증 | `tests/test_tenant.py`, `tests/test_infrastructure.py`, `tests/e2e/test_main_flow.py` | tenant 목록의 admin JWT/Ops key 경로, signed-token tenant 동기화, selector access preflight/rollback, logout draft 폐기 |
 | 프로젝트·결재 워크플로우 | `tests/test_project_management.py`, `tests/test_approval_workflow.py`, `tests/test_project_approval_store_integrity.py` | project/document CRUD, submit/approve/reject, local/fake-S3 무결성과 worker CAS |
+| 보고서 워크플로우 | `tests/test_report_workflow_store.py`, `tests/test_report_workflow_store_integrity.py`, `tests/test_report_workflows_api.py` | planning/slide/final approval/promotion lifecycle, local/fake-S3 손상 보존, conditional create/CAS, disjoint update·terminal decision 경쟁·commit reconciliation |
 | 나라장터 연동 | `tests/test_g2b.py` | 검색/수집 흐름 |
 | SSO | `tests/test_sso.py` | LDAP/SAML/GCloud 관련 검증 |
 | SSO 설정 상태 무결성 | `tests/test_sso_store_integrity.py` | local/fake-S3 손상 보존·동시 부분 변경·secret/SAML/route/API 경계 |

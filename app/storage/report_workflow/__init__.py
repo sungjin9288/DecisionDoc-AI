@@ -4,11 +4,11 @@ This store owns the intermediate production workflow for staged report
 creation: planning approval, slide-level approval, final approval, and
 opt-in learning artifacts.
 
-The implementation is split into focused mixins (core_mixin, helpers_mixin,
-planning_mixin, slide_mixin, approval_mixin, promotion_mixin) plus the
-standalone ``models`` module for enums/dataclasses. This package composes
-them into the single public ``ReportWorkflowStore`` class and re-exports
-every public and internal symbol so existing
+The implementation is split into focused mixins for state mutation, core
+storage, validation helpers, and domain transitions, plus the standalone
+``models`` module for enums/dataclasses. This package composes them into the
+single public ``ReportWorkflowStore`` class and re-exports every public symbol
+so existing
 ``from app.storage.report_workflow_store import X`` imports keep working
 unchanged.
 """
@@ -25,9 +25,12 @@ from app.storage.report_workflow.models import (
     WorkflowComment,
     _now_iso,
 )
+from app.storage.report_workflow.state_mutation import (
+    ReportWorkflowStateMutationMixin,
+    ReportWorkflowStoreError,
+)
 from app.storage.report_workflow.core_mixin import (
     ReportWorkflowCoreMixin,
-    ReportWorkflowStoreError,
 )
 from app.storage.report_workflow.helpers_mixin import ReportWorkflowHelpersMixin
 from app.storage.report_workflow.planning_mixin import ReportWorkflowPlanningMixin
@@ -51,10 +54,11 @@ __all__ = [
 
 class ReportWorkflowStore(
     ReportWorkflowHelpersMixin,
+    ReportWorkflowStateMutationMixin,
     ReportWorkflowCoreMixin,
     ReportWorkflowPlanningMixin,
     ReportWorkflowSlideMixin,
     ReportWorkflowApprovalMixin,
     ReportWorkflowPromotionMixin,
 ):
-    """Thread-safe, tenant-scoped JSON-backed report workflow store."""
+    """Tenant-scoped workflow store with process locks and backend CAS."""
