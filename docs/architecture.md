@@ -198,6 +198,12 @@ Workflow의 모든 read-modify-write는 앱이 선택한 local/S3 `StateBackend`
 
 Missing-state만 빈 목록으로 읽는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/workflow/nested identity, owned schema drift와 backend read/write failure는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Persisted state 오류는 planning·approval 같은 domain `ValueError`와 분리된 `ReportWorkflowStoreError`로 전달되어 API의 400 응답으로 축소되지 않는다. 각 workflow record에는 API에 노출하지 않는 최근 mutation ID를 최대 64개 보존한다. Conditional write가 commit된 뒤 응답이 유실되고 후속 CAS가 발생해 exact payload가 달라져도 receipt로 원래 operation을 조정하며, receipt schema가 손상되면 fail closed 처리한다. 이 보장은 tenant별 단일 report workflow state object 범위이고 실제 AWS runtime 및 다른 state object와의 multi-object transaction은 현재 보장하지 않는다.
 
+## 데이터 흐름 — 감사 로그 상태
+
+`AuditStore`는 tenant별 `tenants/{tenant_id}/audit_logs.jsonl`을 앱이 선택한 local/S3 `StateBackend`에 저장한다. Append 전에 caller entry와 기존 JSONL 전체의 tenant, required field, duplicate key와 `log_id`를 검증하고, malformed·foreign·duplicate evidence를 자동 복구하거나 덮어쓰지 않는다. 새 line을 붙일 때 기존 raw byte prefix와 trailing-newline 경계를 그대로 유지한다.
+
+Worker 간 append 권위는 process-local lock에만 의존하지 않는다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 compare-and-swap으로 갱신한다. 충돌하면 최신 JSONL을 다시 읽고 전체 무결성을 검증한 뒤 같은 entry를 최대 32회 재적용한다. S3는 `If-None-Match`와 ETag `If-Match`, local은 conditional file lock과 atomic replace를 사용한다. Conditional commit 응답이 유실되고 다른 worker의 successor append가 이어져 exact payload가 달라져도 `log_id`와 exact entry read-back으로 원래 append의 성공을 조정한다. 보장 범위는 tenant별 단일 audit JSONL object이며 실제 AWS runtime은 별도 검증 범위다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

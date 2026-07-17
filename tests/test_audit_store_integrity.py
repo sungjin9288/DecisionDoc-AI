@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import pytest
 
 from app.storage.audit_store import AuditLog, AuditStore, AuditStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -19,6 +26,23 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
+
+
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
 
 
 class _Body:
@@ -33,26 +57,78 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
+    ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        time.sleep(self.read_delay)
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -247,11 +323,17 @@ def test_fake_s3_round_trip_preserves_append_order_and_identity() -> None:
 
 
 def test_independent_fake_s3_stores_preserve_concurrent_appends() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
+    client = _MemoryS3Client(read_delay=0.005)
     stores = [
-        AuditStore("alpha", data_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        AuditStore(
+            "alpha",
+            data_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def append(index: int) -> None:
         stores[index].append(_log(f"log-{index}"))
@@ -262,11 +344,52 @@ def test_independent_fake_s3_stores_preserve_concurrent_appends() -> None:
     entries = AuditStore(
         "alpha",
         data_dir="/virtual/data",
-        backend=backend,
+        backend=_s3_backend(client=client)[0],
     ).query_all()
     assert {entry["log_id"] for entry in entries} == {
         f"log-{index}" for index in range(20)
     }
+
+
+def test_fake_s3_append_reconciles_commit_then_successor_append() -> None:
+    backend, client = _s3_backend()
+    store = AuditStore("alpha", data_dir="/virtual/first", backend=backend)
+    successor = AuditStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    store._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        after_write=lambda: successor.append(_log("successor"))
+    )
+    store.append(_log("committed"))
+
+    entries = AuditStore(
+        "alpha",
+        data_dir="/virtual/reload",
+        backend=_s3_backend(client=client)[0],
+    ).query_all()
+    assert [entry["log_id"] for entry in entries] == [
+        "successor",
+        "committed",
+    ]
+
+
+def test_append_stops_after_bounded_conditional_conflicts(tmp_path: Path) -> None:
+    backend = _ConflictingLocalBackend(tmp_path)
+    store = AuditStore("alpha", data_dir=tmp_path, backend=backend)
+
+    with pytest.raises(
+        AuditStoreError,
+        match="Audit log changed too many times to append safely",
+    ):
+        store.append(_log("never-committed"))
+
+    assert backend.attempts == 32
+    assert not store._path.exists()
 
 
 def test_forged_fake_s3_audit_state_is_preserved_and_rejected() -> None:

@@ -4,7 +4,8 @@ Storage: data/tenants/{tenant_id}/audit_logs.jsonl
 Format: one JSON object per line (JSONL), append-only.
 
 CRITICAL: entries are NEVER deleted or modified — only appended.
-Thread-safe within one process across stores that share a data root.
+Append commits use backend conditional create/CAS across workers.
+The shared process lock reduces local contention without defining persistence authority.
 """
 from __future__ import annotations
 
@@ -18,11 +19,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 _audit_locks: dict[Path, threading.RLock] = {}
 _audit_locks_guard = threading.Lock()
+_MAX_APPEND_ATTEMPTS = 32
+_AUDIT_CONTENT_TYPE = "application/x-ndjson; charset=utf-8"
 
 
 class AuditStoreError(ValueError):
@@ -227,7 +230,7 @@ class AuditStore:
     def _read_all(self) -> list[dict[str, Any]]:
         """Read all owned log entries without mutating audit evidence."""
         with self._lock:
-            raw = self._backend.read_text(self._relative_path)
+            raw = self._read_raw()
             return self._parse(raw or "")
 
     # ── public API ─────────────────────────────────────────────────────────
@@ -235,18 +238,68 @@ class AuditStore:
     def append(self, log: AuditLog) -> None:
         """Thread-safe append of a single audit log entry."""
         entry = self._validate_entry(asdict(log))
+        line = json.dumps(entry, ensure_ascii=False) + "\n"
         with self._lock:
-            raw = self._backend.read_text(self._relative_path) or ""
-            existing = self._parse(raw)
-            if any(item["log_id"] == entry["log_id"] for item in existing):
-                raise AuditStoreError("Duplicate audit log identity")
-            separator = "" if not raw or raw.endswith("\n") else "\n"
-            line = json.dumps(entry, ensure_ascii=False) + "\n"
-            self._backend.write_text(
+            for _ in range(_MAX_APPEND_ATTEMPTS):
+                raw = self._read_raw()
+                existing = self._parse(raw or "")
+                if any(item["log_id"] == entry["log_id"] for item in existing):
+                    raise AuditStoreError("Duplicate audit log identity")
+
+                current = raw or ""
+                separator = "" if not current or current.endswith("\n") else "\n"
+                replacement = f"{current}{separator}{line}"
+                if self._append_if_current(expected=raw, replacement=replacement):
+                    return
+
+        raise AuditStoreError(
+            "Audit log changed too many times to append safely"
+        )
+
+    def _read_raw(self) -> str | None:
+        try:
+            return self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise AuditStoreError("Invalid audit log state") from exc
+
+    def _append_if_current(
+        self,
+        *,
+        expected: str | None,
+        replacement: str,
+    ) -> bool:
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    replacement,
+                    content_type=_AUDIT_CONTENT_TYPE,
+                )
+            return self._backend.replace_text_if_equal(
                 self._relative_path,
-                f"{raw}{separator}{line}",
-                content_type="application/x-ndjson; charset=utf-8",
+                expected=expected,
+                replacement=replacement,
+                content_type=_AUDIT_CONTENT_TYPE,
             )
+        except StateBackendError as exc:
+            if self._entry_was_committed(replacement):
+                return True
+            raise AuditStoreError("Failed to persist audit log") from exc
+
+    def _entry_was_committed(self, replacement: str) -> bool:
+        expected_entries = self._parse(replacement)
+        expected_entry = expected_entries[-1]
+        try:
+            observed = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError):
+            return False
+        if observed is None:
+            return False
+        try:
+            observed_entries = self._parse(observed)
+        except AuditStoreError:
+            return False
+        return any(entry == expected_entry for entry in observed_entries)
 
     def _owns(self, entry: dict[str, Any]) -> bool:
         return entry.get("tenant_id") == self._tenant_id

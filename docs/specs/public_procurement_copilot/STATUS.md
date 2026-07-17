@@ -3,6 +3,12 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone audit log cross-worker authority completion
+
+- `AuditStore.append()`는 tenant별 `audit_logs.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 사용한다. 충돌하면 최신 JSONL의 tenant, required field, duplicate key와 `log_id`를 다시 검증하고 기존 raw byte prefix와 newline 경계 위에 같은 entry를 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤에는 fail closed 처리하고, commit 응답이 유실된 뒤 successor append가 이어져 exact payload가 달라져도 `log_id`와 exact entry read-back으로 원래 append의 성공을 조정한다.
+- H60 focused audit integrity gate는 `25 passed`, audit API·security·state·infrastructure 확장 gate는 `346 passed`, provider API key를 process에서 제거한 full no-cost regression은 `4014 passed, 2 skipped, 4 deselected`다. Process lock을 제거한 fake-S3에서 서로 다른 virtual base의 20-way append 보존, bounded conflict, commit-then-error 뒤 successor append reconciliation을 확인했다. Mock/local uvicorn에서는 health·register·login·admin audit query가 모두 `200`이었고 조회된 login `log_id`와 query 자체 `doc.view` entry가 JSONL에 보존됐다. 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone report workflow cross-worker authority completion
 
 - `ReportWorkflowStore`의 create와 planning·slide·visual asset·approval·promotion mutation은 tenant별 `report_workflows.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 state의 ownership·schema와 domain transition을 다시 검증하고 mutation을 재적용하며 `updated_at`은 재적용 시점에 갱신한다.

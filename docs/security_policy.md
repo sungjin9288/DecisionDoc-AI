@@ -118,7 +118,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 감사 로그 저장
   - 저장 위치: local `data/tenants/<tenant_id>/audit_logs.jsonl` 또는 같은 relative path의 S3 state object
   - tenant와 log identity를 append 전에 검증하고 기존 JSONL byte prefix를 보존한다. 손상·foreign·중복 evidence는 자동 복구하거나 건너뛰지 않고 read와 append를 중단한다.
-  - 독립 store 인스턴스의 동시 append는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
+  - 독립 worker의 append는 missing object의 conditional create와 기존 object의 validated-prefix CAS로 확정한다. 충돌하면 최신 JSONL을 다시 검증하고 최대 32회 재시도하며, commit 응답 유실 뒤 successor append가 발생해도 `log_id`와 exact entry read-back으로 성공을 조정한다. 실제 AWS runtime은 현재 검증 범위가 아니다.
   - 조회/내보내기: `GET /admin/audit-logs`, `GET /admin/audit-logs/export`
   - 조회와 CSV 내보내기는 tenant와 action/result/기간 filter를 공유한다. 조회는 검증된 offset/limit과 전체 건수·다음 페이지 여부를 반환하고, CSV는 전체 detail JSON을 보존하며 spreadsheet formula injection이 가능한 문자열을 text cell로 처리
 - 협업 상태 저장
