@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -43,6 +46,38 @@ class _FailingLocalBackend(LocalStateBackend):
             raise StateBackendError("simulated write failure")
         super().write_text(relative_path, text, content_type=content_type)
 
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if self._operation == "write":
+            raise StateBackendError("simulated write failure")
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if self._operation == "write":
+            raise StateBackendError("simulated write failure")
+        return super().replace_text_if_equal(
+            relative_path,
+            expected=expected,
+            replacement=replacement,
+            content_type=content_type,
+        )
+
 
 class _Body:
     def __init__(self, data: bytes) -> None:
@@ -56,19 +91,72 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self._read_delay = read_delay
+        self._lock = threading.Lock()
+        self._read_barrier: threading.Barrier | None = None
+        self._coordinated_reads = 0
+        self._fail_after_conditional_write = False
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def coordinate_next_reads(self, count: int) -> None:
+        self._read_barrier = threading.Barrier(count)
+        self._coordinated_reads = count
+
+    def fail_after_next_conditional_write(self) -> None:
+        self._fail_after_conditional_write = True
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
+    ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+        if fail_after_write:
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        data = self.objects.get((Bucket, Key))
-        if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
+            if data is None:
+                raise self._error("NoSuchKey")
+            wait_at_barrier = self._coordinated_reads > 0
+            if wait_at_barrier:
+                self._coordinated_reads -= 1
+                barrier = self._read_barrier
+            else:
+                barrier = None
+        if barrier is not None:
+            barrier.wait(timeout=2)
         time.sleep(self._read_delay)
-        return {"Body": _Body(data)}
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
@@ -408,6 +496,160 @@ def test_independent_approval_store_instances_preserve_concurrent_creates(
     assert len(local_created) == len(s3_created) == 20
     assert {record.approval_id for record in persisted} == local_created
     assert {record.approval_id for record in remote} == s3_created
+
+
+def test_s3_approval_cas_preserves_cross_worker_creates_and_comments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ApprovalStore(base_dir="/virtual/bootstrap", backend=backend)
+    approval = _create_approval(bootstrap, "alpha")
+    monkeypatch.setattr(
+        "app.storage.approval_store.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    stores = [
+        ApprovalStore(
+            base_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client)[0],
+        )
+        for index in range(20)
+    ]
+
+    def create(store: ApprovalStore, index: int) -> str:
+        return _create_approval(store, "alpha", index + 1).approval_id
+
+    def comment(store: ApprovalStore, index: int) -> str:
+        return store.add_comment(
+            approval.approval_id,
+            author=f"reviewer-{index}",
+            content=f"comment-{index}",
+            stage="review",
+            tenant_id="alpha",
+        ).comments[-1].comment_id
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        created_ids = set(executor.map(create, stores, range(20)))
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        comment_ids = set(executor.map(comment, stores, range(20)))
+
+    reloaded = ApprovalStore(
+        base_dir="/virtual/reload",
+        backend=_s3_backend(client)[0],
+    )
+    records = reloaded.list_by_tenant("alpha")
+    persisted = reloaded.get(approval.approval_id, tenant_id="alpha")
+
+    assert len(created_ids) == 20
+    assert {record.approval_id for record in records} == {
+        approval.approval_id,
+        *created_ids,
+    }
+    assert persisted is not None
+    assert {comment.comment_id for comment in persisted.comments} == comment_ids
+
+
+def test_s3_approval_cas_commits_one_competing_terminal_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    backend, _ = _s3_backend(client)
+    bootstrap = ApprovalStore(base_dir="/virtual/bootstrap", backend=backend)
+    approval = _create_approval(bootstrap, "alpha")
+    bootstrap.submit_for_review(
+        approval.approval_id,
+        reviewer="reviewer",
+        tenant_id="alpha",
+    )
+    bootstrap.approve_review(
+        approval.approval_id,
+        author="reviewer",
+        tenant_id="alpha",
+    )
+    monkeypatch.setattr(
+        "app.storage.approval_store.state_lock",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+    approve_store = ApprovalStore(
+        base_dir="/virtual/approve-worker",
+        backend=_s3_backend(client)[0],
+    )
+    reject_store = ApprovalStore(
+        base_dir="/virtual/reject-worker",
+        backend=_s3_backend(client)[0],
+    )
+    client.coordinate_next_reads(2)
+
+    def approve() -> str | None:
+        try:
+            return approve_store.approve_final(
+                approval.approval_id,
+                author="approver",
+                comment="approved",
+                tenant_id="alpha",
+            ).status
+        except ValueError:
+            return None
+
+    def reject() -> str | None:
+        try:
+            return reject_store.reject(
+                approval.approval_id,
+                author="approver",
+                comment="rejected",
+                tenant_id="alpha",
+            ).status
+        except ValueError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        decisions = list(executor.map(lambda action: action(), (approve, reject)))
+
+    committed = [decision for decision in decisions if decision is not None]
+    persisted = bootstrap.get(approval.approval_id, tenant_id="alpha")
+
+    assert len(committed) == 1
+    assert persisted is not None
+    assert persisted.status == committed[0]
+    terminal_comments = [
+        comment.content
+        for comment in persisted.comments
+        if comment.stage == "approval"
+    ]
+    assert terminal_comments == [
+        "approved" if persisted.status == "approved" else "rejected"
+    ]
+
+
+def test_s3_approval_store_reconciles_commit_then_error() -> None:
+    backend, client = _s3_backend()
+    store = ApprovalStore(base_dir="/virtual/data", backend=backend)
+
+    client.fail_after_next_conditional_write()
+    approval = _create_approval(store, "alpha")
+    store.submit_for_review(
+        approval.approval_id,
+        reviewer="reviewer",
+        tenant_id="alpha",
+    )
+    store.approve_review(
+        approval.approval_id,
+        author="reviewer",
+        tenant_id="alpha",
+    )
+
+    client.fail_after_next_conditional_write()
+    completed = store.approve_final(
+        approval.approval_id,
+        author="approver",
+        tenant_id="alpha",
+    )
+
+    assert completed.status == "approved"
+    persisted = store.get(approval.approval_id, tenant_id="alpha")
+    assert persisted is not None
+    assert persisted.status == "approved"
 
 
 def test_project_store_rejects_forged_s3_record_identity() -> None:

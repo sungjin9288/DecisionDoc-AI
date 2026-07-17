@@ -3,6 +3,12 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone approval state cross-worker authority completion
+
+- `ApprovalStore`의 create·submit·review·comment·document update·final decision mutation은 tenant별 `approvals.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 state의 ownership·schema·transition을 다시 검증하며 operation ID와 timestamp는 재시도 동안 유지한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. Commit 응답이 불확실하면 exact persisted payload를 read-back해 실제 성공을 조정하고, 경쟁 중 확정된 다른 terminal transition은 기존 domain 오류로 반환한다.
+- H57 focused approval gate는 `122 passed`, project/approval/report/security/state/infrastructure 확장 gate는 `541 passed`, full no-cost regression은 `4002 passed, 2 skipped, 4 deselected`다. Process lock을 제거한 fake-S3에서 20-way create/comment 보존, final approve/reject 중 단일 성공, create/final commit-then-error reconciliation을 확인했다. 실제 mock/local uvicorn에서도 health·project/document·approval create와 submit/review/final approve가 모두 `200`이었고 project document가 최종 `approved`로 동기화됐다. 검증은 local/mock/fake-S3만 사용했다. `ProjectStore` worker 간 CAS, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone procurement review evidence state authority completion
 
 - `ProcurementReviewStore`의 record·원본 packet·content-addressed reviewed-package는 앱이 선택한 local/S3 `StateBackend`의 `tenants/{tenant_id}/procurement_reviews/{project_id}/{packet_sha256}/` scope를 공유한다. Local은 conditional file lock/atomic write, S3는 `If-None-Match`와 ETag `If-Match`를 사용해 worker 간 record overwrite를 차단한다.

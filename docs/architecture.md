@@ -174,7 +174,9 @@ ProjectStore                      ApprovalStore
 
 두 store는 앱이 선택한 local/S3 `StateBackend`를 사용하고 tenant별 JSON object의 backend identity와 relative path로 process-local logical lock을 계산한다. 따라서 같은 S3 bucket/prefix/object를 가리키는 독립 store가 서로 다른 virtual base path를 사용해도 한 process 안에서는 같은 read-modify-write lock을 공유한다.
 
-Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/owned ID와 유효한 owned ID를 가진 schema drift는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 보존한다. Persisted state 오류는 domain transition의 `ValueError`와 분리된 store error로 전달되어 approval API의 잘못된 400 응답으로 축소되지 않는다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
+Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/owned ID와 유효한 owned ID를 가진 schema drift는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 보존한다. Persisted state 오류는 domain transition의 `ValueError`와 분리된 store error로 전달되어 approval API의 잘못된 400 응답으로 축소되지 않는다.
+
+`ApprovalStore`는 각 mutation에서 검증된 원문을 expected value로 보존하고 missing state에는 conditional create, existing state에는 compare-and-swap을 적용한다. 충돌하면 최신 state를 다시 읽고 ownership·schema·transition을 재검증한 뒤 동일 operation identity로 재시도한다. S3는 `If-None-Match`와 ETag `If-Match`, local은 conditional file lock과 atomic replace를 사용하며 commit 응답이 불확실하면 exact payload를 read-back한다. 따라서 worker가 다른 결재를 동시에 생성하거나 같은 결재에 댓글을 추가해도 update를 잃지 않고, 최종 승인과 반려가 경쟁하면 먼저 확정된 terminal transition 하나만 성공한다. 이 CAS 보장은 tenant별 단일 approval state object에 한정된다. `ProjectStore`의 worker 간 CAS, 여러 object의 distributed transaction과 실제 AWS runtime은 현재 보장하지 않는다.
 
 ## 데이터 흐름 — 보고서 워크플로우 상태
 

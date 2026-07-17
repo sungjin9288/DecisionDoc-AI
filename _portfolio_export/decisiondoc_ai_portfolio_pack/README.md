@@ -25,7 +25,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | Bundle / Template / Validation | BundleSpec·DocumentSpec + Jinja2 + lint 단계로 문서 유형별 품질 편차 축소 |
 | 멀티 LLM Provider | `mock` / `openai` / `gemini` / `claude` / `local` — factory + fallback chain |
 | 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
-| 프로젝트·결재 상태 무결성 | 프로젝트와 결재 record를 tenant별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key/identity와 owned schema drift를 원본 보존 상태로 차단. 같은 logical object의 process-local 동시 변경을 직렬화 |
+| 프로젝트·결재 상태 무결성 | 프로젝트와 결재 record를 tenant별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key/identity와 owned schema drift를 원본 보존 상태로 차단. 결재 mutation은 conditional create/CAS와 충돌 재시도로 worker 간 overwrite를 방지 |
 | 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. 서로 다른 virtual base도 같은 backend object lock을 공유 |
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,265개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,268개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3265
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3268
 python3 scripts/count_readme_metrics.py --field test_files      # → 251
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 3,999 passed, 2 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,002 passed, 2 skipped, 4 deselected, 2026-07-17 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -345,7 +345,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - G2B 즐겨찾기 state는 local/S3 공통 backend에서 tenant/user ownership과 공고 identity를 검증하고 손상 원본을 보존합니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap과 실제 G2B API 호출은 구현·검증 범위가 아닙니다.
 - 공공조달 판단 state와 source snapshot은 local/S3 공통 backend에서 tenant/project ownership, snapshot storage path와 JSON 구조를 검증하고 손상 원본을 보존합니다. 이 검증은 저장된 snapshot의 경로·JSON 무결성 범위이며 외부 원천 데이터의 의미적 진위, 여러 프로세스의 distributed S3 compare-and-swap, 실제 G2B/provider 호출은 보장하지 않습니다.
 - Decision Council state는 local/S3 공통 backend에서 tenant/project/session identity를 검증하고 손상 원본을 보존합니다. 기존 foreign·malformed record는 조회·변경 대상에서 제외한 채 유지하지만, 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap과 실제 G2B/provider 호출은 검증 범위가 아닙니다.
-- Project/approval state는 local/S3 공통 backend에서 tenant와 record identity를 검증하고 손상 원본을 보존합니다. ID가 없는 기존 malformed record와 explicit foreign record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 유지하지만, 유효한 owned ID를 가진 schema drift는 fail closed 처리합니다. 같은 logical object의 동시성 보장은 한 process 안의 shared lock 범위이며 distributed S3 compare-and-swap은 구현·검증하지 않았습니다.
+- Project/approval state는 local/S3 공통 backend에서 tenant와 record identity를 검증하고 손상 원본을 보존합니다. ID가 없는 기존 malformed record와 explicit foreign record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 유지하지만, 유효한 owned ID를 가진 schema drift는 fail closed 처리합니다. Project mutation은 process-local shared lock 범위입니다. Approval mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌마다 최신 state를 다시 검증해 create·comment·terminal decision overwrite를 방지하며, 불확실한 commit 응답은 exact persisted payload read-back으로 조정합니다. 이 보장은 tenant별 단일 approval object에 한정되고 실제 AWS runtime과 여러 object의 distributed transaction은 검증 범위가 아닙니다.
 - 회의 녹음 metadata/audio는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Audio SHA-256·크기는 읽기 전에 다시 확인하지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 이 검증 범위가 아닙니다.
 - 결제 권한 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 metered request를 `503`으로 차단하고 local HMAC 서명 계약을 검증했지만, 여러 프로세스의 distributed S3 compare-and-swap과 실제 Stripe checkout·cancel·provider-delivered webhook은 구현·검증 범위가 아닙니다.
 - 사용량 event log와 monthly summary는 local/S3 공통 backend에서 process-local lock으로 검증합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. 여러 프로세스의 distributed S3 transaction/CAS, exact reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
@@ -367,4 +367,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,265 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,268 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

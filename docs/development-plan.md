@@ -18,7 +18,7 @@
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-17 실측: 3999 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-17 실측: 4002 passed, 2 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -90,6 +90,7 @@ Providers (5)    Storage (39 스토어)    Ops
 4. 신규 Request 모델은 `ConfigDict(strict=True, extra="forbid")` 필수.
 5. mock provider는 결정론적 — CI/CD와 로컬 데모의 기준 경로.
 6. Persisted review evidence는 missing과 corrupt를 구분하고, immutable artifact를 먼저 검증한 뒤 record를 conditional create/CAS로 확정하며 domain conflict와 store failure를 다른 오류 경계로 전달한다.
+7. Approval mutation은 tenant별 단일 state object의 검증된 원문을 expected value로 사용하고, conditional create/CAS 충돌마다 최신 ownership·schema·transition을 다시 검증한다.
 
 ---
 

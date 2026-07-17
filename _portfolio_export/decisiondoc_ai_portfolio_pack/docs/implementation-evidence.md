@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 기준 non-live 전체 게이트는 `3999 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-17 기준 non-live 전체 게이트는 `4002 passed, 2 skipped, 4 deselected`로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. G2B 실데이터, production deployment, 실제 사용자 성과는 검증하지 않았다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -31,7 +31,7 @@
 | 공공조달 판단 상태 무결성 | 검증 완료 | `app/storage/procurement_store.py`, procurement project/generation/Decision Council caller, `tests/test_procurement_store_integrity.py` | local/fake-S3 missing-state·판단/snapshot 손상 보존·identity/path·입력 검증·logical lock 동시성·API/downstream 회귀와 mock/local uvicorn lifecycle | 외부 원천 진위, distributed S3 CAS와 실제 G2B/provider API는 범위 밖 |
 | 공공조달 검토 증빙 상태 무결성 | 검증 완료 | `app/storage/procurement_review_store.py`, `app/storage/state_backend.py`, `app/services/procurement_review_evidence.py`, project review/generation caller, `tests/test_procurement_review_store.py` | local/fake-S3 record·packet·content-addressed package 손상/누락, exact orphan recovery, conditional create/ETag CAS, uncertain commit read-back, receipt/package semantic drift와 API 500 회귀 | multi-object distributed transaction과 실제 AWS/provider/G2B/입찰 실행은 범위 밖 |
 | Decision Council 상태 무결성 | 검증 완료 | `app/storage/decision_council_store.py`, `app/routers/projects/procurement.py`, generation context caller, `tests/test_decision_council_store_integrity.py` | local/fake-S3 missing-state·손상 보존·canonical identity·동시성·API 회귀와 mock/local uvicorn run/get lifecycle | distributed S3 CAS와 실제 provider/G2B API는 범위 밖 |
-| 프로젝트·결재 상태 무결성 | 검증 완료 | `app/storage/project_store.py`, `app/storage/approval_store.py`, project/approval router, `tests/test_project_approval_store_integrity.py` | local/fake-S3 missing-state·blank/invalid UTF-8·backend failure·owned schema/duplicate identity·logical lock 동시성·API 회귀와 mock/local full approval lifecycle | ID 없는 legacy malformed record는 숨긴 채 보존. Distributed S3 CAS는 범위 밖 |
+| 프로젝트·결재 상태 무결성 | 검증 완료 | `app/storage/project_store.py`, `app/storage/approval_store.py`, `app/storage/state_backend.py`, project/approval router, `tests/test_project_approval_store_integrity.py` | local/fake-S3 missing-state·blank/invalid UTF-8·backend failure·owned schema/duplicate identity·logical lock 동시성·approval conditional create/CAS·competing terminal decision·uncertain commit read-back·API 회귀와 mock/local full approval lifecycle | ID 없는 legacy malformed record는 숨긴 채 보존. Approval CAS는 단일 tenant state object 범위이며 Project worker CAS와 실제 AWS runtime은 범위 밖 |
 | 보고서 워크플로우 상태 무결성 | 검증 완료 | `app/storage/report_workflow/`, report workflow router/service, `tests/test_report_workflow_store_integrity.py` | local/fake-S3 blank/invalid UTF-8·backend failure·workflow/nested identity·cross-base logical lock 동시성·API 500 회귀 | lock은 process-local. Distributed S3 CAS와 provider-backed 생성은 범위 밖 |
 | 회의 녹음 상태 무결성 | 검증 완료 | `app/storage/meeting_recording_store.py`, `app/services/meeting_recording_service.py`, `tests/test_meeting_recording_store_integrity.py` | local/fake-S3 metadata/audio unit·concurrency·API 회귀와 mock/offline HTTP lifecycle | distributed S3 CAS와 실제 OpenAI transcription은 범위 밖 |
 | 결제 권한 상태 무결성 | 검증 완료 | `app/storage/billing_store.py`, `app/middleware/billing.py`, `app/routers/billing.py`, `tests/test_billing_store_integrity.py` | local/fake-S3 unit·concurrency·middleware/API 회귀와 mock/local webhook lifecycle | distributed S3 CAS와 실제 Stripe API는 범위 밖 |
@@ -78,7 +78,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `3999 passed, 2 skipped, 4 deselected` (2026-07-17 실측).
+결과: `4002 passed, 2 skipped, 4 deselected` (2026-07-17 실측).
 
 ### CI advisory lint / security scan
 

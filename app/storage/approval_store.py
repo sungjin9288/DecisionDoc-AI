@@ -2,7 +2,7 @@
 
 Documents go through: 기안(Draft) → 검토(Review) → 승인(Approval) stages.
 Storage: data/tenants/{tenant_id}/approvals.json (one file per tenant).
-Thread-safe within one process across stores that share a logical state object.
+Concurrent changes use process-local locking plus backend conditional writes.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.storage.state_lock import state_lock
@@ -21,6 +21,10 @@ from app.tenant import require_tenant_id
 
 class ApprovalStoreError(RuntimeError):
     """Raised when persisted approval state cannot be trusted."""
+
+
+_MutationResult = TypeVar("_MutationResult")
+_MAX_MUTATION_ATTEMPTS = 32
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -112,14 +116,14 @@ class ApprovalStore:
             relative_path=relative_path,
         )
 
-    def _load(self, tenant_id: str) -> list[dict]:
+    def _read_state(self, tenant_id: str) -> tuple[str | None, list[dict]]:
         tenant_id = require_tenant_id(tenant_id)
         try:
             raw = self._backend.read_text(self._relative_path(tenant_id))
         except (StateBackendError, UnicodeError) as exc:
             raise ApprovalStoreError("Invalid approval state document") from exc
         if raw is None:
-            return []
+            return None, []
         if not raw.strip():
             raise ApprovalStoreError("Invalid approval state document")
         try:
@@ -128,15 +132,55 @@ class ApprovalStore:
             raise ApprovalStoreError("Invalid approval state document") from exc
         if not isinstance(records, list):
             raise ApprovalStoreError("Invalid approval state document")
-        return records
+        return raw, records
 
-    def _save(self, tenant_id: str, records: list[dict]) -> None:
+    def _load(self, tenant_id: str) -> list[dict]:
+        return self._read_state(tenant_id)[1]
+
+    def _persist_if_current(
+        self,
+        tenant_id: str,
+        *,
+        expected: str | None,
+        records: list[dict],
+    ) -> bool:
         self._owned_records(records, tenant_id=tenant_id)
         payload = json.dumps(records, ensure_ascii=False, indent=2)
+        relative_path = self._relative_path(tenant_id)
         try:
-            self._backend.write_text(self._relative_path(tenant_id), payload)
+            if expected is None:
+                return self._backend.write_text_if_absent(relative_path, payload)
+            return self._backend.replace_text_if_equal(
+                relative_path,
+                expected=expected,
+                replacement=payload,
+            )
         except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(relative_path)
+            except StateBackendError:
+                observed = None
+            if observed == payload:
+                return True
             raise ApprovalStoreError("Failed to persist approval state") from exc
+
+    def _mutate_state(
+        self,
+        tenant_id: str,
+        change: Callable[[list[dict]], _MutationResult],
+    ) -> _MutationResult:
+        tenant_id = require_tenant_id(tenant_id)
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, records = self._read_state(tenant_id)
+            self._owned_records(records, tenant_id=tenant_id)
+            result = change(records)
+            if self._persist_if_current(
+                tenant_id,
+                expected=expected,
+                records=records,
+            ):
+                return result
+        raise ApprovalStoreError("Approval state changed too many times to persist safely")
 
     @staticmethod
     def _to_dict(rec: ApprovalRecord) -> dict:
@@ -245,19 +289,51 @@ class ApprovalStore:
         approval_id: str,
         *,
         tenant_id: str,
-    ) -> tuple[str, list[dict], int, ApprovalRecord] | None:
+    ) -> tuple[int, ApprovalRecord] | None:
         """Locate an approval only within the caller's tenant."""
         tenant_id = require_tenant_id(tenant_id)
-        records = self._load(tenant_id)
+        return self._find_in_records(
+            approval_id,
+            records=self._load(tenant_id),
+            tenant_id=tenant_id,
+        )
+
+    def _find_in_records(
+        self,
+        approval_id: str,
+        *,
+        records: list[dict],
+        tenant_id: str,
+    ) -> tuple[int, ApprovalRecord] | None:
         for index, record in self._owned_records(records, tenant_id=tenant_id):
             if record.approval_id == approval_id:
-                return tenant_id, records, index, record
+                return index, record
         return None
 
-    def _flush(self, tenant_id: str, records: list[dict], idx: int, rec: ApprovalRecord) -> ApprovalRecord:
-        records[idx] = self._to_dict(rec)
-        self._save(tenant_id, records)
-        return rec
+    def _mutate_record(
+        self,
+        approval_id: str,
+        *,
+        tenant_id: str,
+        change: Callable[[ApprovalRecord], None],
+    ) -> ApprovalRecord:
+        tenant_id = require_tenant_id(tenant_id)
+
+        def apply(records: list[dict]) -> ApprovalRecord:
+            found = self._find_in_records(
+                approval_id,
+                records=records,
+                tenant_id=tenant_id,
+            )
+            if found is None:
+                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
+            index, record = found
+            change(record)
+            records[index] = self._to_dict(record)
+            return record
+
+        with self._lock(tenant_id):
+            return self._mutate_state(tenant_id, apply)
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -282,49 +358,50 @@ class ApprovalStore:
         procurement_review_document_status_summary: str = "",
     ) -> ApprovalRecord:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock(tenant_id):
-            records = self._load(tenant_id)
-            self._owned_records(records, tenant_id=tenant_id)
-            docs_json = json.dumps(docs, ensure_ascii=False)
-            rec = ApprovalRecord(
-                approval_id=str(uuid.uuid4()),
-                tenant_id=tenant_id,
-                request_id=request_id,
-                bundle_id=bundle_id,
-                title=title,
-                status=ApprovalStatus.DRAFT.value,
-                drafter=drafter,
-                reviewer=None,
-                approver=None,
-                created_at=_now_iso(),
-                submitted_at=None,
-                reviewed_at=None,
-                approved_at=None,
-                rejected_at=None,
-                comments=[],
-                doc_snapshot=docs_json,
-                current_docs=docs_json,
-                gov_options=gov_options,
-                reviewer_approved=False,
-                project_id=project_id,
-                project_document_id=project_document_id,
-                source_decision_council_document_status=decision_council_document_status,
-                source_decision_council_document_status_tone=decision_council_document_status_tone,
-                source_decision_council_document_status_copy=decision_council_document_status_copy,
-                source_decision_council_document_status_summary=decision_council_document_status_summary,
-                source_procurement_review_document_status=procurement_review_document_status,
-                source_procurement_review_document_status_tone=procurement_review_document_status_tone,
-                source_procurement_review_document_status_copy=procurement_review_document_status_copy,
-                source_procurement_review_document_status_summary=procurement_review_document_status_summary,
-            )
+        docs_json = json.dumps(docs, ensure_ascii=False)
+        rec = ApprovalRecord(
+            approval_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            request_id=request_id,
+            bundle_id=bundle_id,
+            title=title,
+            status=ApprovalStatus.DRAFT.value,
+            drafter=drafter,
+            reviewer=None,
+            approver=None,
+            created_at=_now_iso(),
+            submitted_at=None,
+            reviewed_at=None,
+            approved_at=None,
+            rejected_at=None,
+            comments=[],
+            doc_snapshot=docs_json,
+            current_docs=docs_json,
+            gov_options=gov_options,
+            reviewer_approved=False,
+            project_id=project_id,
+            project_document_id=project_document_id,
+            source_decision_council_document_status=decision_council_document_status,
+            source_decision_council_document_status_tone=decision_council_document_status_tone,
+            source_decision_council_document_status_copy=decision_council_document_status_copy,
+            source_decision_council_document_status_summary=decision_council_document_status_summary,
+            source_procurement_review_document_status=procurement_review_document_status,
+            source_procurement_review_document_status_tone=procurement_review_document_status_tone,
+            source_procurement_review_document_status_copy=procurement_review_document_status_copy,
+            source_procurement_review_document_status_summary=procurement_review_document_status_summary,
+        )
+
+        def append_record(records: list[dict]) -> ApprovalRecord:
             records.append(self._to_dict(rec))
-            self._save(tenant_id, records)
             return rec
+
+        with self._lock(tenant_id):
+            return self._mutate_state(tenant_id, append_record)
 
     def get(self, approval_id: str, *, tenant_id: str) -> ApprovalRecord | None:
         with self._lock(tenant_id):
             result = self._find(approval_id, tenant_id=tenant_id)
-            return result[3] if result else None
+            return result[1] if result else None
 
     def list_by_tenant(
         self, tenant_id: str, status: str | None = None
@@ -359,11 +436,9 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        submitted_at = _now_iso()
+
+        def submit(rec: ApprovalRecord) -> None:
             allowed = {ApprovalStatus.DRAFT.value, ApprovalStatus.CHANGES_REQUESTED.value}
             if rec.status not in allowed:
                 raise ValueError(
@@ -372,9 +447,14 @@ class ApprovalStore:
                 )
             rec.status = ApprovalStatus.IN_REVIEW.value
             rec.reviewer = reviewer or rec.reviewer
-            rec.submitted_at = _now_iso()
+            rec.submitted_at = submitted_at
             rec.reviewer_approved = False
-            return self._flush(tenant_id, records, idx, rec)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=submit,
+        )
 
     def request_changes(
         self,
@@ -384,11 +464,16 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        change_comment = ApprovalComment(
+            comment_id=str(uuid.uuid4()),
+            stage="review",
+            author=author,
+            content=comment,
+            created_at=_now_iso(),
+            is_change_request=True,
+        )
+
+        def request(rec: ApprovalRecord) -> None:
             if rec.status != ApprovalStatus.IN_REVIEW.value:
                 raise ValueError(
                     f"상태 전환 오류: '{rec.status}' 상태에서는 수정 요청을 할 수 없습니다. "
@@ -396,11 +481,13 @@ class ApprovalStore:
                 )
             rec.status = ApprovalStatus.CHANGES_REQUESTED.value
             rec.reviewer_approved = False
-            rec.comments.append(ApprovalComment(
-                comment_id=str(uuid.uuid4()), stage="review", author=author,
-                content=comment, created_at=_now_iso(), is_change_request=True,
-            ))
-            return self._flush(tenant_id, records, idx, rec)
+            rec.comments.append(change_comment)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=request,
+        )
 
     def approve_review(
         self,
@@ -410,24 +497,36 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        reviewed_at = _now_iso()
+        review_comment = (
+            ApprovalComment(
+                comment_id=str(uuid.uuid4()),
+                stage="review",
+                author=author,
+                content=comment,
+                created_at=reviewed_at,
+                is_change_request=False,
+            )
+            if comment
+            else None
+        )
+
+        def approve(rec: ApprovalRecord) -> None:
             if rec.status != ApprovalStatus.IN_REVIEW.value:
                 raise ValueError(
                     f"상태 전환 오류: '{rec.status}' 상태에서는 검토 승인을 할 수 없습니다. "
                     f"(허용 상태: in_review)"
                 )
             rec.reviewer_approved = True
-            rec.reviewed_at = _now_iso()
-            if comment:
-                rec.comments.append(ApprovalComment(
-                    comment_id=str(uuid.uuid4()), stage="review", author=author,
-                    content=comment, created_at=_now_iso(), is_change_request=False,
-                ))
-            return self._flush(tenant_id, records, idx, rec)
+            rec.reviewed_at = reviewed_at
+            if review_comment is not None:
+                rec.comments.append(review_comment)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )
 
     def submit_for_approval(
         self,
@@ -436,13 +535,14 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        def assign(rec: ApprovalRecord) -> None:
             rec.approver = approver or rec.approver
-            return self._flush(tenant_id, records, idx, rec)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=assign,
+        )
 
     def approve_final(
         self,
@@ -454,11 +554,21 @@ class ApprovalStore:
         freshness_acknowledged: bool = False,
         approved_source_fingerprint: str = "",
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        approved_at = _now_iso()
+        approval_comment = (
+            ApprovalComment(
+                comment_id=str(uuid.uuid4()),
+                stage="approval",
+                author=author,
+                content=comment,
+                created_at=approved_at,
+                is_change_request=False,
+            )
+            if comment
+            else None
+        )
+
+        def approve(rec: ApprovalRecord) -> None:
             if rec.status != ApprovalStatus.IN_REVIEW.value:
                 raise ValueError(
                     f"상태 전환 오류: '{rec.status}' 상태에서는 최종 승인을 할 수 없습니다. "
@@ -469,18 +579,20 @@ class ApprovalStore:
                     "검토자 승인이 완료되지 않았습니다. 검토자 승인 후 최종 결재가 가능합니다."
                 )
             rec.status = ApprovalStatus.APPROVED.value
-            rec.approved_at = _now_iso()
+            rec.approved_at = approved_at
             rec.approved_source_fingerprint = approved_source_fingerprint
             if freshness_acknowledged:
                 rec.freshness_acknowledged = True
                 rec.freshness_acknowledged_by = author
                 rec.freshness_acknowledged_at = rec.approved_at
-            if comment:
-                rec.comments.append(ApprovalComment(
-                    comment_id=str(uuid.uuid4()), stage="approval", author=author,
-                    content=comment, created_at=_now_iso(), is_change_request=False,
-                ))
-            return self._flush(tenant_id, records, idx, rec)
+            if approval_comment is not None:
+                rec.comments.append(approval_comment)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=approve,
+        )
 
     def reject(
         self,
@@ -490,39 +602,49 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
+        rejected_at = _now_iso()
+        rejection_comment = ApprovalComment(
+            comment_id=str(uuid.uuid4()),
+            stage="approval",
+            author=author,
+            content=comment,
+            created_at=rejected_at,
+            is_change_request=False,
+        )
+
+        def reject_record(rec: ApprovalRecord) -> None:
             if rec.status != ApprovalStatus.IN_REVIEW.value:
                 raise ValueError(
                     f"상태 전환 오류: '{rec.status}' 상태에서는 반려할 수 없습니다. "
                     f"(허용 상태: in_review)"
                 )
             rec.status = ApprovalStatus.REJECTED.value
-            rec.rejected_at = _now_iso()
-            rec.comments.append(ApprovalComment(
-                comment_id=str(uuid.uuid4()), stage="approval", author=author,
-                content=comment, created_at=_now_iso(), is_change_request=False,
-            ))
-            return self._flush(tenant_id, records, idx, rec)
+            rec.rejected_at = rejected_at
+            rec.comments.append(rejection_comment)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=reject_record,
+        )
 
     def update(self, approval_id: str, *, tenant_id: str, **kwargs: Any) -> ApprovalRecord:
         """Update allowed fields: drafter, reviewer, approver.
 
         Used primarily for cascade operations (e.g., user withdrawal).
         """
-        _ALLOWED = {"drafter", "reviewer", "approver"}
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tid, records, idx, rec = result
-            for k, v in kwargs.items():
-                if k in _ALLOWED:
-                    setattr(rec, k, v)
-            return self._flush(tid, records, idx, rec)
+        allowed = {"drafter", "reviewer", "approver"}
+
+        def update_fields(rec: ApprovalRecord) -> None:
+            for key, value in kwargs.items():
+                if key in allowed:
+                    setattr(rec, key, value)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=update_fields,
+        )
 
     def _set_status_direct(
         self,
@@ -532,13 +654,15 @@ class ApprovalStore:
         tenant_id: str,
     ) -> None:
         """Test-only helper — set status bypassing transition guards."""
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tid, records, idx, rec = result
+
+        def set_status(rec: ApprovalRecord) -> None:
             rec.status = status.value
-            self._flush(tid, records, idx, rec)
+
+        self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=set_status,
+        )
 
     def update_docs(
         self,
@@ -547,13 +671,16 @@ class ApprovalStore:
         *,
         tenant_id: str,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
-            rec.current_docs = json.dumps(docs, ensure_ascii=False)
-            return self._flush(tenant_id, records, idx, rec)
+        current_docs = json.dumps(docs, ensure_ascii=False)
+
+        def replace_docs(rec: ApprovalRecord) -> None:
+            rec.current_docs = current_docs
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=replace_docs,
+        )
 
     def add_comment(
         self,
@@ -565,13 +692,20 @@ class ApprovalStore:
         tenant_id: str,
         is_change_request: bool = False,
     ) -> ApprovalRecord:
-        with self._lock(tenant_id):
-            result = self._find(approval_id, tenant_id=tenant_id)
-            if result is None:
-                raise KeyError(f"결재 문서를 찾을 수 없습니다: {approval_id}")
-            tenant_id, records, idx, rec = result
-            rec.comments.append(ApprovalComment(
-                comment_id=str(uuid.uuid4()), stage=stage, author=author,
-                content=content, created_at=_now_iso(), is_change_request=is_change_request,
-            ))
-            return self._flush(tenant_id, records, idx, rec)
+        approval_comment = ApprovalComment(
+            comment_id=str(uuid.uuid4()),
+            stage=stage,
+            author=author,
+            content=content,
+            created_at=_now_iso(),
+            is_change_request=is_change_request,
+        )
+
+        def append_comment(rec: ApprovalRecord) -> None:
+            rec.comments.append(approval_comment)
+
+        return self._mutate_record(
+            approval_id,
+            tenant_id=tenant_id,
+            change=append_comment,
+        )

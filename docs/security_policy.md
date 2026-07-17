@@ -74,7 +74,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 프로젝트·결재 상태
   - 프로젝트와 결재 record는 local `data/tenants/<tenant_id>/{projects,approvals}.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - Tenant와 owned project/approval identity를 state 접근 전에 검증한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/identity와 유효한 owned ID의 schema drift는 조회·결재 전이·후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 현재 tenant에 노출하거나 변경하지 않은 채 보존한다.
-  - 독립 store 인스턴스의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. Persisted state 오류는 approval transition 입력 오류와 구분해 API에서 `500 INTERNAL_ERROR`로 처리한다. Distributed S3 compare-and-swap은 현재 보장 범위가 아니다.
+  - 독립 store 인스턴스의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. `ApprovalStore`는 local conditional write와 S3 conditional create/ETag CAS를 추가로 사용하고, 충돌마다 최신 state의 ownership·schema·transition을 재검증해 worker 간 create/comment/terminal overwrite를 차단한다. 불확실한 commit 응답은 exact payload read-back으로 조정한다. Persisted state 오류는 approval transition 입력 오류와 구분해 API에서 `500 INTERNAL_ERROR`로 처리한다.
+  - Approval CAS는 tenant별 단일 state object 범위다. `ProjectStore`의 worker 간 CAS, multi-object distributed transaction과 실제 AWS runtime은 현재 보장 범위가 아니다.
 - 보고서 워크플로우 상태
   - 기획·장표·시각자료·승인·승격 state는 local `data/tenants/<tenant_id>/report_workflows.json` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant와 workflow/nested identity를 state 접근 전에 검증한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/identity, owned schema drift와 backend failure는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다.
