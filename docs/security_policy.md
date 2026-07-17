@@ -84,7 +84,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 회의 녹음 상태
   - 녹음 metadata와 audio는 local `data/tenants/<tenant_id>/meeting_recordings/<project_id>/<recording_id>/` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant/project/recording identity와 canonical audio path를 state 접근 전에 검증한다. Malformed metadata와 duplicate key는 조회·전사·승인을 중단하고 explicit foreign metadata는 현재 scope에 노출하지 않는다. Audio read는 persisted size와 SHA-256을 실제 bytes와 다시 대조한다.
-  - 독립 store 인스턴스의 create와 transcript/approval 변경은 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 OpenAI transcription 성공은 현재 보장 범위가 아니다.
+  - Recording별 metadata는 local conditional write 또는 S3 conditional create/ETag CAS로 갱신한다. Worker 충돌마다 최신 identity·schema·audio binding 위에 transcript/approval 변경을 최대 32회 재적용하고, API에 노출하지 않는 최근 mutation receipt를 최대 64개 보존해 commit 응답 유실 뒤 successor CAS도 조정한다. Audio는 immutable conditional create로 저장하며 정확히 같은 bytes의 orphan만 재사용한다.
+  - CAS 보장은 단일 metadata object 범위다. Metadata와 audio를 함께 묶는 distributed transaction, 64개를 넘는 successor mutation의 불확실 commit 조정, retry backoff·fairness, 실제 AWS runtime과 실제 OpenAI transcription 성공은 현재 보장 범위가 아니다.
 - 결제 권한 상태
   - plan, account status와 Stripe identity는 local `data/tenants/<tenant_id>/billing.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant와 exact account schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, tenant/plan/status/timestamp drift는 조회와 후속 변경을 중단하며 원본 bytes를 보존한다. Metered request는 tenant/auth context 확정 뒤 상태를 확인하고 검증 실패 시 `503`으로 차단한다.

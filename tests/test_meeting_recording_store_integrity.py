@@ -3,10 +3,13 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import threading
 import time
 import uuid
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +18,11 @@ from app.storage.meeting_recording_store import (
     MeetingRecordingStore,
     MeetingRecordingStoreError,
 )
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -32,6 +39,37 @@ class _SlowLocalBackend(LocalStateBackend):
         return paths
 
 
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, expected, replacement, content_type
+        self.attempts += 1
+        return False
+
+
+class _FailingConditionalBackend(LocalStateBackend):
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, expected, replacement, content_type
+        raise StateBackendError("simulated conditional write failure")
+
+
 class _Body:
     def __init__(self, data: bytes) -> None:
         self._data = data
@@ -44,6 +82,28 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_key_suffix: str | None = None
+        self._after_failed_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        key_suffix: str,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_key_suffix = key_suffix
+        self._after_failed_write = after_write
 
     def put_object(
         self,
@@ -52,47 +112,81 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                (IfNoneMatch is not None or IfMatch is not None)
+                and self._fail_after_key_suffix is not None
+                and Key.endswith(self._fail_after_key_suffix)
+            )
+            if fail_after_write:
+                self._fail_after_key_suffix = None
+                after_failed_write = self._after_failed_write
+                self._after_failed_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
     def head_object(self, *, Bucket: str, Key: str) -> dict:
-        if (Bucket, Key) not in self.objects:
-            error = Exception("NotFound")
-            error.response = {"Error": {"Code": "404"}}
-            raise error
-        return {}
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
+        if data is None:
+            raise self._error("NotFound")
+        return {"ETag": self._etag(data)}
+
+    def delete_object(self, *, Bucket: str, Key: str) -> None:
+        with self._lock:
+            self.objects.pop((Bucket, Key), None)
 
     def list_objects_v2(self, *, Bucket: str, Prefix: str, **kwargs) -> dict:
         _ = kwargs
-        contents = [
-            {"Key": key}
-            for (bucket, key), _ in self.objects.items()
-            if bucket == Bucket and key.startswith(Prefix)
-        ]
+        with self._lock:
+            contents = [
+                {"Key": key}
+                for (bucket, key), _ in self.objects.items()
+                if bucket == Bucket and key.startswith(Prefix)
+            ]
         return {"Contents": contents, "IsTruncated": False}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
         s3_client=client,
     )
     return backend, client
+
+
+def _without_recording_lock(*_args: object):
+    return nullcontext()
 
 
 def _metadata_path(
@@ -521,6 +615,63 @@ def test_recording_store_rejects_uuid_collision_without_overwrite(
     assert audio_path.read_bytes() == original_audio
 
 
+def test_recording_create_reuses_exact_orphan_audio(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording_uuid = uuid.uuid4()
+    monkeypatch.setattr(
+        "app.storage.meeting_recording_store.uuid.uuid4",
+        lambda: recording_uuid,
+    )
+    audio_path = _audio_path(tmp_path, str(recording_uuid))
+    audio_path.parent.mkdir(parents=True)
+    audio_path.write_bytes(b"orphan audio")
+    store = MeetingRecordingStore(base_dir=tmp_path)
+
+    recording = store.create(
+        tenant_id="alpha",
+        project_id="project-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"orphan audio",
+    )
+
+    assert recording.recording_id == str(recording_uuid)
+    assert audio_path.read_bytes() == b"orphan audio"
+    assert _metadata_path(tmp_path, str(recording_uuid)).is_file()
+
+
+def test_recording_create_preserves_conflicting_orphan_audio(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording_uuid = uuid.uuid4()
+    monkeypatch.setattr(
+        "app.storage.meeting_recording_store.uuid.uuid4",
+        lambda: recording_uuid,
+    )
+    audio_path = _audio_path(tmp_path, str(recording_uuid))
+    audio_path.parent.mkdir(parents=True)
+    audio_path.write_bytes(b"existing orphan")
+    store = MeetingRecordingStore(base_dir=tmp_path)
+
+    with pytest.raises(
+        MeetingRecordingStoreError,
+        match="Duplicate meeting recording identity",
+    ):
+        store.create(
+            tenant_id="alpha",
+            project_id="project-1",
+            filename="meeting.wav",
+            content_type="audio/wav",
+            raw=b"different audio",
+        )
+
+    assert audio_path.read_bytes() == b"existing orphan"
+    assert not _metadata_path(tmp_path, str(recording_uuid)).exists()
+
+
 def test_independent_local_stores_allow_one_concurrent_create_per_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -537,6 +688,8 @@ def test_independent_local_stores_allow_one_concurrent_create_per_identity(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = _without_recording_lock
 
     def create(index: int) -> bool:
         try:
@@ -599,6 +752,8 @@ def test_independent_local_stores_preserve_concurrent_transcript_and_approval(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = _without_recording_lock
 
     def mutate(index: int) -> None:
         if index % 2:
@@ -691,8 +846,11 @@ def test_untrusted_fake_s3_metadata_is_preserved() -> None:
 
 
 def test_independent_fake_s3_stores_preserve_concurrent_mutations() -> None:
-    backend, _ = _s3_backend(read_delay=0.005)
-    creator = MeetingRecordingStore(base_dir="/virtual/data", backend=backend)
+    client = _MemoryS3Client(read_delay=0.005)
+    creator = MeetingRecordingStore(
+        base_dir="/virtual/creator",
+        backend=_s3_backend(client=client)[0],
+    )
     recording = creator.create(
         tenant_id="alpha",
         project_id="project-1",
@@ -709,9 +867,14 @@ def test_independent_fake_s3_stores_preserve_concurrent_mutations() -> None:
         transcript_model="test-model",
     )
     stores = [
-        MeetingRecordingStore(base_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        MeetingRecordingStore(
+            base_dir=f"/virtual/worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in stores:
+        store._lock = _without_recording_lock
 
     def mutate(index: int) -> None:
         if index % 2:
@@ -742,6 +905,198 @@ def test_independent_fake_s3_stores_preserve_concurrent_mutations() -> None:
     assert reloaded is not None
     assert reloaded.approval_status == "approved"
     assert reloaded.transcript_text.startswith("transcript-")
+
+
+def test_recording_mutation_reconciles_commit_then_successor_update() -> None:
+    client = _MemoryS3Client()
+    bootstrap = MeetingRecordingStore(
+        base_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    recording = bootstrap.create(
+        tenant_id="alpha",
+        project_id="project-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"audio",
+    )
+    bootstrap.save_transcript(
+        tenant_id="alpha",
+        project_id="project-1",
+        recording_id=recording.recording_id,
+        transcript_text="initial transcript",
+        transcript_language="ko",
+        transcript_model="test-model",
+    )
+    primary = MeetingRecordingStore(
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = MeetingRecordingStore(
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = _without_recording_lock
+    successor._lock = _without_recording_lock
+    client.fail_after_next_conditional_write(
+        key_suffix="metadata.json",
+        after_write=lambda: successor.save_transcript(
+            tenant_id="alpha",
+            project_id="project-1",
+            recording_id=recording.recording_id,
+            transcript_text="successor transcript",
+            transcript_language="ko",
+            transcript_model="successor-model",
+        ),
+    )
+
+    approved = primary.approve(
+        tenant_id="alpha",
+        project_id="project-1",
+        recording_id=recording.recording_id,
+        approved_by="reviewer",
+    )
+
+    assert approved.approval_status == "approved"
+    reloaded = bootstrap.get(
+        tenant_id="alpha",
+        project_id="project-1",
+        recording_id=recording.recording_id,
+    )
+    assert reloaded is not None
+    assert reloaded.approval_status == "approved"
+    assert reloaded.transcript_text == "successor transcript"
+
+
+def test_recording_create_reconciles_commit_then_error() -> None:
+    for key_suffix in ("audio.wav", "metadata.json"):
+        client = _MemoryS3Client()
+        client.fail_after_next_conditional_write(key_suffix=key_suffix)
+        store = MeetingRecordingStore(
+            base_dir=f"/virtual/creator-{key_suffix}",
+            backend=_s3_backend(client=client)[0],
+        )
+
+        recording = store.create(
+            tenant_id="alpha",
+            project_id="project-1",
+            filename="meeting.wav",
+            content_type="audio/wav",
+            raw=b"audio",
+        )
+
+        reloaded = store.get(
+            tenant_id="alpha",
+            project_id="project-1",
+            recording_id=recording.recording_id,
+        )
+        assert reloaded is not None
+        assert reloaded.audio_sha256 == hashlib.sha256(b"audio").hexdigest()
+
+
+def test_recording_mutation_stops_after_bounded_conflicts(tmp_path: Path) -> None:
+    bootstrap = MeetingRecordingStore(base_dir=tmp_path)
+    recording = bootstrap.create(
+        tenant_id="alpha",
+        project_id="project-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"audio",
+    )
+    backend = _ConflictingLocalBackend(tmp_path)
+    store = MeetingRecordingStore(base_dir=tmp_path, backend=backend)
+    store._lock = _without_recording_lock
+
+    with pytest.raises(
+        MeetingRecordingStoreError,
+        match="changed too many times",
+    ):
+        store.mark_processing(
+            tenant_id="alpha",
+            project_id="project-1",
+            recording_id=recording.recording_id,
+        )
+
+    assert backend.attempts == 32
+
+
+def test_recording_mutation_wraps_backend_failure(tmp_path: Path) -> None:
+    bootstrap = MeetingRecordingStore(base_dir=tmp_path)
+    recording = bootstrap.create(
+        tenant_id="alpha",
+        project_id="project-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"audio",
+    )
+    store = MeetingRecordingStore(
+        base_dir=tmp_path,
+        backend=_FailingConditionalBackend(tmp_path),
+    )
+
+    with pytest.raises(
+        MeetingRecordingStoreError,
+        match="Failed to persist meeting recording metadata",
+    ):
+        store.mark_processing(
+            tenant_id="alpha",
+            project_id="project-1",
+            recording_id=recording.recording_id,
+        )
+
+
+def test_recording_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = MeetingRecordingStore(base_dir=tmp_path)
+    recording = store.create(
+        tenant_id="alpha",
+        project_id="project-1",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        raw=b"audio",
+    )
+    for _ in range(70):
+        store.mark_processing(
+            tenant_id="alpha",
+            project_id="project-1",
+            recording_id=recording.recording_id,
+        )
+
+    public = store.get(
+        tenant_id="alpha",
+        project_id="project-1",
+        recording_id=recording.recording_id,
+    )
+    metadata_path = _metadata_path(tmp_path, recording.recording_id)
+    persisted = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert public is not None
+    assert not hasattr(public, "_mutation_ids")
+    assert len(persisted["_mutation_ids"]) == 64
+
+    corrupt_histories = (
+        [f"mutation-{index}" for index in range(65)],
+        ["duplicate", "duplicate"],
+        [""],
+    )
+    for mutation_ids in corrupt_histories:
+        persisted["_mutation_ids"] = mutation_ids
+        metadata_path.write_text(json.dumps(persisted), encoding="utf-8")
+        original_bytes = metadata_path.read_bytes()
+
+        with pytest.raises(MeetingRecordingStoreError):
+            store.get(
+                tenant_id="alpha",
+                project_id="project-1",
+                recording_id=recording.recording_id,
+            )
+        with pytest.raises(MeetingRecordingStoreError):
+            store.mark_processing(
+                tenant_id="alpha",
+                project_id="project-1",
+                recording_id=recording.recording_id,
+            )
+        assert metadata_path.read_bytes() == original_bytes
 
 
 def test_application_constructs_recording_store_with_shared_backend() -> None:

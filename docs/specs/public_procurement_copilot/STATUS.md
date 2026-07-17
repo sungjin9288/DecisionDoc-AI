@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone meeting recording cross-worker authority completion
+
+- `MeetingRecordingStore`는 recording별 `tenants/{tenant_id}/meeting_recordings/{project_id}/{recording_id}/metadata.json`을 권위 객체로 사용한다. Create는 metadata를 conditional create하고 transcript·approval mutation은 검증된 원문을 expected value로 사용하는 CAS retry loop로 갱신한다. 충돌하면 최신 identity·schema·audio binding 위에 같은 변경을 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 metadata에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존한다. Commit 응답 유실 뒤 successor CAS가 이어져도 receipt로 원래 operation을 조정한다. Audio는 immutable conditional create로 저장하고 동일 bytes orphan만 재사용하며 충돌 bytes는 덮어쓰지 않는다.
+- H64 focused meeting recording gate는 `54 passed, 1 warning`, recording API·smoke·state backend·usage·project·security·infrastructure 확장 gate는 `587 passed, 1 warning`, provider API key를 process에서 제거한 full no-cost regression은 `4063 passed, 2 skipped, 4 deselected`다. Mock/local HTTP lifecycle에서는 project create·recording upload·approve·list·detail이 모두 `200`이었고 persisted private receipt 3개와 API 비노출, provider 호출 0건을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. CAS는 recording별 단일 metadata object 범위이며 metadata와 audio를 함께 묶는 distributed transaction, 64개를 넘는 successor mutation 조정, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone reusable artifact cross-worker authority completion
 
 - `TemplateStore`, `HistoryStore`, `ShareStore`의 mutation은 tenant별 `templates.jsonl`, `history.jsonl`, `shares.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema·lifecycle 위에 template add/delete/use-count, history add/delete/favorite/visual-asset/promotion, share create/access/revoke를 재적용한다.

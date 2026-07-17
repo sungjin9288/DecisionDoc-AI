@@ -228,6 +228,12 @@ CAS 보장은 tenant별 단일 message 또는 notification object 범위다. 메
 
 초대 수락은 invite object를 먼저 비활성 claim한 worker 하나만 account callback을 실행한다. Callback 예외는 동일 claim을 다시 활성화하고 성공 시 private claim ID를 제거해 완료한다. 이 보장은 각각 단일 user 또는 invite object 범위다. `users.json`과 `invites.json`을 함께 묶는 distributed transaction과 process crash 뒤 남은 claim의 자동 recovery는 제공하지 않으며, 실제 AWS runtime과 초대 메일 전달 성공은 별도 검증 범위다.
 
+## 데이터 흐름 — 회의 녹음 상태
+
+회의 녹음은 `tenants/{tenant_id}/meeting_recordings/{project_id}/{recording_id}/metadata.json`을 recording별 권위 객체로 사용한다. Create는 audio를 content-bound immutable object로 conditional create한 뒤 metadata를 conditional create하고, transcript·approval mutation은 검증된 metadata 원문을 expected value로 사용하는 CAS retry loop로 갱신한다. 충돌하면 최신 identity·schema·audio binding을 다시 검증하고 같은 변경을 최대 32회 재적용한다.
+
+최근 mutation ID는 metadata에 최대 64개까지 private receipt로 보존한다. Conditional commit 응답이 유실되고 다른 worker의 successor CAS가 이어져 exact payload가 달라져도 receipt read-back으로 원래 변경의 성공을 조정한다. 동일 경로의 orphan audio는 bytes가 정확히 일치할 때만 재사용하고 다른 bytes는 덮어쓰지 않는다. 이 보장은 단일 metadata object 범위이며 metadata와 audio를 하나로 묶는 distributed transaction, 실제 AWS runtime과 provider transcription은 별도 검증 범위다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```
