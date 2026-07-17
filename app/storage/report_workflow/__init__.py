@@ -25,7 +25,10 @@ from app.storage.report_workflow.models import (
     WorkflowComment,
     _now_iso,
 )
-from app.storage.report_workflow.core_mixin import ReportWorkflowCoreMixin
+from app.storage.report_workflow.core_mixin import (
+    ReportWorkflowCoreMixin,
+    ReportWorkflowStoreError,
+)
 from app.storage.report_workflow.helpers_mixin import ReportWorkflowHelpersMixin
 from app.storage.report_workflow.planning_mixin import ReportWorkflowPlanningMixin
 from app.storage.report_workflow.slide_mixin import ReportWorkflowSlideMixin
@@ -42,6 +45,7 @@ __all__ = [
     "ApprovalStep",
     "ReportWorkflowRecord",
     "ReportWorkflowStore",
+    "ReportWorkflowStoreError",
 ]
 
 

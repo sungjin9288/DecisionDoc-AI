@@ -22,7 +22,7 @@ class ReportWorkflowPromotionMixin:
         project_document_id: str,
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(report_workflow_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
@@ -43,7 +43,7 @@ class ReportWorkflowPromotionMixin:
         documents: list[dict[str, Any]],
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(report_workflow_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")
@@ -65,7 +65,7 @@ class ReportWorkflowPromotionMixin:
         actor: str = "",
         tenant_id: str,
     ) -> ReportWorkflowRecord:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(report_workflow_id, tenant_id=tenant_id)
             if result is None:
                 raise KeyError(f"보고서 워크플로우를 찾을 수 없습니다: {report_workflow_id}")

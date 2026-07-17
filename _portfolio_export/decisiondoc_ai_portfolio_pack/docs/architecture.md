@@ -160,6 +160,22 @@ ProjectStore                      ApprovalStore
 
 Missing-state read는 파일이나 object를 만들지 않는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/owned ID와 유효한 owned ID를 가진 schema drift는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 호환을 위해 현재 tenant의 조회·변경 대상에서 제외한 채 보존한다. Persisted state 오류는 domain transition의 `ValueError`와 분리된 store error로 전달되어 approval API의 잘못된 400 응답으로 축소되지 않는다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
 
+## 데이터 흐름 — 보고서 워크플로우 상태
+
+```
+/report-workflows*
+    │
+    ▼
+ReportWorkflowStore
+    ├─ tenants/{tenant_id}/report_workflows.json
+    ├─ planning / slides / visual assets / approval / promotion
+    └─ tenant/workflow/nested identity 검증
+```
+
+Workflow의 모든 read-modify-write는 앱이 선택한 local/S3 `StateBackend`와 tenant별 relative path로 계산한 process-local logical lock 안에서 실행한다. 같은 S3 bucket/prefix/object를 가리키는 독립 store가 서로 다른 virtual base를 사용해도 한 process 안에서는 같은 lock을 공유한다.
+
+Missing-state만 빈 목록으로 읽는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/workflow/nested identity, owned schema drift와 backend read/write failure는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Persisted state 오류는 planning·approval 같은 domain `ValueError`와 분리된 `ReportWorkflowStoreError`로 전달되어 API의 400 응답으로 축소되지 않는다. Distributed S3 compare-and-swap은 현재 보장하지 않는다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

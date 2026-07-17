@@ -4,13 +4,17 @@ record lookup (``_find``/``_flush``), and the ``create``/``get``/
 from __future__ import annotations
 
 import json
-import threading
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import (
+    StateBackend,
+    StateBackendError,
+    get_state_backend,
+)
+from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
 
 from app.storage.report_workflow.models import (
@@ -20,17 +24,8 @@ from app.storage.report_workflow.models import (
 )
 
 
-_workflow_locks: dict[Path, threading.RLock] = {}
-_workflow_locks_guard = threading.Lock()
-
-
-class ReportWorkflowStoreError(ValueError):
+class ReportWorkflowStoreError(RuntimeError):
     """Raised when persisted report workflow state cannot be trusted."""
-
-
-def _lock_for_path(path: Path) -> threading.RLock:
-    with _workflow_locks_guard:
-        return _workflow_locks.setdefault(path.resolve(), threading.RLock())
 
 
 def _require_workflow_id(report_workflow_id: object) -> str:
@@ -56,19 +51,35 @@ class ReportWorkflowCoreMixin:
     def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
-        self._lock = _lock_for_path(self._base / "tenants" / "report_workflows")
 
     def _relative_path(self, tenant_id: str) -> str:
         tenant_id = require_tenant_id(tenant_id)
         return str(Path("tenants") / tenant_id / "report_workflows.json")
 
+    def _lock(self, tenant_id: str):
+        relative_path = self._relative_path(tenant_id)
+        return state_lock(
+            self._backend,
+            data_dir=self._base,
+            relative_path=relative_path,
+        )
+
     def _load(self, tenant_id: str) -> list[Any]:
-        raw = self._backend.read_text(self._relative_path(tenant_id))
+        try:
+            raw = self._backend.read_text(self._relative_path(tenant_id))
+        except (StateBackendError, UnicodeError) as exc:
+            raise ReportWorkflowStoreError(
+                "Invalid report workflow state document"
+            ) from exc
         if raw is None:
             return []
+        if not raw.strip():
+            raise ReportWorkflowStoreError(
+                "Invalid report workflow state document"
+            )
         try:
             records = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ReportWorkflowStoreError) as exc:
             raise ReportWorkflowStoreError(
                 "Invalid report workflow state document"
             ) from exc
@@ -80,7 +91,12 @@ class ReportWorkflowCoreMixin:
 
     def _save(self, tenant_id: str, records: list[Any]) -> None:
         payload = json.dumps(records, ensure_ascii=False, indent=2)
-        self._backend.write_text(self._relative_path(tenant_id), payload)
+        try:
+            self._backend.write_text(self._relative_path(tenant_id), payload)
+        except StateBackendError as exc:
+            raise ReportWorkflowStoreError(
+                "Failed to persist report workflow state"
+            ) from exc
 
     def _owned_records(
         self,
@@ -155,7 +171,7 @@ class ReportWorkflowCoreMixin:
         learning_opt_in: bool = False,
     ) -> ReportWorkflowRecord:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = self._load(tenant_id)
             self._owned_records(records, tenant_id=tenant_id)
             now = _now_iso()
@@ -186,13 +202,13 @@ class ReportWorkflowCoreMixin:
             return rec
 
     def get(self, report_workflow_id: str, *, tenant_id: str) -> ReportWorkflowRecord | None:
-        with self._lock:
+        with self._lock(tenant_id):
             result = self._find(report_workflow_id, tenant_id=tenant_id)
             return result[3] if result else None
 
     def list_by_tenant(self, tenant_id: str, status: str | None = None) -> list[ReportWorkflowRecord]:
         tenant_id = require_tenant_id(tenant_id)
-        with self._lock:
+        with self._lock(tenant_id):
             records = [
                 record
                 for _, record in self._owned_records(

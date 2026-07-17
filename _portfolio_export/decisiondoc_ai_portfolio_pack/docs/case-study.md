@@ -66,6 +66,7 @@
 - Local/S3 storage abstraction
 - project, knowledge, approvals, history/share, health/metrics, G2B, report workflow API
 - project/approval tenant state의 local/S3 logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
+- report workflow tenant state의 backend-bound logical object locking, corrupt-state fail-closed 처리와 API 오류 경계
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
 - tenant/project-bound procurement review packet, reviewer inbox, downstream evidence freshness, share/approval drift acknowledgement
 - Dockerfile, Docker Compose, AWS SAM 설정

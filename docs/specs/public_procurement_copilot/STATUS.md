@@ -3,6 +3,12 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone report workflow state authority completion
+
+- `ReportWorkflowStore`의 planning·slide·visual asset·approval·promotion mutation은 local base path가 아니라 selected `StateBackend`와 tenant별 `tenants/{tenant_id}/report_workflows.json` relative path로 계산한 process-local logical lock 안에서 실행한다. 서로 다른 virtual base를 쓰는 독립 store도 같은 S3 bucket/prefix/object를 가리키면 lock을 공유한다.
+- Missing-state만 빈 목록으로 읽는다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/workflow/nested identity, owned schema drift와 backend read/write failure는 조회와 후속 mutation을 중단하고 원본 bytes를 보존한다. Persisted state 오류는 planning/approval domain `ValueError`와 분리된 `ReportWorkflowStoreError`로 전달되어 API의 400 응답으로 축소되지 않는다.
+- H55 focused integrity gate는 `27 passed`, report workflow·quality learning·knowledge·project/approval·security·infrastructure 확장 gate는 `411 passed`, full no-cost regression은 `3964 passed, 2 skipped, 4 deselected`다. 검증은 local/mock/fake-S3만 사용했다. Distributed S3 CAS, provider API, G2B live API, AWS runtime, Stripe API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone project and approval state authority completion
 
 - `ProjectStore`와 `ApprovalStore`는 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/{projects,approvals}.json`을 사용한다. Read-modify-write는 local base path가 아니라 backend identity와 relative path로 계산한 process-local logical lock 안에서 직렬화하므로, 서로 다른 virtual base를 쓰는 독립 store도 같은 S3 object를 가리키면 lock을 공유한다.

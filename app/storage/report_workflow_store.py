@@ -20,6 +20,7 @@ from app.storage.report_workflow import (
     ReportWorkflowRecord,
     ReportWorkflowStatus,
     ReportWorkflowStore,
+    ReportWorkflowStoreError,
     SlideDraft,
     SlidePlan,
     SlideStatus,
@@ -36,4 +37,5 @@ __all__ = [
     "ApprovalStep",
     "ReportWorkflowRecord",
     "ReportWorkflowStore",
+    "ReportWorkflowStoreError",
 ]
