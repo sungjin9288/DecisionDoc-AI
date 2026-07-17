@@ -204,6 +204,40 @@ def test_invite_accept_public_for_valid_invite(client):
     assert body["user"]["assigned_ai_profiles"] == ["delivery_pm"]
 
 
+def test_invite_accept_duplicate_username_releases_claim(client):
+    admin = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "관리자",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert admin.status_code == 200
+    token = admin.json()["access_token"]
+    invite = client.post(
+        "/admin/invite",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "member@test.com", "role": "member"},
+    )
+    assert invite.status_code == 200
+    invite_id = invite.json()["invite_id"]
+
+    duplicate = client.post(
+        f"/invite/{invite_id}/accept",
+        json={
+            "username": "admin",
+            "display_name": "중복 사용자",
+            "password": "MemberPass1!",
+        },
+    )
+
+    assert duplicate.status_code == 400
+    assert "이미 존재" in duplicate.json()["detail"]
+    assert client.get(f"/invite/{invite_id}").status_code == 200
+
+
 def test_admin_can_update_location_user_ai_assignment(client):
     admin = client.post(
         "/auth/register",

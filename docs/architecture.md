@@ -212,6 +212,14 @@ Worker 간 append 권위는 process-local lock에만 의존하지 않는다. Mis
 
 CAS 보장은 tenant별 단일 message 또는 notification object 범위다. 메시지 게시와 mention notification 생성을 하나의 commit으로 묶는 distributed transaction, 실제 AWS runtime, SMTP·Slack 전달 성공은 현재 보장하지 않는다.
 
+## 데이터 흐름 — 계정·초대 상태
+
+`UserStore`와 `InviteStore`는 tenant별 `tenants/{tenant_id}/{users,invites}.json`을 앱이 선택한 local/S3 `StateBackend`에 저장한다. Missing-state만 빈 상태로 읽고 malformed document, duplicate key·owned identity·username과 손상된 mutation receipt는 인증·등록·초대 수락 및 후속 변경을 중단하며 원본 bytes를 보존한다. Persisted state 오류는 caller 입력 `ValueError`와 분리해 API에서 4xx로 축소하지 않는다.
+
+계정 생성·profile·password·last-login 변경과 초대 생성·사용 변경은 missing state에 conditional create, existing state에 compare-and-swap을 적용한다. 충돌하면 최신 ownership·schema와 username uniqueness 위에 mutation을 최대 32회 재적용하고, API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor CAS가 이어져도 원래 operation을 조정한다. 첫 관리자 등록은 tenant가 비어 있다는 precondition과 admin create를 같은 CAS mutation에서 처리한다.
+
+초대 수락은 invite object를 먼저 비활성 claim한 worker 하나만 account callback을 실행한다. Callback 예외는 동일 claim을 다시 활성화하고 성공 시 private claim ID를 제거해 완료한다. 이 보장은 각각 단일 user 또는 invite object 범위다. `users.json`과 `invites.json`을 함께 묶는 distributed transaction과 process crash 뒤 남은 claim의 자동 recovery는 제공하지 않으며, 실제 AWS runtime과 초대 메일 전달 성공은 별도 검증 범위다.
+
 ## 데이터 흐름 — 프로젝트 import
 
 ```

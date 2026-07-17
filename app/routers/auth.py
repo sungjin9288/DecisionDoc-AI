@@ -51,22 +51,26 @@ def _serialize_user_for_client(user) -> dict:
 @router.post("/auth/register")
 async def register_first_admin(request: Request, body: CreateUserRequest):
     """Create the first admin user when no users exist in the tenant."""
-    from app.storage.user_store import get_user_store, UserRole
+    from app.storage.user_store import (
+        UserStoreAlreadyInitialized,
+        UserStoreError,
+        get_user_store,
+    )
     from app.services.auth_service import create_access_token, create_refresh_token
 
     tenant_id = get_tenant_id(request)
     user_store = get_user_store(tenant_id)
-    existing = user_store.list_users()
-    if existing:
-        raise HTTPException(403, "이미 사용자가 존재합니다. 관리자에게 초대를 요청하세요.")
     try:
-        user = user_store.create(
+        user = user_store.create_first_admin(
             username=body.username,
             display_name=body.display_name,
             email=body.email,
             password=body.password,
-            role=UserRole.ADMIN,
         )
+    except UserStoreAlreadyInitialized as exc:
+        raise HTTPException(403, str(exc))
+    except UserStoreError:
+        raise
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     user_store.update_last_login(user.user_id)

@@ -41,8 +41,9 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
 - 계정·초대 상태
   - 사용자와 초대 record는 local `data/tenants/<tenant_id>/{users,invites}.json` 또는 같은 relative path의 S3 state object에 저장한다.
-  - tenant를 path 선택 전에 검증하고 손상 document, duplicate key, owned identity·role·timestamp drift와 duplicate username은 인증·등록·초대 수락과 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 인증에 사용하지 않고 원본에 보존한다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 초대 메일 전달은 현재 보장 범위가 아니다.
+  - tenant를 path 선택 전에 검증하고 손상 document, duplicate key, owned identity·role·timestamp drift, duplicate username과 손상 private receipt는 인증·등록·초대 수락과 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 인증에 사용하지 않고 원본에 보존한다. Persisted 오류는 caller 입력 오류와 분리해 API에서 `500 INTERNAL_ERROR`로 처리한다.
+  - Worker mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema·username uniqueness를 다시 검증한다. 최근 mutation receipt는 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정한다. 첫 관리자는 empty-tenant precondition과 생성을 한 mutation으로 처리하며, 초대 수락은 invite claim을 먼저 확정한 worker 하나만 account callback을 실행하고 callback 실패 시 claim을 되돌린다.
+  - CAS는 각각 tenant별 단일 user 또는 invite state object 범위다. 두 object를 함께 묶는 distributed transaction, process crash 뒤 남은 claim의 자동 recovery, 실제 AWS runtime과 초대 메일 전달 성공은 현재 보장 범위가 아니다.
 - 사용자 템플릿 상태
   - 재사용 문서 입력은 local `data/tenants/<tenant_id>/templates.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant를 path 선택 전에 검증하고 malformed JSON, duplicate key, non-object·owned malformed record와 duplicate template identity는 조회와 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 기존 tenant 미표기 record는 path ownership으로 읽는다.

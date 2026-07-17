@@ -1,7 +1,7 @@
 """app/storage/user_store.py — Tenant-scoped user account storage.
 
 Storage: data/tenants/{tenant_id}/users.json
-Thread-safe within one process across stores that share a data root.
+Process-local locks reduce contention; backend CAS preserves worker-safe updates.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import bcrypt
 
@@ -21,16 +21,24 @@ from app.ai_profiles.catalog import (
     default_ai_profiles_for_role,
     normalize_ai_profile_keys,
 )
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
 _user_locks: dict[Path, threading.RLock] = {}
 _user_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
-class UserStoreError(ValueError):
+class UserStoreError(RuntimeError):
     """Raised when persisted user state cannot be trusted."""
+
+
+class UserStoreAlreadyInitialized(ValueError):
+    """Raised when a tenant already has its first user."""
 
 
 def _lock_for_path(path: Path) -> threading.RLock:
@@ -175,6 +183,7 @@ class UserStore:
             not isinstance(profile, str) for profile in profiles
         ):
             raise UserStoreError("Invalid user AI profiles")
+        self._mutation_ids(record)
 
     def _validate_state(self, data: object) -> dict[str, dict]:
         if not isinstance(data, dict):
@@ -193,23 +202,115 @@ class UserStore:
             usernames.add(username)
         return data
 
-    def _load(self) -> dict[str, dict]:
-        raw = self._backend.read_text(self._relative_path)
+    def _read_state(self) -> tuple[str | None, dict[str, dict]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise UserStoreError("Invalid user state document") from exc
         if raw is None:
-            return {}
+            return None, {}
+        return raw, self._decode_state(raw)
+
+    def _decode_state(self, raw: str) -> dict[str, dict]:
         if not raw.strip():
             raise UserStoreError("Invalid user state document")
         try:
             data = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, UserStoreError, ValueError) as exc:
             raise UserStoreError("Invalid user state document") from exc
         return self._validate_state(data)
 
-    def _save(self, data: dict[str, dict]) -> None:
+    def _load(self) -> dict[str, dict]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise UserStoreError("Invalid user mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict,
+        *,
+        previous: dict | None,
+        mutation_id: str,
+    ) -> dict:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        data: dict[str, dict],
+        committed: Callable[[dict[str, dict]], bool],
+    ) -> bool:
         self._validate_state(data)
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(data, ensure_ascii=False, indent=2),
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_data = self._decode_state(observed)
+                except UserStoreError:
+                    pass
+                else:
+                    if committed(observed_data):
+                        return True
+            raise UserStoreError("Failed to persist user state") from exc
+
+    def _mutate(
+        self,
+        change: Callable[
+            [dict[str, dict]],
+            tuple[_MutationResult, bool],
+        ],
+        *,
+        committed: Callable[[dict[str, dict]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, data = self._read_state()
+            result, changed = change(data)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                data=data,
+                committed=committed,
+            ):
+                return result
+        raise UserStoreError(
+            "User state changed too many times to persist safely"
         )
 
     # ── internal helpers ──────────────────────────────────────────────────
@@ -247,6 +348,48 @@ class UserStore:
         assigned_ai_profiles: list[str] | None = None,
     ) -> User:
         """Create a new user. Raises ValueError if username already exists."""
+        return self._create(
+            username=username,
+            display_name=display_name,
+            email=email,
+            password=password,
+            role=role,
+            job_title=job_title,
+            assigned_ai_profiles=assigned_ai_profiles,
+            require_empty=False,
+        )
+
+    def create_first_admin(
+        self,
+        username: str,
+        display_name: str,
+        email: str,
+        password: str,
+    ) -> User:
+        """Atomically create the first tenant user as an administrator."""
+        return self._create(
+            username=username,
+            display_name=display_name,
+            email=email,
+            password=password,
+            role=UserRole.ADMIN,
+            job_title="",
+            assigned_ai_profiles=None,
+            require_empty=True,
+        )
+
+    def _create(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        email: str,
+        password: str,
+        role: UserRole | str,
+        job_title: str,
+        assigned_ai_profiles: list[str] | None,
+        require_empty: bool,
+    ) -> User:
         if (
             not isinstance(username, str)
             or not username
@@ -254,12 +397,12 @@ class UserStore:
             or not isinstance(email, str)
             or not isinstance(job_title, str)
         ):
-            raise UserStoreError("Invalid user record")
+            raise ValueError("Invalid user record")
         if assigned_ai_profiles is not None and (
             not isinstance(assigned_ai_profiles, list)
             or any(not isinstance(profile, str) for profile in assigned_ai_profiles)
         ):
-            raise UserStoreError("Invalid user AI profiles")
+            raise ValueError("Invalid user AI profiles")
         _validate_password(password)
         if isinstance(role, str):
             role = UserRole(role)
@@ -268,31 +411,58 @@ class UserStore:
             if assigned_ai_profiles is None
             else normalize_ai_profile_keys(assigned_ai_profiles)
         )
-        with self._lock:
-            data = self._load()
-            for u in data.values():
-                if self._owns(u) and u["username"] == username:
-                    raise ValueError(f"사용자 이름 '{username}'이(가) 이미 존재합니다.")
-            user_id = str(uuid.uuid4())
-            user = User(
-                user_id=user_id,
-                tenant_id=self._tenant_id,
-                username=username,
-                display_name=display_name,
-                email=email,
-                password_hash=_hash_password(password),
-                role=role,
-                is_active=True,
-                created_at=_now_iso(),
-                last_login=None,
-                avatar_color=_pick_avatar_color(username),
-                job_title=(job_title or "").strip(),
-                assigned_ai_profiles=normalized_profiles,
+        mutation_id = uuid.uuid4().hex
+        user: User | None = None
+
+        def apply(data: dict[str, dict]) -> tuple[User, bool]:
+            nonlocal user
+            if require_empty and any(
+                self._owns(record) for record in data.values()
+            ):
+                raise UserStoreAlreadyInitialized(
+                    "이미 사용자가 존재합니다. 관리자에게 초대를 요청하세요."
+                )
+            for record in data.values():
+                if self._owns(record) and record["username"] == username:
+                    raise ValueError(
+                        f"사용자 이름 '{username}'이(가) 이미 존재합니다."
+                    )
+            if user is None:
+                user_id = str(uuid.uuid4())
+                user = User(
+                    user_id=user_id,
+                    tenant_id=self._tenant_id,
+                    username=username,
+                    display_name=display_name,
+                    email=email,
+                    password_hash=_hash_password(password),
+                    role=role,
+                    is_active=True,
+                    created_at=_now_iso(),
+                    last_login=None,
+                    avatar_color=_pick_avatar_color(username),
+                    job_title=(job_title or "").strip(),
+                    assigned_ai_profiles=normalized_profiles,
+                )
+                self._validate_record(user_id, asdict(user))
+            data[user.user_id] = self._record_mutation(
+                asdict(user),
+                previous=None,
+                mutation_id=mutation_id,
             )
-            self._validate_record(user_id, asdict(user))
-            data[user_id] = asdict(user)
-            self._save(data)
-            return user
+            return user, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            if user is None:
+                return False
+            record = data.get(user.user_id)
+            return bool(
+                self._owns(record)
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def get_by_id(self, user_id: str) -> User | None:
         with self._lock:
@@ -338,48 +508,109 @@ class UserStore:
         unknown = set(kwargs) - allowed
         if unknown:
             raise ValueError(f"수정 불가 필드: {unknown}")
-        with self._lock:
-            data = self._load()
-            rec = data.get(user_id)
-            if not self._owns(rec):
+        updates: dict[str, Any] = {}
+        for key, value in kwargs.items():
+            if value is None:
+                continue
+            if key == "role":
+                updates[key] = UserRole(value).value
+            elif key == "assigned_ai_profiles":
+                updates[key] = normalize_ai_profile_keys(value)
+            elif key == "job_title":
+                updates[key] = str(value or "").strip()
+            else:
+                updates[key] = value
+        mutation_id = uuid.uuid4().hex
+
+        def apply(data: dict[str, dict]) -> tuple[User, bool]:
+            record = data.get(user_id)
+            if not self._owns(record):
                 raise ValueError(f"사용자를 찾을 수 없습니다: {user_id}")
-            for k, v in kwargs.items():
-                if v is None:
-                    continue
-                if k == "role":
-                    rec["role"] = UserRole(v).value if isinstance(v, str) else UserRole(v).value
-                elif k == "assigned_ai_profiles":
-                    rec["assigned_ai_profiles"] = normalize_ai_profile_keys(v)
-                elif k == "job_title":
-                    rec["job_title"] = str(v or "").strip()
-                else:
-                    rec[k] = v
-            data[user_id] = rec
-            self._save(data)
-            return self._to_user(rec)
+            if not updates:
+                return self._to_user(record), False
+            updated = dict(record)
+            updated.update(updates)
+            data[user_id] = self._record_mutation(
+                updated,
+                previous=record,
+                mutation_id=mutation_id,
+            )
+            return self._to_user(data[user_id]), True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(user_id)
+            return bool(
+                self._owns(record)
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def change_password(self, user_id: str, old_password: str, new_password: str) -> bool:
         """Returns False if old_password is wrong; raises ValueError if new_password weak."""
+        mutation_id = uuid.uuid4().hex
+        new_password_hash: str | None = None
+
+        def apply(data: dict[str, dict]) -> tuple[bool, bool]:
+            nonlocal new_password_hash
+            record = data.get(user_id)
+            if not self._owns(record) or not _check_password(
+                old_password,
+                record["password_hash"],
+            ):
+                return False, False
+            if new_password_hash is None:
+                _validate_password(new_password)
+                new_password_hash = _hash_password(new_password)
+            updated = dict(record)
+            updated["password_hash"] = new_password_hash
+            data[user_id] = self._record_mutation(
+                updated,
+                previous=record,
+                mutation_id=mutation_id,
+            )
+            return True, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(user_id)
+            return bool(
+                self._owns(record)
+                and mutation_id in self._mutation_ids(record)
+            )
+
         with self._lock:
-            data = self._load()
-            rec = data.get(user_id)
-            if not self._owns(rec) or not _check_password(old_password, rec["password_hash"]):
-                return False
-            _validate_password(new_password)
-            rec["password_hash"] = _hash_password(new_password)
-            data[user_id] = rec
-            self._save(data)
-        return True
+            return self._mutate(apply, committed=was_committed)
 
     def deactivate(self, user_id: str) -> None:
         self.update(user_id, is_active=False)
 
     def update_last_login(self, user_id: str) -> None:
+        mutation_id = uuid.uuid4().hex
+        last_login = _now_iso()
+
+        def apply(data: dict[str, dict]) -> tuple[None, bool]:
+            record = data.get(user_id)
+            if not self._owns(record):
+                return None, False
+            updated = dict(record)
+            updated["last_login"] = last_login
+            data[user_id] = self._record_mutation(
+                updated,
+                previous=record,
+                mutation_id=mutation_id,
+            )
+            return None, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(user_id)
+            return bool(
+                self._owns(record)
+                and mutation_id in self._mutation_ids(record)
+            )
+
         with self._lock:
-            data = self._load()
-            if self._owns(data.get(user_id)):
-                data[user_id]["last_login"] = _now_iso()
-                self._save(data)
+            self._mutate(apply, committed=was_committed)
 
     def has_any_users(self) -> bool:
         """Return True when the tenant has at least one registered user.

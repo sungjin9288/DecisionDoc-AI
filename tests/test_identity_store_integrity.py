@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.invite_store import InviteStore, InviteStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 from app.storage.user_store import (
     UserRole,
     UserStore,
+    UserStoreAlreadyInitialized,
     UserStoreError,
     get_user_store,
 )
@@ -28,6 +38,35 @@ class _SlowLocalBackend(LocalStateBackend):
         return raw
 
 
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
+
+
+class _FailingConditionalBackend(LocalStateBackend):
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        raise StateBackendError("simulated conditional write failure")
+
+
 class _Body:
     def __init__(self, data: bytes) -> None:
         self._data = data
@@ -40,6 +79,27 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_conditional_write = False
+        self._after_failed_conditional_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_conditional_write = True
+        self._after_failed_conditional_write = after_write
 
     def put_object(
         self,
@@ -48,25 +108,49 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                self._fail_after_conditional_write
+                and (IfNoneMatch is not None or IfMatch is not None)
+            )
+            if fail_after_write:
+                self._fail_after_conditional_write = False
+                after_failed_write = self._after_failed_conditional_write
+                self._after_failed_conditional_write = None
+            else:
+                after_failed_write = None
+        if fail_after_write:
+            if after_failed_write is not None:
+                after_failed_write()
+            raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        time.sleep(self.read_delay)
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -275,9 +359,9 @@ def test_identity_store_rejects_invalid_caller_record_before_write(
     user_store = UserStore(tmp_path / "tenants/alpha")
     invite_store = InviteStore("alpha", data_dir=tmp_path)
 
-    with pytest.raises(UserStoreError, match="Invalid user record"):
+    with pytest.raises(ValueError, match="Invalid user record"):
         user_store.create("", "Alice", "alice@example.com", "Password1")
-    with pytest.raises(InviteStoreError, match="Invalid invite record"):
+    with pytest.raises(ValueError, match="Invalid invite record"):
         invite_store.create("", "invitee@example.com", "member", "admin-1")
 
     assert not user_store._path.exists()
@@ -294,6 +378,8 @@ def test_independent_local_user_stores_preserve_concurrent_creates(
         UserStore(tenant_dir, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> None:
         stores[index].create(
@@ -320,6 +406,8 @@ def test_independent_local_invite_stores_preserve_concurrent_creates(
         InviteStore("alpha", data_dir=tmp_path, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     def create(index: int) -> None:
         stores[index].create(
@@ -352,6 +440,8 @@ def test_independent_identity_stores_reject_concurrent_duplicate_identity(
         InviteStore("alpha", data_dir=tmp_path, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in [*user_stores, *invite_stores]:
+        store._lock = nullcontext()
 
     def create_user(index: int) -> bool:
         try:
@@ -411,6 +501,8 @@ def test_concurrent_invite_acceptance_creates_one_account(
     creator = InviteStore("alpha", data_dir=tmp_path)
     creator.create("invite-1", "invitee@example.com", "member", "admin-1")
     stores = [InviteStore("alpha", data_dir=tmp_path) for _ in range(20)]
+    for store in stores:
+        store._lock = nullcontext()
     user_store = UserStore(tmp_path / "tenants/alpha")
 
     def accept(index: int):
@@ -488,15 +580,24 @@ def test_independent_fake_s3_identity_stores_preserve_concurrent_creates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
-    backend, client = _s3_backend(read_delay=0.005)
+    client = _MemoryS3Client(read_delay=0.005)
     user_stores = [
-        UserStore(Path("/virtual/data/tenants/alpha"), backend=backend)
-        for _ in range(20)
+        UserStore(
+            Path(f"/virtual/user-worker-{index}/tenants/alpha"),
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
     invite_stores = [
-        InviteStore("alpha", data_dir="/virtual/data", backend=backend)
-        for _ in range(20)
+        InviteStore(
+            "alpha",
+            data_dir=f"/virtual/invite-worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in [*user_stores, *invite_stores]:
+        store._lock = nullcontext()
 
     def create_user(index: int) -> None:
         user_stores[index].create(
@@ -520,7 +621,8 @@ def test_independent_fake_s3_identity_stores_preserve_concurrent_creates(
         list(executor.map(create_invite, range(20)))
 
     users = UserStore(
-        Path("/virtual/data/tenants/alpha"), backend=backend
+        Path("/virtual/reload/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
     ).list_users()
     invites = json.loads(
         client.objects[
@@ -531,6 +633,448 @@ def test_independent_fake_s3_identity_stores_preserve_concurrent_creates(
         f"user-{index}" for index in range(20)
     }
     assert set(invites) == {f"invite-{index}" for index in range(20)}
+
+
+def test_fake_s3_first_admin_registration_allows_one_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    client = _MemoryS3Client(read_delay=0.005)
+    stores = [
+        UserStore(
+            Path(f"/virtual/admin-worker-{index}/tenants/alpha"),
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    def register(index: int):
+        try:
+            return stores[index].create_first_admin(
+                f"admin-{index}",
+                f"Admin {index}",
+                f"admin-{index}@example.com",
+                "Password1",
+            )
+        except UserStoreAlreadyInitialized:
+            return None
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(register, range(20)))
+
+    users = UserStore(
+        Path("/virtual/reload/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    ).list_users()
+    assert sum(result is not None for result in results) == 1
+    assert len(users) == 1
+    assert users[0].role is UserRole.ADMIN
+
+
+def test_fake_s3_user_updates_preserve_password_and_profile_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.storage.user_store._hash_password",
+        lambda password: f"hash:{password}",
+    )
+    monkeypatch.setattr(
+        "app.storage.user_store._check_password",
+        lambda password, password_hash: password_hash == f"hash:{password}",
+    )
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = UserStore(
+        Path("/virtual/bootstrap/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    )
+    user = bootstrap.create(
+        "alice",
+        "Alice",
+        "alice@example.com",
+        "Password1",
+    )
+    profile_store = UserStore(
+        Path("/virtual/profile-worker/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    )
+    password_store = UserStore(
+        Path("/virtual/password-worker/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    )
+    profile_store._lock = nullcontext()
+    password_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        profile_result, password_result = executor.map(
+            lambda action: action(),
+            (
+                lambda: profile_store.update(
+                    user.user_id,
+                    display_name="Alice Updated",
+                    job_title="Reviewer",
+                ),
+                lambda: password_store.change_password(
+                    user.user_id,
+                    "Password1",
+                    "Password2",
+                ),
+            ),
+        )
+
+    reloaded = bootstrap.get_by_id(user.user_id)
+    assert profile_result.display_name == "Alice Updated"
+    assert password_result is True
+    assert reloaded is not None
+    assert reloaded.display_name == "Alice Updated"
+    assert reloaded.job_title == "Reviewer"
+    assert bootstrap.verify_password(user.user_id, "Password2") is True
+
+
+def test_fake_s3_invite_update_preserves_successor_create() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    bootstrap = InviteStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.create(
+        "invite-1",
+        "first@example.com",
+        "member",
+        "admin-1",
+    )
+    update_store = InviteStore(
+        "alpha",
+        data_dir="/virtual/update-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    create_store = InviteStore(
+        "alpha",
+        data_dir="/virtual/create-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    update_store._lock = nullcontext()
+    create_store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(
+            executor.map(
+                lambda action: action(),
+                (
+                    lambda: update_store.mark_used("invite-1"),
+                    lambda: create_store.create(
+                        "invite-2",
+                        "second@example.com",
+                        "viewer",
+                        "admin-1",
+                    ),
+                ),
+            )
+        )
+
+    first = bootstrap.get("invite-1")
+    second = bootstrap.get("invite-2")
+    assert first is not None
+    assert first["is_active"] is False
+    assert first["used_at"] is not None
+    assert second is not None
+    assert second["email"] == "second@example.com"
+
+
+def test_fake_s3_invite_acceptance_claims_one_account_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    client = _MemoryS3Client(read_delay=0.005)
+    creator = InviteStore(
+        "alpha",
+        data_dir="/virtual/bootstrap",
+        backend=_s3_backend(client=client)[0],
+    )
+    creator.create(
+        "invite-1",
+        "invitee@example.com",
+        "member",
+        "admin-1",
+    )
+    invite_stores = [
+        InviteStore(
+            "alpha",
+            data_dir=f"/virtual/invite-worker-{index}",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    user_stores = [
+        UserStore(
+            Path(f"/virtual/user-worker-{index}/tenants/alpha"),
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in [*invite_stores, *user_stores]:
+        store._lock = nullcontext()
+    callback_indexes: list[int] = []
+    client.fail_after_next_conditional_write()
+
+    def accept(index: int):
+        def create_account(invite: dict):
+            callback_indexes.append(index)
+            return user_stores[index].create(
+                f"user-{index}",
+                f"User {index}",
+                invite["email"],
+                "Password1",
+            )
+
+        return invite_stores[index].accept("invite-1", create_account)
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(accept, range(20)))
+
+    users = UserStore(
+        Path("/virtual/reload/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    ).list_users()
+    invite = creator.get("invite-1")
+    invite_key = (
+        "unit-bucket",
+        "decisiondoc-ai/state/tenants/alpha/invites.json",
+    )
+    raw_invite = json.loads(client.objects[invite_key])["invite-1"]
+    assert len(callback_indexes) == 1
+    assert sum(result is not None for result in results) == 1
+    assert len(users) == 1
+    assert invite is not None
+    assert invite["is_active"] is False
+    assert invite["used_at"] is not None
+    assert not any(key.startswith("_") for key in invite)
+    assert "_acceptance_id" not in raw_invite
+
+
+def test_invite_acceptance_failure_releases_its_claim(tmp_path: Path) -> None:
+    store = InviteStore("alpha", data_dir=tmp_path)
+    store.create(
+        "invite-1",
+        "invitee@example.com",
+        "member",
+        "admin-1",
+    )
+
+    def fail_account_creation(_: dict) -> None:
+        raise RuntimeError("simulated account creation failure")
+
+    with pytest.raises(RuntimeError, match="simulated account creation failure"):
+        store.accept("invite-1", fail_account_creation)
+
+    retryable = store.get("invite-1")
+    assert retryable is not None
+    assert retryable["is_active"] is True
+    assert retryable["used_at"] is None
+    assert store.accept("invite-1", lambda _: "created") == "created"
+    persisted = json.loads(store._path_val.read_text(encoding="utf-8"))["invite-1"]
+    assert persisted["is_active"] is False
+    assert "_acceptance_id" not in persisted
+
+
+def test_identity_stores_reconcile_commit_then_successor_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    client = _MemoryS3Client()
+    user_store = UserStore(
+        Path("/virtual/user-worker/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    )
+    user_successor = UserStore(
+        Path("/virtual/user-successor/tenants/alpha"),
+        backend=_s3_backend(client=client)[0],
+    )
+    user_store._lock = nullcontext()
+    user_successor._lock = nullcontext()
+    user = user_store.create(
+        "alice",
+        "Alice",
+        "alice@example.com",
+        "Password1",
+    )
+    client.fail_after_next_conditional_write(
+        after_write=lambda: user_successor.update(
+            user.user_id,
+            email="successor@example.com",
+        )
+    )
+    updated = user_store.update(user.user_id, display_name="Alice Updated")
+
+    invite_store = InviteStore(
+        "alpha",
+        data_dir="/virtual/invite-worker",
+        backend=_s3_backend(client=client)[0],
+    )
+    invite_successor = InviteStore(
+        "alpha",
+        data_dir="/virtual/invite-successor",
+        backend=_s3_backend(client=client)[0],
+    )
+    invite_store._lock = nullcontext()
+    invite_successor._lock = nullcontext()
+    invite_store.create(
+        "invite-1",
+        "first@example.com",
+        "member",
+        "admin-1",
+    )
+    client.fail_after_next_conditional_write(
+        after_write=lambda: invite_successor.create(
+            "invite-2",
+            "second@example.com",
+            "viewer",
+            "admin-1",
+        )
+    )
+    invite_store.mark_used("invite-1")
+
+    persisted_user = user_store.get_by_id(user.user_id)
+    assert updated.display_name == "Alice Updated"
+    assert persisted_user is not None
+    assert persisted_user.display_name == "Alice Updated"
+    assert persisted_user.email == "successor@example.com"
+    assert invite_store.get("invite-1")["is_active"] is False
+    assert invite_store.get("invite-2")["email"] == "second@example.com"
+
+
+@pytest.mark.parametrize(
+    ("store_type", "error"),
+    [
+        (UserStore, "User state changed too many times to persist safely"),
+        (InviteStore, "Invite state changed too many times to persist safely"),
+    ],
+)
+def test_identity_mutation_stops_after_bounded_conflicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store_type: type[UserStore] | type[InviteStore],
+    error: str,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    backend = _ConflictingLocalBackend(tmp_path)
+    if store_type is UserStore:
+        store = UserStore(tmp_path / "tenants/alpha", backend=backend)
+    else:
+        store = InviteStore("alpha", data_dir=tmp_path, backend=backend)
+
+    with pytest.raises((UserStoreError, InviteStoreError), match=error):
+        if isinstance(store, UserStore):
+            store.create("alice", "Alice", "alice@example.com", "Password1")
+        else:
+            store.create(
+                "invite-1",
+                "invitee@example.com",
+                "member",
+                "admin-1",
+            )
+
+    assert backend.attempts == 32
+
+
+@pytest.mark.parametrize(
+    ("store_type", "error"),
+    [
+        (UserStore, "Failed to persist user state"),
+        (InviteStore, "Failed to persist invite state"),
+    ],
+)
+def test_identity_mutation_wraps_backend_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store_type: type[UserStore] | type[InviteStore],
+    error: str,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    backend = _FailingConditionalBackend(tmp_path)
+    if store_type is UserStore:
+        store = UserStore(tmp_path / "tenants/alpha", backend=backend)
+    else:
+        store = InviteStore("alpha", data_dir=tmp_path, backend=backend)
+
+    with pytest.raises((UserStoreError, InviteStoreError), match=error):
+        if isinstance(store, UserStore):
+            store.create("alice", "Alice", "alice@example.com", "Password1")
+        else:
+            store.create(
+                "invite-1",
+                "invitee@example.com",
+                "member",
+                "admin-1",
+            )
+
+
+def test_identity_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.storage.user_store._hash_password", lambda _: "test-hash")
+    user_store = UserStore(tmp_path / "tenants/alpha")
+    user = user_store.create(
+        "alice",
+        "Alice",
+        "alice@example.com",
+        "Password1",
+    )
+    invite_store = InviteStore("alpha", data_dir=tmp_path)
+    invite_store.create(
+        "invite-1",
+        "invitee@example.com",
+        "member",
+        "admin-1",
+    )
+
+    for index in range(70):
+        user_store.update(user.user_id, display_name=f"Alice {index}")
+        invite_store.mark_used("invite-1")
+
+    user_records = json.loads(user_store._path.read_text(encoding="utf-8"))
+    invite_records = json.loads(
+        invite_store._path_val.read_text(encoding="utf-8")
+    )
+    assert len(user_records[user.user_id]["_mutation_ids"]) == 64
+    assert len(invite_records["invite-1"]["_mutation_ids"]) == 64
+    assert "_mutation_ids" not in asdict(user_store.get_by_id(user.user_id))
+    assert not any(
+        key.startswith("_")
+        for key in invite_store.get("invite-1")
+    )
+
+    user_history = user_records[user.user_id]["_mutation_ids"]
+    invite_history = invite_records["invite-1"]["_mutation_ids"]
+    user_history[0] = user_history[1]
+    invite_history[0] = invite_history[1]
+    user_store._path.write_text(json.dumps(user_records), encoding="utf-8")
+    invite_store._path_val.write_text(
+        json.dumps(invite_records),
+        encoding="utf-8",
+    )
+    user_bytes = user_store._path.read_bytes()
+    invite_bytes = invite_store._path_val.read_bytes()
+
+    with pytest.raises(UserStoreError, match="Invalid user mutation history"):
+        user_store.list_users()
+    with pytest.raises(InviteStoreError, match="Invalid invite mutation history"):
+        invite_store.get("invite-1")
+    with pytest.raises(UserStoreError, match="Invalid user mutation history"):
+        user_store.create("bob", "Bob", "bob@example.com", "Password1")
+    with pytest.raises(InviteStoreError, match="Invalid invite mutation history"):
+        invite_store.create(
+            "invite-2",
+            "second@example.com",
+            "viewer",
+            "admin-1",
+        )
+
+    assert user_store._path.read_bytes() == user_bytes
+    assert invite_store._path_val.read_bytes() == invite_bytes
 
 
 def test_invite_routes_pass_the_application_state_backend() -> None:

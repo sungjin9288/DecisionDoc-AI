@@ -29,7 +29,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. Conditional create/CAS와 충돌 재시도로 worker 간 update 유실과 상충하는 최종 결정을 방지 |
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. Conditional create/CAS와 `log_id` commit reconciliation으로 worker 간 append 유실을 방지. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`) |
-| 계정·초대 상태 무결성 | 사용자 계정과 초대 lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리 |
+| 계정·초대 상태 무결성 | 사용자 계정과 초대 lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리. Conditional create/CAS, atomic first-admin precondition과 claim-before-account-create로 worker 간 계정 변경 유실·복수 초기 관리자·초대 중복 수락을 방지 |
 | SSO 설정 상태 무결성 | LDAP·SAML·GCloud·OAuth2 설정과 암호화된 secret을 tenant별 local/S3 state에 결속하고 손상·unknown provider·foreign ownership·복호화 실패를 fail closed 처리 |
 | 사용자 템플릿 상태 무결성 | 재사용 문서 입력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
 | 생성 이력 상태 무결성 | 문서 생성·재열기·즐겨찾기·시각자료·지식 승격 이력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,288개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,298개**, **251개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3288
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3298
 python3 scripts/count_readme_metrics.py --field test_files      # → 251
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,024 passed, 2 skipped, 4 deselected, 2026-07-17 H61 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,036 passed, 2 skipped, 4 deselected, 2026-07-17 H62 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -337,7 +337,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. Mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌할 때마다 최신 state의 ownership·schema·transition을 다시 검증합니다. 최근 mutation receipt는 64개로 제한해 후속 CAS 뒤에도 불확실한 commit을 조정하며, 손상 receipt는 원본을 보존하고 fail closed 처리합니다. 이 보장은 tenant별 단일 report workflow state object에 한정되고 실제 AWS runtime과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 CAS를 적용하며, 충돌 시 최신 JSONL을 다시 검증하고 append를 재적용합니다. Commit 응답이 불확실하면 `log_id`와 exact entry를 read-back해 후속 append 뒤에도 성공을 조정합니다. 이 보장은 tenant별 단일 audit JSONL object 범위이며 실제 AWS runtime은 검증하지 않았습니다.
 - 메시지·알림 state는 tenant별 `messages.json`과 `notifications.json`에 각각 conditional create/CAS를 적용합니다. 충돌할 때마다 최신 state의 ownership·schema를 다시 검증하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 후속 CAS도 조정합니다. Local conditional lock 초기화의 동시 create도 재시도하며 receipt 손상은 원본 보존 상태로 fail closed 처리합니다. 이 보장은 각 단일 state object 범위이고 메시지 저장과 mention 알림 생성을 함께 묶는 distributed transaction, 실제 AWS runtime, 외부 SMTP·Slack 전달 성공은 검증 범위가 아닙니다.
-- 사용자·초대 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 갱신하는 distributed compare-and-swap과 실제 초대 메일 전달은 구현·검증 범위가 아닙니다.
+- 사용자·초대 state는 tenant별 `users.json`과 `invites.json`에 각각 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 username uniqueness를 다시 검증하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 첫 관리자 생성은 빈 tenant 확인과 create를 한 CAS mutation으로 처리하고, 초대 수락은 invite를 먼저 claim한 worker 하나만 account callback을 실행하며 callback 실패 시 claim을 되돌립니다. 이 보장은 각 단일 state object 범위이고 user와 invite object를 함께 묶는 distributed transaction이나 process crash 뒤 claim 자동 복구는 제공하지 않습니다. 실제 AWS runtime과 초대 메일 전달 성공도 검증 범위가 아닙니다.
 - SSO 설정 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. Secret은 Fernet authenticated encryption과 PBKDF2 key derivation을 사용하며 복호화 실패를 평문 fallback으로 처리하지 않습니다. 서명 없는 SAML assertion과 RelayState 불일치는 거부하지만, 현재 기본 requirements에 `python3-saml` verifier가 없어 SAML ACS는 fail closed 상태이며 실제 LDAP·SAML IdP·GCloud 로그인과 distributed S3 compare-and-swap은 검증 범위가 아닙니다.
 - 사용자 템플릿 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
 - 생성 이력 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 여러 프로세스가 같은 S3 객체를 동시에 갱신하는 distributed compare-and-swap은 구현·검증 범위가 아닙니다.
@@ -367,4 +367,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,288 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,298 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -5,12 +5,13 @@ import logging
 import json
 import os
 import threading
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.invite")
@@ -19,9 +20,13 @@ _Result = TypeVar("_Result")
 
 _invite_locks: dict[Path, threading.RLock] = {}
 _invite_locks_guard = threading.Lock()
+_MAX_MUTATION_ATTEMPTS = 32
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_ACCEPTANCE_ID_FIELD = "_acceptance_id"
+_MAX_TRACKED_MUTATIONS = 64
 
 
-class InviteStoreError(ValueError):
+class InviteStoreError(RuntimeError):
     """Raised when persisted invitation state cannot be trusted."""
 
 
@@ -100,6 +105,15 @@ class InviteStore:
                 datetime.fromisoformat(used_at)
         except ValueError as exc:
             raise InviteStoreError("Invalid invite timestamp") from exc
+        acceptance_id = record.get(_ACCEPTANCE_ID_FIELD)
+        if acceptance_id is not None and (
+            not isinstance(acceptance_id, str)
+            or not acceptance_id
+            or record["is_active"]
+            or used_at is None
+        ):
+            raise InviteStoreError("Invalid invite acceptance state")
+        self._mutation_ids(record)
 
     def _validate_state(self, data: object) -> dict[str, dict]:
         if not isinstance(data, dict):
@@ -110,23 +124,123 @@ class InviteStore:
             self._validate_record(invite_id, record)
         return data
 
-    def _load(self) -> dict[str, dict]:
-        raw = self._backend.read_text(self._relative_path)
+    def _read_state(self) -> tuple[str | None, dict[str, dict]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise InviteStoreError("Invalid invite state document") from exc
         if raw is None:
-            return {}
+            return None, {}
+        return raw, self._decode_state(raw)
+
+    def _decode_state(self, raw: str) -> dict[str, dict]:
         if not raw.strip():
             raise InviteStoreError("Invalid invite state document")
         try:
             data = json.loads(raw, object_pairs_hook=_unique_object)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, InviteStoreError, ValueError) as exc:
             raise InviteStoreError("Invalid invite state document") from exc
         return self._validate_state(data)
 
-    def _save(self, data: dict[str, dict]) -> None:
+    def _load(self) -> dict[str, dict]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise InviteStoreError("Invalid invite mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        record: dict,
+        *,
+        previous: dict | None,
+        mutation_id: str,
+    ) -> dict:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(record)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    @staticmethod
+    def _public_record(record: dict) -> dict:
+        return {
+            key: value
+            for key, value in record.items()
+            if not key.startswith("_")
+        }
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        data: dict[str, dict],
+        committed: Callable[[dict[str, dict]], bool],
+    ) -> bool:
         self._validate_state(data)
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(data, ensure_ascii=False, indent=2),
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        try:
+            if expected is None:
+                return self._backend.write_text_if_absent(
+                    self._relative_path,
+                    payload,
+                )
+            return self._backend.replace_text_if_equal(
+                self._relative_path,
+                expected=expected,
+                replacement=payload,
+            )
+        except StateBackendError as exc:
+            try:
+                observed = self._backend.read_text(self._relative_path)
+            except (StateBackendError, UnicodeError):
+                observed = None
+            if observed == payload:
+                return True
+            if observed is not None:
+                try:
+                    observed_data = self._decode_state(observed)
+                except InviteStoreError:
+                    pass
+                else:
+                    if committed(observed_data):
+                        return True
+            raise InviteStoreError("Failed to persist invite state") from exc
+
+    def _mutate(
+        self,
+        change: Callable[
+            [dict[str, dict]],
+            tuple[_Result, bool],
+        ],
+        *,
+        committed: Callable[[dict[str, dict]], bool],
+    ) -> _Result:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, data = self._read_state()
+            result, changed = change(data)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                data=data,
+                committed=committed,
+            ):
+                return result
+        raise InviteStoreError(
+            "Invite state changed too many times to persist safely"
         )
 
     def create(
@@ -148,34 +262,50 @@ class InviteStore:
             or not isinstance(job_title, str)
             or not isinstance(expires_days, int)
         ):
-            raise InviteStoreError("Invalid invite record")
+            raise ValueError("Invalid invite record")
         if assigned_ai_profiles is not None and (
             not isinstance(assigned_ai_profiles, list)
             or any(not isinstance(profile, str) for profile in assigned_ai_profiles)
         ):
-            raise InviteStoreError("Invalid invite AI profiles")
+            raise ValueError("Invalid invite AI profiles")
         now = datetime.now()
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+        invite = {
+            "invite_id": invite_id,
+            "tenant_id": self._tenant_id,
+            "email": email,
+            "role": role,
+            "created_by": created_by,
+            "created_at": now.isoformat(),
+            "expires_at": (now + timedelta(days=expires_days)).isoformat(),
+            "job_title": job_title,
+            "assigned_ai_profiles": list(assigned_ai_profiles or []),
+            "is_active": True,
+            "used_at": None,
+        }
+        self._validate_record(invite_id, invite)
+        persisted = self._record_mutation(
+            invite,
+            previous=None,
+            mutation_id=mutation_id,
+        )
+
+        def apply(data: dict[str, dict]) -> tuple[dict, bool]:
             if invite_id in data:
                 raise ValueError(f"초대 ID가 이미 존재합니다: {invite_id}")
-            invite = {
-                "invite_id": invite_id,
-                "tenant_id": self._tenant_id,
-                "email": email,
-                "role": role,
-                "created_by": created_by,
-                "created_at": now.isoformat(),
-                "expires_at": (now + timedelta(days=expires_days)).isoformat(),
-                "job_title": job_title,
-                "assigned_ai_profiles": list(assigned_ai_profiles or []),
-                "is_active": True,
-                "used_at": None,
-            }
-            self._validate_record(invite_id, invite)
-            data[invite_id] = invite
-            self._save(data)
-            return data[invite_id]
+            data[invite_id] = persisted
+            return self._public_record(invite), True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(invite_id)
+            return bool(
+                record
+                and record.get("tenant_id") == self._tenant_id
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def get(self, invite_id: str) -> dict | None:
         with self._lock:
@@ -183,37 +313,167 @@ class InviteStore:
             invite = data.get(invite_id)
             if not invite or invite.get("tenant_id") != self._tenant_id:
                 return None
+            public_invite = self._public_record(invite)
             expires_at = datetime.fromisoformat(invite["expires_at"])
             if expires_at < datetime.now(expires_at.tzinfo):
-                invite["is_active"] = False
-            return invite
+                public_invite["is_active"] = False
+            return public_invite
 
     def accept(
         self,
         invite_id: str,
         create_account: Callable[[dict], _Result],
     ) -> _Result | None:
-        """Create one account and consume the invitation in the same lock."""
-        with self._lock:
-            data = self._load()
+        """Claim one invitation before invoking the account creation callback."""
+        acceptance_id = uuid.uuid4().hex
+        claim_mutation_id = uuid.uuid4().hex
+        accepted_at = datetime.now().isoformat()
+
+        def claim(data: dict[str, dict]) -> tuple[dict | None, bool]:
             invite = data.get(invite_id)
             if not invite or invite.get("tenant_id") != self._tenant_id:
-                return None
+                return None, False
             expires_at = datetime.fromisoformat(invite["expires_at"])
             if not invite["is_active"] or expires_at < datetime.now(expires_at.tzinfo):
-                return None
+                return None, False
+            public_invite = self._public_record(invite)
+            updated = dict(invite)
+            updated["is_active"] = False
+            updated["used_at"] = accepted_at
+            updated[_ACCEPTANCE_ID_FIELD] = acceptance_id
+            data[invite_id] = self._record_mutation(
+                updated,
+                previous=invite,
+                mutation_id=claim_mutation_id,
+            )
+            return public_invite, True
 
-            result = create_account(dict(invite))
-            invite["is_active"] = False
-            invite["used_at"] = datetime.now().isoformat()
-            self._save(data)
-            return result
+        def claim_was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(invite_id)
+            return bool(
+                record
+                and record.get("tenant_id") == self._tenant_id
+                and record.get(_ACCEPTANCE_ID_FIELD) == acceptance_id
+                and claim_mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            invite = self._mutate(claim, committed=claim_was_committed)
+        if invite is None:
+            return None
+
+        try:
+            result = create_account(invite)
+        except Exception:
+            self._rollback_acceptance(invite_id, acceptance_id=acceptance_id)
+            raise
+
+        self._finish_acceptance(invite_id, acceptance_id=acceptance_id)
+        return result
+
+    def _rollback_acceptance(
+        self,
+        invite_id: str,
+        *,
+        acceptance_id: str,
+    ) -> None:
+        mutation_id = uuid.uuid4().hex
+
+        def apply(data: dict[str, dict]) -> tuple[None, bool]:
+            invite = data.get(invite_id)
+            if (
+                not invite
+                or invite.get("tenant_id") != self._tenant_id
+                or invite.get(_ACCEPTANCE_ID_FIELD) != acceptance_id
+            ):
+                raise InviteStoreError("Invite acceptance claim was lost")
+            updated = dict(invite)
+            updated["is_active"] = True
+            updated["used_at"] = None
+            updated.pop(_ACCEPTANCE_ID_FIELD, None)
+            data[invite_id] = self._record_mutation(
+                updated,
+                previous=invite,
+                mutation_id=mutation_id,
+            )
+            return None, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(invite_id)
+            return bool(
+                record
+                and record.get("tenant_id") == self._tenant_id
+                and record.get(_ACCEPTANCE_ID_FIELD) is None
+                and record.get("is_active") is True
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
+
+    def _finish_acceptance(
+        self,
+        invite_id: str,
+        *,
+        acceptance_id: str,
+    ) -> None:
+        mutation_id = uuid.uuid4().hex
+
+        def apply(data: dict[str, dict]) -> tuple[None, bool]:
+            invite = data.get(invite_id)
+            if (
+                not invite
+                or invite.get("tenant_id") != self._tenant_id
+                or invite.get(_ACCEPTANCE_ID_FIELD) != acceptance_id
+            ):
+                raise InviteStoreError("Invite acceptance claim was lost")
+            updated = dict(invite)
+            updated.pop(_ACCEPTANCE_ID_FIELD, None)
+            data[invite_id] = self._record_mutation(
+                updated,
+                previous=invite,
+                mutation_id=mutation_id,
+            )
+            return None, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(invite_id)
+            return bool(
+                record
+                and record.get("tenant_id") == self._tenant_id
+                and record.get(_ACCEPTANCE_ID_FIELD) is None
+                and record.get("is_active") is False
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)
 
     def mark_used(self, invite_id: str) -> None:
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+        used_at = datetime.now().isoformat()
+
+        def apply(data: dict[str, dict]) -> tuple[None, bool]:
             invite = data.get(invite_id)
-            if invite and invite.get("tenant_id") == self._tenant_id:
-                data[invite_id]["is_active"] = False
-                data[invite_id]["used_at"] = datetime.now().isoformat()
-                self._save(data)
+            if not invite or invite.get("tenant_id") != self._tenant_id:
+                return None, False
+            updated = dict(invite)
+            updated["is_active"] = False
+            updated["used_at"] = used_at
+            data[invite_id] = self._record_mutation(
+                updated,
+                previous=invite,
+                mutation_id=mutation_id,
+            )
+            return None, True
+
+        def was_committed(data: dict[str, dict]) -> bool:
+            record = data.get(invite_id)
+            return bool(
+                record
+                and record.get("tenant_id") == self._tenant_id
+                and mutation_id in self._mutation_ids(record)
+            )
+
+        with self._lock:
+            self._mutate(apply, committed=was_committed)

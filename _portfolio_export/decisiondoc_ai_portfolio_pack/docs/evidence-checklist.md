@@ -54,10 +54,13 @@
 | 협업 상태 cross-worker 무결성 | 완료 | `pytest -q tests/test_collaboration_store_integrity.py --tb=short` -> `49 passed`; process lock 없는 local/fake-S3 20-way conditional create/CAS, disjoint update, bounded private receipt, commit-then-successor update와 hard-delete reconciliation 검증 |
 | 협업 상태 HTTP lifecycle | 완료 | H61 mock/local uvicorn에서 health·admin 등록·Bob 초대 수락·`@bob` message·mention notification·read/edit/delete가 모두 `200`. Message receipt 3개, notification receipt 2개의 persisted private/public 비노출 확인. Provider·SMTP·Slack 호출 없음 |
 | H61 협업 상태 확장 회귀 | 완료 | collaboration/notification/approval/auth/security/state/infrastructure 묶음 -> `439 passed`; local lock-file 동시 초기화 회귀 포함, 외부 호출 없음 |
+| 계정·초대 cross-worker 무결성 | 완료 | `pytest -q tests/test_identity_store_integrity.py --tb=short` -> `45 passed`; process lock 없는 local/fake-S3 20-way conditional create/CAS, atomic first-admin, disjoint update, bounded private receipt, commit-then-successor reconciliation과 invite claim/rollback 검증 |
+| 계정·초대 HTTP lifecycle | 완료 | H62 mock/local uvicorn에서 health·첫 admin 등록·두 번째 등록 거부·초대 생성/수락·profile/password 변경·새 비밀번호 로그인이 `200/403/200/200/200/200/200`. User receipt `[2, 4]`, invite receipt `3`, claim 제거와 public 비노출 확인. Provider·초대 메일 호출 없음 |
+| H62 계정·초대 확장 회귀 | 완료 | identity/auth/invite/security/infrastructure 묶음 -> `301 passed`; persisted store 오류와 caller 4xx 분리 포함, 외부 호출 없음 |
 | H56 procurement review 확장 회귀 | 완료 | review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 묶음 -> `610 passed`; provider API와 외부 실행 없음 |
 | H57 approval CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `541 passed`; process lock 없는 fake-S3 conditional create/CAS 포함, provider API와 외부 실행 없음 |
 | H58 project CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `546 passed`; process lock 없는 fake-S3 project conditional create/CAS, bounded mutation receipt, disjoint update와 delete 경쟁 포함, provider API와 외부 실행 없음 |
-| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4024 passed, 2 skipped, 4 deselected` (2026-07-17 H61 실측) |
+| Non-live 전체 pytest gate | 완료 | provider API key를 process에서 제거한 `pytest tests/ -m "not live" -q` -> `4036 passed, 2 skipped, 4 deselected` (2026-07-17 H62 실측) |
 | GitHub Actions CI | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CI `29502322163` success (`3554 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `e286f2f`, CD `29502322086` success. image digest `sha256:c72c286bcaabea41d59081631e4cf5ef6a1496f2f0cafaf01a96114732e6a384`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

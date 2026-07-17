@@ -3,6 +3,14 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone account and invitation cross-worker authority completion
+
+- `UserStore`와 `InviteStore`의 mutation은 tenant별 `users.json` 또는 `invites.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema·username uniqueness를 다시 검증하고 account create/profile/password/login 및 invite create/use 변경을 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존한다. Commit 응답 유실 뒤 successor CAS가 이어져도 receipt로 원래 operation을 조정한다.
+- 첫 관리자 등록은 empty tenant 확인과 admin create를 같은 CAS mutation에서 처리한다. 초대 수락은 invite claim을 먼저 확정한 worker 하나만 account callback을 실행하고 callback 예외에는 claim을 rollback하며 성공하면 private claim ID를 제거한다. Persisted store 오류는 caller `ValueError`와 분리해 API 4xx로 축소하지 않는다.
+- H62 focused identity integrity gate는 `45 passed`, identity·auth·invite·security·infrastructure 확장 gate는 `301 passed`, provider API key를 process에서 제거한 full no-cost regression은 `4036 passed, 2 skipped, 4 deselected`다. Mock/local uvicorn에서는 health·첫 admin 등록·두 번째 등록 거부·초대 생성/수락·profile/password 변경·새 비밀번호 로그인이 `200/403/200/200/200/200/200`이었고 user receipt `[2, 4]`, invite receipt `3`, claim 제거와 public 비노출을 확인했다.
+- 검증은 mock/local/fake-S3만 사용했다. 객체별 CAS는 user와 invite를 함께 묶는 distributed transaction이나 process crash 뒤 claim 자동 recovery가 아니며 실제 AWS/provider/G2B/Stripe, 초대 메일 전달, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone collaboration state cross-worker authority completion
 
 - `MessageStore`와 `NotificationStore`의 mutation은 tenant별 `messages.json` 또는 `notifications.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop를 공유한다. 충돌하면 최신 ownership·schema를 다시 검증하고 post/create/edit/delete/read/delivery/retention 변경을 재적용한다.

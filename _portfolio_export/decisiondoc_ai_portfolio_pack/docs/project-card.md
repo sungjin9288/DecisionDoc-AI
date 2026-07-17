@@ -124,7 +124,7 @@ User / Team
 - 직접 설명 가능한 기능: [contribution-note.md](./contribution-note.md)의 “직접 설명 가능한 구현 범위” 표를 기준으로 한다.
 - 설계했다고 설명 가능한 구조: provider/storage abstraction, bundle catalog, FastAPI router/service 분리, validation pipeline, procurement evidence freshness, completion readiness chain.
 - 문서화 또는 기획 측면 기여: product direction, execution plan, roadmap, evidence gallery, contribution boundary note를 근거로 설명한다.
-- 문제 해결 또는 디버깅 사례: CSP nonce 적용, stale procurement evidence 차단, readiness receipt/checker, source-backed README metrics와 portfolio pack drift 검출을 중심으로 설명한다.
+- 문제 해결 또는 디버깅 사례: CSP nonce 적용, stale procurement evidence 차단, account/invite cross-worker CAS와 atomic first-admin, readiness receipt/checker, source-backed README metrics와 portfolio pack drift 검출을 중심으로 설명한다.
 - 면접에서 코드 수준으로 설명해야 할 부분: `app/main.py`, `app/services/generation_service/`, `app/providers/factory.py`, `app/storage/base.py`, `app/routers/generate/`, `scripts/check_completion_readiness.py`
 
 ## 8. Current Status
@@ -136,6 +136,7 @@ User / Team
 | 구현 완료 | provider abstraction/fallback | 구현 완료 | `app/providers/factory.py`, `app/ai/pipeline.py` | 가능 |
 | 구현 완료 | bundle catalog/schema/template 구조 | 구현 완료 | `app/bundle_catalog/spec.py`, `app/bundle_catalog/registry.py`, `app/templates/` | 가능 |
 | 구현 완료 | local/S3 storage abstraction | 구현 완료 | `app/storage/base.py`, `app/storage/factory.py`, `app/storage/local.py`, `app/storage/s3.py` | 가능 |
+| 구현 완료 | account/invite cross-worker state authority | 구현 완료 | `app/storage/user_store.py`, `app/storage/invite_store.py`, `tests/test_identity_store_integrity.py` | 가능 |
 | 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
 | 구현 완료 | procurement review state/freshness/audit boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
 | 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |

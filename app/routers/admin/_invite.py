@@ -182,19 +182,18 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
                 data_dir / "tenants" / tenant.tenant_id,
                 backend=request.app.state.state_backend,
             )
-            existing = user_store.get_by_username(body.username)
-            if existing:
-                raise HTTPException(400, "이미 사용 중인 아이디입니다.")
-            user = user_store.create(
-                username=body.username,
-                display_name=body.display_name,
-                email=invite.get("email", ""),
-                password=body.password,
-                role=invite.get("role", "member"),
-                job_title=invite.get("job_title", ""),
-                assigned_ai_profiles=invite.get("assigned_ai_profiles") or [],
-            )
-            return user
+            try:
+                return user_store.create(
+                    username=body.username,
+                    display_name=body.display_name,
+                    email=invite.get("email", ""),
+                    password=body.password,
+                    role=invite.get("role", "member"),
+                    job_title=invite.get("job_title", ""),
+                    assigned_ai_profiles=invite.get("assigned_ai_profiles") or [],
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
 
         user = store.accept(invite_id, create_account)
         if user is not None:
