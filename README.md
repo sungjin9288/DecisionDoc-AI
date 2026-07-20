@@ -36,9 +36,9 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 생성 이력 상태 무결성 | 문서 생성·재열기·즐겨찾기·시각자료·지식 승격 이력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
 | 프로젝트 지식 상태 무결성 | 참고 문서 index와 본문·style object를 tenant/project별 local/S3 state에 결속하고 SHA-256·크기·ownership·중복·orphan을 검증. 생성 context, procurement 평가, report promotion도 같은 backend를 사용 |
 | G2B 즐겨찾기 상태 무결성 | 공고 즐겨찾기를 tenant/user별 local/S3 state에 결속하고 손상·중복 identity를 빈 목록으로 축소하지 않는다. 기존 owner 없는 record는 호환하고 foreign owner는 노출·변경하지 않음 |
-| 공공조달 판단 상태 무결성 | Go/No-Go 판단 record와 source snapshot을 tenant/project별 local/S3 state에 결속하고 손상 JSON·중복 snapshot metadata·경로 drift·비직렬화 payload를 원본 보존 상태로 차단 |
+| 공공조달 판단 상태 무결성 | Go/No-Go 판단 record와 source snapshot을 tenant/project별 local/S3 state에 결속하고 손상 JSON·중복 snapshot metadata·경로 drift·비직렬화 payload를 원본 보존 상태로 차단. 판단 mutation은 conditional create/CAS와 bounded private receipt로 worker 간 update 유실과 불확실 commit을 조정하고 snapshot은 immutable create로 저장 |
 | 공공조달 검토 증빙 상태 무결성 | Review record·원본 packet·content-addressed reviewed-package를 tenant/project/packet SHA-256별 local/S3 state에 결속하고 손상·누락·부분 쓰기를 fail closed 처리. S3 conditional create와 ETag CAS로 worker 간 record overwrite를 차단 |
-| Decision Council 상태 무결성 | 조달 의사결정 session을 tenant/project별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key와 owned session identity drift를 원본 보존 상태로 차단 |
+| Decision Council 상태 무결성 | 조달 의사결정 session을 tenant/project별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key와 owned session identity drift를 원본 보존 상태로 차단. Session upsert는 conditional create/CAS, canonical identity와 bounded private receipt로 worker 간 revision 유실과 불확실 commit을 조정 |
 | 회의 녹음 상태 무결성 | 녹음 metadata와 audio SHA-256·크기를 tenant/project/recording 경로에 결속하고 손상·identity drift·UUID 충돌·audio 변조를 fail closed 처리. Recording별 metadata mutation은 conditional create/CAS와 bounded private receipt로 worker 간 전사·승인 유실과 불확실 commit을 조정 |
 | 결제 권한 상태 무결성 | plan·status·Stripe identity를 tenant별 local/S3 state에 결속하고 손상·unknown value를 원본 보존 상태로 fail closed 처리. Conditional create/CAS와 bounded private receipt로 worker 간 plan·status·Stripe identity 유실과 불확실 commit을 조정 |
 | 스타일 프로필 상태 무결성 | tone guide·bundle override·분석 예시·기본 스타일을 tenant별 local/S3 state에 결속하고 손상·중복 identity·다중 default를 원본 보존 상태로 fail closed 처리 |
@@ -266,10 +266,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,378개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,389개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3378
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3389
 python3 scripts/count_readme_metrics.py --field test_files      # → 252
 ```
 
@@ -299,7 +299,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,117 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-20 H69 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,128 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-20 H70 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -369,4 +369,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,378 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,389 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

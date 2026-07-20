@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone procurement and Decision Council cross-worker authority completion
+
+- `ProcurementDecisionStore`의 decision upsert·notes mutation과 `DecisionCouncilStore`의 session upsert는 각각 tenant별 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·canonical decision/session identity 위에 같은 operation을 재적용하고 최대 32회 뒤 fail closed 처리한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. Decision/session record에는 API에 노출하지 않는 최근 mutation ID를 64개까지 보존해 commit 응답 유실 뒤 successor notes/upsert 또는 revision update가 이어져도 원래 operation을 조정한다. Procurement source snapshot은 immutable conditional create 후 exact payload read-back으로만 lost-success를 인정한다. Process-local lock은 contention 완화 수단일 뿐 persistence authority가 아니다.
+- H70 focused procurement/Council gate는 `104 passed, 1 warning`, service/API·security·state backend·infrastructure 확장 gate는 `417 passed, 1 skipped, 1 warning`, full no-cost regression은 `4128 passed, 2 skipped, 4 deselected, 1 warning`이다. Process lock 없는 local/fake-S3 20-way distinct/same-key mutation과 same-session revision, 32회 conflict cap, 64개 receipt, commit-then-error 뒤 successor mutation, private metadata 비노출을 검증했다. 핵심 경합 5회 반복과 mock/local HTTP health·project create·procurement GET·Council run/get도 통과했고 decision/session 결속, current binding, 외부 호출 0건을 확인했다.
+- Conditional authority는 procurement decision과 Council session 각각의 단일 object 범위다. Decision/snapshot 또는 procurement/Council을 함께 묶는 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone fine-tune and model cross-worker authority completion
 
 - `FineTuneStore` dataset append·snapshot-bound clear, export metadata append와 `ModelRegistry` register/status/eval/deprecate mutation은 각각 tenant별 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·request/model/job identity 위에 같은 operation을 재적용한다.

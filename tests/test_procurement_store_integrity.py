@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,6 +29,47 @@ class _SlowLocalBackend(LocalStateBackend):
         return raw
 
 
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path, *, conflict_suffix: str) -> None:
+        super().__init__(root)
+        self.conflict_suffix = conflict_suffix
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith(self.conflict_suffix):
+            self.attempts += 1
+            return False
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith(self.conflict_suffix):
+            self.attempts += 1
+            return False
+        return super().replace_text_if_equal(
+            relative_path,
+            expected=expected,
+            replacement=replacement,
+            content_type=content_type,
+        )
+
+
 class _Body:
     def __init__(self, data: bytes) -> None:
         self._data = data
@@ -37,19 +82,74 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_key_fragment: str | None = None
+        self._after_failed_write: Callable[[], None] | None = None
 
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        key_fragment: str,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_key_fragment = key_fragment
+        self._after_failed_write = after_write
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
+    ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                (IfNoneMatch is not None or IfMatch is not None)
+                and self._fail_after_key_fragment is not None
+                and self._fail_after_key_fragment in Key
+            )
+            if fail_after_write:
+                self._fail_after_key_fragment = None
+                after_write = self._after_failed_write
+                self._after_failed_write = None
+            else:
+                after_write = None
+
+        if not fail_after_write:
+            return
+        if after_write is not None:
+            after_write()
+        raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
         time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
@@ -300,6 +400,8 @@ def test_independent_store_instances_preserve_concurrent_project_upserts(
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._decision_lock = lambda _tenant_id: nullcontext()
 
     def upsert(index: int) -> str:
         return _upsert(stores[index], project_id=f"project-{index}").decision_id
@@ -322,6 +424,8 @@ def test_independent_store_instances_keep_one_identity_for_concurrent_same_proje
         )
         for _ in range(20)
     ]
+    for store in stores:
+        store._decision_lock = lambda _tenant_id: nullcontext()
 
     def upsert(index: int) -> str:
         return _upsert(stores[index], notes=f"update-{index}").decision_id
@@ -344,6 +448,8 @@ def test_independent_s3_stores_preserve_concurrent_project_upserts() -> None:
         )
         for index in range(20)
     ]
+    for store in stores:
+        store._decision_lock = lambda _tenant_id: nullcontext()
 
     def upsert(index: int) -> str:
         return _upsert(stores[index], project_id=f"project-{index}").decision_id
@@ -354,6 +460,163 @@ def test_independent_s3_stores_preserve_concurrent_project_upserts() -> None:
     records = json.loads(client.objects[_decision_s3_key()])
     assert len(created) == 20
     assert {record["decision_id"] for record in records} == created
+
+
+def test_procurement_create_reconciles_commit_then_successor_update() -> None:
+    client = _MemoryS3Client()
+    primary = ProcurementDecisionStore(
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = ProcurementDecisionStore(
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._decision_lock = lambda _tenant_id: nullcontext()
+    successor._decision_lock = lambda _tenant_id: nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_fragment="procurement_decisions.json",
+        after_write=lambda: successor.update_notes(
+            project_id="project-shared",
+            tenant_id="alpha",
+            notes="successor update",
+        ),
+    )
+    created = _upsert(
+        primary,
+        project_id="project-shared",
+        notes="initial decision",
+    )
+
+    persisted = primary.get("project-shared", tenant_id="alpha")
+    assert created.notes == "initial decision"
+    assert persisted is not None
+    assert persisted.decision_id == created.decision_id
+    assert persisted.notes == "successor update"
+
+
+def test_procurement_notes_reconcile_commit_then_successor_upsert() -> None:
+    client = _MemoryS3Client()
+    primary = ProcurementDecisionStore(
+        base_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = ProcurementDecisionStore(
+        base_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._decision_lock = lambda _tenant_id: nullcontext()
+    successor._decision_lock = lambda _tenant_id: nullcontext()
+    original = _upsert(primary, project_id="project-shared")
+
+    client.fail_after_next_conditional_write(
+        key_fragment="procurement_decisions.json",
+        after_write=lambda: _upsert(
+            successor,
+            project_id="project-shared",
+            notes="successor evaluation",
+        ),
+    )
+    updated = primary.update_notes(
+        project_id="project-shared",
+        tenant_id="alpha",
+        notes="operator note",
+    )
+
+    persisted = primary.get("project-shared", tenant_id="alpha")
+    assert updated.notes == "operator note"
+    assert updated.updated_at == original.updated_at
+    assert persisted is not None
+    assert persisted.notes == "successor evaluation"
+    assert persisted.updated_at != original.updated_at
+
+
+def test_procurement_snapshot_reconciles_lost_success_response() -> None:
+    client = _MemoryS3Client()
+    store = ProcurementDecisionStore(
+        base_dir="/virtual/data",
+        backend=_s3_backend(client)[0],
+    )
+    client.fail_after_next_conditional_write(
+        key_fragment="procurement_snapshots/",
+    )
+
+    snapshot = store.save_source_snapshot(
+        tenant_id="alpha",
+        project_id="project-1",
+        source_kind="fixture",
+        payload={"source": "committed"},
+    )
+
+    assert store.load_source_snapshot(
+        tenant_id="alpha",
+        project_id="project-1",
+        snapshot_id=snapshot.snapshot_id,
+    ) == {"source": "committed"}
+
+
+def test_procurement_mutations_stop_after_bounded_conflicts(
+    tmp_path: Path,
+) -> None:
+    backend = _ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="procurement_decisions.json",
+    )
+    store = ProcurementDecisionStore(base_dir=str(tmp_path), backend=backend)
+    store._decision_lock = lambda _tenant_id: nullcontext()
+
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="changed too many times",
+    ):
+        _upsert(store)
+
+    assert backend.attempts == 32
+
+
+def test_procurement_mutation_history_is_private_and_bounded(
+    tmp_path: Path,
+) -> None:
+    store = ProcurementDecisionStore(base_dir=str(tmp_path))
+    _upsert(store)
+    for index in range(70):
+        store.update_notes(
+            project_id="project-1",
+            tenant_id="alpha",
+            notes=f"note-{index}",
+        )
+
+    public = store.get("project-1", tenant_id="alpha")
+    persisted = json.loads(_decision_path(tmp_path).read_text(encoding="utf-8"))[0]
+    assert public is not None
+    assert "_mutation_ids" not in public.model_dump(mode="json")
+    assert len(persisted["_mutation_ids"]) == 64
+
+
+def test_invalid_procurement_mutation_history_fails_closed(
+    tmp_path: Path,
+) -> None:
+    store = ProcurementDecisionStore(base_dir=str(tmp_path))
+    _upsert(store)
+    path = _decision_path(tmp_path)
+    records = json.loads(path.read_text(encoding="utf-8"))
+    records[0]["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    path.write_text(json.dumps(records), encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="mutation history",
+    ):
+        store.list_by_tenant("alpha")
+    with pytest.raises(
+        ProcurementDecisionStoreError,
+        match="mutation history",
+    ):
+        _upsert(store, project_id="project-2")
+
+    assert path.read_bytes() == original
 
 
 def test_forged_s3_decision_identity_is_hidden_and_unmodifiable() -> None:
@@ -395,16 +658,22 @@ def test_snapshot_is_bound_to_tenant_and_project() -> None:
         project_id="project-1",
         snapshot_id=snapshot.snapshot_id,
     ) == {"source": "owned"}
-    assert store.load_source_snapshot(
-        tenant_id="alpha",
-        project_id="project-2",
-        snapshot_id=snapshot.snapshot_id,
-    ) is None
-    assert store.load_source_snapshot(
-        tenant_id="beta",
-        project_id="project-1",
-        snapshot_id=snapshot.snapshot_id,
-    ) is None
+    assert (
+        store.load_source_snapshot(
+            tenant_id="alpha",
+            project_id="project-2",
+            snapshot_id=snapshot.snapshot_id,
+        )
+        is None
+    )
+    assert (
+        store.load_source_snapshot(
+            tenant_id="beta",
+            project_id="project-1",
+            snapshot_id=snapshot.snapshot_id,
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-분석 기준: 2026-07-17 현재 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 로드맵은 외부 실증을 과장하지 않고 재현 가능한 검증 evidence 확보를 우선한다.
+분석 기준: 2026-07-20 현재 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 로드맵은 외부 실증을 과장하지 않고 재현 가능한 검증 evidence 확보를 우선한다.
 
 제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
 
@@ -34,6 +34,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-17 H67 완료: runtime prompt override, A/B prompt experiment, request pattern mutation을 각각 tenant별 단일 state object의 conditional create/CAS authority에 결속했다. Worker 충돌마다 최신 ownership·schema 위에 save/increment/delete, create/assign/result/conclude/delete, append/clear를 재적용하고 최대 32회 뒤 fail closed 처리한다. Override refresh는 stable incarnation·누적 count·payload-bound save receipt를 유지하며 incarnation 필드가 없던 기존 record도 deterministic lineage로 같은 생명주기에 결속한다. A/B variant·hint·experiment identity는 한 assignment CAS에 결속하고 result와 conclusion도 같은 identity에만 적용한다. Pending winner는 persisted result·hint·mutation receipt와 대조한 뒤 동일 operation ID로 override를 저장하며 mismatch와 pending reset을 차단한다. Request clear는 최초 snapshot identity만 제거한다. A/B와 override를 함께 묶는 distributed transaction, retry backoff·fairness, 실제 AWS/provider runtime은 범위 밖이다.
 - 2026-07-20 H68 완료: feedback와 eval evidence append를 각각 tenant별 `feedback.jsonl`, `eval_results.jsonl`의 conditional create/CAS authority에 결속했다. 기존 JSONL byte prefix와 foreign/legacy record를 보존하고 worker 충돌마다 최신 schema·ownership·append identity를 검증해 최대 32회 같은 record를 재적용한다. Feedback은 생성 시 고정한 `feedback_id`, eval은 public `EvalRecord`에 노출하지 않는 private append identity로 commit 응답 유실 뒤 successor append까지 한 번만 조정한다. Process lock 없는 local/fake-S3 20-way append, conflict cap, duplicate identity 차단과 consumer 회귀를 no-cost로 확인했으며 실제 AWS/provider runtime은 범위 밖이다.
 - 2026-07-20 H69 완료: fine-tune dataset append·clear, export metadata append와 model registry lifecycle mutation을 각각 tenant별 단일 object의 conditional create/CAS authority에 결속했다. Dataset은 private append identity로 clear 뒤 같은 request ID의 successor record를 보존하고, registry는 immutable incarnation과 최근 64개 mutation receipt로 register/status/eval/deprecate의 commit 응답 유실 뒤 successor mutation을 조정한다. Export content는 immutable conditional create 뒤 size·SHA-256 metadata를 별도 CAS로 확정하고 metadata 없는 orphan을 권위에서 제외한다. Process lock 없는 local/fake-S3 20-way append/register/export, 32회 conflict cap, private metadata 비노출과 caller 회귀를 no-cost로 확인했으며 multi-object transaction과 실제 AWS/provider training runtime은 범위 밖이다.
+- 2026-07-20 H70 완료: procurement decision upsert·notes mutation과 Decision Council session upsert를 각각 tenant별 단일 state object의 conditional create/CAS authority에 결속했다. 충돌마다 최신 ownership·schema·canonical decision/session identity 위에 같은 operation을 재적용하고, 최근 64개 private mutation receipt로 commit 응답 유실 뒤 successor mutation도 조정한다. Source snapshot은 immutable conditional create와 exact read-back으로 lost-success를 판정한다. Process lock 없는 local/fake-S3 20-way distinct/same-key mutation, 32회 conflict cap, private receipt 비노출과 mock/local HTTP 결속을 no-cost로 확인했으며 decision/snapshot 및 procurement/Council multi-object transaction과 실제 AWS/provider/G2B runtime은 범위 밖이다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -41,7 +42,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-20 H69 실측: 4117 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-20 H70 실측: 4128 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

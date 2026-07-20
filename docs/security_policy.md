@@ -63,7 +63,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 공공조달 판단 상태
   - 판단 record는 `data/tenants/<tenant_id>/procurement_decisions.json`, source snapshot은 `data/tenants/<tenant_id>/procurement_snapshots/<project_id>/<snapshot_id>.json` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant/project, snapshot metadata ID와 storage path를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key·snapshot metadata, 비직렬화 payload와 non-finite number는 조회나 write를 중단하며 기존 bytes를 덮어쓰지 않는다. Explicit foreign decision은 현재 tenant의 판단 근거로 노출하거나 변경하지 않는다.
-  - 판단 record의 read-modify-write는 backend logical object 기준 process-local lock으로 직렬화한다. Snapshot 검증은 persisted path와 JSON 구조의 무결성 범위이며 외부 원천 데이터의 의미적 진위, distributed S3 compare-and-swap과 실제 G2B/provider 성공은 현재 보장 범위가 아니다.
+  - 판단 mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema·decision identity 위에 upsert/notes 변경을 최대 32회 재적용한다. 최근 mutation receipt는 64개로 제한하고 public 응답에서는 제거한다. Commit 응답이 유실된 뒤 successor mutation이 이어져도 receipt와 decision identity로 성공을 조정한다.
+  - Source snapshot은 immutable conditional create로 저장하고 write 응답 유실 시 exact payload read-back으로만 성공을 조정한다. 이 보장은 decision과 snapshot 각각의 단일 object 범위이며 두 객체를 묶는 transaction, 외부 원천 데이터의 의미적 진위, 실제 AWS/G2B/provider 성공은 현재 보장 범위가 아니다.
 - 공공조달 검토 증빙 상태
   - Review record·원본 packet·reviewed-package는 local `data/tenants/<tenant_id>/procurement_reviews/<project_id>/<packet_sha256>/` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant/project/packet SHA-256과 exact record/receipt schema, packet receipt, completed package의 embedded receipt·manifest를 다시 대조한다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조·semantic drift와 backend failure는 검토함 조회·완료·다운로드·downstream generation을 중단하며 원본 bytes를 보존한다.
@@ -71,7 +72,8 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - Decision Council 상태
   - 조달 의사결정 session은 local `data/tenants/<tenant_id>/decision_council_sessions.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - Caller tenant와 persisted tenant, project/use-case/bundle로 계산한 canonical session key를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key와 owned session ID/key 중복은 조회·revision 갱신을 중단하며 원본 bytes를 보존한다. 기존 foreign·malformed record는 현재 tenant의 의사결정 근거로 사용하지 않는다.
-  - Local/S3 write는 모두 앱이 선택한 backend를 통하고 process-local logical state lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 provider/G2B 성공은 현재 보장 범위가 아니다.
+  - Session upsert는 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 canonical identity 위에 revision 변경을 최대 32회 재적용한다. 최근 mutation receipt는 64개로 제한하고 public 응답에서는 제거하며 commit 응답 유실 뒤 successor revision도 조정한다.
+  - 이 보장은 tenant별 단일 Council state object 범위다. Procurement decision과 Council session을 함께 묶는 transaction, 실제 AWS/provider/G2B 성공은 현재 보장 범위가 아니다.
 - 프로젝트·결재 상태
   - 프로젝트와 결재 record는 local `data/tenants/<tenant_id>/{projects,approvals}.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - Tenant와 owned project/approval identity를 state 접근 전에 검증한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key/identity와 유효한 owned ID의 schema drift는 조회·결재 전이·후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record와 owned ID가 없는 기존 malformed record는 현재 tenant에 노출하거나 변경하지 않은 채 보존한다.

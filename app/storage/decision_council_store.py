@@ -5,15 +5,17 @@ Stores one canonical latest council session per project/use-case/target bundle.
 Storage:
   - data/tenants/{tenant_id}/decision_council_sessions.json
 """
+
 from __future__ import annotations
 
 import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal, TypeVar
 
 from app.schemas import DecisionCouncilSessionResponse
+from app.storage.conditional_state import persist_text_if_current
 from app.storage.state_backend import (
     StateBackend,
     StateBackendError,
@@ -25,6 +27,12 @@ from app.tenant import require_tenant_id
 
 class DecisionCouncilStoreError(ValueError):
     """Raised when persisted Decision Council state cannot be trusted."""
+
+
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MAX_MUTATION_ATTEMPTS = 32
+_MutationResult = TypeVar("_MutationResult")
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -58,7 +66,9 @@ class DecisionCouncilStore:
         "current_procurement_blocking_hard_filter_count",
     }
 
-    def __init__(self, base_dir: str = "data", *, backend: StateBackend | None = None) -> None:
+    def __init__(
+        self, base_dir: str = "data", *, backend: StateBackend | None = None
+    ) -> None:
         self._base = Path(base_dir)
         self._backend = backend or get_state_backend(data_dir=self._base)
 
@@ -74,16 +84,8 @@ class DecisionCouncilStore:
             relative_path=relative_path,
         )
 
-    def _load(self, tenant_id: str) -> list[Any]:
-        tenant_id = require_tenant_id(tenant_id)
-        try:
-            raw = self._backend.read_text(self._relative_path(tenant_id))
-        except (StateBackendError, UnicodeError) as exc:
-            raise DecisionCouncilStoreError(
-                "Invalid Decision Council state document"
-            ) from exc
-        if raw is None:
-            return []
+    @staticmethod
+    def _decode_records(raw: str) -> list[Any]:
         if not raw.strip():
             raise DecisionCouncilStoreError("Invalid Decision Council state document")
         try:
@@ -96,15 +98,106 @@ class DecisionCouncilStore:
             raise DecisionCouncilStoreError("Invalid Decision Council state document")
         return records
 
-    def _save(self, tenant_id: str, records: list[Any]) -> None:
+    def _read_state(self, tenant_id: str) -> tuple[str | None, list[Any]]:
+        tenant_id = require_tenant_id(tenant_id)
+        try:
+            raw = self._backend.read_text(self._relative_path(tenant_id))
+        except (StateBackendError, UnicodeError) as exc:
+            raise DecisionCouncilStoreError(
+                "Invalid Decision Council state document"
+            ) from exc
+        if raw is None:
+            return None, []
+        return raw, self._decode_records(raw)
+
+    def _load(self, tenant_id: str) -> list[Any]:
+        return self._read_state(tenant_id)[1]
+
+    @staticmethod
+    def _mutation_ids(record: dict[str, Any]) -> list[str]:
+        mutation_ids = record.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise DecisionCouncilStoreError("Invalid Decision Council mutation history")
+        return list(mutation_ids)
+
+    def _record_payload(
+        self,
+        session: DecisionCouncilSessionResponse,
+        *,
+        previous: dict[str, Any] | None,
+        mutation_id: str,
+    ) -> dict[str, Any]:
+        mutation_ids = self._mutation_ids(previous or {})
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = self._to_dict(session)
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    def _persist_if_current(
+        self,
+        tenant_id: str,
+        *,
+        expected: str | None,
+        records: list[Any],
+        committed: Callable[[list[Any]], bool],
+    ) -> bool:
+        tenant_id = require_tenant_id(tenant_id)
         self._owned_sessions(records, tenant_id=tenant_id)
         payload = json.dumps(records, ensure_ascii=False, indent=2)
+
+        def decode(raw: str) -> list[Any]:
+            observed = self._decode_records(raw)
+            self._owned_sessions(observed, tenant_id=tenant_id)
+            return observed
+
         try:
-            self._backend.write_text(self._relative_path(tenant_id), payload)
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path(tenant_id),
+                expected=expected,
+                replacement=payload,
+                decode=decode,
+                committed=committed,
+                decode_errors=(DecisionCouncilStoreError,),
+            )
         except StateBackendError as exc:
             raise DecisionCouncilStoreError(
                 "Failed to persist Decision Council state"
             ) from exc
+
+    def _mutate_state(
+        self,
+        tenant_id: str,
+        change: Callable[[list[Any]], tuple[_MutationResult, bool]],
+        *,
+        committed: Callable[[list[Any]], bool],
+    ) -> _MutationResult:
+        tenant_id = require_tenant_id(tenant_id)
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, records = self._read_state(tenant_id)
+            self._owned_sessions(records, tenant_id=tenant_id)
+            result, changed = change(records)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                tenant_id,
+                expected=expected,
+                records=records,
+                committed=committed,
+            ):
+                return result
+        raise DecisionCouncilStoreError(
+            "Decision Council state changed too many times to persist safely"
+        )
 
     @staticmethod
     def build_session_key(
@@ -117,7 +210,10 @@ class DecisionCouncilStore:
 
     @staticmethod
     def _from_dict(data: dict) -> DecisionCouncilSessionResponse:
-        return DecisionCouncilSessionResponse.model_validate(data)
+        public = dict(data)
+        DecisionCouncilStore._mutation_ids(public)
+        public.pop(_MUTATION_IDS_FIELD, None)
+        return DecisionCouncilSessionResponse.model_validate(public)
 
     @staticmethod
     def _to_dict(session: DecisionCouncilSessionResponse) -> dict:
@@ -142,7 +238,9 @@ class DecisionCouncilStore:
                 continue
             try:
                 session = self._from_dict(record)
-            except ValueError:
+            except DecisionCouncilStoreError:
+                raise
+            except (TypeError, ValueError):
                 continue
 
             expected_key = self.build_session_key(
@@ -194,43 +292,87 @@ class DecisionCouncilStore:
     ) -> tuple[DecisionCouncilSessionResponse, Literal["created", "updated"]]:
         tenant_id = require_tenant_id(tenant_id)
         if session.tenant_id != tenant_id:
-            raise ValueError("Decision Council session tenant does not match store scope")
+            raise ValueError(
+                "Decision Council session tenant does not match store scope"
+            )
         session_key = self.build_session_key(
             project_id=session.project_id,
             use_case=session.use_case,
             target_bundle_type=session.target_bundle_type,
         )
         if session.session_key != session_key:
-            raise ValueError("Decision Council session key does not match session identity")
+            raise ValueError(
+                "Decision Council session key does not match session identity"
+            )
 
-        with self._lock(tenant_id):
+        mutation_id = uuid.uuid4().hex
+        new_session_id = session.session_id or str(uuid.uuid4())
+        target_session_id: str | None = None
+        target_bound = False
+        session_payload = session.model_dump(
+            mode="json",
+            exclude=self._DERIVED_RESPONSE_FIELDS,
+        )
+
+        def apply(
+            records: list[Any],
+        ) -> tuple[
+            tuple[DecisionCouncilSessionResponse, Literal["created", "updated"]],
+            bool,
+        ]:
+            nonlocal target_bound, target_session_id
             now = _now_iso()
-            records = self._load(tenant_id)
             existing = self._find(
                 records,
                 tenant_id=tenant_id,
                 session_key=session_key,
             )
-            session_payload = session.model_dump(
-                mode="json",
-                exclude=self._DERIVED_RESPONSE_FIELDS,
-            )
             if existing is None:
+                if target_bound and target_session_id != new_session_id:
+                    raise DecisionCouncilStoreError(
+                        "Decision Council session identity changed during mutation"
+                    )
+                target_bound = True
+                target_session_id = new_session_id
                 stored = DecisionCouncilSessionResponse.model_validate(
                     {
                         **session_payload,
-                        "session_id": session.session_id or str(uuid.uuid4()),
+                        "session_id": new_session_id,
                         "session_key": session_key,
                         "session_revision": max(1, int(session.session_revision or 1)),
                         "created_at": session.created_at or now,
                         "updated_at": now,
                     }
                 )
-                records.append(self._to_dict(stored))
-                self._save(tenant_id, records)
-                return stored.model_copy(update={"operation": "created"}), "created"
+                records.append(
+                    self._record_payload(
+                        stored,
+                        previous=None,
+                        mutation_id=mutation_id,
+                    )
+                )
+                return (
+                    stored.model_copy(update={"operation": "created"}),
+                    "created",
+                ), True
 
             idx, current = existing
+            if not target_bound:
+                target_bound = True
+                target_session_id = current.session_id
+            elif target_session_id == new_session_id:
+                target_session_id = current.session_id
+            elif current.session_id != target_session_id:
+                raise DecisionCouncilStoreError(
+                    "Decision Council session identity changed during mutation"
+                )
+
+            previous = records[idx]
+            if mutation_id in self._mutation_ids(previous):
+                return (
+                    current.model_copy(update={"operation": "updated"}),
+                    "updated",
+                ), False
             stored = DecisionCouncilSessionResponse.model_validate(
                 {
                     **session_payload,
@@ -241,9 +383,36 @@ class DecisionCouncilStore:
                     "updated_at": now,
                 }
             )
-            records[idx] = self._to_dict(stored)
-            self._save(tenant_id, records)
-            return stored.model_copy(update={"operation": "updated"}), "updated"
+            records[idx] = self._record_payload(
+                stored,
+                previous=previous,
+                mutation_id=mutation_id,
+            )
+            return (
+                stored.model_copy(update={"operation": "updated"}),
+                "updated",
+            ), True
+
+        def was_committed(records: list[Any]) -> bool:
+            existing = self._find(
+                records,
+                tenant_id=tenant_id,
+                session_key=session_key,
+            )
+            if existing is None:
+                return False
+            idx, current = existing
+            return (
+                current.session_id == target_session_id
+                and mutation_id in self._mutation_ids(records[idx])
+            )
+
+        with self._lock(tenant_id):
+            return self._mutate_state(
+                tenant_id=tenant_id,
+                change=apply,
+                committed=was_committed,
+            )
 
     def get_latest(
         self,
