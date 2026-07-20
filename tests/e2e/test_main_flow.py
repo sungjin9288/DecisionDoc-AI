@@ -738,6 +738,133 @@ def test_bundle_selection_enables_generate_button(page):
     assert not page.locator("#generate-btn").is_disabled()
 
 
+def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_completion(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingRuns = [];
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const agentResult = (suffix, taskType) => ({
+            skill_name: `skill-${suffix}`,
+            task_type: taskType,
+            provider_name: 'mock',
+            plan: [`plan-${suffix}`],
+            draft: `draft-${suffix}`,
+            qa: {
+              hard_gate_pass: true,
+              scores: { completeness: 1 },
+              gate_issues: [],
+            },
+            evidence_status: {
+              confirmed: [`confirmed-${suffix}`],
+              assumptions: [],
+              gaps: [],
+              source_references: [],
+            },
+            quality_warnings: [],
+            trajectory_id: `trajectory-${suffix}`,
+            trajectory_saved: true,
+          });
+          const setRunInput = (title, taskType) => {
+            document.querySelector('#docops-title').value = title;
+            document.querySelector('#docops-task-type').value = taskType;
+          };
+          try {
+            window.fetch = (input, options) => {
+              const url = String(input || '');
+              if (url === '/api/agent/document-ops/run') {
+                return new Promise(resolve => pendingRuns.push(resolve));
+              }
+              if (url === '/api/agent/document-ops/trajectories/stats') {
+                return Promise.resolve(response({
+                  total_records: 2,
+                  accepted_records: 0,
+                  pending_records: 2,
+                  export_count: 0,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                return Promise.resolve(response({
+                  trajectories: [],
+                  total: 0,
+                  offset: 0,
+                  returned: 0,
+                  has_more: false,
+                  order: 'newest',
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            setRunInput('older run', 'decision_brief');
+            const olderSuccess = runDocumentOpsAgent();
+            setRunInput('newer run', 'evidence_gap_review');
+            const newerSuccess = runDocumentOpsAgent();
+            while (pendingRuns.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingRuns[1](response(agentResult('new', 'evidence_gap_review')));
+            await newerSuccess;
+            const currentText = document.querySelector('#document-ops-result').textContent;
+
+            const taskFilter = document.querySelector('#docops-trajectory-task-filter');
+            taskFilter.value = 'decision_brief';
+            pendingRuns[0](response(agentResult('old', 'decision_brief')));
+            await olderSuccess;
+            const afterOlderSuccess = document.querySelector('#document-ops-result').textContent;
+            const filterAfterOlderSuccess = taskFilter.value;
+            const notificationAfterOlderSuccess = document.querySelector(
+              '#notification-container',
+            ).textContent;
+
+            setRunInput('older failing run', 'develop_quality_improvement');
+            const olderFailure = runDocumentOpsAgent();
+            setRunInput('newest run', 'policy_planning_brief');
+            const newestSuccess = runDocumentOpsAgent();
+            while (pendingRuns.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingRuns[3](response(agentResult('newest', 'policy_planning_brief')));
+            await newestSuccess;
+            pendingRuns[2](response({ detail: 'stale agent failure' }, 503));
+            await olderFailure;
+            const finalText = document.querySelector('#document-ops-result').textContent;
+            const finalNotifications = document.querySelector(
+              '#notification-container',
+            ).textContent;
+
+            return {
+              currentText,
+              afterOlderSuccess,
+              filterAfterOlderSuccess,
+              notificationAfterOlderSuccess,
+              finalText,
+              finalNotifications,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "draft-new" in result["currentText"]
+    assert "draft-old" not in result["currentText"]
+    assert "draft-new" in result["afterOlderSuccess"]
+    assert "draft-old" not in result["afterOlderSuccess"]
+    assert result["filterAfterOlderSuccess"] == "decision_brief"
+    assert "이전 DocumentOps 실행의 trajectory 저장을 완료했습니다." in result["notificationAfterOlderSuccess"]
+    assert "draft-newest" in result["finalText"]
+    assert "Agent 실행 실패" not in result["finalText"]
+    assert "stale agent failure" not in result["finalText"]
+    assert "이전 DocumentOps 실행이 실패했습니다." in result["finalNotifications"]
+
+
 def test_document_ops_trajectory_history_searches_filters_and_paginates_without_mobile_overflow(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []

@@ -79,6 +79,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - Training Audit Checklist accepts only the latest request for the current tenant and provider/model planning query; a planning change removes the previous audit action, and a completed audit export invalidates an older in-flight checklist read
 - Training Adapter Contract and Training Execution Rehearsal each accept only the latest request for the current tenant and provider/model planning query; a planning change replaces old configuration and artifact evidence with an explicit recheck state
 - SFT Export Preview and the reviewed artifact list accept results only for the task selected when their request began, while Training Plan Preview uses the same rule for its exact provider/model query; changing either context replaces open evidence with an explicit recheck state
+- concurrent DocumentOps Agent runs bind the result panel to the latest initiated run and tenant; a late same-tenant trajectory save refreshes history without resetting current filters or replacing the latest draft, while stale failures remain warning-only
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -233,9 +234,10 @@ Last local verification on 2026-07-21:
 - training audit checklist planning-context Chromium gate: 1 passed
 - training provider evidence latest-response focused gate: 3 passed, 1 warning
 - task/planning preview context focused gate: 4 passed, 1 warning
-- DocumentOps static expansion gate: 27 passed, 131 deselected, 1 warning
-- DocumentOps Chromium expansion gate: 13 passed, 38 deselected
-- full repository non-live gate: 4239 passed, 2 skipped, 4 deselected, 1 warning
+- Agent latest-run result ownership focused gate: 2 passed, 1 warning
+- DocumentOps static expansion gate: 28 passed, 131 deselected, 1 warning
+- DocumentOps Chromium expansion gate: 14 passed, 38 deselected
+- full repository non-live gate: 4241 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

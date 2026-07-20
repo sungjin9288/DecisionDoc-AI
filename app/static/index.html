@@ -7038,7 +7038,7 @@
 
   /* ── DocumentOps Agent UI ─────────────────────────────────────── */
   const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;
-  let _documentOpsLastResult = null;
+  let _documentOpsAgentRunVersion = 0;
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsStatsRequestVersion = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
@@ -7153,6 +7153,12 @@
     }
     const skillName = ($id('docops-skill-name')?.value || '').trim();
     const resultEl = $id('document-ops-result');
+    const runVersion = ++_documentOpsAgentRunVersion;
+    const tenantId = _currentTenantId;
+    const runIsCurrent = () => (
+      runVersion === _documentOpsAgentRunVersion
+      && tenantId === _currentTenantId
+    );
     if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);font-size:.86rem;">Agent 실행 중...</div>';
     const payload = {
       task_type: taskType,
@@ -7177,11 +7183,23 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      _documentOpsLastResult = data;
+      if (!runIsCurrent()) {
+        if (data.trajectory_saved === true && tenantId === _currentTenantId) {
+          await loadDocumentOpsTrajectories();
+          showNotification('이전 DocumentOps 실행의 trajectory 저장을 완료했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'info');
+        } else {
+          showNotification('이전 DocumentOps 실행은 완료됐지만 현재 결과 화면은 더 최근 실행을 유지합니다.', 'info');
+        }
+        return;
+      }
       renderDocumentOpsResult(data);
       await loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
       showNotification(data.trajectory_saved ? 'DocumentOps 결과와 trajectory를 저장했습니다.' : 'DocumentOps 결과를 생성했습니다.', 'success');
     } catch (err) {
+      if (!runIsCurrent()) {
+        showNotification('이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'warn');
+        return;
+      }
       if (resultEl) resultEl.innerHTML = `<div style="color:#ef4444;">Agent 실행 실패: ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('DocumentOps 실행 실패: ' + (err.message || err), 'error');
     }

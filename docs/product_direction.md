@@ -112,6 +112,9 @@ Needs:
 9. Scope honesty is mandatory.
    Planning docs, README, sales docs, and portfolio docs must separate implemented, validated, planned, and unverified capabilities.
 
+10. Current context owns interactive evidence.
+    When browser operations overlap, only the latest tenant-bound request may replace the visible result. Earlier operations that completed a durable side effect must remain observable without rewriting the user's current filters or evidence panel.
+
 ## 6. Product Pillars
 
 ### Pillar 1: Decision Package Generation

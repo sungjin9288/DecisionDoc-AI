@@ -897,6 +897,25 @@ def test_index_html_document_ops_previews_keep_the_current_input_context():
     assert "markDocumentOpsTrainingPlanStale('Base model 조건이 변경되었습니다.')" in content
 
 
+def test_index_html_document_ops_agent_run_keeps_the_latest_result():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function runDocumentOpsAgent()")
+    end = content.index("function renderDocumentOpsResult", start)
+    run_block = content[start:end]
+
+    assert "let _documentOpsAgentRunVersion = 0;" in content
+    assert "const runVersion = ++_documentOpsAgentRunVersion;" in run_block
+    assert "const tenantId = _currentTenantId;" in run_block
+    assert "runVersion === _documentOpsAgentRunVersion" in run_block
+    assert "tenantId === _currentTenantId" in run_block
+    assert run_block.count("if (!runIsCurrent()) {") == 2
+    assert "await loadDocumentOpsTrajectories();" in run_block
+    assert "이전 DocumentOps 실행의 trajectory 저장을 완료했습니다." in run_block
+    assert "이전 DocumentOps 실행은 완료됐지만 현재 결과 화면은 더 최근 실행을 유지합니다." in run_block
+    assert "이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다." in run_block
+    assert "_documentOpsLastResult" not in content
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(

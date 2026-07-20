@@ -28,6 +28,7 @@ The current codebase already provides:
 - dry-run approval, readiness, execution-request, and audit records
 - ops-key governance and reviewer sign-off summaries
 - a disabled provider adapter contract and side-effect-free rehearsal
+- latest-run browser ownership for concurrent Agent results, with stale same-tenant saves observed without replacing the current draft or filters
 
 The source of truth for the implemented boundary is `STATUS.md` and the referenced runtime code, not
 historical phase numbers.
