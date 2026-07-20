@@ -4,25 +4,26 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import uuid
 from pathlib import Path
 from typing import Any
-from weakref import WeakValueDictionary
 
 from app.storage.base import atomic_write_text
+from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.state_lock import state_lock
 from app.storage.trajectory.redaction import _now_iso, _redact_input
 from app.storage.trajectory.sft_quality import _is_accepted, _sft_export_blockers, _source_references
+from app.storage.trajectory.state_mixin import (
+    _APPEND_ID_FIELD,
+    _INCARNATION_FIELD,
+    _MAX_TRACKED_REVIEW_MUTATIONS,
+    _REVIEW_MUTATION_IDS_FIELD,
+    TrajectoryStateMixin,
+    TrajectoryStoreError,
+)
 from app.tenant import require_tenant_id
 
 _log = logging.getLogger("decisiondoc.storage.trajectory")
-_path_locks: WeakValueDictionary[Path, Any] = WeakValueDictionary()
-_path_locks_guard = threading.Lock()
-
-
-def _lock_for_path(path: Path) -> Any:
-    with _path_locks_guard:
-        return _path_locks.setdefault(path.resolve(), threading.RLock())
 
 
 def _tenant_component(tenant_id: str) -> str:
@@ -58,32 +59,75 @@ def _trajectory_search_text(record: dict[str, Any]) -> str:
     return "\n".join(str(value) for value in fields if value).casefold()
 
 
-class TrajectoryCoreMixin:
+class TrajectoryCoreMixin(TrajectoryStateMixin):
     """Init, save/get/review, stats, and shared tenant file-path plumbing."""
 
-    def __init__(self, data_dir: str | Path) -> None:
+    def __init__(
+        self,
+        data_dir: str | Path,
+        *,
+        backend: StateBackend | None = None,
+    ) -> None:
         self._base_dir = Path(data_dir)
-        self._lock = _lock_for_path(self._base_dir / "tenants")
+        self._backend = backend or get_state_backend(data_dir=self._base_dir)
+        self._lock = state_lock(
+            self._backend,
+            data_dir=self._base_dir,
+            relative_path="tenants/trajectory-authority",
+        )
+
+    @property
+    def backend(self) -> StateBackend:
+        return self._backend
 
     def save(self, trajectory: dict[str, Any], *, tenant_id: str) -> str:
         """Persist one trajectory and return its trajectory_id.
 
-        Duplicate ``trajectory_id`` values are ignored to keep repeated agent
-        retries from polluting reviewed-data exports.
+        Same-content retries are idempotent. Reusing a ``trajectory_id`` for
+        different generated content fails without changing persisted state.
         """
         tenant_id = _tenant_component(tenant_id)
         record = self._normalize_record(trajectory, tenant_id=tenant_id)
         trajectory_id = str(record["trajectory_id"])
+        append_id = uuid.uuid4().hex
+        record[_APPEND_ID_FIELD] = append_id
+        record[_INCARNATION_FIELD] = uuid.uuid4().hex
+
+        def append(
+            records: list[dict[str, Any]],
+        ) -> tuple[str, bool]:
+            matches = [
+                item
+                for item in records
+                if item.get("trajectory_id") == trajectory_id
+            ]
+            if matches:
+                if (
+                    len(matches) == 1
+                    and self._owns_record(matches[0], tenant_id)
+                    and self._same_trajectory_content(matches[0], record)
+                ):
+                    return trajectory_id, False
+                raise TrajectoryStoreError(
+                    "Trajectory identity already belongs to different content"
+                )
+            records.append(record)
+            return trajectory_id, True
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns_record(item, tenant_id)
+                and item.get(_APPEND_ID_FIELD) == append_id
+                and item.get("trajectory_id") == trajectory_id
+                for item in records
+            )
+
         with self._lock:
-            raw_records = self._read_raw_records_unlocked(tenant_id)
-            existing_ids = {str(item.get("trajectory_id")) for item in raw_records}
-            if trajectory_id in existing_ids:
-                return trajectory_id
-            path = self._jsonl_path(tenant_id)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
-        return trajectory_id
+            return self._mutate_records(
+                tenant_id=tenant_id,
+                change=append,
+                committed=was_committed,
+            )
 
     def get_records(
         self,
@@ -172,6 +216,7 @@ class TrajectoryCoreMixin:
         expected_review_version: int | None = None,
     ) -> dict[str, Any] | None:
         """Attach human review metadata to an existing trajectory."""
+        tenant_id = _tenant_component(tenant_id)
         if expected_review_version is not None and (
             isinstance(expected_review_version, bool)
             or not isinstance(expected_review_version, int)
@@ -208,38 +253,95 @@ class TrajectoryCoreMixin:
         if review_metadata:
             review_content["metadata"] = review_metadata
 
-        with self._lock:
-            records = self._read_raw_records_unlocked(tenant_id)
+        mutation_id = uuid.uuid4().hex
+        target_identity: str | None = None
+
+        def apply_review(
+            records: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any] | None, bool]:
+            nonlocal target_identity
+
             record = self._find_owned_record(records, tenant_id, trajectory_id)
             if record is None:
-                return None
-            current = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
-            if record.get("human_review_status") in {"accepted", "rejected"} and _review_content(current) == review_content:
-                return record
+                return None, False
+
+            identity = self._record_identity(record, tenant_id=tenant_id)
+            if target_identity is None:
+                target_identity = identity
+            elif target_identity != identity:
+                raise TrajectoryStoreError(
+                    "Trajectory identity changed during review"
+                )
+
+            mutation_ids = self._review_mutation_ids(record)
+            if mutation_id in mutation_ids:
+                return self._public_record(record), False
+
+            current = (
+                record.get("human_feedback")
+                if isinstance(record.get("human_feedback"), dict)
+                else {}
+            )
+            if (
+                record.get("human_review_status") in {"accepted", "rejected"}
+                and _review_content(current) == review_content
+            ):
+                return self._public_record(record), False
 
             current_version = int(current.get("review_version") or 0)
-            if expected_review_version is not None and expected_review_version != current_version:
+            if (
+                expected_review_version is not None
+                and expected_review_version != current_version
+            ):
                 raise TrajectoryReviewConflictError(
                     trajectory_id,
                     expected_version=expected_review_version,
                     current_version=current_version,
                 )
 
-            version = current_version + 1
-            feedback = {**review_content, "review_version": version, "reviewed_at": _now_iso()}
+            feedback = {
+                **review_content,
+                "review_version": current_version + 1,
+                "reviewed_at": _now_iso(),
+            }
             if record.get("human_review_status") in {"accepted", "rejected"}:
                 history = record.get("human_review_history")
                 if not isinstance(history, list):
                     history = []
-                history.append(current)
+                history.append(dict(current))
                 record["human_review_history"] = history
             record["human_feedback"] = feedback
-            record["human_review_status"] = "accepted" if accepted else "rejected"
+            record["human_review_status"] = (
+                "accepted" if accepted else "rejected"
+            )
+            record[_INCARNATION_FIELD] = identity
+            mutation_ids.append(mutation_id)
+            record[_REVIEW_MUTATION_IDS_FIELD] = mutation_ids[
+                -_MAX_TRACKED_REVIEW_MUTATIONS:
+            ]
+
             normalized = self._normalize_record(record, tenant_id=tenant_id)
             record.clear()
             record.update(normalized)
-            self._write_records_unlocked(tenant_id, records)
-        return record
+            return self._public_record(record), True
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            record = self._find_owned_record(
+                records,
+                tenant_id,
+                trajectory_id,
+            )
+            return bool(
+                record
+                and mutation_id in self._review_mutation_ids(record)
+            )
+
+        with self._lock:
+            return self._mutate_records(
+                tenant_id=tenant_id,
+                change=apply_review,
+                committed=was_committed,
+            )
 
     def get_stats(self, *, tenant_id: str) -> dict[str, Any]:
         with self._lock:
@@ -380,73 +482,6 @@ class TrajectoryCoreMixin:
             }
         return sft
 
-    def _read_records_unlocked(self, tenant_id: str) -> list[dict[str, Any]]:
-        return self._owned_records(
-            self._read_raw_records_unlocked(tenant_id),
-            tenant_id,
-        )
-
-    def _read_raw_records_unlocked(self, tenant_id: str) -> list[dict[str, Any]]:
-        path = self._jsonl_path(tenant_id)
-        if not path.exists():
-            return []
-        records: list[dict[str, Any]] = []
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                item = json.loads(stripped)
-            except json.JSONDecodeError as exc:
-                _log.warning("Skipping malformed trajectory record: %s", exc)
-                continue
-            if isinstance(item, dict):
-                records.append(item)
-        return records
-
-    def _owned_records(
-        self,
-        records: list[dict[str, Any]],
-        tenant_id: str,
-    ) -> list[dict[str, Any]]:
-        counts: dict[str, int] = {}
-        for record in records:
-            trajectory_id = record.get("trajectory_id")
-            if not isinstance(trajectory_id, str) or not trajectory_id:
-                continue
-            counts[trajectory_id] = counts.get(trajectory_id, 0) + 1
-        return [
-            record
-            for record in records
-            if record.get("tenant_id") in (None, tenant_id)
-            and isinstance(record.get("trajectory_id"), str)
-            and bool(record["trajectory_id"])
-            and counts[record["trajectory_id"]] == 1
-        ]
-
-    def _find_owned_record(
-        self,
-        records: list[dict[str, Any]],
-        tenant_id: str,
-        trajectory_id: str,
-    ) -> dict[str, Any] | None:
-        matches = [
-            record
-            for record in records
-            if record.get("trajectory_id") == trajectory_id
-        ]
-        if len(matches) != 1 or matches[0].get("tenant_id") not in (None, tenant_id):
-            return None
-        return matches[0]
-
-    def _write_records_unlocked(self, tenant_id: str, records: list[dict[str, Any]]) -> None:
-        text = "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in records)
-        atomic_write_text(self._jsonl_path(tenant_id), f"{text}\n" if text else "")
-
     def _load_meta_unlocked(
         self,
         tenant_id: str,
@@ -530,8 +565,12 @@ class TrajectoryCoreMixin:
     def _tenant_dir(self, tenant_id: str) -> Path:
         return self._base_dir / "tenants" / _tenant_component(tenant_id)
 
+    def _jsonl_relative_path(self, tenant_id: str) -> str:
+        return f"tenants/{_tenant_component(tenant_id)}/trajectories.jsonl"
+
     def _jsonl_path(self, tenant_id: str) -> Path:
-        return self._tenant_dir(tenant_id) / "trajectories.jsonl"
+        root = Path(getattr(self._backend, "root", self._base_dir))
+        return root / self._jsonl_relative_path(tenant_id)
 
     def _meta_path(self, tenant_id: str) -> Path:
         return self._tenant_dir(tenant_id) / "trajectory_metadata.json"

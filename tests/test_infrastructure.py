@@ -3035,6 +3035,31 @@ def test_trajectory_store_contract_requires_explicit_tenant_binding():
     assert defaulted_methods == []
 
 
+def test_application_binds_trajectory_store_to_selected_state_backend():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "app" / "main.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    constructors = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "TrajectoryStore"
+    ]
+
+    assert len(constructors) == 1
+    backend = next(
+        (
+            keyword.value
+            for keyword in constructors[0].keywords
+            if keyword.arg == "backend"
+        ),
+        None,
+    )
+    assert isinstance(backend, ast.Name)
+    assert backend.id == "state_backend"
+
+
 def test_production_trajectory_store_calls_bind_tenant_explicitly():
     root = Path(__file__).resolve().parents[1]
     missing_tenant: list[str] = []

@@ -211,7 +211,7 @@ def create_app() -> FastAPI:
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
     project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
     report_workflow_store = ReportWorkflowStore(base_dir=str(data_dir), backend=state_backend)
-    trajectory_store = TrajectoryStore(data_dir)
+    trajectory_store = TrajectoryStore(data_dir, backend=state_backend)
     meeting_recording_store = MeetingRecordingStore(base_dir=str(data_dir), backend=state_backend)
     voice_brief_base_url = get_voice_brief_api_base_url()
     voice_brief_import_service = (

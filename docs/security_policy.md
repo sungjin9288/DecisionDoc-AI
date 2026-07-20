@@ -39,6 +39,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - `/admin/tenants`를 포함한 admin endpoint는 인증된 admin JWT 또는 설정된 Ops key 중 하나를 요구한다. Ops UI는 공통 인증 header 조합을 사용해 로그인 세션을 보존하며 두 자격 증명을 동시에 요구하지 않는다.
   - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다.
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
+- DocumentOps trajectory 상태
+  - Redacted trajectory와 사람 review 이력은 local `data/tenants/<tenant_id>/trajectories.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.
+  - Tenant와 trajectory identity를 path·record에서 검증하고 blank·malformed·non-object JSONL, duplicate key·identity, non-finite number와 손상 private receipt는 조회·append·review를 중단하며 원본 bytes를 보존한다. 기존 tenant 미표기 record는 path-owned compatibility를 유지하고 explicit foreign record는 현재 tenant에 노출하거나 변경하지 않는다.
+  - Append와 review는 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 record 집합에 operation을 최대 32회 재적용한다. Private append/incarnation identity와 최근 64개 review mutation receipt로 commit 응답 유실 뒤 successor mutation을 조정하며 public record와 SFT source에는 private metadata를 노출하지 않는다. Expected review version은 최신 CAS state에서 비교한다.
+  - 이 보장은 tenant별 단일 trajectory/review JSONL object 범위다. `trajectory_metadata.json`, SFT export, freeze, training approval/request/audit artifact는 local filesystem handoff authority이며 JSONL과의 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness, 실제 AWS/provider/training runtime은 현재 보장 범위가 아니다.
 - Root tenant registry 상태
   - Tenant record와 API key hash는 local `data/tenants.json` 또는 같은 relative path의 S3 state object에 저장한다. Mutation receipt는 public tenant identifier로 유효하지 않은 private root sentinel 아래에 두고 admin/API 응답에서는 제거한다.
   - Target mutation은 tenant identity와 record schema를 다시 검증하며 malformed private metadata, foreign ownership과 invalid target record는 조회·변경 또는 인증 성공으로 축소하지 않고 원본을 보존한다.

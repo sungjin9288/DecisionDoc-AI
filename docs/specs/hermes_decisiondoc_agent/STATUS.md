@@ -11,6 +11,7 @@ dependency가 아니다.
 - DecisionDoc의 route, service, provider, storage, tenant 경계를 유지한다.
 - 외부 Hermes runtime, terminal/browser execution, remote tool execution을 연결하지 않는다.
 - trajectory와 reviewed SFT dataset은 로컬 검토 및 품질 증적까지만 다룬다.
+- trajectory/review JSONL은 선택된 local/S3 `StateBackend`의 conditional create/CAS authority를 사용하되 export/freeze/training handoff artifact는 local filesystem 경계로 유지한다.
 - training provider adapter는 `stub_only`이며 upload, provider job, training, model promotion을
   실행하지 않는다.
 - 유료 provider 호출과 AWS runtime 검증은 별도 승인 작업으로 분리한다.
@@ -24,7 +25,7 @@ dependency가 아니다.
 | QA and eval | `app/evals/document_ops/` | task-specific hard gates, stable issue code, affected field, remediation hint와 rubric |
 | API | `app/routers/document_ops_agent.py` | tenant-aware run, review, export, freeze, approval, audit, governance endpoints |
 | Service | `app/services/document_ops_service.py` | agent와 trajectory storage를 route에서 분리해 orchestration |
-| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/` | tenant-scoped persistence, review, stats, export, freeze, approval records |
+| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/core_mixin.py`, `app/storage/trajectory/state_mixin.py` | tenant-scoped JSONL conditional create/CAS, review, stats; local export/freeze/approval records |
 | Training adapter | `app/services/document_ops_training_adapter.py` | disabled contract와 read-only rehearsal만 제공 |
 
 The implemented flow is:
@@ -73,8 +74,8 @@ The static DocumentOps workbench now follows the same local governance chain as 
   a reviewer opens its detail, while existing API callers retain the default full-list response
 - detail views and human review requests append success/failure audit events with trajectory and
   compact review provenance; inputs, drafts, and review notes are not copied into audit detail
-- review requests carry the version loaded with the detail record; storage compares it while holding
-  the tenant write lock, returns an identical retry unchanged, and rejects a different stale decision
+- review requests carry the version loaded with the detail record; storage compares it against the
+  latest conditional-CAS state, returns an identical retry unchanged, and rejects a different stale decision
   with `409` plus expected/current version evidence
 - review inputs update a user-tenant-trajectory keyed page-memory draft as the reviewer types, so
   ordinary list refreshes and conflict recovery can restore notes and score only in the same authenticated
@@ -124,8 +125,8 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   writes also require the non-negative version returned by the current detail record.
 - Dataset exports, freezes, training approval/readiness/plan, audit, governance, reviewer sign-off,
   and provider adapter endpoints require the ops key.
-- Storage methods receive the current tenant ID; export and download paths are resolved inside the
-  tenant boundary.
+- Storage methods receive the current tenant ID. Trajectory/review JSONL uses the app-selected
+  backend while export and download paths remain local handoff artifacts resolved inside the tenant boundary.
 - Agent execution is blocked by maintenance mode. Read-only review surfaces remain separately
   authenticated.
 - Training request schemas and storage reject `start_training`, `upload_dataset`, and
@@ -167,13 +168,14 @@ pytest -q \
   tests/evals/test_document_ops_gates.py \
   tests/test_document_ops_agent_api.py \
   tests/test_document_ops_training_adapter.py \
-  tests/storage/test_trajectory_store.py
+  tests/storage/test_trajectory_store.py \
+  tests/storage/test_trajectory_store_integrity.py
 ```
 
-The five files currently define 60 test functions. Reproduce the source count with:
+The six files currently define 85 test functions. Reproduce the source count with:
 
 ```bash
-python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
+python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py","tests/storage/test_trajectory_store_integrity.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
 ```
 
 Integration coverage also exists in:
@@ -184,12 +186,12 @@ Integration coverage also exists in:
 Before release or handoff, run the focused suite and the repository non-live gate. A test-function
 source count is not a pass claim.
 
-Last local verification on 2026-07-15:
+Last local verification on 2026-07-20:
 
-- focused DocumentOps suite: 60 passed
-- focused DocumentOps, report-workflow integration, and infrastructure: 208 passed
-- DocumentOps trajectory browser E2E: 2 passed
-- full `pytest -q tests/ -m "not live" --tb=short`: 3020 passed, 1 skipped, 4 deselected
+- trajectory/API focused gate: 79 passed, 1 warning
+- DocumentOps, report-workflow integration, and infrastructure expansion: 280 passed, 1 warning
+- full repository non-live gate: 4200 passed, 2 skipped, 4 deselected, 1 warning
+- mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof
