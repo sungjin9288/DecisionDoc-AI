@@ -41,6 +41,35 @@ class _SlowLocalBackend(LocalStateBackend):
         return raw
 
 
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, text, content_type
+        self.attempts += 1
+        return False
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        _ = relative_path, expected, replacement, content_type
+        self.attempts += 1
+        return False
+
+
 class _Body:
     def __init__(self, data: bytes) -> None:
         self._data = data
@@ -296,21 +325,29 @@ def test_foreign_quality_records_remain_hidden_and_preserved(tmp_path: Path) -> 
     feedback_path = tmp_path / "tenants/alpha/feedback.jsonl"
     feedback_path.parent.mkdir(parents=True)
     foreign_feedback = {"tenant_id": "beta", "opaque": {"keep": True}}
-    feedback_path.write_text(json.dumps(foreign_feedback) + "\n", encoding="utf-8")
+    foreign_feedback_text = f" {json.dumps(foreign_feedback)} \n"
+    feedback_path.write_text(foreign_feedback_text, encoding="utf-8")
     feedback_store = FeedbackStore(tmp_path, tenant_id="alpha")
     feedback_store.save({"bundle_type": "tech_decision", "rating": 5})
+    assert feedback_path.read_text(encoding="utf-8").startswith(foreign_feedback_text)
     feedback_records = [
-        json.loads(line) for line in feedback_path.read_text().splitlines()
+        json.loads(line)
+        for line in feedback_path.read_text().splitlines()
+        if line.strip()
     ]
     assert feedback_store.get_all()[0]["rating"] == 5
     assert feedback_records[0] == foreign_feedback
 
     eval_path = tmp_path / "tenants/alpha/eval_results.jsonl"
     foreign_eval = {"tenant_id": "beta", "opaque": {"keep": True}}
-    eval_path.write_text(json.dumps(foreign_eval) + "\n", encoding="utf-8")
+    foreign_eval_text = f" {json.dumps(foreign_eval)} \n"
+    eval_path.write_text(foreign_eval_text, encoding="utf-8")
     eval_store = EvalStore(tmp_path, tenant_id="alpha")
     eval_store.append(_eval_record("owned"))
-    eval_records = [json.loads(line) for line in eval_path.read_text().splitlines()]
+    assert eval_path.read_text(encoding="utf-8").startswith(foreign_eval_text)
+    eval_records = [
+        json.loads(line) for line in eval_path.read_text().splitlines() if line.strip()
+    ]
     assert [record.request_id for record in eval_store.load_all()] == ["request-owned"]
     assert eval_records[0] == foreign_eval
 
@@ -420,6 +457,8 @@ def test_independent_local_quality_stores_preserve_concurrent_writes(
         )
         for _ in range(20)
     ]
+    for store in [*feedback_stores, *eval_stores, *override_stores]:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -486,19 +525,33 @@ def test_quality_state_round_trips_through_fake_s3() -> None:
 
 
 def test_independent_fake_s3_quality_stores_preserve_concurrent_writes() -> None:
-    backend, _ = _s3_backend(read_delay=0.003)
+    client = _MemoryS3Client(read_delay=0.003)
     feedback_stores = [
-        FeedbackStore("/virtual/data", tenant_id="alpha", backend=backend)
-        for _ in range(20)
+        FeedbackStore(
+            f"/virtual/feedback-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
     eval_stores = [
-        EvalStore("/virtual/data", tenant_id="alpha", backend=backend)
-        for _ in range(20)
+        EvalStore(
+            f"/virtual/eval-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
     override_stores = [
-        PromptOverrideStore("/virtual/data", tenant_id="alpha", backend=backend)
-        for _ in range(20)
+        PromptOverrideStore(
+            f"/virtual/override-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
     ]
+    for store in [*feedback_stores, *eval_stores, *override_stores]:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -529,6 +582,153 @@ def test_independent_fake_s3_quality_stores_preserve_concurrent_writes() -> None
     assert len(feedback_stores[0].get_all()) == 20
     assert len(eval_stores[0].load_all()) == 20
     assert len(override_stores[0].list_overrides()) == 20
+
+
+def test_feedback_append_reconciles_commit_then_successor_append() -> None:
+    client = _MemoryS3Client()
+    primary = FeedbackStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = FeedbackStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_suffix="feedback.jsonl",
+        after_write=lambda: successor.save({"bundle_type": "successor", "rating": 4}),
+    )
+    primary.save({"bundle_type": "committed", "rating": 5})
+
+    records = primary.get_all()
+    assert len(records) == 2
+    assert {record["bundle_type"] for record in records} == {
+        "committed",
+        "successor",
+    }
+
+
+def test_eval_append_reconciles_commit_then_successor_append() -> None:
+    client = _MemoryS3Client()
+    primary = EvalStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = EvalStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    successor.append(_eval_record("seed"))
+
+    client.fail_after_next_conditional_write(
+        key_suffix="eval_results.jsonl",
+        after_write=lambda: successor.append(_eval_record("successor")),
+    )
+    primary.append(_eval_record("committed"))
+
+    records = primary.load_all()
+    assert len(records) == 3
+    assert {record.request_id for record in records} == {
+        "request-committed",
+        "request-seed",
+        "request-successor",
+    }
+
+
+def test_feedback_and_eval_appends_stop_after_bounded_conflicts(
+    tmp_path: Path,
+) -> None:
+    feedback_backend = _ConflictingLocalBackend(tmp_path / "feedback")
+    feedback = FeedbackStore(
+        tmp_path / "feedback",
+        tenant_id="alpha",
+        backend=feedback_backend,
+    )
+    with pytest.raises(
+        FeedbackStoreError,
+        match="changed too many times to append safely",
+    ):
+        feedback.save({"bundle_type": "tech_decision", "rating": 5})
+    assert feedback_backend.attempts == 32
+
+    eval_backend = _ConflictingLocalBackend(tmp_path / "eval")
+    eval_path = tmp_path / "eval/tenants/alpha/eval_results.jsonl"
+    eval_path.parent.mkdir(parents=True)
+    seed = {
+        key: value
+        for key, value in vars(_eval_record("seed")).items()
+        if key != "tenant_id"
+    }
+    eval_path.write_text(f"{json.dumps(seed)}\n", encoding="utf-8")
+    evaluations = EvalStore(
+        tmp_path / "eval",
+        tenant_id="alpha",
+        backend=eval_backend,
+    )
+    with pytest.raises(
+        EvalStoreError,
+        match="changed too many times to append safely",
+    ):
+        evaluations.append(_eval_record("never-committed"))
+    assert eval_backend.attempts == 32
+
+
+def test_eval_append_identity_stays_private(tmp_path: Path) -> None:
+    store = EvalStore(tmp_path, tenant_id="alpha")
+    store.append(_eval_record("private"))
+
+    record = store.load_all()[0]
+    assert not hasattr(record, "_append_id")
+
+    raw_record = json.loads(store._path.read_text(encoding="utf-8"))
+    assert raw_record["_append_id"]
+
+
+def test_duplicate_quality_append_identities_are_rejected(tmp_path: Path) -> None:
+    feedback_path = tmp_path / "tenants/alpha/feedback.jsonl"
+    feedback_path.parent.mkdir(parents=True)
+    feedback_record = {
+        "feedback_id": "duplicate-feedback",
+        "tenant_id": "alpha",
+        "timestamp": 1.0,
+        "bundle_type": "tech_decision",
+        "rating": 5,
+    }
+    feedback_path.write_text(
+        f"{json.dumps(feedback_record)}\n{json.dumps(feedback_record)}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(FeedbackStoreError, match="Duplicate feedback identity"):
+        FeedbackStore(tmp_path, tenant_id="alpha").get_all()
+
+    eval_path = tmp_path / "tenants/alpha/eval_results.jsonl"
+    eval_record = {
+        **{
+            key: value
+            for key, value in _eval_record("duplicate").__dict__.items()
+            if key != "tenant_id"
+        },
+        "tenant_id": "alpha",
+        "_append_id": "duplicate-append",
+    }
+    eval_path.write_text(
+        f"{json.dumps(eval_record)}\n{json.dumps(eval_record)}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        EvalStoreError,
+        match="Duplicate evaluation append identity",
+    ):
+        EvalStore(tmp_path, tenant_id="alpha").load_all()
 
 
 def test_independent_prompt_override_workers_preserve_updates() -> None:
@@ -746,9 +946,7 @@ def test_prompt_override_operation_identity_is_bound_to_payload(
         "ab_test_winner",
         operation_id="winner-operation",
     )
-    assert store.get_override("proposal_kr")["override_hint"] == (
-        "Newer operator hint"
-    )
+    assert store.get_override("proposal_kr")["override_hint"] == ("Newer operator hint")
 
     with pytest.raises(
         PromptOverrideStoreError,

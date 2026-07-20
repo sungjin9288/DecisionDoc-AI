@@ -6,12 +6,14 @@ import json
 import math
 import os
 import threading
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.conditional_state import persist_text_if_current
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.storage.state_lock import state_backend_identity, state_lock
 from app.tenant import require_tenant_id
 
@@ -22,6 +24,9 @@ class EvalStoreError(RuntimeError):
 
 _eval_stores: dict[tuple[Any, ...], "EvalStore"] = {}
 _eval_stores_guard = threading.Lock()
+_MAX_APPEND_ATTEMPTS = 32
+_EVAL_CONTENT_TYPE = "application/x-ndjson; charset=utf-8"
+_APPEND_ID_FIELD = "_append_id"
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -117,7 +122,7 @@ class EvalStore:
         }
 
     def _validate_owned(self, record: dict[str, Any], *, legacy: bool) -> None:
-        allowed_fields = self._BASE_FIELDS | self._OPTIONAL_FIELDS
+        allowed_fields = self._BASE_FIELDS | self._OPTIONAL_FIELDS | {_APPEND_ID_FIELD}
         if legacy:
             allowed_fields -= {"tenant_id"}
         if not self._BASE_FIELDS.issubset(record) or not set(record).issubset(
@@ -127,6 +132,9 @@ class EvalStore:
         if not legacy and record.get("tenant_id") != self._tenant_id:
             raise EvalStoreError("Evaluation tenant ownership mismatch")
 
+        append_id = record.get(_APPEND_ID_FIELD)
+        if append_id is not None:
+            self._identifier(append_id, field_name="append identity")
         self._identifier(record.get("request_id"), field_name="request identity")
         self._identifier(record.get("bundle_id"), field_name="bundle identity")
         timestamp = record.get("timestamp")
@@ -177,12 +185,9 @@ class EvalStore:
                 maximum=1.0,
             )
 
-    def _load_raw(self) -> list[dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
-        if raw is None or raw == "":
-            return []
-
+    def _decode_state(self, raw: str) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
+        owned_append_ids: set[str] = set()
         for line_number, line in enumerate(raw.splitlines(), 1):
             if not line.strip():
                 raise EvalStoreError(
@@ -205,40 +210,104 @@ class EvalStore:
                     records.append(record)
                     continue
             self._validate_owned(record, legacy=stored_tenant_id is None)
+            append_id = record.get(_APPEND_ID_FIELD)
+            if append_id is not None:
+                if append_id in owned_append_ids:
+                    raise EvalStoreError(
+                        f"Duplicate evaluation append identity: {append_id}"
+                    )
+                owned_append_ids.add(append_id)
             records.append(record)
         return records
 
-    def _save(self, records: list[dict[str, Any]]) -> None:
-        text = "".join(
-            f"{json.dumps(record, ensure_ascii=False, separators=(',', ':'))}\n"
-            for record in records
-        )
-        self._backend.write_text(
-            self._relative_path,
-            text,
-            content_type="application/x-ndjson; charset=utf-8",
-        )
+    def _read_state(self) -> tuple[str | None, list[dict[str, Any]]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise EvalStoreError("Evaluation state could not be read") from exc
+        if raw is None or raw == "":
+            return raw, []
+        return raw, self._decode_state(raw)
+
+    def _load_raw(self) -> list[dict[str, Any]]:
+        return self._read_state()[1]
+
+    def _append_if_current(
+        self,
+        *,
+        expected: str | None,
+        replacement: str,
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> bool:
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=replacement,
+                decode=self._decode_state,
+                committed=committed,
+                decode_errors=(EvalStoreError,),
+                content_type=_EVAL_CONTENT_TYPE,
+            )
+        except StateBackendError as exc:
+            raise EvalStoreError("Evaluation state could not be written") from exc
 
     def append(self, record: EvalRecord) -> None:
-        """Append one validated evaluation result."""
+        """Append one validated evaluation result with worker-safe CAS."""
         if record.tenant_id is not None and record.tenant_id != self._tenant_id:
             raise ValueError("Eval record tenant does not match store tenant")
-        payload = {**asdict(record), "tenant_id": self._tenant_id}
+        append_id = uuid.uuid4().hex
+        payload = {
+            **asdict(record),
+            "tenant_id": self._tenant_id,
+            _APPEND_ID_FIELD: append_id,
+        }
         try:
             self._validate_owned(payload, legacy=False)
         except EvalStoreError as exc:
             raise ValueError(str(exc)) from exc
 
+        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(item) and item.get(_APPEND_ID_FIELD) == append_id
+                for item in records
+            )
+
         with self._lock:
-            records = self._load_raw()
-            records.append(payload)
-            self._save(records)
+            for _ in range(_MAX_APPEND_ATTEMPTS):
+                raw, records = self._read_state()
+                if was_committed(records):
+                    return
+                current = raw or ""
+                separator = "" if not current or current.endswith("\n") else "\n"
+                replacement = f"{current}{separator}{line}"
+                if self._append_if_current(
+                    expected=raw,
+                    replacement=replacement,
+                    committed=was_committed,
+                ):
+                    return
+
+        raise EvalStoreError("Evaluation state changed too many times to append safely")
 
     def load_all(self) -> list[EvalRecord]:
         """Load all trusted evaluation records owned by this tenant."""
         with self._lock:
             records = self._load_raw()
-        return [EvalRecord(**record) for record in records if self._owns(record)]
+        return [
+            EvalRecord(
+                **{
+                    key: value
+                    for key, value in record.items()
+                    if key != _APPEND_ID_FIELD
+                }
+            )
+            for record in records
+            if self._owns(record)
+        ]
 
     def summary(self) -> dict[str, Any]:
         records = self.load_all()

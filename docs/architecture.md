@@ -314,11 +314,13 @@ SSO 설정은 `tenants/{tenant_id}/sso_config.json` relative path를 local/S3 sh
 EvalPipeline.run()
     ├─ heuristic_score (길이/구조/한국어 비율)
     ├─ lint_checks (필수 섹션 존재 여부)
-    └─ EvalStore.save() → JSONL 누적
+    └─ EvalStore.append() → JSONL 누적
          └─ GET /eval/report
 ```
 
 Quality learning state는 feedback·eval·prompt override뿐 아니라 A/B prompt experiment와 freeform·sketch request pattern까지 `tenants/{tenant_id}/` 아래의 동일 local/S3 `StateBackend`에 저장한다. 모든 request-path caller는 `app.state.data_dir`와 `app.state.state_backend`를 전달한다. Persisted schema, identity, timestamp 또는 UTF-8/JSON 무결성이 깨지면 빈 품질 상태로 fallback하지 않고 요청을 중단하며 원본을 보존한다.
+
+Feedback와 eval append는 기존 JSONL byte prefix를 보존하고 missing object에는 conditional create, 기존 object에는 검증된 원문을 expected value로 사용하는 CAS를 적용한다. Worker 충돌마다 최신 state의 ownership·schema와 feedback/append identity 중복을 다시 검증하고 최대 32회 같은 record를 재적용한다. Feedback은 생성 시 확정한 `feedback_id`, eval은 storage에만 기록하는 private append identity로 commit 응답 유실 뒤 successor append까지 조정한다. Private identity는 `EvalRecord`와 API에 노출하지 않으며 동일 request ID의 반복 평가는 기존 계약대로 허용한다. Process-local lock은 contention 완화 수단이고 persistence authority는 각 tenant JSONL object의 conditional write다.
 
 Prompt override, A/B experiment, request pattern mutation은 검증된 원문을 expected value로 쓰는 conditional create/CAS authority를 갖는다. 충돌하면 최신 state를 다시 검증하고 최대 32회 같은 operation을 재적용하며, process-local lock은 contention 완화 수단으로만 사용한다. Override refresh는 같은 incarnation과 누적 applied count를 유지하고 payload-bound save receipt로 operation ID 재사용을 검증한다. Incarnation이 없던 기존 override는 bundle·생성 시각·tenant binding의 deterministic lineage를 사용하므로 서로 다른 worker가 refresh와 increment를 같은 생명주기에 재적용한다. A/B assignment는 variant·hint·experiment identity를 한 CAS에서 함께 확정하고 background result와 conclusion도 그 identity에만 적용한다. Pending conclusion은 persisted sample·winner score·hint·mutation receipt와 대조한 뒤 같은 operation ID로 winner override를 저장하며, 실패하면 public active experiment로 남아 다음 evaluation에서 재개된다. Pending reset은 conflict로 거부한다. Request-pattern clear는 첫 snapshot에서 선택한 unmatched record ID만 제거하므로 CAS 충돌 뒤 들어온 append를 삭제하지 않는다. Private receipt와 incarnation은 public 응답에서 제거한다. 이 authority는 각 단일 state object 범위이며 A/B와 override 두 객체를 원자적으로 묶는 distributed transaction, 실제 AWS runtime과 provider 품질은 별도 검증 범위다.
 

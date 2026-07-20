@@ -9,9 +9,10 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.conditional_state import persist_text_if_current
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.storage.state_lock import state_backend_identity, state_lock
 from app.tenant import require_tenant_id
 
@@ -22,6 +23,8 @@ class FeedbackStoreError(RuntimeError):
 
 _feedback_stores: dict[tuple[Any, ...], "FeedbackStore"] = {}
 _feedback_stores_guard = threading.Lock()
+_MAX_APPEND_ATTEMPTS = 32
+_FEEDBACK_CONTENT_TYPE = "application/x-ndjson; charset=utf-8"
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -142,12 +145,9 @@ class FeedbackStore:
         if "docs" in record:
             self._validate_docs(record["docs"])
 
-    def _load(self) -> list[dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
-        if raw is None or raw == "":
-            return []
-
+    def _decode_state(self, raw: str) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
+        owned_feedback_ids: set[str] = set()
         for line_number, line in enumerate(raw.splitlines(), 1):
             if not line.strip():
                 raise FeedbackStoreError(
@@ -172,19 +172,45 @@ class FeedbackStore:
                     records.append(record)
                     continue
             self._validate_owned(record, legacy=stored_tenant_id is None)
+            feedback_id = record["feedback_id"]
+            if feedback_id in owned_feedback_ids:
+                raise FeedbackStoreError(f"Duplicate feedback identity: {feedback_id}")
+            owned_feedback_ids.add(feedback_id)
             records.append(record)
         return records
 
-    def _save(self, records: list[dict[str, Any]]) -> None:
-        text = "".join(
-            f"{json.dumps(record, ensure_ascii=False, separators=(',', ':'))}\n"
-            for record in records
-        )
-        self._backend.write_text(
-            self._relative_path,
-            text,
-            content_type="application/x-ndjson; charset=utf-8",
-        )
+    def _read_state(self) -> tuple[str | None, list[dict[str, Any]]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise FeedbackStoreError("Feedback state could not be read") from exc
+        if raw is None or raw == "":
+            return raw, []
+        return raw, self._decode_state(raw)
+
+    def _load(self) -> list[dict[str, Any]]:
+        return self._read_state()[1]
+
+    def _append_if_current(
+        self,
+        *,
+        expected: str | None,
+        replacement: str,
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> bool:
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=replacement,
+                decode=self._decode_state,
+                committed=committed,
+                decode_errors=(FeedbackStoreError,),
+                content_type=_FEEDBACK_CONTENT_TYPE,
+            )
+        except StateBackendError as exc:
+            raise FeedbackStoreError("Feedback state could not be written") from exc
 
     def _validated_input(self, feedback: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(feedback, dict) or not set(feedback).issubset(
@@ -208,18 +234,35 @@ class FeedbackStore:
         return record
 
     def save(self, feedback: dict[str, Any]) -> str:
-        """Append one validated feedback record."""
+        """Append one validated feedback record with worker-safe CAS."""
         record = self._validated_input(feedback)
+        line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            return any(self._owns(item) and item == record for item in records)
+
         with self._lock:
-            records = self._load()
-            if any(
-                self._owns(item) and item.get("feedback_id") == record["feedback_id"]
-                for item in records
-            ):
-                raise FeedbackStoreError("Duplicate feedback identity")
-            records.append(record)
-            self._save(records)
-        return record["feedback_id"]
+            for _ in range(_MAX_APPEND_ATTEMPTS):
+                raw, records = self._read_state()
+                if any(
+                    self._owns(item)
+                    and item.get("feedback_id") == record["feedback_id"]
+                    for item in records
+                ):
+                    raise FeedbackStoreError("Duplicate feedback identity")
+                current = raw or ""
+                separator = "" if not current or current.endswith("\n") else "\n"
+                replacement = f"{current}{separator}{line}"
+                if self._append_if_current(
+                    expected=raw,
+                    replacement=replacement,
+                    committed=was_committed,
+                ):
+                    return record["feedback_id"]
+
+        raise FeedbackStoreError(
+            "Feedback state changed too many times to append safely"
+        )
 
     def save_feedback(self, feedback: dict[str, Any]) -> str:
         """Save feedback while supplying an empty document list when omitted."""

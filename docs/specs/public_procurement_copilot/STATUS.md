@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone feedback and eval evidence cross-worker authority completion
+
+- `FeedbackStore`와 `EvalStore` append는 tenant별 `feedback.jsonl`, `eval_results.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 기존 JSONL byte prefix와 foreign/legacy record를 그대로 보존하고 충돌할 때마다 최신 ownership·schema·append identity를 재검증한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 feedback은 public `feedback_id`, eval은 storage 전용 private append identity로 commit 응답 유실 뒤 successor append까지 조정한다. Eval private identity는 `EvalRecord`와 API에 노출하지 않고 동일 request ID의 반복 평가는 기존 계약대로 유지한다.
+- H68 focused quality learning gate는 `57 passed, 1 warning`, feedback/eval/self-improve/dashboard/fine-tune consumer gate는 `158 passed, 1 warning`, quality experiment·generation·security·infrastructure를 포함한 확장 gate는 `486 passed, 1 warning`이다. Full no-cost regression은 `4106 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했다. Process lock 없는 local/fake-S3 20-way append, byte-prefix·foreign/legacy 보존, duplicate identity, 32회 conflict cap과 commit-then-error 뒤 successor append를 2026-07-20 no-cost 환경에서 검증했다.
+- CAS는 각 tenant별 단일 JSONL object 범위다. Retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone quality state cross-worker authority completion
 
 - `PromptOverrideStore`, `ABTestStore`, `RequestPatternStore` mutation은 tenant별 `prompt_overrides.json`, `ab_tests.json`, `request_patterns.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema 위에 override save/increment/delete, experiment create/assign/result/conclude/delete, request append/clear를 재적용한다.
@@ -153,7 +160,7 @@ Milestone 6 completed
 
 - `FeedbackStore`, `EvalStore`, `PromptOverrideStore`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` quality state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
 - Malformed JSON/JSONL, blank line, duplicate key, owned field/type/timestamp/score drift는 조회와 후속 append/update를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 tenant 필드 없는 기존 record는 path-owned compatibility를 유지한다.
-- 같은 state object의 독립 store 인스턴스는 process-local shared lock으로 local/fake-S3 read-modify-write를 직렬화한다. Feedback/eval/dashboard/admin route와 generation feedback context, prompt override·eval feedback injection은 앱 data root/backend를 사용하며 손상 state를 조용히 생략하지 않는다.
+- Feedback/eval append와 prompt override mutation은 이후 H68/H67에서 각각 conditional create/CAS authority로 전환했고 process-local lock은 contention 완화 수단으로만 남겼다. Feedback/eval/dashboard/admin route와 generation feedback context, prompt override·eval feedback injection은 앱 data root/backend를 사용하며 손상 state를 조용히 생략하지 않는다.
 - H46 focused integrity gate는 `43 passed`, quality/security/infrastructure 확장 gate는 `310 passed`, full no-cost regression은 `3720 passed, 2 skipped, 4 deselected`다. Provider API, G2B live API, AWS runtime, distributed S3 CAS, FineTuneStore·ModelRegistry hardening, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
 
 ## Post-milestone SSO configuration state integrity hardening
