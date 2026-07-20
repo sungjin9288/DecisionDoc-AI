@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,236 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H86) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,239 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H87) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-21 H86 실측: 4236 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-21 H87 실측: 4239 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -113,6 +113,7 @@ Providers (5)    Storage (45 modules)   Ops
 25. DocumentOps Training Audit Checklist는 request version, tenant, provider/model query가 모두 현재 조건과 일치할 때만 checklist와 audit 목록을 렌더링한다. Planning 조건이 바뀌면 열린 checklist를 `RECHECK REQUIRED`로 낮추고 `Audit 저장` action을 제거하며, 성공한 audit 저장은 진행 중 이전 read를 무효화해 새 evidence를 가리지 않게 한다.
 26. DocumentOps Training Execution Request Records는 같은 tenant의 연속 조회마다 독립 request version을 증가시키고 response, JSON parse, error branch에서 최신 여부를 확인한다. 늦은 이전 성공이나 오류는 최신 two-person guard 기록을 되돌리지 않으며, execution request 저장 뒤 시작되는 새 조회가 저장 전 진행 중 read보다 우선한다.
 27. DocumentOps Training Adapter Contract과 Training Execution Rehearsal은 각자 request version, tenant, provider/model query가 현재 planning 조건과 일치할 때만 결과를 렌더링한다. Planning 조건이 변경되면 진행 중 응답을 무효화하고 이전 config 안전 표시와 artifact reference를 `RECHECK REQUIRED`로 대체한다.
+28. DocumentOps SFT Export Preview와 Reviewed SFT artifact 목록은 요청을 시작한 tenant와 task 조건이 현재 선택과 일치할 때만 렌더링한다. Training Plan Preview도 독립 request version, tenant, provider/model query를 함께 확인한다. Task 또는 planning 조건이 바뀌면 진행 중 success/error를 폐기하고 열린 evidence를 `RECHECK REQUIRED`로 대체한다.
 
 ---
 

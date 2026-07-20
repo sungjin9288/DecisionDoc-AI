@@ -7043,8 +7043,10 @@
   let _documentOpsStatsRequestVersion = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
   let _documentOpsGovernanceRequestVersion = 0;
+  let _documentOpsExportPreviewRequestVersion = 0;
   let _documentOpsExportListRequestVersion = 0;
   let _documentOpsReadinessRequestVersion = 0;
+  let _documentOpsTrainingPlanRequestVersion = 0;
   let _documentOpsExecutionRequestListVersion = 0;
   let _documentOpsAuditChecklistRequestVersion = 0;
   let _documentOpsAdapterContractRequestVersion = 0;
@@ -7095,6 +7097,10 @@
       provider: String($id('docops-training-provider')?.value || 'provider_agnostic').trim(),
       baseModel: String($id('docops-training-base-model')?.value || '').trim(),
     };
+  }
+
+  function documentOpsSelectedTaskType() {
+    return String($id('docops-task-type')?.value || '').trim();
   }
 
   function documentOpsPlanningParams() {
@@ -7669,14 +7675,16 @@
     if (!el) return;
     const requestVersion = ++_documentOpsExportListRequestVersion;
     const tenantId = _currentTenantId;
+    const taskType = documentOpsSelectedTaskType();
     const requestIsCurrent = () => (
       requestVersion === _documentOpsExportListRequestVersion
       && tenantId === _currentTenantId
+      && taskType === documentOpsSelectedTaskType()
     );
     el.style.display = 'block';
+    el.dataset.taskFresh = 'false';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">reviewed SFT JSONL 목록 로드 중...</div>';
     try {
-      const taskType = ($id('docops-task-type')?.value || '').trim();
       const params = new URLSearchParams({ limit: '20' });
       if (taskType) params.set('task_type', taskType);
       const [exportsRes, freezesRes] = await Promise.all([
@@ -7693,7 +7701,7 @@
       const exportsData = await exportsRes.json();
       const freezesData = await freezesRes.json();
       if (!requestIsCurrent()) return;
-      renderDocumentOpsExports(exportsData, freezesData);
+      renderDocumentOpsExports(exportsData, freezesData, taskType);
     } catch (err) {
       if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Export 목록 로드 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
@@ -7701,10 +7709,11 @@
     }
   }
 
-  function renderDocumentOpsExports(data, freezeData = {}) {
+  function renderDocumentOpsExports(data, freezeData = {}, taskType = documentOpsSelectedTaskType()) {
     const el = $id('document-ops-export-list');
     if (!el) return;
     el.style.display = 'block';
+    el.dataset.taskFresh = 'true';
     const exports = Array.isArray(data?.exports) ? data.exports : [];
     const freezes = Array.isArray(freezeData?.freezes) ? freezeData.freezes : [];
     const rows = exports.map(item => {
@@ -7733,7 +7742,7 @@
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.7rem;">
         <div>
           <strong style="font-size:.92rem;">Reviewed SFT JSONL Artifacts</strong>
-          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">ops key 필요 · reviewed accepted-only · 최근 20개 · task filter=${escapeHtml(($id('docops-task-type')?.value || 'all'))}</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">ops key 필요 · reviewed accepted-only · 최근 20개 · task filter=${escapeHtml(taskType || 'all')}</div>
         </div>
         <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:#eef2ff;color:#3730a3;">${Number(data?.total || exports.length)} files</span>
       </div>
@@ -7928,16 +7937,28 @@
   async function previewDocumentOpsTrainingPlan() {
     const el = $id('document-ops-training-plan-preview');
     if (!el) return;
+    const requestVersion = ++_documentOpsTrainingPlanRequestVersion;
+    const tenantId = _currentTenantId;
+    const planningQuery = documentOpsPlanningParams().toString();
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsTrainingPlanRequestVersion
+      && tenantId === _currentTenantId
+      && planningQuery === documentOpsPlanningParams().toString()
+    );
     el.style.display = 'block';
+    el.dataset.planningFresh = 'false';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training plan preview 생성 중...</div>';
     try {
-      const params = documentOpsPlanningParams();
-      const res = await fetch(`/api/agent/document-ops/trajectories/training-plan/preview?${params}`, {
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-plan/preview?${planningQuery}`, {
         headers: getOpsAccessHeaders(),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingPlanPreview(await res.json());
+      const data = await res.json();
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingPlanPreview(data);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Training plan preview 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Training plan preview 실패: ' + (err.message || err), 'error');
     }
@@ -7947,6 +7968,7 @@
     const el = $id('document-ops-training-plan-preview');
     if (!el) return;
     el.style.display = 'block';
+    el.dataset.planningFresh = 'true';
     const spec = data?.job_spec || {};
     const dataset = spec?.dataset || {};
     const evaluation = spec?.evaluation || {};
@@ -8945,28 +8967,70 @@
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  function markDocumentOpsExportEvidenceStale(reason) {
+    _documentOpsExportPreviewRequestVersion += 1;
+    _documentOpsExportListRequestVersion += 1;
+    [
+      ['document-ops-export-preview', previewDocumentOpsExport],
+      ['document-ops-export-list', loadDocumentOpsExports],
+    ].forEach(([elementId, reload]) => {
+      const el = $id(elementId);
+      if (!el || el.style.display === 'none') return;
+      el.dataset.taskFresh = 'false';
+      el.innerHTML = `
+        <div data-docops-export-evidence-stale style="border:1px solid rgba(146,64,14,.3);border-radius:8px;padding:.65rem;background:rgba(146,64,14,.07);">
+          <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+            <div>
+              <strong style="font-size:.78rem;color:#92400e;">RECHECK REQUIRED</strong>
+              <div style="font-size:.72rem;color:#92400e;line-height:1.45;margin-top:.2rem;">${escapeHtml(reason)} 현재 task 조건으로 export 증적을 다시 확인해야 합니다.</div>
+            </div>
+            <button class="action-btn" type="button" data-docops-export-evidence-refresh style="font-size:.72rem;padding:.3rem .65rem;">다시 확인</button>
+          </div>
+        </div>
+      `;
+      el.querySelector('[data-docops-export-evidence-refresh]')?.addEventListener('click', reload);
+    });
+  }
+
+  function markDocumentOpsTrainingPlanStale(reason) {
+    _documentOpsTrainingPlanRequestVersion += 1;
+    markDocumentOpsPlanningEvidenceStale(
+      'document-ops-training-plan-preview',
+      reason,
+      previewDocumentOpsTrainingPlan,
+    );
+  }
+
   async function previewDocumentOpsExport() {
     const el = $id('document-ops-export-preview');
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">SFT export 후보 검수 중...</div>';
-    }
+    if (!el) return;
+    const requestVersion = ++_documentOpsExportPreviewRequestVersion;
+    const tenantId = _currentTenantId;
+    const taskType = documentOpsSelectedTaskType();
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsExportPreviewRequestVersion
+      && tenantId === _currentTenantId
+      && taskType === documentOpsSelectedTaskType()
+    );
+    el.style.display = 'block';
+    el.dataset.taskFresh = 'false';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">SFT export 후보 검수 중...</div>';
     try {
-      const taskType = ($id('docops-task-type')?.value || '').trim() || null;
       const res = await fetch('/api/agent/document-ops/trajectories/export/preview', {
         method: 'POST',
         headers: { ...getOpsAccessHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_type: taskType, min_records: 1, accepted_only: true, include_metadata: true, sample_limit: 5 }),
+        body: JSON.stringify({ task_type: taskType || null, min_records: 1, accepted_only: true, include_metadata: true, sample_limit: 5 }),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+      if (!requestIsCurrent()) return;
       renderDocumentOpsExportPreview(data);
       showNotification(data.would_export ? 'SFT export 후보가 준비되었습니다.' : 'SFT export 후보가 부족합니다.', data.would_export ? 'success' : 'warn');
     } catch (err) {
-      if (el) {
-        el.style.display = 'block';
-        el.innerHTML = `<div style="color:#ef4444;">Export preview 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
-      }
+      if (!requestIsCurrent()) return;
+      el.style.display = 'block';
+      el.innerHTML = `<div style="color:#ef4444;">Export preview 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Export preview 실패: ' + (err.message || err), 'error');
     }
   }
@@ -8975,6 +9039,7 @@
     const el = $id('document-ops-export-preview');
     if (!el) return;
     el.style.display = 'block';
+    el.dataset.taskFresh = 'true';
     const blockers = data?.blocker_summary || {};
     const scores = data?.quality_score_summary || {};
     const samples = Array.isArray(data?.sample_records) ? data.sample_records : [];
@@ -9059,14 +9124,20 @@
     _documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250);
   });
 
+  $id('docops-task-type')?.addEventListener('change', () => {
+    markDocumentOpsExportEvidenceStale('DocumentOps task 조건이 변경되었습니다.');
+  });
+
   $id('docops-training-provider')?.addEventListener('change', () => {
     markDocumentOpsGovernanceStale('Planning provider 조건이 변경되었습니다.');
+    markDocumentOpsTrainingPlanStale('Planning provider 조건이 변경되었습니다.');
     markDocumentOpsTrainingAuditChecklistStale('Planning provider 조건이 변경되었습니다.');
     markDocumentOpsTrainingAdapterContractStale('Planning provider 조건이 변경되었습니다.');
     markDocumentOpsTrainingRehearsalStale('Planning provider 조건이 변경되었습니다.');
   });
   $id('docops-training-base-model')?.addEventListener('input', () => {
     markDocumentOpsGovernanceStale('Base model 조건이 변경되었습니다.');
+    markDocumentOpsTrainingPlanStale('Base model 조건이 변경되었습니다.');
     markDocumentOpsTrainingAuditChecklistStale('Base model 조건이 변경되었습니다.');
     markDocumentOpsTrainingAdapterContractStale('Base model 조건이 변경되었습니다.');
     markDocumentOpsTrainingRehearsalStale('Base model 조건이 변경되었습니다.');

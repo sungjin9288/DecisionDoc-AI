@@ -860,6 +860,43 @@ def test_index_html_document_ops_training_provider_evidence_keeps_latest_plannin
     assert "markDocumentOpsTrainingRehearsalStale('Base model 조건이 변경되었습니다.')" in content
 
 
+def test_index_html_document_ops_previews_keep_the_current_input_context():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    export_preview_start = content.index("async function previewDocumentOpsExport()")
+    export_preview_end = content.index("function renderDocumentOpsExportPreview", export_preview_start)
+    export_preview = content[export_preview_start:export_preview_end]
+    export_list_start = content.index("async function loadDocumentOpsExports()")
+    export_list_end = content.index("function renderDocumentOpsExports", export_list_start)
+    export_list = content[export_list_start:export_list_end]
+    training_plan_start = content.index("async function previewDocumentOpsTrainingPlan()")
+    training_plan_end = content.index(
+        "function renderDocumentOpsTrainingPlanPreview",
+        training_plan_start,
+    )
+    training_plan = content[training_plan_start:training_plan_end]
+
+    assert "let _documentOpsExportPreviewRequestVersion = 0;" in content
+    assert "let _documentOpsTrainingPlanRequestVersion = 0;" in content
+    assert "const requestVersion = ++_documentOpsExportPreviewRequestVersion;" in export_preview
+    assert "const taskType = documentOpsSelectedTaskType();" in export_preview
+    assert "taskType === documentOpsSelectedTaskType()" in export_preview
+    assert export_preview.count("if (!requestIsCurrent()) return;") == 3
+    assert "const taskType = documentOpsSelectedTaskType();" in export_list
+    assert "taskType === documentOpsSelectedTaskType()" in export_list
+    assert "renderDocumentOpsExports(exportsData, freezesData, taskType);" in export_list
+    assert "const requestVersion = ++_documentOpsTrainingPlanRequestVersion;" in training_plan
+    assert "const planningQuery = documentOpsPlanningParams().toString();" in training_plan
+    assert "planningQuery === documentOpsPlanningParams().toString()" in training_plan
+    assert training_plan.count("if (!requestIsCurrent()) return;") == 3
+    assert "function markDocumentOpsExportEvidenceStale(reason)" in content
+    assert "function markDocumentOpsTrainingPlanStale(reason)" in content
+    assert "data-docops-export-evidence-stale" in content
+    assert "markDocumentOpsExportEvidenceStale('DocumentOps task 조건이 변경되었습니다.')" in content
+    assert "markDocumentOpsTrainingPlanStale('Planning provider 조건이 변경되었습니다.')" in content
+    assert "markDocumentOpsTrainingPlanStale('Base model 조건이 변경되었습니다.')" in content
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(
@@ -2405,7 +2442,10 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
     blocks = []
     for start_marker, end_marker in (
         ("function renderDocumentOpsTrajectoryCard(item)", "async function reviewDocumentOpsTrajectory",),
-        ("function renderDocumentOpsExports(data, freezeData = {})", "async function downloadDocumentOpsExport",),
+        (
+            "function renderDocumentOpsExports(data, freezeData = {}, taskType = documentOpsSelectedTaskType())",
+            "async function downloadDocumentOpsExport",
+        ),
         ("function renderDocumentOpsTrainingReadiness(data)", "async function approveDocumentOpsTrainingFromFreeze",),
         ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
         ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),

@@ -1330,7 +1330,27 @@ def test_document_ops_exports_keep_the_latest_same_tenant_response(page):
             const finalText = document.querySelector('#document-ops-export-list').textContent;
             const notifications = document.querySelector('#notification-container').textContent;
 
-            return { successText, finalText, notifications };
+            const changedDuringRead = loadDocumentOpsExports();
+            while (pendingExports.length < 5) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            const taskInput = document.querySelector('#docops-task-type');
+            taskInput.value = 'policy_planning_brief';
+            taskInput.dispatchEvent(new Event('change', { bubbles: true }));
+            pendingExports[4](response({
+              total: 1,
+              exports: [{
+                filename: 'wrong-task-after-change.jsonl',
+                record_count: 1,
+                size_bytes: 80,
+                content_sha256: 'd'.repeat(64),
+                exists: true,
+              }],
+            }));
+            await changedDuringRead;
+            const staleText = document.querySelector('#document-ops-export-list').textContent;
+
+            return { successText, finalText, notifications, staleText };
           } finally {
             window.fetch = nativeFetch;
           }
@@ -1342,6 +1362,175 @@ def test_document_ops_exports_keep_the_latest_same_tenant_response(page):
     assert "newest-evidence-gap.jsonl" in result["finalText"]
     assert "Export 목록 로드 실패" not in result["finalText"]
     assert "stale failure" not in result["notifications"]
+    assert "RECHECK REQUIRED" in result["staleText"]
+    assert "wrong-task-after-change.jsonl" not in result["staleText"]
+
+
+def _document_ops_export_preview(task_type: str, suffix: str) -> dict[str, object]:
+    return {
+        "task_type": task_type,
+        "would_export": True,
+        "candidate_count": 1,
+        "eligible_count": 1,
+        "blocked_count": 0,
+        "estimated_jsonl_lines": 1,
+        "quality_score_summary": {"avg": 0.9},
+        "blocker_summary": {},
+        "sample_records": [
+            {
+                "trajectory_id": f"trajectory-{suffix}",
+                "task_type": task_type,
+                "skill": "policy-planning",
+                "quality_score": 0.9,
+                "blockers": [],
+            }
+        ],
+        "blocked_samples": [],
+    }
+
+
+def _document_ops_training_plan(provider: str, base_model: str, suffix: str) -> dict[str, object]:
+    return {
+        "status": "preview_ready",
+        "job_spec": {
+            "provider": provider,
+            "base_model": base_model,
+            "objective": f"objective-{suffix}",
+            "dataset": {
+                "export_filename": f"export-{suffix}.jsonl",
+                "record_count": 1,
+                "freeze_manifest_id": f"freeze-{suffix}",
+            },
+            "evaluation": {
+                "suite": "document_ops_offline_eval",
+                "required_metrics": {"schema_valid_rate": 1},
+            },
+            "training_parameters": {"epochs": 1},
+            "execution_steps": [
+                {"step": f"validate-{suffix}", "status": "dry_run_pass"}
+            ],
+        },
+        "blockers": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {
+            "loader": "export-preview",
+            "container_id": "document-ops-export-preview",
+            "url_prefix": "/api/agent/document-ops/trajectories/export/preview",
+            "older": _document_ops_export_preview("decision_brief", "old"),
+            "newer": _document_ops_export_preview("evidence_gap_review", "new"),
+            "newest": _document_ops_export_preview("policy_planning_brief", "newest"),
+            "new_marker": "trajectory-new",
+            "old_marker": "trajectory-old",
+            "newest_marker": "trajectory-newest",
+            "failure_label": "Export preview 실패",
+            "stale_error": "stale export preview failure",
+            "change_target": "task",
+        },
+        {
+            "loader": "training-plan",
+            "container_id": "document-ops-training-plan-preview",
+            "url_prefix": "/api/agent/document-ops/trajectories/training-plan/preview?",
+            "older": _document_ops_training_plan("openai", "old-model", "old"),
+            "newer": _document_ops_training_plan("gemini", "new-model", "new"),
+            "newest": _document_ops_training_plan("openai", "newest-model", "newest"),
+            "new_marker": "export-new.jsonl",
+            "old_marker": "export-old.jsonl",
+            "newest_marker": "export-newest.jsonl",
+            "failure_label": "Training plan preview 실패",
+            "stale_error": "stale training plan failure",
+            "change_target": "provider",
+        },
+    ],
+    ids=("export-preview", "training-plan"),
+)
+def test_document_ops_previews_keep_the_current_input_context(page, case):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async scenario => {
+          const nativeFetch = window.fetch;
+          const pending = [];
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const loadPreview = scenario.loader === 'export-preview'
+            ? previewDocumentOpsExport
+            : previewDocumentOpsTrainingPlan;
+          const taskInput = document.querySelector('#docops-task-type');
+          const providerInput = document.querySelector('#docops-training-provider');
+          const modelInput = document.querySelector('#docops-training-base-model');
+          const setContext = (taskType, provider, baseModel) => {
+            taskInput.value = taskType;
+            providerInput.value = provider;
+            modelInput.value = baseModel;
+          };
+          try {
+            window.fetch = (input, options) => {
+              if (!String(input || '').startsWith(scenario.url_prefix)) {
+                return nativeFetch(input, options);
+              }
+              return new Promise(resolve => pending.push(resolve));
+            };
+
+            setContext('decision_brief', 'openai', 'old-model');
+            const olderSuccess = loadPreview();
+            setContext('evidence_gap_review', 'gemini', 'new-model');
+            const newerSuccess = loadPreview();
+            while (pending.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[1](response(scenario.newer));
+            await newerSuccess;
+            pending[0](response(scenario.older));
+            await olderSuccess;
+            const container = document.querySelector(`#${scenario.container_id}`);
+            const successText = container.textContent;
+
+            setContext('develop_quality_improvement', 'claude', 'older-failure');
+            const olderFailure = loadPreview();
+            setContext('policy_planning_brief', 'openai', 'newest-model');
+            const newestSuccess = loadPreview();
+            while (pending.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[3](response(scenario.newest));
+            await newestSuccess;
+            pending[2](response({ detail: scenario.stale_error }, 503));
+            await olderFailure;
+            const finalText = container.textContent;
+            const notifications = document.querySelector('#notification-container').textContent;
+
+            if (scenario.change_target === 'task') {
+              taskInput.value = 'decision_brief';
+              taskInput.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+              providerInput.value = 'gemini';
+              providerInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            const staleText = container.textContent;
+
+            return { successText, finalText, notifications, staleText };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }""",
+        case,
+    )
+
+    assert case["new_marker"] in result["successText"]
+    assert case["old_marker"] not in result["successText"]
+    assert case["newest_marker"] in result["finalText"]
+    assert case["failure_label"] not in result["finalText"]
+    assert case["stale_error"] not in result["notifications"]
+    assert "RECHECK REQUIRED" in result["staleText"]
+    assert case["newest_marker"] not in result["staleText"]
 
 
 def test_document_ops_readiness_keeps_the_latest_same_tenant_response(page):
