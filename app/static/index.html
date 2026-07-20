@@ -7045,6 +7045,7 @@
   let _documentOpsGovernanceRequestVersion = 0;
   let _documentOpsExportListRequestVersion = 0;
   let _documentOpsReadinessRequestVersion = 0;
+  let _documentOpsExecutionRequestListVersion = 0;
   let _documentOpsAuditChecklistRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
@@ -8015,15 +8016,25 @@
   async function loadDocumentOpsTrainingExecutionRequests() {
     const el = $id('document-ops-training-execution-requests');
     if (!el) return;
+    const requestVersion = ++_documentOpsExecutionRequestListVersion;
+    const tenantId = _currentTenantId;
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsExecutionRequestListVersion
+      && tenantId === _currentTenantId
+    );
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training execution request records 로드 중...</div>';
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-execution-requests?limit=20', {
         headers: getOpsAccessHeaders(),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingExecutionRequests(await res.json());
+      const data = await res.json();
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingExecutionRequests(data);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Training execution request 목록 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
     }
   }

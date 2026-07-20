@@ -701,6 +701,25 @@ def test_index_html_document_ops_readiness_keeps_the_latest_same_tenant_response
     assert readiness_block.count("if (!requestIsCurrent()) return;") == 3
 
 
+def test_index_html_document_ops_execution_requests_keep_the_latest_same_tenant_response():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadDocumentOpsTrainingExecutionRequests()")
+    end = content.index("function renderDocumentOpsTrainingExecutionRequests", start)
+    requests_block = content[start:end]
+
+    assert "let _documentOpsExecutionRequestListVersion = 0;" in content
+    assert (
+        "const requestVersion = ++_documentOpsExecutionRequestListVersion;"
+        in requests_block
+    )
+    assert (
+        "requestVersion === _documentOpsExecutionRequestListVersion"
+        in requests_block
+    )
+    assert "tenantId === _currentTenantId" in requests_block
+    assert requests_block.count("if (!requestIsCurrent()) return;") == 3
+
+
 def test_index_html_document_ops_audit_checklist_keeps_the_latest_planning_response():
     content = open("app/static/index.html", encoding="utf-8").read()
     start = content.index("async function loadDocumentOpsTrainingAuditChecklist()")

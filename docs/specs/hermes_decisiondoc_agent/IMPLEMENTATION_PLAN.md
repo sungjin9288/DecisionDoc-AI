@@ -141,6 +141,8 @@ Work:
 - keep trajectory history pagination aligned across storage, API, and browser state
 - keep tenant-scoped search and newest/oldest ordering aligned across storage, API, and browser state
 - keep summary lists and lazy-loaded detail on the same tenant and review contract
+- keep training execution request records bound to the latest same-tenant read, and let the refresh
+  after a successful record save supersede any read that began before the save
 - keep the training audit checklist bound to the latest tenant and provider/model planning context,
   remove stale audit actions after a planning change, and do not let an older read hide a completed audit export
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes

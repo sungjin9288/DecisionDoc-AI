@@ -1454,6 +1454,108 @@ def test_document_ops_readiness_keeps_the_latest_same_tenant_response(page):
     assert "stale readiness failure" not in result["notifications"]
 
 
+def test_document_ops_execution_requests_keep_the_latest_same_tenant_response(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingReads = [];
+          const requestsUrl = '/api/agent/document-ops/trajectories/training-execution-requests?limit=20';
+          const createUrl = '/api/agent/document-ops/trajectories/training-execution-requests';
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const records = requestId => ({
+            training_execution_requests: [{
+              request_id: requestId,
+              requester: 'browser-requester',
+              prior_training_approver: 'browser-approver',
+              provider: 'openai',
+              base_model: 'gpt-test-base',
+              manifest_id: requestId.replace('request', 'freeze'),
+              integrity_verified: true,
+              two_person_guard_satisfied: true,
+              training_execution_allowed: false,
+              provider_api_calls_allowed: false,
+              provider_job_started: false,
+              external_upload_started: false,
+              model_promotion_allowed: false,
+            }],
+          });
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              const method = String(options?.method || 'GET').toUpperCase();
+              if (url === createUrl && method === 'POST') {
+                return Promise.resolve(response({ request_id: 'request-saved' }));
+              }
+              if (url === requestsUrl) {
+                return new Promise(resolve => pendingReads.push(resolve));
+              }
+              return nativeFetch(input, options);
+            };
+
+            const olderSuccess = loadDocumentOpsTrainingExecutionRequests();
+            const newerSuccess = loadDocumentOpsTrainingExecutionRequests();
+            while (pendingReads.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingReads[1](response(records('request-new')));
+            await newerSuccess;
+            pendingReads[0](response(records('request-old')));
+            await olderSuccess;
+            const successText = document.querySelector(
+              '#document-ops-training-execution-requests',
+            ).textContent;
+
+            const olderFailure = loadDocumentOpsTrainingExecutionRequests();
+            const newestSuccess = loadDocumentOpsTrainingExecutionRequests();
+            while (pendingReads.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingReads[3](response(records('request-newest')));
+            await newestSuccess;
+            pendingReads[2](response({ detail: 'stale execution request failure' }, 503));
+            await olderFailure;
+            const finalText = document.querySelector(
+              '#document-ops-training-execution-requests',
+            ).textContent;
+
+            const readBeforeSave = loadDocumentOpsTrainingExecutionRequests();
+            while (pendingReads.length < 5) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            document.querySelector('#docops-execution-requester').value = 'browser-requester';
+            const save = requestDocumentOpsTrainingExecution();
+            while (pendingReads.length < 6) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingReads[5](response(records('request-saved')));
+            await save;
+            pendingReads[4](response(records('request-before-save')));
+            await readBeforeSave;
+            const savedText = document.querySelector(
+              '#document-ops-training-execution-requests',
+            ).textContent;
+
+            return { successText, finalText, savedText };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "request-new" in result["successText"]
+    assert "request-old" not in result["successText"]
+    assert "request-newest" in result["finalText"]
+    assert "Training execution request 목록 실패" not in result["finalText"]
+    assert "request-saved" in result["savedText"]
+    assert "request-before-save" not in result["savedText"]
+
+
 def test_document_ops_audit_checklist_keeps_the_latest_planning_response(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
