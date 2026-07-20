@@ -71,6 +71,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
   explicitly instead of falling back to a generic operator identity
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
 - the Review 상태 action loads one service-composed overview, shows the prioritized review state and next action before the three source reports, and keeps one stale-response guard and refresh read-only
+- each source report has a stable SHA-256 that excludes only its top-level generation time; the browser compares successful same-tenant observations in session memory and labels the recheck as first, unchanged, or changed without persisting it
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -203,7 +204,9 @@ Last local verification on 2026-07-20:
 - governance review overview backend/API gate: 12 passed, 1 warning
 - governance review overview static gate: 7 passed, 143 deselected, 1 warning
 - governance review overview Chromium gate: 1 passed
-- full repository non-live gate: 4220 passed, 2 skipped, 4 deselected, 1 warning
+- governance recheck fingerprint backend/API/static gate: 7 passed, 1 warning
+- governance recheck fingerprint Chromium gate: 1 passed
+- full repository non-live gate: 4221 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

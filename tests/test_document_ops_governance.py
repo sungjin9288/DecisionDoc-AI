@@ -9,6 +9,8 @@ from app.services.document_ops_governance import (
 
 def _governance_summary() -> dict:
     return {
+        "report_type": "document_ops_training_governance_dashboard_summary",
+        "generated_at": "2026-07-20T13:59:57+00:00",
         "read_only": True,
         "status": "governance_ready_for_human_review",
         "no_side_effects": True,
@@ -23,6 +25,7 @@ def _governance_summary() -> dict:
 
 def _artifact_inventory() -> dict:
     return {
+        "report_type": "document_ops_governance_artifact_inventory",
         "read_only": True,
         "status": "clean",
         "counts": {
@@ -47,6 +50,8 @@ def _artifact_inventory() -> dict:
 
 def _signoff_summary() -> dict:
     return {
+        "report_type": "document_ops_phase25_signoff_summary_endpoint",
+        "generated_at": "2026-07-20T13:59:59+00:00",
         "read_only": True,
         "overall_status": "manual_signoff_complete_no_training_authorization",
         "training_execution_allowed": False,
@@ -114,6 +119,41 @@ def test_governance_overview_reports_three_independent_ready_checks() -> None:
     }
     assert all(value is False for value in overview["authorization_boundary"].values())
     assert "외부 실행 권한은 별도 승인 대상" in overview["next_review_action"]
+    recheck = overview["recheck_evidence"]
+    assert recheck["fingerprint_algorithm"] == "sha256"
+    assert len(recheck["review_state_fingerprint"]) == 64
+    assert [source["source"] for source in recheck["sources"]] == [
+        "training_governance",
+        "artifact_inventory",
+        "reviewer_signoff",
+    ]
+    assert recheck["volatile_fields_excluded"] == ["source_report.generated_at"]
+    assert recheck["persisted"] is False
+
+
+def test_governance_overview_fingerprint_ignores_report_generation_time_only() -> None:
+    first = _build()
+
+    governance = deepcopy(_governance_summary())
+    governance["generated_at"] = "2026-07-20T15:00:00+00:00"
+    signoff = deepcopy(_signoff_summary())
+    signoff["generated_at"] = "2026-07-20T15:00:02+00:00"
+    same_state = _build(governance=governance, signoff=signoff)
+
+    assert (
+        first["recheck_evidence"]["review_state_fingerprint"]
+        == same_state["recheck_evidence"]["review_state_fingerprint"]
+    )
+
+    inventory = deepcopy(_artifact_inventory())
+    inventory["status"] = "attention_required"
+    inventory["counts"]["referenced_tampered"] = 1
+    changed_state = _build(inventory=inventory)
+
+    assert (
+        first["recheck_evidence"]["review_state_fingerprint"]
+        != changed_state["recheck_evidence"]["review_state_fingerprint"]
+    )
 
 
 def test_governance_overview_prioritizes_integrity_and_review_blockers() -> None:

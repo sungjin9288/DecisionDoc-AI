@@ -1040,6 +1040,16 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
         "no_signoff_records_found"
     )
     assert overview_body["observation_boundary"]["combined_snapshot_atomic"] is False
+    recheck = overview_body["recheck_evidence"]
+    assert recheck["fingerprint_algorithm"] == "sha256"
+    assert len(recheck["review_state_fingerprint"]) == 64
+    assert [source["source"] for source in recheck["sources"]] == [
+        "training_governance",
+        "artifact_inventory",
+        "reviewer_signoff",
+    ]
+    assert recheck["volatile_fields_excluded"] == ["source_report.generated_at"]
+    assert recheck["persisted"] is False
     assert all(
         value is False
         for value in overview_body["authorization_boundary"].values()

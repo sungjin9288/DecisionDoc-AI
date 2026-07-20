@@ -7040,6 +7040,7 @@
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
   let _documentOpsGovernanceRequestVersion = 0;
+  let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
 
@@ -8269,7 +8270,8 @@
         requestVersion !== _documentOpsGovernanceRequestVersion
         || tenantId !== _currentTenantId
       ) return;
-      renderDocumentOpsGovernanceOverview(data);
+      const recheck = compareDocumentOpsGovernanceObservation(data, tenantId);
+      renderDocumentOpsGovernanceOverview(data, recheck);
       renderDocumentOpsTrainingGovernanceSummary(data?.training_governance_summary || {});
       renderDocumentOpsGovernanceArtifactInventory(data?.artifact_inventory || {});
       renderDocumentOpsReviewerSignoffSummary(data?.reviewer_signoff_summary || {});
@@ -8284,7 +8286,50 @@
     }
   }
 
-  function renderDocumentOpsGovernanceOverview(data) {
+  function compareDocumentOpsGovernanceObservation(data, tenantId) {
+    const evidence = data?.recheck_evidence || {};
+    const expectedSources = [
+      'training_governance',
+      'artifact_inventory',
+      'reviewer_signoff',
+    ];
+    const sources = Array.isArray(evidence?.sources) ? evidence.sources : [];
+    const isSha256 = value => /^[a-f0-9]{64}$/.test(String(value || ''));
+    const sourceContractValid = (
+      sources.length === expectedSources.length
+      && expectedSources.every((source, index) => (
+        sources[index]?.source === source
+        && isSha256(sources[index]?.fingerprint)
+      ))
+    );
+    const volatileFields = evidence?.volatile_fields_excluded;
+    const contractValid = (
+      evidence?.fingerprint_algorithm === 'sha256'
+      && isSha256(evidence?.review_state_fingerprint)
+      && sourceContractValid
+      && Array.isArray(volatileFields)
+      && volatileFields.length === 1
+      && volatileFields[0] === 'source_report.generated_at'
+      && evidence?.persisted === false
+    );
+    if (!contractValid) {
+      return { status: 'invalid', fingerprint: '' };
+    }
+
+    const fingerprint = evidence.review_state_fingerprint;
+    const previous = _documentOpsGovernanceObservation;
+    const status = (
+      !previous || previous.tenantId !== tenantId
+        ? 'first'
+        : previous.fingerprint === fingerprint
+          ? 'unchanged'
+          : 'changed'
+    );
+    _documentOpsGovernanceObservation = { tenantId, fingerprint };
+    return { status, fingerprint };
+  }
+
+  function renderDocumentOpsGovernanceOverview(data, recheck) {
     const el = $id('document-ops-governance-overview');
     if (!el) return;
     el.style.display = 'block';
@@ -8316,6 +8361,38 @@
     const authorizationClosed = authorizationFields.every(
       field => authorization[field] === false,
     );
+    const recheckMeta = {
+      invalid: [
+        'RECHECK CONTRACT INVALID',
+        '재확인 fingerprint 계약을 검증할 수 없습니다. 원본 report를 직접 확인하세요.',
+        '#b91c1c',
+        'rgba(185,28,28,.06)',
+      ],
+      first: [
+        'FIRST OBSERVATION',
+        '첫 관측입니다. 다음 새로고침부터 검토 상태 변경 여부를 비교합니다.',
+        '#1d4ed8',
+        'rgba(29,78,216,.06)',
+      ],
+      unchanged: [
+        'UNCHANGED',
+        '직전 재확인과 검토 상태가 동일합니다.',
+        '#166534',
+        'rgba(22,101,52,.06)',
+      ],
+      changed: [
+        'STATE CHANGED',
+        '직전 재확인 이후 검토 상태가 달라졌습니다. 세 원본 report를 다시 확인하세요.',
+        '#92400e',
+        'rgba(146,64,14,.06)',
+      ],
+    };
+    const [recheckLabel, recheckMessage, recheckColor, recheckBackground] = (
+      recheckMeta[recheck?.status] || recheckMeta.invalid
+    );
+    const fingerprintPreview = recheck?.fingerprint
+      ? `${recheck.fingerprint.slice(0, 12)}…`
+      : 'unavailable';
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
         <div>
@@ -8342,6 +8419,14 @@
       <div style="border:1px solid var(--border);border-radius:8px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.6rem;">
         <div style="font-size:.75rem;font-weight:900;color:#1f2a44;">다음 검토 작업</div>
         <div style="font-size:.73rem;color:var(--muted);line-height:1.5;margin-top:.25rem;">${escapeHtml(data?.next_review_action || '원본 report를 다시 확인하세요.')}</div>
+      </div>
+      <div data-docops-governance-recheck="${escapeHtml(recheck?.status || 'invalid')}" style="border:1px solid ${recheckColor}33;border-radius:8px;padding:.65rem;background:${recheckBackground};margin-bottom:.6rem;">
+        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;flex-wrap:wrap;">
+          <div style="font-size:.75rem;font-weight:900;color:${recheckColor};">수동 재확인 · ${recheckLabel}</div>
+          <code style="font-size:.68rem;color:${recheckColor};">${escapeHtml(fingerprintPreview)}</code>
+        </div>
+        <div style="font-size:.72rem;color:${recheckColor};line-height:1.5;margin-top:.25rem;">${escapeHtml(recheckMessage)}</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:.18rem;">현재 browser memory에서만 비교 · persisted=false · 생성 시각 제외</div>
       </div>
       <div style="font-size:.7rem;color:${authorizationClosed ? '#166534' : '#b91c1c'};line-height:1.5;">
         source reports independently read=${observation?.source_reports_read_independently === true ? 'true' : 'false'} · combined snapshot atomic=${observation?.combined_snapshot_atomic === true ? 'true' : 'false'} · manual recheck=${observation?.manual_recheck_required === true ? 'true' : 'false'}<br>
@@ -17390,6 +17475,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _documentOpsReviewDrafts.clear();
+    _documentOpsGovernanceObservation = null;
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();
@@ -17407,6 +17493,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _documentOpsReviewDrafts.clear();
+    _documentOpsGovernanceObservation = null;
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();

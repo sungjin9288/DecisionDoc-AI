@@ -643,6 +643,14 @@ def test_index_html_document_ops_loads_one_governance_review_overview():
     assert "tenantId !== _currentTenantId" in content
     assert "data-docops-governance-refresh" in content
     assert "combined transaction 아님" in content
+    assert "compareDocumentOpsGovernanceObservation(data, tenantId)" in content
+    assert "evidence?.fingerprint_algorithm === 'sha256'" in content
+    assert "volatileFields[0] === 'source_report.generated_at'" in content
+    assert "data-docops-governance-recheck" in content
+    assert "직전 재확인과 검토 상태가 동일합니다." in content
+    assert "직전 재확인 이후 검토 상태가 달라졌습니다." in content
+    assert "현재 browser memory에서만 비교 · persisted=false · 생성 시각 제외" in content
+    assert content.count("_documentOpsGovernanceObservation = null;") == 3
     assert "const authorizationFields = [" in content
     assert "field => authorization[field] === false" in content
     assert "external authorization all false=" in content
@@ -2233,7 +2241,7 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
         ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
         ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),
         (
-            "function renderDocumentOpsGovernanceOverview(data)",
+            "function renderDocumentOpsGovernanceOverview(data, recheck)",
             "async function downloadDocumentOpsReviewerSignoffSummary",
         ),
     ):

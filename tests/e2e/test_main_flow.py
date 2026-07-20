@@ -208,6 +208,7 @@ def _governance_overview_payload(
         if signoff_complete
         else "reviewer_signoff_pending"
     )
+    state_fingerprint = ("a" if attention_required else "b") * 64
     return {
         "report_type": "document_ops_governance_review_overview",
         "tenant_id": "system",
@@ -246,6 +247,32 @@ def _governance_overview_payload(
             "source_reports_read_independently": True,
             "combined_snapshot_atomic": False,
             "manual_recheck_required": True,
+        },
+        "recheck_evidence": {
+            "fingerprint_algorithm": "sha256",
+            "review_state_fingerprint": state_fingerprint,
+            "sources": [
+                {
+                    "source": "training_governance",
+                    "report_type": "document_ops_training_governance_dashboard_summary",
+                    "generated_at": "2026-07-20T13:59:57+00:00",
+                    "fingerprint": "c" * 64,
+                },
+                {
+                    "source": "artifact_inventory",
+                    "report_type": "document_ops_governance_artifact_inventory",
+                    "generated_at": None,
+                    "fingerprint": ("d" if attention_required else "e") * 64,
+                },
+                {
+                    "source": "reviewer_signoff",
+                    "report_type": "document_ops_phase25_signoff_summary_endpoint",
+                    "generated_at": "2026-07-20T13:59:59+00:00",
+                    "fingerprint": ("f" if signoff_complete else "0") * 64,
+                },
+            ],
+            "volatile_fields_excluded": ["source_report.generated_at"],
+            "persisted": False,
         },
         "authorization_boundary": {
             "dataset_upload_authorized": False,
@@ -916,6 +943,7 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
     inventory_panel = page.locator("#document-ops-governance-artifact-inventory")
     signoff_panel = page.locator("#document-ops-reviewer-signoff-summary")
     assert "문제 2개" in overview_panel.inner_text()
+    assert "첫 관측입니다." in overview_panel.inner_text()
     assert "combined snapshot atomic=false" in overview_panel.inner_text()
     assert "external authorization all false=true" in overview_panel.inner_text()
     inventory_text = inventory_panel.inner_text()
@@ -950,6 +978,7 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
         "권위 metadata와 현재 backend artifact가 일치합니다."
         in inventory_panel.inner_text()
     )
+    assert "직전 재확인 이후 검토 상태가 달라졌습니다." in overview_panel.inner_text()
     assert "SIGN-OFF COMPLETE" in signoff_panel.inner_text()
     assert inventory_panel.locator("[data-docops-artifact-issue]").count() == 0
     assert len(overview_requests) == 2
@@ -1016,6 +1045,7 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
     )
     assert "REVIEW EVIDENCE READY" in current_state["overviewText"]
     assert "ARTIFACT CHECK NEEDED" not in current_state["overviewText"]
+    assert "직전 재확인과 검토 상태가 동일합니다." in current_state["overviewText"]
     assert "current-export.jsonl" in current_state["summaryText"]
     assert "stale-export.jsonl" not in current_state["summaryText"]
     assert "ARTIFACTS CLEAN" in current_state["inventoryText"]
@@ -1032,6 +1062,16 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
         full_page=True,
     )
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
+    assert page.evaluate(
+        """() => {
+          _documentOpsGovernanceObservation = {
+            tenantId: _currentTenantId,
+            fingerprint: 'f'.repeat(64),
+          };
+          logout();
+          return _documentOpsGovernanceObservation === null;
+        }"""
+    )
     assert console_errors == []
     assert page_errors == []
 

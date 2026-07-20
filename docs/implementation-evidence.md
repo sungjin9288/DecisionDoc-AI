@@ -1,6 +1,6 @@
 # Implementation Evidence
 
-분석 기준: 2026-07-20 현재 로컬 repo, mock provider 기반 runtime evidence, OpenAI live proof, non-live pytest gate, completion readiness/proof receipt, static PWA/CSP evidence.
+분석 기준: 2026-07-21 현재 로컬 repo, mock provider 기반 runtime evidence, OpenAI live proof, non-live pytest gate, completion readiness/proof receipt, static PWA/CSP evidence.
 
 ## 1. 프로젝트 유형 판단
 
@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-20 H77 기준 non-live 전체 게이트는 `4220 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. 잔여 paid provider proof와 G2B 실데이터, production deployment, 실제 사용자 성과 검증은 현재 보류했다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-21 H78 기준 non-live 전체 게이트는 `4221 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. 잔여 paid provider proof와 G2B 실데이터, production deployment, 실제 사용자 성과 검증은 현재 보류했다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -83,7 +83,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `4220 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-20 H77 실측, 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정).
+결과: `4221 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-21 H78 실측, 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정).
 
 ### CI advisory lint / security scan
 

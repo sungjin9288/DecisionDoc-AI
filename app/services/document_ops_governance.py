@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 
@@ -32,6 +34,11 @@ _INVENTORY_ISSUE_COUNTS = (
     "referenced_missing",
     "referenced_tampered",
     "unreferenced",
+)
+_SOURCE_REPORTS = (
+    ("training_governance", "training_governance_summary"),
+    ("artifact_inventory", "artifact_inventory"),
+    ("reviewer_signoff", "reviewer_signoff_summary"),
 )
 
 
@@ -89,6 +96,61 @@ def _signoff_boundary_is_clear(summary: dict[str, Any]) -> bool:
 def _inventory_issue_count(inventory: dict[str, Any]) -> int:
     counts = _mapping(inventory.get("counts"))
     return sum(_count(counts.get(field)) for field in _INVENTORY_ISSUE_COUNTS)
+
+
+def _sha256_json(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _source_observation(source: str, report: dict[str, Any]) -> dict[str, Any]:
+    stable_report = {
+        key: value
+        for key, value in report.items()
+        if key != "generated_at"
+    }
+    generated_at = report.get("generated_at")
+    return {
+        "source": source,
+        "report_type": report.get("report_type"),
+        "generated_at": generated_at if isinstance(generated_at, str) else None,
+        "fingerprint": _sha256_json(stable_report),
+    }
+
+
+def _recheck_evidence(
+    *,
+    training_governance_summary: dict[str, Any],
+    artifact_inventory: dict[str, Any],
+    reviewer_signoff_summary: dict[str, Any],
+) -> dict[str, Any]:
+    reports = {
+        "training_governance_summary": training_governance_summary,
+        "artifact_inventory": artifact_inventory,
+        "reviewer_signoff_summary": reviewer_signoff_summary,
+    }
+    sources = [
+        _source_observation(source, reports[report_key])
+        for source, report_key in _SOURCE_REPORTS
+    ]
+    return {
+        "fingerprint_algorithm": "sha256",
+        "review_state_fingerprint": _sha256_json(
+            {
+                item["source"]: item["fingerprint"]
+                for item in sources
+            }
+        ),
+        "sources": sources,
+        "volatile_fields_excluded": ["source_report.generated_at"],
+        "persisted": False,
+    }
 
 
 def _check_status(*, boundary_clear: bool, passed: bool) -> str:
@@ -211,6 +273,11 @@ def build_document_ops_governance_overview(
             "combined_snapshot_atomic": False,
             "manual_recheck_required": True,
         },
+        "recheck_evidence": _recheck_evidence(
+            training_governance_summary=training_governance_summary,
+            artifact_inventory=artifact_inventory,
+            reviewer_signoff_summary=reviewer_signoff_summary,
+        ),
         "authorization_boundary": {
             "dataset_upload_authorized": False,
             "provider_api_call_authorized": False,
