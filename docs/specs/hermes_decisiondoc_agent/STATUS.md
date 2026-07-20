@@ -57,7 +57,7 @@ The no-execution governance workflow supports:
 7. Create a two-person execution request only from the current approval chain, without starting execution.
 8. Export a pre-execution audit and reject stale or tampered request/audit references in governance summaries.
 9. Rehearse the provider adapter contract with no external side effects.
-10. Compare governance metadata authority with selected-backend objects through the Ops-key read-only inventory; recheck before any separate cleanup decision.
+10. Compare governance metadata authority with selected-backend objects through the Ops-key read-only inventory and show the same exact counts, issues, and recheck boundary in the local Governance view; neither surface performs cleanup.
 
 These records are approval evidence. They are not authorization to upload a dataset, call a
 provider training API, start a training job, or promote a model.
@@ -69,6 +69,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - reviewers, freeze reviewers, dry-run approvers, execution requesters, and auditors are entered
   explicitly instead of falling back to a generic operator identity
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
+- the Governance action loads the training summary and artifact inventory together, shows exact issue counts and bounded problem details, and keeps refresh read-only
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -196,7 +197,9 @@ Last local verification on 2026-07-20:
 - governance index/artifact and DocumentOps caller expansion: 296 passed, 1 warning
 - governance artifact inventory trajectory storage gate: 84 passed
 - governance artifact inventory and DocumentOps caller expansion: 333 passed, 1 warning
-- full repository non-live gate: 4214 passed, 2 skipped, 4 deselected, 1 warning
+- governance artifact browser static/PWA gate: 199 passed, 1 warning
+- governance artifact storage/API/Chromium connection gate: 24 passed, 1 warning
+- full repository non-live gate: 4216 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

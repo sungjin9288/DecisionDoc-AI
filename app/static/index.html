@@ -6167,6 +6167,7 @@
       <div id="document-ops-training-execution-requests" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-audit-checklist" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-governance-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-governance-artifact-inventory" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-reviewer-signoff-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-download-fallback" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-adapter-contract" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
@@ -7038,6 +7039,8 @@
   let _documentOpsLastResult = null;
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
+  let _documentOpsTrainingGovernanceRequestVersion = 0;
+  let _documentOpsArtifactInventoryRequestVersion = 0;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
 
@@ -8180,6 +8183,8 @@
   async function loadDocumentOpsTrainingGovernanceSummary() {
     const el = $id('document-ops-training-governance-summary');
     if (!el) return;
+    const requestVersion = ++_documentOpsTrainingGovernanceRequestVersion;
+    const tenantId = _currentTenantId;
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training governance summary 로드 중...</div>';
     try {
@@ -8188,8 +8193,17 @@
         headers: getOpsAccessHeaders(),
       });
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingGovernanceSummary(await res.json());
+      const data = await res.json();
+      if (
+        requestVersion !== _documentOpsTrainingGovernanceRequestVersion
+        || tenantId !== _currentTenantId
+      ) return;
+      renderDocumentOpsTrainingGovernanceSummary(data);
     } catch (err) {
+      if (
+        requestVersion !== _documentOpsTrainingGovernanceRequestVersion
+        || tenantId !== _currentTenantId
+      ) return;
       el.innerHTML = `<div style="color:#ef4444;">Training governance summary 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Training governance summary 실패: ' + (err.message || err), 'error');
     }
@@ -8255,6 +8269,139 @@
         <div style="font-size:.73rem;color:#92400e;margin-top:.25rem;">${blockers.map(item => escapeHtml(item)).join(' · ')}</div>
       </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">Governance summary is ready for human review. 실행은 별도 workflow입니다.</div>'}
     `;
+  }
+
+  async function loadDocumentOpsGovernance() {
+    await Promise.all([
+      loadDocumentOpsTrainingGovernanceSummary(),
+      loadDocumentOpsGovernanceArtifactInventory(),
+    ]);
+  }
+
+  async function loadDocumentOpsGovernanceArtifactInventory() {
+    const el = $id('document-ops-governance-artifact-inventory');
+    if (!el) return;
+    const requestVersion = ++_documentOpsArtifactInventoryRequestVersion;
+    const tenantId = _currentTenantId;
+    el.style.display = 'block';
+    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">governance artifact inventory 확인 중...</div>';
+    try {
+      const res = await fetch('/api/agent/document-ops/trajectories/governance-artifacts/inventory?limit=50', {
+        headers: getOpsAccessHeaders(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (
+        requestVersion !== _documentOpsArtifactInventoryRequestVersion
+        || tenantId !== _currentTenantId
+      ) return;
+      renderDocumentOpsGovernanceArtifactInventory(data);
+    } catch (err) {
+      if (
+        requestVersion !== _documentOpsArtifactInventoryRequestVersion
+        || tenantId !== _currentTenantId
+      ) return;
+      el.innerHTML = `<div style="color:#b91c1c;">Governance artifact inventory 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Governance artifact inventory 실패: ' + (err.message || err), 'error');
+    }
+  }
+
+  function documentOpsArtifactStatusLabel(status) {
+    return {
+      invalid_reference: '잘못된 참조',
+      referenced_missing: '참조 파일 누락',
+      referenced_tampered: '참조 파일 변조',
+      unreferenced: '권위 metadata에 없는 파일',
+    }[status] || status || '알 수 없는 상태';
+  }
+
+  function renderDocumentOpsGovernanceArtifactInventory(data) {
+    const el = $id('document-ops-governance-artifact-inventory');
+    if (!el) return;
+    el.style.display = 'block';
+
+    const counts = data?.counts || {};
+    const collections = data?.collections || {};
+    const observation = data?.observation_boundary || {};
+    const cleanup = data?.cleanup_boundary || {};
+    const issueCount = [
+      'invalid_reference',
+      'referenced_missing',
+      'referenced_tampered',
+      'unreferenced',
+    ].reduce((total, key) => total + Number(counts[key] || 0), 0);
+    const boundarySafe = (
+      data?.read_only === true
+      && observation?.metadata_snapshot_atomic === true
+      && observation?.multi_object_snapshot_atomic === false
+      && cleanup?.automatic_cleanup_allowed === false
+      && cleanup?.objects_deleted === false
+      && cleanup?.manual_recheck_required === true
+    );
+    const clean = data?.status === 'clean' && issueCount === 0 && boundarySafe;
+    const badge = clean ? 'ARTIFACTS CLEAN' : boundarySafe ? 'ATTENTION REQUIRED' : 'BOUNDARY INVALID';
+    const collectionLabels = {
+      exports: 'SFT export',
+      freezes: 'Dataset freeze',
+      training_approvals: 'Dry-run approval',
+      training_execution_requests: 'Execution request',
+      training_pre_execution_audits: 'Pre-execution audit',
+    };
+    const issues = Object.entries(collections).flatMap(([collectionName, collection]) => (
+      Array.isArray(collection?.artifacts)
+        ? collection.artifacts
+          .filter(item => item?.status !== 'referenced_verified')
+          .map(item => ({ ...item, collectionName }))
+        : []
+    ));
+    const visibleIssues = issues.slice(0, 20);
+    const collectionTruncated = Object.values(collections).some(collection => collection?.truncated === true);
+
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.92rem;">Governance Artifact Inventory</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">selected backend read-only 점검 · artifact 내용 변경 없음</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.4rem;">
+          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${clean ? '#dcfce7' : '#fef3c7'};color:${clean ? '#15803d' : '#92400e'};">${badge}</span>
+          <button type="button" class="action-btn" data-docops-artifact-inventory-refresh aria-label="governance artifact inventory 다시 확인" title="다시 확인" style="width:30px;height:30px;padding:0;">↻</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:.45rem;margin-bottom:.75rem;">
+        ${[
+          ['권위 reference', counts?.authoritative_references],
+          ['검증 완료', counts?.referenced_verified],
+          ['누락', counts?.referenced_missing],
+          ['변조', counts?.referenced_tampered],
+          ['잘못된 참조', counts?.invalid_reference],
+          ['미참조', counts?.unreferenced],
+        ].map(([label, value]) => `<div style="border:1px solid var(--border);border-radius:8px;padding:.5rem;background:rgba(255,255,255,.5);">
+          <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(label)}</div>
+          <div style="font-size:.95rem;font-weight:900;">${escapeHtml(String(value ?? 0))}</div>
+        </div>`).join('')}
+      </div>
+      <div style="border:1px solid ${boundarySafe ? 'rgba(22,101,52,.28)' : 'rgba(185,28,28,.28)'};border-radius:8px;padding:.65rem;background:${boundarySafe ? 'rgba(22,101,52,.06)' : 'rgba(185,28,28,.06)'};margin-bottom:.65rem;">
+        <div style="font-size:.76rem;font-weight:900;color:${boundarySafe ? '#166534' : '#b91c1c'};">관측 및 정리 경계</div>
+        <div style="font-size:.72rem;color:${boundarySafe ? '#166534' : '#b91c1c'};line-height:1.5;margin-top:.25rem;">
+          Metadata snapshot은 atomic하지만 여러 object 관측은 transaction이 아닙니다. 실제 정리 판단 전 다시 확인해야 하며, 이 화면은 자동 삭제를 허용하지 않고 어떤 파일도 삭제하지 않습니다.
+        </div>
+      </div>
+      ${visibleIssues.length ? `<div style="display:flex;flex-direction:column;gap:.4rem;">
+        ${visibleIssues.map(item => `<div data-docops-artifact-issue style="border:1px solid rgba(180,83,9,.24);border-radius:8px;padding:.55rem;background:rgba(180,83,9,.05);">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;">
+            <strong style="font-size:.75rem;color:#1f2937;">${escapeHtml(item?.relative_path || item?.filename || '-')}</strong>
+            <span style="font-size:.68rem;font-weight:850;color:#92400e;">${escapeHtml(documentOpsArtifactStatusLabel(item?.status))}</span>
+          </div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.18rem;">${escapeHtml(collectionLabels[item?.collectionName] || item?.collectionName || '-')} · content inspected=${item?.content_inspected ? 'yes' : 'no'}</div>
+        </div>`).join('')}
+      </div>
+      ${issues.length > visibleIssues.length || collectionTruncated ? `<div style="font-size:.7rem;color:#92400e;margin-top:.5rem;">화면에는 문제 ${visibleIssues.length}건만 표시합니다. Exact count를 기준으로 backend를 다시 확인하세요.</div>` : ''}` : '<div style="font-size:.76rem;color:#166534;font-weight:850;">권위 metadata와 현재 backend artifact가 일치합니다.</div>'}
+    `;
+    el.querySelector('[data-docops-artifact-inventory-refresh]')?.addEventListener(
+      'click',
+      loadDocumentOpsGovernanceArtifactInventory,
+    );
   }
 
   async function loadDocumentOpsReviewerSignoffSummary() {
@@ -8567,7 +8714,7 @@
     'request-execution': requestDocumentOpsTrainingExecution,
     'load-audit-checklist': loadDocumentOpsTrainingAuditChecklist,
     'export-audit': exportDocumentOpsTrainingAudit,
-    'load-governance': loadDocumentOpsTrainingGovernanceSummary,
+    'load-governance': loadDocumentOpsGovernance,
     'load-signoff': loadDocumentOpsReviewerSignoffSummary,
     'download-signoff': downloadDocumentOpsReviewerSignoffSummary,
     'load-adapter-contract': loadDocumentOpsTrainingAdapterContract,

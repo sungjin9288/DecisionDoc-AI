@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 마지막으로 문서화한 main 자동화 증적: commit `309c79e` 기준 GitHub Actions CI `29710492757` success, CD `29710492759` success. CI는 `4102 passed, 5 skipped`, CD image digest는 `sha256:0fde02c5dce36453c1eab42ab5706bf69e512870e07663071903175a431c8960`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 마지막으로 문서화한 main 자동화 증적: commit `95db749` 기준 GitHub Actions CI `29742732681` success, CD `29742732620` success. CI는 `4215 passed, 5 skipped`, CD image digest는 `sha256:455c99cb5b0502537f2014097a459bc837793ce506af9af88d0f77fc0eca1d4a`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 2026-07-17 H50 완료: project knowledge index와 content/style object를 tenant/project별 selected StateBackend에 결속하고 hash·size·ownership·duplicate·orphan을 fail closed로 검증한다. Knowledge API, generation context, procurement evaluator, report promotion도 같은 backend를 사용하며 local/fake-S3 rollback·동시성·API 회귀를 추가했다.
 - 2026-07-17 H51 완료: G2B bookmark state를 tenant/user별 selected StateBackend에 결속하고 malformed·invalid UTF-8·duplicate·owned identity drift를 fail closed로 검증한다. Legacy owner 없는 record와 explicit foreign owner 보존, local/fake-S3 동시성, API 오류 경계를 no-cost로 확인했다.
@@ -40,6 +40,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-20 H73 완료: DocumentOps trajectory append와 사람 review를 tenant별 단일 `trajectories.jsonl` object의 conditional create/CAS authority에 결속했다. 충돌마다 최신 record 집합에 같은 operation을 최대 32회 재적용하고 private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교하고 private metadata는 public/SFT projection에서 제거한다. Process lock 없는 local/fake-S3 20-way append/review, lost append/review response, same-content legacy retry, 손상·중복 원본 보존과 caller 회귀를 no-cost로 확인했다. Metadata·SFT export·freeze·training approval/request/audit artifact는 local filesystem handoff로 남고 multi-object transaction과 실제 AWS/provider/training runtime은 범위 밖이다.
 - 2026-07-20 H74 완료: DocumentOps `trajectory_metadata.json`을 선택된 local/S3 backend의 별도 conditional create/CAS index로 승격하고 SFT export, freeze, dry-run approval, execution request, pre-execution audit를 immutable backend object로 발행한 뒤 identity·size·SHA-256에 결속했다. Process lock 없는 local/fake-S3 concurrent freeze append, 32회 conflict cap, artifact와 metadata lost-response reconciliation, corrupt metadata 원본 보존, tampered export/audit download 차단과 전체 governance chain을 no-cost로 확인했다. H74 이전 hash-only local record는 checksum 검증으로 읽되 size binding을 주장하지 않는다. Reviewer sign-off summary도 같은 backend prefix를 read-only로 사용한다. Trajectory/index/artifact multi-object transaction, 비권위 orphan 자동 GC와 실제 AWS/provider/dataset upload/training/model promotion은 범위 밖이다.
 - 2026-07-20 H75 완료: DocumentOps governance metadata의 다섯 managed collection과 selected local/S3 backend object를 비교하는 Ops-key 전용 read-only inventory를 추가했다. 권위 reference를 verified·missing·tampered·invalid로, metadata에 없는 object를 unreferenced로 분리하고 collection/전체 exact count와 bounded issue-first detail을 제공한다. Corrupt metadata는 inventory도 원본 보존 상태로 fail closed 처리하고 legacy hash-only artifact는 checksum verified와 size binding 미검증을 구분한다. Local/fake-S3에서 누락·변조·orphan 분류와 무삭제 경계를 no-cost로 확인했다. Metadata snapshot은 atomic하지만 multi-object scan은 transaction이 아니므로 concurrent write 시 재확인이 필요하며, inventory는 cleanup authority가 아니다. 자동 GC·실제 AWS/provider/training runtime은 범위 밖이다.
+- 2026-07-20 H76 완료: DocumentOps Governance 버튼이 training summary와 governance artifact inventory를 함께 조회하도록 local browser flow를 현재 backend authority에 맞췄다. 화면은 exact count와 missing·tampered·invalid·unreferenced 문제만 우선 표시하고, metadata snapshot과 multi-object scan의 차이 및 무삭제 경계를 같은 자리에서 설명한다. Ops-key를 포함한 GET만 사용하며 tenant 전환이나 더 최근 재확인 뒤 도착한 stale response는 화면에 반영하지 않는다. Static/PWA, local API, 실제 Chromium과 desktop/mobile screenshot으로 attention→clean 재확인과 390px overflow 없음까지 no-cost로 확인했으며 cleanup action과 외부 실행은 추가하지 않았다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -47,7 +48,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-20 H75 실측: 4214 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-20 H76 실측: 4216 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

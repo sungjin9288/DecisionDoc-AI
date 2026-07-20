@@ -628,8 +628,28 @@ def test_index_html_document_ops_shows_training_governance_dashboard_summary():
     assert "Training Governance Dashboard Summary" in content
     assert "loadDocumentOpsTrainingGovernanceSummary()" in content
     assert "/api/agent/document-ops/trajectories/training-governance/summary?" in content
+    assert "requestVersion !== _documentOpsTrainingGovernanceRequestVersion" in content
+    assert "tenantId !== _currentTenantId" in content
     assert "read-only aggregate · no training · no upload · no provider calls" in content
     assert "No-side-effect guard" in content
+
+
+def test_index_html_document_ops_shows_read_only_governance_artifact_inventory():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert 'id="document-ops-governance-artifact-inventory"' in content
+    assert "loadDocumentOpsGovernanceArtifactInventory()" in content
+    assert (
+        "/api/agent/document-ops/trajectories/governance-artifacts/inventory?limit=50"
+        in content
+    )
+    assert "Governance Artifact Inventory" in content
+    assert "requestVersion !== _documentOpsArtifactInventoryRequestVersion" in content
+    assert "tenantId !== _currentTenantId" in content
+    assert "Metadata snapshot은 atomic하지만 여러 object 관측은 transaction이 아닙니다." in content
+    assert "이 화면은 자동 삭제를 허용하지 않고 어떤 파일도 삭제하지 않습니다." in content
+    assert "data-docops-artifact-inventory-refresh" in content
+    assert "data-docops-artifact-issue" in content
 
 
 def test_index_html_document_ops_shows_reviewer_signoff_summary():
@@ -2132,6 +2152,7 @@ def test_index_html_document_ops_action_wiring_exists():
         "'request-execution': requestDocumentOpsTrainingExecution",
         "'load-audit-checklist': loadDocumentOpsTrainingAuditChecklist",
         "'export-audit': exportDocumentOpsTrainingAudit",
+        "'load-governance': loadDocumentOpsGovernance",
         "'load-signoff': loadDocumentOpsReviewerSignoffSummary",
         "'download-signoff': downloadDocumentOpsReviewerSignoffSummary",
         "'load-rehearsal': loadDocumentOpsTrainingRehearsal",
@@ -2205,6 +2226,7 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
         ("function renderDocumentOpsTrainingReadiness(data)", "async function approveDocumentOpsTrainingFromFreeze",),
         ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
         ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),
+        ("function renderDocumentOpsGovernanceArtifactInventory(data)", "async function loadDocumentOpsReviewerSignoffSummary",),
     ):
         start = content.index(start_marker)
         end = content.index(end_marker, start)
@@ -2223,6 +2245,7 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
         "data-docops-training-audit-export",
         "data-docops-training-audit-refresh",
         "data-docops-training-audit-download=\"${escapeHtml(data.audit_file)}\"",
+        "data-docops-artifact-inventory-refresh",
     ):
         assert marker in block
 
@@ -2246,6 +2269,9 @@ def test_index_html_document_ops_dynamic_action_wiring_exists():
         "downloadDocumentOpsTrainingAudit(btn.dataset.docopsTrainingAuditDownload || '')",
         "container.querySelector('[data-docops-training-audit-export]')?.addEventListener('click', exportDocumentOpsTrainingAudit)",
         "container.querySelector('[data-docops-training-audit-refresh]')?.addEventListener('click', loadDocumentOpsTrainingAuditChecklist)",
+        "el.querySelector('[data-docops-artifact-inventory-refresh]')?.addEventListener(",
+        "'click',",
+        "loadDocumentOpsGovernanceArtifactInventory,",
     ):
         assert marker in content
 

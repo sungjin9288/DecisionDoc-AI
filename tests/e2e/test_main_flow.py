@@ -35,6 +35,102 @@ def _wait_until_text_contains(page, selector: str, expected: str, *, timeout_ms:
     raise AssertionError(f"{selector} did not contain {expected!r} within {timeout_ms}ms")
 
 
+def _governance_inventory_payload(*, attention_required: bool) -> dict:
+    directories = {
+        "exports": "trajectory_exports",
+        "freezes": "trajectory_freezes",
+        "training_approvals": "trajectory_training_approvals",
+        "training_execution_requests": "trajectory_training_execution_requests",
+        "training_pre_execution_audits": "trajectory_training_audits",
+    }
+    collections = {
+        name: {
+            "directory": directory,
+            "counts": {},
+            "artifacts": [],
+            "returned": 0,
+            "truncated": False,
+        }
+        for name, directory in directories.items()
+    }
+    if attention_required:
+        collections["exports"]["artifacts"] = [
+            {
+                "filename": "sft_tampered.jsonl",
+                "relative_path": "tenants/system/trajectory_exports/sft_tampered.jsonl",
+                "status": "referenced_tampered",
+                "content_inspected": True,
+            }
+        ]
+        collections["exports"]["returned"] = 1
+        collections["training_pre_execution_audits"]["artifacts"] = [
+            {
+                "filename": "orphan.json",
+                "relative_path": "tenants/system/trajectory_training_audits/orphan.json",
+                "status": "unreferenced",
+                "content_inspected": False,
+            }
+        ]
+        collections["training_pre_execution_audits"]["returned"] = 1
+
+    return {
+        "report_type": "document_ops_governance_artifact_inventory",
+        "tenant_id": "system",
+        "backend": "local",
+        "status": "attention_required" if attention_required else "clean",
+        "read_only": True,
+        "metadata": {
+            "relative_path": "tenants/system/trajectory_metadata.json",
+            "exists": True,
+        },
+        "counts": {
+            "authoritative_references": 2,
+            "observed_objects": 3 if attention_required else 2,
+            "referenced_verified": 1 if attention_required else 2,
+            "referenced_missing": 0,
+            "referenced_tampered": 1 if attention_required else 0,
+            "invalid_reference": 0,
+            "unreferenced": 1 if attention_required else 0,
+        },
+        "collections": collections,
+        "observation_boundary": {
+            "metadata_snapshot_atomic": True,
+            "multi_object_snapshot_atomic": False,
+            "concurrent_writes_may_require_recheck": True,
+        },
+        "cleanup_boundary": {
+            "automatic_cleanup_allowed": False,
+            "objects_deleted": False,
+            "manual_recheck_required": True,
+        },
+    }
+
+
+def _governance_summary_payload(export_filename: str) -> dict:
+    return {
+        "report_type": "document_ops_training_governance_dashboard_summary",
+        "status": "governance_ready_for_human_review",
+        "counts": {
+            "reviewed_sft_exports": 1,
+            "dataset_freezes": 0,
+            "dry_run_training_approvals": 0,
+            "training_execution_requests": 0,
+            "pre_execution_audit_exports": 0,
+        },
+        "latest": {
+            "reviewed_sft_export": {
+                "filename": export_filename,
+            }
+        },
+        "guard_counts": {},
+        "artifact_chain": {},
+        "audit_chain": {},
+        "audit_checklist": {},
+        "blockers": [],
+        "no_side_effects": True,
+    }
+
+
 def _generate_to_results(page, title: str, goal: str) -> None:
     """Drive the current 2-step generate flow until results are visible."""
     page.wait_for_selector(".bundle-card", timeout=5000)
@@ -627,6 +723,148 @@ def test_document_ops_trajectory_history_searches_filters_and_paginates_without_
     page.screenshot(path=str(tmp_path / "document-ops-trajectory-mobile.png"), full_page=True)
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
     assert console_errors == []
+
+
+def test_document_ops_governance_inventory_rechecks_attention_without_cleanup(
+    page,
+    live_server,
+    tmp_path,
+):
+    inventory_requests: list[dict[str, str]] = []
+    attention_payload = _governance_inventory_payload(attention_required=True)
+    clean_payload = _governance_inventory_payload(attention_required=False)
+
+    def handle_inventory(route):
+        request = route.request
+        inventory_requests.append(
+            {
+                "method": request.method,
+                "ops_key": request.headers.get("x-decisiondoc-ops-key", ""),
+                "authorization": request.headers.get("authorization", ""),
+            }
+        )
+        payload = attention_payload if len(inventory_requests) == 1 else clean_payload
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(payload),
+        )
+
+    inventory_url = (
+        "**/api/agent/document-ops/trajectories/"
+        "governance-artifacts/inventory?limit=50"
+    )
+    page.route(inventory_url, handle_inventory)
+    page.locator('[data-page="document-ops-page"]').click()
+    page.fill("#docops-ops-key-input", live_server["ops_key"])
+    page.locator('[data-docops-action="load-governance"]').click()
+
+    panel = page.locator("#document-ops-governance-artifact-inventory")
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-artifact-inventory",
+        "ATTENTION REQUIRED",
+        timeout_ms=10000,
+    )
+    panel_text = panel.inner_text()
+    assert "sft_tampered.jsonl" in panel_text
+    assert "orphan.json" in panel_text
+    assert "참조 파일 변조" in panel_text
+    assert "권위 metadata에 없는 파일" in panel_text
+    assert "어떤 파일도 삭제하지 않습니다." in panel_text
+    assert panel.locator("[data-docops-artifact-issue]").count() == 2
+    assert panel.get_by_role(
+        "button",
+        name="governance artifact inventory 다시 확인",
+    ).count() == 1
+    assert len(inventory_requests) == 1
+    first_request = inventory_requests[0]
+    assert first_request["method"] == "GET"
+    assert first_request["ops_key"] == live_server["ops_key"]
+    assert first_request["authorization"].startswith("Bearer ")
+
+    panel.get_by_role(
+        "button",
+        name="governance artifact inventory 다시 확인",
+    ).click()
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-artifact-inventory",
+        "ARTIFACTS CLEAN",
+        timeout_ms=10000,
+    )
+    assert "권위 metadata와 현재 backend artifact가 일치합니다." in panel.inner_text()
+    assert panel.locator("[data-docops-artifact-issue]").count() == 0
+    assert len(inventory_requests) == 2
+    assert all(request["method"] == "GET" for request in inventory_requests)
+    assert all(request["ops_key"] == live_server["ops_key"] for request in inventory_requests)
+
+    current_state = page.evaluate(
+        """async ({ staleSummary, currentSummary, staleInventory, currentInventory }) => {
+          const nativeFetch = window.fetch;
+          const currentTenantId = _currentTenantId;
+          const pendingResponses = [];
+          let holdResponses = true;
+          const isSummary = url => url.includes('/training-governance/summary?');
+          const isInventory = url => url.includes('/governance-artifacts/inventory?');
+          const responseFor = (url, summary, inventory) => new Response(
+            JSON.stringify(isSummary(url) ? summary : inventory),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          try {
+            window.fetch = (input, options) => {
+              const url = String(input || '');
+              if (!isSummary(url) && !isInventory(url)) {
+                return nativeFetch(input, options);
+              }
+              if (holdResponses) {
+                return new Promise(resolve => pendingResponses.push({ url, resolve }));
+              }
+              return Promise.resolve(responseFor(url, currentSummary, currentInventory));
+            };
+
+            _currentTenantId = 'stale-tenant';
+            const staleLoad = loadDocumentOpsGovernance();
+            while (pendingResponses.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            holdResponses = false;
+            _currentTenantId = currentTenantId;
+            await loadDocumentOpsGovernance();
+            pendingResponses.forEach(({ url, resolve }) => {
+              resolve(responseFor(url, staleSummary, staleInventory));
+            });
+            await staleLoad;
+
+            return {
+              summaryText: document.querySelector('#document-ops-training-governance-summary')?.textContent || '',
+              inventoryText: document.querySelector('#document-ops-governance-artifact-inventory')?.textContent || '',
+            };
+          } finally {
+            window.fetch = nativeFetch;
+            _currentTenantId = currentTenantId;
+          }
+        }""",
+        {
+            "staleSummary": _governance_summary_payload("stale-export.jsonl"),
+            "currentSummary": _governance_summary_payload("current-export.jsonl"),
+            "staleInventory": attention_payload,
+            "currentInventory": clean_payload,
+        },
+    )
+    assert "current-export.jsonl" in current_state["summaryText"]
+    assert "stale-export.jsonl" not in current_state["summaryText"]
+    assert "ARTIFACTS CLEAN" in current_state["inventoryText"]
+    assert "sft_tampered.jsonl" not in current_state["inventoryText"]
+
+    page.screenshot(
+        path=str(tmp_path / "document-ops-governance-inventory-desktop.png"),
+        full_page=True,
+    )
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-governance-inventory-mobile.png"), full_page=True)
+    assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
 
 
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
