@@ -553,6 +553,23 @@ def test_resolve_action_explicit_document_ops_events_preserves_access_failures()
     assert _resolve_action("GET", "/api/agent/document-ops/trajectories/stats", 200) == ""
     assert ACTION_TYPES["document_ops.trajectory_view"] == "DocumentOps 이력 상세 조회"
     assert ACTION_TYPES["document_ops.trajectory_review"] == "DocumentOps 사람 검토"
+    assert (
+        _resolve_action(
+            "GET",
+            "/api/agent/document-ops/trajectories/governance/overview",
+            200,
+            explicit_action="document_ops.governance_view",
+        )
+        == "document_ops.governance_view"
+    )
+    assert (
+        ACTION_TYPES["document_ops.governance_view"]
+        == "DocumentOps governance 조회"
+    )
+    assert (
+        ACTION_TYPES["document_ops.governance_handoff_download"]
+        == "DocumentOps governance handoff 다운로드"
+    )
 
 
 def test_resolve_action_procurement_review_inbox_view():

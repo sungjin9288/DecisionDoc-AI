@@ -14,6 +14,10 @@ from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id, get_username
 from app.maintenance.mode import require_not_maintenance
+from app.middleware.document_ops_audit import (
+    prepare_governance_audit,
+    record_governance_audit_result,
+)
 from app.schemas import (
     DocumentOpsAgentRunRequest,
     DocumentOpsDatasetFreezeRequest,
@@ -197,12 +201,15 @@ def get_document_ops_training_governance_summary(
     base_model: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
-    return _service(request).training_governance_dashboard_summary(
+    prepare_governance_audit(request, surface="training_governance_summary")
+    summary = _service(request).training_governance_dashboard_summary(
         tenant_id=get_tenant_id(request),
         provider=provider,
         base_model=base_model,
         limit=limit,
     )
+    record_governance_audit_result(request, summary)
+    return summary
 
 
 @router.get("/trajectories/governance/overview", dependencies=[Depends(require_ops_key)])
@@ -212,12 +219,15 @@ def get_document_ops_governance_review_overview(
     base_model: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
-    return _service(request).governance_review_overview(
+    prepare_governance_audit(request, surface="governance_overview")
+    overview = _service(request).governance_review_overview(
         tenant_id=get_tenant_id(request),
         provider=provider,
         base_model=base_model,
         limit=limit,
     )
+    record_governance_audit_result(request, overview)
+    return overview
 
 
 @router.get("/trajectories/governance-artifacts/inventory", dependencies=[Depends(require_ops_key)])
@@ -225,10 +235,13 @@ def inspect_document_ops_governance_artifacts(
     request: Request,
     limit: int = Query(default=200, ge=1, le=500),
 ) -> dict:
-    return _service(request).governance_artifact_inventory(
+    prepare_governance_audit(request, surface="artifact_inventory")
+    inventory = _service(request).governance_artifact_inventory(
         tenant_id=get_tenant_id(request),
         limit=limit,
     )
+    record_governance_audit_result(request, inventory)
+    return inventory
 
 
 @router.get("/trajectories/reviewer-signoff/summary", dependencies=[Depends(require_ops_key)])
@@ -236,10 +249,13 @@ def get_document_ops_reviewer_signoff_summary(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
-    return _service(request).reviewer_signoff_summary(
+    prepare_governance_audit(request, surface="reviewer_signoff_summary")
+    summary = _service(request).reviewer_signoff_summary(
         tenant_id=get_tenant_id(request),
         limit=limit,
     )
+    record_governance_audit_result(request, summary)
+    return summary
 
 
 @router.get("/trajectories/reviewer-signoff/summary/download", dependencies=[Depends(require_ops_key)])
@@ -247,11 +263,17 @@ def download_document_ops_reviewer_signoff_summary(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Response:
+    prepare_governance_audit(
+        request,
+        surface="reviewer_signoff_summary",
+        download=True,
+    )
     tenant_id = get_tenant_id(request)
     payload = _service(request).reviewer_signoff_summary_export(
         tenant_id=tenant_id,
         limit=limit,
     )
+    record_governance_audit_result(request, payload)
     filename = (
         "reviewer_signoff_summary_"
         f"{_safe_download_filename_part(tenant_id)}_"

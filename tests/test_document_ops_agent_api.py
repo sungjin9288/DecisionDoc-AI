@@ -1055,6 +1055,37 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
         for value in overview_body["authorization_boundary"].values()
     )
 
+    from app.storage.audit_store import AuditStore
+
+    governance_audits = AuditStore("system").query(
+        filters={"action": "document_ops.governance_view"},
+    )
+    assert {
+        entry["detail"]["governance_surface"]
+        for entry in governance_audits
+    } == {
+        "training_governance_summary",
+        "artifact_inventory",
+        "governance_overview",
+    }
+    overview_audit = next(
+        entry
+        for entry in governance_audits
+        if entry["detail"]["governance_surface"] == "governance_overview"
+    )
+    assert overview_audit["resource_type"] == "document_ops_governance"
+    assert overview_audit["resource_id"] == "governance_overview"
+    assert overview_audit["detail"]["governance_status"] == "reviewer_signoff_pending"
+    assert overview_audit["detail"]["read_only"] is True
+    assert overview_audit["detail"]["state_fingerprint_persisted"] is False
+    assert not {
+        "review_state_fingerprint",
+        "sources",
+        "training_governance_summary",
+        "artifact_inventory",
+        "reviewer_signoff_summary",
+    } & overview_audit["detail"].keys()
+
     blocked_adapter_contract = client.get(
         "/api/agent/document-ops/trajectories/training-provider-adapter/contract",
         headers=_api_headers(),
@@ -1236,6 +1267,39 @@ def test_document_ops_reviewer_signoff_summary_is_ops_key_read_only(tmp_path, mo
     assert downloaded_body["summary"]["overall_status"] == "pending_manual_signoff_no_training_authorization"
     assert all(value is False for value in downloaded_body["guard_flags"].values())
     assert all(value is False for value in downloaded_body["side_effect_boundary"].values())
+
+    from app.storage.audit_store import AuditStore
+
+    governance_views = AuditStore("system").query(
+        filters={"action": "document_ops.governance_view"},
+    )
+    assert len(governance_views) == 1
+    assert governance_views[0]["resource_type"] == "document_ops_governance"
+    assert governance_views[0]["resource_id"] == "reviewer_signoff_summary"
+    assert governance_views[0]["detail"]["governance_surface"] == "reviewer_signoff_summary"
+    assert governance_views[0]["detail"]["governance_status"] == (
+        "pending_manual_signoff_no_training_authorization"
+    )
+    assert governance_views[0]["detail"]["read_only"] is True
+
+    handoff_downloads = AuditStore("system").query(
+        filters={"action": "document_ops.governance_handoff_download"},
+    )
+    assert len(handoff_downloads) == 1
+    handoff_detail = handoff_downloads[0]["detail"]
+    assert handoff_downloads[0]["resource_type"] == "document_ops_governance"
+    assert handoff_downloads[0]["resource_id"] == "reviewer_signoff_summary"
+    assert handoff_detail["governance_status"] == (
+        "pending_manual_signoff_no_training_authorization"
+    )
+    assert handoff_detail["read_only"] is True
+    assert not {
+        "records",
+        "summary",
+        "required_reviewers",
+        "review_state_fingerprint",
+        "sources",
+    } & handoff_detail.keys()
 
 
 def test_document_ops_unknown_task_returns_400(tmp_path, monkeypatch) -> None:

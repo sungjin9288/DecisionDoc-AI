@@ -1076,6 +1076,48 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
     assert page_errors == []
 
 
+def test_document_ops_governance_view_is_visible_in_redacted_audit_history(
+    page,
+    live_server,
+):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on(
+        "console",
+        lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+    )
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+
+    page.locator('[data-page="document-ops-page"]').click()
+    page.fill("#docops-ops-key-input", live_server["ops_key"])
+    page.locator('[data-docops-action="load-governance"]').click()
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-overview",
+        "FIRST OBSERVATION",
+        timeout_ms=10000,
+    )
+
+    page.evaluate(
+        """async () => {
+          document.querySelector('#ops-panel').style.display = 'block';
+          document.querySelector('#audit-action-filter').value = 'document_ops.governance_view';
+          await loadAuditLogs({ action: 'document_ops.governance_view' }, 0);
+        }"""
+    )
+    audit_text = page.locator("#audit-log-table").inner_text()
+    assert "document_ops.governance_view" in audit_text
+    assert "surface=governance_overview" in audit_text
+    assert "status=" in audit_text
+    assert "read_only=true" in audit_text
+    assert "fingerprint_persisted=false" in audit_text
+    assert "review_state_fingerprint" not in audit_text
+    assert "training_governance_summary" not in audit_text
+    assert "reviewer_signoff_summary" not in audit_text
+    assert console_errors == []
+    assert page_errors == []
+
+
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []

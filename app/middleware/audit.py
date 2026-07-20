@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 
 from fastapi import Request
 
+from app.middleware.document_ops_audit import (
+    document_ops_audit_detail,
+    document_ops_resource_identity,
+)
+
 _log = logging.getLogger("decisiondoc.audit")
 
 # ── Audit rules — (HTTP method, path pattern) → action type ────────────────────
@@ -414,30 +419,6 @@ def _append_audit_entries(
         report_quality_pilot_preview_verified = getattr(
             request.state, "report_quality_pilot_preview_verified", None
         )
-        document_ops_trajectory_id = (
-            getattr(request.state, "document_ops_trajectory_id", "") or ""
-        )
-        document_ops_review_status = (
-            getattr(request.state, "document_ops_review_status", "") or ""
-        )
-        document_ops_review_decision = (
-            getattr(request.state, "document_ops_review_decision", "") or ""
-        )
-        document_ops_reviewer = (
-            getattr(request.state, "document_ops_reviewer", "") or ""
-        )
-        document_ops_review_version = getattr(
-            request.state, "document_ops_review_version", None
-        )
-        document_ops_quality_score = getattr(
-            request.state, "document_ops_quality_score", None
-        )
-        document_ops_expected_review_version = getattr(
-            request.state, "document_ops_expected_review_version", None
-        )
-        document_ops_current_review_version = getattr(
-            request.state, "document_ops_current_review_version", None
-        )
         detail = {
             "method": request.method,
             "path": path,
@@ -567,22 +548,7 @@ def _append_audit_entries(
             )
         if report_quality_pilot_preview_verified is not None:
             detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
-        if document_ops_trajectory_id:
-            detail["trajectory_id"] = document_ops_trajectory_id
-        if document_ops_review_status:
-            detail["review_status"] = document_ops_review_status
-        if document_ops_review_decision:
-            detail["review_decision"] = document_ops_review_decision
-        if document_ops_reviewer:
-            detail["reviewer"] = document_ops_reviewer
-        if document_ops_review_version is not None:
-            detail["review_version"] = document_ops_review_version
-        if document_ops_expected_review_version is not None:
-            detail["expected_review_version"] = document_ops_expected_review_version
-        if document_ops_current_review_version is not None:
-            detail["current_review_version"] = document_ops_current_review_version
-        if document_ops_quality_score is not None:
-            detail["quality_score"] = document_ops_quality_score
+        detail.update(document_ops_audit_detail(request))
 
         store = AuditStore(tenant_id)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -687,11 +653,9 @@ def _build_audit_log(
     if action.startswith("share.") and share_id:
         resource_type = "share"
         resource_id = share_id
-    if action.startswith("document_ops."):
-        resource_type = "document_ops_trajectory"
-        resource_id = str(
-            getattr(request.state, "document_ops_trajectory_id", "") or ""
-        )
+    document_ops_identity = document_ops_resource_identity(request, action)
+    if document_ops_identity is not None:
+        resource_type, resource_id = document_ops_identity
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

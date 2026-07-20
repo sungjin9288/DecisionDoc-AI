@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,221 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H78) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,222 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H79) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-21 H78 실측: 4221 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-21 H79 실측: 4222 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -43,7 +43,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 44 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 45 (top-level storage modules)
-python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
+python3 scripts/count_readme_metrics.py --field middleware_files  # → 10 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 268 (라우트)
 ```
 
@@ -53,8 +53,10 @@ Client (Web UI / CLI / API)
   ▼
 FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │
-  ├─ Middleware 체인 (9): CORS → observability → request_id → security_headers
-  │     → rate_limit → auth → tenant → billing → audit → metrics
+  ├─ Middleware layer (10개 Python 모듈)
+  │     request chain: CORS → observability → request_id → security_headers
+  │       → rate_limit → auth → tenant → billing → audit → metrics
+  │     audit context helper: document_ops_audit
   │
   ├─ Routers (23 top-level files, 라우트 268):
   │     generate / approvals / projects / knowledge / report_workflows
@@ -103,6 +105,7 @@ Providers (5)    Storage (45 modules)   Ops
 17. DocumentOps governance artifact inventory는 Ops-key가 있는 read-only route에서만 제공한다. Metadata authority를 먼저 엄격 검증하고 다섯 managed directory의 object를 `referenced_verified`, `referenced_missing`, `referenced_tampered`, `invalid_reference`, `unreferenced`로 분류한다. Metadata snapshot 하나는 atomic하지만 여러 object 관측은 transaction이 아니며 자동 삭제 권한도 없으므로 concurrent write 가능성과 실제 cleanup 전에 재확인이 필요하다. Local browser는 같은 Ops-key route를 GET으로만 읽어 exact count와 문제 artifact를 보여주며, tenant 전환이나 후속 재조회보다 늦게 도착한 응답을 폐기하고 삭제 action을 제공하지 않는다.
 18. DocumentOps governance review overview는 training governance, artifact inventory, reviewer sign-off를 service에서 각각 읽어 reviewer-facing 상태로 합성한다. 경계 drift, artifact integrity, governance blocker, human sign-off 순서로 먼저 조치할 문제를 선택하고 다음 검토 행동과 원본 report를 함께 반환한다. 세 조회를 하나의 atomic snapshot으로 과장하지 않으며 수동 재확인과 dataset upload, provider call, training, model promotion 권한 `false`를 응답과 화면에서 유지한다.
 19. Governance overview의 수동 재확인은 source report의 top-level `generated_at`만 제외한 canonical SHA-256을 사용한다. Browser는 성공한 동일 tenant 응답만 현재 인증 세션 메모리에서 비교해 최초·동일·변경을 표시하고 logout·invalid session에서 기준을 제거한다. Fingerprint는 상태 비교용 read-only 값이며 persisted receipt, atomic snapshot, 외부 실행 권한으로 해석하지 않는다.
+20. DocumentOps governance summary·overview·inventory·reviewer sign-off 조회와 sign-off handoff 다운로드는 route가 명시한 action으로 tenant append-only audit에 기록한다. Audit detail은 surface, aggregate status, read-only 여부와 fingerprint 비저장 사실만 보존하고 fingerprint 값, source report, reviewer record를 복사하지 않는다. Governance resource는 trajectory resource와 분리해 Admin Ops에서 독립적으로 필터링한다.
 
 ---
 

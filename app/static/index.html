@@ -6811,6 +6811,8 @@
         <option value="report_quality.pilot_package_verify">품질 Pilot 수신 패키지 검증</option>
         <option value="document_ops.trajectory_view">DocumentOps 상세 조회</option>
         <option value="document_ops.trajectory_review">DocumentOps 사람 검토</option>
+        <option value="document_ops.governance_view">DocumentOps governance 조회</option>
+        <option value="document_ops.governance_handoff_download">DocumentOps governance handoff</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -27895,6 +27897,17 @@ function renderAuditEvidence(log, detail) {
     if (detail.expected_review_version != null) evidence.push(`expected=${detail.expected_review_version}`);
     if (detail.current_review_version != null) evidence.push(`current=${detail.current_review_version}`);
     if (detail.quality_score != null) evidence.push(`score=${detail.quality_score}`);
+    return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
+  }
+  if (['document_ops.governance_view', 'document_ops.governance_handoff_download'].includes(log?.action)) {
+    const evidence = [
+      `surface=${detail.governance_surface || '-'}`,
+      `status=${detail.governance_status || '-'}`,
+      `read_only=${String(detail.read_only === true)}`,
+    ];
+    if (detail.state_fingerprint_persisted != null) {
+      evidence.push(`fingerprint_persisted=${String(detail.state_fingerprint_persisted === true)}`);
+    }
     return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
   }
   return '';

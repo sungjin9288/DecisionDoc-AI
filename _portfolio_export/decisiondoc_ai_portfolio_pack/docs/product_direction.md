@@ -296,7 +296,7 @@ Connect the public procurement copilot into the package workflow:
 - go / conditional go / no-go recommendation,
 - proposal handoff.
 
-Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, verified reviewed-package re-download, and current-review downstream provenance are connected in the project detail UI. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
+Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, verified reviewed-package re-download, current-review downstream provenance, and redacted DocumentOps governance read-access audit are connected. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
 
 ## 11. Decision Checklist For Future Work
 

@@ -1850,6 +1850,8 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "buildReportWorkflowQualityPilotImportCommand" in content
     assert '<option value="document_ops.trajectory_view">' in content
     assert '<option value="document_ops.trajectory_review">' in content
+    assert '<option value="document_ops.governance_view">' in content
+    assert '<option value="document_ops.governance_handoff_download">' in content
     assert "function renderAuditEvidence(log, detail)" in content
     assert "package_sha256=${escapeHtml(detail.pilot_package_sha256)}" in content
     assert "semantics_verified=${escapeHtml(String(detail.pilot_artifact_semantics_verified === true))}" in content
@@ -1860,6 +1862,13 @@ def test_index_html_ops_static_action_wiring_exists():
     assert "expected=${detail.expected_review_version}" in content
     assert "current=${detail.current_review_version}" in content
     assert "score=${detail.quality_score}" in content
+    assert "surface=${detail.governance_surface || '-'}" in content
+    assert "status=${detail.governance_status || '-'}" in content
+    assert "read_only=${String(detail.read_only === true)}" in content
+    assert (
+        "fingerprint_persisted=${String("
+        "detail.state_fingerprint_persisted === true)}"
+    ) in content
     assert "request=${escapeHtml(detail.request_id || '-')}" in content
     assert "sha256=${escapeHtml(detail.pilot_sha256 || '-')}" in content
     assert "preview_verified=${escapeHtml(String(detail.pilot_preview_verified === true))}" in content
