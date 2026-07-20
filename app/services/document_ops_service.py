@@ -8,6 +8,9 @@ from typing import Any, Callable
 from app.agents.document_ops_agent import DocumentOpsAgent
 from app.agents.schemas import DocumentOpsRequest, DocumentOpsResult
 from app.providers.base import Provider
+from app.services.document_ops_governance import (
+    build_document_ops_governance_overview,
+)
 from app.services.document_ops_training_adapter import (
     training_adapter_contract_summary,
     training_execution_rehearsal_summary,
@@ -388,6 +391,36 @@ class DocumentOpsService:
             provider=provider,
             base_model=base_model,
             limit=limit,
+        )
+
+    def governance_review_overview(
+        self,
+        *,
+        tenant_id: str,
+        provider: str = "provider_agnostic",
+        base_model: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        training_governance_summary = self.training_governance_dashboard_summary(
+            tenant_id=tenant_id,
+            provider=provider,
+            base_model=base_model,
+            limit=limit,
+        )
+        artifact_inventory = self.governance_artifact_inventory(
+            tenant_id=tenant_id,
+            limit=limit,
+        )
+        reviewer_signoff_summary = self.reviewer_signoff_summary(
+            tenant_id=tenant_id,
+            limit=limit,
+        )
+        return build_document_ops_governance_overview(
+            tenant_id=tenant_id,
+            generated_at=datetime.now(UTC).isoformat(),
+            training_governance_summary=training_governance_summary,
+            artifact_inventory=artifact_inventory,
+            reviewer_signoff_summary=reviewer_signoff_summary,
         )
 
     def reviewer_signoff_summary(

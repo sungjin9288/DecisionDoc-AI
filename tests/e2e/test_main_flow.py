@@ -109,6 +109,7 @@ def _governance_inventory_payload(*, attention_required: bool) -> dict:
 def _governance_summary_payload(export_filename: str) -> dict:
     return {
         "report_type": "document_ops_training_governance_dashboard_summary",
+        "read_only": True,
         "status": "governance_ready_for_human_review",
         "counts": {
             "reviewed_sft_exports": 1,
@@ -128,6 +129,138 @@ def _governance_summary_payload(export_filename: str) -> dict:
         "audit_checklist": {},
         "blockers": [],
         "no_side_effects": True,
+        "training_execution_allowed": False,
+        "provider_api_calls_allowed": False,
+        "external_upload_allowed": False,
+        "provider_job_started": False,
+        "model_promotion_allowed": False,
+    }
+
+
+def _governance_signoff_payload(*, complete: bool) -> dict:
+    status = (
+        "manual_signoff_complete_no_training_authorization"
+        if complete
+        else "pending_manual_signoff_no_training_authorization"
+    )
+    return {
+        "report_type": "document_ops_reviewer_signoff_summary",
+        "read_only": True,
+        "overall_status": status,
+        "record_count": 1,
+        "records": [
+            {
+                "signoff_record_id": "signoff-e2e",
+                "filename": "signoff-e2e.json",
+                "created_at": "2026-07-20T13:55:00+00:00",
+                "record_status": status,
+                "reviewers": [{"role": "reviewer", "complete": complete}],
+                "reviewers_complete_count": 1 if complete else 0,
+                "pending_reviewer_count": 0 if complete else 1,
+                "changes_requested_count": 0,
+                "blocked_count": 0,
+                "completed_validation": {"valid": complete},
+                "boundary": {
+                    "training_execution_authorized": False,
+                    "provider_fine_tune_api_call_authorized": False,
+                },
+            }
+        ],
+        "aggregate": {
+            "completed_record_count": 1 if complete else 0,
+            "pending_record_count": 0 if complete else 1,
+            "manual_follow_up_record_count": 0,
+            "boundary_violation_count": 0,
+            "all_protected_training_flags_false": True,
+            "training_execution_authorized": False,
+            "external_dataset_upload_authorized": False,
+            "provider_fine_tune_api_call_authorized": False,
+            "provider_job_creation_authorized": False,
+            "model_promotion_authorized": False,
+        },
+        "side_effect_boundary": {
+            "actual_reviewer_approval_recorded_by_summary": False,
+            "training_execution_started": False,
+            "external_dataset_uploaded": False,
+            "provider_fine_tune_api_called": False,
+            "provider_job_created": False,
+            "model_promoted": False,
+        },
+        "blockers": [] if complete else ["reviewer_signoff_pending"],
+        "training_execution_allowed": False,
+        "provider_api_calls_allowed": False,
+        "external_upload_allowed": False,
+        "provider_job_started": False,
+        "model_promotion_allowed": False,
+    }
+
+
+def _governance_overview_payload(
+    *,
+    attention_required: bool,
+    signoff_complete: bool,
+    export_filename: str,
+) -> dict:
+    status = (
+        "artifact_integrity_attention"
+        if attention_required
+        else "review_evidence_ready"
+        if signoff_complete
+        else "reviewer_signoff_pending"
+    )
+    return {
+        "report_type": "document_ops_governance_review_overview",
+        "tenant_id": "system",
+        "generated_at": "2026-07-20T14:00:00+00:00",
+        "read_only": True,
+        "status": status,
+        "checks": [
+            {
+                "id": "artifact_integrity",
+                "status": "attention" if attention_required else "passed",
+                "summary": "권위 reference 2개, 검증 완료 1개, 문제 2개"
+                if attention_required
+                else "권위 reference 2개, 검증 완료 2개, 문제 0개",
+            },
+            {
+                "id": "governance_chain",
+                "status": "passed",
+                "summary": "governance blocker 0개",
+            },
+            {
+                "id": "reviewer_signoff",
+                "status": "passed" if signoff_complete else "attention",
+                "summary": "완료 1개, pending 0개, follow-up 0개"
+                if signoff_complete
+                else "완료 0개, pending 1개, follow-up 0개",
+            },
+        ],
+        "next_review_action": (
+            "권위 metadata와 selected backend artifact 차이를 먼저 확인하세요."
+            if attention_required
+            else "세 read-only 검토가 각각 통과했습니다."
+            if signoff_complete
+            else "Tenant-local reviewer sign-off를 완료하세요."
+        ),
+        "observation_boundary": {
+            "source_reports_read_independently": True,
+            "combined_snapshot_atomic": False,
+            "manual_recheck_required": True,
+        },
+        "authorization_boundary": {
+            "dataset_upload_authorized": False,
+            "provider_api_call_authorized": False,
+            "training_execution_authorized": False,
+            "provider_job_creation_authorized": False,
+            "model_promotion_authorized": False,
+        },
+        "training_governance_summary": _governance_summary_payload(export_filename),
+        "artifact_inventory": _governance_inventory_payload(
+            attention_required=attention_required
+        ),
+        "reviewer_signoff_summary": _governance_signoff_payload(
+            complete=signoff_complete
+        ),
     }
 
 
@@ -725,121 +858,147 @@ def test_document_ops_trajectory_history_searches_filters_and_paginates_without_
     assert console_errors == []
 
 
-def test_document_ops_governance_inventory_rechecks_attention_without_cleanup(
+def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
     page,
     live_server,
     tmp_path,
 ):
-    inventory_requests: list[dict[str, str]] = []
-    attention_payload = _governance_inventory_payload(attention_required=True)
-    clean_payload = _governance_inventory_payload(attention_required=False)
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on(
+        "console",
+        lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+    )
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    overview_requests: list[dict[str, str]] = []
+    attention_payload = _governance_overview_payload(
+        attention_required=True,
+        signoff_complete=False,
+        export_filename="attention-export.jsonl",
+    )
+    ready_payload = _governance_overview_payload(
+        attention_required=False,
+        signoff_complete=True,
+        export_filename="current-export.jsonl",
+    )
 
-    def handle_inventory(route):
+    def handle_overview(route):
         request = route.request
-        inventory_requests.append(
+        overview_requests.append(
             {
                 "method": request.method,
                 "ops_key": request.headers.get("x-decisiondoc-ops-key", ""),
                 "authorization": request.headers.get("authorization", ""),
             }
         )
-        payload = attention_payload if len(inventory_requests) == 1 else clean_payload
+        payload = attention_payload if len(overview_requests) == 1 else ready_payload
         route.fulfill(
             status=200,
             content_type="application/json",
             body=json.dumps(payload),
         )
 
-    inventory_url = (
-        "**/api/agent/document-ops/trajectories/"
-        "governance-artifacts/inventory?limit=50"
+    page.route(
+        "**/api/agent/document-ops/trajectories/governance/overview?*",
+        handle_overview,
     )
-    page.route(inventory_url, handle_inventory)
     page.locator('[data-page="document-ops-page"]').click()
     page.fill("#docops-ops-key-input", live_server["ops_key"])
     page.locator('[data-docops-action="load-governance"]').click()
 
-    panel = page.locator("#document-ops-governance-artifact-inventory")
     _wait_until_text_contains(
         page,
-        "#document-ops-governance-artifact-inventory",
-        "ATTENTION REQUIRED",
+        "#document-ops-governance-overview",
+        "ARTIFACT CHECK NEEDED",
         timeout_ms=10000,
     )
-    panel_text = panel.inner_text()
-    assert "sft_tampered.jsonl" in panel_text
-    assert "orphan.json" in panel_text
-    assert "참조 파일 변조" in panel_text
-    assert "권위 metadata에 없는 파일" in panel_text
-    assert "어떤 파일도 삭제하지 않습니다." in panel_text
-    assert panel.locator("[data-docops-artifact-issue]").count() == 2
-    assert panel.get_by_role(
+    overview_panel = page.locator("#document-ops-governance-overview")
+    inventory_panel = page.locator("#document-ops-governance-artifact-inventory")
+    signoff_panel = page.locator("#document-ops-reviewer-signoff-summary")
+    assert "문제 2개" in overview_panel.inner_text()
+    assert "combined snapshot atomic=false" in overview_panel.inner_text()
+    assert "external authorization all false=true" in overview_panel.inner_text()
+    inventory_text = inventory_panel.inner_text()
+    assert "sft_tampered.jsonl" in inventory_text
+    assert "orphan.json" in inventory_text
+    assert "참조 파일 변조" in inventory_text
+    assert "권위 metadata에 없는 파일" in inventory_text
+    assert "어떤 파일도 삭제하지 않습니다." in inventory_text
+    assert inventory_panel.locator("[data-docops-artifact-issue]").count() == 2
+    assert "SIGN-OFF PENDING" in signoff_panel.inner_text()
+    assert overview_panel.get_by_role(
         "button",
-        name="governance artifact inventory 다시 확인",
+        name="governance review 상태 다시 확인",
     ).count() == 1
-    assert len(inventory_requests) == 1
-    first_request = inventory_requests[0]
+    assert len(overview_requests) == 1
+    first_request = overview_requests[0]
     assert first_request["method"] == "GET"
     assert first_request["ops_key"] == live_server["ops_key"]
     assert first_request["authorization"].startswith("Bearer ")
 
-    panel.get_by_role(
+    overview_panel.get_by_role(
         "button",
-        name="governance artifact inventory 다시 확인",
+        name="governance review 상태 다시 확인",
     ).click()
     _wait_until_text_contains(
         page,
-        "#document-ops-governance-artifact-inventory",
-        "ARTIFACTS CLEAN",
+        "#document-ops-governance-overview",
+        "REVIEW EVIDENCE READY",
         timeout_ms=10000,
     )
-    assert "권위 metadata와 현재 backend artifact가 일치합니다." in panel.inner_text()
-    assert panel.locator("[data-docops-artifact-issue]").count() == 0
-    assert len(inventory_requests) == 2
-    assert all(request["method"] == "GET" for request in inventory_requests)
-    assert all(request["ops_key"] == live_server["ops_key"] for request in inventory_requests)
+    assert (
+        "권위 metadata와 현재 backend artifact가 일치합니다."
+        in inventory_panel.inner_text()
+    )
+    assert "SIGN-OFF COMPLETE" in signoff_panel.inner_text()
+    assert inventory_panel.locator("[data-docops-artifact-issue]").count() == 0
+    assert len(overview_requests) == 2
+    assert all(request["method"] == "GET" for request in overview_requests)
+    assert all(
+        request["ops_key"] == live_server["ops_key"]
+        for request in overview_requests
+    )
 
     current_state = page.evaluate(
-        """async ({ staleSummary, currentSummary, staleInventory, currentInventory }) => {
+        """async ({ staleOverview, currentOverview }) => {
           const nativeFetch = window.fetch;
           const currentTenantId = _currentTenantId;
           const pendingResponses = [];
           let holdResponses = true;
-          const isSummary = url => url.includes('/training-governance/summary?');
-          const isInventory = url => url.includes('/governance-artifacts/inventory?');
-          const responseFor = (url, summary, inventory) => new Response(
-            JSON.stringify(isSummary(url) ? summary : inventory),
+          const isOverview = url => url.includes('/governance/overview?');
+          const responseFor = payload => new Response(
+            JSON.stringify(payload),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
           try {
             window.fetch = (input, options) => {
               const url = String(input || '');
-              if (!isSummary(url) && !isInventory(url)) {
+              if (!isOverview(url)) {
                 return nativeFetch(input, options);
               }
               if (holdResponses) {
-                return new Promise(resolve => pendingResponses.push({ url, resolve }));
+                return new Promise(resolve => pendingResponses.push(resolve));
               }
-              return Promise.resolve(responseFor(url, currentSummary, currentInventory));
+              return Promise.resolve(responseFor(currentOverview));
             };
 
             _currentTenantId = 'stale-tenant';
             const staleLoad = loadDocumentOpsGovernance();
-            while (pendingResponses.length < 2) {
+            while (pendingResponses.length < 1) {
               await new Promise(resolve => setTimeout(resolve, 0));
             }
 
             holdResponses = false;
             _currentTenantId = currentTenantId;
             await loadDocumentOpsGovernance();
-            pendingResponses.forEach(({ url, resolve }) => {
-              resolve(responseFor(url, staleSummary, staleInventory));
-            });
+            pendingResponses.forEach(resolve => resolve(responseFor(staleOverview)));
             await staleLoad;
 
             return {
+              overviewText: document.querySelector('#document-ops-governance-overview')?.textContent || '',
               summaryText: document.querySelector('#document-ops-training-governance-summary')?.textContent || '',
               inventoryText: document.querySelector('#document-ops-governance-artifact-inventory')?.textContent || '',
+              signoffText: document.querySelector('#document-ops-reviewer-signoff-summary')?.textContent || '',
             };
           } finally {
             window.fetch = nativeFetch;
@@ -847,24 +1006,34 @@ def test_document_ops_governance_inventory_rechecks_attention_without_cleanup(
           }
         }""",
         {
-            "staleSummary": _governance_summary_payload("stale-export.jsonl"),
-            "currentSummary": _governance_summary_payload("current-export.jsonl"),
-            "staleInventory": attention_payload,
-            "currentInventory": clean_payload,
+            "staleOverview": _governance_overview_payload(
+                attention_required=True,
+                signoff_complete=False,
+                export_filename="stale-export.jsonl",
+            ),
+            "currentOverview": ready_payload,
         },
     )
+    assert "REVIEW EVIDENCE READY" in current_state["overviewText"]
+    assert "ARTIFACT CHECK NEEDED" not in current_state["overviewText"]
     assert "current-export.jsonl" in current_state["summaryText"]
     assert "stale-export.jsonl" not in current_state["summaryText"]
     assert "ARTIFACTS CLEAN" in current_state["inventoryText"]
     assert "sft_tampered.jsonl" not in current_state["inventoryText"]
+    assert "SIGN-OFF COMPLETE" in current_state["signoffText"]
 
     page.screenshot(
-        path=str(tmp_path / "document-ops-governance-inventory-desktop.png"),
+        path=str(tmp_path / "document-ops-governance-overview-desktop.png"),
         full_page=True,
     )
     page.set_viewport_size({"width": 390, "height": 844})
-    page.screenshot(path=str(tmp_path / "document-ops-governance-inventory-mobile.png"), full_page=True)
+    page.screenshot(
+        path=str(tmp_path / "document-ops-governance-overview-mobile.png"),
+        full_page=True,
+    )
     assert page.evaluate("document.documentElement.scrollWidth === window.innerWidth")
+    assert console_errors == []
+    assert page_errors == []
 
 
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):

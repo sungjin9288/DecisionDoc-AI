@@ -6068,14 +6068,13 @@
       <button type="button" class="action-btn" data-docops-action="request-execution">Request 기록</button>
       <button type="button" class="action-btn" data-docops-action="load-audit-checklist">Audit 검토</button>
       <button type="button" class="action-btn" data-docops-action="export-audit">Audit 저장</button>
-      <button type="button" class="action-btn" data-docops-action="load-governance">Governance</button>
+      <button type="button" class="action-btn" data-docops-action="load-governance">Review 상태</button>
     </div>
   </div>
 
   <details class="docops-more-tools">
     <summary>추가 증적 도구</summary>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
-      <button type="button" class="action-btn" data-docops-action="load-signoff">Sign-off 요약</button>
       <button type="button" class="action-btn" data-docops-action="download-signoff">Sign-off JSON</button>
       <button type="button" class="action-btn" data-docops-action="load-adapter-contract">Adapter 계약</button>
       <button type="button" class="action-btn" data-docops-action="load-rehearsal">Rehearsal</button>
@@ -6166,6 +6165,7 @@
       <div id="document-ops-training-plan-preview" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-execution-requests" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-audit-checklist" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
+      <div id="document-ops-governance-overview" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-training-governance-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-governance-artifact-inventory" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
       <div id="document-ops-reviewer-signoff-summary" style="display:none;background:var(--surface-solid);border:1px solid var(--border);border-radius:18px;padding:1rem;color:var(--muted);font-size:.84rem;"></div>
@@ -7039,8 +7039,7 @@
   let _documentOpsLastResult = null;
   let _documentOpsTrajectoryOffset = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
-  let _documentOpsTrainingGovernanceRequestVersion = 0;
-  let _documentOpsArtifactInventoryRequestVersion = 0;
+  let _documentOpsGovernanceRequestVersion = 0;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
 
@@ -8180,35 +8179,6 @@
     }
   }
 
-  async function loadDocumentOpsTrainingGovernanceSummary() {
-    const el = $id('document-ops-training-governance-summary');
-    if (!el) return;
-    const requestVersion = ++_documentOpsTrainingGovernanceRequestVersion;
-    const tenantId = _currentTenantId;
-    el.style.display = 'block';
-    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training governance summary 로드 중...</div>';
-    try {
-      const params = documentOpsPlanningParams();
-      const res = await fetch(`/api/agent/document-ops/trajectories/training-governance/summary?${params}`, {
-        headers: getOpsAccessHeaders(),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      if (
-        requestVersion !== _documentOpsTrainingGovernanceRequestVersion
-        || tenantId !== _currentTenantId
-      ) return;
-      renderDocumentOpsTrainingGovernanceSummary(data);
-    } catch (err) {
-      if (
-        requestVersion !== _documentOpsTrainingGovernanceRequestVersion
-        || tenantId !== _currentTenantId
-      ) return;
-      el.innerHTML = `<div style="color:#ef4444;">Training governance summary 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
-      showNotification('Training governance summary 실패: ' + (err.message || err), 'error');
-    }
-  }
-
   function renderDocumentOpsTrainingGovernanceSummary(data) {
     const el = $id('document-ops-training-governance-summary');
     if (!el) return;
@@ -8272,38 +8242,116 @@
   }
 
   async function loadDocumentOpsGovernance() {
-    await Promise.all([
-      loadDocumentOpsTrainingGovernanceSummary(),
-      loadDocumentOpsGovernanceArtifactInventory(),
-    ]);
-  }
-
-  async function loadDocumentOpsGovernanceArtifactInventory() {
-    const el = $id('document-ops-governance-artifact-inventory');
-    if (!el) return;
-    const requestVersion = ++_documentOpsArtifactInventoryRequestVersion;
+    const overviewEl = $id('document-ops-governance-overview');
+    if (!overviewEl) return;
+    const requestVersion = ++_documentOpsGovernanceRequestVersion;
     const tenantId = _currentTenantId;
-    el.style.display = 'block';
-    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">governance artifact inventory 확인 중...</div>';
+    const detailIds = [
+      'document-ops-training-governance-summary',
+      'document-ops-governance-artifact-inventory',
+      'document-ops-reviewer-signoff-summary',
+    ];
+    overviewEl.style.display = 'block';
+    overviewEl.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">governance review 상태 확인 중...</div>';
+    detailIds.forEach(id => {
+      const detail = $id(id);
+      if (detail) detail.style.display = 'none';
+    });
     try {
-      const res = await fetch('/api/agent/document-ops/trajectories/governance-artifacts/inventory?limit=50', {
+      const params = documentOpsPlanningParams();
+      params.set('limit', '50');
+      const res = await fetch(`/api/agent/document-ops/trajectories/governance/overview?${params}`, {
         headers: getOpsAccessHeaders(),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (
-        requestVersion !== _documentOpsArtifactInventoryRequestVersion
+        requestVersion !== _documentOpsGovernanceRequestVersion
         || tenantId !== _currentTenantId
       ) return;
-      renderDocumentOpsGovernanceArtifactInventory(data);
+      renderDocumentOpsGovernanceOverview(data);
+      renderDocumentOpsTrainingGovernanceSummary(data?.training_governance_summary || {});
+      renderDocumentOpsGovernanceArtifactInventory(data?.artifact_inventory || {});
+      renderDocumentOpsReviewerSignoffSummary(data?.reviewer_signoff_summary || {});
+      return data;
     } catch (err) {
       if (
-        requestVersion !== _documentOpsArtifactInventoryRequestVersion
+        requestVersion !== _documentOpsGovernanceRequestVersion
         || tenantId !== _currentTenantId
       ) return;
-      el.innerHTML = `<div style="color:#b91c1c;">Governance artifact inventory 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
-      showNotification('Governance artifact inventory 실패: ' + (err.message || err), 'error');
+      overviewEl.innerHTML = `<div style="color:#b91c1c;">Governance review 상태 확인 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
+      showNotification('Governance review 상태 확인 실패: ' + (err.message || err), 'error');
     }
+  }
+
+  function renderDocumentOpsGovernanceOverview(data) {
+    const el = $id('document-ops-governance-overview');
+    if (!el) return;
+    el.style.display = 'block';
+    const statusMeta = {
+      boundary_attention: ['BOUNDARY ATTENTION', '#b91c1c', '#fee2e2'],
+      artifact_integrity_attention: ['ARTIFACT CHECK NEEDED', '#92400e', '#fef3c7'],
+      governance_review_needed: ['GOVERNANCE REVIEW NEEDED', '#92400e', '#fef3c7'],
+      reviewer_signoff_pending: ['HUMAN SIGN-OFF PENDING', '#92400e', '#fef3c7'],
+      review_evidence_ready: ['REVIEW EVIDENCE READY', '#166534', '#dcfce7'],
+    };
+    const [statusLabel, statusColor, statusBackground] = (
+      statusMeta[data?.status] || ['REVIEW REQUIRED', '#b91c1c', '#fee2e2']
+    );
+    const checkLabels = {
+      artifact_integrity: 'Artifact integrity',
+      governance_chain: 'Governance chain',
+      reviewer_signoff: 'Reviewer sign-off',
+    };
+    const checks = Array.isArray(data?.checks) ? data.checks : [];
+    const observation = data?.observation_boundary || {};
+    const authorization = data?.authorization_boundary || {};
+    const authorizationFields = [
+      'dataset_upload_authorized',
+      'provider_api_call_authorized',
+      'training_execution_authorized',
+      'provider_job_creation_authorized',
+      'model_promotion_authorized',
+    ];
+    const authorizationClosed = authorizationFields.every(
+      field => authorization[field] === false,
+    );
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
+        <div>
+          <strong style="font-size:.96rem;color:#1f2a44;">Governance Review Overview</strong>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">세 read-only report를 독립 조회 · combined transaction 아님 · 검토 전 수동 재확인</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.4rem;">
+          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${statusBackground};color:${statusColor};">${statusLabel}</span>
+          <button type="button" class="action-btn" data-docops-governance-refresh aria-label="governance review 상태 다시 확인" title="다시 확인" style="width:30px;height:30px;padding:0;">↻</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:.5rem;margin-bottom:.7rem;">
+        ${checks.map(check => {
+          const passed = check?.status === 'passed';
+          const boundaryAttention = check?.status === 'boundary_attention';
+          const color = passed ? '#166534' : boundaryAttention ? '#b91c1c' : '#92400e';
+          const background = passed ? 'rgba(22,101,52,.06)' : boundaryAttention ? 'rgba(185,28,28,.06)' : 'rgba(146,64,14,.06)';
+          return `<div style="border:1px solid ${color}33;border-radius:8px;padding:.6rem;background:${background};">
+            <div style="font-size:.75rem;font-weight:900;color:${color};">${escapeHtml(checkLabels[check?.id] || check?.id || 'Unknown check')}</div>
+            <div style="font-size:.7rem;color:var(--muted);margin-top:.22rem;line-height:1.45;">${escapeHtml(check?.summary || '-')}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:.65rem;background:rgba(255,255,255,.52);margin-bottom:.6rem;">
+        <div style="font-size:.75rem;font-weight:900;color:#1f2a44;">다음 검토 작업</div>
+        <div style="font-size:.73rem;color:var(--muted);line-height:1.5;margin-top:.25rem;">${escapeHtml(data?.next_review_action || '원본 report를 다시 확인하세요.')}</div>
+      </div>
+      <div style="font-size:.7rem;color:${authorizationClosed ? '#166534' : '#b91c1c'};line-height:1.5;">
+        source reports independently read=${observation?.source_reports_read_independently === true ? 'true' : 'false'} · combined snapshot atomic=${observation?.combined_snapshot_atomic === true ? 'true' : 'false'} · manual recheck=${observation?.manual_recheck_required === true ? 'true' : 'false'}<br>
+        external authorization all false=${authorizationClosed ? 'true' : 'false'}
+      </div>
+    `;
+    el.querySelector('[data-docops-governance-refresh]')?.addEventListener(
+      'click',
+      loadDocumentOpsGovernance,
+    );
   }
 
   function documentOpsArtifactStatusLabel(status) {
@@ -8363,10 +8411,7 @@
           <strong style="font-size:.92rem;">Governance Artifact Inventory</strong>
           <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">selected backend read-only 점검 · artifact 내용 변경 없음</div>
         </div>
-        <div style="display:flex;align-items:center;gap:.4rem;">
-          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${clean ? '#dcfce7' : '#fef3c7'};color:${clean ? '#15803d' : '#92400e'};">${badge}</span>
-          <button type="button" class="action-btn" data-docops-artifact-inventory-refresh aria-label="governance artifact inventory 다시 확인" title="다시 확인" style="width:30px;height:30px;padding:0;">↻</button>
-        </div>
+        <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${clean ? '#dcfce7' : '#fef3c7'};color:${clean ? '#15803d' : '#92400e'};">${badge}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:.45rem;margin-bottom:.75rem;">
         ${[
@@ -8398,28 +8443,6 @@
       </div>
       ${issues.length > visibleIssues.length || collectionTruncated ? `<div style="font-size:.7rem;color:#92400e;margin-top:.5rem;">화면에는 문제 ${visibleIssues.length}건만 표시합니다. Exact count를 기준으로 backend를 다시 확인하세요.</div>` : ''}` : '<div style="font-size:.76rem;color:#166534;font-weight:850;">권위 metadata와 현재 backend artifact가 일치합니다.</div>'}
     `;
-    el.querySelector('[data-docops-artifact-inventory-refresh]')?.addEventListener(
-      'click',
-      loadDocumentOpsGovernanceArtifactInventory,
-    );
-  }
-
-  async function loadDocumentOpsReviewerSignoffSummary() {
-    const el = $id('document-ops-reviewer-signoff-summary');
-    if (!el) return;
-    el.style.display = 'block';
-    el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">reviewer sign-off summary 로드 중...</div>';
-    try {
-      const params = new URLSearchParams({ limit: '50' });
-      const res = await fetch(`/api/agent/document-ops/trajectories/reviewer-signoff/summary?${params}`, {
-        headers: getOpsAccessHeaders(),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsReviewerSignoffSummary(await res.json());
-    } catch (err) {
-      el.innerHTML = `<div style="color:#ef4444;">Reviewer sign-off summary 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
-      showNotification('Reviewer sign-off summary 실패: ' + (err.message || err), 'error');
-    }
   }
 
   async function downloadDocumentOpsReviewerSignoffSummary() {
@@ -8715,7 +8738,6 @@
     'load-audit-checklist': loadDocumentOpsTrainingAuditChecklist,
     'export-audit': exportDocumentOpsTrainingAudit,
     'load-governance': loadDocumentOpsGovernance,
-    'load-signoff': loadDocumentOpsReviewerSignoffSummary,
     'download-signoff': downloadDocumentOpsReviewerSignoffSummary,
     'load-adapter-contract': loadDocumentOpsTrainingAdapterContract,
     'load-rehearsal': loadDocumentOpsTrainingRehearsal,

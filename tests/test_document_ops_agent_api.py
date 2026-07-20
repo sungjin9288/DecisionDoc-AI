@@ -1011,6 +1011,40 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
         "manual_recheck_required": True,
     }
 
+    blocked_overview = client.get(
+        "/api/agent/document-ops/trajectories/governance/overview",
+        headers=_api_headers(),
+    )
+    assert blocked_overview.status_code == 401
+
+    overview = client.get(
+        "/api/agent/document-ops/trajectories/governance/overview"
+        "?provider=openai&base_model=gpt-test-base&limit=20",
+        headers=_ops_headers(),
+    )
+    assert overview.status_code == 200
+    overview_body = overview.json()
+    assert overview_body["report_type"] == "document_ops_governance_review_overview"
+    assert overview_body["status"] == "reviewer_signoff_pending"
+    assert overview_body["read_only"] is True
+    assert [item["status"] for item in overview_body["checks"]] == [
+        "passed",
+        "passed",
+        "attention",
+    ]
+    assert overview_body["training_governance_summary"]["status"] == (
+        "governance_ready_for_human_review"
+    )
+    assert overview_body["artifact_inventory"]["status"] == "clean"
+    assert overview_body["reviewer_signoff_summary"]["overall_status"] == (
+        "no_signoff_records_found"
+    )
+    assert overview_body["observation_boundary"]["combined_snapshot_atomic"] is False
+    assert all(
+        value is False
+        for value in overview_body["authorization_boundary"].values()
+    )
+
     blocked_adapter_contract = client.get(
         "/api/agent/document-ops/trajectories/training-provider-adapter/contract",
         headers=_api_headers(),

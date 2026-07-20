@@ -205,6 +205,21 @@ def get_document_ops_training_governance_summary(
     )
 
 
+@router.get("/trajectories/governance/overview", dependencies=[Depends(require_ops_key)])
+def get_document_ops_governance_review_overview(
+    request: Request,
+    provider: str = Query(default="provider_agnostic", min_length=1, max_length=80),
+    base_model: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    return _service(request).governance_review_overview(
+        tenant_id=get_tenant_id(request),
+        provider=provider,
+        base_model=base_model,
+        limit=limit,
+    )
+
+
 @router.get("/trajectories/governance-artifacts/inventory", dependencies=[Depends(require_ops_key)])
 def inspect_document_ops_governance_artifacts(
     request: Request,

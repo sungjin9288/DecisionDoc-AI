@@ -626,39 +626,47 @@ def test_index_html_document_ops_shows_pre_execution_audit_checklist_export():
 def test_index_html_document_ops_shows_training_governance_dashboard_summary():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert "Training Governance Dashboard Summary" in content
-    assert "loadDocumentOpsTrainingGovernanceSummary()" in content
-    assert "/api/agent/document-ops/trajectories/training-governance/summary?" in content
-    assert "requestVersion !== _documentOpsTrainingGovernanceRequestVersion" in content
+    assert "renderDocumentOpsTrainingGovernanceSummary(" in content
+    assert "data?.training_governance_summary || {}" in content
     assert "tenantId !== _currentTenantId" in content
     assert "read-only aggregate · no training · no upload · no provider calls" in content
     assert "No-side-effect guard" in content
+
+
+def test_index_html_document_ops_loads_one_governance_review_overview():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert 'id="document-ops-governance-overview"' in content
+    assert "Governance Review Overview" in content
+    assert "/api/agent/document-ops/trajectories/governance/overview?" in content
+    assert "requestVersion !== _documentOpsGovernanceRequestVersion" in content
+    assert "tenantId !== _currentTenantId" in content
+    assert "data-docops-governance-refresh" in content
+    assert "combined transaction 아님" in content
+    assert "const authorizationFields = [" in content
+    assert "field => authorization[field] === false" in content
+    assert "external authorization all false=" in content
 
 
 def test_index_html_document_ops_shows_read_only_governance_artifact_inventory():
     content = open("app/static/index.html", encoding="utf-8").read()
 
     assert 'id="document-ops-governance-artifact-inventory"' in content
-    assert "loadDocumentOpsGovernanceArtifactInventory()" in content
-    assert (
-        "/api/agent/document-ops/trajectories/governance-artifacts/inventory?limit=50"
-        in content
-    )
+    assert "renderDocumentOpsGovernanceArtifactInventory(" in content
+    assert "data?.artifact_inventory || {}" in content
     assert "Governance Artifact Inventory" in content
-    assert "requestVersion !== _documentOpsArtifactInventoryRequestVersion" in content
-    assert "tenantId !== _currentTenantId" in content
     assert "Metadata snapshot은 atomic하지만 여러 object 관측은 transaction이 아닙니다." in content
     assert "이 화면은 자동 삭제를 허용하지 않고 어떤 파일도 삭제하지 않습니다." in content
-    assert "data-docops-artifact-inventory-refresh" in content
     assert "data-docops-artifact-issue" in content
 
 
 def test_index_html_document_ops_shows_reviewer_signoff_summary():
     content = open("app/static/index.html", encoding="utf-8").read()
     assert "Reviewer Sign-Off Summary" in content
-    assert "loadDocumentOpsReviewerSignoffSummary()" in content
+    assert "renderDocumentOpsReviewerSignoffSummary(" in content
+    assert "data?.reviewer_signoff_summary || {}" in content
     assert "downloadDocumentOpsReviewerSignoffSummary()" in content
     assert 'id="document-ops-download-fallback"' in content
-    assert "/api/agent/document-ops/trajectories/reviewer-signoff/summary?" in content
     assert "/api/agent/document-ops/trajectories/reviewer-signoff/summary/download?" in content
     assert "read-only sign-off evidence · no training · no upload · no provider calls" in content
     assert "Reviewer sign-off summary JSON" in content
@@ -2131,7 +2139,6 @@ def test_index_html_document_ops_page_uses_event_listeners():
         "load-audit-checklist",
         "export-audit",
         "load-governance",
-        "load-signoff",
         "download-signoff",
         "load-adapter-contract",
         "load-rehearsal",
@@ -2153,7 +2160,6 @@ def test_index_html_document_ops_action_wiring_exists():
         "'load-audit-checklist': loadDocumentOpsTrainingAuditChecklist",
         "'export-audit': exportDocumentOpsTrainingAudit",
         "'load-governance': loadDocumentOpsGovernance",
-        "'load-signoff': loadDocumentOpsReviewerSignoffSummary",
         "'download-signoff': downloadDocumentOpsReviewerSignoffSummary",
         "'load-rehearsal': loadDocumentOpsTrainingRehearsal",
         "'run-agent': runDocumentOpsAgent",
@@ -2226,7 +2232,10 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
         ("function renderDocumentOpsTrainingReadiness(data)", "async function approveDocumentOpsTrainingFromFreeze",),
         ("function renderDocumentOpsTrainingExecutionRequests(data)", "async function loadDocumentOpsTrainingAuditChecklist",),
         ("function renderDocumentOpsTrainingAuditChecklist(data, auditList)", "async function downloadDocumentOpsTrainingAudit",),
-        ("function renderDocumentOpsGovernanceArtifactInventory(data)", "async function loadDocumentOpsReviewerSignoffSummary",),
+        (
+            "function renderDocumentOpsGovernanceOverview(data)",
+            "async function downloadDocumentOpsReviewerSignoffSummary",
+        ),
     ):
         start = content.index(start_marker)
         end = content.index(end_marker, start)
@@ -2245,7 +2254,7 @@ def test_index_html_document_ops_dynamic_actions_use_event_listeners():
         "data-docops-training-audit-export",
         "data-docops-training-audit-refresh",
         "data-docops-training-audit-download=\"${escapeHtml(data.audit_file)}\"",
-        "data-docops-artifact-inventory-refresh",
+        "data-docops-governance-refresh",
     ):
         assert marker in block
 
@@ -2269,9 +2278,9 @@ def test_index_html_document_ops_dynamic_action_wiring_exists():
         "downloadDocumentOpsTrainingAudit(btn.dataset.docopsTrainingAuditDownload || '')",
         "container.querySelector('[data-docops-training-audit-export]')?.addEventListener('click', exportDocumentOpsTrainingAudit)",
         "container.querySelector('[data-docops-training-audit-refresh]')?.addEventListener('click', loadDocumentOpsTrainingAuditChecklist)",
-        "el.querySelector('[data-docops-artifact-inventory-refresh]')?.addEventListener(",
+        "el.querySelector('[data-docops-governance-refresh]')?.addEventListener(",
         "'click',",
-        "loadDocumentOpsGovernanceArtifactInventory,",
+        "loadDocumentOpsGovernance,",
     ):
         assert marker in content
 
