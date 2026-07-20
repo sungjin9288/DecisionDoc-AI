@@ -7044,6 +7044,7 @@
   let _documentOpsTrajectoryRequestVersion = 0;
   let _documentOpsGovernanceRequestVersion = 0;
   let _documentOpsExportListRequestVersion = 0;
+  let _documentOpsReadinessRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
@@ -7796,15 +7797,25 @@
   async function loadDocumentOpsTrainingReadiness() {
     const el = $id('document-ops-training-readiness');
     if (!el) return;
+    const requestVersion = ++_documentOpsReadinessRequestVersion;
+    const tenantId = _currentTenantId;
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsReadinessRequestVersion
+      && tenantId === _currentTenantId
+    );
     el.style.display = 'block';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training readiness 요약 로드 중...</div>';
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-readiness?limit=20', {
         headers: getOpsAccessHeaders(),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingReadiness(await res.json());
+      const readiness = await res.json();
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingReadiness(readiness);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Training readiness 로드 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Training readiness 로드 실패: ' + (err.message || err), 'error');
     }

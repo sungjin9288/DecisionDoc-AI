@@ -1344,6 +1344,116 @@ def test_document_ops_exports_keep_the_latest_same_tenant_response(page):
     assert "stale failure" not in result["notifications"]
 
 
+def test_document_ops_readiness_keeps_the_latest_same_tenant_response(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pending = [];
+          const readinessUrl = '/api/agent/document-ops/trajectories/training-readiness?limit=20';
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const readiness = (manifestId, exportFilename) => ({
+            status: 'ready_for_training_decision',
+            blockers: [],
+            reviewed_export_count: 1,
+            freeze_count: 1,
+            dry_run_training_approval_count: 0,
+            latest_export_quality: { schema_invalid_count: 0 },
+            eval_plan_coverage: {
+              latest: {
+                suite: 'document_ops_offline_eval',
+                required_metric_count: 2,
+                required_metric_names: ['schema_valid_rate', 'source_reference_coverage'],
+              },
+            },
+            latest_reviewed_export: { filename: exportFilename },
+            latest_dataset_freeze: { manifest_id: manifestId, exists: true },
+            latest_training_approval: {},
+            artifact_chain: {
+              freeze_integrity_verified: true,
+              freeze_matches_latest_export: true,
+              approval_integrity_verified: null,
+              approval_matches_latest_freeze: false,
+              approval_guard_clean: null,
+            },
+            training_guard: {
+              no_training_started: true,
+              training_started_count: 0,
+              provider_job_started_count: 0,
+              model_promotion_allowed_count: 0,
+              external_upload_started: false,
+            },
+          });
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') !== readinessUrl) {
+                return nativeFetch(input, options);
+              }
+              return new Promise(resolve => pending.push(resolve));
+            };
+
+            const olderSuccess = loadDocumentOpsTrainingReadiness();
+            const newerSuccess = loadDocumentOpsTrainingReadiness();
+            while (pending.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[1](response(readiness('freeze-new', 'new.jsonl')));
+            await newerSuccess;
+            pending[0](response(readiness('freeze-old', 'old.jsonl')));
+            await olderSuccess;
+            const successText = document.querySelector(
+              '#document-ops-training-readiness',
+            ).textContent;
+            const successManifest = document.querySelector(
+              '[data-docops-training-approve]',
+            )?.dataset.docopsTrainingApprove || '';
+
+            const olderFailure = loadDocumentOpsTrainingReadiness();
+            const newestSuccess = loadDocumentOpsTrainingReadiness();
+            while (pending.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[3](response(readiness('freeze-newest', 'newest.jsonl')));
+            await newestSuccess;
+            pending[2](response({ detail: 'stale readiness failure' }, 503));
+            await olderFailure;
+            const finalText = document.querySelector(
+              '#document-ops-training-readiness',
+            ).textContent;
+            const finalManifest = document.querySelector(
+              '[data-docops-training-approve]',
+            )?.dataset.docopsTrainingApprove || '';
+            const notifications = document.querySelector(
+              '#notification-container',
+            ).textContent;
+
+            return {
+              successText,
+              successManifest,
+              finalText,
+              finalManifest,
+              notifications,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "new.jsonl" in result["successText"]
+    assert "old.jsonl" not in result["successText"]
+    assert result["successManifest"] == "freeze-new"
+    assert "newest.jsonl" in result["finalText"]
+    assert "Training readiness 로드 실패" not in result["finalText"]
+    assert result["finalManifest"] == "freeze-newest"
+    assert "stale readiness failure" not in result["notifications"]
+
+
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []
