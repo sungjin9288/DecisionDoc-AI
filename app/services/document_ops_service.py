@@ -353,6 +353,17 @@ class DocumentOpsService:
     def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str) -> Path | None:
         return self._trajectory_store.get_training_pre_execution_audit_path(filename, tenant_id=tenant_id)
 
+    def get_training_pre_execution_audit_bytes(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> bytes | None:
+        return self._trajectory_store.get_training_pre_execution_audit_bytes(
+            filename,
+            tenant_id=tenant_id,
+        )
+
     def training_governance_dashboard_summary(
         self,
         *,
@@ -449,8 +460,25 @@ class DocumentOpsService:
     def get_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
         return self._trajectory_store.get_sft_export_path(filename, tenant_id=tenant_id)
 
+    def get_sft_export_bytes(self, filename: str, *, tenant_id: str) -> bytes | None:
+        return self._trajectory_store.get_sft_export_bytes(
+            filename,
+            tenant_id=tenant_id,
+        )
+
     def get_reviewed_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
         return self._trajectory_store.get_reviewed_sft_export_path(filename, tenant_id=tenant_id)
+
+    def get_reviewed_sft_export_bytes(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> bytes | None:
+        return self._trajectory_store.get_reviewed_sft_export_bytes(
+            filename,
+            tenant_id=tenant_id,
+        )
 
     def freeze_sft_export(
         self,

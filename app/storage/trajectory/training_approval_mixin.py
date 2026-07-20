@@ -7,9 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
+from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
 from app.storage.trajectory.redaction import (
-    _file_sha256,
     _is_safe_manifest_id,
     _is_safe_training_approval_filename,
     _now_iso,
@@ -42,10 +41,21 @@ class TrajectoryTrainingApprovalMixin:
             approval_file = str(item.get("approval_file") or "")
             if approval_file in seen_files:
                 continue
-            approval_path = self._resolve_training_approval_path(tenant_id, approval_file)
-            if approval_path and not self._json_artifact_belongs_to_tenant(approval_path, tenant_id):
+            artifact = self._read_training_approval_artifact(
+                tenant_id,
+                approval_file,
+            )
+            if artifact and not self._json_artifact_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
             approval_sha256 = str(item.get("approval_sha256") or "")
+            approval_size = item.get("approval_size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                approval_size,
+            )
             approvals.append(
                 {
                     "approval_id": item.get("approval_id"),
@@ -63,13 +73,18 @@ class TrajectoryTrainingApprovalMixin:
                     "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
                     "approval_sha256": approval_sha256 or None,
                     "integrity_verified": bool(
-                        approval_path
+                        artifact
                         and approval_sha256
-                        and _file_sha256(approval_path) == approval_sha256
+                        and size_matches
+                        and artifact.sha256 == approval_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        approval_size,
                     ),
                     "created_at": item.get("created_at"),
-                    "exists": approval_path is not None,
-                    "size_bytes": approval_path.stat().st_size if approval_path else 0,
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_files.add(approval_file)
@@ -171,13 +186,24 @@ class TrajectoryTrainingApprovalMixin:
             },
         }
         approval_file = f"training_approval_{manifest_id}_{approval_ts}_{approval_id[-8:]}.json"
-        approval_path = self._training_approval_dir(tenant_id) / approval_file
-        atomic_write_text(approval_path, json.dumps(approval, ensure_ascii=False, indent=2, sort_keys=True))
+        artifact = self._publish_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_approvals",
+            filename=approval_file,
+            raw=json.dumps(
+                approval,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8"),
+            content_type="application/json; charset=utf-8",
+        )
         self._append_training_approval_meta(
             tenant_id,
             approval_file,
             approval,
-            approval_sha256=_file_sha256(approval_path),
+            approval_size_bytes=artifact.size_bytes,
+            approval_sha256=artifact.sha256,
         )
         return approval
 
@@ -428,35 +454,68 @@ class TrajectoryTrainingApprovalMixin:
         approval_file: str,
         approval: dict[str, Any],
         *,
+        approval_size_bytes: int,
         approval_sha256: str,
     ) -> None:
+        manifest = (
+            approval.get("manifest")
+            if isinstance(approval.get("manifest"), dict)
+            else {}
+        )
+        guard = (
+            approval.get("execution_guard")
+            if isinstance(approval.get("execution_guard"), dict)
+            else {}
+        )
+        gate = (
+            approval.get("approval_gate")
+            if isinstance(approval.get("approval_gate"), dict)
+            else {}
+        )
+        item = {
+            "tenant_id": tenant_id,
+            "approval_id": approval.get("approval_id"),
+            "approval_file": approval_file,
+            "approval_size_bytes": approval_size_bytes,
+            "approval_sha256": approval_sha256,
+            "manifest_id": manifest.get("manifest_id"),
+            "export_filename": manifest.get("export_filename"),
+            "export_sha256": manifest.get("export_sha256"),
+            "quality_report_sha256": manifest.get(
+                "quality_report_sha256"
+            ),
+            "approver": gate.get("approver"),
+            "dry_run": guard.get("dry_run", True),
+            "training_execution_allowed": guard.get(
+                "training_execution_allowed",
+                False,
+            ),
+            "external_upload_started": guard.get(
+                "external_upload_started",
+                False,
+            ),
+            "provider_api_calls_allowed": guard.get(
+                "provider_api_calls_allowed",
+                False,
+            ),
+            "provider_job_started": guard.get(
+                "provider_job_started",
+                False,
+            ),
+            "model_promotion_allowed": guard.get(
+                "model_promotion_allowed",
+                False,
+            ),
+            "created_at": approval.get("created_at"),
+        }
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id, for_update=True)
-            meta["training_approval_count"] = int(meta.get("training_approval_count") or 0) + 1
-            manifest = approval.get("manifest") if isinstance(approval.get("manifest"), dict) else {}
-            guard = approval.get("execution_guard") if isinstance(approval.get("execution_guard"), dict) else {}
-            gate = approval.get("approval_gate") if isinstance(approval.get("approval_gate"), dict) else {}
-            meta.setdefault("training_approvals", []).append(
-                {
-                    "tenant_id": tenant_id,
-                    "approval_id": approval.get("approval_id"),
-                    "approval_file": approval_file,
-                    "approval_sha256": approval_sha256,
-                    "manifest_id": manifest.get("manifest_id"),
-                    "export_filename": manifest.get("export_filename"),
-                    "export_sha256": manifest.get("export_sha256"),
-                    "quality_report_sha256": manifest.get("quality_report_sha256"),
-                    "approver": gate.get("approver"),
-                    "dry_run": guard.get("dry_run", True),
-                    "training_execution_allowed": guard.get("training_execution_allowed", False),
-                    "external_upload_started": guard.get("external_upload_started", False),
-                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
-                    "provider_job_started": guard.get("provider_job_started", False),
-                    "model_promotion_allowed": guard.get("model_promotion_allowed", False),
-                    "created_at": approval.get("created_at"),
-                }
+            self._append_meta_item(
+                tenant_id=tenant_id,
+                collection="training_approvals",
+                count_key="training_approval_count",
+                item=item,
+                identity_keys=("approval_id", "approval_file"),
             )
-            self._write_meta_unlocked(tenant_id, meta)
 
     def _training_artifact_chain_summary(
         self,
@@ -546,28 +605,35 @@ class TrajectoryTrainingApprovalMixin:
         }
 
     def _resolve_training_approval_path(self, tenant_id: str, filename: str) -> Path | None:
+        return self._local_artifact_path(
+            self._read_training_approval_artifact(tenant_id, filename)
+        )
+
+    def _read_training_approval_artifact(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_training_approval_filename(filename):
             return None
-        approval_dir = self._training_approval_dir(tenant_id)
-        candidate = approval_dir / filename
-        try:
-            base = approval_dir.resolve(strict=True)
-            resolved = candidate.resolve(strict=True)
-        except OSError:
-            return None
-        if not resolved.is_file() or not resolved.is_relative_to(base):
-            return None
-        return resolved
+        return self._read_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_approvals",
+            filename=filename,
+        )
 
     def _load_training_approval_by_file(self, tenant_id: str, filename: str) -> dict[str, Any] | None:
-        approval_path = self._resolve_training_approval_path(tenant_id, filename)
-        if approval_path is None:
+        artifact = self._read_training_approval_artifact(
+            tenant_id,
+            filename,
+        )
+        if artifact is None:
             return None
-        if not self._json_artifact_belongs_to_tenant(approval_path, tenant_id):
+        if not self._json_artifact_belongs_to_tenant(artifact, tenant_id):
             return None
         try:
-            data = json.loads(approval_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            data = json.loads(artifact.text())
+        except json.JSONDecodeError:
             return None
         if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
             return None
@@ -575,14 +641,17 @@ class TrajectoryTrainingApprovalMixin:
 
     def _training_approval_eval_summary(self, tenant_id: str, approval: dict[str, Any]) -> dict[str, Any]:
         approval_file = str(approval.get("approval_file") or "")
-        path = self._resolve_training_approval_path(tenant_id, approval_file)
+        artifact = self._read_training_approval_artifact(
+            tenant_id,
+            approval_file,
+        )
         data = self._load_training_approval_by_file(tenant_id, approval_file) or {}
         eval_plan = data.get("eval_plan") if isinstance(data.get("eval_plan"), dict) else {}
         required_metrics = eval_plan.get("required_metrics") if isinstance(eval_plan.get("required_metrics"), dict) else {}
         return {
             "approval_id": approval.get("approval_id"),
             "approval_file": approval_file,
-            "exists": path is not None,
+            "exists": artifact is not None,
             "has_eval_plan": bool(eval_plan),
             "suite": eval_plan.get("suite"),
             "has_required_metrics": bool(required_metrics),

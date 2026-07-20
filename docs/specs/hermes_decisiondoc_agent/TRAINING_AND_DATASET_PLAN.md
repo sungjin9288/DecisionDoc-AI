@@ -193,7 +193,7 @@ Positive scoring:
 - Add trajectory capture for reviewed document work.
 - Keep existing model/provider behavior unchanged.
 - Export examples for inspection only.
-- Preserve the checksum-bound local governance chain through freeze, approval, request, and audit.
+- Preserve the checksum-bound selected-backend governance chain through freeze, approval, request, and audit.
 
 ### Phase 2: Small SFT Experiment
 

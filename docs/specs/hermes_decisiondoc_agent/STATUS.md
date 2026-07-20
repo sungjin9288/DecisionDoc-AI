@@ -10,8 +10,9 @@ dependency가 아니다.
 
 - DecisionDoc의 route, service, provider, storage, tenant 경계를 유지한다.
 - 외부 Hermes runtime, terminal/browser execution, remote tool execution을 연결하지 않는다.
-- trajectory와 reviewed SFT dataset은 로컬 검토 및 품질 증적까지만 다룬다.
-- trajectory/review JSONL은 선택된 local/S3 `StateBackend`의 conditional create/CAS authority를 사용하되 export/freeze/training handoff artifact는 local filesystem 경계로 유지한다.
+- trajectory와 reviewed SFT dataset은 외부 실행 없는 검토 및 품질 증적까지만 다룬다.
+- trajectory/review JSONL과 governance metadata index는 선택된 local/S3 `StateBackend`에서 각각 conditional create/CAS authority를 가진다.
+- export/freeze/approval/request/audit artifact는 같은 backend에 immutable object로 발행하고 metadata의 identity·size·SHA-256 binding으로 검증한다.
 - training provider adapter는 `stub_only`이며 upload, provider job, training, model promotion을
   실행하지 않는다.
 - 유료 provider 호출과 AWS runtime 검증은 별도 승인 작업으로 분리한다.
@@ -25,7 +26,7 @@ dependency가 아니다.
 | QA and eval | `app/evals/document_ops/` | task-specific hard gates, stable issue code, affected field, remediation hint와 rubric |
 | API | `app/routers/document_ops_agent.py` | tenant-aware run, review, export, freeze, approval, audit, governance endpoints |
 | Service | `app/services/document_ops_service.py` | agent와 trajectory storage를 route에서 분리해 orchestration |
-| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/core_mixin.py`, `app/storage/trajectory/state_mixin.py` | tenant-scoped JSONL conditional create/CAS, review, stats; local export/freeze/approval records |
+| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/core_mixin.py`, `app/storage/trajectory/state_mixin.py`, `app/storage/trajectory/artifact_state_mixin.py` | tenant-scoped trajectory/metadata CAS, review, stats; selected-backend immutable governance artifact |
 | Training adapter | `app/services/document_ops_training_adapter.py` | disabled contract와 read-only rehearsal만 제공 |
 
 The implemented flow is:
@@ -40,12 +41,12 @@ request
   -> tenant-scoped TrajectoryStore
   -> human review
   -> reviewed SFT export
-  -> dataset freeze and local governance evidence
+  -> dataset freeze and selected-backend governance evidence
 ```
 
 ## Review And Dataset Flow
 
-The local workflow supports:
+The no-execution governance workflow supports:
 
 1. Capture a redacted trajectory from a DocumentOps run.
 2. Record a named human review with bounded notes, quality score, redacted metadata, version, and history.
@@ -62,7 +63,7 @@ provider training API, start a training job, or promote a model.
 
 ## Local Browser Flow
 
-The static DocumentOps workbench now follows the same local governance chain as the API:
+The static DocumentOps workbench now follows the same no-execution governance chain as the API:
 
 - reviewers, freeze reviewers, dry-run approvers, execution requesters, and auditors are entered
   explicitly instead of falling back to a generic operator identity
@@ -172,10 +173,10 @@ pytest -q \
   tests/storage/test_trajectory_store_integrity.py
 ```
 
-The six files currently define 85 test functions. Reproduce the source count with:
+The seven files currently define 94 test functions. Reproduce the source count with:
 
 ```bash
-python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py","tests/storage/test_trajectory_store_integrity.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
+python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py","tests/storage/test_trajectory_store_integrity.py","tests/storage/test_trajectory_artifact_authority.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
 ```
 
 Integration coverage also exists in:
@@ -190,7 +191,9 @@ Last local verification on 2026-07-20:
 
 - trajectory/API focused gate: 79 passed, 1 warning
 - DocumentOps, report-workflow integration, and infrastructure expansion: 280 passed, 1 warning
-- full repository non-live gate: 4200 passed, 2 skipped, 4 deselected, 1 warning
+- governance index/artifact storage gate: 82 passed
+- governance index/artifact and DocumentOps caller expansion: 296 passed, 1 warning
+- full repository non-live gate: 4212 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

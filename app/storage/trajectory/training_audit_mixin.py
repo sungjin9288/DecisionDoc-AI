@@ -7,8 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _dedupe, _file_sha256, _is_safe_training_audit_filename, _now_iso
+from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
+from app.storage.trajectory.redaction import (
+    _dedupe,
+    _is_safe_training_audit_filename,
+    _now_iso,
+)
 
 
 class TrajectoryTrainingAuditMixin:
@@ -258,10 +262,21 @@ class TrajectoryTrainingAuditMixin:
             audit_file = str(item.get("audit_file") or "")
             if audit_file in seen_files:
                 continue
-            audit_path = self._resolve_training_audit_path(tenant_id, audit_file)
-            if audit_path and not self._json_artifact_belongs_to_tenant(audit_path, tenant_id):
+            artifact = self._read_training_audit_artifact(
+                tenant_id,
+                audit_file,
+            )
+            if artifact and not self._json_artifact_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
             audit_sha256 = str(item.get("audit_sha256") or "")
+            audit_size = item.get("audit_size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                audit_size,
+            )
             audits.append(
                 {
                     "audit_id": item.get("audit_id"),
@@ -279,13 +294,18 @@ class TrajectoryTrainingAuditMixin:
                     "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
                     "audit_sha256": audit_sha256 or None,
                     "integrity_verified": bool(
-                        audit_path
+                        artifact
                         and audit_sha256
-                        and _file_sha256(audit_path) == audit_sha256
+                        and size_matches
+                        and artifact.sha256 == audit_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        audit_size,
                     ),
                     "created_at": item.get("created_at"),
-                    "exists": audit_path is not None,
-                    "size_bytes": audit_path.stat().st_size if audit_path else 0,
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_files.add(audit_file)
@@ -369,20 +389,48 @@ class TrajectoryTrainingAuditMixin:
             },
         }
         audit_file = f"training_pre_execution_audit_{audit_id}_{audit_ts}.json"
-        audit_path = self._training_audit_dir(tenant_id) / audit_file
         audit_record["audit_file"] = audit_file
-        atomic_write_text(audit_path, json.dumps(audit_record, ensure_ascii=False, indent=2, sort_keys=True))
+        artifact = self._publish_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_audits",
+            filename=audit_file,
+            raw=json.dumps(
+                audit_record,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8"),
+            content_type="application/json; charset=utf-8",
+        )
         self._append_training_pre_execution_audit_meta(
             tenant_id,
             audit_file,
             audit_record,
-            audit_sha256=_file_sha256(audit_path),
+            audit_size_bytes=artifact.size_bytes,
+            audit_sha256=artifact.sha256,
         )
         return audit_record
 
     def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str) -> Path | None:
-        """Resolve a metadata-safe pre-execution audit artifact path."""
-        return self._resolve_training_audit_path(tenant_id, filename)
+        """Return a local audit path when the selected backend is local."""
+        artifact = self._get_training_audit_artifact(
+            filename,
+            tenant_id=tenant_id,
+        )
+        return self._local_artifact_path(artifact)
+
+    def get_training_pre_execution_audit_bytes(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> bytes | None:
+        """Return a metadata-recorded audit from the selected backend."""
+        artifact = self._get_training_audit_artifact(
+            filename,
+            tenant_id=tenant_id,
+        )
+        return artifact.raw if artifact else None
 
     def training_governance_dashboard_summary(
         self,
@@ -508,51 +556,86 @@ class TrajectoryTrainingAuditMixin:
         audit_file: str,
         audit_record: dict[str, Any],
         *,
+        audit_size_bytes: int,
         audit_sha256: str,
     ) -> None:
+        gate = (
+            audit_record.get("audit_gate")
+            if isinstance(audit_record.get("audit_gate"), dict)
+            else {}
+        )
+        guard = (
+            audit_record.get("execution_guard")
+            if isinstance(audit_record.get("execution_guard"), dict)
+            else {}
+        )
+        checklist = (
+            audit_record.get("checklist_snapshot")
+            if isinstance(audit_record.get("checklist_snapshot"), dict)
+            else {}
+        )
+        packet = (
+            checklist.get("human_review_packet")
+            if isinstance(checklist.get("human_review_packet"), dict)
+            else {}
+        )
+        dataset = (
+            packet.get("dataset")
+            if isinstance(packet.get("dataset"), dict)
+            else {}
+        )
+        plan = (
+            checklist.get("training_plan_preview")
+            if isinstance(checklist.get("training_plan_preview"), dict)
+            else {}
+        )
+        job_spec = (
+            plan.get("job_spec")
+            if isinstance(plan.get("job_spec"), dict)
+            else {}
+        )
+        item = {
+            "tenant_id": tenant_id,
+            "audit_id": audit_record.get("audit_id"),
+            "audit_file": audit_file,
+            "audit_size_bytes": audit_size_bytes,
+            "audit_sha256": audit_sha256,
+            "status": gate.get("status"),
+            "auditor": gate.get("auditor"),
+            "request_id": packet.get("latest_request_id"),
+            "manifest_id": dataset.get("freeze_manifest_id"),
+            "provider": job_spec.get("provider"),
+            "base_model": job_spec.get("base_model"),
+            "training_execution_allowed": guard.get(
+                "training_execution_allowed",
+                False,
+            ),
+            "provider_job_started": guard.get(
+                "provider_job_started",
+                False,
+            ),
+            "external_upload_started": guard.get(
+                "external_upload_started",
+                False,
+            ),
+            "provider_api_calls_allowed": guard.get(
+                "provider_api_calls_allowed",
+                False,
+            ),
+            "model_promotion_allowed": guard.get(
+                "model_promotion_allowed",
+                False,
+            ),
+            "created_at": audit_record.get("created_at"),
+        }
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id, for_update=True)
-            meta["training_pre_execution_audit_count"] = int(meta.get("training_pre_execution_audit_count") or 0) + 1
-            gate = audit_record.get("audit_gate") if isinstance(audit_record.get("audit_gate"), dict) else {}
-            guard = audit_record.get("execution_guard") if isinstance(audit_record.get("execution_guard"), dict) else {}
-            checklist = (
-                audit_record.get("checklist_snapshot")
-                if isinstance(audit_record.get("checklist_snapshot"), dict)
-                else {}
+            self._append_meta_item(
+                tenant_id=tenant_id,
+                collection="training_pre_execution_audits",
+                count_key="training_pre_execution_audit_count",
+                item=item,
+                identity_keys=("audit_id", "audit_file"),
             )
-            packet = (
-                checklist.get("human_review_packet")
-                if isinstance(checklist.get("human_review_packet"), dict)
-                else {}
-            )
-            dataset = packet.get("dataset") if isinstance(packet.get("dataset"), dict) else {}
-            plan = (
-                checklist.get("training_plan_preview")
-                if isinstance(checklist.get("training_plan_preview"), dict)
-                else {}
-            )
-            job_spec = plan.get("job_spec") if isinstance(plan.get("job_spec"), dict) else {}
-            meta.setdefault("training_pre_execution_audits", []).append(
-                {
-                    "tenant_id": tenant_id,
-                    "audit_id": audit_record.get("audit_id"),
-                    "audit_file": audit_file,
-                    "audit_sha256": audit_sha256,
-                    "status": gate.get("status"),
-                    "auditor": gate.get("auditor"),
-                    "request_id": packet.get("latest_request_id"),
-                    "manifest_id": dataset.get("freeze_manifest_id"),
-                    "provider": job_spec.get("provider"),
-                    "base_model": job_spec.get("base_model"),
-                    "training_execution_allowed": guard.get("training_execution_allowed", False),
-                    "provider_job_started": guard.get("provider_job_started", False),
-                    "external_upload_started": guard.get("external_upload_started", False),
-                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
-                    "model_promotion_allowed": guard.get("model_promotion_allowed", False),
-                    "created_at": audit_record.get("created_at"),
-                }
-            )
-            self._write_meta_unlocked(tenant_id, meta)
 
     def _training_audit_chain_summary(
         self,
@@ -633,28 +716,82 @@ class TrajectoryTrainingAuditMixin:
         }
 
     def _resolve_training_audit_path(self, tenant_id: str, filename: str) -> Path | None:
+        return self._local_artifact_path(
+            self._read_training_audit_artifact(tenant_id, filename)
+        )
+
+    def _read_training_audit_artifact(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_training_audit_filename(filename):
             return None
-        audit_dir = self._training_audit_dir(tenant_id)
-        candidate = audit_dir / filename
-        try:
-            base = audit_dir.resolve(strict=True)
-            resolved = candidate.resolve(strict=True)
-        except OSError:
+        return self._read_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_audits",
+            filename=filename,
+        )
+
+    def _get_training_audit_artifact(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> TrajectoryArtifact | None:
+        if not _is_safe_training_audit_filename(filename):
             return None
-        if not resolved.is_file() or not resolved.is_relative_to(base):
+        with self._lock:
+            meta = self._load_meta_unlocked(tenant_id)
+        audits = self._owned_meta_items(
+            meta,
+            "training_pre_execution_audits",
+            tenant_id,
+        )
+        metadata = next(
+            (
+                item
+                for item in audits
+                if item.get("audit_file") == filename
+            ),
+            None,
+        )
+        if metadata is None:
             return None
-        return resolved
+        artifact = self._read_training_audit_artifact(
+            tenant_id,
+            filename,
+        )
+        if artifact and not self._json_artifact_belongs_to_tenant(
+            artifact,
+            tenant_id,
+        ):
+            return None
+        expected_sha256 = str(metadata.get("audit_sha256") or "")
+        expected_size = metadata.get("audit_size_bytes")
+        if artifact and (
+            not expected_sha256
+            or not self._artifact_size_matches(
+                artifact,
+                expected_size,
+            )
+            or artifact.sha256 != expected_sha256
+        ):
+            return None
+        return artifact
 
     def _load_training_audit_by_file(self, tenant_id: str, filename: str) -> dict[str, Any] | None:
-        audit_path = self._resolve_training_audit_path(tenant_id, filename)
-        if audit_path is None:
+        artifact = self._read_training_audit_artifact(
+            tenant_id,
+            filename,
+        )
+        if artifact is None:
             return None
-        if not self._json_artifact_belongs_to_tenant(audit_path, tenant_id):
+        if not self._json_artifact_belongs_to_tenant(artifact, tenant_id):
             return None
         try:
-            data = json.loads(audit_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            data = json.loads(artifact.text())
+        except json.JSONDecodeError:
             return None
         if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
             return None

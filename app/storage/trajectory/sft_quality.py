@@ -320,7 +320,10 @@ def _quality_recommendations(report: dict[str, Any]) -> list[str]:
     provenance = report.get("provenance_coverage") if isinstance(report.get("provenance_coverage"), dict) else {}
     if provenance.get("complete_records", 0) < report.get("jsonl_record_count", 0):
         recommendations.append("restore_review_provenance_before_training")
-    if report.get("content_sha256_matches_metadata") is False:
+    if (
+        report.get("content_sha256_matches_metadata") is False
+        or report.get("size_bytes_matches_metadata") is False
+    ):
         recommendations.append("regenerate_export_after_integrity_check")
     if report.get("eligible_count") == 0 or report.get("jsonl_record_count") == 0:
         recommendations.append("collect_reviewed_accepted_trajectories")

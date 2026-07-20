@@ -6,7 +6,6 @@ from typing import Any
 
 from app.storage.trajectory.redaction import _now_iso
 from app.storage.trajectory.signoff import (
-    _list_reviewer_signoff_record_paths,
     _reviewer_signoff_summary_blockers,
     _summarize_reviewer_signoff_record,
 )
@@ -21,21 +20,46 @@ class TrajectorySignoffMixin:
         tenant_id: str,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """Summarize tenant-local reviewer sign-off JSON records without side effects."""
-        signoff_dir = self._reviewer_signoff_dir(tenant_id)
-        paths = _list_reviewer_signoff_record_paths(signoff_dir, limit=limit)
+        """Summarize selected-backend reviewer sign-off records without side effects."""
+        relative_paths = self._list_artifact_paths(
+            tenant_id=tenant_id,
+            directory="trajectory_reviewer_signoffs",
+        )
+        prefix = self._artifact_relative_path(
+            tenant_id,
+            "trajectory_reviewer_signoffs",
+            "_",
+        ).removesuffix("_")
+        filenames = [
+            relative_path.removeprefix(prefix)
+            for relative_path in relative_paths
+            if relative_path.startswith(prefix)
+            and "/" not in relative_path.removeprefix(prefix)
+            and relative_path.endswith(".json")
+        ][:limit]
         records: list[dict[str, Any]] = []
         load_errors: list[dict[str, str]] = []
-        for path in paths:
+        for filename in filenames:
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
+                artifact = self._read_artifact(
+                    tenant_id=tenant_id,
+                    directory="trajectory_reviewer_signoffs",
+                    filename=filename,
+                )
+                if artifact is None:
+                    continue
+                data = json.loads(artifact.text())
                 if not isinstance(data, dict):
                     raise ValueError("sign-off record must be a JSON object")
                 if data.get("tenant_id") not in (None, tenant_id):
                     continue
-                records.append(_summarize_reviewer_signoff_record(path.name, data))
-            except (OSError, ValueError, json.JSONDecodeError) as exc:
-                load_errors.append({"filename": path.name, "error": str(exc)})
+                records.append(
+                    _summarize_reviewer_signoff_record(filename, data)
+                )
+            except (ValueError, json.JSONDecodeError) as exc:
+                load_errors.append(
+                    {"filename": filename, "error": str(exc)}
+                )
 
         completed_count = sum(1 for item in records if item["completed_validation"]["valid"])
         pending_count = sum(
@@ -76,8 +100,12 @@ class TrajectorySignoffMixin:
             "tenant_id": tenant_id,
             "generated_at": _now_iso(),
             "read_only": True,
-            "summary_source": "tenant_local_reviewer_signoff_records",
-            "record_directory_exists": signoff_dir.is_dir(),
+            "summary_source": "selected_backend_reviewer_signoff_records",
+            "record_directory_exists": bool(filenames)
+            or (
+                self._backend.kind == "local"
+                and self._reviewer_signoff_dir(tenant_id).is_dir()
+            ),
             "record_count": len(records),
             "load_error_count": len(load_errors),
             "overall_status": overall_status,

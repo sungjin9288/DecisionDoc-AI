@@ -7,8 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _file_sha256, _is_safe_freeze_filename, _json_sha256
+from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
+from app.storage.trajectory.redaction import (
+    _is_safe_freeze_filename,
+    _json_sha256,
+)
 
 
 class TrajectoryFreezeMixin:
@@ -32,10 +35,21 @@ class TrajectoryFreezeMixin:
             manifest_file = str(item.get("manifest_file") or "")
             if manifest_file in seen_manifest_files:
                 continue
-            manifest_path = self._resolve_freeze_path(tenant_id, manifest_file)
-            if manifest_path and not self._json_artifact_belongs_to_tenant(manifest_path, tenant_id):
+            artifact = self._read_freeze_artifact(
+                tenant_id,
+                manifest_file,
+            )
+            if artifact and not self._json_artifact_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
             manifest_sha256 = str(item.get("manifest_sha256") or "")
+            manifest_size = item.get("manifest_size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                manifest_size,
+            )
             freezes.append(
                 {
                     "manifest_id": item.get("manifest_id"),
@@ -46,16 +60,21 @@ class TrajectoryFreezeMixin:
                     "quality_report_sha256": item.get("quality_report_sha256"),
                     "manifest_sha256": manifest_sha256 or None,
                     "integrity_verified": bool(
-                        manifest_path
+                        artifact
                         and manifest_sha256
-                        and _file_sha256(manifest_path) == manifest_sha256
+                        and size_matches
+                        and artifact.sha256 == manifest_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        manifest_size,
                     ),
                     "training_allowed": bool(item.get("training_allowed", False)),
                     "training_started": bool(item.get("training_started", False)),
                     "reviewer": item.get("reviewer"),
                     "created_at": item.get("created_at"),
-                    "exists": manifest_path is not None,
-                    "size_bytes": manifest_path.stat().st_size if manifest_path else 0,
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_manifest_files.add(manifest_file)
@@ -79,8 +98,13 @@ class TrajectoryFreezeMixin:
         reviewer = reviewer.strip()
         if not reviewer:
             raise ValueError("reviewer is required.")
-        export_path = self.get_sft_export_path(filename, tenant_id=tenant_id)
-        if export_path is None:
+        export_artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=False,
+            require_integrity=False,
+        )
+        if export_artifact is None:
             return None
         quality_report = self.inspect_sft_export_quality(filename, tenant_id=tenant_id, sample_limit=sample_limit)
         if quality_report is None:
@@ -92,15 +116,15 @@ class TrajectoryFreezeMixin:
         manifest_ts = now.strftime("%Y%m%dT%H%M%S")
         manifest_id = f"dsf_{uuid.uuid4().hex}"
         quality_report_sha256 = _json_sha256(quality_report)
-        export_sha256 = _file_sha256(export_path)
+        export_sha256 = export_artifact.sha256
         manifest = {
             "schema_version": "document_ops_dataset_freeze_v1",
             "manifest_id": manifest_id,
             "created_at": created_at,
             "tenant_id": tenant_id,
             "export": {
-                "filename": export_path.name,
-                "size_bytes": export_path.stat().st_size,
+                "filename": export_artifact.filename,
+                "size_bytes": export_artifact.size_bytes,
                 "sha256": export_sha256,
                 "record_count": int(quality_report.get("jsonl_record_count") or 0),
             },
@@ -125,14 +149,29 @@ class TrajectoryFreezeMixin:
                 "reason": "Dataset freeze only. Model training or promotion requires a separate explicit approval workflow.",
             },
         }
-        manifest_file = f"freeze_{export_path.stem}_{manifest_ts}_{manifest_id[-8:]}.json"
-        manifest_path = self._freeze_dir(tenant_id) / manifest_file
-        atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
+        export_stem = Path(export_artifact.filename).stem
+        manifest_file = (
+            f"freeze_{export_stem}_{manifest_ts}_{manifest_id[-8:]}.json"
+        )
+        raw = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ).encode("utf-8")
+        artifact = self._publish_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_freezes",
+            filename=manifest_file,
+            raw=raw,
+            content_type="application/json; charset=utf-8",
+        )
         self._append_freeze_meta(
             tenant_id,
             manifest_file,
             manifest,
-            manifest_sha256=_file_sha256(manifest_path),
+            manifest_size_bytes=artifact.size_bytes,
+            manifest_sha256=artifact.sha256,
         )
         return manifest
 
@@ -142,28 +181,44 @@ class TrajectoryFreezeMixin:
         manifest_file: str,
         manifest: dict[str, Any],
         *,
+        manifest_size_bytes: int,
         manifest_sha256: str,
     ) -> None:
+        item = {
+            "tenant_id": tenant_id,
+            "manifest_id": manifest.get("manifest_id"),
+            "manifest_file": manifest_file,
+            "manifest_size_bytes": manifest_size_bytes,
+            "manifest_sha256": manifest_sha256,
+            "export_filename": (manifest.get("export") or {}).get(
+                "filename"
+            ),
+            "export_sha256": (manifest.get("export") or {}).get("sha256"),
+            "record_count": (manifest.get("export") or {}).get(
+                "record_count"
+            ),
+            "quality_report_sha256": (
+                manifest.get("quality_report") or {}
+            ).get("sha256"),
+            "training_allowed": (manifest.get("training_guard") or {}).get(
+                "training_allowed",
+                False,
+            ),
+            "training_started": (manifest.get("training_guard") or {}).get(
+                "training_started",
+                False,
+            ),
+            "reviewer": (manifest.get("review_gate") or {}).get("reviewer"),
+            "created_at": manifest.get("created_at"),
+        }
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id, for_update=True)
-            meta["freeze_count"] = int(meta.get("freeze_count") or 0) + 1
-            meta.setdefault("freezes", []).append(
-                {
-                    "tenant_id": tenant_id,
-                    "manifest_id": manifest.get("manifest_id"),
-                    "manifest_file": manifest_file,
-                    "manifest_sha256": manifest_sha256,
-                    "export_filename": (manifest.get("export") or {}).get("filename"),
-                    "export_sha256": (manifest.get("export") or {}).get("sha256"),
-                    "record_count": (manifest.get("export") or {}).get("record_count"),
-                    "quality_report_sha256": (manifest.get("quality_report") or {}).get("sha256"),
-                    "training_allowed": (manifest.get("training_guard") or {}).get("training_allowed", False),
-                    "training_started": (manifest.get("training_guard") or {}).get("training_started", False),
-                    "reviewer": (manifest.get("review_gate") or {}).get("reviewer"),
-                    "created_at": manifest.get("created_at"),
-                }
+            self._append_meta_item(
+                tenant_id=tenant_id,
+                collection="freezes",
+                count_key="freeze_count",
+                item=item,
+                identity_keys=("manifest_id", "manifest_file"),
             )
-            self._write_meta_unlocked(tenant_id, meta)
 
     def _load_freeze_manifest_by_id(self, manifest_id: str, *, tenant_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -176,29 +231,33 @@ class TrajectoryFreezeMixin:
                 break
         if not manifest_file:
             return None
-        manifest_path = self._resolve_freeze_path(tenant_id, manifest_file)
-        if manifest_path is None:
+        artifact = self._read_freeze_artifact(tenant_id, manifest_file)
+        if artifact is None:
             return None
-        if not self._json_artifact_belongs_to_tenant(manifest_path, tenant_id):
+        if not self._json_artifact_belongs_to_tenant(artifact, tenant_id):
             return None
         try:
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            data = json.loads(artifact.text())
+        except (json.JSONDecodeError, ValueError):
             return None
         if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
             return None
         return data
 
     def _resolve_freeze_path(self, tenant_id: str, filename: str) -> Path | None:
+        return self._local_artifact_path(
+            self._read_freeze_artifact(tenant_id, filename)
+        )
+
+    def _read_freeze_artifact(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_freeze_filename(filename):
             return None
-        freeze_dir = self._freeze_dir(tenant_id)
-        candidate = freeze_dir / filename
-        try:
-            base = freeze_dir.resolve(strict=True)
-            resolved = candidate.resolve(strict=True)
-        except OSError:
-            return None
-        if not resolved.is_file() or not resolved.is_relative_to(base):
-            return None
-        return resolved
+        return self._read_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_freezes",
+            filename=filename,
+        )

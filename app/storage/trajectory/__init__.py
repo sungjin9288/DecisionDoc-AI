@@ -5,11 +5,12 @@ tenant-scoped JSONL file, then exports reviewed/accepted examples into
 SFT-compatible message records only when explicitly requested.
 
 The implementation is split into focused mixins and helper modules (core_mixin,
-sft_export_mixin, freeze_mixin, training_approval_mixin, training_execution_mixin,
-training_audit_mixin, signoff_mixin, plus the standalone helper modules
-constants, redaction, sft_quality, training_readiness, signoff). This package
-composes them into the single public ``TrajectoryStore`` class and re-exports
-every public and internal symbol so existing
+artifact_state_mixin, sft_export_mixin, freeze_mixin,
+training_approval_mixin, training_execution_mixin, training_audit_mixin,
+signoff_mixin, plus the standalone helper modules constants, redaction,
+sft_quality, training_readiness, signoff). This package composes them into the
+single public ``TrajectoryStore`` class and re-exports every public and internal
+symbol so existing
 ``from app.storage.trajectory_store import X`` imports keep working unchanged.
 """
 from __future__ import annotations

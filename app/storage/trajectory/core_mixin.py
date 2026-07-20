@@ -8,9 +8,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
 from app.storage.state_backend import StateBackend, get_state_backend
 from app.storage.state_lock import state_lock
+from app.storage.trajectory.artifact_state_mixin import (
+    TrajectoryArtifactStateMixin,
+)
 from app.storage.trajectory.redaction import _now_iso, _redact_input
 from app.storage.trajectory.sft_quality import _is_accepted, _sft_export_blockers, _source_references
 from app.storage.trajectory.state_mixin import (
@@ -59,7 +61,10 @@ def _trajectory_search_text(record: dict[str, Any]) -> str:
     return "\n".join(str(value) for value in fields if value).casefold()
 
 
-class TrajectoryCoreMixin(TrajectoryStateMixin):
+class TrajectoryCoreMixin(
+    TrajectoryArtifactStateMixin,
+    TrajectoryStateMixin,
+):
     """Init, save/get/review, stats, and shared tenant file-path plumbing."""
 
     def __init__(
@@ -482,70 +487,6 @@ class TrajectoryCoreMixin(TrajectoryStateMixin):
             }
         return sft
 
-    def _load_meta_unlocked(
-        self,
-        tenant_id: str,
-        *,
-        for_update: bool = False,
-    ) -> dict[str, Any]:
-        empty = {"tenant_id": tenant_id, "export_count": 0, "exports": []}
-        path = self._meta_path(tenant_id)
-        if not path.exists():
-            return empty
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return empty
-        if not isinstance(data, dict):
-            return empty
-        if data.get("tenant_id") not in (None, tenant_id):
-            if for_update:
-                raise ValueError("trajectory metadata tenant_id does not match the requested tenant")
-            return empty
-        result = dict(data)
-        result["tenant_id"] = tenant_id
-        return result
-
-    def _write_meta_unlocked(self, tenant_id: str, meta: dict[str, Any]) -> None:
-        if meta.get("tenant_id") != tenant_id:
-            raise ValueError("trajectory metadata tenant_id does not match the requested tenant")
-        atomic_write_text(
-            self._meta_path(tenant_id),
-            json.dumps(meta, ensure_ascii=False, indent=2, sort_keys=True),
-        )
-
-    @staticmethod
-    def _json_artifact_belongs_to_tenant(path: Path, tenant_id: str) -> bool:
-        """Reject explicit foreign ownership while retaining legacy artifacts."""
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return True
-        if not isinstance(data, dict):
-            return True
-        return data.get("tenant_id") in (None, tenant_id)
-
-    @staticmethod
-    def _jsonl_export_belongs_to_tenant(path: Path, tenant_id: str) -> bool:
-        """Reject an export if any parseable row declares another tenant."""
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return True
-        for line in lines:
-            if not line.strip():
-                continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(data, dict):
-                continue
-            metadata = data.get("metadata")
-            if isinstance(metadata, dict) and metadata.get("tenant_id") not in (None, tenant_id):
-                return False
-        return True
-
     @staticmethod
     def _owned_meta_items(
         meta: dict[str, Any],
@@ -563,7 +504,7 @@ class TrajectoryCoreMixin(TrajectoryStateMixin):
         ]
 
     def _tenant_dir(self, tenant_id: str) -> Path:
-        return self._base_dir / "tenants" / _tenant_component(tenant_id)
+        return self._artifact_directory_path(tenant_id, "")
 
     def _jsonl_relative_path(self, tenant_id: str) -> str:
         return f"tenants/{_tenant_component(tenant_id)}/trajectories.jsonl"

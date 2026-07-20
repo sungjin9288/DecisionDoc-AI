@@ -7,9 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
+from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
 from app.storage.trajectory.redaction import (
-    _file_sha256,
     _is_safe_export_filename,
     _json_sha256,
     _now_iso,
@@ -110,9 +109,18 @@ class TrajectorySftExportMixin:
                 continue
             if task_type is not None and item.get("task_type") != task_type:
                 continue
-            path = self._resolve_export_path(tenant_id, filename)
-            if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+            artifact = self._read_export_artifact(tenant_id, filename)
+            if artifact and not self._jsonl_export_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
+            expected_sha256 = str(item.get("content_sha256") or "")
+            expected_size = item.get("size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                expected_size,
+            )
             exports.append(
                 {
                     "filename": filename,
@@ -124,8 +132,18 @@ class TrajectorySftExportMixin:
                     "export_fingerprint": item.get("export_fingerprint"),
                     "content_sha256": item.get("content_sha256"),
                     "source_trajectory_ids": item.get("source_trajectory_ids") or [],
-                    "exists": path is not None,
-                    "size_bytes": path.stat().st_size if path else 0,
+                    "integrity_verified": bool(
+                        artifact
+                        and expected_sha256
+                        and size_matches
+                        and artifact.sha256 == expected_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        expected_size,
+                    ),
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_filenames.add(filename)
@@ -162,9 +180,18 @@ class TrajectorySftExportMixin:
                 continue
             if task_type is not None and item.get("task_type") != task_type:
                 continue
-            path = self._resolve_export_path(tenant_id, filename)
-            if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+            artifact = self._read_export_artifact(tenant_id, filename)
+            if artifact and not self._jsonl_export_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
+            expected_sha256 = str(item.get("content_sha256") or "")
+            expected_size = item.get("size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                expected_size,
+            )
             exports.append(
                 {
                     "filename": filename,
@@ -176,8 +203,18 @@ class TrajectorySftExportMixin:
                     "export_fingerprint": item.get("export_fingerprint"),
                     "content_sha256": item.get("content_sha256"),
                     "source_trajectory_ids": item.get("source_trajectory_ids") or [],
-                    "exists": path is not None,
-                    "size_bytes": path.stat().st_size if path else 0,
+                    "integrity_verified": bool(
+                        artifact
+                        and expected_sha256
+                        and size_matches
+                        and artifact.sha256 == expected_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        expected_size,
+                    ),
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_filenames.add(filename)
@@ -186,42 +223,110 @@ class TrajectorySftExportMixin:
         return exports
 
     def get_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
-        """Resolve a metadata-recorded SFT export filename to a safe path."""
-        if not _is_safe_export_filename(filename):
-            raise ValueError("Invalid export filename.")
-        with self._lock:
-            meta = self._load_meta_unlocked(tenant_id)
-        raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
-        known = {
-            str(item.get("filename") or "")
-            for item in raw_exports
-            if isinstance(item, dict)
-        }
-        if filename not in known:
-            return None
-        path = self._resolve_export_path(tenant_id, filename)
-        if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
-            return None
-        return path
+        """Return a local path for a verified export when using a local backend."""
+        artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=False,
+            require_integrity=True,
+        )
+        return self._local_artifact_path(artifact)
 
-    def get_reviewed_sft_export_path(self, filename: str, *, tenant_id: str) -> Path | None:
-        """Resolve a reviewed-only SFT export filename to a safe path."""
+    def get_sft_export_bytes(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> bytes | None:
+        """Return a metadata-recorded export from the selected backend."""
+        artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=False,
+            require_integrity=True,
+        )
+        return artifact.raw if artifact else None
+
+    def get_reviewed_sft_export_path(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> Path | None:
+        """Return a local path for a reviewed export on a local backend."""
+        artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=True,
+            require_integrity=True,
+        )
+        return self._local_artifact_path(artifact)
+
+    def get_reviewed_sft_export_bytes(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+    ) -> bytes | None:
+        """Return a reviewed-only export from the selected backend."""
+        artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=True,
+            require_integrity=True,
+        )
+        return artifact.raw if artifact else None
+
+    def _get_sft_export_artifact(
+        self,
+        filename: str,
+        *,
+        tenant_id: str,
+        reviewed_only: bool,
+        require_integrity: bool,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_export_filename(filename):
             raise ValueError("Invalid export filename.")
         with self._lock:
             meta = self._load_meta_unlocked(tenant_id)
         raw_exports = self._owned_meta_items(meta, "exports", tenant_id)
-        reviewed_known = {
-            str(item.get("filename") or "")
-            for item in raw_exports
-            if isinstance(item, dict) and item.get("accepted_only") is True
-        }
-        if filename not in reviewed_known:
+        known = next(
+            (
+                item
+                for item in raw_exports
+                if isinstance(item, dict)
+                and item.get("filename") == filename
+                and (
+                    not reviewed_only
+                    or item.get("accepted_only") is True
+                )
+            ),
+            None,
+        )
+        if known is None:
             return None
-        path = self._resolve_export_path(tenant_id, filename)
-        if path and not self._jsonl_export_belongs_to_tenant(path, tenant_id):
+        artifact = self._read_export_artifact(tenant_id, filename)
+        if artifact and not self._jsonl_export_belongs_to_tenant(
+            artifact,
+            tenant_id,
+        ):
             return None
-        return path
+        expected_sha256 = str(known.get("content_sha256") or "")
+        expected_size = known.get("size_bytes")
+        if (
+            artifact
+            and require_integrity
+            and (
+                not expected_sha256
+                or not self._artifact_size_matches(
+                    artifact,
+                    expected_size,
+                )
+                or artifact.sha256 != expected_sha256
+            )
+        ):
+            return None
+        return artifact
 
     def preview_sft_export(
         self,
@@ -368,16 +473,33 @@ class TrajectorySftExportMixin:
         sample_limit: int = 5,
     ) -> dict[str, Any] | None:
         """Inspect a metadata-recorded SFT JSONL export without modifying it."""
-        path = self.get_sft_export_path(filename, tenant_id=tenant_id)
-        if path is None:
+        artifact = self._get_sft_export_artifact(
+            filename,
+            tenant_id=tenant_id,
+            reviewed_only=False,
+            require_integrity=False,
+        )
+        if artifact is None:
             return None
         export_metadata = self._get_export_metadata(tenant_id, filename)
         expected_sha256 = str(export_metadata.get("content_sha256") or "")
-        actual_sha256 = _file_sha256(path)
+        expected_size = export_metadata.get("size_bytes")
+        actual_sha256 = artifact.sha256
         checksum_matches = bool(expected_sha256) and actual_sha256 == expected_sha256
+        size_matches = (
+            None
+            if expected_size is None
+            else (
+                isinstance(expected_size, int)
+                and artifact.size_bytes == expected_size
+            )
+        )
         records: list[dict[str, Any]] = []
         parse_errors: list[dict[str, Any]] = []
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for line_number, line in enumerate(
+            artifact.text().splitlines(),
+            start=1,
+        ):
             stripped = line.strip()
             if not stripped:
                 continue
@@ -412,8 +534,10 @@ class TrajectorySftExportMixin:
                 "report_type": "sft_export_file_quality",
                 "dry_run": False,
                 "tenant_id": tenant_id,
-                "filename": path.name,
-                "size_bytes": path.stat().st_size,
+                "filename": artifact.filename,
+                "size_bytes": artifact.size_bytes,
+                "expected_size_bytes": expected_size,
+                "size_bytes_matches_metadata": size_matches,
                 "content_sha256": actual_sha256,
                 "expected_content_sha256": expected_sha256 or None,
                 "content_sha256_matches_metadata": checksum_matches,
@@ -423,6 +547,7 @@ class TrajectorySftExportMixin:
                 "ready_for_training": (
                     report["schema_invalid_count"] == 0
                     and bool(records)
+                    and size_matches is not False
                     and checksum_matches
                     and report["provenance_coverage"]["complete_records"] == len(records)
                 ),
@@ -442,18 +567,23 @@ class TrajectorySftExportMixin:
         return {}
 
     def _resolve_export_path(self, tenant_id: str, filename: str) -> Path | None:
+        """Compatibility path for callers using the local backend."""
+        return self._local_artifact_path(
+            self._read_export_artifact(tenant_id, filename)
+        )
+
+    def _read_export_artifact(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_export_filename(filename):
             return None
-        export_dir = self._export_dir(tenant_id)
-        candidate = export_dir / filename
-        try:
-            base = export_dir.resolve(strict=True)
-            resolved = candidate.resolve(strict=True)
-        except OSError:
-            return None
-        if not resolved.is_file() or not resolved.is_relative_to(base):
-            return None
-        return resolved
+        return self._read_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_exports",
+            filename=filename,
+        )
 
     def _reuse_or_write_sft_export(
         self,
@@ -469,44 +599,124 @@ class TrajectorySftExportMixin:
         source_trajectory_ids: list[str],
     ) -> str:
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id, for_update=True)
-            raw_exports = meta.setdefault("exports", [])
-            if not isinstance(raw_exports, list):
-                raw_exports = []
-                meta["exports"] = raw_exports
-            exports = self._owned_meta_items(meta, "exports", tenant_id)
+            meta = self._load_meta_unlocked(tenant_id)
+            exports = self._owned_meta_items(
+                meta,
+                "exports",
+                tenant_id,
+            )
             for item in reversed(exports):
-                if not isinstance(item, dict) or item.get("export_fingerprint") != export_fingerprint:
+                if (
+                    not isinstance(item, dict)
+                    or item.get("export_fingerprint") != export_fingerprint
+                ):
                     continue
-                existing = self._resolve_export_path(tenant_id, str(item.get("filename") or ""))
+                existing = self._read_export_artifact(
+                    tenant_id,
+                    str(item.get("filename") or ""),
+                )
                 if (
                     existing is not None
-                    and self._jsonl_export_belongs_to_tenant(existing, tenant_id)
-                    and _file_sha256(existing) == content_sha256
+                    and self._jsonl_export_belongs_to_tenant(
+                        existing,
+                        tenant_id,
+                    )
+                    and existing.sha256 == content_sha256
                 ):
-                    return str(existing)
+                    return self._artifact_reference(existing)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
             suffix = f"_{_safe_label(task_type)}" if task_type else ""
-            export_path = self._export_dir(tenant_id) / f"sft{suffix}_{timestamp}_{export_fingerprint[:8]}.jsonl"
-            atomic_write_text(export_path, content)
-            raw_exports.append(
-                {
-                    "tenant_id": tenant_id,
-                    "filename": export_path.name,
-                    "record_count": len(records),
-                    "task_type": task_type,
-                    "accepted_only": accepted_only,
-                    "include_metadata": include_metadata,
-                    "exported_at": _now_iso(),
-                    "export_fingerprint": export_fingerprint,
-                    "content_sha256": content_sha256,
-                    "source_trajectory_ids": source_trajectory_ids,
-                }
+            filename = (
+                f"sft{suffix}_{timestamp}_{export_fingerprint[:8]}.jsonl"
             )
-            meta["export_count"] = int(meta.get("export_count") or 0) + 1
-            self._write_meta_unlocked(tenant_id, meta)
-            return str(export_path)
+            artifact = self._publish_artifact(
+                tenant_id=tenant_id,
+                directory="trajectory_exports",
+                filename=filename,
+                raw=content.encode("utf-8"),
+                content_type="application/x-ndjson; charset=utf-8",
+            )
+            entry = {
+                "tenant_id": tenant_id,
+                "filename": filename,
+                "record_count": len(records),
+                "task_type": task_type,
+                "accepted_only": accepted_only,
+                "include_metadata": include_metadata,
+                "exported_at": _now_iso(),
+                "export_fingerprint": export_fingerprint,
+                "size_bytes": artifact.size_bytes,
+                "content_sha256": content_sha256,
+                "source_trajectory_ids": source_trajectory_ids,
+            }
+
+            def bind_export(
+                current: dict[str, Any],
+            ) -> tuple[str, bool]:
+                raw_exports = current.setdefault("exports", [])
+                if not isinstance(raw_exports, list):
+                    raise ValueError(
+                        "trajectory metadata exports must be a list"
+                    )
+                owned = self._owned_meta_items(
+                    current,
+                    "exports",
+                    tenant_id,
+                )
+                existing = next(
+                    (
+                        item
+                        for item in owned
+                        if item.get("export_fingerprint")
+                        == export_fingerprint
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    if (
+                        existing.get("content_sha256")
+                        != content_sha256
+                    ):
+                        raise ValueError(
+                            "export fingerprint is bound to different content"
+                        )
+                    return str(existing.get("filename") or ""), False
+                if any(
+                    item.get("filename") == filename
+                    for item in owned
+                ):
+                    raise ValueError(
+                        "export filename is bound to different content"
+                    )
+                raw_exports.append(entry)
+                current["export_count"] = len(owned) + 1
+                return filename, True
+
+            def was_committed(current: dict[str, Any]) -> bool:
+                raw_exports = current.get("exports")
+                return isinstance(raw_exports, list) and any(
+                    item == entry
+                    for item in raw_exports
+                    if isinstance(item, dict)
+                )
+
+            selected_filename = self._mutate_meta(
+                tenant_id=tenant_id,
+                change=bind_export,
+                committed=was_committed,
+            )
+            if selected_filename == filename:
+                return self._artifact_reference(artifact)
+            selected = self._read_export_artifact(
+                tenant_id,
+                selected_filename,
+            )
+            if selected is None or selected.sha256 != content_sha256:
+                raise ValueError(
+                    "export metadata points to unavailable content"
+                )
+            return self._artifact_reference(selected)
 
 
 def _require_reviewed_export_metadata(*, accepted_only: bool, include_metadata: bool) -> None:

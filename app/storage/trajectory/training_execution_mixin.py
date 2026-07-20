@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.storage.base import atomic_write_text
-from app.storage.trajectory.redaction import _file_sha256, _is_safe_training_execution_request_filename
+from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
+from app.storage.trajectory.redaction import (
+    _is_safe_training_execution_request_filename,
+)
 
 
 class TrajectoryTrainingExecutionMixin:
@@ -36,10 +38,21 @@ class TrajectoryTrainingExecutionMixin:
             request_file = str(item.get("request_file") or "")
             if request_file in seen_files:
                 continue
-            request_path = self._resolve_training_execution_request_path(tenant_id, request_file)
-            if request_path and not self._json_artifact_belongs_to_tenant(request_path, tenant_id):
+            artifact = self._read_training_execution_request_artifact(
+                tenant_id,
+                request_file,
+            )
+            if artifact and not self._json_artifact_belongs_to_tenant(
+                artifact,
+                tenant_id,
+            ):
                 continue
             request_sha256 = str(item.get("request_sha256") or "")
+            request_size = item.get("request_size_bytes")
+            size_matches = self._artifact_size_matches(
+                artifact,
+                request_size,
+            )
             requests.append(
                 {
                     "request_id": item.get("request_id"),
@@ -58,13 +71,18 @@ class TrajectoryTrainingExecutionMixin:
                     "model_promotion_allowed": bool(item.get("model_promotion_allowed", False)),
                     "request_sha256": request_sha256 or None,
                     "integrity_verified": bool(
-                        request_path
+                        artifact
                         and request_sha256
-                        and _file_sha256(request_path) == request_sha256
+                        and size_matches
+                        and artifact.sha256 == request_sha256
+                    ),
+                    "size_binding_verified": self._artifact_size_binding_verified(
+                        artifact,
+                        request_size,
                     ),
                     "created_at": item.get("created_at"),
-                    "exists": request_path is not None,
-                    "size_bytes": request_path.stat().st_size if request_path else 0,
+                    "exists": artifact is not None,
+                    "size_bytes": artifact.size_bytes if artifact else 0,
                 }
             )
             seen_files.add(request_file)
@@ -157,13 +175,24 @@ class TrajectoryTrainingExecutionMixin:
             raise ValueError("two-person guard is not satisfied.")
 
         request_file = f"training_execution_request_{request_id}_{request_ts}.json"
-        request_path = self._training_execution_request_dir(tenant_id) / request_file
-        atomic_write_text(request_path, json.dumps(request_record, ensure_ascii=False, indent=2, sort_keys=True))
+        artifact = self._publish_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_execution_requests",
+            filename=request_file,
+            raw=json.dumps(
+                request_record,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8"),
+            content_type="application/json; charset=utf-8",
+        )
         self._append_training_execution_request_meta(
             tenant_id,
             request_file,
             request_record,
-            request_sha256=_file_sha256(request_path),
+            request_size_bytes=artifact.size_bytes,
+            request_sha256=artifact.sha256,
         )
         return request_record
 
@@ -173,66 +202,120 @@ class TrajectoryTrainingExecutionMixin:
         request_file: str,
         request_record: dict[str, Any],
         *,
+        request_size_bytes: int,
         request_sha256: str,
     ) -> None:
+        plan = (
+            request_record.get("plan_preview")
+            if isinstance(request_record.get("plan_preview"), dict)
+            else {}
+        )
+        dataset = (
+            plan.get("dataset")
+            if isinstance(plan.get("dataset"), dict)
+            else {}
+        )
+        gate = (
+            request_record.get("request_gate")
+            if isinstance(request_record.get("request_gate"), dict)
+            else {}
+        )
+        guard = (
+            request_record.get("execution_guard")
+            if isinstance(request_record.get("execution_guard"), dict)
+            else {}
+        )
+        two_person = (
+            request_record.get("two_person_guard")
+            if isinstance(request_record.get("two_person_guard"), dict)
+            else {}
+        )
+        item = {
+            "tenant_id": tenant_id,
+            "request_id": request_record.get("request_id"),
+            "request_file": request_file,
+            "request_size_bytes": request_size_bytes,
+            "request_sha256": request_sha256,
+            "manifest_id": dataset.get("freeze_manifest_id"),
+            "approval_id": gate.get("prior_training_approval_id"),
+            "provider": plan.get("provider"),
+            "base_model": plan.get("base_model"),
+            "requester": gate.get("requester"),
+            "prior_training_approver": gate.get(
+                "prior_training_approver"
+            ),
+            "two_person_guard_satisfied": two_person.get(
+                "satisfied",
+                False,
+            ),
+            "training_execution_allowed": guard.get(
+                "training_execution_allowed",
+                False,
+            ),
+            "provider_job_started": guard.get(
+                "provider_job_started",
+                False,
+            ),
+            "external_upload_started": guard.get(
+                "external_upload_started",
+                False,
+            ),
+            "provider_api_calls_allowed": guard.get(
+                "provider_api_calls_allowed",
+                False,
+            ),
+            "model_promotion_allowed": guard.get(
+                "model_promotion_allowed",
+                False,
+            ),
+            "created_at": request_record.get("created_at"),
+        }
         with self._lock:
-            meta = self._load_meta_unlocked(tenant_id, for_update=True)
-            meta["training_execution_request_count"] = int(meta.get("training_execution_request_count") or 0) + 1
-            plan = request_record.get("plan_preview") if isinstance(request_record.get("plan_preview"), dict) else {}
-            dataset = plan.get("dataset") if isinstance(plan.get("dataset"), dict) else {}
-            gate = request_record.get("request_gate") if isinstance(request_record.get("request_gate"), dict) else {}
-            guard = request_record.get("execution_guard") if isinstance(request_record.get("execution_guard"), dict) else {}
-            two_person = request_record.get("two_person_guard") if isinstance(request_record.get("two_person_guard"), dict) else {}
-            meta.setdefault("training_execution_requests", []).append(
-                {
-                    "tenant_id": tenant_id,
-                    "request_id": request_record.get("request_id"),
-                    "request_file": request_file,
-                    "request_sha256": request_sha256,
-                    "manifest_id": dataset.get("freeze_manifest_id"),
-                    "approval_id": gate.get("prior_training_approval_id"),
-                    "provider": plan.get("provider"),
-                    "base_model": plan.get("base_model"),
-                    "requester": gate.get("requester"),
-                    "prior_training_approver": gate.get("prior_training_approver"),
-                    "two_person_guard_satisfied": two_person.get("satisfied", False),
-                    "training_execution_allowed": guard.get("training_execution_allowed", False),
-                    "provider_job_started": guard.get("provider_job_started", False),
-                    "external_upload_started": guard.get("external_upload_started", False),
-                    "provider_api_calls_allowed": guard.get("provider_api_calls_allowed", False),
-                    "model_promotion_allowed": guard.get("model_promotion_allowed", False),
-                    "created_at": request_record.get("created_at"),
-                }
+            self._append_meta_item(
+                tenant_id=tenant_id,
+                collection="training_execution_requests",
+                count_key="training_execution_request_count",
+                item=item,
+                identity_keys=("request_id", "request_file"),
             )
-            self._write_meta_unlocked(tenant_id, meta)
 
     def _resolve_training_execution_request_path(self, tenant_id: str, filename: str) -> Path | None:
+        return self._local_artifact_path(
+            self._read_training_execution_request_artifact(
+                tenant_id,
+                filename,
+            )
+        )
+
+    def _read_training_execution_request_artifact(
+        self,
+        tenant_id: str,
+        filename: str,
+    ) -> TrajectoryArtifact | None:
         if not _is_safe_training_execution_request_filename(filename):
             return None
-        request_dir = self._training_execution_request_dir(tenant_id)
-        candidate = request_dir / filename
-        try:
-            base = request_dir.resolve(strict=True)
-            resolved = candidate.resolve(strict=True)
-        except OSError:
-            return None
-        if not resolved.is_file() or not resolved.is_relative_to(base):
-            return None
-        return resolved
+        return self._read_artifact(
+            tenant_id=tenant_id,
+            directory="trajectory_training_execution_requests",
+            filename=filename,
+        )
 
     def _load_training_execution_request_by_file(
         self,
         tenant_id: str,
         filename: str,
     ) -> dict[str, Any] | None:
-        request_path = self._resolve_training_execution_request_path(tenant_id, filename)
-        if request_path is None:
+        artifact = self._read_training_execution_request_artifact(
+            tenant_id,
+            filename,
+        )
+        if artifact is None:
             return None
-        if not self._json_artifact_belongs_to_tenant(request_path, tenant_id):
+        if not self._json_artifact_belongs_to_tenant(artifact, tenant_id):
             return None
         try:
-            data = json.loads(request_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            data = json.loads(artifact.text())
+        except json.JSONDecodeError:
             return None
         if not isinstance(data, dict) or data.get("tenant_id") not in (None, tenant_id):
             return None

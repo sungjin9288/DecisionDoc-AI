@@ -100,9 +100,10 @@ Acceptance:
 
 Goal: keep approval records useful while preventing them from becoming execution authority.
 
-Status: implemented for the local governance chain. Freeze, approval, execution-request, and audit
-artifacts retain their own SHA-256 in metadata. Readiness and audit summaries reject a missing,
-tampered, or stale `export -> freeze -> approval -> request -> audit` reference.
+Status: implemented for the selected-backend, no-execution governance chain. Freeze, approval,
+execution-request, and audit artifacts retain their own SHA-256 in metadata. Readiness and audit
+summaries reject a missing, tampered, or stale
+`export -> freeze -> approval -> request -> audit` reference.
 
 Work:
 

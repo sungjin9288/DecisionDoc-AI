@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
@@ -302,17 +302,19 @@ def export_document_ops_training_pre_execution_audit(
 
 
 @router.get("/trajectories/training-audits/{filename}/download", dependencies=[Depends(require_ops_key)])
-def download_document_ops_training_pre_execution_audit(filename: str, request: Request) -> FileResponse:
-    audit_path = _service(request).get_training_pre_execution_audit_path(
+def download_document_ops_training_pre_execution_audit(filename: str, request: Request) -> Response:
+    content = _service(request).get_training_pre_execution_audit_bytes(
         filename,
         tenant_id=get_tenant_id(request),
     )
-    if audit_path is None:
+    if content is None:
         raise HTTPException(status_code=404, detail="Training pre-execution audit file not found.")
-    return FileResponse(
-        path=audit_path,
+    return Response(
+        content=content,
         media_type="application/json",
-        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
@@ -366,38 +368,42 @@ def list_document_ops_reviewed_sft_exports(
 
 
 @router.get("/trajectories/exports/{filename}", dependencies=[Depends(require_ops_key)])
-def download_document_ops_trajectory_export(filename: str, request: Request) -> FileResponse:
+def download_document_ops_trajectory_export(filename: str, request: Request) -> Response:
     try:
-        export_path = _service(request).get_sft_export_path(
+        content = _service(request).get_sft_export_bytes(
             filename,
             tenant_id=get_tenant_id(request),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if export_path is None:
+    if content is None:
         raise HTTPException(status_code=404, detail="Export file not found.")
-    return FileResponse(
-        path=export_path,
+    return Response(
+        content=content,
         media_type="application/x-ndjson",
-        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
 @router.get("/trajectories/reviewed-sft-exports/{filename}/download", dependencies=[Depends(require_ops_key)])
-def download_document_ops_reviewed_sft_export(filename: str, request: Request) -> FileResponse:
+def download_document_ops_reviewed_sft_export(filename: str, request: Request) -> Response:
     try:
-        export_path = _service(request).get_reviewed_sft_export_path(
+        content = _service(request).get_reviewed_sft_export_bytes(
             filename,
             tenant_id=get_tenant_id(request),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if export_path is None:
+    if content is None:
         raise HTTPException(status_code=404, detail="Reviewed SFT export file not found.")
-    return FileResponse(
-        path=export_path,
+    return Response(
+        content=content,
         media_type="application/x-ndjson",
-        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
