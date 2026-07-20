@@ -1,0 +1,39 @@
+{
+  "schema_version": "decisiondoc.finished_document_human_review.v1",
+  "scope": "records factual and visual review decisions for local generated documents; does not authorize external actions",
+  "status": "pending",
+  "created_at": "2026-07-13T12:59:01.252775+00:00",
+  "updated_at": "2026-07-13T12:59:01.252775+00:00",
+  "evidence": {
+    "manifest_path": "manifest.json",
+    "manifest_sha256": "67167dfb01a7ec360c87424ca776daf16368a61bae678acde750f41e6ff8da43",
+    "manifest_schema_version": "decisiondoc.finished_document_review.v3",
+    "manifest_generated_at": "2026-07-13T12:59:01.252775+00:00"
+  },
+  "bundle_reviews": {
+    "proposal_kr": {
+      "factual_grounding": "not_reviewed",
+      "visual_review": "not_reviewed",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewed_at": "",
+      "notes": ""
+    },
+    "performance_plan_kr": {
+      "factual_grounding": "not_reviewed",
+      "visual_review": "not_reviewed",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewed_at": "",
+      "notes": ""
+    }
+  },
+  "external_actions_authorized": {
+    "provider_api_execution": false,
+    "aws_runtime_execution": false,
+    "dataset_upload": false,
+    "training_execution": false,
+    "model_promotion": false,
+    "production_service_resume": false
+  }
+}

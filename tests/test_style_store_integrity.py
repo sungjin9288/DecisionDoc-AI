@@ -4,19 +4,25 @@ import ast
 import json
 import time
 import uuid
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import LocalStateBackend
 from app.storage.style_store import (
     StyleExample,
     StyleStore,
     StyleStoreError,
     ToneGuide,
     get_style_store,
+)
+from tests.conditional_state_support import (
+    ConflictingLocalBackend,
+    MemoryS3Client as _MemoryS3Client,
+    s3_backend as _s3_backend,
 )
 
 
@@ -28,53 +34,6 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
-
-
-class _Body:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-
-class _MemoryS3Client:
-    def __init__(self, *, read_delay: float = 0.0) -> None:
-        self.objects: dict[tuple[str, str], bytes] = {}
-        self.read_delay = read_delay
-
-    def put_object(
-        self,
-        *,
-        Bucket: str,
-        Key: str,
-        Body: bytes,
-        ContentType: str,
-    ) -> None:
-        _ = ContentType
-        self.objects[(Bucket, Key)] = Body
-
-    def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
-        if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
-
-
-def _s3_backend(
-    *,
-    read_delay: float = 0.0,
-) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
-    backend = S3StateBackend(
-        bucket="unit-bucket",
-        prefix="decisiondoc-ai/state/",
-        s3_client=client,
-    )
-    return backend, client
 
 
 def _tone(marker: str = "") -> dict:
@@ -287,6 +246,8 @@ def test_independent_local_style_stores_preserve_concurrent_creates(
         StyleStore("alpha", data_dir=tmp_path, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -310,6 +271,8 @@ def test_independent_local_style_stores_preserve_concurrent_overrides(
         StyleStore("alpha", data_dir=tmp_path, backend=_SlowLocalBackend(tmp_path))
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -325,9 +288,7 @@ def test_independent_local_style_stores_preserve_concurrent_overrides(
 
     reloaded = creator.get(profile.profile_id)
     assert reloaded is not None
-    assert set(reloaded.bundle_overrides) == {
-        f"bundle-{index}" for index in range(20)
-    }
+    assert set(reloaded.bundle_overrides) == {f"bundle-{index}" for index in range(20)}
 
 
 def test_style_round_trip_through_fake_s3() -> None:
@@ -369,6 +330,8 @@ def test_independent_fake_s3_style_stores_preserve_concurrent_mutations() -> Non
         StyleStore("alpha", data_dir="/virtual/data", backend=backend)
         for _ in range(20)
     ]
+    for store in stores:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         profiles = list(
@@ -395,6 +358,290 @@ def test_independent_fake_s3_style_stores_preserve_concurrent_mutations() -> Non
     target = reloaded.get(target_id)
     assert target is not None
     assert len(target.bundle_overrides) == 20
+
+
+def test_style_create_reconciles_commit_then_successor_create() -> None:
+    client = _MemoryS3Client()
+    primary = StyleStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = StyleStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_fragment="style_profiles.json",
+        after_write=lambda: successor.create("Successor", "", "user-2"),
+    )
+    created = primary.create("Primary", "", "user-1")
+
+    assert created.name == "Primary"
+    assert {profile.name for profile in primary.list_profiles()} == {
+        "Primary",
+        "Successor",
+    }
+
+
+def test_style_update_reconciles_commit_then_successor_override() -> None:
+    client = _MemoryS3Client()
+    primary = StyleStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = StyleStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    profile = primary.create("Shared", "", "user-1")
+
+    client.fail_after_next_conditional_write(
+        key_fragment="style_profiles.json",
+        after_write=lambda: successor.set_bundle_override(
+            profile.profile_id,
+            "successor",
+            ToneGuide(formality="brief"),
+        ),
+    )
+    primary.set_bundle_override(
+        profile.profile_id,
+        "primary",
+        ToneGuide(formality="formal"),
+    )
+
+    persisted = primary.get(profile.profile_id)
+    assert persisted is not None
+    assert set(persisted.bundle_overrides) == {"primary", "successor"}
+
+
+def test_style_update_reconciles_commit_then_same_id_replacement() -> None:
+    client = _MemoryS3Client()
+    primary = StyleStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = StyleStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.initialize_defaults()
+
+    def recreate_official_profile() -> None:
+        successor.delete("default-official")
+        successor.initialize_defaults()
+
+    client.fail_after_next_conditional_write(
+        key_fragment="style_profiles.json",
+        after_write=recreate_official_profile,
+    )
+    primary.update_tone_guide(
+        "default-official",
+        ToneGuide(formality="committed old profile"),
+    )
+
+    current = primary.get("default-official")
+    assert current is not None
+    assert current.tone_guide.formality != "committed old profile"
+
+
+def test_style_update_does_not_modify_recreated_system_profile() -> None:
+    client = _MemoryS3Client()
+    primary = StyleStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = StyleStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.initialize_defaults()
+
+    def recreate_official_profile() -> None:
+        successor.delete("default-official")
+        successor.initialize_defaults()
+
+    client.before_next_conditional_write(
+        key_fragment="style_profiles.json",
+        callback=recreate_official_profile,
+    )
+
+    with pytest.raises(StyleStoreError, match="identity changed"):
+        primary.update_tone_guide(
+            "default-official",
+            ToneGuide(formality="stale update"),
+        )
+
+    current = primary.get("default-official")
+    assert current is not None
+    assert current.tone_guide.formality != "stale update"
+
+
+def test_style_retry_keeps_updated_at_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _MemoryS3Client()
+    primary = StyleStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = StyleStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    profile = primary.create("Shared", "", "user-1")
+    timestamps = iter(
+        [
+            "2099-01-01T00:00:01+00:00",
+            "2099-01-01T00:00:02+00:00",
+            "2099-01-01T00:00:03+00:00",
+        ]
+    )
+    monkeypatch.setattr("app.storage.style_store._now_iso", lambda: next(timestamps))
+
+    client.before_next_conditional_write(
+        key_fragment="style_profiles.json",
+        callback=lambda: successor.set_bundle_override(
+            profile.profile_id,
+            "successor",
+            ToneGuide(formality="later"),
+        ),
+    )
+    primary.set_bundle_override(
+        profile.profile_id,
+        "primary",
+        ToneGuide(formality="retried"),
+    )
+
+    current = primary.get(profile.profile_id)
+    assert current is not None
+    assert current.updated_at == "2099-01-01T00:00:03+00:00"
+
+
+def test_style_mutations_stop_after_bounded_conflicts(tmp_path: Path) -> None:
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="style_profiles.json",
+    )
+    store = StyleStore("alpha", data_dir=tmp_path, backend=backend)
+    store._lock = nullcontext()
+
+    with pytest.raises(StyleStoreError, match="changed too many times"):
+        store.create("Blocked", "", "user-1")
+
+    assert backend.attempts == 32
+
+
+def test_existing_style_mutation_stops_after_bounded_conflicts(tmp_path: Path) -> None:
+    profile = StyleStore("alpha", data_dir=tmp_path).create(
+        "Existing",
+        "",
+        "user-1",
+    )
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="style_profiles.json",
+    )
+    store = StyleStore("alpha", data_dir=tmp_path, backend=backend)
+    store._lock = nullcontext()
+
+    with pytest.raises(StyleStoreError, match="changed too many times"):
+        store.set_bundle_override(
+            profile.profile_id,
+            "blocked",
+            ToneGuide(formality="blocked"),
+        )
+
+    assert backend.attempts == 32
+
+
+def test_profile_matching_old_metadata_name_remains_addressable(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "tenants/alpha/style_profiles.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"_mutation_ids": _record("_mutation_ids")}),
+        encoding="utf-8",
+    )
+    store = StyleStore("alpha", data_dir=tmp_path)
+
+    profile = store.get("_mutation_ids")
+
+    assert profile is not None
+    assert profile.profile_id == "_mutation_ids"
+
+
+def test_style_private_state_is_hidden_and_bounded(tmp_path: Path) -> None:
+    store = StyleStore("alpha", data_dir=tmp_path)
+    profile = store.create("Shared", "", "user-1")
+    for index in range(70):
+        store.set_bundle_override(
+            profile.profile_id,
+            f"bundle-{index}",
+            ToneGuide(formality=f"tone-{index}"),
+        )
+
+    public = store.get(profile.profile_id)
+    persisted = json.loads(store._path.read_text(encoding="utf-8"))
+
+    assert public is not None
+    assert "_incarnation" not in public.__dict__
+    assert "_mutation_ids" not in public.__dict__
+    assert "_incarnation" in persisted[profile.profile_id]
+    assert len(persisted[""]["_mutation_ids"]) == 64
+
+
+def test_invalid_style_mutation_history_fails_closed(tmp_path: Path) -> None:
+    store = StyleStore("alpha", data_dir=tmp_path)
+    store.create("Shared", "", "user-1")
+    persisted = json.loads(store._path.read_text(encoding="utf-8"))
+    persisted[""]["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    store._path.write_text(json.dumps(persisted), encoding="utf-8")
+    original = store._path.read_bytes()
+
+    with pytest.raises(StyleStoreError, match="mutation history"):
+        store.list_profiles()
+    with pytest.raises(StyleStoreError, match="mutation history"):
+        store.create("Blocked", "", "user-1")
+
+    assert store._path.read_bytes() == original
+
+
+def test_null_style_mutation_history_fails_closed(tmp_path: Path) -> None:
+    store = StyleStore("alpha", data_dir=tmp_path)
+    store.create("Shared", "", "user-1")
+    persisted = json.loads(store._path.read_text(encoding="utf-8"))
+    persisted[""] = None
+    store._path.write_text(json.dumps(persisted), encoding="utf-8")
+    original = store._path.read_bytes()
+
+    with pytest.raises(StyleStoreError, match="mutation history"):
+        store.list_profiles()
+    with pytest.raises(StyleStoreError, match="mutation history"):
+        store.create("Blocked", "", "user-1")
+
+    assert store._path.read_bytes() == original
 
 
 def test_initialize_defaults_preserves_existing_default(tmp_path: Path) -> None:
@@ -512,7 +759,9 @@ def test_prompt_build_does_not_silently_omit_corrupt_style_state(
 
     _current_tenant_id.value = "alpha"
     try:
-        with pytest.raises(StyleStoreError, match="Invalid style profile state document"):
+        with pytest.raises(
+            StyleStoreError, match="Invalid style profile state document"
+        ):
             build_bundle_prompt(
                 {"title": "Style integrity"},
                 "v1",

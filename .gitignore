@@ -17,6 +17,10 @@ __pycache__/
 data/
 exports/
 reports/
+!_portfolio_export/decisiondoc_ai_portfolio_pack/reports/
+!_portfolio_export/decisiondoc_ai_portfolio_pack/reports/eval/
+!_portfolio_export/decisiondoc_ai_portfolio_pack/reports/eval/v1/
+!_portfolio_export/decisiondoc_ai_portfolio_pack/reports/eval/v1/eval_report.md
 output/
 .playwright-cli/
 _portfolio_export/*.zip

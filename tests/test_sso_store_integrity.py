@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
@@ -18,7 +19,12 @@ from app.storage.sso_store import (
     SSOStoreError,
     get_sso_store,
 )
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import LocalStateBackend
+from tests.conditional_state_support import (
+    ConflictingLocalBackend,
+    MemoryS3Client as _MemoryS3Client,
+    s3_backend as _s3_backend,
+)
 
 
 _NOW = "2026-07-17T00:00:00+00:00"
@@ -29,54 +35,6 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
-
-
-class _Body:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-
-class _MemoryS3Client:
-    def __init__(self, *, read_delay: float = 0.0) -> None:
-        self.objects: dict[tuple[str, str], bytes] = {}
-        self.read_delay = read_delay
-
-    def put_object(
-        self,
-        *,
-        Bucket: str,
-        Key: str,
-        Body: bytes,
-        ContentType: str,
-    ) -> None:
-        _ = ContentType
-        self.objects[(Bucket, Key)] = Body
-
-    def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
-        if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
-
-
-def _s3_backend(
-    client: _MemoryS3Client | None = None,
-    *,
-    read_delay: float = 0.0,
-) -> tuple[S3StateBackend, _MemoryS3Client]:
-    selected_client = client or _MemoryS3Client(read_delay=read_delay)
-    backend = S3StateBackend(
-        bucket="unit-bucket",
-        prefix="decisiondoc-ai/state/",
-        s3_client=selected_client,
-    )
-    return backend, selected_client
 
 
 def _record(tenant_id: str = "alpha") -> dict:
@@ -306,6 +264,8 @@ def test_independent_local_stores_preserve_concurrent_partial_updates(
 ) -> None:
     backend = _SlowLocalBackend(tmp_path)
     stores = [SSOStore("alpha", data_dir=tmp_path, backend=backend) for _ in range(12)]
+    for store in stores:
+        store._lock = nullcontext()
     domains = [f"team-{index}.example" for index in range(len(stores))]
 
     with ThreadPoolExecutor(max_workers=len(stores)) as executor:
@@ -322,12 +282,111 @@ def test_independent_s3_stores_preserve_concurrent_partial_updates(
     stores = [
         SSOStore("alpha", data_dir=tmp_path, backend=backend) for backend in backends
     ]
+    for store in stores:
+        store._lock = nullcontext()
     domains = [f"remote-{index}.example" for index in range(len(stores))]
 
     with ThreadPoolExecutor(max_workers=len(stores)) as executor:
         list(executor.map(lambda pair: _append_domain(*pair), zip(stores, domains)))
 
     assert sorted(stores[0].get().gcloud.allowed_domains) == sorted(domains)
+
+
+def test_sso_update_reconciles_commit_then_successor_update() -> None:
+    client = _MemoryS3Client()
+    primary = SSOStore(
+        "alpha",
+        data_dir="/virtual/primary",
+        backend=_s3_backend(client)[0],
+    )
+    successor = SSOStore(
+        "alpha",
+        data_dir="/virtual/successor",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_fragment="sso_config.json",
+        after_write=lambda: _append_domain(successor, "successor.example"),
+    )
+    _append_domain(primary, "primary.example")
+
+    assert set(primary.get().gcloud.allowed_domains) == {
+        "primary.example",
+        "successor.example",
+    }
+
+
+def test_sso_mutations_stop_after_bounded_conflicts(tmp_path: Path) -> None:
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="sso_config.json",
+    )
+    store = SSOStore("alpha", data_dir=tmp_path, backend=backend)
+    store._lock = nullcontext()
+
+    with pytest.raises(SSOStoreError, match="changed too many times"):
+        store.update(lambda config: setattr(config, "updated_at", _NOW))
+
+    assert backend.attempts == 32
+
+
+def test_existing_sso_mutation_stops_after_bounded_conflicts(tmp_path: Path) -> None:
+    SSOStore("alpha", data_dir=tmp_path).update(
+        lambda config: setattr(config, "updated_at", _NOW)
+    )
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="sso_config.json",
+    )
+    store = SSOStore("alpha", data_dir=tmp_path, backend=backend)
+    store._lock = nullcontext()
+
+    with pytest.raises(SSOStoreError, match="changed too many times"):
+        store.update(
+            lambda config: setattr(config.ldap, "server_url", "ldap://blocked")
+        )
+
+    assert backend.attempts == 32
+
+
+def test_sso_private_state_is_hidden_and_bounded(tmp_path: Path) -> None:
+    store = SSOStore("alpha", data_dir=tmp_path)
+
+    for index in range(70):
+
+        def update(config: SSOConfig, marker: int = index) -> None:
+            config.ldap.server_url = f"ldap://server-{marker}.example"
+            config.updated_at = _NOW
+
+        store.update(update)
+
+    public = asdict(store.get())
+    persisted = json.loads(
+        (tmp_path / "tenants/alpha/sso_config.json").read_text(encoding="utf-8")
+    )
+
+    assert "_mutation_ids" not in public
+    assert len(persisted["_mutation_ids"]) == 64
+
+
+def test_invalid_sso_mutation_history_fails_closed(tmp_path: Path) -> None:
+    store = SSOStore("alpha", data_dir=tmp_path)
+    store.update(lambda config: setattr(config, "updated_at", _NOW))
+    path = tmp_path / "tenants/alpha/sso_config.json"
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    persisted["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    path.write_text(json.dumps(persisted), encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(SSOStoreError, match="mutation history"):
+        store.get()
+    with pytest.raises(SSOStoreError, match="mutation history"):
+        store.update(lambda config: setattr(config, "updated_at", _NOW))
+
+    assert path.read_bytes() == original
 
 
 def test_sso_routes_use_public_factory_with_application_state_backend() -> None:

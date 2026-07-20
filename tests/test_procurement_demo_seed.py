@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,24 @@ from app.storage.share_store import ShareStore
 from app.storage.state_backend import get_state_backend
 from app.storage.tenant_store import TenantStore
 from app.storage.user_store import UserStore
+from scripts.seed_procurement_stale_share_demo import _fresh_data_guard
+
+
+def test_demo_fresh_data_guard_ignores_tenant_registry_metadata(
+    tmp_path: Path,
+) -> None:
+    tenants_path = tmp_path / "tenants.json"
+    tenants_path.write_text(
+        json.dumps(
+            {
+                "system": {"tenant_id": "system"},
+                "": {"_registry_mutation_ids": ["mutation-1"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _fresh_data_guard(tmp_path) is None
 
 
 def test_seed_procurement_stale_share_demo_creates_local_manual_verification_state(
@@ -62,30 +81,44 @@ def test_seed_procurement_stale_share_demo_creates_local_manual_verification_sta
 
     project_store = ProjectStore(base_dir=str(data_dir), backend=backend)
     projects = project_store.list_by_tenant("system")
-    project = next((item for item in projects if item.name == "거점 stale share 데모 프로젝트"), None)
+    project = next(
+        (item for item in projects if item.name == "거점 stale share 데모 프로젝트"),
+        None,
+    )
     assert project is not None
     assert len(project.documents) >= 2
-    decision_document = next((doc for doc in project.documents if doc.bundle_id == "bid_decision_kr"), None)
-    proposal_document = next((doc for doc in project.documents if doc.bundle_id == "proposal_kr"), None)
+    decision_document = next(
+        (doc for doc in project.documents if doc.bundle_id == "bid_decision_kr"), None
+    )
+    proposal_document = next(
+        (doc for doc in project.documents if doc.bundle_id == "proposal_kr"), None
+    )
     assert decision_document is not None
     assert proposal_document is not None
     assert decision_document.title == "입찰 의사결정 문서"
     assert proposal_document.title == "입찰 제안서"
     assert decision_document.source_decision_council_session_id
     assert proposal_document.source_decision_council_session_id
-    assert decision_document.source_decision_council_session_id == proposal_document.source_decision_council_session_id
+    assert (
+        decision_document.source_decision_council_session_id
+        == proposal_document.source_decision_council_session_id
+    )
     assert decision_document.source_decision_council_session_revision == 1
     assert proposal_document.source_decision_council_session_revision == 1
     assert decision_document.source_decision_council_direction
     assert proposal_document.source_decision_council_direction
 
-    procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=backend)
+    procurement_store = ProcurementDecisionStore(
+        base_dir=str(data_dir), backend=backend
+    )
     procurement_record = procurement_store.get(project.project_id, tenant_id="system")
     assert procurement_record is not None
     assert procurement_record.recommendation is not None
     assert procurement_record.recommendation.value.value == "NO_GO"
 
-    decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=backend)
+    decision_council_store = DecisionCouncilStore(
+        base_dir=str(data_dir), backend=backend
+    )
     decision_council_service = DecisionCouncilService(
         decision_council_store=decision_council_store,
     )
@@ -99,7 +132,9 @@ def test_seed_procurement_stale_share_demo_creates_local_manual_verification_sta
         procurement_record=procurement_record,
     )
     assert bound_session.current_procurement_binding_status == "stale"
-    assert bound_session.current_procurement_binding_reason_code == "procurement_updated"
+    assert (
+        bound_session.current_procurement_binding_reason_code == "procurement_updated"
+    )
 
     share_store = ShareStore("system", data_dir=data_dir, backend=backend)
     shares = share_store.list_by_user(user.user_id)
@@ -119,6 +154,12 @@ def test_seed_procurement_stale_share_demo_creates_local_manual_verification_sta
     )
     assert latest_share_audit is not None
     assert latest_share_audit["detail"]["project_id"] == project.project_id
-    assert latest_share_audit["detail"]["share_project_document_id"] == proposal_document.doc_id
+    assert (
+        latest_share_audit["detail"]["share_project_document_id"]
+        == proposal_document.doc_id
+    )
     assert latest_share_audit["detail"]["bundle_type"] == "proposal_kr"
-    assert latest_share_audit["detail"]["share_decision_council_document_status"] == "stale_procurement"
+    assert (
+        latest_share_audit["detail"]["share_decision_council_document_status"]
+        == "stale_procurement"
+    )

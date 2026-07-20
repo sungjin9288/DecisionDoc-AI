@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -14,7 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.conditional_state import persist_text_if_current
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
 
@@ -101,6 +103,9 @@ _sso_locks: dict[tuple[Any, ...], threading.RLock] = {}
 _sso_locks_guard = threading.Lock()
 _sso_stores: dict[tuple[Any, ...], "SSOStore"] = {}
 _sso_stores_lock = threading.Lock()
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_MUTATION_ATTEMPTS = 32
+_MAX_TRACKED_MUTATIONS = 64
 
 
 def _get_fernet_key() -> bytes:
@@ -286,8 +291,13 @@ class SSOStore:
 
     def _validate_owned(self, data: dict[str, Any], *, legacy: bool) -> None:
         expected_fields = self._TOP_LEVEL_FIELDS - ({"tenant_id"} if legacy else set())
-        if set(data) != expected_fields:
+        private_fields = set(data) - expected_fields
+        if not expected_fields <= set(data) or private_fields not in (
+            set(),
+            {_MUTATION_IDS_FIELD},
+        ):
             raise SSOStoreError("Invalid SSO configuration fields")
+        self._mutation_ids(data)
         if not legacy and data.get("tenant_id") != self._tenant_id:
             raise SSOStoreError("SSO configuration tenant ownership mismatch")
         try:
@@ -347,10 +357,30 @@ class SSOStore:
         stored_tenant_id = data.get("tenant_id")
         return stored_tenant_id is None or stored_tenant_id == self._tenant_id
 
-    def _load(self) -> dict[str, Any] | None:
-        raw = self._backend.read_text(self._relative_path)
+    @staticmethod
+    def _mutation_ids(data: dict[str, Any]) -> list[str]:
+        mutation_ids = data.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise SSOStoreError("Invalid SSO mutation history")
+        return list(mutation_ids)
+
+    def _read_state(self) -> tuple[str | None, dict[str, Any] | None]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise SSOStoreError("Invalid SSO state document") from exc
         if raw is None:
-            return None
+            return None, None
+        if not raw.strip():
+            raise SSOStoreError("Invalid SSO state document")
         try:
             data = json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, TypeError, SSOStoreError) as exc:
@@ -363,9 +393,12 @@ class SSOStore:
             if not isinstance(stored_tenant_id, str) or not stored_tenant_id:
                 raise SSOStoreError("Invalid SSO tenant identity")
             if stored_tenant_id != self._tenant_id:
-                return data
+                return raw, data
         self._validate_owned(data, legacy=stored_tenant_id is None)
-        return data
+        return raw, data
+
+    def _load(self) -> dict[str, Any] | None:
+        return self._read_state()[1]
 
     def _validated_for_save(self, config: SSOConfig) -> dict[str, Any]:
         if config.tenant_id != self._tenant_id:
@@ -379,6 +412,79 @@ class SSOStore:
             raise ValueError(str(exc)) from exc
         return data
 
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        data: dict[str, Any],
+        mutation_id: str,
+    ) -> bool:
+        self._validate_owned(data, legacy=False)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+
+        def decode(raw: str) -> dict[str, Any]:
+            if not raw.strip():
+                raise SSOStoreError("Invalid SSO state document")
+            try:
+                observed = json.loads(raw, object_pairs_hook=_unique_object)
+            except (json.JSONDecodeError, TypeError, SSOStoreError) as exc:
+                raise SSOStoreError("Invalid SSO state document") from exc
+            if not isinstance(observed, dict):
+                raise SSOStoreError("Invalid SSO state document")
+            stored_tenant_id = observed.get("tenant_id")
+            if stored_tenant_id != self._tenant_id:
+                raise SSOStoreError("SSO configuration tenant ownership mismatch")
+            self._validate_owned(observed, legacy=False)
+            return observed
+
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=payload,
+                decode=decode,
+                committed=lambda observed: mutation_id in self._mutation_ids(observed),
+                decode_errors=(SSOStoreError,),
+            )
+        except StateBackendError as exc:
+            raise SSOStoreError("Failed to persist SSO state") from exc
+
+    def _mutate(
+        self,
+        *,
+        change: Callable[[SSOConfig], None] | None = None,
+        replacement: SSOConfig | None = None,
+    ) -> SSOConfig:
+        mutation_id = secrets.token_hex(16)
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, existing = self._read_state()
+            if existing is not None and not self._owns(existing):
+                raise SSOStoreError("Foreign SSO configuration must be preserved")
+
+            config = (
+                replacement
+                if replacement is not None
+                else (
+                    SSOConfig(tenant_id=self._tenant_id)
+                    if existing is None
+                    else _config_from_dict(self._tenant_id, existing)
+                )
+            )
+            if change is not None:
+                change(config)
+            data = self._validated_for_save(config)
+            mutation_ids = self._mutation_ids(existing or {})
+            mutation_ids.append(mutation_id)
+            data[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+            if self._persist_if_current(
+                expected=expected,
+                data=data,
+                mutation_id=mutation_id,
+            ):
+                return config
+        raise SSOStoreError("SSO state changed too many times to persist safely")
+
     def get(self) -> SSOConfig:
         """Return the current config or a side-effect-free disabled default."""
         with self._lock:
@@ -389,35 +495,14 @@ class SSOStore:
 
     def save(self, config: SSOConfig) -> None:
         """Validate and atomically replace the owned SSO configuration."""
-        data = self._validated_for_save(config)
+        self._validated_for_save(config)
         with self._lock:
-            existing = self._load()
-            if existing is not None and not self._owns(existing):
-                raise SSOStoreError("Foreign SSO configuration must be preserved")
-            self._backend.write_text(
-                self._relative_path,
-                json.dumps(data, ensure_ascii=False, indent=2),
-            )
+            self._mutate(replacement=config)
 
     def update(self, change: Callable[[SSOConfig], None]) -> SSOConfig:
         """Apply a partial change without exposing a read-modify-write race."""
         with self._lock:
-            existing = self._load()
-            if existing is not None and not self._owns(existing):
-                raise SSOStoreError("Foreign SSO configuration must be preserved")
-
-            config = (
-                SSOConfig(tenant_id=self._tenant_id)
-                if existing is None
-                else _config_from_dict(self._tenant_id, existing)
-            )
-            change(config)
-            data = self._validated_for_save(config)
-            self._backend.write_text(
-                self._relative_path,
-                json.dumps(data, ensure_ascii=False, indent=2),
-            )
-            return config
+            return self._mutate(change=change)
 
     def is_sso_enabled(self) -> bool:
         return self.get().provider != SSOProvider.DISABLED

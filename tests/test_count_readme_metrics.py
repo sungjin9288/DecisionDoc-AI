@@ -136,7 +136,7 @@ def test_readme_and_development_plan_counts_match_source() -> None:
 
     assert f"# → {metrics['router_files']} (top-level 라우터 파일)" in plan
     assert f"# → {metrics['service_files']} (서비스)" in plan
-    assert f"# → {metrics['storage_files']} (스토어)" in plan
+    assert f"# → {metrics['storage_files']} (top-level storage modules)" in plan
     assert f"# → {metrics['middleware_files']} (미들웨어)" in plan
     assert f"# → {metrics['route_decorators']} (라우트)" in plan
     assert "python3 scripts/count_readme_metrics.py --field router_files" in plan

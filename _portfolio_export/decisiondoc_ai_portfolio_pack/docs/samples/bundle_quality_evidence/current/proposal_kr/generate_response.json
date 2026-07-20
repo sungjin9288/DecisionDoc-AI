@@ -1,0 +1,13 @@
+{
+  "provider": "mock",
+  "schema_version": "v1",
+  "bundle_type": "proposal_kr",
+  "title": "국토교통 통합형 서비스 발굴 경연 사업 제안서",
+  "doc_count": 4,
+  "doc_types": [
+    "business_understanding",
+    "tech_proposal",
+    "execution_plan",
+    "expected_impact"
+  ]
+}

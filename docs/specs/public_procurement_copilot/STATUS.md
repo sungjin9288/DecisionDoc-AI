@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone bookmark, style, SSO, and tenant registry cross-worker authority completion
+
+- `BookmarkStore`, `StyleStore`, `SSOStore`와 root-scoped `TenantStore` mutation은 각각 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·target identity 위에 같은 operation을 최대 32회 재적용한다.
+- 각 object의 최근 private mutation receipt는 64개로 제한하고 public response와 profile/tenant reader에서 제거한다. Bookmark identity와 style profile incarnation은 같은 public ID의 replacement lifecycle을 구분하며, tenant API key rotation은 최초 생성한 plaintext와 현재 persisted hash를 같은 mutation에 결속한다. 후속 rotation으로 superseded된 lost response는 성공으로 반환하지 않는다. Private root metadata는 public identifier로 유효할 수 없는 sentinel 아래에 격리해 기존 identifier namespace를 보존한다. Commit 응답 유실 뒤 successor mutation이 이어져도 private receipt와 target identity로 원래 operation을 조정한다. Process-local lock은 contention 완화 수단일 뿐 persistence authority가 아니다.
+- H71 focused integrity gate는 `152 passed, 1 warning`, caller/API·security·state backend·infrastructure 확장 gate는 `516 passed, 1 warning`, full no-cost regression은 `4168 passed, 2 skipped, 4 deselected, 1 warning`이다. Process lock 없는 local/fake-S3 distinct/same-key mutation, create/existing-object 32회 conflict cap, 64개 receipt, commit-then-error 뒤 successor mutation, same-key replacement 보존, monotonic style timestamp, authenticatable API key reconciliation, malformed metadata 차단, legacy identifier 보존과 핵심 경합 5회 반복을 검증했다.
+- Conditional authority는 bookmark, style profile, SSO config, tenant registry 각각의 단일 object 범위다. 서로 다른 object를 함께 묶는 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone procurement and Decision Council cross-worker authority completion
 
 - `ProcurementDecisionStore`의 decision upsert·notes mutation과 `DecisionCouncilStore`의 session upsert는 각각 tenant별 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·canonical decision/session identity 위에 같은 operation을 재적용하고 최대 32회 뒤 fail closed 처리한다.

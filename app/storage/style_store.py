@@ -6,14 +6,24 @@ import copy
 import json
 import logging
 import os
+import secrets
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.conditional_state import persist_text_if_current
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
+from app.storage.style_store_validation import (
+    INCARNATION_FIELD as _INCARNATION_FIELD,
+    MAX_TRACKED_MUTATIONS as _MAX_TRACKED_MUTATIONS,
+    MUTATION_IDS_FIELD as _MUTATION_IDS_FIELD,
+    STATE_METADATA_KEY as _STATE_METADATA_KEY,
+    StyleStoreError,
+    StyleStoreValidationMixin,
+)
 from app.tenant import require_tenant_id
 
 _log = logging.getLogger(__name__)
@@ -22,10 +32,8 @@ _style_locks: dict[tuple[Any, ...], threading.RLock] = {}
 _style_locks_guard = threading.Lock()
 _style_stores: dict[tuple[Any, ...], "StyleStore"] = {}
 _style_stores_guard = threading.Lock()
-
-
-class StyleStoreError(RuntimeError):
-    """Raised when persisted style profile state cannot be trusted."""
+_MAX_MUTATION_ATTEMPTS = 32
+_MutationResult = TypeVar("_MutationResult")
 
 
 def _now_iso() -> str:
@@ -194,40 +202,8 @@ def _backend_cache_key(
     return ("local", data_dir.resolve())
 
 
-class StyleStore:
+class StyleStore(StyleStoreValidationMixin):
     """Read and update one tenant's style profiles."""
-
-    _PROFILE_FIELDS = {
-        "profile_id",
-        "tenant_id",
-        "name",
-        "description",
-        "tone_guide",
-        "examples",
-        "bundle_overrides",
-        "is_default",
-        "created_by",
-        "created_at",
-        "updated_at",
-    }
-    _SYSTEM_FIELDS = {"is_system", "few_shot_example", "avatar_color"}
-    _TONE_FIELDS = {
-        "formality",
-        "density",
-        "perspective",
-        "custom_rules",
-        "forbidden_words",
-        "preferred_words",
-    }
-    _EXAMPLE_FIELDS = {
-        "example_id",
-        "source_filename",
-        "bundle_id",
-        "extracted_patterns",
-        "sample_sentences",
-        "uploaded_at",
-        "uploaded_by",
-    }
 
     def __init__(
         self,
@@ -249,186 +225,101 @@ class StyleStore:
             relative_path=self._relative_path,
         )
 
-    @staticmethod
-    def _input_identifier(value: object, *, field_name: str) -> str:
-        if (
-            not isinstance(value, str)
-            or not value
-            or value != value.strip()
-            or any(ord(character) < 32 or ord(character) == 127 for character in value)
-        ):
-            raise ValueError(f"Invalid {field_name}")
-        return value
-
-    @staticmethod
-    def _persisted_identifier(value: object, *, field_name: str) -> str:
+    def _read_state(self) -> tuple[str | None, dict[str, Any]]:
         try:
-            return StyleStore._input_identifier(value, field_name=field_name)
-        except ValueError as exc:
-            raise StyleStoreError(f"Invalid {field_name}") from exc
-
-    @staticmethod
-    def _timestamp(value: object, *, field_name: str) -> str:
-        if not isinstance(value, str) or not value:
-            raise StyleStoreError(f"Invalid {field_name}")
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError as exc:
-            raise StyleStoreError(f"Invalid {field_name}") from exc
-        if parsed.tzinfo is None or parsed.utcoffset() is None:
-            raise StyleStoreError(f"Invalid {field_name}")
-        return value
-
-    @staticmethod
-    def _string_list(value: object, *, field_name: str) -> list[str]:
-        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-            raise StyleStoreError(f"Invalid {field_name}")
-        return value
-
-    def _validate_tone(self, value: object) -> dict[str, Any]:
-        if not isinstance(value, dict) or set(value) != self._TONE_FIELDS:
-            raise StyleStoreError("Invalid tone guide")
-        for field_name in ("formality", "density", "perspective"):
-            if not isinstance(value.get(field_name), str):
-                raise StyleStoreError("Invalid tone guide")
-        for field_name in ("custom_rules", "forbidden_words", "preferred_words"):
-            self._string_list(value.get(field_name), field_name=f"tone {field_name}")
-        return value
-
-    def _validate_example(self, value: object) -> dict[str, Any]:
-        if not isinstance(value, dict) or set(value) != self._EXAMPLE_FIELDS:
-            raise StyleStoreError("Invalid style example")
-        self._persisted_identifier(value.get("example_id"), field_name="example identity")
-        self._persisted_identifier(
-            value.get("source_filename"), field_name="example source filename"
-        )
-        bundle_id = value.get("bundle_id")
-        if bundle_id is not None:
-            self._persisted_identifier(bundle_id, field_name="example bundle identity")
-        self._string_list(
-            value.get("extracted_patterns"), field_name="example extracted patterns"
-        )
-        self._string_list(
-            value.get("sample_sentences"), field_name="example sample sentences"
-        )
-        self._timestamp(value.get("uploaded_at"), field_name="example upload timestamp")
-        self._persisted_identifier(
-            value.get("uploaded_by"), field_name="example uploader identity"
-        )
-        return value
-
-    def _owns(self, record: object) -> bool:
-        return isinstance(record, dict) and record.get("tenant_id") == self._tenant_id
-
-    def _validate_owned_profile(
-        self,
-        storage_key: str,
-        profile: dict[str, Any],
-    ) -> dict[str, Any]:
-        is_system = profile.get("is_system") is True
-        expected_fields = self._PROFILE_FIELDS | (self._SYSTEM_FIELDS if is_system else set())
-        if set(profile) != expected_fields:
-            raise StyleStoreError("Invalid style profile fields")
-
-        profile_id = self._persisted_identifier(
-            profile.get("profile_id"), field_name="style profile identity"
-        )
-        if storage_key != profile_id:
-            raise StyleStoreError("Style profile storage identity mismatch")
-        if profile.get("tenant_id") != self._tenant_id:
-            raise StyleStoreError("Style profile tenant ownership mismatch")
-        self._persisted_identifier(profile.get("name"), field_name="style profile name")
-        if not isinstance(profile.get("description"), str):
-            raise StyleStoreError("Invalid style profile description")
-        self._validate_tone(profile.get("tone_guide"))
-
-        examples = profile.get("examples")
-        if not isinstance(examples, list):
-            raise StyleStoreError("Invalid style profile examples")
-        example_ids: set[str] = set()
-        for example in examples:
-            validated_example = self._validate_example(example)
-            example_id = validated_example["example_id"]
-            if example_id in example_ids:
-                raise StyleStoreError("Duplicate style example identity")
-            example_ids.add(example_id)
-
-        overrides = profile.get("bundle_overrides")
-        if not isinstance(overrides, dict):
-            raise StyleStoreError("Invalid style bundle overrides")
-        for bundle_id, tone in overrides.items():
-            self._persisted_identifier(bundle_id, field_name="style bundle identity")
-            self._validate_tone(tone)
-
-        if not isinstance(profile.get("is_default"), bool):
-            raise StyleStoreError("Invalid default style flag")
-        self._persisted_identifier(
-            profile.get("created_by"), field_name="style profile creator identity"
-        )
-        created_at = self._timestamp(
-            profile.get("created_at"), field_name="style profile created timestamp"
-        )
-        updated_at = self._timestamp(
-            profile.get("updated_at"), field_name="style profile updated timestamp"
-        )
-        if datetime.fromisoformat(updated_at) < datetime.fromisoformat(created_at):
-            raise StyleStoreError("Invalid style profile update timestamp")
-
-        if is_system:
-            if profile.get("is_system") is not True:
-                raise StyleStoreError("Invalid system style flag")
-            if not isinstance(profile.get("few_shot_example"), str):
-                raise StyleStoreError("Invalid system style example")
-            avatar_color = profile.get("avatar_color")
-            if (
-                not isinstance(avatar_color, str)
-                or len(avatar_color) != 7
-                or not avatar_color.startswith("#")
-                or any(character not in "0123456789abcdefABCDEF" for character in avatar_color[1:])
-            ):
-                raise StyleStoreError("Invalid system style avatar color")
-        return profile
-
-    def _validate_state(self, state: object) -> dict[str, dict[str, Any]]:
-        if not isinstance(state, dict):
-            raise StyleStoreError("Invalid style profile state")
-
-        default_count = 0
-        for storage_key, profile in state.items():
-            if not isinstance(profile, dict):
-                raise StyleStoreError("Invalid style profile record")
-            stored_tenant_id = profile.get("tenant_id")
-            if not isinstance(stored_tenant_id, str) or not stored_tenant_id:
-                raise StyleStoreError("Invalid style profile tenant identity")
-            if stored_tenant_id != self._tenant_id:
-                continue
-            self._validate_owned_profile(storage_key, profile)
-            if profile["is_default"]:
-                default_count += 1
-        if default_count > 1:
-            raise StyleStoreError("Multiple default style profiles")
-        return state
-
-    def _load(self) -> dict[str, dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise StyleStoreError("Invalid style profile state document") from exc
         if raw is None:
-            return {}
+            return None, {}
+        if not raw.strip():
+            raise StyleStoreError("Invalid style profile state document")
         try:
             state = json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, TypeError, StyleStoreError) as exc:
             raise StyleStoreError("Invalid style profile state document") from exc
-        return self._validate_state(state)
+        return raw, self._validate_state(state)
 
-    def _save(self, state: dict[str, dict[str, Any]]) -> None:
+    def _load(self) -> dict[str, Any]:
+        state = self._read_state()[1]
+        return {
+            profile_id: profile
+            for profile_id, profile in state.items()
+            if profile_id != _STATE_METADATA_KEY
+        }
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        state: dict[str, Any],
+        mutation_id: str,
+    ) -> bool:
         validated = self._validate_state(state)
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(validated, ensure_ascii=False, indent=2),
+        payload = json.dumps(validated, ensure_ascii=False, indent=2)
+
+        def decode(raw: str) -> dict[str, Any]:
+            if not raw.strip():
+                raise StyleStoreError("Invalid style profile state document")
+            try:
+                observed = json.loads(raw, object_pairs_hook=_unique_object)
+            except (json.JSONDecodeError, TypeError, StyleStoreError) as exc:
+                raise StyleStoreError("Invalid style profile state document") from exc
+            return self._validate_state(observed)
+
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=payload,
+                decode=decode,
+                committed=lambda observed: mutation_id in self._mutation_ids(observed),
+                decode_errors=(StyleStoreError,),
+            )
+        except StateBackendError as exc:
+            raise StyleStoreError("Failed to persist style profile state") from exc
+
+    def _mutate(
+        self,
+        mutation_id: str,
+        change: Callable[[dict[str, Any]], tuple[_MutationResult, bool]],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, state = self._read_state()
+            result, changed = change(state)
+            if not changed:
+                return result
+
+            mutation_ids = self._mutation_ids(state)
+            mutation_ids.append(mutation_id)
+            state[_STATE_METADATA_KEY] = {
+                _MUTATION_IDS_FIELD: mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+            }
+            if self._persist_if_current(
+                expected=expected,
+                state=state,
+                mutation_id=mutation_id,
+            ):
+                return result
+        raise StyleStoreError(
+            "Style profile state changed too many times to persist safely"
         )
+
+    @staticmethod
+    def _updated_at(*profiles: dict[str, Any]) -> str:
+        now = _now_iso()
+        latest = max(
+            profiles,
+            key=lambda profile: datetime.fromisoformat(profile["updated_at"]),
+        )["updated_at"]
+        if datetime.fromisoformat(now) < datetime.fromisoformat(latest):
+            return latest
+        return now
 
     def _require_owned(
         self,
-        state: dict[str, dict[str, Any]],
+        state: dict[str, Any],
         profile_id: str,
     ) -> dict[str, Any]:
         profile = state.get(profile_id)
@@ -442,6 +333,7 @@ class StyleStore:
         if not isinstance(description, str):
             raise ValueError("Invalid style profile description")
         self._input_identifier(created_by, field_name="style profile creator identity")
+        mutation_id = secrets.token_hex(16)
         now = _now_iso()
         profile = StyleProfile(
             profile_id=str(uuid.uuid4()),
@@ -457,18 +349,21 @@ class StyleStore:
             updated_at=now,
         )
         record = _profile_to_dict(profile)
+        record[_INCARNATION_FIELD] = secrets.token_hex(16)
         self._validate_owned_profile(profile.profile_id, record)
 
-        with self._lock:
-            state = self._load()
+        def create_profile(state: dict[str, Any]) -> tuple[StyleProfile, bool]:
             if profile.profile_id in state:
                 raise StyleStoreError("Duplicate style profile identity")
-            if not any(self._owns(item) for item in state.values()):
-                profile.is_default = True
-                record["is_default"] = True
-            state[profile.profile_id] = record
-            self._save(state)
-        return profile
+            candidate = copy.deepcopy(record)
+            candidate["is_default"] = not any(
+                self._owns(item) for item in state.values()
+            )
+            state[profile.profile_id] = candidate
+            return _profile_from_dict(candidate), True
+
+        with self._lock:
+            return self._mutate(mutation_id, create_profile)
 
     def get(self, profile_id: str) -> StyleProfile | None:
         with self._lock:
@@ -494,16 +389,29 @@ class StyleStore:
         ]
 
     def set_default(self, profile_id: str) -> None:
-        with self._lock:
-            state = self._load()
-            self._require_owned(state, profile_id)
-            now = _now_iso()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def set_default_profile(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
+            target = self._require_owned(state, profile_id)
+            target_identity = self._bind_profile(
+                target,
+                expected_identity=target_identity,
+            )
+            owned_profiles = [
+                profile for profile in state.values() if self._owns(profile)
+            ]
+            updated_at = self._updated_at(*owned_profiles)
             for current_id, profile in state.items():
                 if not self._owns(profile):
                     continue
                 profile["is_default"] = current_id == profile_id
-                profile["updated_at"] = now
-            self._save(state)
+                profile["updated_at"] = updated_at
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, set_default_profile)
 
     def update_tone_guide(
         self,
@@ -512,13 +420,22 @@ class StyleStore:
     ) -> StyleProfile:
         tone = asdict(tone_guide)
         self._validate_tone(tone)
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def update_tone(state: dict[str, Any]) -> tuple[StyleProfile, bool]:
+            nonlocal target_identity
             profile = self._require_owned(state, profile_id)
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             profile["tone_guide"] = tone
-            profile["updated_at"] = _now_iso()
-            self._save(state)
-            return _profile_from_dict(profile)
+            profile["updated_at"] = self._updated_at(profile)
+            return _profile_from_dict(profile), True
+
+        with self._lock:
+            return self._mutate(mutation_id, update_tone)
 
     def set_bundle_override(
         self,
@@ -529,62 +446,110 @@ class StyleStore:
         self._input_identifier(bundle_id, field_name="style bundle identity")
         tone = asdict(tone_guide)
         self._validate_tone(tone)
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def set_override(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
             profile = self._require_owned(state, profile_id)
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             profile["bundle_overrides"][bundle_id] = tone
-            profile["updated_at"] = _now_iso()
-            self._save(state)
+            profile["updated_at"] = self._updated_at(profile)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, set_override)
 
     def remove_bundle_override(self, profile_id: str, bundle_id: str) -> None:
         self._input_identifier(bundle_id, field_name="style bundle identity")
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def remove_override(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
             profile = self._require_owned(state, profile_id)
             if bundle_id not in profile["bundle_overrides"]:
-                return
+                return None, False
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             profile["bundle_overrides"].pop(bundle_id)
-            profile["updated_at"] = _now_iso()
-            self._save(state)
+            profile["updated_at"] = self._updated_at(profile)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, remove_override)
 
     def add_example(self, profile_id: str, example: StyleExample) -> None:
         record = asdict(example)
         self._validate_example(record)
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def append_example(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
             profile = self._require_owned(state, profile_id)
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             if any(
-                item["example_id"] == example.example_id
-                for item in profile["examples"]
+                item["example_id"] == example.example_id for item in profile["examples"]
             ):
                 raise StyleStoreError("Duplicate style example identity")
             profile["examples"].append(record)
-            profile["updated_at"] = _now_iso()
-            self._save(state)
+            profile["updated_at"] = self._updated_at(profile)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, append_example)
 
     def remove_example(self, profile_id: str, example_id: str) -> None:
         self._input_identifier(example_id, field_name="style example identity")
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def discard_example(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
             profile = self._require_owned(state, profile_id)
             remaining = [
-                item
-                for item in profile["examples"]
-                if item["example_id"] != example_id
+                item for item in profile["examples"] if item["example_id"] != example_id
             ]
             if len(remaining) == len(profile["examples"]):
-                return
+                return None, False
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             profile["examples"] = remaining
-            profile["updated_at"] = _now_iso()
-            self._save(state)
+            profile["updated_at"] = self._updated_at(profile)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, discard_example)
 
     def delete(self, profile_id: str) -> None:
-        with self._lock:
-            state = self._load()
-            if not self._owns(state.get(profile_id)):
-                return
+        mutation_id = secrets.token_hex(16)
+        target_identity: str | None = None
+
+        def delete_profile(state: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
+            profile = state.get(profile_id)
+            if not self._owns(profile):
+                return None, False
+            target_identity = self._bind_profile(
+                profile,
+                expected_identity=target_identity,
+            )
             state.pop(profile_id)
-            self._save(state)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, delete_profile)
 
     def is_system(self, profile_id: str) -> bool:
         with self._lock:
@@ -596,8 +561,14 @@ class StyleStore:
         """Add missing built-in profiles without changing existing records."""
         from app.storage.default_styles import DEFAULT_STYLE_PROFILES
 
-        with self._lock:
-            state = self._load()
+        mutation_id = secrets.token_hex(16)
+        created_at = _now_iso()
+        incarnations = {
+            profile["style_id"]: secrets.token_hex(16)
+            for profile in DEFAULT_STYLE_PROFILES
+        }
+
+        def add_defaults(state: dict[str, Any]) -> tuple[int, bool]:
             has_default = any(
                 self._owns(profile) and profile["is_default"]
                 for profile in state.values()
@@ -608,7 +579,6 @@ class StyleStore:
                 if profile_id in state:
                     continue
                 tone = default_profile.get("tone_guide", {})
-                now = _now_iso()
                 is_default = bool(default_profile.get("is_default") and not has_default)
                 entry: dict[str, Any] = {
                     "profile_id": profile_id,
@@ -619,7 +589,9 @@ class StyleStore:
                         "formality": tone.get("formality", ""),
                         "density": tone.get("density", ""),
                         "perspective": tone.get("perspective", ""),
-                        "custom_rules": copy.copy(default_profile.get("custom_rules", [])),
+                        "custom_rules": copy.copy(
+                            default_profile.get("custom_rules", [])
+                        ),
                         "forbidden_words": copy.copy(
                             default_profile.get("forbidden_expressions", [])
                         ),
@@ -632,16 +604,19 @@ class StyleStore:
                     "few_shot_example": default_profile.get("few_shot_example", ""),
                     "avatar_color": default_profile.get("avatar_color", ""),
                     "created_by": "system",
-                    "created_at": now,
-                    "updated_at": now,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                    _INCARNATION_FIELD: incarnations[profile_id],
                 }
                 self._validate_owned_profile(profile_id, entry)
                 state[profile_id] = entry
                 has_default = has_default or is_default
                 added += 1
+            return added, bool(added)
 
+        with self._lock:
+            added = self._mutate(mutation_id, add_defaults)
             if added:
-                self._save(state)
                 _log.info(
                     "Loaded %d default style profiles for tenant=%s",
                     added,

@@ -39,6 +39,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - `/admin/tenants`를 포함한 admin endpoint는 인증된 admin JWT 또는 설정된 Ops key 중 하나를 요구한다. Ops UI는 공통 인증 header 조합을 사용해 로그인 세션을 보존하며 두 자격 증명을 동시에 요구하지 않는다.
   - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다.
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
+- Root tenant registry 상태
+  - Tenant record와 API key hash는 local `data/tenants.json` 또는 같은 relative path의 S3 state object에 저장한다. Mutation receipt는 public tenant identifier로 유효하지 않은 private root sentinel 아래에 두고 admin/API 응답에서는 제거한다.
+  - Target mutation은 tenant identity와 record schema를 다시 검증하며 malformed private metadata, foreign ownership과 invalid target record는 조회·변경 또는 인증 성공으로 축소하지 않고 원본을 보존한다.
+  - Create/update/hint/API key rotation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 target에 operation을 최대 32회 재적용한다. 최근 64개 private mutation receipt로 commit 응답 유실 뒤 successor mutation을 조정한다.
+  - API key rotation은 한 번 생성한 plaintext와 hash를 같은 mutation에 결속한다. Lost response는 현재 hash가 정확히 하나의 active owned tenant에 결속돼 실제 인증 가능한 경우에만 성공으로 조정하며, 후속 rotation·비활성화·foreign ownership·duplicate hash는 fail closed 처리한다. 이 보장은 단일 root registry object 범위이고 실제 AWS runtime과 다른 state object를 묶는 transaction은 현재 보장 범위가 아니다.
 - 계정·초대 상태
   - 사용자와 초대 record는 local `data/tenants/<tenant_id>/{users,invites}.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant를 path 선택 전에 검증하고 손상 document, duplicate key, owned identity·role·timestamp drift, duplicate username과 손상 private receipt는 인증·등록·초대 수락과 후속 변경을 중단한다. Explicit foreign record는 현재 tenant에 노출하거나 인증에 사용하지 않고 원본에 보존한다. Persisted 오류는 caller 입력 오류와 분리해 API에서 `500 INTERNAL_ERROR`로 처리한다.
@@ -59,7 +64,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - G2B 즐겨찾기 상태
   - 공고 즐겨찾기는 local `data/tenants/<tenant_id>/g2b_bookmarks.json` 또는 같은 relative path의 S3 state object에 저장한다. 내부 owner metadata는 현재 tenant/user로 기록하고 API 응답에서는 제거한다.
   - Tenant와 user bucket을 state 접근 전에 검증한다. Malformed/invalid UTF-8 JSON, duplicate key, invalid collection, owned record와 duplicate bid identity는 조회와 후속 추가·삭제를 중단하며 원본 bytes를 보존한다. Explicit foreign owner는 현재 user에게 노출하거나 변경하지 않는다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local logical state lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 G2B API 성공은 현재 보장 범위가 아니다.
+  - Add/remove는 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema·bookmark identity 위에 최대 32회 재적용한다. Private bookmark identity와 최근 64개 mutation receipt는 API에서 제거하고 commit 응답 유실 뒤 successor mutation을 조정한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다. 이 보장은 단일 bookmark object 범위이고 실제 G2B API 성공과 multi-object transaction은 현재 보장 범위가 아니다.
 - 공공조달 판단 상태
   - 판단 record는 `data/tenants/<tenant_id>/procurement_decisions.json`, source snapshot은 `data/tenants/<tenant_id>/procurement_snapshots/<project_id>/<snapshot_id>.json` 또는 같은 relative path의 S3 object에 저장한다.
   - Tenant/project, snapshot metadata ID와 storage path를 다시 대조한다. Blank·malformed·invalid UTF-8·non-list JSON, duplicate key·snapshot metadata, 비직렬화 payload와 non-finite number는 조회나 write를 중단하며 기존 bytes를 덮어쓰지 않는다. Explicit foreign decision은 현재 tenant의 판단 근거로 노출하거나 변경하지 않는다.
@@ -104,11 +109,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - LDAP, SAML, GCloud, OAuth2 설정은 local `data/tenants/<tenant_id>/sso_config.json` 또는 같은 relative path의 S3 state object에 저장한다. Secret은 PBKDF2로 유도한 Fernet key로 암호화하며 복호화 실패를 암호문 평문 fallback으로 처리하지 않는다.
   - Tenant와 exact nested schema를 검증한다. Malformed JSON, duplicate key, unknown provider, type/timestamp drift와 올바르지 않은 암호문 형식은 조회와 후속 변경을 중단하고 원본 bytes를 보존한다. Explicit foreign 설정은 현재 tenant에 노출하거나 덮어쓰지 않고, tenant 필드 없는 기존 파일은 path ownership으로 읽는다.
   - Admin update는 strict Pydantic schema를 사용하고 masked secret 재전송은 기존 암호문을 유지한다. GCloud state와 SAML RelayState는 constant-time 비교하며 SAML ACS는 IdP certificate와 signed assertion 검증을 요구한다. Verifier가 없으면 인증을 거부한다.
-  - 독립 store 인스턴스의 partial update는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 LDAP/SAML/GCloud 로그인 성공은 현재 보장 범위가 아니다.
+  - Save/partial update는 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 owned config에 변경을 최대 32회 재적용한다. 최근 64개 private mutation receipt는 public config에서 제거하고 commit 응답 유실 뒤 successor update를 조정한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다. 이 보장은 단일 SSO config object 범위이고 실제 LDAP/SAML/GCloud 로그인 성공은 현재 보장 범위가 아니다.
 - 스타일 프로필 상태
   - tone guide, bundle override, 분석 예시와 default/system metadata는 local `data/tenants/<tenant_id>/style_profiles.json` 또는 같은 relative path의 S3 state object에 저장한다.
   - tenant와 owned profile의 exact schema를 state 접근 전에 검증한다. Malformed JSON, duplicate key, identity/timestamp drift, duplicate example ID와 multiple default는 조회·prompt build와 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존한다.
-  - 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 직렬화한다. Distributed S3 compare-and-swap과 실제 provider 기반 style analysis 성공은 현재 보장 범위가 아니다.
+  - Profile mutation은 local conditional file write 또는 S3 conditional create/ETag CAS로 확정하고 충돌마다 최신 ownership·schema·profile identity 위에 최대 32회 재적용한다. Private incarnation은 같은 public profile ID의 replacement lifecycle을 구분하고 최근 64개 mutation receipt와 함께 public profile reader에서 제거한다. Process-local lock은 contention 완화 수단이며 persistence authority가 아니다. 이 보장은 단일 style profile object 범위이고 실제 provider 기반 style analysis 성공은 현재 보장 범위가 아니다.
 - 품질 학습 상태
   - 사용자 feedback, eval evidence, runtime prompt override, A/B prompt experiment와 request pattern은 local `data/tenants/<tenant_id>/{feedback.jsonl,eval_results.jsonl,prompt_overrides.json,ab_tests.json,request_patterns.jsonl}` 또는 같은 relative path의 S3 state object에 저장한다.
   - Tenant와 owned record schema를 state 접근 전에 검증한다. Malformed/invalid UTF-8 JSON/JSONL, duplicate key·identity, identity/type/timestamp/score drift는 dashboard·eval·feedback·A/B·request-pattern API와 생성 prompt build, 후속 변경을 중단하며 원본 bytes를 보존한다. Explicit foreign record는 현재 tenant에 노출하거나 변경하지 않고 보존하며 tenant 필드 없는 기존 record는 path ownership으로 읽는다.

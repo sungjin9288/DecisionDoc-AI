@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import argparse
 import os
 import sys
@@ -36,7 +38,10 @@ from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.project_store import ProjectStore
 from app.storage.share_store import ShareStore
 from app.storage.state_backend import get_state_backend
-from app.storage.tenant_store import TenantStore
+from app.storage.tenant_store import (
+    TENANT_REGISTRY_METADATA_FIELDS,
+    TenantStore,
+)
 from app.storage.user_store import UserRole, UserStore
 
 
@@ -45,7 +50,9 @@ DEMO_PASSWORD = "DemoPass123!"
 DEMO_EMAIL = "stale-demo-admin@example.invalid"
 DEMO_DISPLAY_NAME = "Stale Share Demo Admin"
 DEMO_PROJECT_NAME = "거점 stale share 데모 프로젝트"
-DEMO_PROJECT_DESCRIPTION = "locations overview와 stale-share review를 직접 확인하는 로컬 데모"
+DEMO_PROJECT_DESCRIPTION = (
+    "locations overview와 stale-share review를 직접 확인하는 로컬 데모"
+)
 DEMO_PROJECT_CLIENT = "DecisionDoc Demo"
 DEMO_CONTRACT_NUMBER = "DEMO-STALE-SHARE-001"
 DEMO_DECISION_REQUEST_ID = "demo-procurement-stale-share-bid-decision"
@@ -88,7 +95,15 @@ def _fresh_data_guard(data_dir: Path) -> Path | None:
             tenants_payload = json.loads(tenants_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, json.JSONDecodeError):
             return tenants_path
-        tenant_ids = {str(key) for key in tenants_payload.keys()} if isinstance(tenants_payload, dict) else set()
+        tenant_ids = (
+            {
+                str(key)
+                for key in tenants_payload
+                if key not in TENANT_REGISTRY_METADATA_FIELDS
+            }
+            if isinstance(tenants_payload, dict)
+            else set()
+        )
         if tenant_ids - {DEMO_TENANT_ID}:
             return tenants_path
 
@@ -337,9 +352,15 @@ def seed_procurement_stale_share_demo(
     )
 
     project_store = ProjectStore(base_dir=str(data_dir), backend=backend)
-    procurement_store = ProcurementDecisionStore(base_dir=str(data_dir), backend=backend)
-    decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=backend)
-    decision_council_service = DecisionCouncilService(decision_council_store=decision_council_store)
+    procurement_store = ProcurementDecisionStore(
+        base_dir=str(data_dir), backend=backend
+    )
+    decision_council_store = DecisionCouncilStore(
+        base_dir=str(data_dir), backend=backend
+    )
+    decision_council_service = DecisionCouncilService(
+        decision_council_store=decision_council_store
+    )
     share_store = ShareStore(DEMO_TENANT_ID, data_dir=data_dir, backend=backend)
     storage = LocalStorage(data_dir=data_dir, exports_dir=data_dir)
 
@@ -351,7 +372,9 @@ def seed_procurement_stale_share_demo(
         contract_number=DEMO_CONTRACT_NUMBER,
     )
 
-    initial_procurement = _seed_initial_procurement_state(procurement_store, project_id=project.project_id)
+    initial_procurement = _seed_initial_procurement_state(
+        procurement_store, project_id=project.project_id
+    )
     council_session = decision_council_service.run_procurement_council(
         tenant_id=DEMO_TENANT_ID,
         project_id=project.project_id,
@@ -409,7 +432,9 @@ def seed_procurement_stale_share_demo(
         source_decision_council_direction=council_session.consensus.recommended_direction,
     )
 
-    current_procurement = _seed_stale_procurement_state(procurement_store, project_id=project.project_id)
+    current_procurement = _seed_stale_procurement_state(
+        procurement_store, project_id=project.project_id
+    )
     latest_session = decision_council_service.get_latest_procurement_council(
         tenant_id=DEMO_TENANT_ID,
         project_id=project.project_id,
@@ -427,7 +452,9 @@ def seed_procurement_stale_share_demo(
         latest_session=bound_session,
     )
     if not document_status or document_status["status"] != "stale_procurement":
-        raise SystemExit("Demo seed expected a stale_procurement council-backed document status.")
+        raise SystemExit(
+            "Demo seed expected a stale_procurement council-backed document status."
+        )
 
     share_link = share_store.create(
         request_id=DEMO_PROPOSAL_REQUEST_ID,
@@ -464,7 +491,9 @@ def seed_procurement_stale_share_demo(
                 "share_decision_council_document_status": document_status["status"],
                 "share_decision_council_document_status_tone": document_status["tone"],
                 "share_decision_council_document_status_copy": document_status["copy"],
-                "share_decision_council_document_status_summary": document_status["summary"],
+                "share_decision_council_document_status_summary": document_status[
+                    "summary"
+                ],
             },
             session_id="demo-procurement-stale-share-seed",
         )
@@ -528,7 +557,9 @@ def _print_result(result: DemoSeedResult) -> None:
     print(f"  decision_project_document_id: {result.decision_project_document_id}")
     print(f"  proposal_project_document_id: {result.proposal_project_document_id}")
     print(f"  decision_council_session_id: {result.decision_council_session_id}")
-    print(f"  decision_council_session_revision: {result.decision_council_session_revision}")
+    print(
+        f"  decision_council_session_revision: {result.decision_council_session_revision}"
+    )
     print(f"  share_id: {result.share_id}")
     print("")
     print("Links")
@@ -537,12 +568,22 @@ def _print_result(result: DemoSeedResult) -> None:
     print(f"  public share: {result.public_share_url}")
     print("")
     print("Manual check")
-    print("  1. Start the app with the same DATA_DIR and DECISIONDOC_PROCUREMENT_COPILOT_ENABLED=1.")
+    print(
+        "  1. Start the app with the same DATA_DIR and DECISIONDOC_PROCUREMENT_COPILOT_ENABLED=1."
+    )
     print("  2. Sign in with the seeded admin account above.")
-    print("  3. Open the focused review URL to land directly on the stale-share review state.")
-    print("  4. Confirm the same Decision Council session is linked to both bid_decision_kr and proposal_kr rows.")
-    print("  5. Confirm the proposal_kr share is stale, publicly reachable, and visible in locations stale-share triage.")
-    print("  6. Open the public share URL, then revoke it from the UI and verify the same URL becomes 404.")
+    print(
+        "  3. Open the focused review URL to land directly on the stale-share review state."
+    )
+    print(
+        "  4. Confirm the same Decision Council session is linked to both bid_decision_kr and proposal_kr rows."
+    )
+    print(
+        "  5. Confirm the proposal_kr share is stale, publicly reachable, and visible in locations stale-share triage."
+    )
+    print(
+        "  6. Open the public share URL, then revoke it from the UI and verify the same URL becomes 404."
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,0 +1,263 @@
+{
+  "scenario_id": "procurement-decision-package-local-demo",
+  "schema_purpose": "expected_decision_package",
+  "updated_at": "2026-06-23",
+  "package": {
+    "package_id": "local-procurement-demo-001-package",
+    "recommendation": "CONDITIONAL_GO",
+    "recommendation_reason": "The opportunity fits the team's document workflow and internal tooling capabilities, but proposal drafting should wait for security plan ownership, operator training staffing, and Korean proposal review confirmation.",
+    "opportunity_ref": {
+      "opportunity_id": "local-procurement-demo-001",
+      "title": "Public Agency Document Workflow Modernization Pilot",
+      "source_type": "local_fixture"
+    },
+    "hard_filters": [
+      {
+        "filter_id": "mandatory-certification",
+        "status": "pass",
+        "reason": "No unavailable mandatory certification is present in the local fixture."
+      },
+      {
+        "filter_id": "deadline-readiness",
+        "status": "pass",
+        "reason": "Deadline is 21 days, which does not violate the sample excluded risk condition."
+      },
+      {
+        "filter_id": "security-plan",
+        "status": "needs_review",
+        "reason": "A security handling plan is mandatory and currently draft-required."
+      }
+    ],
+    "soft_fit_score": {
+      "score": 68,
+      "band": "conditional",
+      "factors": [
+        {
+          "name": "domain_fit",
+          "score": 78,
+          "evidence_ids": [
+            "evidence-service-line-document-workflow"
+          ]
+        },
+        {
+          "name": "reference_project_fit",
+          "score": 64,
+          "evidence_ids": [
+            "evidence-public-sector-reference"
+          ]
+        },
+        {
+          "name": "staffing_readiness",
+          "score": 58,
+          "evidence_ids": [
+            "gap-training-staffing-owner"
+          ]
+        },
+        {
+          "name": "security_readiness",
+          "score": 52,
+          "evidence_ids": [
+            "gap-security-plan-owner"
+          ]
+        },
+        {
+          "name": "budget_fit",
+          "score": 82,
+          "evidence_ids": [
+            "evidence-budget-fit"
+          ]
+        }
+      ]
+    },
+    "evidence_summary": [
+      {
+        "evidence_id": "evidence-service-line-document-workflow",
+        "type": "source_fact",
+        "source": "capability_profile.service_lines",
+        "summary": "Capability profile includes document workflow consulting and internal tooling."
+      },
+      {
+        "evidence_id": "evidence-public-sector-reference",
+        "type": "source_fact",
+        "source": "capability_profile.public_sector_references",
+        "summary": "A public-sector style reporting process reference is available, but the fit should be reviewed."
+      },
+      {
+        "evidence_id": "evidence-budget-fit",
+        "type": "source_fact",
+        "source": "opportunity.budget_range + capability_profile.preferred_budget_range",
+        "summary": "Opportunity budget range falls inside the sample preferred budget range."
+      },
+      {
+        "evidence_id": "gap-security-plan-owner",
+        "type": "missing_evidence",
+        "source": "operator_notes.known_uncertainty",
+        "summary": "Security handling plan owner is not confirmed."
+      },
+      {
+        "evidence_id": "gap-training-staffing-owner",
+        "type": "missing_evidence",
+        "source": "operator_notes.known_uncertainty",
+        "summary": "Operator training staffing owner is not assigned."
+      }
+    ],
+    "bid_readiness_checklist": [
+      {
+        "item_id": "security-plan",
+        "label": "Finalize security handling plan",
+        "owner": "unassigned",
+        "status": "blocked",
+        "required_before": "proposal_drafting"
+      },
+      {
+        "item_id": "training-staffing",
+        "label": "Assign operator training staffing owner",
+        "owner": "unassigned",
+        "status": "blocked",
+        "required_before": "proposal_drafting"
+      },
+      {
+        "item_id": "proposal-reviewer",
+        "label": "Confirm Korean proposal package reviewer",
+        "owner": "unassigned",
+        "status": "needs_review",
+        "required_before": "proposal_submission"
+      }
+    ],
+    "validation_summary": {
+      "schema_status": "expected_shape_only",
+      "boundary_status": "explicit_non_authorization_required",
+      "operator_summary": "CONDITIONAL_GO can be reviewed, but proposal work should wait until the listed gaps have owners. This package is evidence for review, not approval to act.",
+      "next_review_action": "Assign an owner to each unresolved gap, then ask the named reviewer to sign off on the package scope only.",
+      "unresolved_gaps": [
+        "security-plan",
+        "training-staffing",
+        "proposal-reviewer"
+      ]
+    },
+    "reviewer_handoff": {
+      "requested_reviewer": "executive-reviewer",
+      "requested_decision": "review_conditional_go",
+      "review_prompt": "Confirm whether proposal drafting may start after listed blockers receive owners.",
+      "non_authorization_note": "Review acceptance does not authorize provider calls, AWS runtime execution, dataset upload, training, model promotion, production service resume, bid submission, legal approval, or contractual commitment."
+    },
+    "proposal_handoff": {
+      "handoff_scope": "proposal_drafting_preparation_only",
+      "source_package_id": "local-procurement-demo-001-package",
+      "recommendation": "CONDITIONAL_GO",
+      "drafting_status": "blocked_until_review",
+      "required_inputs": [
+        "security-plan",
+        "training-staffing",
+        "proposal-reviewer"
+      ],
+      "blocked_until": [
+        "security-plan",
+        "training-staffing",
+        "proposal-reviewer"
+      ],
+      "allowed_next_steps": [
+        "prepare proposal outline",
+        "assign evidence owner",
+        "confirm reviewer sign-off"
+      ],
+      "excluded_actions": [
+        "provider_api_execution",
+        "aws_runtime_execution",
+        "dataset_upload",
+        "training_execution",
+        "model_promotion",
+        "production_service_resume",
+        "bid_submission",
+        "legal_approval",
+        "contractual_commitment"
+      ],
+      "non_authorization_note": "Review acceptance does not authorize provider calls, AWS runtime execution, dataset upload, training, model promotion, production service resume, bid submission, legal approval, or contractual commitment."
+    },
+    "pending_signoff": {
+      "status": "pending",
+      "reviewer": "executive-reviewer",
+      "signoff_scope": "decision_package_review_only",
+      "operational_approval": false
+    },
+    "audit_manifest": {
+      "schema_purpose": "procurement_decision_package_audit_manifest",
+      "packet_status": "local_review_packet",
+      "package_id": "local-procurement-demo-001-package",
+      "recommendation": "CONDITIONAL_GO",
+      "included_artifacts": [
+        "decision_package.json",
+        "procurement_review.html",
+        "decision_summary.md",
+        "evidence_summary.md",
+        "bid_readiness_checklist.md",
+        "validation_summary.json",
+        "reviewer_handoff.json",
+        "proposal_handoff.json",
+        "pending_signoff.json",
+        "signoff_summary.md",
+        "audit_manifest.json",
+        "export_manifest.json"
+      ],
+      "decision_artifacts": [
+        "decision_package.json",
+        "procurement_review.html",
+        "decision_summary.md",
+        "bid_readiness_checklist.md"
+      ],
+      "evidence_artifacts": [
+        "evidence_summary.md"
+      ],
+      "validation_artifacts": [
+        "validation_summary.json"
+      ],
+      "handoff_artifacts": [
+        "reviewer_handoff.json",
+        "proposal_handoff.json"
+      ],
+      "signoff_artifacts": [
+        "pending_signoff.json",
+        "signoff_summary.md"
+      ],
+      "excluded_actions": [
+        "provider_api_execution",
+        "aws_runtime_execution",
+        "dataset_upload",
+        "training_execution",
+        "model_promotion",
+        "production_service_resume",
+        "bid_submission",
+        "legal_approval",
+        "contractual_commitment"
+      ],
+      "non_authorization_note": "Review acceptance does not authorize provider calls, AWS runtime execution, dataset upload, training, model promotion, production service resume, bid submission, legal approval, or contractual commitment."
+    },
+    "export_manifest": {
+      "included_artifacts": [
+        "decision_package.json",
+        "procurement_review.html",
+        "decision_summary.md",
+        "evidence_summary.md",
+        "bid_readiness_checklist.md",
+        "validation_summary.json",
+        "reviewer_handoff.json",
+        "proposal_handoff.json",
+        "pending_signoff.json",
+        "signoff_summary.md",
+        "audit_manifest.json",
+        "export_manifest.json"
+      ],
+      "excluded_actions": [
+        "provider_api_execution",
+        "aws_runtime_execution",
+        "dataset_upload",
+        "training_execution",
+        "model_promotion",
+        "production_service_resume",
+        "bid_submission",
+        "legal_approval",
+        "contractual_commitment"
+      ]
+    }
+  }
+}

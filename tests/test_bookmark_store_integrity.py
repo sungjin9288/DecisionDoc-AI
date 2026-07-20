@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -10,7 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.bookmark_store import BookmarkStore, BookmarkStoreError
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import LocalStateBackend
+from tests.conditional_state_support import (
+    ConflictingLocalBackend,
+    MemoryS3Client as _MemoryS3Client,
+    s3_backend as _s3_backend,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -18,52 +24,6 @@ class _SlowLocalBackend(LocalStateBackend):
         raw = super().read_text(relative_path)
         time.sleep(0.005)
         return raw
-
-
-class _Body:
-    def __init__(self, raw: bytes) -> None:
-        self._raw = raw
-
-    def read(self) -> bytes:
-        return self._raw
-
-
-class _MemoryS3Client:
-    def __init__(self, *, read_delay: float = 0.0) -> None:
-        self.objects: dict[tuple[str, str], bytes] = {}
-        self.read_delay = read_delay
-
-    def put_object(
-        self,
-        *,
-        Bucket: str,
-        Key: str,
-        Body: bytes,
-        ContentType: str,
-    ) -> None:
-        _ = ContentType
-        self.objects[(Bucket, Key)] = Body
-
-    def get_object(self, *, Bucket: str, Key: str) -> dict:
-        time.sleep(self.read_delay)
-        raw = self.objects.get((Bucket, Key))
-        if raw is None:
-            error = RuntimeError("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(raw)}
-
-
-def _s3_backend(
-    client: _MemoryS3Client | None = None,
-) -> tuple[S3StateBackend, _MemoryS3Client]:
-    selected_client = client or _MemoryS3Client()
-    backend = S3StateBackend(
-        bucket="unit-bucket",
-        prefix="decisiondoc-ai/state/",
-        s3_client=selected_client,
-    )
-    return backend, selected_client
 
 
 def _path(root: Path) -> Path:
@@ -261,6 +221,8 @@ def test_independent_local_and_s3_stores_preserve_concurrent_bookmarks(
         )
         for _ in range(20)
     ]
+    for store in local_stores:
+        store._lock = nullcontext()
 
     client = _MemoryS3Client(read_delay=0.005)
     s3_stores = [
@@ -271,6 +233,8 @@ def test_independent_local_and_s3_stores_preserve_concurrent_bookmarks(
         )
         for _ in range(20)
     ]
+    for store in s3_stores:
+        store._lock = nullcontext()
 
     def add(store: BookmarkStore, index: int) -> None:
         store.add(
@@ -290,6 +254,256 @@ def test_independent_local_and_s3_stores_preserve_concurrent_bookmarks(
     assert {
         item["bid_number"] for item in s3_stores[0].get_for_user("user-1")
     } == expected
+
+
+def test_concurrent_same_bookmark_keeps_one_owned_record() -> None:
+    client = _MemoryS3Client(read_delay=0.005)
+    stores = [
+        BookmarkStore(
+            base_dir=f"/virtual/data-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(
+            executor.map(
+                lambda store: store.add(
+                    "user-1",
+                    {"bid_number": "BID-SHARED", "title": "Shared"},
+                ),
+                stores,
+            )
+        )
+
+    assert {result["bid_number"] for result in results} == {"BID-SHARED"}
+    assert stores[0].get_for_user("user-1") == [results[0]]
+
+
+def test_bookmark_add_reconciles_commit_then_successor_add() -> None:
+    client = _MemoryS3Client()
+    primary = BookmarkStore(
+        base_dir="/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    successor = BookmarkStore(
+        base_dir="/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_fragment="g2b_bookmarks.json",
+        after_write=lambda: successor.add(
+            "user-1",
+            {"bid_number": "BID-2", "title": "Successor"},
+        ),
+    )
+    created = primary.add(
+        "user-1",
+        {"bid_number": "BID-1", "title": "Primary"},
+    )
+
+    assert created["bid_number"] == "BID-1"
+    assert {item["bid_number"] for item in primary.get_for_user("user-1")} == {
+        "BID-1",
+        "BID-2",
+    }
+
+
+def test_bookmark_remove_reconciles_commit_then_successor_add() -> None:
+    client = _MemoryS3Client()
+    primary = BookmarkStore(
+        base_dir="/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    successor = BookmarkStore(
+        base_dir="/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.add("user-1", {"bid_number": "BID-1", "title": "Primary"})
+
+    client.fail_after_next_conditional_write(
+        key_fragment="g2b_bookmarks.json",
+        after_write=lambda: successor.add(
+            "user-1",
+            {"bid_number": "BID-2", "title": "Successor"},
+        ),
+    )
+    primary.remove("user-1", "BID-1")
+
+    assert [item["bid_number"] for item in primary.get_for_user("user-1")] == ["BID-2"]
+
+
+def test_bookmark_remove_reconciles_commit_then_same_bid_replacement() -> None:
+    client = _MemoryS3Client()
+    primary = BookmarkStore(
+        base_dir="/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    successor = BookmarkStore(
+        base_dir="/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.add("user-1", {"bid_number": "BID-1", "title": "Original"})
+
+    client.fail_after_next_conditional_write(
+        key_fragment="g2b_bookmarks.json",
+        after_write=lambda: successor.add(
+            "user-1",
+            {"bid_number": "BID-1", "title": "Replacement"},
+        ),
+    )
+    primary.remove("user-1", "BID-1")
+
+    assert primary.get_for_user("user-1")[0]["title"] == "Replacement"
+
+
+def test_bookmark_remove_does_not_delete_same_bid_replacement() -> None:
+    client = _MemoryS3Client()
+    primary = BookmarkStore(
+        base_dir="/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    successor = BookmarkStore(
+        base_dir="/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.add("user-1", {"bid_number": "BID-1", "title": "Original"})
+
+    def replace_bookmark() -> None:
+        successor.remove("user-1", "BID-1")
+        successor.add("user-1", {"bid_number": "BID-1", "title": "Replacement"})
+
+    client.before_next_conditional_write(
+        key_fragment="g2b_bookmarks.json",
+        callback=replace_bookmark,
+    )
+
+    with pytest.raises(BookmarkStoreError, match="identity changed"):
+        primary.remove("user-1", "BID-1")
+
+    assert primary.get_for_user("user-1")[0]["title"] == "Replacement"
+
+
+def test_bookmark_mutations_stop_after_bounded_conflicts(tmp_path: Path) -> None:
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="g2b_bookmarks.json",
+    )
+    store = BookmarkStore(
+        base_dir=str(tmp_path),
+        tenant_id="alpha",
+        backend=backend,
+    )
+    store._lock = nullcontext()
+
+    with pytest.raises(BookmarkStoreError, match="changed too many times"):
+        store.add("user-1", {"bid_number": "BID-1"})
+
+    assert backend.attempts == 32
+
+
+def test_existing_bookmark_mutation_stops_after_bounded_conflicts(
+    tmp_path: Path,
+) -> None:
+    BookmarkStore(base_dir=str(tmp_path), tenant_id="alpha").add(
+        "user-1",
+        {"bid_number": "BID-1"},
+    )
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="g2b_bookmarks.json",
+    )
+    store = BookmarkStore(
+        base_dir=str(tmp_path),
+        tenant_id="alpha",
+        backend=backend,
+    )
+    store._lock = nullcontext()
+
+    with pytest.raises(BookmarkStoreError, match="changed too many times"):
+        store.remove("user-1", "BID-1")
+
+    assert backend.attempts == 32
+
+
+def test_legacy_user_matching_old_metadata_name_remains_addressable(
+    tmp_path: Path,
+) -> None:
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="alpha")
+
+    store.add("_bookmark_mutation_ids", {"bid_number": "BID-LEGACY"})
+
+    assert store.get_for_user("_bookmark_mutation_ids")[0]["bid_number"] == "BID-LEGACY"
+
+
+def test_bookmark_private_state_is_hidden_and_bounded(tmp_path: Path) -> None:
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="alpha")
+    for index in range(70):
+        store.add("user-1", {"bid_number": f"BID-{index}"})
+
+    public = store.get_for_user("user-1")
+    persisted = json.loads(_path(tmp_path).read_text(encoding="utf-8"))
+
+    assert all("_bookmark_id" not in bookmark for bookmark in public)
+    assert all("_bookmark_owner" not in bookmark for bookmark in public)
+    assert len(persisted[""]["_bookmark_mutation_ids"]) == 64
+
+
+def test_invalid_bookmark_mutation_history_fails_closed(tmp_path: Path) -> None:
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="alpha")
+    store.add("user-1", {"bid_number": "BID-1"})
+    path = _path(tmp_path)
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    persisted[""]["_bookmark_mutation_ids"] = [
+        f"mutation-{index}" for index in range(65)
+    ]
+    path.write_text(json.dumps(persisted), encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(BookmarkStoreError, match="mutation history"):
+        store.get_for_user("user-1")
+    with pytest.raises(BookmarkStoreError, match="mutation history"):
+        store.add("user-1", {"bid_number": "BID-2"})
+
+    assert path.read_bytes() == original
+
+
+def test_null_bookmark_mutation_history_fails_closed(tmp_path: Path) -> None:
+    store = BookmarkStore(base_dir=str(tmp_path), tenant_id="alpha")
+    store.add("user-1", {"bid_number": "BID-1"})
+    path = _path(tmp_path)
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    persisted[""] = None
+    path.write_text(json.dumps(persisted), encoding="utf-8")
+    original = path.read_bytes()
+
+    with pytest.raises(BookmarkStoreError, match="mutation history"):
+        store.get_for_user("user-1")
+    with pytest.raises(BookmarkStoreError, match="mutation history"):
+        store.add("user-1", {"bid_number": "BID-2"})
+
+    assert path.read_bytes() == original
 
 
 def test_bookmark_routes_use_the_selected_state_backend() -> None:

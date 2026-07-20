@@ -2,13 +2,17 @@
 
 Stored as JSON per tenant: data/tenants/{tenant_id}/g2b_bookmarks.json
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
+from app.storage.conditional_state import persist_text_if_current
 from app.storage.state_backend import (
     StateBackend,
     StateBackendError,
@@ -18,6 +22,12 @@ from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
 
 _OWNER_KEY = "_bookmark_owner"
+_BOOKMARK_ID_KEY = "_bookmark_id"
+_STATE_METADATA_KEY = ""  # Public user identifiers reject the empty string.
+_MUTATION_IDS_KEY = "_bookmark_mutation_ids"
+_MAX_MUTATION_ATTEMPTS = 32
+_MAX_TRACKED_MUTATIONS = 64
+_MutationResult = TypeVar("_MutationResult")
 
 
 class BookmarkStoreError(ValueError):
@@ -69,13 +79,13 @@ class BookmarkStore:
             relative_path=self._relative_path,
         )
 
-    def _load(self) -> dict[str, Any]:
+    def _read_state(self) -> tuple[str | None, dict[str, Any]]:
         try:
             raw = self._backend.read_text(self._relative_path)
         except (StateBackendError, UnicodeError) as exc:
             raise BookmarkStoreError("Invalid bookmark state document") from exc
         if raw is None:
-            return {}
+            return None, {}
         if not raw.strip():
             raise BookmarkStoreError("Invalid bookmark state document")
         try:
@@ -85,17 +95,97 @@ class BookmarkStore:
         if not isinstance(data, dict):
             raise BookmarkStoreError("Invalid bookmark state document")
         self._validate_state(data)
-        return data
+        return raw, data
 
-    def _save(self, data: dict[str, Any]) -> None:
+    def _load(self) -> dict[str, Any]:
+        return self._read_state()[1]
+
+    @staticmethod
+    def _mutation_ids(data: dict[str, Any]) -> list[str]:
+        if _STATE_METADATA_KEY not in data:
+            return []
+        metadata = data[_STATE_METADATA_KEY]
+        if not isinstance(metadata, dict) or set(metadata) != {_MUTATION_IDS_KEY}:
+            raise BookmarkStoreError("Invalid bookmark mutation history")
+        mutation_ids = metadata.get(_MUTATION_IDS_KEY)
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise BookmarkStoreError("Invalid bookmark mutation history")
+        return list(mutation_ids)
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        data: dict[str, Any],
+        mutation_id: str,
+    ) -> bool:
+        self._validate_state(data)
         payload = json.dumps(data, ensure_ascii=False, indent=2)
+
+        def decode(raw: str) -> dict[str, Any]:
+            if not raw.strip():
+                raise BookmarkStoreError("Invalid bookmark state document")
+            try:
+                observed = json.loads(raw, object_pairs_hook=_unique_object)
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise BookmarkStoreError("Invalid bookmark state document") from exc
+            if not isinstance(observed, dict):
+                raise BookmarkStoreError("Invalid bookmark state document")
+            self._validate_state(observed)
+            return observed
+
         try:
-            self._backend.write_text(self._relative_path, payload)
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=payload,
+                decode=decode,
+                committed=lambda observed: mutation_id in self._mutation_ids(observed),
+                decode_errors=(BookmarkStoreError,),
+            )
         except StateBackendError as exc:
             raise BookmarkStoreError("Failed to persist bookmark state") from exc
 
+    def _mutate(
+        self,
+        mutation_id: str,
+        change: Callable[[dict[str, Any]], tuple[_MutationResult, bool]],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, data = self._read_state()
+            result, changed = change(data)
+            if not changed:
+                return result
+
+            mutation_ids = self._mutation_ids(data)
+            mutation_ids.append(mutation_id)
+            data[_STATE_METADATA_KEY] = {
+                _MUTATION_IDS_KEY: mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+            }
+            if self._persist_if_current(
+                expected=expected,
+                data=data,
+                mutation_id=mutation_id,
+            ):
+                return result
+        raise BookmarkStoreError(
+            "Bookmark state changed too many times to persist safely"
+        )
+
     def _validate_state(self, data: dict[str, Any]) -> None:
+        self._mutation_ids(data)
         for user_id, bookmarks in data.items():
+            if user_id == _STATE_METADATA_KEY:
+                continue
             try:
                 _require_user_id(user_id)
             except ValueError as exc:
@@ -113,6 +203,11 @@ class BookmarkStore:
                     bid_number = _require_bid_number(bookmark.get("bid_number"))
                 except ValueError as exc:
                     raise BookmarkStoreError("Invalid owned bookmark record") from exc
+                bookmark_id = bookmark.get(_BOOKMARK_ID_KEY)
+                if bookmark_id is not None and (
+                    not isinstance(bookmark_id, str) or not bookmark_id
+                ):
+                    raise BookmarkStoreError("Invalid bookmark identity")
                 bookmarked_at = bookmark.get("bookmarked_at")
                 if bookmarked_at is not None and (
                     not isinstance(bookmarked_at, str) or not bookmarked_at
@@ -133,9 +228,28 @@ class BookmarkStore:
         }
 
     def _public_bookmark(self, bookmark: dict[str, Any]) -> dict[str, Any]:
-        return {key: value for key, value in bookmark.items() if key != _OWNER_KEY}
+        return {
+            key: value
+            for key, value in bookmark.items()
+            if key not in {_OWNER_KEY, _BOOKMARK_ID_KEY}
+        }
 
-    def _owned_bookmarks(self, data: dict[str, Any], user_id: str) -> list[dict[str, Any]]:
+    @staticmethod
+    def _bookmark_identity(bookmark: dict[str, Any]) -> str:
+        bookmark_id = bookmark.get(_BOOKMARK_ID_KEY)
+        if isinstance(bookmark_id, str) and bookmark_id:
+            return bookmark_id
+        legacy_payload = json.dumps(
+            bookmark,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return f"legacy:{hashlib.sha256(legacy_payload.encode()).hexdigest()}"
+
+    def _owned_bookmarks(
+        self, data: dict[str, Any], user_id: str
+    ) -> list[dict[str, Any]]:
         bookmarks = data.get(user_id, [])
         return [bookmark for bookmark in bookmarks if self._owns(bookmark, user_id)]
 
@@ -144,8 +258,11 @@ class BookmarkStore:
         if not isinstance(announcement, dict):
             raise ValueError("Invalid announcement")
         bid_number = _require_bid_number(announcement.get("bid_number"))
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+        bookmark_id = str(uuid.uuid4())
+        bookmarked_at = datetime.now(timezone.utc).isoformat()
+
+        def add_bookmark(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             existing = next(
                 (
                     bookmark
@@ -155,38 +272,56 @@ class BookmarkStore:
                 None,
             )
             if existing is not None:
-                return self._public_bookmark(existing)
+                return self._public_bookmark(existing), False
 
-            bookmarks = data.setdefault(user_id, [])
             stored = dict(announcement)
-            stored["bookmarked_at"] = datetime.now(timezone.utc).isoformat()
+            stored["bookmarked_at"] = bookmarked_at
             stored[_OWNER_KEY] = {
                 "tenant_id": self.tenant_id,
                 "user_id": user_id,
             }
-            bookmarks.insert(0, stored)
-            self._save(data)
-        return self._public_bookmark(stored)
+            stored[_BOOKMARK_ID_KEY] = bookmark_id
+            data.setdefault(user_id, []).insert(0, stored)
+            return self._public_bookmark(stored), True
+
+        with self._lock:
+            return self._mutate(mutation_id, add_bookmark)
 
     def remove(self, user_id: str, bid_number: str) -> None:
         user_id = _require_user_id(user_id)
         bid_number = _require_bid_number(bid_number)
-        with self._lock:
-            data = self._load()
+        mutation_id = uuid.uuid4().hex
+        target_identity: str | None = None
+
+        def remove_bookmark(data: dict[str, Any]) -> tuple[None, bool]:
+            nonlocal target_identity
             bookmarks = data.get(user_id)
             if bookmarks is None:
-                return
-            remaining = [
-                bookmark
-                for bookmark in bookmarks
-                if not (
-                    self._owns(bookmark, user_id)
+                return None, False
+            target = next(
+                (
+                    bookmark
+                    for bookmark in bookmarks
+                    if self._owns(bookmark, user_id)
                     and bookmark.get("bid_number") == bid_number
-                )
+                ),
+                None,
+            )
+            if target is None:
+                return None, False
+
+            current_identity = self._bookmark_identity(target)
+            if target_identity is None:
+                target_identity = current_identity
+            elif target_identity != current_identity:
+                raise BookmarkStoreError("Bookmark identity changed during mutation")
+            data[user_id] = [
+                bookmark for bookmark in bookmarks if bookmark is not target
             ]
-            if len(remaining) != len(bookmarks):
-                data[user_id] = remaining
-                self._save(data)
+            return None, True
+
+        with self._lock:
+            self._mutate(mutation_id, remove_bookmark)
 
     def get_for_user(self, user_id: str) -> list[dict]:
         user_id = _require_user_id(user_id)
@@ -199,4 +334,6 @@ class BookmarkStore:
 
     def is_bookmarked(self, user_id: str, bid_number: str) -> bool:
         bid_number = _require_bid_number(bid_number)
-        return any(b.get("bid_number") == bid_number for b in self.get_for_user(user_id))
+        return any(
+            b.get("bid_number") == bid_number for b in self.get_for_user(user_id)
+        )

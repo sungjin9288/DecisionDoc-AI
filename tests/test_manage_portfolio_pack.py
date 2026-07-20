@@ -21,7 +21,9 @@ def _write_sources(root: Path) -> tuple[str, ...]:
     return tuple(sorted(files))
 
 
-def test_portfolio_pack_sync_prunes_stale_files_and_checks_exact_content(tmp_path: Path) -> None:
+def test_portfolio_pack_sync_prunes_stale_files_and_checks_exact_content(
+    tmp_path: Path,
+) -> None:
     source_paths = _write_sources(tmp_path)
     pack_dir = tmp_path / "exports" / "decisiondoc_ai_portfolio_pack"
     stale_file = pack_dir / "stale.md"
@@ -35,22 +37,59 @@ def test_portfolio_pack_sync_prunes_stale_files_and_checks_exact_content(tmp_pat
         prune=True,
     )
 
-    manifest = json.loads((pack_dir / manager.MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (pack_dir / manager.MANIFEST_NAME).read_text(encoding="utf-8")
+    )
     assert result["ok"] is True
     assert result["source_file_count"] == 3
     assert not stale_file.exists()
     assert [item["path"] for item in manifest["files"]] == list(source_paths)
-    assert manager.check_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths)["ok"] is True
+    assert (
+        manager.check_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths)[
+            "ok"
+        ]
+        is True
+    )
 
 
 def test_portfolio_pack_check_rejects_tampered_content(tmp_path: Path) -> None:
     source_paths = _write_sources(tmp_path)
     pack_dir = tmp_path / "decisiondoc_ai_portfolio_pack"
-    manager.sync_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True)
+    manager.sync_pack(
+        root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True
+    )
     (pack_dir / "docs/case-study.md").write_text("tampered\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="file drifted"):
         manager.check_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths)
+
+
+def test_portfolio_pack_rejects_missing_relative_markdown_link(tmp_path: Path) -> None:
+    source_paths = _write_sources(tmp_path)
+    (tmp_path / "README.md").write_text(
+        "# DecisionDoc AI\n\n[Missing](./docs/missing.md)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="link target is missing"):
+        manager.sync_pack(
+            root=tmp_path,
+            pack_dir=tmp_path / "decisiondoc_ai_portfolio_pack",
+            source_paths=source_paths,
+            prune=True,
+        )
+
+    (tmp_path / "README.md").write_text(
+        "# DecisionDoc AI\n\nRun from `/Users/alice/private/DecisionDoc-AI`.\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="private home path"):
+        manager.sync_pack(
+            root=tmp_path,
+            pack_dir=tmp_path / "decisiondoc_ai_portfolio_pack",
+            source_paths=source_paths,
+            prune=True,
+        )
 
 
 def test_portfolio_zip_is_deterministic_and_rejects_tampering(tmp_path: Path) -> None:
@@ -58,7 +97,9 @@ def test_portfolio_zip_is_deterministic_and_rejects_tampering(tmp_path: Path) ->
     pack_dir = tmp_path / "decisiondoc_ai_portfolio_pack"
     first_zip = tmp_path / "first.zip"
     second_zip = tmp_path / "second.zip"
-    manager.sync_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True)
+    manager.sync_pack(
+        root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True
+    )
 
     first = manager.package_zip(
         root=tmp_path,
@@ -98,7 +139,9 @@ def test_portfolio_pack_rejects_unsafe_paths_and_directories(tmp_path: Path) -> 
 def test_portfolio_pack_rejects_zip_output_inside_pack(tmp_path: Path) -> None:
     source_paths = _write_sources(tmp_path)
     pack_dir = tmp_path / "decisiondoc_ai_portfolio_pack"
-    manager.sync_pack(root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True)
+    manager.sync_pack(
+        root=tmp_path, pack_dir=pack_dir, source_paths=source_paths, prune=True
+    )
 
     with pytest.raises(ValueError, match="outside the portfolio pack"):
         manager.package_zip(
