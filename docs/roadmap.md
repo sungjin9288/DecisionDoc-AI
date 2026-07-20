@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 마지막으로 문서화한 main 자동화 증적: commit `2f36438` 기준 GitHub Actions CI `29756211158` success, CD `29756211147` success. CI는 `4222 passed, 5 skipped`, CD image digest는 `sha256:0706989bb8f7a4113bb77647d2fb626b3b161ee8b390ead08b3c21dd3723b379`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 마지막으로 문서화한 main 자동화 증적: commit `5d59e15` 기준 GitHub Actions CI `29759143687` success, CD `29759143729` success. CI는 `4223 passed, 5 skipped`, CD image digest는 `sha256:eb28ebf4527d851be98a8d25d96b4456f5df8d2e4f75f387067f55f37ce1cf28`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 2026-07-17 H50 완료: project knowledge index와 content/style object를 tenant/project별 selected StateBackend에 결속하고 hash·size·ownership·duplicate·orphan을 fail closed로 검증한다. Knowledge API, generation context, procurement evaluator, report promotion도 같은 backend를 사용하며 local/fake-S3 rollback·동시성·API 회귀를 추가했다.
 - 2026-07-17 H51 완료: G2B bookmark state를 tenant/user별 selected StateBackend에 결속하고 malformed·invalid UTF-8·duplicate·owned identity drift를 fail closed로 검증한다. Legacy owner 없는 record와 explicit foreign owner 보존, local/fake-S3 동시성, API 오류 경계를 no-cost로 확인했다.
@@ -44,6 +44,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-20 H77 완료: DocumentOps Review 상태를 Ops-key 단일 GET overview로 정리했다. Service가 training governance, selected-backend artifact inventory, reviewer sign-off를 각각 읽고 `boundary_attention`, `artifact_integrity_attention`, `governance_review_needed`, `reviewer_signoff_pending`, `review_evidence_ready` 순서로 reviewer가 먼저 볼 상태와 다음 검토 행동을 반환한다. Browser는 overview 한 요청으로 세 원본 report를 렌더링하고 하나의 stale tenant/request guard와 refresh를 사용한다. 합성 snapshot은 atomic이 아니며 수동 재확인이 필요하고 외부 실행 권한은 모두 false다. Unit/API/static/실제 Chromium에서 attention→ready 전환, 늦게 도착한 이전 tenant 응답 폐기, desktop/mobile layout과 390px overflow·console/page error 0건을 no-cost로 확인했다.
 - 2026-07-21 H78 완료: Governance overview의 수동 재확인을 상태 비교가 가능한 동작으로 보강했다. Service는 세 source report에서 top-level `generated_at`만 제외한 canonical SHA-256과 이를 묶은 review-state fingerprint를 반환한다. Browser는 성공한 동일 tenant 관측만 현재 인증 세션 메모리에서 비교해 첫 관측·동일·변경을 표시하며 logout·invalid session과 stale 응답은 비교 기준을 남기거나 바꾸지 않는다. Fingerprint는 저장하지 않고 합성 snapshot의 비원자성 및 외부 실행 권한 false를 그대로 유지한다. Focused backend/API/static `7 passed, 1 warning`, 실제 Chromium `1 passed`와 desktop/mobile screenshot, 390px overflow·console/page error 0건을 no-cost로 확인했다.
 - 2026-07-21 H79 완료: DocumentOps governance summary·overview·artifact inventory·reviewer sign-off 조회와 sign-off handoff 다운로드를 tenant append-only audit에 연결했다. `document_ops.governance_view`와 `document_ops.governance_handoff_download`은 trajectory audit과 다른 governance resource로 기록되고 Admin Ops에서 필터링할 수 있다. Audit detail은 surface·aggregate status·read-only 여부만 보존하며 overview fingerprint 값, source report, reviewer record는 복사하지 않는다. DocumentOps audit context를 작은 전용 helper로 분리해 기존 audit middleware를 766줄에서 730줄로 줄였고, focused backend/API/static `232 passed, 1 warning`과 실제 Chromium audit-console `1 passed`를 no-cost로 확인했다.
+- 2026-07-21 H80 완료: Browser의 governance overview가 source mutation 뒤에도 최신 상태처럼 남던 간극을 닫았다. Reviewed SFT export, dataset freeze, dry-run approval, execution request, pre-execution audit 저장이 성공하거나 planning provider/model 조건이 바뀌면 진행 중 overview 요청을 무효화하고 열린 badge를 `RECHECK REQUIRED`로 낮춘다. 이전 fingerprint는 유지해 다음 성공 조회에서 실제 source 변화 여부를 다시 비교하며, 새 조회가 끝나기 전까지 기존 패널은 이전 관측이라고 명시한다. 실패한 mutation, download, read-only 조회는 freshness를 올리지 않는다. Static contract `2 passed, 1 warning`과 실제 Chromium stale→recheck→fresh `1 passed`를 no-cost로 확인했다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -51,7 +52,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-21 H79 실측: 4222 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-21 H80 실측: 4223 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

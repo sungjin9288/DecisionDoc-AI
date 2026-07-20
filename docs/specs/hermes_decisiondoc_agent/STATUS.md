@@ -82,6 +82,9 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - governance summary, overview, inventory, and reviewer sign-off reads plus sign-off handoff
   downloads use separate governance audit resources; only surface, aggregate status, and read-only
   state are retained, while fingerprints, source reports, and reviewer records are not copied
+- a successful reviewed export, freeze, dry-run approval, execution request, or pre-execution
+  audit write marks the open governance overview stale; planning provider/model changes do the same,
+  and only a successful new overview read restores its fresh status
 - review requests carry the version loaded with the detail record; storage compares it against the
   latest conditional-CAS state, returns an identical retry unchanged, and rejects a different stale decision
   with `409` plus expected/current version evidence
@@ -209,7 +212,9 @@ Last local verification on 2026-07-20:
 - governance review overview Chromium gate: 1 passed
 - governance recheck fingerprint backend/API/static gate: 7 passed, 1 warning
 - governance recheck fingerprint Chromium gate: 1 passed
-- full repository non-live gate: 4222 passed, 2 skipped, 4 deselected, 1 warning
+- governance browser freshness static contract: 2 passed, 1 warning
+- governance browser freshness Chromium gate: 1 passed
+- full repository non-live gate: 4223 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

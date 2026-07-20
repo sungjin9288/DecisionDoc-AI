@@ -656,6 +656,29 @@ def test_index_html_document_ops_loads_one_governance_review_overview():
     assert "external authorization all false=" in content
 
 
+def test_index_html_document_ops_marks_governance_stale_after_source_changes():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    assert "function markDocumentOpsGovernanceStale(reason)" in content
+    assert "_documentOpsGovernanceRequestVersion += 1;" in content
+    assert "data-docops-governance-stale" in content
+    assert "data-docops-governance-status" in content
+    assert "overviewEl.dataset.governanceFresh = 'false';" in content
+    assert "el.dataset.governanceFresh = 'true';" in content
+    assert "RECHECK REQUIRED" in content
+    assert "성공한 새 조회가 끝날 때까지 아래 내용은 이전 관측입니다." in content
+    for marker in (
+        "새 reviewed SFT export가 생성되었습니다.",
+        "Dataset freeze 기록이 변경되었습니다.",
+        "Dry-run training approval 기록이 변경되었습니다.",
+        "Training execution request 기록이 변경되었습니다.",
+        "Pre-execution audit 기록이 변경되었습니다.",
+        "Planning provider 조건이 변경되었습니다.",
+        "Base model 조건이 변경되었습니다.",
+    ):
+        assert f"markDocumentOpsGovernanceStale('{marker}')" in content
+
+
 def test_index_html_document_ops_shows_read_only_governance_artifact_inventory():
     content = open("app/static/index.html", encoding="utf-8").read()
 

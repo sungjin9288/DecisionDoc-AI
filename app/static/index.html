@@ -7640,6 +7640,9 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+      if (data.exported) {
+        markDocumentOpsGovernanceStale('새 reviewed SFT export가 생성되었습니다.');
+      }
       showNotification(data.exported ? `SFT export 생성: ${data.filename}` : '승인된 trajectory가 부족해 export를 만들지 않았습니다.', data.exported ? 'success' : 'warn');
       await loadDocumentOpsTrajectories();
       if (data.exported) await loadDocumentOpsExports();
@@ -7741,6 +7744,7 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const manifest = await res.json();
+      markDocumentOpsGovernanceStale('Dataset freeze 기록이 변경되었습니다.');
       showNotification(`Dataset freeze를 기록했습니다: ${manifest.manifest_id}`, 'success');
       await Promise.all([loadDocumentOpsExports(), loadDocumentOpsTrainingReadiness()]);
     } catch (err) {
@@ -7879,6 +7883,7 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const approval = await res.json();
+      markDocumentOpsGovernanceStale('Dry-run training approval 기록이 변경되었습니다.');
       showNotification(`Dry-run approval을 기록했습니다: ${approval.approval_id}`, 'success');
       await loadDocumentOpsTrainingReadiness();
     } catch (err) {
@@ -7968,6 +7973,7 @@
       });
       if (!res.ok) throw new Error(await res.text());
       await res.json();
+      markDocumentOpsGovernanceStale('Training execution request 기록이 변경되었습니다.');
       await loadDocumentOpsTrainingExecutionRequests();
       showNotification('Training execution request record를 저장했습니다. 학습/업로드는 시작되지 않았습니다.', 'success');
     } catch (err) {
@@ -8063,7 +8069,9 @@
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingAuditExport(await res.json());
+      const audit = await res.json();
+      markDocumentOpsGovernanceStale('Pre-execution audit 기록이 변경되었습니다.');
+      renderDocumentOpsTrainingAuditExport(audit);
       showNotification('Pre-execution audit export를 저장했습니다. 학습/업로드/provider 호출은 시작되지 않았습니다.', 'success');
     } catch (err) {
       showNotification('Pre-execution audit export 실패: ' + (err.message || err), 'error');
@@ -8244,6 +8252,50 @@
     `;
   }
 
+  function documentOpsGovernanceStaleNoticeHtml(reason, includeRefresh = false) {
+    const message = String(reason || '').trim();
+    return `
+      <div data-docops-governance-stale ${message ? '' : 'hidden'} style="border:1px solid rgba(146,64,14,.3);border-radius:8px;padding:.65rem;background:rgba(146,64,14,.07);margin-bottom:.65rem;">
+        <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:center;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:.75rem;font-weight:900;color:#92400e;">재확인 필요</div>
+            <div style="font-size:.72rem;color:#92400e;line-height:1.5;margin-top:.2rem;">
+              <span data-docops-governance-stale-reason>${escapeHtml(message || 'Governance source가 변경되었을 수 있습니다.')}</span>
+              성공한 새 조회가 끝날 때까지 아래 내용은 이전 관측입니다.
+            </div>
+          </div>
+          ${includeRefresh ? '<button type="button" class="action-btn" data-docops-governance-refresh>다시 확인</button>' : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function markDocumentOpsGovernanceStale(reason) {
+    _documentOpsGovernanceRequestVersion += 1;
+    const overviewEl = $id('document-ops-governance-overview');
+    if (!overviewEl || overviewEl.style.display === 'none') return;
+
+    const message = String(reason || '').trim() || 'Governance source가 변경되었을 수 있습니다.';
+    overviewEl.dataset.governanceFresh = 'false';
+    const statusBadge = overviewEl.querySelector('[data-docops-governance-status]');
+    if (!statusBadge) {
+      overviewEl.innerHTML = documentOpsGovernanceStaleNoticeHtml(message, true);
+      overviewEl.querySelector('[data-docops-governance-refresh]')?.addEventListener(
+        'click',
+        loadDocumentOpsGovernance,
+      );
+      return;
+    }
+
+    statusBadge.textContent = 'RECHECK REQUIRED';
+    statusBadge.style.background = '#fef3c7';
+    statusBadge.style.color = '#92400e';
+    const staleNotice = overviewEl.querySelector('[data-docops-governance-stale]');
+    if (staleNotice) staleNotice.hidden = false;
+    const reasonEl = overviewEl.querySelector('[data-docops-governance-stale-reason]');
+    if (reasonEl) reasonEl.textContent = message;
+  }
+
   async function loadDocumentOpsGovernance() {
     const overviewEl = $id('document-ops-governance-overview');
     if (!overviewEl) return;
@@ -8335,6 +8387,7 @@
     const el = $id('document-ops-governance-overview');
     if (!el) return;
     el.style.display = 'block';
+    el.dataset.governanceFresh = 'true';
     const statusMeta = {
       boundary_attention: ['BOUNDARY ATTENTION', '#b91c1c', '#fee2e2'],
       artifact_integrity_attention: ['ARTIFACT CHECK NEEDED', '#92400e', '#fef3c7'],
@@ -8402,10 +8455,11 @@
           <div style="font-size:.72rem;color:var(--muted);margin-top:.18rem;">세 read-only report를 독립 조회 · combined transaction 아님 · 검토 전 수동 재확인</div>
         </div>
         <div style="display:flex;align-items:center;gap:.4rem;">
-          <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${statusBackground};color:${statusColor};">${statusLabel}</span>
+          <span data-docops-governance-status style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${statusBackground};color:${statusColor};">${statusLabel}</span>
           <button type="button" class="action-btn" data-docops-governance-refresh aria-label="governance review 상태 다시 확인" title="다시 확인" style="width:30px;height:30px;padding:0;">↻</button>
         </div>
       </div>
+      ${documentOpsGovernanceStaleNoticeHtml('')}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:.5rem;margin-bottom:.7rem;">
         ${checks.map(check => {
           const passed = check?.status === 'passed';
@@ -8852,6 +8906,13 @@
   $id('docops-trajectory-query')?.addEventListener('input', () => {
     clearTimeout(_documentOpsTrajectorySearchTimer);
     _documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250);
+  });
+
+  $id('docops-training-provider')?.addEventListener('change', () => {
+    markDocumentOpsGovernanceStale('Planning provider 조건이 변경되었습니다.');
+  });
+  $id('docops-training-base-model')?.addEventListener('input', () => {
+    markDocumentOpsGovernanceStale('Base model 조건이 변경되었습니다.');
   });
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */

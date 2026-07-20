@@ -1052,6 +1052,68 @@ def test_document_ops_governance_overview_rechecks_all_read_only_evidence(
     assert "sft_tampered.jsonl" not in current_state["inventoryText"]
     assert "SIGN-OFF COMPLETE" in current_state["signoffText"]
 
+    page.route(
+        "**/api/agent/document-ops/trajectories/export",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "exported": True,
+                    "filename": "new-reviewed-export.jsonl",
+                }
+            ),
+        ),
+    )
+    page.locator('[data-docops-action="export-trajectories"]').click()
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-overview",
+        "RECHECK REQUIRED",
+        timeout_ms=10000,
+    )
+    assert (
+        "새 reviewed SFT export가 생성되었습니다."
+        in overview_panel.inner_text()
+    )
+    assert (
+        overview_panel.get_attribute("data-governance-fresh")
+        == "false"
+    )
+    overview_panel.get_by_role(
+        "button",
+        name="governance review 상태 다시 확인",
+    ).click()
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-overview",
+        "REVIEW EVIDENCE READY",
+        timeout_ms=10000,
+    )
+    assert overview_panel.get_attribute("data-governance-fresh") == "true"
+    assert "직전 재확인과 검토 상태가 동일합니다." in overview_panel.inner_text()
+
+    page.select_option("#docops-training-provider", "openai")
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-overview",
+        "RECHECK REQUIRED",
+        timeout_ms=10000,
+    )
+    assert "Planning provider 조건이 변경되었습니다." in overview_panel.inner_text()
+    overview_panel.get_by_role(
+        "button",
+        name="governance review 상태 다시 확인",
+    ).click()
+    _wait_until_text_contains(
+        page,
+        "#document-ops-governance-overview",
+        "REVIEW EVIDENCE READY",
+        timeout_ms=10000,
+    )
+    assert overview_panel.get_attribute("data-governance-fresh") == "true"
+    assert len(overview_requests) == 4
+
     page.screenshot(
         path=str(tmp_path / "document-ops-governance-overview-desktop.png"),
         full_page=True,
