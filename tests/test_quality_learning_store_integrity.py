@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +24,11 @@ from app.storage.prompt_override_store import (
     PromptOverrideStoreError,
     get_override_store,
 )
-from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+    StateBackendError,
+)
 
 
 _NOW = "2026-07-17T00:00:00+00:00"
@@ -45,6 +53,28 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_key_suffix: str | None = None
+        self._after_failed_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        key_suffix: str,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_key_suffix = key_suffix
+        self._after_failed_write = after_write
 
     def put_object(
         self,
@@ -53,31 +83,58 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                (IfNoneMatch is not None or IfMatch is not None)
+                and self._fail_after_key_suffix is not None
+                and Key.endswith(self._fail_after_key_suffix)
+            )
+            if fail_after_write:
+                self._fail_after_key_suffix = None
+                after_write = self._after_failed_write
+                self._after_failed_write = None
+            else:
+                after_write = None
+
+        if not fail_after_write:
+            return
+        if after_write is not None:
+            after_write()
+        raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict:
         time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    selected_client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
-        s3_client=client,
+        s3_client=selected_client,
     )
-    return backend, client
+    return backend, selected_client
 
 
 def _eval_record(marker: str, *, tenant_id: str | None = None) -> EvalRecord:
@@ -472,6 +529,268 @@ def test_independent_fake_s3_quality_stores_preserve_concurrent_writes() -> None
     assert len(feedback_stores[0].get_all()) == 20
     assert len(eval_stores[0].load_all()) == 20
     assert len(override_stores[0].list_overrides()) == 20
+
+
+def test_independent_prompt_override_workers_preserve_updates() -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    stores = [
+        PromptOverrideStore(
+            f"/virtual/worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(
+            executor.map(
+                lambda item: item[1].save_override(
+                    f"bundle-{item[0]}",
+                    f"Hint {item[0]}",
+                    "manual",
+                ),
+                enumerate(stores),
+            )
+        )
+
+    assert len(stores[0].list_overrides()) == 20
+
+    stores[0].save_override("shared", "Shared hint", "manual")
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(
+            executor.map(
+                lambda store: store.increment_applied("shared"),
+                stores,
+            )
+        )
+    assert stores[0].get_override("shared")["applied_count"] == 20
+
+
+def test_prompt_override_public_records_hide_mutation_metadata(
+    tmp_path: Path,
+) -> None:
+    store = PromptOverrideStore(tmp_path, tenant_id="alpha")
+    store.save_override("proposal_kr", "Use evidence", "manual")
+
+    records = [
+        store.get_override("proposal_kr"),
+        store.list_overrides()[0],
+    ]
+    assert all(
+        not any(field.startswith("_") for field in record)
+        for record in records
+        if record is not None
+    )
+
+    persisted = json.loads(store._path.read_text(encoding="utf-8"))
+    assert persisted["proposal_kr"]["_incarnation_id"]
+    assert persisted["proposal_kr"]["_mutation_ids"]
+
+
+def test_prompt_override_save_reconciles_commit_then_increment() -> None:
+    client = _MemoryS3Client()
+    primary = PromptOverrideStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = PromptOverrideStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_suffix="prompt_overrides.json",
+        after_write=lambda: successor.increment_applied("proposal_kr"),
+    )
+    primary.save_override("proposal_kr", "Use evidence", "manual")
+
+    record = primary.get_override("proposal_kr")
+    assert record is not None
+    assert record["override_hint"] == "Use evidence"
+    assert record["applied_count"] == 1
+
+
+def test_prompt_override_increment_reconciles_successor_increment() -> None:
+    client = _MemoryS3Client()
+    primary = PromptOverrideStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = PromptOverrideStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.save_override("proposal_kr", "Use evidence", "manual")
+
+    client.fail_after_next_conditional_write(
+        key_suffix="prompt_overrides.json",
+        after_write=lambda: successor.increment_applied("proposal_kr"),
+    )
+    primary.increment_applied("proposal_kr")
+
+    assert primary.get_override("proposal_kr")["applied_count"] == 2
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_prompt_override_increment_survives_concurrent_refresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy: bool,
+) -> None:
+    backend = LocalStateBackend(tmp_path)
+    primary = PromptOverrideStore(
+        tmp_path,
+        tenant_id="alpha",
+        backend=backend,
+    )
+    successor = PromptOverrideStore(
+        tmp_path,
+        tenant_id="alpha",
+        backend=backend,
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    if legacy:
+        path = tmp_path / "tenants" / "alpha" / "prompt_overrides.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps({"proposal_kr": _override_record("proposal_kr")}),
+            encoding="utf-8",
+        )
+    else:
+        primary.save_override("proposal_kr", "Old hint", "manual")
+
+    original_replace = backend.replace_text_if_equal
+
+    def replace_after_refresh(*args, **kwargs):
+        monkeypatch.setattr(backend, "replace_text_if_equal", original_replace)
+        successor.save_override("proposal_kr", "New hint", "manual")
+        return original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(backend, "replace_text_if_equal", replace_after_refresh)
+    primary.increment_applied("proposal_kr")
+
+    record = primary.get_override("proposal_kr")
+    assert record is not None
+    assert record["override_hint"] == "New hint"
+    assert record["applied_count"] == 1
+
+
+def test_prompt_override_legacy_delete_does_not_mask_failed_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = LocalStateBackend(tmp_path)
+    store = PromptOverrideStore(
+        tmp_path,
+        tenant_id="alpha",
+        backend=backend,
+    )
+    path = tmp_path / "tenants" / "alpha" / "prompt_overrides.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"proposal_kr": _override_record("proposal_kr")}),
+        encoding="utf-8",
+    )
+
+    def fail_before_write(*args, **kwargs):
+        raise StateBackendError("simulated failed write")
+
+    monkeypatch.setattr(backend, "replace_text_if_equal", fail_before_write)
+
+    with pytest.raises(
+        PromptOverrideStoreError,
+        match="could not be written",
+    ):
+        store.delete_override("proposal_kr")
+
+    assert store.get_override("proposal_kr") is not None
+
+
+def test_prompt_override_operation_identity_is_bound_to_payload(
+    tmp_path: Path,
+) -> None:
+    store = PromptOverrideStore(tmp_path, tenant_id="alpha")
+    store.save_override(
+        "proposal_kr",
+        "Use evidence",
+        "ab_test_winner",
+        operation_id="winner-operation",
+    )
+    store.save_override(
+        "proposal_kr",
+        "Use evidence",
+        "ab_test_winner",
+        operation_id="winner-operation",
+    )
+    store.save_override(
+        "proposal_kr",
+        "Newer operator hint",
+        "manual",
+        operation_id="operator-operation",
+    )
+    store.save_override(
+        "proposal_kr",
+        "Use evidence",
+        "ab_test_winner",
+        operation_id="winner-operation",
+    )
+    assert store.get_override("proposal_kr")["override_hint"] == (
+        "Newer operator hint"
+    )
+
+    with pytest.raises(
+        PromptOverrideStoreError,
+        match="reused with a different payload",
+    ):
+        store.save_override(
+            "proposal_kr",
+            "Ignore evidence",
+            "ab_test_winner",
+            operation_id="winner-operation",
+        )
+
+
+def test_prompt_override_delete_preserves_recreated_identity() -> None:
+    client = _MemoryS3Client()
+    primary = PromptOverrideStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = PromptOverrideStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.save_override("proposal_kr", "Old hint", "manual")
+
+    client.fail_after_next_conditional_write(
+        key_suffix="prompt_overrides.json",
+        after_write=lambda: successor.save_override(
+            "proposal_kr",
+            "New hint",
+            "manual",
+        ),
+    )
+    primary.delete_override("proposal_kr")
+
+    recreated = primary.get_override("proposal_kr")
+    assert recreated is not None
+    assert recreated["override_hint"] == "New hint"
 
 
 def test_quality_store_factories_are_scoped_by_root_and_backend(

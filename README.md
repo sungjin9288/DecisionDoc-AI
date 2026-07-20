@@ -41,8 +41,8 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 회의 녹음 상태 무결성 | 녹음 metadata와 audio SHA-256·크기를 tenant/project/recording 경로에 결속하고 손상·identity drift·UUID 충돌·audio 변조를 fail closed 처리. Recording별 metadata mutation은 conditional create/CAS와 bounded private receipt로 worker 간 전사·승인 유실과 불확실 commit을 조정 |
 | 결제 권한 상태 무결성 | plan·status·Stripe identity를 tenant별 local/S3 state에 결속하고 손상·unknown value를 원본 보존 상태로 fail closed 처리. Conditional create/CAS와 bounded private receipt로 worker 간 plan·status·Stripe identity 유실과 불확실 commit을 조정 |
 | 스타일 프로필 상태 무결성 | tone guide·bundle override·분석 예시·기본 스타일을 tenant별 local/S3 state에 결속하고 손상·중복 identity·다중 default를 원본 보존 상태로 fail closed 처리 |
-| 품질 학습 상태 무결성 | feedback·eval evidence·runtime prompt override를 tenant별 local/S3 state에 결속하고 손상·중복 JSON key·owned schema drift를 원본 보존 상태로 fail closed 처리 |
-| 품질 실험·요청 패턴 상태 무결성 | A/B prompt experiment와 freeform·sketch request pattern을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 빈 상태로 축소하지 않으며 winner override와 conclusion 순서를 보존 |
+| 품질 학습 상태 무결성 | feedback·eval evidence·runtime prompt override를 tenant별 local/S3 state에 결속하고 손상·중복 JSON key·owned schema drift를 원본 보존 상태로 fail closed 처리. Override mutation은 conditional create/CAS, payload-bound save receipt와 stable incarnation으로 refresh 경쟁 중 applied count와 불확실 commit을 조정 |
+| 품질 실험·요청 패턴 상태 무결성 | A/B prompt experiment와 freeform·sketch request pattern을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 빈 상태로 축소하지 않는다. Variant·hint·experiment identity를 한 CAS assignment로 결속하고 result도 같은 incarnation에만 기록하며, resumable winner claim과 snapshot-bound clear로 worker 경쟁을 조정 |
 | 공개 공유 상태 무결성 | 외부 공개 링크의 생성·조회·접근 횟수·취소 lifecycle을 tenant별 local/S3 state에 결속하고 손상·identity drift를 원본 보존 상태로 fail closed 처리 |
 | 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, 1회 완료 receipt, 검증된 reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
@@ -97,7 +97,7 @@ Services (43) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (41 스토어)    Ops
+Providers (5)    Storage (44 스토어)    Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock/openai/     (atomic write 공통)   eval / eval_live
@@ -265,10 +265,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,338개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,362개**, **252개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3338
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3362
 python3 scripts/count_readme_metrics.py --field test_files      # → 252
 ```
 
@@ -298,7 +298,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,076 passed, 2 skipped, 4 deselected, 2026-07-17 H66 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,101 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-20 H67 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -349,7 +349,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 결제 권한 state는 tenant별 `billing.json`을 local conditional write 또는 S3 conditional create/ETag CAS로 갱신합니다. 충돌마다 최신 account schema·tenant identity 위에 plan·status·Stripe identity 변경을 재적용하며 최근 private mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 손상 state와 receipt는 metered request를 `503`으로 차단합니다. 이 보장은 단일 billing object 범위이며 billing과 usage를 함께 묶는 transaction, 64개를 넘는 successor mutation 조정, 32회 즉시 재시도의 backoff·fairness, 실제 AWS runtime과 Stripe checkout·cancel·provider-delivered webhook은 검증 범위가 아닙니다.
 - 사용량 event log와 monthly summary는 local/S3 공통 backend에서 각각 conditional create/CAS로 갱신합니다. Event log를 권위 원본으로 두고 summary coverage·aggregate를 다시 계산하며, 정확히 하나의 검증된 trailing event만 summary에서 빠진 경우에는 최신 event log 위에 summary를 CAS로 보완합니다. 손상·변조·둘 이상의 event gap은 원본 보존 상태로 fail closed 처리하고 process-local lock은 contention 완화에만 사용합니다. Generation·DocumentOps·meeting transcription·knowledge·G2B·style·procurement·report workflow·admin expansion의 provider-backed route는 tenant별 admission lock과 한도 검사를 먼저 거칩니다. Direct provider 작업과 실제 provider를 호출한 OCR·visual 호출만 동일 authority에 기록하고 실패 응답의 token도 보존합니다. 취소된 admission waiter와 rewrite/stream worker는 provider 작업이 끝나기 전에 lock을 반환하지 않으며, provider 오류 원문은 public response·상태·로그에 저장하지 않습니다. Provider를 사용하지 않는 local parse·edited export와 실제 생성 범위 밖 provider image는 한도와 provider 초기화에서 분리합니다. Event와 summary 두 객체를 함께 묶는 atomic transaction, 여러 worker 사이의 exact admission reservation, 실제 provider usage·비용 대조는 구현·검증 범위가 아닙니다.
 - 스타일 프로필 state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 style API와 prompt build를 중단하지만, mock provider는 LLM prompt builder를 호출하지 않으며 여러 프로세스의 distributed S3 compare-and-swap과 실제 provider 기반 style analysis는 구현·검증 범위가 아닙니다.
-- Feedback, eval evidence, runtime prompt override, A/B prompt experiment, request pattern, fine-tune dataset/export와 model registry state는 local/S3 공통 backend와 process-local shared lock으로 검증했습니다. 손상 state는 관련 API와 생성 provider selection을 중단하고, A/B winner override 저장에 실패하면 experiment를 concluded로 기록하지 않으며, export bytes는 size/SHA-256을 다시 확인합니다. 자동 provider training은 기본 비활성이고 명시적 execution authority를 요구합니다. 여러 프로세스의 distributed S3 compare-and-swap은 구현·검증 범위가 아니며 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
+- Runtime prompt override, A/B prompt experiment와 request pattern state는 객체별 local conditional write 또는 S3 conditional create/ETag CAS를 사용합니다. 충돌마다 최신 ownership·schema 위에 override save/increment/delete, experiment create/assign/result/conclude/delete, request append/clear를 최대 32회 재적용합니다. Override refresh는 incarnation과 누적 applied count를 유지하고 payload-bound save receipt로 동일 operation ID의 다른 payload를 거부합니다. Incarnation 필드가 없던 기존 override는 bundle·생성 시각·tenant binding으로 deterministic lineage를 계산해 concurrent refresh와 increment가 같은 record를 가리키게 합니다. A/B assignment는 variant·hint·experiment identity를 한 CAS 결과로 반환하며 background result와 conclusion도 그 identity에 결속합니다. Pending winner는 persisted result·hint·mutation receipt와 다시 대조하고, 같은 operation ID로 winner override를 저장한 뒤 concluded로 전환합니다. Override 실패 시 public active 상태를 유지해 다음 평가에서 재개하고 pending reset은 `409`로 거부합니다. Request clear는 첫 snapshot의 unmatched ID만 제거해 그 뒤 append를 보존합니다. Private metadata는 public 응답에 노출하지 않습니다. 이 보장은 각 단일 state object 범위이며 A/B와 override 객체를 함께 묶는 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness와 실제 AWS runtime은 검증 범위가 아닙니다. Feedback, eval evidence, fine-tune dataset/export와 model registry는 기존 process-local shared lock 경계를 유지하며, 실제 dataset upload·training execution·external polling·model promotion은 실행하지 않았습니다.
 - 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
 - Procurement review record·원본 packet·reviewed-package는 local/S3 공통 backend의 tenant/project/packet SHA-256 경로에 함께 결속합니다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조와 backend failure는 빈 검토함, 새 packet 또는 사용자 입력 충돌로 축소하지 않고 `500 INTERNAL_ERROR`로 중단하며 원본 bytes를 보존합니다. Pending receipt와 완료 package의 embedded receipt/manifest까지 semantic하게 다시 대조합니다. Packet은 exact orphan bytes만 재사용하고 reviewed-package는 content-addressed 경로에 immutable하게 쓴 뒤 record를 CAS로 전환합니다. S3는 `If-None-Match`/`If-Match`, local은 conditional file lock과 atomic write를 사용하며 commit 결과가 불확실하면 read-back으로 조정합니다. 여러 artifact를 한 번에 commit하는 distributed transaction과 실제 AWS S3 runtime 검증은 범위 밖입니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. tenant 검토함은 pending/completed 상태를 모아 보여주고 기존 프로젝트 상세와 검증된 package 다운로드로 연결합니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. Project-linked share는 서버가 tenant/project/document/request/bundle binding을 검증하고 생성 시점 source fingerprint를 저장합니다. 공개 공유 페이지는 조회할 때마다 현재 원본을 다시 대조해 변경·삭제 상태를 경고하고 `share.view` audit evidence를 남기며, admin Locations의 외부 공유 review queue는 stale `share.create`와 drift `share.view`를 함께 보여주되 반복 조회를 영향받은 고유 링크 수로 중복 집계하지 않습니다. 이후 current 조회가 확인되면 해당 링크만 위험 queue에서 해소하고 복구 건수를 별도로 표시하며 기존 audit은 보존합니다. 공유 취소는 처리자·시각을 남기고 자연 만료와 구분하며, 같은 문서에 여러 링크가 있으면 닫힌 최신 링크보다 아직 활성인 링크를 먼저 보여줍니다. Generic legacy share는 기존 동작을 유지합니다. 연결된 결재는 요청 시점 상태를 보존하고 상세 조회와 최종 승인 직전에 현재 원본을 다시 대조하며, stale 상태의 최종 승인은 명시적 acknowledgement를 approval record와 audit에 남겨야 진행됩니다. 승인 후 원본 source fingerprint가 달라진 경우에도 immutable 승인 스냅샷을 다운로드하기 전에 별도 확인이 필요하고 그 결과가 download audit에 남습니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
@@ -366,4 +366,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,338 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 266 · 테스트 3,362 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

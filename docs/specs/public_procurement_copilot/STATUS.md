@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone quality state cross-worker authority completion
+
+- `PromptOverrideStore`, `ABTestStore`, `RequestPatternStore` mutation은 tenant별 `prompt_overrides.json`, `ab_tests.json`, `request_patterns.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema 위에 override save/increment/delete, experiment create/assign/result/conclude/delete, request append/clear를 재적용한다.
+- Local은 conditional file lock과 atomic replace, S3는 `If-None-Match`와 ETag `If-Match`를 사용한다. 최대 32회 충돌 뒤 fail closed 처리하며 override refresh는 같은 incarnation·누적 applied count·payload-bound save receipt를 유지한다. Incarnation 필드가 없는 기존 override는 bundle·생성 시각·tenant binding의 deterministic lineage로 migration한다. A/B create replacement는 bounded receipt를 넘기고 delete/recreate는 immutable incarnation으로 구분한다. Private metadata는 public 응답에서 제거하며 process-local lock은 contention 완화 수단일 뿐 persistence authority가 아니다.
+- A/B assignment는 variant·hint·experiment identity를 한 CAS 결과로 반환하고 background result와 conclusion을 같은 identity에만 적용한다. Winner pending claim은 persisted sample·winner score·hint·mutation receipt와 일치해야 하며 동일 operation ID로 runtime override를 저장한 뒤 conclusion을 finalize한다. Override 저장 실패는 public active 상태를 유지하고 다음 evaluation에서 같은 claim을 재개한다. Pending reset은 `409`로 거부하고 request-pattern clear는 첫 snapshot의 unmatched record ID만 제거한다.
+- H67 focused quality-state gate는 quality learning `52 passed, 1 warning`과 quality experiment `37 passed, 1 warning`, 기존 quality 확장 gate는 `381 passed, 1 warning`, generation/eval caller 추가 확장 gate는 `432 passed, 1 warning`이다. 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정한 full no-cost regression은 `4101 passed, 2 skipped, 4 deselected, 1 warning`이다. Mock/local TestClient lifecycle에서는 winner `variant_a`, concluded·freeform 응답 `200`, pending reset `409`, concluded/request count 각 `1`, override hint 일치와 private metadata 비노출을 확인했다. 검증은 2026-07-20 mock/local/fake-S3에서 수행했으며 provider API, 실제 AWS runtime, A/B와 override를 함께 묶는 distributed transaction, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone usage metering cross-worker authority completion
 
 - `UsageStore`는 tenant별 `tenants/{tenant_id}/usage.jsonl`을 권위 event log로, `usage_summary.json`을 검증 가능한 파생 상태로 사용한다. Event append와 summary 갱신은 각각 conditional create/CAS retry loop로 확정하고 충돌하면 최신 event log와 summary coverage·aggregate를 다시 검증한다.

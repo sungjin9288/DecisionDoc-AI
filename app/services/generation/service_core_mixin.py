@@ -332,6 +332,7 @@ class GenerationCoreMixin:
             # A/B variant selected during prompt building (set by _inject_prompt_override)
             # Only available on cache miss (cache hits don't call build_bundle_prompt)
             ab_variant: str | None = None
+            ab_experiment_id: str | None = None
             ab_store_instance: Any | None = None
             if not cache_hit:
                 from app.domain.schema import _ab_selected
@@ -342,6 +343,11 @@ class GenerationCoreMixin:
                     from app.storage.ab_test_store import get_ab_test_store
 
                     ab_variant = sel_variant
+                    ab_experiment_id = getattr(
+                        _ab_selected,
+                        "experiment_id",
+                        None,
+                    )
                     ab_store_instance = get_ab_test_store(
                         tenant_id,
                         data_dir=self.data_dir,
@@ -379,6 +385,7 @@ class GenerationCoreMixin:
                     context=payload.get("context", ""),
                     ab_store=ab_store_instance,
                     ab_variant=ab_variant,
+                    ab_experiment_id=ab_experiment_id,
                     finetune_store=active_finetune_store,
                     ft_system_prompt=ft_system_prompt,
                     ft_output=ft_output,

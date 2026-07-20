@@ -50,6 +50,7 @@ def run_eval_pipeline(
     context: str = "",
     ab_store: Any | None = None,
     ab_variant: str | None = None,
+    ab_experiment_id: str | None = None,
     finetune_store: Any | None = None,
     ft_system_prompt: str = "",
     ft_output: str = "",
@@ -69,6 +70,7 @@ def run_eval_pipeline(
         context: 원본 생성 요청의 배경/상황
         ab_store: ABTestStore instance (None이면 A/B 기록 건너뜀)
         ab_variant: 이번 생성에 사용된 variant ('variant_a'/'variant_b')
+        ab_experiment_id: variant가 선택된 experiment incarnation
         finetune_store: FineTuneStore instance for Trigger B collection (optional)
         ft_system_prompt: System prompt used for this generation (for fine-tune messages)
         ft_output: Full rendered markdown output (for fine-tune messages)
@@ -196,9 +198,16 @@ def run_eval_pipeline(
     if ab_store is not None and ab_variant is not None:
         try:
             ab_store.record_result(
-                bundle_id, ab_variant, record.heuristic_score, record.llm_score
+                bundle_id,
+                ab_variant,
+                record.heuristic_score,
+                record.llm_score,
+                experiment_id=ab_experiment_id,
             )
-            winner = ab_store.evaluate_and_conclude(bundle_id)
+            winner = ab_store.evaluate_and_conclude(
+                bundle_id,
+                experiment_id=ab_experiment_id,
+            )
             if winner:
                 _log.info("[ABTest] Concluded %s: winner=%s", bundle_id, winner)
                 # ── Trigger C: A/B winner → collect fine-tune record ─────────
@@ -249,6 +258,7 @@ def run_eval_in_background(
     context: str = "",
     ab_store: Any | None = None,
     ab_variant: str | None = None,
+    ab_experiment_id: str | None = None,
     finetune_store: Any | None = None,
     ft_system_prompt: str = "",
     ft_output: str = "",
@@ -268,6 +278,7 @@ def run_eval_in_background(
             "context": context,
             "ab_store": ab_store,
             "ab_variant": ab_variant,
+            "ab_experiment_id": ab_experiment_id,
             "finetune_store": finetune_store,
             "ft_system_prompt": ft_system_prompt,
             "ft_output": ft_output,

@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,076 passed, 2 skipped, 4 deselected, 2026-07-17 H66) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,101 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-20 H67) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-17 H66 실측: 4076 passed, 2 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-20 H67 실측: 4101 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -42,7 +42,7 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 43 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 41 (스토어)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 44 (스토어)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 9 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 266 (라우트)
 ```
@@ -74,7 +74,7 @@ Services (43) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (41 스토어)    Ops
+Providers (5)    Storage (44 스토어)    Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock / openai    (atomic write 공통)   eval / eval_live
@@ -96,6 +96,7 @@ Providers (5)    Storage (41 스토어)    Ops
 10. Template/history/share mutation은 각각 tenant별 단일 state object에서 conditional create/CAS를 사용하고, 충돌마다 최신 ownership·schema·lifecycle 위에 변경을 재적용한다. Bounded private receipt와 target identity read-back은 public schema와 분리하고 손상 시 fail closed 처리한다.
 11. Billing account mutation은 tenant별 단일 `billing.json`에서 conditional create/CAS를 사용하고, 충돌마다 최신 tenant·account schema 위에 plan·status·Stripe identity 변경을 재적용한다. Bounded private receipt는 public billing response와 분리하고 손상 시 fail closed 처리한다.
 12. Usage event append와 summary 갱신은 각각 `usage.jsonl`과 `usage_summary.json`의 conditional create/CAS로 확정한다. Event log를 권위 원본으로 유지하고 정확히 하나의 검증된 trailing event gap만 summary에 재적용하며, 손상·변조·복수 gap은 원본 보존 상태로 fail closed 처리한다.
+13. Prompt override, A/B experiment, request pattern mutation은 각 tenant별 state object의 conditional create/CAS로 확정한다. Override save receipt는 operation payload에 결속하고 refresh는 incarnation과 applied count를 유지한다. A/B assignment와 result는 같은 experiment identity에 결속하며, conclusion은 persisted result와 receipt에 맞는 private pending claim만 재개한다. Request clear는 최초 snapshot identity만 제거한다.
 
 ---
 

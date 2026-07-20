@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.auth.api_key import require_api_key
 from app.dependencies import get_tenant_id, require_admin
@@ -89,11 +89,14 @@ def list_concluded_ab_tests(request: Request) -> list[dict]:
 def reset_ab_test(bundle_id: str, request: Request) -> dict:
     """Delete the A/B test for a bundle (reset for fresh start)."""
     require_admin(request)
-    from app.storage.ab_test_store import get_ab_test_store
+    from app.storage.ab_test_store import ABTestConflictError, get_ab_test_store
     ab_store = get_ab_test_store(
         get_tenant_id(request),
         data_dir=request.app.state.data_dir,
         backend=request.app.state.state_backend,
     )
-    ab_store.delete_test(bundle_id)
+    try:
+        ab_store.delete_test(bundle_id)
+    except ABTestConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"deleted": True, "bundle_id": bundle_id}

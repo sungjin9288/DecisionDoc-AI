@@ -6,8 +6,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from app.storage.conditional_state import mutate_with_retry, persist_text_if_current
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.storage.state_lock import state_lock
 from app.tenant import require_tenant_id
@@ -15,6 +16,9 @@ from app.tenant import require_tenant_id
 
 class RequestPatternStoreError(RuntimeError):
     """Raised when persisted request pattern evidence cannot be trusted."""
+
+
+_MAX_MUTATION_ATTEMPTS = 32
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -122,7 +126,49 @@ class RequestPatternStore:
             ) from exc
         if raw is None or raw == "":
             return raw, []
+        return raw, self._decode_state(raw)
 
+    @staticmethod
+    def _serialize(records: list[dict[str, Any]]) -> str:
+        return "".join(
+            f"{json.dumps(record, ensure_ascii=False, separators=(',', ':'))}\n"
+            for record in records
+        )
+
+    def _persist_if_current(
+        self,
+        expected: str | None,
+        records: list[dict[str, Any]],
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> bool:
+        for record in records:
+            if self._owns(record):
+                self._validate_owned(
+                    record,
+                    legacy="tenant_id" not in record,
+                )
+        content = self._serialize(records)
+        content_type = "application/x-ndjson; charset=utf-8"
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=content,
+                decode=self._decode_state,
+                committed=committed,
+                decode_errors=(RequestPatternStoreError,),
+                content_type=content_type,
+            )
+        except StateBackendError as exc:
+            raise RequestPatternStoreError(
+                "Request pattern state could not be written"
+            ) from exc
+
+    def _decode_state(
+        self,
+        raw: str,
+    ) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         owned_record_ids: set[str] = set()
         for line_number, line in enumerate(raw.splitlines(), 1):
@@ -159,19 +205,27 @@ class RequestPatternStore:
                 )
             owned_record_ids.add(record_id)
             records.append(record)
-        return raw, records
+        return records
 
-    def _write(self, text: str) -> None:
-        try:
-            self._backend.write_text(
-                self._relative_path,
-                text,
-                content_type="application/x-ndjson; charset=utf-8",
-            )
-        except StateBackendError as exc:
-            raise RequestPatternStoreError(
-                "Request pattern state could not be written"
-            ) from exc
+    def _mutate(
+        self,
+        change: Callable[
+            [list[dict[str, Any]]],
+            tuple[Any, bool],
+        ],
+        *,
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> Any:
+        return mutate_with_retry(
+            read=self._load,
+            change=change,
+            persist=self._persist_if_current,
+            committed=committed,
+            max_attempts=_MAX_MUTATION_ATTEMPTS,
+            conflict_error=lambda: RequestPatternStoreError(
+                "Request pattern state changed too many times to persist safely"
+            ),
+        )
 
     def record_request(
         self,
@@ -200,15 +254,26 @@ class RequestPatternStore:
             "matched": matched,
         }
         self._validate_owned(record, legacy=False)
-        line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+
+        def apply(records: list[dict[str, Any]]) -> tuple[str, bool]:
+            if any(
+                self._owns(existing)
+                and existing.get("record_id") == record_id
+                for existing in records
+            ):
+                return record_id, False
+            records.append(record)
+            return record_id, True
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(existing)
+                and existing.get("record_id") == record_id
+                for existing in records
+            )
 
         with self._lock:
-            current, _records = self._load()
-            content = current or ""
-            if content and not content.endswith("\n"):
-                content += "\n"
-            self._write(f"{content}{line}\n")
-        return record_id
+            return self._mutate(apply, committed=was_committed)
 
     def get_unmatched(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return the most recent unmatched records owned by this tenant."""
@@ -223,26 +288,45 @@ class RequestPatternStore:
 
     def clear_unmatched(self) -> int:
         """Remove owned unmatched records while preserving every foreign record."""
-        with self._lock:
-            _raw, records = self._load()
-            removed = sum(
-                1
-                for record in records
-                if self._owns(record) and not record["matched"]
-            )
-            if removed == 0:
-                return 0
+        target_record_ids: set[str] | None = None
+
+        def apply(records: list[dict[str, Any]]) -> tuple[int, bool]:
+            nonlocal target_record_ids
+            if target_record_ids is None:
+                target_record_ids = {
+                    record["record_id"]
+                    for record in records
+                    if self._owns(record) and not record["matched"]
+                }
+            if not target_record_ids:
+                return 0, False
+
             retained = [
                 record
                 for record in records
-                if not self._owns(record) or record["matched"]
+                if not (
+                    self._owns(record)
+                    and record["record_id"] in target_record_ids
+                )
             ]
-            content = "".join(
-                f"{json.dumps(record, ensure_ascii=False, separators=(',', ':'))}\n"
-                for record in retained
-            )
-            self._write(content)
-            return removed
+            removed = len(records) - len(retained)
+            if removed == 0:
+                return 0, False
+            records[:] = retained
+            return removed, True
+
+        def was_committed(records: list[dict[str, Any]]) -> bool:
+            if not target_record_ids:
+                return False
+            remaining_owned_ids = {
+                record["record_id"]
+                for record in records
+                if self._owns(record)
+            }
+            return target_record_ids.isdisjoint(remaining_owned_ids)
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def _read_all(self) -> list[dict[str, Any]]:
         with self._lock:

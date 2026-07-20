@@ -1,8 +1,5 @@
 """tests/test_eval_pipeline.py — 평가 파이프라인 단위 테스트."""
-from dataclasses import asdict
 from pathlib import Path
-
-import pytest
 
 from app.eval.eval_store import EvalRecord, EvalStore
 from app.eval.pipeline import run_eval_pipeline
@@ -92,6 +89,39 @@ def test_run_eval_pipeline_saves_multiple(tmp_path: Path) -> None:
     run_eval_pipeline("r1", "tech_decision", _sample_docs(), store, tenant_id="system")
     run_eval_pipeline("r2", "tech_decision", _sample_docs(), store, tenant_id="system")
     assert len(store.load_all()) == 2
+
+
+def test_run_eval_pipeline_resumes_pending_ab_conclusion(tmp_path: Path) -> None:
+    class PendingABStore:
+        def __init__(self) -> None:
+            self.recorded = False
+            self.concluded = False
+
+        def record_result(self, *args, experiment_id=None) -> bool:
+            assert experiment_id == "experiment-1"
+            self.recorded = True
+            return False
+
+        def evaluate_and_conclude(self, bundle_id, *, experiment_id=None):
+            assert bundle_id == "tech_decision"
+            assert experiment_id == "experiment-1"
+            self.concluded = True
+            return "variant_a"
+
+    ab_store = PendingABStore()
+    run_eval_pipeline(
+        request_id="pending-ab",
+        bundle_id="tech_decision",
+        docs=_sample_docs(),
+        eval_store=_make_store(tmp_path),
+        ab_store=ab_store,
+        ab_variant="variant_a",
+        ab_experiment_id="experiment-1",
+        tenant_id="system",
+    )
+
+    assert ab_store.recorded
+    assert ab_store.concluded
 
 
 def test_generate_report_empty(tmp_path: Path) -> None:
