@@ -205,6 +205,17 @@ def get_document_ops_training_governance_summary(
     )
 
 
+@router.get("/trajectories/governance-artifacts/inventory", dependencies=[Depends(require_ops_key)])
+def inspect_document_ops_governance_artifacts(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict:
+    return _service(request).governance_artifact_inventory(
+        tenant_id=get_tenant_id(request),
+        limit=limit,
+    )
+
+
 @router.get("/trajectories/reviewer-signoff/summary", dependencies=[Depends(require_ops_key)])
 def get_document_ops_reviewer_signoff_summary(
     request: Request,

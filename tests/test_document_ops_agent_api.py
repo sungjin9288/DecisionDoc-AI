@@ -983,6 +983,34 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert all(value == 0 for value in governance_body["guard_counts"].values())
     assert governance_body["blockers"] == []
 
+    blocked_inventory = client.get(
+        "/api/agent/document-ops/trajectories/governance-artifacts/inventory",
+        headers=_api_headers(),
+    )
+    assert blocked_inventory.status_code == 401
+    inventory = client.get(
+        "/api/agent/document-ops/trajectories/governance-artifacts/inventory?limit=20",
+        headers=_ops_headers(),
+    )
+    assert inventory.status_code == 200
+    inventory_body = inventory.json()
+    assert inventory_body["report_type"] == "document_ops_governance_artifact_inventory"
+    assert inventory_body["status"] == "clean"
+    assert inventory_body["read_only"] is True
+    assert inventory_body["counts"]["authoritative_references"] == 5
+    assert inventory_body["counts"]["referenced_verified"] == 5
+    assert inventory_body["counts"]["unreferenced"] == 0
+    assert inventory_body["observation_boundary"] == {
+        "metadata_snapshot_atomic": True,
+        "multi_object_snapshot_atomic": False,
+        "concurrent_writes_may_require_recheck": True,
+    }
+    assert inventory_body["cleanup_boundary"] == {
+        "automatic_cleanup_allowed": False,
+        "objects_deleted": False,
+        "manual_recheck_required": True,
+    }
+
     blocked_adapter_contract = client.get(
         "/api/agent/document-ops/trajectories/training-provider-adapter/contract",
         headers=_api_headers(),

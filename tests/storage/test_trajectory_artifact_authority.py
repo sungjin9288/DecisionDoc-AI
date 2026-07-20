@@ -310,6 +310,20 @@ def test_legacy_hash_only_export_remains_readable_without_size_claim(
     listed = store.list_sft_exports(tenant_id="alpha")
     assert listed[0]["integrity_verified"] is True
     assert listed[0]["size_binding_verified"] is False
+    inventory = store.inspect_governance_artifacts(tenant_id="alpha")
+    artifact = inventory["collections"]["exports"]["artifacts"][0]
+    assert artifact["status"] == "referenced_verified"
+    assert artifact["size_binding_verified"] is False
+
+    metadata["exports"][0]["filename"] = "../unsafe.jsonl"
+    backend.write_text(metadata_path, json.dumps(metadata))
+    unsafe_inventory = store.inspect_governance_artifacts(tenant_id="alpha")
+    assert unsafe_inventory["counts"]["invalid_reference"] == 1
+    assert unsafe_inventory["counts"]["unreferenced"] == 1
+    assert (
+        unsafe_inventory["collections"]["exports"]["artifacts"][0]["status"]
+        == "invalid_reference"
+    )
 
 
 @pytest.mark.parametrize(
@@ -357,6 +371,8 @@ def test_corrupt_metadata_fails_closed_without_overwrite(
 
     with pytest.raises(TrajectoryStoreError, match="metadata"):
         store.list_sft_exports(tenant_id="alpha")
+    with pytest.raises(TrajectoryStoreError, match="metadata"):
+        store.inspect_governance_artifacts(tenant_id="alpha")
 
     assert backend.read_text(relative_path) == corrupt
 
@@ -382,6 +398,94 @@ def test_metadata_conflict_cap_leaves_export_outside_authority(tmp_path: Path) -
     assert backend.attempts == 32
     assert store.list_sft_exports(tenant_id="alpha") == []
     assert backend.list_prefix("tenants/alpha/trajectory_exports")
+    inventory = store.inspect_governance_artifacts(tenant_id="alpha")
+    assert inventory["status"] == "attention_required"
+    assert inventory["counts"]["authoritative_references"] == 0
+    assert inventory["counts"]["unreferenced"] == 1
+    assert inventory["cleanup_boundary"]["objects_deleted"] is False
+
+
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_governance_inventory_classifies_integrity_issues_without_writes(
+    tmp_path: Path,
+    backend_kind: str,
+) -> None:
+    client = MemoryS3Client()
+    backend = (
+        LocalStateBackend(tmp_path / "state")
+        if backend_kind == "local"
+        else _s3_backend(client)
+    )
+    store = _store(tmp_path, backend)
+    filename, manifest, _ = _approved_chain(store, trajectory_id="trj_inventory")
+    store.request_training_execution_from_plan(
+        tenant_id="alpha",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+    store.export_training_pre_execution_audit(
+        tenant_id="alpha",
+        auditor="compliance-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+    )
+
+    export_path = f"tenants/alpha/trajectory_exports/{filename}"
+    export_bytes = backend.read_bytes(export_path)
+    assert export_bytes is not None
+    backend.write_bytes(export_path, export_bytes + b"\n")
+    freeze_metadata = store.list_dataset_freezes(tenant_id="alpha")[0]
+    assert freeze_metadata["manifest_id"] == manifest["manifest_id"]
+    freeze_path = (
+        f"tenants/alpha/trajectory_freezes/{freeze_metadata['manifest_file']}"
+    )
+    backend.delete(freeze_path)
+    orphan_path = "tenants/alpha/trajectory_training_audits/orphan.json"
+    backend.write_bytes(orphan_path, b"orphan")
+    metadata_before = backend.read_text(
+        "tenants/alpha/trajectory_metadata.json"
+    )
+
+    inventory = store.inspect_governance_artifacts(
+        tenant_id="alpha",
+        limit=10,
+    )
+
+    assert inventory["status"] == "attention_required"
+    assert inventory["read_only"] is True
+    assert inventory["observation_boundary"] == {
+        "metadata_snapshot_atomic": True,
+        "multi_object_snapshot_atomic": False,
+        "concurrent_writes_may_require_recheck": True,
+    }
+    assert inventory["counts"] == {
+        "authoritative_references": 5,
+        "observed_objects": 5,
+        "referenced_verified": 3,
+        "referenced_missing": 1,
+        "referenced_tampered": 1,
+        "invalid_reference": 0,
+        "unreferenced": 1,
+    }
+    assert (
+        inventory["collections"]["exports"]["artifacts"][0]["status"]
+        == "referenced_tampered"
+    )
+    assert (
+        inventory["collections"]["freezes"]["artifacts"][0]["status"]
+        == "referenced_missing"
+    )
+    assert inventory["cleanup_boundary"] == {
+        "automatic_cleanup_allowed": False,
+        "objects_deleted": False,
+        "manual_recheck_required": True,
+    }
+    assert backend.read_bytes(orphan_path) == b"orphan"
+    assert (
+        backend.read_text("tenants/alpha/trajectory_metadata.json")
+        == metadata_before
+    )
 
 
 def test_reviewer_signoff_summary_reads_selected_backend(tmp_path: Path) -> None:

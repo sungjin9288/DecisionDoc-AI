@@ -235,6 +235,17 @@ class DocumentOpsService:
         )
         return {"training_approvals": approvals, "total": len(approvals)}
 
+    def governance_artifact_inventory(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        return self._trajectory_store.inspect_governance_artifacts(
+            tenant_id=tenant_id,
+            limit=limit,
+        )
+
     def training_readiness_summary(
         self,
         *,

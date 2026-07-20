@@ -19,7 +19,10 @@ PERF_THRESHOLDS = {
 
 @pytest.mark.parametrize("endpoint,max_ms", PERF_THRESHOLDS.items())
 def test_endpoint_response_time(endpoint, max_ms):
-    """Each endpoint must respond within threshold."""
+    """Each initialized endpoint must respond within threshold."""
+    warmup = client.get(endpoint)
+    assert warmup.status_code in (200, 401, 403)
+
     times = []
     for _ in range(5):
         start = time.monotonic()

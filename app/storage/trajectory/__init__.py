@@ -77,6 +77,9 @@ from app.storage.trajectory.signoff import (
     _summarize_signoff_reviewer,
     _validate_reviewer_signoff_record,
 )
+from app.storage.trajectory.artifact_inventory_mixin import (
+    TrajectoryArtifactInventoryMixin,
+)
 from app.storage.trajectory.core_mixin import TrajectoryCoreMixin, TrajectoryReviewConflictError, _log
 from app.storage.trajectory.state_mixin import TrajectoryStoreError
 from app.storage.trajectory.freeze_mixin import TrajectoryFreezeMixin
@@ -95,6 +98,7 @@ __all__ = [
 
 class TrajectoryStore(
     TrajectoryCoreMixin,
+    TrajectoryArtifactInventoryMixin,
     TrajectorySftExportMixin,
     TrajectoryFreezeMixin,
     TrajectoryTrainingApprovalMixin,

@@ -26,7 +26,7 @@ dependency가 아니다.
 | QA and eval | `app/evals/document_ops/` | task-specific hard gates, stable issue code, affected field, remediation hint와 rubric |
 | API | `app/routers/document_ops_agent.py` | tenant-aware run, review, export, freeze, approval, audit, governance endpoints |
 | Service | `app/services/document_ops_service.py` | agent와 trajectory storage를 route에서 분리해 orchestration |
-| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/core_mixin.py`, `app/storage/trajectory/state_mixin.py`, `app/storage/trajectory/artifact_state_mixin.py` | tenant-scoped trajectory/metadata CAS, review, stats; selected-backend immutable governance artifact |
+| Trajectory storage | `app/storage/trajectory_store.py`, `app/storage/trajectory/core_mixin.py`, `app/storage/trajectory/state_mixin.py`, `app/storage/trajectory/artifact_state_mixin.py`, `app/storage/trajectory/artifact_inventory_mixin.py` | tenant-scoped trajectory/metadata CAS, review, stats; selected-backend immutable governance artifact와 read-only integrity inventory |
 | Training adapter | `app/services/document_ops_training_adapter.py` | disabled contract와 read-only rehearsal만 제공 |
 
 The implemented flow is:
@@ -57,6 +57,7 @@ The no-execution governance workflow supports:
 7. Create a two-person execution request only from the current approval chain, without starting execution.
 8. Export a pre-execution audit and reject stale or tampered request/audit references in governance summaries.
 9. Rehearse the provider adapter contract with no external side effects.
+10. Compare governance metadata authority with selected-backend objects through the Ops-key read-only inventory; recheck before any separate cleanup decision.
 
 These records are approval evidence. They are not authorization to upload a dataset, call a
 provider training API, start a training job, or promote a model.
@@ -193,7 +194,9 @@ Last local verification on 2026-07-20:
 - DocumentOps, report-workflow integration, and infrastructure expansion: 280 passed, 1 warning
 - governance index/artifact storage gate: 82 passed
 - governance index/artifact and DocumentOps caller expansion: 296 passed, 1 warning
-- full repository non-live gate: 4212 passed, 2 skipped, 4 deselected, 1 warning
+- governance artifact inventory trajectory storage gate: 84 passed
+- governance artifact inventory and DocumentOps caller expansion: 333 passed, 1 warning
+- full repository non-live gate: 4214 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 
