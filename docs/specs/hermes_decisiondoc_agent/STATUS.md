@@ -73,6 +73,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - the Review 상태 action loads one service-composed overview, shows the prioritized review state and next action before the three source reports, and keeps one stale-response guard and refresh read-only
 - each source report has a stable SHA-256 that excludes only its top-level generation time; the browser compares successful same-tenant observations in session memory and labels the recheck as first, unchanged, or changed without persisting it
 - Trajectory Stats accepts only the latest same-tenant request outcome, so an older success or error cannot replace current accepted, pending, or export counts
+- the task-filtered Reviewed SFT export list accepts only the latest same-tenant export/freeze response, so an older success or error cannot replace current artifact rows or emit a stale failure notice
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -217,9 +218,11 @@ Last local verification on 2026-07-21:
 - governance browser freshness Chromium gate: 1 passed
 - trajectory stats latest-response static gate: 1 passed, 1 warning
 - trajectory stats same-tenant Chromium gate: 1 passed
-- DocumentOps static expansion gate: 21 passed, 131 deselected, 1 warning
-- related DocumentOps Chromium expansion gate: 3 passed
-- full repository non-live gate: 4225 passed, 2 skipped, 4 deselected, 1 warning
+- reviewed export list latest-response static gate: 1 passed, 1 warning
+- reviewed export list same-tenant Chromium gate: 1 passed
+- DocumentOps static expansion gate: 22 passed, 131 deselected, 1 warning
+- related DocumentOps Chromium expansion gate: 4 passed, 40 deselected
+- full repository non-live gate: 4227 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

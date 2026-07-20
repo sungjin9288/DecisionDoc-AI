@@ -1254,6 +1254,96 @@ def test_document_ops_stats_keeps_the_latest_same_tenant_response(page):
     assert "stats 로드 실패" not in result["finalText"]
 
 
+def test_document_ops_exports_keep_the_latest_same_tenant_response(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingExports = [];
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          try {
+            window.fetch = (input, options) => {
+              const url = String(input || '');
+              if (url.includes('/api/agent/document-ops/trajectories/reviewed-sft-exports?')) {
+                return new Promise(resolve => pendingExports.push(resolve));
+              }
+              if (url === '/api/agent/document-ops/trajectories/freezes?limit=200') {
+                return Promise.resolve(response({ freezes: [] }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-task-type').value = 'decision_brief';
+            const olderSuccess = loadDocumentOpsExports();
+            document.querySelector('#docops-task-type').value = 'evidence_gap_review';
+            const newerSuccess = loadDocumentOpsExports();
+            while (pendingExports.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingExports[1](response({
+              total: 1,
+              exports: [{
+                filename: 'new-evidence-gap.jsonl',
+                record_count: 2,
+                size_bytes: 120,
+                content_sha256: 'b'.repeat(64),
+                exists: true,
+              }],
+            }));
+            await newerSuccess;
+            pendingExports[0](response({
+              total: 1,
+              exports: [{
+                filename: 'old-decision-brief.jsonl',
+                record_count: 1,
+                size_bytes: 80,
+                content_sha256: 'a'.repeat(64),
+                exists: true,
+              }],
+            }));
+            await olderSuccess;
+            const successText = document.querySelector('#document-ops-export-list').textContent;
+
+            const olderFailure = loadDocumentOpsExports();
+            const newestSuccess = loadDocumentOpsExports();
+            while (pendingExports.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingExports[3](response({
+              total: 1,
+              exports: [{
+                filename: 'newest-evidence-gap.jsonl',
+                record_count: 3,
+                size_bytes: 160,
+                content_sha256: 'c'.repeat(64),
+                exists: true,
+              }],
+            }));
+            await newestSuccess;
+            pendingExports[2](response({ detail: 'stale failure' }, 503));
+            await olderFailure;
+            const finalText = document.querySelector('#document-ops-export-list').textContent;
+            const notifications = document.querySelector('#notification-container').textContent;
+
+            return { successText, finalText, notifications };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "new-evidence-gap.jsonl" in result["successText"]
+    assert "old-decision-brief.jsonl" not in result["successText"]
+    assert "newest-evidence-gap.jsonl" in result["finalText"]
+    assert "Export 목록 로드 실패" not in result["finalText"]
+    assert "stale failure" not in result["notifications"]
+
+
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []

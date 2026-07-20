@@ -669,6 +669,19 @@ def test_index_html_document_ops_stats_keep_the_latest_same_tenant_response():
     assert stats_block.count("if (!requestIsCurrent()) return;") == 3
 
 
+def test_index_html_document_ops_exports_keep_the_latest_same_tenant_response():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadDocumentOpsExports()")
+    end = content.index("function renderDocumentOpsExports", start)
+    exports_block = content[start:end]
+
+    assert "let _documentOpsExportListRequestVersion = 0;" in content
+    assert "const requestVersion = ++_documentOpsExportListRequestVersion;" in exports_block
+    assert "requestVersion === _documentOpsExportListRequestVersion" in exports_block
+    assert "tenantId === _currentTenantId" in exports_block
+    assert exports_block.count("if (!requestIsCurrent()) return;") == 3
+
+
 def test_index_html_document_ops_marks_governance_stale_after_source_changes():
     content = open("app/static/index.html", encoding="utf-8").read()
 
