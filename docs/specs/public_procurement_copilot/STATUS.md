@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone fine-tune and model cross-worker authority completion
+
+- `FineTuneStore` dataset append·snapshot-bound clear, export metadata append와 `ModelRegistry` register/status/eval/deprecate mutation은 각각 tenant별 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·request/model/job identity 위에 같은 operation을 재적용한다.
+- Dataset은 public record에 노출하지 않는 append identity로 clear 후 같은 request ID로 재생성된 successor를 구분한다. Model registry는 immutable incarnation과 최근 64개 private mutation receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Export content는 filename별 immutable conditional create 뒤 record count·size·SHA-256 metadata를 별도 CAS로 확정하며 metadata 없는 orphan은 download/upload authority가 아니다. Process-local lock은 contention 완화 수단일 뿐 persistence authority가 아니다.
+- H69 focused fine-tune/model gate는 `77 passed, 1 warning`, fine-tune/eval/generation/security/infrastructure/state backend 확장 gate는 `390 passed, 1 warning`이다. Full no-cost regression은 `4117 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했다. Process lock 없는 local/fake-S3 20-way dataset append·model register·export metadata, 32회 conflict cap, private metadata 비노출, commit-then-error 뒤 successor append/update, clear 후 same-request recreate와 export orphan 비권위화를 2026-07-20 no-cost 환경에서 검증했다.
+- Conditional authority는 dataset, export metadata, model registry 각 단일 object 범위다. Export content와 metadata의 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, external polling, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone feedback and eval evidence cross-worker authority completion
 
 - `FeedbackStore`와 `EvalStore` append는 tenant별 `feedback.jsonl`, `eval_results.jsonl`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 기존 JSONL byte prefix와 foreign/legacy record를 그대로 보존하고 충돌할 때마다 최신 ownership·schema·append identity를 재검증한다.
@@ -152,7 +159,7 @@ Milestone 6 completed
 
 - `FineTuneStore`와 `ModelRegistry`는 tenant ID를 state 접근 전에 검증하고 local/S3 모두 앱이 선택한 shared `StateBackend`의 `tenants/{tenant_id}/` state를 사용한다. Missing-state read는 파일이나 object를 만들지 않는다.
 - Malformed JSON/JSONL, blank line, duplicate key, owned schema/type/timestamp/score drift, duplicate request/model/provider-job identity는 조회와 후속 write를 fail closed로 중단하고 원본 bytes를 보존한다. Explicit foreign record는 숨긴 채 보존하며 tenant 필드 없는 기존 record와 hash가 없던 legacy export metadata는 path-owned read compatibility를 유지한다.
-- Fine-tune export는 messages-only JSONL의 record count, size와 SHA-256을 metadata에 결속하고 download와 provider upload 직전에 다시 검증한다. 독립 store 인스턴스의 read-modify-write는 process-local shared lock으로 local/fake-S3에서 직렬화하며 route, generation provider selection과 orchestrator는 앱 data root/backend를 사용한다. 손상된 registry는 active model 없음으로 축소하지 않는다.
+- Fine-tune export는 messages-only JSONL의 record count, size와 SHA-256을 metadata에 결속하고 download와 provider upload 직전에 다시 검증한다. H69에서 dataset·export metadata·model registry mutation을 객체별 conditional create/CAS로 전환해 process-local lock은 contention 완화 수단으로만 남겼다. Export content는 immutable create 후 metadata로 권위화하며 두 객체의 distributed transaction은 제공하지 않는다. Route, generation provider selection과 orchestrator는 앱 data root/backend를 사용하고 손상된 registry를 active model 없음으로 축소하지 않는다.
 - 자동 provider training은 기본값 `FINETUNE_AUTO_ENABLED=0`이며 opt-in과 threshold를 모두 요구한다. Orchestrator는 명시적 execution authority가 없는 호출에서 upload/job creation을 수행하지 않고, provider job 성공 모델은 promotion eval 동안 inactive 상태를 유지한 뒤 평가 종료 후에만 ready로 전환한다.
 - H47 focused integrity gate는 `39 passed`, fine-tune/model/security/infrastructure 확장 gate는 `281 passed`, full no-cost regression은 `3759 passed, 2 skipped, 4 deselected`다. 모든 provider key를 process에서 제거하고 provider route를 mock으로 고정해 검증했다. Provider API, G2B live API, AWS runtime, actual dataset upload, training execution, external provider job polling, actual model promotion, distributed S3 CAS, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았다.
 

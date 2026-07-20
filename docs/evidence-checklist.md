@@ -68,10 +68,11 @@
 | H66 사용량 계량 CAS 확장 회귀 | 완료 | usage/billing/state backend/security/infrastructure 묶음 -> `434 passed, 1 warning`; provider·Stripe·AWS API와 외부 실행 없음 |
 | H67 품질 상태 CAS 확장 회귀 | 완료 | quality learning/experiment·A/B·self-improve·stability·bundle expander·dashboard·security·infrastructure 묶음 -> `381 passed, 1 warning`; generation/eval caller 추가 묶음 -> `432 passed, 1 warning`; provider·AWS API와 외부 실행 없음 |
 | H68 feedback/eval append CAS 확장 회귀 | 완료 | feedback/eval/self-improve/dashboard/fine-tune/quality learning consumer 묶음 -> `158 passed, 1 warning`; quality experiment·generation·security·infrastructure 추가 묶음 -> `486 passed, 1 warning`; public `EvalRecord` 계약 유지, provider·AWS API와 외부 실행 없음 |
+| H69 fine-tune/model authority CAS 확장 회귀 | 완료 | focused fine-tune/model gate -> `77 passed, 1 warning`; fine-tune/eval/generation/security/infrastructure/state backend 확장 gate -> `390 passed, 1 warning`; process lock 없는 local/fake-S3 20-way dataset append·model register·export metadata, 32회 cap, private receipt·uncertain commit·orphan 비권위화와 execution guard 검증 |
 | H56 procurement review 확장 회귀 | 완료 | review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 묶음 -> `610 passed`; provider API와 외부 실행 없음 |
 | H57 approval CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `541 passed`; process lock 없는 fake-S3 conditional create/CAS 포함, provider API와 외부 실행 없음 |
 | H58 project CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `546 passed`; process lock 없는 fake-S3 project conditional create/CAS, bounded mutation receipt, disjoint update와 delete 경쟁 포함, provider API와 외부 실행 없음 |
-| Non-live 전체 pytest gate | 완료 | 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정한 `pytest tests/ -m "not live" -q` -> `4106 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-20 H68 실측) |
+| Non-live 전체 pytest gate | 완료 | 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정한 `pytest tests/ -m "not live" -q` -> `4117 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-20 H69 실측) |
 | GitHub Actions CI | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `309c79e`, CI `29710492757` success (`4102 passed, 5 skipped`) |
 | GitHub Actions CD | 완료 | 마지막으로 문서화한 main 자동화 증적: commit `309c79e`, CD `29710492759` success. image digest `sha256:0fde02c5dce36453c1eab42ab5706bf69e512870e07663071903175a431c8960`; staging deploy/smoke와 production deploy는 skip되어 배포 proof에서 제외 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |

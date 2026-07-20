@@ -6,9 +6,10 @@ import hashlib
 import json
 import threading
 import time
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +25,58 @@ from app.storage.model_registry import (
     clear_model_registry_cache,
     get_model_registry,
 )
-from app.storage.state_backend import S3StateBackend
+from app.storage.state_backend import (
+    LocalStateBackend,
+    S3StateBackend,
+)
+
+
+class _SlowLocalBackend(LocalStateBackend):
+    def read_text(self, relative_path: str) -> str | None:
+        raw = super().read_text(relative_path)
+        time.sleep(0.003)
+        return raw
+
+
+class _ConflictingLocalBackend(LocalStateBackend):
+    def __init__(self, root: Path, *, conflict_suffix: str) -> None:
+        super().__init__(root)
+        self.conflict_suffix = conflict_suffix
+        self.attempts = 0
+
+    def write_text_if_absent(
+        self,
+        relative_path: str,
+        text: str,
+        *,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith(self.conflict_suffix):
+            self.attempts += 1
+            return False
+        return super().write_text_if_absent(
+            relative_path,
+            text,
+            content_type=content_type,
+        )
+
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        if relative_path.endswith(self.conflict_suffix):
+            self.attempts += 1
+            return False
+        return super().replace_text_if_equal(
+            relative_path,
+            expected=expected,
+            replacement=replacement,
+            content_type=content_type,
+        )
 
 
 class _Body:
@@ -39,6 +91,28 @@ class _MemoryS3Client:
     def __init__(self, *, read_delay: float = 0.0) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.read_delay = read_delay
+        self._lock = threading.Lock()
+        self._fail_after_key_suffix: str | None = None
+        self._after_failed_write: Callable[[], None] | None = None
+
+    @staticmethod
+    def _etag(data: bytes) -> str:
+        return f'"{hashlib.sha256(data).hexdigest()}"'
+
+    @staticmethod
+    def _error(code: str) -> Exception:
+        error = Exception(code)
+        error.response = {"Error": {"Code": code}}
+        return error
+
+    def fail_after_next_conditional_write(
+        self,
+        *,
+        key_suffix: str,
+        after_write: Callable[[], None] | None = None,
+    ) -> None:
+        self._fail_after_key_suffix = key_suffix
+        self._after_failed_write = after_write
 
     def put_object(
         self,
@@ -47,25 +121,52 @@ class _MemoryS3Client:
         Key: str,
         Body: bytes,
         ContentType: str,
+        IfNoneMatch: str | None = None,
+        IfMatch: str | None = None,
     ) -> None:
         _ = ContentType
-        self.objects[(Bucket, Key)] = Body
+        with self._lock:
+            current = self.objects.get((Bucket, Key))
+            if IfNoneMatch == "*" and current is not None:
+                raise self._error("PreconditionFailed")
+            if IfMatch is not None and (
+                current is None or self._etag(current) != IfMatch
+            ):
+                raise self._error("PreconditionFailed")
+            self.objects[(Bucket, Key)] = Body
+            fail_after_write = (
+                (IfNoneMatch is not None or IfMatch is not None)
+                and self._fail_after_key_suffix is not None
+                and Key.endswith(self._fail_after_key_suffix)
+            )
+            if fail_after_write:
+                self._fail_after_key_suffix = None
+                after_write = self._after_failed_write
+                self._after_failed_write = None
+            else:
+                after_write = None
+
+        if not fail_after_write:
+            return
+        if after_write is not None:
+            after_write()
+        raise self._error("InternalError")
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, _Body]:
         time.sleep(self.read_delay)
-        data = self.objects.get((Bucket, Key))
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
         if data is None:
-            error = Exception("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(data)}
+            raise self._error("NoSuchKey")
+        return {"Body": _Body(data), "ETag": self._etag(data)}
 
 
 def _s3_backend(
     *,
     read_delay: float = 0.0,
+    client: _MemoryS3Client | None = None,
 ) -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client(read_delay=read_delay)
+    client = client or _MemoryS3Client(read_delay=read_delay)
     backend = S3StateBackend(
         bucket="unit-bucket",
         prefix="decisiondoc-ai/state/",
@@ -290,16 +391,27 @@ def test_training_state_round_trips_through_fake_s3() -> None:
     }
 
 
-def test_independent_fake_s3_training_stores_preserve_concurrent_writes() -> None:
-    backend, _ = _s3_backend(read_delay=0.002)
+def test_independent_local_training_stores_preserve_concurrent_writes(
+    tmp_path: Path,
+) -> None:
     fine_tune_stores = [
-        FineTuneStore("/virtual/data", tenant_id="alpha", backend=backend)
+        FineTuneStore(
+            tmp_path,
+            tenant_id="alpha",
+            backend=_SlowLocalBackend(tmp_path),
+        )
         for _ in range(20)
     ]
     registries = [
-        ModelRegistry("/virtual/data", tenant_id="alpha", backend=backend)
+        ModelRegistry(
+            tmp_path,
+            tenant_id="alpha",
+            backend=_SlowLocalBackend(tmp_path),
+        )
         for _ in range(20)
     ]
+    for store in [*fine_tune_stores, *registries]:
+        store._lock = nullcontext()
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(
@@ -320,6 +432,350 @@ def test_independent_fake_s3_training_stores_preserve_concurrent_writes() -> Non
 
     assert len(fine_tune_stores[0].get_records()) == 20
     assert len(registries[0].list_models()) == 20
+
+
+def test_independent_fake_s3_training_stores_preserve_concurrent_writes() -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    fine_tune_stores = [
+        FineTuneStore(
+            f"/virtual/finetune-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    registries = [
+        ModelRegistry(
+            f"/virtual/registry-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in [*fine_tune_stores, *registries]:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(
+            executor.map(
+                lambda item: item[1].save_record(
+                    _messages(str(item[0])),
+                    _metadata(str(item[0])),
+                ),
+                enumerate(fine_tune_stores),
+            )
+        )
+        list(
+            executor.map(
+                lambda item: _register(item[1], str(item[0])),
+                enumerate(registries),
+            )
+        )
+
+    assert len(fine_tune_stores[0].get_records()) == 20
+    assert len(registries[0].list_models()) == 20
+
+
+def test_independent_fake_s3_exports_preserve_concurrent_history() -> None:
+    client = _MemoryS3Client(read_delay=0.002)
+    bootstrap = FineTuneStore(
+        "/virtual/bootstrap",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    bootstrap.save_record(_messages(), _metadata())
+    stores = [
+        FineTuneStore(
+            f"/virtual/export-worker-{index}",
+            tenant_id="alpha",
+            backend=_s3_backend(client=client)[0],
+        )
+        for index in range(20)
+    ]
+    for store in stores:
+        store._lock = nullcontext()
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        exports = list(
+            executor.map(
+                lambda store: store.export_for_training(min_records=1),
+                stores,
+            )
+        )
+
+    assert all(export is not None for export in exports)
+    assert bootstrap.get_stats()["export_count"] == 20
+    assert len({export.filename for export in exports if export is not None}) == 20
+
+
+def test_finetune_append_reconciles_commit_then_successor_append() -> None:
+    client = _MemoryS3Client()
+    primary = FineTuneStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = FineTuneStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_suffix="dataset.jsonl",
+        after_write=lambda: successor.save_record(
+            _messages("successor"),
+            _metadata("successor"),
+        ),
+    )
+    assert primary.save_record(_messages("committed"), _metadata("committed"))
+
+    records = primary.get_records()
+    assert {record["metadata"]["request_id"] for record in records} == {
+        "request-committed",
+        "request-successor",
+    }
+
+
+def test_finetune_clear_preserves_same_request_recreated_after_commit() -> None:
+    client = _MemoryS3Client()
+    primary = FineTuneStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = FineTuneStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.save_record(_messages("original"), _metadata("shared"))
+
+    client.fail_after_next_conditional_write(
+        key_suffix="dataset.jsonl",
+        after_write=lambda: successor.save_record(
+            _messages("replacement"),
+            _metadata("shared"),
+        ),
+    )
+    assert primary.clear_dataset() == 1
+
+    records = primary.get_records()
+    assert len(records) == 1
+    assert records[0]["messages"][1]["content"] == "Input replacement"
+
+
+def test_finetune_export_reconciles_commit_then_successor_export() -> None:
+    client = _MemoryS3Client()
+    primary = FineTuneStore(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = FineTuneStore(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    primary.save_record(_messages(), _metadata())
+    successor_exports: list[Any] = []
+
+    client.fail_after_next_conditional_write(
+        key_suffix="metadata.json",
+        after_write=lambda: successor_exports.append(
+            successor.export_for_training(min_records=1)
+        ),
+    )
+    committed = primary.export_for_training(min_records=1)
+
+    assert committed is not None
+    assert successor_exports[0] is not None
+    assert primary.get_stats()["export_count"] == 2
+    assert primary.get_export_bytes(committed.filename) is not None
+
+
+def test_model_registration_reconciles_commit_then_successor_update() -> None:
+    client = _MemoryS3Client()
+    primary = ModelRegistry(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = ModelRegistry(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+
+    client.fail_after_next_conditional_write(
+        key_suffix="model_registry.json",
+        after_write=lambda: successor.update_status("job-committed", "failed"),
+    )
+    registered = _register(primary, "committed")
+
+    assert registered["status"] == "training"
+    assert primary.get_model_by_job("job-committed")["status"] == "failed"
+
+
+def test_model_update_reconciles_commit_then_successor_eval() -> None:
+    client = _MemoryS3Client()
+    primary = ModelRegistry(
+        "/virtual/primary",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    successor = ModelRegistry(
+        "/virtual/successor",
+        tenant_id="alpha",
+        backend=_s3_backend(client=client)[0],
+    )
+    primary._lock = nullcontext()
+    successor._lock = nullcontext()
+    _register(primary, "shared")
+
+    client.fail_after_next_conditional_write(
+        key_suffix="model_registry.json",
+        after_write=lambda: successor.update_eval_result(
+            "ft:model:shared",
+            avg_score_after=0.9,
+            eval_result={"gate": "passed"},
+        ),
+    )
+    assert primary.update_status("job-shared", "ready")
+
+    model = primary.get_model("ft:model:shared")
+    assert model is not None
+    assert model["status"] == "ready"
+    assert model["avg_score_after"] == 0.9
+    assert model["eval_result"] == {"gate": "passed"}
+
+
+def test_training_state_mutations_stop_after_bounded_conflicts(
+    tmp_path: Path,
+) -> None:
+    dataset_backend = _ConflictingLocalBackend(
+        tmp_path / "dataset",
+        conflict_suffix="dataset.jsonl",
+    )
+    fine_tune = FineTuneStore(
+        tmp_path / "dataset",
+        tenant_id="alpha",
+        backend=dataset_backend,
+    )
+    fine_tune._lock = nullcontext()
+    with pytest.raises(
+        FineTuneStoreError,
+        match="dataset changed too many times",
+    ):
+        fine_tune.save_record(_messages(), _metadata())
+    assert dataset_backend.attempts == 32
+
+    registry_backend = _ConflictingLocalBackend(
+        tmp_path / "registry",
+        conflict_suffix="model_registry.json",
+    )
+    registry = ModelRegistry(
+        tmp_path / "registry",
+        tenant_id="alpha",
+        backend=registry_backend,
+    )
+    registry._lock = nullcontext()
+    with pytest.raises(
+        ModelRegistryError,
+        match="registry changed too many times",
+    ):
+        _register(registry)
+    assert registry_backend.attempts == 32
+
+
+def test_export_metadata_conflict_leaves_orphan_outside_authority(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "exports"
+    bootstrap = FineTuneStore(root, tenant_id="alpha")
+    bootstrap.save_record(_messages(), _metadata())
+    backend = _ConflictingLocalBackend(
+        root,
+        conflict_suffix="metadata.json",
+    )
+    store = FineTuneStore(root, tenant_id="alpha", backend=backend)
+    store._lock = nullcontext()
+
+    with pytest.raises(
+        FineTuneStoreError,
+        match="metadata changed too many times",
+    ):
+        store.export_for_training(min_records=1)
+
+    export_files = list((root / "tenants/alpha/finetune").glob("export*.jsonl"))
+    assert len(export_files) == 1
+    assert store.get_export_bytes(export_files[0].name) is None
+    assert backend.attempts == 32
+
+
+def test_training_reconciliation_metadata_is_private_and_bounded(
+    tmp_path: Path,
+) -> None:
+    fine_tune = FineTuneStore(tmp_path, tenant_id="alpha")
+    fine_tune.save_record(_messages(), _metadata())
+    public_record = fine_tune.get_records()[0]
+    persisted_record = json.loads(
+        (tmp_path / "tenants/alpha/finetune/dataset.jsonl").read_text(encoding="utf-8")
+    )
+    assert "_append_id" not in public_record
+    assert persisted_record["_append_id"]
+
+    registry = ModelRegistry(tmp_path, tenant_id="alpha")
+    _register(registry)
+    for index in range(70):
+        status = "failed" if index % 2 else "training"
+        assert registry.update_status("job-sample", status)
+    public_model = registry.get_model("ft:model:sample")
+    persisted_model = json.loads(
+        (tmp_path / "tenants/alpha/model_registry.json").read_text(encoding="utf-8")
+    )[0]
+
+    assert public_model is not None
+    assert "_incarnation_id" not in public_model
+    assert "_mutation_ids" not in public_model
+    assert persisted_model["_incarnation_id"]
+    assert len(persisted_model["_mutation_ids"]) == 64
+
+
+def test_invalid_training_reconciliation_metadata_fails_closed(
+    tmp_path: Path,
+) -> None:
+    fine_tune = FineTuneStore(tmp_path, tenant_id="alpha")
+    fine_tune.save_record(_messages(), _metadata())
+    dataset_path = tmp_path / "tenants/alpha/finetune/dataset.jsonl"
+    record = json.loads(dataset_path.read_text(encoding="utf-8"))
+    record["_append_id"] = ""
+    dataset_path.write_text(f"{json.dumps(record)}\n", encoding="utf-8")
+    dataset_raw = dataset_path.read_bytes()
+
+    with pytest.raises(FineTuneStoreError, match="append identity"):
+        fine_tune.get_records()
+    assert dataset_path.read_bytes() == dataset_raw
+
+    registry = ModelRegistry(tmp_path, tenant_id="beta")
+    _register(registry)
+    registry_path = tmp_path / "tenants/beta/model_registry.json"
+    models = json.loads(registry_path.read_text(encoding="utf-8"))
+    models[0]["_mutation_ids"] = [f"mutation-{index}" for index in range(65)]
+    registry_path.write_text(json.dumps(models), encoding="utf-8")
+    registry_raw = registry_path.read_bytes()
+
+    with pytest.raises(ModelRegistryError, match="mutation history"):
+        registry.list_models()
+    assert registry_path.read_bytes() == registry_raw
 
 
 def test_training_state_factories_are_scoped_by_root_and_backend(
@@ -727,7 +1183,9 @@ def test_training_authority_callers_bind_application_backend() -> None:
         Path("app/routers/generate/ops.py"): {"get_finetune_store"},
         Path("app/routers/admin/_models.py"): {"get_model_registry"},
         Path("app/services/generation/service_core_mixin.py"): {"get_finetune_store"},
-        Path("app/services/generation/service_provider_mixin.py"): {"get_model_registry"},
+        Path("app/services/generation/service_provider_mixin.py"): {
+            "get_model_registry"
+        },
         Path("app/services/finetune_orchestrator.py"): {
             "get_finetune_store",
             "get_model_registry",

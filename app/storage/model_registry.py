@@ -6,11 +6,13 @@ import json
 import math
 import os
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from app.storage.state_backend import StateBackend, get_state_backend
+from app.storage.conditional_state import persist_text_if_current
+from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.storage.state_lock import state_backend_identity, state_lock
 from app.tenant import require_tenant_id
 
@@ -22,6 +24,11 @@ class ModelRegistryError(RuntimeError):
 _VALID_STATUSES = frozenset({"training", "ready", "failed", "deprecated"})
 _model_registries: dict[tuple[Any, ...], "ModelRegistry"] = {}
 _model_registries_guard = threading.Lock()
+_INCARNATION_ID_FIELD = "_incarnation_id"
+_MUTATION_IDS_FIELD = "_mutation_ids"
+_MAX_TRACKED_MUTATIONS = 64
+_MAX_MUTATION_ATTEMPTS = 32
+_MutationResult = TypeVar("_MutationResult")
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -51,6 +58,7 @@ class ModelRegistry:
         "ready_at",
         "eval_result",
     }
+    _PRIVATE_FIELDS = {_INCARNATION_ID_FIELD, _MUTATION_IDS_FIELD}
 
     def __init__(
         self,
@@ -97,7 +105,9 @@ class ModelRegistry:
             timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError as exc:
             raise ModelRegistryError(f"Invalid model {field_name}") from exc
-        if timestamp.tzinfo is None or timestamp.utcoffset() != timezone.utc.utcoffset(timestamp):
+        if timestamp.tzinfo is None or timestamp.utcoffset() != timezone.utc.utcoffset(
+            timestamp
+        ):
             raise ModelRegistryError(f"Invalid model {field_name}")
         return value
 
@@ -127,7 +137,9 @@ class ModelRegistry:
 
     def _validate_owned(self, model: dict[str, Any], *, legacy: bool) -> None:
         expected_fields = self._RECORD_FIELDS - ({"tenant_id"} if legacy else set())
-        if set(model) != expected_fields:
+        if not expected_fields.issubset(model) or not set(model).issubset(
+            expected_fields | self._PRIVATE_FIELDS
+        ):
             raise ModelRegistryError("Invalid model registry fields")
 
         self._text(model.get("model_id"), field_name="identity")
@@ -141,7 +153,11 @@ class ModelRegistry:
             raise ModelRegistryError("Invalid model status")
         self._text(model.get("training_file_id"), field_name="training file identity")
         record_count = model.get("record_count")
-        if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 1:
+        if (
+            isinstance(record_count, bool)
+            or not isinstance(record_count, int)
+            or record_count < 1
+        ):
             raise ModelRegistryError("Invalid model training record count")
         self._score(
             model.get("avg_score_before"),
@@ -154,18 +170,23 @@ class ModelRegistry:
             allow_none=True,
         )
         self._text(model.get("openai_job_id"), field_name="provider job identity")
-        self._timestamp(model.get("created_at"), field_name="creation timestamp", allow_none=False)
-        self._timestamp(model.get("ready_at"), field_name="ready timestamp", allow_none=True)
-        if model.get("eval_result") is not None and not isinstance(model.get("eval_result"), dict):
+        self._timestamp(
+            model.get("created_at"), field_name="creation timestamp", allow_none=False
+        )
+        self._timestamp(
+            model.get("ready_at"), field_name="ready timestamp", allow_none=True
+        )
+        if model.get("eval_result") is not None and not isinstance(
+            model.get("eval_result"), dict
+        ):
             raise ModelRegistryError("Invalid model evaluation result")
         if model.get("status") == "ready":
             if model["model_id"].startswith("pending:"):
                 raise ModelRegistryError("Invalid ready model authority")
+        self._incarnation_id(model)
+        self._mutation_ids(model)
 
-    def _read_all(self) -> list[dict[str, Any]]:
-        raw = self._backend.read_text(self._relative_path)
-        if raw is None:
-            return []
+    def _decode_state(self, raw: str) -> list[dict[str, Any]]:
         try:
             data = json.loads(raw, object_pairs_hook=_unique_object)
         except (json.JSONDecodeError, TypeError, ModelRegistryError) as exc:
@@ -196,13 +217,127 @@ class ModelRegistry:
             raise ModelRegistryError("Duplicate provider job identity in registry")
         return models
 
+    def _read_state(self) -> tuple[str | None, list[dict[str, Any]]]:
+        try:
+            raw = self._backend.read_text(self._relative_path)
+        except (StateBackendError, UnicodeError) as exc:
+            raise ModelRegistryError("Model registry could not be read") from exc
+        if raw is None:
+            return None, []
+        return raw, self._decode_state(raw)
+
+    def _read_all(self) -> list[dict[str, Any]]:
+        return self._read_state()[1]
+
     def _read_owned(self) -> list[dict[str, Any]]:
         return [model for model in self._read_all() if self._owns(model)]
 
-    def _save(self, models: list[dict[str, Any]]) -> None:
-        self._backend.write_text(
-            self._relative_path,
-            json.dumps(models, ensure_ascii=False, indent=2),
+    @staticmethod
+    def _incarnation_id(model: dict[str, Any]) -> str | None:
+        incarnation_id = model.get(_INCARNATION_ID_FIELD)
+        if incarnation_id is not None and (
+            not isinstance(incarnation_id, str) or not incarnation_id
+        ):
+            raise ModelRegistryError("Invalid model incarnation")
+        return incarnation_id
+
+    def _effective_incarnation_id(self, model: dict[str, Any]) -> str:
+        incarnation_id = self._incarnation_id(model)
+        if incarnation_id is not None:
+            return incarnation_id
+        identity = "|".join(
+            (
+                self._tenant_id,
+                str(model.get("openai_job_id") or ""),
+                str(model.get("created_at") or ""),
+            )
+        )
+        return f"legacy:{uuid.uuid5(uuid.NAMESPACE_URL, identity).hex}"
+
+    @staticmethod
+    def _mutation_ids(model: dict[str, Any]) -> list[str]:
+        mutation_ids = model.get(_MUTATION_IDS_FIELD, [])
+        if (
+            not isinstance(mutation_ids, list)
+            or len(mutation_ids) > _MAX_TRACKED_MUTATIONS
+            or any(
+                not isinstance(mutation_id, str) or not mutation_id
+                for mutation_id in mutation_ids
+            )
+            or len(mutation_ids) != len(set(mutation_ids))
+        ):
+            raise ModelRegistryError("Invalid model mutation history")
+        return list(mutation_ids)
+
+    def _record_mutation(
+        self,
+        model: dict[str, Any],
+        *,
+        previous: dict[str, Any],
+        mutation_id: str,
+        incarnation_id: str,
+    ) -> dict[str, Any]:
+        mutation_ids = self._mutation_ids(previous)
+        if mutation_id not in mutation_ids:
+            mutation_ids.append(mutation_id)
+        persisted = dict(model)
+        persisted[_INCARNATION_ID_FIELD] = incarnation_id
+        persisted[_MUTATION_IDS_FIELD] = mutation_ids[-_MAX_TRACKED_MUTATIONS:]
+        return persisted
+
+    @staticmethod
+    def _public_model(model: dict[str, Any]) -> dict[str, Any]:
+        public = dict(model)
+        public.pop(_INCARNATION_ID_FIELD, None)
+        public.pop(_MUTATION_IDS_FIELD, None)
+        return public
+
+    def _persist_if_current(
+        self,
+        *,
+        expected: str | None,
+        models: list[dict[str, Any]],
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> bool:
+        for model in models:
+            if self._owns(model):
+                self._validate_owned(model, legacy=model.get("tenant_id") is None)
+        replacement = json.dumps(models, ensure_ascii=False, indent=2)
+        try:
+            return persist_text_if_current(
+                backend=self._backend,
+                relative_path=self._relative_path,
+                expected=expected,
+                replacement=replacement,
+                decode=self._decode_state,
+                committed=committed,
+                decode_errors=(ModelRegistryError,),
+            )
+        except StateBackendError as exc:
+            raise ModelRegistryError("Model registry could not be written") from exc
+
+    def _mutate(
+        self,
+        change: Callable[
+            [list[dict[str, Any]]],
+            tuple[_MutationResult, bool],
+        ],
+        *,
+        committed: Callable[[list[dict[str, Any]]], bool],
+    ) -> _MutationResult:
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, models = self._read_state()
+            result, changed = change(models)
+            if not changed:
+                return result
+            if self._persist_if_current(
+                expected=expected,
+                models=models,
+                committed=committed,
+            ):
+                return result
+        raise ModelRegistryError(
+            "Model registry changed too many times to persist safely"
         )
 
     def register_model(
@@ -233,16 +368,35 @@ class ModelRegistry:
             "eval_result": None,
         }
         self._validate_owned(record, legacy=False)
-        with self._lock:
-            models = self._read_all()
+        mutation_id = uuid.uuid4().hex
+        incarnation_id = uuid.uuid4().hex
+        persisted = self._record_mutation(
+            record,
+            previous={},
+            mutation_id=mutation_id,
+            incarnation_id=incarnation_id,
+        )
+
+        def apply(models: list[dict[str, Any]]) -> tuple[dict[str, Any], bool]:
             owned = [model for model in models if self._owns(model)]
             if any(model["model_id"] == model_id for model in owned):
                 raise ModelRegistryError("Model identity is already registered")
             if any(model["openai_job_id"] == openai_job_id for model in owned):
                 raise ModelRegistryError("Provider job identity is already registered")
-            models.append(record)
-            self._save(models)
-        return record
+            models.append(dict(persisted))
+            return self._public_model(record), True
+
+        def was_committed(models: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(model)
+                and model.get("openai_job_id") == openai_job_id
+                and self._effective_incarnation_id(model) == incarnation_id
+                and mutation_id in self._mutation_ids(model)
+                for model in models
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def update_status(
         self,
@@ -253,46 +407,79 @@ class ModelRegistry:
         ready_at: str | None = None,
     ) -> bool:
         if status not in _VALID_STATUSES:
-            raise ValueError(f"Invalid status '{status}'. Must be one of {_VALID_STATUSES}")
+            raise ValueError(
+                f"Invalid status '{status}'. Must be one of {_VALID_STATUSES}"
+            )
         self._text(openai_job_id, field_name="provider job identity")
         if model_id is not None:
             self._text(model_id, field_name="identity")
         if ready_at is not None:
             self._timestamp(ready_at, field_name="ready timestamp", allow_none=False)
 
-        with self._lock:
-            models = self._read_all()
-            target = next(
+        mutation_id = uuid.uuid4().hex
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(models: list[dict[str, Any]]) -> tuple[bool, bool]:
+            nonlocal target_bound, target_incarnation
+            target_index = next(
                 (
-                    model
-                    for model in models
+                    index
+                    for index, model in enumerate(models)
                     if self._owns(model) and model["openai_job_id"] == openai_job_id
                 ),
                 None,
             )
-            if target is None:
-                return False
+            if target_index is None:
+                return False, False
+            target = models[target_index]
+            incarnation_id = self._effective_incarnation_id(target)
+            if not target_bound:
+                target_incarnation = incarnation_id
+                target_bound = True
+            elif incarnation_id != target_incarnation:
+                return False, False
+            if mutation_id in self._mutation_ids(target):
+                return True, False
+
             candidate_model_id = model_id or target["model_id"]
             if status == "ready" and candidate_model_id.startswith("pending:"):
                 raise ModelRegistryError("A pending model identity cannot be promoted")
             if model_id is not None and any(
                 self._owns(existing)
-                and existing is not target
+                and index != target_index
                 and existing["model_id"] == model_id
-                for existing in models
+                for index, existing in enumerate(models)
             ):
                 raise ModelRegistryError("Model identity is already registered")
 
-            target["status"] = status
+            updated = dict(target)
+            updated["status"] = status
             if model_id is not None:
-                target["model_id"] = model_id
+                updated["model_id"] = model_id
             if status == "ready":
-                target["ready_at"] = ready_at or datetime.now(timezone.utc).isoformat()
+                updated["ready_at"] = ready_at or datetime.now(timezone.utc).isoformat()
             elif ready_at is not None:
-                target["ready_at"] = ready_at
-            self._validate_owned(target, legacy=target.get("tenant_id") is None)
-            self._save(models)
-            return True
+                updated["ready_at"] = ready_at
+            models[target_index] = self._record_mutation(
+                updated,
+                previous=target,
+                mutation_id=mutation_id,
+                incarnation_id=incarnation_id,
+            )
+            return True, True
+
+        def was_committed(models: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(model)
+                and model.get("openai_job_id") == openai_job_id
+                and self._effective_incarnation_id(model) == target_incarnation
+                and mutation_id in self._mutation_ids(model)
+                for model in models
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def update_eval_result(
         self,
@@ -309,24 +496,56 @@ class ModelRegistry:
         )
         if eval_result is not None and not isinstance(eval_result, dict):
             raise ModelRegistryError("Invalid model evaluation result")
-        with self._lock:
-            models = self._read_all()
-            target = next(
+
+        mutation_id = uuid.uuid4().hex
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(models: list[dict[str, Any]]) -> tuple[bool, bool]:
+            nonlocal target_bound, target_incarnation
+            target_index = next(
                 (
-                    model
-                    for model in models
+                    index
+                    for index, model in enumerate(models)
                     if self._owns(model) and model["model_id"] == model_id
                 ),
                 None,
             )
-            if target is None:
-                return False
-            target["avg_score_after"] = score
+            if target_index is None:
+                return False, False
+            target = models[target_index]
+            incarnation_id = self._effective_incarnation_id(target)
+            if not target_bound:
+                target_incarnation = incarnation_id
+                target_bound = True
+            elif incarnation_id != target_incarnation:
+                return False, False
+            if mutation_id in self._mutation_ids(target):
+                return True, False
+
+            updated = dict(target)
+            updated["avg_score_after"] = score
             if eval_result is not None:
-                target["eval_result"] = eval_result
-            self._validate_owned(target, legacy=target.get("tenant_id") is None)
-            self._save(models)
-            return True
+                updated["eval_result"] = eval_result
+            models[target_index] = self._record_mutation(
+                updated,
+                previous=target,
+                mutation_id=mutation_id,
+                incarnation_id=incarnation_id,
+            )
+            return True, True
+
+        def was_committed(models: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(model)
+                and model.get("model_id") == model_id
+                and self._effective_incarnation_id(model) == target_incarnation
+                and mutation_id in self._mutation_ids(model)
+                for model in models
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def get_active_model(self, bundle_id: str | None) -> dict[str, Any] | None:
         if bundle_id is not None:
@@ -343,27 +562,34 @@ class ModelRegistry:
         candidates = bundle_specific or ready
         if not candidates:
             return None
-        return max(
-            candidates,
-            key=lambda model: (
-                model["avg_score_after"] is not None,
-                model["avg_score_after"] or 0.0,
-                model["created_at"],
-            ),
+        return self._public_model(
+            max(
+                candidates,
+                key=lambda model: (
+                    model["avg_score_after"] is not None,
+                    model["avg_score_after"] or 0.0,
+                    model["created_at"],
+                ),
+            )
         )
 
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         self._text(model_id, field_name="identity")
         with self._lock:
-            return next(
-                (model for model in self._read_owned() if model["model_id"] == model_id),
+            model = next(
+                (
+                    model
+                    for model in self._read_owned()
+                    if model["model_id"] == model_id
+                ),
                 None,
             )
+        return self._public_model(model) if model is not None else None
 
     def get_model_by_job(self, openai_job_id: str) -> dict[str, Any] | None:
         self._text(openai_job_id, field_name="provider job identity")
         with self._lock:
-            return next(
+            model = next(
                 (
                     model
                     for model in self._read_owned()
@@ -371,6 +597,7 @@ class ModelRegistry:
                 ),
                 None,
             )
+        return self._public_model(model) if model is not None else None
 
     def list_models(
         self,
@@ -388,26 +615,57 @@ class ModelRegistry:
             results = [model for model in results if model["bundle_id"] == bundle_id]
         if status is not None:
             results = [model for model in results if model["status"] == status]
-        return results
+        return [self._public_model(model) for model in results]
 
     def deprecate_model(self, model_id: str) -> bool:
         self._text(model_id, field_name="identity")
-        with self._lock:
-            models = self._read_all()
-            target = next(
+        mutation_id = uuid.uuid4().hex
+        target_incarnation: str | None = None
+        target_bound = False
+
+        def apply(models: list[dict[str, Any]]) -> tuple[bool, bool]:
+            nonlocal target_bound, target_incarnation
+            target_index = next(
                 (
-                    model
-                    for model in models
+                    index
+                    for index, model in enumerate(models)
                     if self._owns(model) and model["model_id"] == model_id
                 ),
                 None,
             )
-            if target is None:
-                return False
-            target["status"] = "deprecated"
-            self._validate_owned(target, legacy=target.get("tenant_id") is None)
-            self._save(models)
-            return True
+            if target_index is None:
+                return False, False
+            target = models[target_index]
+            incarnation_id = self._effective_incarnation_id(target)
+            if not target_bound:
+                target_incarnation = incarnation_id
+                target_bound = True
+            elif incarnation_id != target_incarnation:
+                return False, False
+            if mutation_id in self._mutation_ids(target):
+                return True, False
+
+            updated = dict(target)
+            updated["status"] = "deprecated"
+            models[target_index] = self._record_mutation(
+                updated,
+                previous=target,
+                mutation_id=mutation_id,
+                incarnation_id=incarnation_id,
+            )
+            return True, True
+
+        def was_committed(models: list[dict[str, Any]]) -> bool:
+            return any(
+                self._owns(model)
+                and model.get("model_id") == model_id
+                and self._effective_incarnation_id(model) == target_incarnation
+                and mutation_id in self._mutation_ids(model)
+                for model in models
+            )
+
+        with self._lock:
+            return self._mutate(apply, committed=was_committed)
 
     def has_active_training(self, bundle_id: str | None) -> bool:
         if bundle_id is not None:
@@ -443,7 +701,9 @@ def get_model_registry(
     with _model_registries_guard:
         registry = _model_registries.get(key)
         if registry is None:
-            registry = ModelRegistry(root, tenant_id=tenant_id, backend=selected_backend)
+            registry = ModelRegistry(
+                root, tenant_id=tenant_id, backend=selected_backend
+            )
             _model_registries[key] = registry
         return registry
 
