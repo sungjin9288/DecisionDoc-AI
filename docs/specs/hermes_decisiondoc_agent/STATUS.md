@@ -72,6 +72,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - the ops key is available and persisted from the DocumentOps page without requiring `?ops=1`
 - the Review 상태 action loads one service-composed overview, shows the prioritized review state and next action before the three source reports, and keeps one stale-response guard and refresh read-only
 - each source report has a stable SHA-256 that excludes only its top-level generation time; the browser compares successful same-tenant observations in session memory and labels the recheck as first, unchanged, or changed without persisting it
+- Trajectory Stats accepts only the latest same-tenant request outcome, so an older success or error cannot replace current accepted, pending, or export counts
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -197,7 +198,7 @@ Integration coverage also exists in:
 Before release or handoff, run the focused suite and the repository non-live gate. A test-function
 source count is not a pass claim.
 
-Last local verification on 2026-07-20:
+Last local verification on 2026-07-21:
 
 - trajectory/API focused gate: 79 passed, 1 warning
 - DocumentOps, report-workflow integration, and infrastructure expansion: 280 passed, 1 warning
@@ -214,7 +215,11 @@ Last local verification on 2026-07-20:
 - governance recheck fingerprint Chromium gate: 1 passed
 - governance browser freshness static contract: 2 passed, 1 warning
 - governance browser freshness Chromium gate: 1 passed
-- full repository non-live gate: 4223 passed, 2 skipped, 4 deselected, 1 warning
+- trajectory stats latest-response static gate: 1 passed, 1 warning
+- trajectory stats same-tenant Chromium gate: 1 passed
+- DocumentOps static expansion gate: 21 passed, 131 deselected, 1 warning
+- related DocumentOps Chromium expansion gate: 3 passed
+- full repository non-live gate: 4225 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

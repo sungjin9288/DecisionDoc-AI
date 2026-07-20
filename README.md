@@ -30,7 +30,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. Conditional create/CAS와 `log_id` commit reconciliation으로 worker 간 append 유실을 방지. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`). Root tenant registry mutation은 conditional create/CAS와 bounded private receipt로 worker 간 create·update·API key rotation 유실을 방지 |
 | Fine-tune·model authority 무결성 | dataset JSONL, export metadata와 model lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리. 객체별 conditional create/CAS, private append/incarnation receipt와 immutable export create로 worker 간 append·clear·export·model update 유실과 불확실 commit을 조정 |
-| DocumentOps governance review overview | Ops 전용 read-only API가 training governance, selected-backend artifact inventory, reviewer sign-off를 독립적으로 읽어 하나의 검토 상태와 다음 행동으로 정리. Source report 생성 시각만 제외한 SHA-256으로 직전 browser 관측과 `최초·동일·변경`을 구분하되 비교값을 저장하지 않음. Export·freeze·dry-run approval·execution request·audit 저장 또는 planning provider/model 변경 뒤에는 열린 overview를 즉시 `RECHECK REQUIRED`로 낮추고, 성공한 새 조회가 끝나야 ready 표시를 복구함. Governance 조회와 sign-off handoff 다운로드는 surface·aggregate status·read-only 여부만 append-only audit에 남기고 fingerprint와 source report는 복사하지 않음. 합성 snapshot의 원자성을 주장하지 않고 object 삭제, dataset upload, provider call, training, model promotion을 허용하지 않음 |
+| DocumentOps governance review overview | Ops 전용 read-only API가 training governance, selected-backend artifact inventory, reviewer sign-off를 독립적으로 읽어 하나의 검토 상태와 다음 행동으로 정리. Source report 생성 시각만 제외한 SHA-256으로 직전 browser 관측과 `최초·동일·변경`을 구분하되 비교값을 저장하지 않음. Export·freeze·dry-run approval·execution request·audit 저장 또는 planning provider/model 변경 뒤에는 열린 overview를 즉시 `RECHECK REQUIRED`로 낮추고, 성공한 새 조회가 끝나야 ready 표시를 복구함. Trajectory Stats는 같은 tenant의 연속 요청 중 최신 success/error만 반영해 이전 응답이 accepted·pending·export count를 되돌리지 못함. Governance 조회와 sign-off handoff 다운로드는 surface·aggregate status·read-only 여부만 append-only audit에 남기고 fingerprint와 source report는 복사하지 않음. 합성 snapshot의 원자성을 주장하지 않고 object 삭제, dataset upload, provider call, training, model promotion을 허용하지 않음 |
 | 계정·초대 상태 무결성 | 사용자 계정과 초대 lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리. Conditional create/CAS, atomic first-admin precondition과 claim-before-account-create로 worker 간 계정 변경 유실·복수 초기 관리자·초대 중복 수락을 방지 |
 | SSO 설정 상태 무결성 | LDAP·SAML·GCloud·OAuth2 설정과 암호화된 secret을 tenant별 local/S3 state에 결속하고 손상·unknown provider·foreign ownership·복호화 실패를 fail closed 처리. Partial update는 conditional create/CAS로 최신 설정에 재적용 |
 | 사용자 템플릿 상태 무결성 | 재사용 문서 입력을 tenant별 local/S3 JSONL에 결속하고 손상·중복 identity를 원본 보존 상태로 fail closed 처리 |
@@ -268,10 +268,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,472개**, **255개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,474개**, **255개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3472
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3474
 python3 scripts/count_readme_metrics.py --field test_files      # → 255
 ```
 
@@ -301,7 +301,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,223 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H80 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,225 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H81 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -373,4 +373,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 268 · 테스트 3,472 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 268 · 테스트 3,474 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

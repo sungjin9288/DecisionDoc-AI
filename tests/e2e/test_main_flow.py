@@ -1180,6 +1180,80 @@ def test_document_ops_governance_view_is_visible_in_redacted_audit_history(
     assert page_errors == []
 
 
+def test_document_ops_stats_keeps_the_latest_same_tenant_response(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pending = [];
+          const statsUrl = '/api/agent/document-ops/trajectories/stats';
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') !== statsUrl) {
+                return nativeFetch(input, options);
+              }
+              return new Promise(resolve => pending.push(resolve));
+            };
+
+            const olderSuccess = loadDocumentOpsStats();
+            const newerSuccess = loadDocumentOpsStats();
+            while (pending.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[1](response({
+              total_records: 2,
+              accepted_records: 2,
+              pending_records: 0,
+              export_count: 1,
+            }));
+            await newerSuccess;
+            pending[0](response({
+              total_records: 2,
+              accepted_records: 1,
+              pending_records: 1,
+              export_count: 0,
+            }));
+            await olderSuccess;
+            const successText = document.querySelector('#document-ops-stats').textContent;
+
+            const olderFailure = loadDocumentOpsStats();
+            const newestSuccess = loadDocumentOpsStats();
+            while (pending.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[3](response({
+              total_records: 3,
+              accepted_records: 3,
+              pending_records: 0,
+              export_count: 2,
+            }));
+            await newestSuccess;
+            pending[2](response({ detail: 'stale failure' }, 503));
+            await olderFailure;
+            const finalText = document.querySelector('#document-ops-stats').textContent;
+
+            return { successText, finalText };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "accepted 2" in result["successText"]
+    assert "pending 0" in result["successText"]
+    assert "exports 1" in result["successText"]
+    assert "accepted 3" in result["finalText"]
+    assert "pending 0" in result["finalText"]
+    assert "exports 2" in result["finalText"]
+    assert "stats 로드 실패" not in result["finalText"]
+
+
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []

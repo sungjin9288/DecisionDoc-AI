@@ -7040,6 +7040,7 @@
   const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;
   let _documentOpsLastResult = null;
   let _documentOpsTrajectoryOffset = 0;
+  let _documentOpsStatsRequestVersion = 0;
   let _documentOpsTrajectoryRequestVersion = 0;
   let _documentOpsGovernanceRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
@@ -7270,12 +7271,18 @@
   async function loadDocumentOpsStats() {
     const el = $id('document-ops-stats');
     if (!el) return;
+    const requestVersion = ++_documentOpsStatsRequestVersion;
     const tenantId = _currentTenantId;
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsStatsRequestVersion
+      && tenantId === _currentTenantId
+    );
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/stats', { headers: getAuthHeaders() });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
       const stats = await res.json();
-      if (tenantId !== _currentTenantId) return;
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;">
         <strong style="font-size:.85rem;">Trajectory Stats</strong>
         <span>total ${Number(stats.total_records || 0)}</span>
@@ -7284,7 +7291,7 @@
         <span>exports ${Number(stats.export_count || 0)}</span>
       </div>`;
     } catch (err) {
-      if (tenantId !== _currentTenantId) return;
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<span style="color:#ef4444;">stats 로드 실패: ${escapeHtml(err.message || String(err))}</span>`;
     }
   }

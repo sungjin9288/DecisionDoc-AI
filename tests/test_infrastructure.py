@@ -656,6 +656,19 @@ def test_index_html_document_ops_loads_one_governance_review_overview():
     assert "external authorization all false=" in content
 
 
+def test_index_html_document_ops_stats_keep_the_latest_same_tenant_response():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadDocumentOpsStats()")
+    end = content.index("async function loadDocumentOpsTrajectoryList", start)
+    stats_block = content[start:end]
+
+    assert "let _documentOpsStatsRequestVersion = 0;" in content
+    assert "const requestVersion = ++_documentOpsStatsRequestVersion;" in stats_block
+    assert "requestVersion === _documentOpsStatsRequestVersion" in stats_block
+    assert "tenantId === _currentTenantId" in stats_block
+    assert stats_block.count("if (!requestIsCurrent()) return;") == 3
+
+
 def test_index_html_document_ops_marks_governance_stale_after_source_changes():
     content = open("app/static/index.html", encoding="utf-8").read()
 
@@ -2228,7 +2241,7 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "_documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250)",
         "responseOrder === 'oldest'",
         "requestVersion !== _documentOpsTrajectoryRequestVersion",
-        "if (tenantId !== _currentTenantId) return;",
+        "tenantId === _currentTenantId",
         "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-detail",
         "data-docops-trajectory-detail-content",
