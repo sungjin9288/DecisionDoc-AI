@@ -1556,6 +1556,164 @@ def test_document_ops_execution_requests_keep_the_latest_same_tenant_response(pa
     assert "request-before-save" not in result["savedText"]
 
 
+def _document_ops_adapter_contract(provider: str, base_model: str) -> dict[str, object]:
+    return {
+        "provider": provider,
+        "base_model": base_model,
+        "adapter_status": f"{provider}-{base_model}",
+        "execution_enabled": False,
+        "config_valid": True,
+        "config_errors": [],
+        "config_warnings": [],
+        "adapter_contract": {
+            "required_methods": ["prepare_job_spec"],
+            "forbidden_in_stub": ["execute_training"],
+        },
+    }
+
+
+def _document_ops_training_rehearsal(
+    provider: str,
+    base_model: str,
+    suffix: str,
+) -> dict[str, object]:
+    return {
+        "status": "rehearsal_ready",
+        "provider": provider,
+        "base_model": base_model,
+        "artifact_references": {
+            "dataset_freeze": {"manifest_id": f"freeze-{suffix}"},
+            "pre_execution_audit": {"audit_id": f"audit-{suffix}"},
+        },
+        "rehearsal_steps": [
+            {
+                "step": f"validate-{suffix}",
+                "status": "dry_run_pass",
+                "side_effect": False,
+                "mode": "dry_run",
+            }
+        ],
+        "blockers": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {
+            "loader": "contract",
+            "container_id": "document-ops-training-adapter-contract",
+            "url_prefix": "/api/agent/document-ops/trajectories/training-provider-adapter/contract?",
+            "older": _document_ops_adapter_contract("openai", "old-model"),
+            "newer": _document_ops_adapter_contract("gemini", "new-model"),
+            "newest": _document_ops_adapter_contract("openai", "newest-model"),
+            "success_markers": ["gemini", "new-model"],
+            "old_marker": "old-model",
+            "newest_marker": "newest-model",
+            "failure_label": "Training adapter contract 실패",
+            "stale_error": "stale adapter failure",
+            "change_target": "provider",
+        },
+        {
+            "loader": "rehearsal",
+            "container_id": "document-ops-training-rehearsal",
+            "url_prefix": "/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?",
+            "older": _document_ops_training_rehearsal("openai", "old-model", "old"),
+            "newer": _document_ops_training_rehearsal("gemini", "new-model", "new"),
+            "newest": _document_ops_training_rehearsal("openai", "newest-model", "newest"),
+            "success_markers": ["freeze-new", "audit-new"],
+            "old_marker": "freeze-old",
+            "newest_marker": "freeze-newest",
+            "failure_label": "Training execution rehearsal 실패",
+            "stale_error": "stale rehearsal failure",
+            "change_target": "model",
+        },
+    ],
+    ids=("adapter-contract", "training-rehearsal"),
+)
+def test_document_ops_training_provider_evidence_keeps_the_latest_planning_response(page, case):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async scenario => {
+          const nativeFetch = window.fetch;
+          const pending = [];
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const loadEvidence = scenario.loader === 'contract'
+            ? loadDocumentOpsTrainingAdapterContract
+            : loadDocumentOpsTrainingRehearsal;
+          try {
+            window.fetch = (input, options) => {
+              if (!String(input || '').startsWith(scenario.url_prefix)) {
+                return nativeFetch(input, options);
+              }
+              return new Promise(resolve => pending.push(resolve));
+            };
+
+            const providerInput = document.querySelector('#docops-training-provider');
+            const modelInput = document.querySelector('#docops-training-base-model');
+            providerInput.value = 'openai';
+            modelInput.value = 'old-model';
+            const olderSuccess = loadEvidence();
+            providerInput.value = 'gemini';
+            modelInput.value = 'new-model';
+            const newerSuccess = loadEvidence();
+            while (pending.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[1](response(scenario.newer));
+            await newerSuccess;
+            pending[0](response(scenario.older));
+            await olderSuccess;
+            const container = document.querySelector(`#${scenario.container_id}`);
+            const successText = container.textContent;
+
+            providerInput.value = 'claude';
+            modelInput.value = 'older-failure';
+            const olderFailure = loadEvidence();
+            providerInput.value = 'openai';
+            modelInput.value = 'newest-model';
+            const newestSuccess = loadEvidence();
+            while (pending.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pending[3](response(scenario.newest));
+            await newestSuccess;
+            pending[2](response({ detail: scenario.stale_error }, 503));
+            await olderFailure;
+            const finalText = container.textContent;
+            const notifications = document.querySelector('#notification-container').textContent;
+
+            const changedInput = scenario.change_target === 'provider' ? providerInput : modelInput;
+            changedInput.value = scenario.change_target === 'provider' ? 'gemini' : 'changed-model';
+            changedInput.dispatchEvent(new Event(
+              scenario.change_target === 'provider' ? 'change' : 'input',
+              { bubbles: true },
+            ));
+            const staleText = container.textContent;
+
+            return { successText, finalText, notifications, staleText };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }""",
+        case,
+    )
+
+    for marker in case["success_markers"]:
+        assert marker in result["successText"]
+    assert case["old_marker"] not in result["successText"]
+    assert case["newest_marker"] in result["finalText"]
+    assert case["failure_label"] not in result["finalText"]
+    assert case["stale_error"] not in result["notifications"]
+    assert "RECHECK REQUIRED" in result["staleText"]
+    assert case["newest_marker"] not in result["staleText"]
+
+
 def test_document_ops_audit_checklist_keeps_the_latest_planning_response(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)

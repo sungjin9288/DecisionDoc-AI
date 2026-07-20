@@ -7047,6 +7047,8 @@
   let _documentOpsReadinessRequestVersion = 0;
   let _documentOpsExecutionRequestListVersion = 0;
   let _documentOpsAuditChecklistRequestVersion = 0;
+  let _documentOpsAdapterContractRequestVersion = 0;
+  let _documentOpsTrainingRehearsalRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
@@ -8751,20 +8753,73 @@
     `;
   }
 
+  function markDocumentOpsPlanningEvidenceStale(elementId, reason, reload) {
+    const el = $id(elementId);
+    if (!el || el.style.display === 'none') return;
+    el.dataset.planningFresh = 'false';
+    el.innerHTML = `
+      <div data-docops-planning-evidence-stale style="border:1px solid rgba(146,64,14,.3);border-radius:8px;padding:.65rem;background:rgba(146,64,14,.07);">
+        <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+          <div>
+            <strong style="font-size:.78rem;color:#92400e;">RECHECK REQUIRED</strong>
+            <div style="font-size:.72rem;color:#92400e;line-height:1.45;margin-top:.2rem;">${escapeHtml(reason)} 현재 planning 조건으로 이 증적을 다시 확인해야 합니다.</div>
+          </div>
+          <button class="action-btn" type="button" data-docops-planning-evidence-refresh style="font-size:.72rem;padding:.3rem .65rem;">다시 확인</button>
+        </div>
+      </div>
+    `;
+    el.querySelector('[data-docops-planning-evidence-refresh]')?.addEventListener('click', reload);
+  }
+
+  function markDocumentOpsTrainingAdapterContractStale(reason) {
+    _documentOpsAdapterContractRequestVersion += 1;
+    markDocumentOpsPlanningEvidenceStale(
+      'document-ops-training-adapter-contract',
+      reason,
+      loadDocumentOpsTrainingAdapterContract,
+    );
+  }
+
+  function markDocumentOpsTrainingRehearsalStale(reason) {
+    _documentOpsTrainingRehearsalRequestVersion += 1;
+    markDocumentOpsPlanningEvidenceStale(
+      'document-ops-training-rehearsal',
+      reason,
+      loadDocumentOpsTrainingRehearsal,
+    );
+  }
+
   async function loadDocumentOpsTrainingAdapterContract() {
     const el = $id('document-ops-training-adapter-contract');
     if (!el) return;
+    const requestVersion = ++_documentOpsAdapterContractRequestVersion;
+    const tenantId = _currentTenantId;
+    const params = documentOpsPlanningParams();
+    params.delete('limit');
+    const planningQuery = params.toString();
+    const requestIsCurrent = () => {
+      const currentParams = documentOpsPlanningParams();
+      currentParams.delete('limit');
+      return (
+        requestVersion === _documentOpsAdapterContractRequestVersion
+        && tenantId === _currentTenantId
+        && planningQuery === currentParams.toString()
+      );
+    };
     el.style.display = 'block';
+    el.dataset.planningFresh = 'false';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training adapter contract 로드 중...</div>';
     try {
-      const params = documentOpsPlanningParams();
-      params.delete('limit');
-      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/contract?${params}`, {
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/contract?${planningQuery}`, {
         headers: getOpsAccessHeaders(),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingAdapterContract(await res.json());
+      const data = await res.json();
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingAdapterContract(data);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Training adapter contract 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Training adapter contract 실패: ' + (err.message || err), 'error');
     }
@@ -8779,6 +8834,7 @@
     const forbidden = Array.isArray(contract?.forbidden_in_stub) ? contract.forbidden_in_stub : [];
     const errors = Array.isArray(data?.config_errors) ? data.config_errors : [];
     const warnings = Array.isArray(data?.config_warnings) ? data.config_warnings : [];
+    el.dataset.planningFresh = 'true';
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
         <div>
@@ -8809,16 +8865,28 @@
   async function loadDocumentOpsTrainingRehearsal() {
     const el = $id('document-ops-training-rehearsal');
     if (!el) return;
+    const requestVersion = ++_documentOpsTrainingRehearsalRequestVersion;
+    const tenantId = _currentTenantId;
+    const planningQuery = documentOpsPlanningParams().toString();
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsTrainingRehearsalRequestVersion
+      && tenantId === _currentTenantId
+      && planningQuery === documentOpsPlanningParams().toString()
+    );
     el.style.display = 'block';
+    el.dataset.planningFresh = 'false';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">training execution rehearsal 로드 중...</div>';
     try {
-      const params = documentOpsPlanningParams();
-      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?${params}`, {
+      const res = await fetch(`/api/agent/document-ops/trajectories/training-provider-adapter/rehearsal?${planningQuery}`, {
         headers: getOpsAccessHeaders(),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
-      renderDocumentOpsTrainingRehearsal(await res.json());
+      const data = await res.json();
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingRehearsal(data);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Training execution rehearsal 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Training execution rehearsal 실패: ' + (err.message || err), 'error');
     }
@@ -8834,6 +8902,7 @@
     const refs = data?.artifact_references || {};
     const freeze = refs?.dataset_freeze || {};
     const audit = refs?.pre_execution_audit || {};
+    el.dataset.planningFresh = 'true';
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.75rem;">
         <div>
@@ -8993,10 +9062,14 @@
   $id('docops-training-provider')?.addEventListener('change', () => {
     markDocumentOpsGovernanceStale('Planning provider 조건이 변경되었습니다.');
     markDocumentOpsTrainingAuditChecklistStale('Planning provider 조건이 변경되었습니다.');
+    markDocumentOpsTrainingAdapterContractStale('Planning provider 조건이 변경되었습니다.');
+    markDocumentOpsTrainingRehearsalStale('Planning provider 조건이 변경되었습니다.');
   });
   $id('docops-training-base-model')?.addEventListener('input', () => {
     markDocumentOpsGovernanceStale('Base model 조건이 변경되었습니다.');
     markDocumentOpsTrainingAuditChecklistStale('Base model 조건이 변경되었습니다.');
+    markDocumentOpsTrainingAdapterContractStale('Base model 조건이 변경되었습니다.');
+    markDocumentOpsTrainingRehearsalStale('Base model 조건이 변경되었습니다.');
   });
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */

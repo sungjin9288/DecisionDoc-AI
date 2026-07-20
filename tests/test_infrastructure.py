@@ -822,6 +822,44 @@ def test_index_html_document_ops_shows_training_execution_rehearsal():
     assert "side_effect" in content
 
 
+def test_index_html_document_ops_training_provider_evidence_keeps_latest_planning_response():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    loaders = (
+        (
+            "loadDocumentOpsTrainingAdapterContract",
+            "renderDocumentOpsTrainingAdapterContract",
+            "_documentOpsAdapterContractRequestVersion",
+        ),
+        (
+            "loadDocumentOpsTrainingRehearsal",
+            "renderDocumentOpsTrainingRehearsal",
+            "_documentOpsTrainingRehearsalRequestVersion",
+        ),
+    )
+    for loader_name, renderer_name, version_name in loaders:
+        match = re.search(
+            rf"async function {loader_name}\(\) \{{(?P<body>[\s\S]*?)\n  \}}\n\n  function {renderer_name}",
+            content,
+        )
+        assert match is not None
+        body = match.group("body")
+        assert f"const requestVersion = ++{version_name};" in body
+        assert "const tenantId = _currentTenantId;" in body
+        assert "const planningQuery =" in body
+        assert "const requestIsCurrent = () =>" in body
+        assert body.count("if (!requestIsCurrent()) return;") >= 3
+
+    assert "function markDocumentOpsTrainingAdapterContractStale(reason)" in content
+    assert "function markDocumentOpsTrainingRehearsalStale(reason)" in content
+    assert "data-docops-planning-evidence-stale" in content
+    assert "RECHECK REQUIRED" in content
+    assert "markDocumentOpsTrainingAdapterContractStale('Planning provider 조건이 변경되었습니다.')" in content
+    assert "markDocumentOpsTrainingRehearsalStale('Planning provider 조건이 변경되었습니다.')" in content
+    assert "markDocumentOpsTrainingAdapterContractStale('Base model 조건이 변경되었습니다.')" in content
+    assert "markDocumentOpsTrainingRehearsalStale('Base model 조건이 변경되었습니다.')" in content
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(

@@ -145,6 +145,8 @@ Work:
   after a successful record save supersede any read that began before the save
 - keep the training audit checklist bound to the latest tenant and provider/model planning context,
   remove stale audit actions after a planning change, and do not let an older read hide a completed audit export
+- keep Adapter Contract and Rehearsal bound to their latest tenant and provider/model planning context,
+  and replace old configuration or artifact evidence with an explicit recheck state when that context changes
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
