@@ -1,4 +1,5 @@
 """Tests for Knowledge Store and Knowledge API endpoints."""
+
 from __future__ import annotations
 
 import io
@@ -11,9 +12,11 @@ from fastapi.testclient import TestClient
 
 # ── KnowledgeStore unit tests ─────────────────────────────────────────────────
 
+
 class TestKnowledgeStore:
     def test_add_and_list(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("report.pdf", "분기 실적 보고서 내용입니다.")
         docs = store.list_documents()
@@ -23,6 +26,7 @@ class TestKnowledgeStore:
 
     def test_get_document(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("spec.docx", "제품 스펙 문서", tags=["spec"])
         fetched = store.get_document(entry.doc_id)
@@ -32,6 +36,7 @@ class TestKnowledgeStore:
 
     def test_delete_document(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("old.txt", "오래된 문서")
         assert store.delete_document(entry.doc_id) is True
@@ -40,16 +45,19 @@ class TestKnowledgeStore:
 
     def test_delete_nonexistent(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj1", data_dir=str(tmp_path), tenant_id="system")
         assert store.delete_document("nonexistent") is False
 
     def test_build_context_empty(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("empty_proj", data_dir=str(tmp_path), tenant_id="system")
         assert store.build_context() == ""
 
     def test_build_context_with_docs(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj2", data_dir=str(tmp_path), tenant_id="system")
         store.add_document("guide.md", "개발 가이드라인 문서")
         store.add_document("arch.md", "아키텍처 설계서")
@@ -60,9 +68,14 @@ class TestKnowledgeStore:
 
     def test_update_style(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj3", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("report.txt", "보고서")
-        style = {"formality": "합쇼체", "density": "간결", "sentence_endings": ["입니다", "합니다"]}
+        style = {
+            "formality": "합쇼체",
+            "density": "간결",
+            "sentence_endings": ["입니다", "합니다"],
+        }
         result = store.update_style(entry.doc_id, style)
         assert result is True
         fetched = store.get_document(entry.doc_id)
@@ -70,26 +83,32 @@ class TestKnowledgeStore:
 
     def test_build_style_context_no_styles(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj4", data_dir=str(tmp_path), tenant_id="system")
         store.add_document("doc.txt", "내용")
         assert store.build_style_context() == ""
 
     def test_build_style_context_with_styles(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj5", data_dir=str(tmp_path), tenant_id="system")
         entry = store.add_document("doc.txt", "내용")
-        store.update_style(entry.doc_id, {
-            "formality": "합쇼체",
-            "density": "상세",
-            "sentence_endings": ["입니다", "합니다", "습니다"],
-            "summary": "격식체 상세 문서",
-        })
+        store.update_style(
+            entry.doc_id,
+            {
+                "formality": "합쇼체",
+                "density": "상세",
+                "sentence_endings": ["입니다", "합니다", "습니다"],
+                "summary": "격식체 상세 문서",
+            },
+        )
         ctx = store.build_style_context()
         assert "스타일 가이드" in ctx
         assert "합쇼체" in ctx
 
     def test_max_docs_eviction(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore, MAX_DOCS_PER_PROJECT
+
         store = KnowledgeStore("proj_evict", data_dir=str(tmp_path), tenant_id="system")
         for i in range(MAX_DOCS_PER_PROJECT + 2):
             store.add_document(f"doc{i}.txt", f"내용 {i}")
@@ -98,6 +117,7 @@ class TestKnowledgeStore:
 
     def test_context_respects_max_chars(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
+
         store = KnowledgeStore("proj_big", data_dir=str(tmp_path), tenant_id="system")
         # 대용량 텍스트
         big_text = "가" * 5000
@@ -134,7 +154,10 @@ class TestKnowledgeStore:
         assert fetched.notes == "PPT 요약과 본문 표 구조가 우수함"
         assert fetched.knowledge_scope["project_id"] == "proj_meta"
         assert fetched.knowledge_scope["organization"] == "국토교통부"
-        assert fetched.knowledge_scope["bundle_types"] == ["proposal_kr", "performance_plan_kr"]
+        assert fetched.knowledge_scope["bundle_types"] == [
+            "proposal_kr",
+            "performance_plan_kr",
+        ]
         assert fetched.knowledge_scope["topic_tags"] == ["공공", "교통"]
 
     def test_update_metadata_and_rank_documents_for_context(self, tmp_path):
@@ -184,7 +207,9 @@ class TestKnowledgeStore:
         assert ranked[0]["learning_mode"] == "approved_output"
         assert ranked[0]["search_backend"] == "local_keyword"
         assert ranked[0]["query_overlap"] == len(ranked[0]["matched_query_terms"])
-        assert {"모빌리티", "제안", "파주시"}.issubset(set(ranked[0]["matched_query_terms"]))
+        assert {"모빌리티", "제안", "파주시"}.issubset(
+            set(ranked[0]["matched_query_terms"])
+        )
         assert "모빌리티" in ranked[0]["query_terms"]
         assert ranked[0]["knowledge_scope"]["project_id"] == "proj_rank"
         assert ranked[0]["knowledge_scope"]["report_workflow_id"] == "rw-paju-001"
@@ -194,15 +219,28 @@ class TestKnowledgeStore:
         assert "bundle `proposal_kr` 일치" in ranked[0]["selection_reason"]
         assert "graph" in ranked[0]["selection_reason"]
         assert ranked[0]["graph_relationships"]["relation_count"] >= 5
-        assert "produced_by_workflow" in ranked[0]["graph_relationships"]["relation_types"]
+        assert (
+            "produced_by_workflow" in ranked[0]["graph_relationships"]["relation_types"]
+        )
         assert "applies_to_bundle" in ranked[0]["graph_relationships"]["relation_types"]
-        assert "approved_for_reuse" in ranked[0]["graph_relationships"]["relation_types"]
+        assert (
+            "approved_for_reuse" in ranked[0]["graph_relationships"]["relation_types"]
+        )
         assert "workflow 관계" in ranked[0]["graph_relationship_summary"]
         assert ranked[0]["graph_relationship_score"] == 72
-        assert any(item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"])
-        assert any(item["label"] == "동일 workflow" for item in ranked[0]["score_breakdown"])
-        assert any(item["label"] == "기관 scope 일치" for item in ranked[0]["score_breakdown"])
-        assert any(item["label"] == "관계 그래프" and item["score"] == 72 for item in ranked[0]["score_breakdown"])
+        assert any(
+            item["label"] == "bundle 일치" for item in ranked[0]["score_breakdown"]
+        )
+        assert any(
+            item["label"] == "동일 workflow" for item in ranked[0]["score_breakdown"]
+        )
+        assert any(
+            item["label"] == "기관 scope 일치" for item in ranked[0]["score_breakdown"]
+        )
+        assert any(
+            item["label"] == "관계 그래프" and item["score"] == 72
+            for item in ranked[0]["score_breakdown"]
+        )
         assert ranked[1]["doc_id"] == generic.doc_id
 
         ctx = store.build_context(
@@ -238,12 +276,18 @@ class TestKnowledgeStore:
 
         assert ranked[0]["doc_id"] == entry.doc_id
         assert ranked[0]["search_backend"] == "sqlite_fts"
-        assert {"스마트", "안전", "국토교통부"}.issubset(set(ranked[0]["matched_query_terms"]))
+        assert {"스마트", "안전", "국토교통부"}.issubset(
+            set(ranked[0]["matched_query_terms"])
+        )
 
-    def test_report_workflow_scope_can_prioritize_matching_approved_artifact(self, tmp_path):
+    def test_report_workflow_scope_can_prioritize_matching_approved_artifact(
+        self, tmp_path
+    ):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj-rw-scope", data_dir=str(tmp_path), tenant_id="system")
+        store = KnowledgeStore(
+            "proj-rw-scope", data_dir=str(tmp_path), tenant_id="system"
+        )
         other_workflow = store.add_document(
             "other-approved.md",
             "다른 workflow 승인본",
@@ -287,7 +331,9 @@ class TestKnowledgeStore:
     def test_find_promoted_document_by_source_request_and_doc_type(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
 
-        store = KnowledgeStore("proj-dedupe", data_dir=str(tmp_path), tenant_id="system")
+        store = KnowledgeStore(
+            "proj-dedupe", data_dir=str(tmp_path), tenant_id="system"
+        )
         entry = store.add_document(
             "approved-reference.md",
             "# 승인본\n본문",
@@ -330,7 +376,12 @@ class TestKnowledgeStore:
         assert "tenant B private context" not in store_a.build_context()
         assert "tenant A private context" not in store_b.build_context()
         assert (
-            tmp_path / "tenants" / "tenant-a" / "knowledge" / "shared-project" / "index.json"
+            tmp_path
+            / "tenants"
+            / "tenant-a"
+            / "knowledge"
+            / "shared-project"
+            / "index.json"
         ).exists()
 
     def test_foreign_drift_is_hidden_and_preserved_during_owned_update(self, tmp_path):
@@ -345,7 +396,8 @@ class TestKnowledgeStore:
         index_path = (
             tmp_path / "tenants" / "tenant-a" / "knowledge" / "project-a" / "index.json"
         )
-        records = json.loads(index_path.read_text(encoding="utf-8"))
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        records = payload["documents"]
         foreign = {
             **records[0],
             "doc_id": "abcdef123456",
@@ -353,7 +405,7 @@ class TestKnowledgeStore:
             "filename": "foreign.txt",
         }
         records.append(foreign)
-        index_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+        index_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         index_path.with_name("abcdef123456.txt").write_text(
             "foreign context",
             encoding="utf-8",
@@ -366,7 +418,7 @@ class TestKnowledgeStore:
         assert store.delete_document("abcdef123456") is False
         assert store.update_metadata(owned.doc_id, notes="owned update") is True
 
-        persisted = json.loads(index_path.read_text(encoding="utf-8"))
+        persisted = json.loads(index_path.read_text(encoding="utf-8"))["documents"]
         assert persisted[1] == foreign
         assert persisted[0]["notes"] == "owned update"
 
@@ -382,23 +434,34 @@ class TestKnowledgeStore:
         index_path = (
             tmp_path / "tenants" / "tenant-a" / "knowledge" / "project-a" / "index.json"
         )
-        records = json.loads(index_path.read_text(encoding="utf-8"))
-        records.append({
-            **records[0],
-            "tenant_id": "tenant-b",
-            "filename": "conflicting.txt",
-        })
-        index_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        records = payload["documents"]
+        records.append(
+            {
+                **records[0],
+                "tenant_id": "tenant-b",
+                "filename": "conflicting.txt",
+            }
+        )
+        index_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+        with pytest.raises(
+            KnowledgeStoreError, match="Duplicate knowledge document identity"
+        ):
             store.list_documents()
-        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+        with pytest.raises(
+            KnowledgeStoreError, match="Duplicate knowledge document identity"
+        ):
             store.get_document(owned.doc_id)
-        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+        with pytest.raises(
+            KnowledgeStoreError, match="Duplicate knowledge document identity"
+        ):
             store.update_metadata(owned.doc_id, notes="changed")
-        with pytest.raises(KnowledgeStoreError, match="Duplicate knowledge document identity"):
+        with pytest.raises(
+            KnowledgeStoreError, match="Duplicate knowledge document identity"
+        ):
             store.delete_document(owned.doc_id)
-        assert json.loads(index_path.read_text(encoding="utf-8")) == records
+        assert json.loads(index_path.read_text(encoding="utf-8")) == payload
 
     def test_concurrent_instances_preserve_all_documents(self, tmp_path):
         from app.storage.knowledge_store import KnowledgeStore
@@ -443,7 +506,16 @@ class TestKnowledgeStore:
             KnowledgeStore("project-a", data_dir=str(tmp_path))
 
         invalid_root = tmp_path / "invalid"
-        for tenant_id in ("", " tenant-a", "tenant-a ", ".", "..", "a/b", "a\\b", "a\x00b"):
+        for tenant_id in (
+            "",
+            " tenant-a",
+            "tenant-a ",
+            ".",
+            "..",
+            "a/b",
+            "a\\b",
+            "a\x00b",
+        ):
             with pytest.raises(ValueError, match="Invalid tenant_id"):
                 KnowledgeStore(
                     "project-a",
@@ -455,11 +527,13 @@ class TestKnowledgeStore:
 
 # ── attachment_service PPTX 테스트 ────────────────────────────────────────────
 
+
 class TestPptxExtraction:
     def _make_pptx(self, slides: list[list[str]]) -> bytes:
         """Helper: Create minimal PPTX bytes with given slide texts."""
         from pptx import Presentation
         from pptx.util import Inches
+
         buf = io.BytesIO()
         prs = Presentation()
         blank_layout = prs.slide_layouts[5]
@@ -475,6 +549,7 @@ class TestPptxExtraction:
 
     def test_extract_pptx_basic(self):
         from app.services.attachment_service import extract_text
+
         raw = self._make_pptx([["슬라이드 1 제목", "내용 1"], ["슬라이드 2 제목"]])
         result = extract_text("test.pptx", raw)
         assert "슬라이드 1" in result
@@ -483,11 +558,13 @@ class TestPptxExtraction:
 
     def test_extract_pptx_in_allowed_extensions(self):
         from app.services.attachment_service import ALLOWED_EXTENSIONS
+
         assert ".pptx" in ALLOWED_EXTENSIONS
 
     def test_extract_pptx_empty_raises(self):
         from app.services.attachment_service import extract_text, AttachmentError
         from pptx import Presentation
+
         buf = io.BytesIO()
         Presentation().save(buf)
         with pytest.raises(AttachmentError, match="텍스트를 추출할 수 없습니다"):
@@ -496,12 +573,14 @@ class TestPptxExtraction:
 
 # ── Knowledge API endpoint 테스트 ─────────────────────────────────────────────
 
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DECISIONDOC_API_KEYS", "test-key")
     from app.main import create_app
+
     return TestClient(create_app())
 
 
@@ -690,14 +769,20 @@ class TestKnowledgeAPI:
         assert "graph_relationship_summary" in body["ranked_documents"][0]
         assert "graph_relationship_score" in body["ranked_documents"][0]
         assert body["ranked_documents"][0]["score_breakdown"]
-        assert body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
-        assert body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"
+        assert (
+            body["ranked_documents"][0]["knowledge_scope"]["project_id"] == "proj-ctx"
+        )
+        assert (
+            body["ranked_documents"][0]["knowledge_scope"]["organization"] == "파주시"
+        )
 
     def test_temporal_graph_endpoint(self, client, tmp_path):
         client.post(
             "/knowledge/proj-graph-api/documents",
             headers=HEADERS,
-            files={"file": ("approved.txt", b"Approved workflow artifact", "text/plain")},
+            files={
+                "file": ("approved.txt", b"Approved workflow artifact", "text/plain")
+            },
             data={
                 "tags": "교통,안전",
                 "learning_mode": "approved_output",
@@ -732,11 +817,15 @@ class TestKnowledgeAPI:
         assert body["summary"]["relation_counts"]["scoped_to_organization"] == 1
         assert body["summary"]["relation_counts"]["approved_for_reuse"] == 1
 
-    def test_temporal_graph_export_endpoint_returns_portable_artifact(self, client, tmp_path):
+    def test_temporal_graph_export_endpoint_returns_portable_artifact(
+        self, client, tmp_path
+    ):
         client.post(
             "/knowledge/proj-graph-export/documents",
             headers=HEADERS,
-            files={"file": ("approved.txt", b"Approved workflow artifact", "text/plain")},
+            files={
+                "file": ("approved.txt", b"Approved workflow artifact", "text/plain")
+            },
             data={
                 "tags": "교통,안전",
                 "learning_mode": "approved_output",
@@ -775,7 +864,9 @@ class TestKnowledgeAPI:
         assert body["graph"]["project_id"] == "proj-graph-export"
         assert body["graph"]["applied_scope"]["has_filters"] is True
         assert body["graph"]["summary"]["node_counts"]["artifact"] == 1
-        assert body["graph"]["summary"]["relation_counts"]["scoped_to_organization"] == 1
+        assert (
+            body["graph"]["summary"]["relation_counts"]["scoped_to_organization"] == 1
+        )
         assert body["graph"]["summary"]["relation_counts"]["applies_to_bundle"] == 2
 
     def test_temporal_graph_export_rejects_unsupported_format(self, client):
@@ -844,8 +935,14 @@ class TestKnowledgeAPI:
                 "title": "파주시 모빌리티 제안서",
                 "bundle_type": "proposal_kr",
                 "docs": [
-                    {"doc_type": "business_understanding", "markdown": "# 사업 이해\n승인본 본문"},
-                    {"doc_type": "execution_plan", "markdown": "# 수행 계획\n추진 전략"},
+                    {
+                        "doc_type": "business_understanding",
+                        "markdown": "# 사업 이해\n승인본 본문",
+                    },
+                    {
+                        "doc_type": "execution_plan",
+                        "markdown": "# 수행 계획\n추진 전략",
+                    },
                 ],
                 "tags": ["공공", "교통"],
                 "quality_tier": "gold",
@@ -868,17 +965,26 @@ class TestKnowledgeAPI:
         assert body["documents"][0]["quality_tier"] == "gold"
         assert body["documents"][0]["applicable_bundles"] == ["proposal_kr"]
         assert body["documents"][0]["knowledge_scope"]["project_id"] == "proj-promote"
-        assert body["documents"][0]["knowledge_scope"]["bundle_types"] == ["proposal_kr"]
+        assert body["documents"][0]["knowledge_scope"]["bundle_types"] == [
+            "proposal_kr"
+        ]
 
-        history_item = HistoryStore("system", base_dir=str(tmp_path)).get_for_user("test-user")[0]
+        history_item = HistoryStore("system", base_dir=str(tmp_path)).get_for_user(
+            "test-user"
+        )[0]
         assert history_item["knowledge_promoted"] is True
         assert history_item["knowledge_project_id"] == "proj-promote"
         assert history_item["knowledge_document_count"] == 2
         assert history_item["knowledge_quality_tier"] == "gold"
         assert history_item["knowledge_success_state"] == "awarded"
-        history_detail = HistoryStore("system", base_dir=str(tmp_path)).get_entry("req-456", "test-user")
+        history_detail = HistoryStore("system", base_dir=str(tmp_path)).get_entry(
+            "req-456", "test-user"
+        )
         assert history_detail is not None
-        assert history_detail["knowledge_documents"][0]["doc_type"] == "business_understanding"
+        assert (
+            history_detail["knowledge_documents"][0]["doc_type"]
+            == "business_understanding"
+        )
         assert history_detail["knowledge_documents"][1]["doc_type"] == "execution_plan"
 
         preview = client.get(
@@ -903,8 +1009,14 @@ class TestKnowledgeAPI:
                 "title": "파주시 모빌리티 제안서",
                 "bundle_type": "proposal_kr",
                 "docs": [
-                    {"doc_type": "business_understanding", "markdown": "# 사업 이해\n승인본 본문"},
-                    {"doc_type": "execution_plan", "markdown": "# 수행 계획\n추진 전략"},
+                    {
+                        "doc_type": "business_understanding",
+                        "markdown": "# 사업 이해\n승인본 본문",
+                    },
+                    {
+                        "doc_type": "execution_plan",
+                        "markdown": "# 수행 계획\n추진 전략",
+                    },
                 ],
                 "tags": ["공공", "교통"],
                 "quality_tier": "gold",

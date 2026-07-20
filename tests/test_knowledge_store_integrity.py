@@ -4,6 +4,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +16,11 @@ from app.storage.knowledge_store import KnowledgeStore, KnowledgeStoreError
 from app.storage.procurement_store import ProcurementDecisionStore
 from app.storage.report_workflow_store import ReportWorkflowRecord, ReportWorkflowStore
 from app.storage.state_backend import LocalStateBackend, S3StateBackend
+from tests.conditional_state_support import (
+    ConflictingLocalBackend,
+    MemoryS3Client,
+    s3_backend,
+)
 
 
 class _SlowLocalBackend(LocalStateBackend):
@@ -24,62 +30,10 @@ class _SlowLocalBackend(LocalStateBackend):
         return value
 
 
-class _Body:
-    def __init__(self, raw: bytes) -> None:
-        self._raw = raw
-
-    def read(self) -> bytes:
-        return self._raw
-
-
-class _MemoryS3Client:
-    def __init__(self) -> None:
-        self.objects: dict[tuple[str, str], bytes] = {}
-        self.fail_next_put_key: str | None = None
-
-    def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:
-        _ = ContentType
-        if self.fail_next_put_key == Key:
-            self.fail_next_put_key = None
-            raise RuntimeError("injected put failure")
-        self.objects[(Bucket, Key)] = Body
-
-    def get_object(self, *, Bucket: str, Key: str) -> dict:
-        raw = self.objects.get((Bucket, Key))
-        if raw is None:
-            error = RuntimeError("NoSuchKey")
-            error.response = {"Error": {"Code": "NoSuchKey"}}
-            raise error
-        return {"Body": _Body(raw)}
-
-    def head_object(self, *, Bucket: str, Key: str) -> dict:
-        if (Bucket, Key) not in self.objects:
-            error = RuntimeError("NotFound")
-            error.response = {"Error": {"Code": "404"}}
-            raise error
-        return {}
-
-    def list_objects_v2(self, *, Bucket: str, Prefix: str) -> dict:
-        return {
-            "Contents": [
-                {"Key": key}
-                for bucket, key in self.objects
-                if bucket == Bucket and key.startswith(Prefix)
-            ]
-        }
-
-    def delete_object(self, *, Bucket: str, Key: str) -> None:
-        self.objects.pop((Bucket, Key), None)
-
-
-def _s3_backend() -> tuple[S3StateBackend, _MemoryS3Client]:
-    client = _MemoryS3Client()
-    backend = S3StateBackend(
-        bucket="unit-bucket",
-        prefix="decisiondoc-ai/state/",
-        s3_client=client,
-    )
-    return backend, client
+def _s3_backend(
+    client: MemoryS3Client | None = None,
+) -> tuple[S3StateBackend, MemoryS3Client]:
+    return s3_backend(client)
 
 
 def _knowledge_prefix(
@@ -96,6 +50,39 @@ def _index_path(root: Path, project_id: str = "project-a") -> Path:
 
 def _s3_key(relative_path: str) -> tuple[str, str]:
     return "unit-bucket", f"decisiondoc-ai/state/{relative_path}"
+
+
+def _s3_index_payload(
+    client: MemoryS3Client,
+    project_id: str = "project-a",
+) -> dict[str, Any]:
+    raw = client.objects[_s3_key(f"{_knowledge_prefix(project_id)}/index.json")]
+    return json.loads(raw)
+
+
+def _index_payload(root: Path, project_id: str = "project-a") -> Any:
+    return json.loads(_index_path(root, project_id).read_text(encoding="utf-8"))
+
+
+def _index_records(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return payload
+    return payload["documents"]
+
+
+def _persist_index(root: Path, payload: Any, project_id: str = "project-a") -> None:
+    _index_path(root, project_id).write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+
+def _object_path(
+    root: Path,
+    record: dict[str, Any],
+    field: str,
+) -> Path:
+    return _index_path(root).parent / record[field]
 
 
 def _local_store(tmp_path: Path, project_id: str = "project-a") -> KnowledgeStore:
@@ -151,7 +138,8 @@ def test_invalid_index_stops_reads_and_writes_without_replacement(
 def test_text_hash_mismatch_blocks_every_mutation(tmp_path: Path) -> None:
     store = _local_store(tmp_path)
     entry = store.add_document("trusted.txt", "alpha")
-    text_path = _index_path(tmp_path).parent / f"{entry.doc_id}.txt"
+    record = _index_records(_index_payload(tmp_path))[0]
+    text_path = _object_path(tmp_path, record, "_text_object")
     text_path.write_text("omega", encoding="utf-8")
     corrupted = text_path.read_bytes()
 
@@ -172,17 +160,18 @@ def test_style_corruption_and_partial_binding_fail_closed(tmp_path: Path) -> Non
         "trusted",
         style_profile={"tone": "formal"},
     )
-    directory = _index_path(tmp_path).parent
-    style_path = directory / f"{entry.doc_id}_style.json"
+    payload = _index_payload(tmp_path)
+    record = _index_records(payload)[0]
+    style_path = _object_path(tmp_path, record, "_style_object")
     style_path.write_bytes(b'{"tone":"formal","tone":"forged"}')
 
     with pytest.raises(KnowledgeStoreError, match="Invalid knowledge style object"):
         store.get_document(entry.doc_id)
 
-    records = json.loads(_index_path(tmp_path).read_text(encoding="utf-8"))
+    records = _index_records(payload)
     style_path.write_text(json.dumps({"tone": "formal"}), encoding="utf-8")
     records[0].pop("style_sha256")
-    partial = json.dumps(records).encode()
+    partial = json.dumps(payload).encode()
     _index_path(tmp_path).write_bytes(partial)
 
     with pytest.raises(KnowledgeStoreError, match="Partial knowledge content binding"):
@@ -231,7 +220,9 @@ def test_legacy_record_without_bindings_remains_readable(tmp_path: Path) -> None
     assert entry.text == text
     assert store.update_metadata(doc_id, notes="migrated on mutation") is True
 
-    persisted = json.loads(_index_path(tmp_path).read_text(encoding="utf-8"))[0]
+    payload = _index_payload(tmp_path)
+    assert payload["schema_version"] == "knowledge_index.v2"
+    persisted = _index_records(payload)[0]
     assert persisted["tenant_id"] == "tenant-a"
     assert persisted["project_id"] == "project-a"
     assert len(persisted["text_sha256"]) == 64
@@ -251,13 +242,13 @@ def test_independent_local_and_s3_instances_preserve_concurrent_adds(
         )
         for _ in range(20)
     ]
-    s3_backend, _client = _s3_backend()
+    shared_client = MemoryS3Client(read_delay=0.001)
     s3_stores = [
         KnowledgeStore(
             "s3-concurrency",
             data_dir="/virtual/data",
             tenant_id="tenant-a",
-            backend=s3_backend,
+            backend=_s3_backend(shared_client)[0],
         )
         for _ in range(20)
     ]
@@ -299,12 +290,22 @@ def test_delete_removes_index_content_and_style(
         "delete me",
         style_profile={"tone": "direct"},
     )
+    if backend_kind == "local":
+        payload = _index_payload(tmp_path, "delete-project")
+    else:
+        raw = backend.read_text(f"{_knowledge_prefix('delete-project')}/index.json")
+        assert raw is not None
+        payload = json.loads(raw)
+    record = _index_records(payload)[0]
+    content_paths = [
+        f"{_knowledge_prefix('delete-project')}/{record['_text_object']}",
+        f"{_knowledge_prefix('delete-project')}/{record['_style_object']}",
+    ]
 
     assert store.delete_document(entry.doc_id) is True
     assert store.list_documents() == []
     relative_prefix = _knowledge_prefix("delete-project")
-    assert backend.read_bytes(f"{relative_prefix}/{entry.doc_id}.txt") is None
-    assert backend.read_bytes(f"{relative_prefix}/{entry.doc_id}_style.json") is None
+    assert all(backend.read_bytes(path) is None for path in content_paths)
     if client is not None:
         assert _s3_key(f"{relative_prefix}/index.json") in client.objects
 
@@ -312,7 +313,7 @@ def test_delete_removes_index_content_and_style(
 def test_failed_index_write_rolls_back_new_content_objects() -> None:
     backend, client = _s3_backend()
     index_key = _s3_key(f"{_knowledge_prefix()}/index.json")[1]
-    client.fail_next_put_key = index_key
+    client.fail_before_next_write(key_fragment=index_key)
     store = KnowledgeStore(
         "project-a",
         data_dir="/virtual/data",
@@ -320,7 +321,7 @@ def test_failed_index_write_rolls_back_new_content_objects() -> None:
         backend=backend,
     )
 
-    with pytest.raises(KnowledgeStoreError, match="could not be written"):
+    with pytest.raises(KnowledgeStoreError, match="could not be persisted"):
         store.add_document(
             "rollback.txt",
             "rollback",
@@ -341,17 +342,320 @@ def test_failed_style_index_write_restores_previous_object_state() -> None:
     entry = store.add_document("style.txt", "style")
     index_relative = f"{_knowledge_prefix()}/index.json"
     original_index = client.objects[_s3_key(index_relative)]
-    client.fail_next_put_key = _s3_key(index_relative)[1]
+    client.fail_before_next_write(
+        key_fragment=_s3_key(index_relative)[1],
+    )
 
-    with pytest.raises(KnowledgeStoreError, match="could not be written"):
+    with pytest.raises(KnowledgeStoreError, match="could not be persisted"):
         store.update_style(entry.doc_id, {"tone": "formal"})
 
     assert client.objects[_s3_key(index_relative)] == original_index
-    assert _s3_key(f"{_knowledge_prefix()}/{entry.doc_id}_style.json") not in client.objects
+    style_keys = [
+        key
+        for bucket, key in client.objects
+        if bucket == "unit-bucket" and "/style-" in key
+    ]
+    assert style_keys == []
     assert store.get_document(entry.doc_id).style_profile == {}
 
 
-def _create_client(tmp_path: Path, monkeypatch, *, raise_server_exceptions: bool = True):
+def test_versioned_index_hides_internal_authority_metadata(
+    tmp_path: Path,
+) -> None:
+    store = _local_store(tmp_path)
+    entry = store.add_document(
+        "authority.txt",
+        "bound content",
+        style_profile={"tone": "direct"},
+    )
+
+    payload = _index_payload(tmp_path)
+    record = _index_records(payload)[0]
+    public = store.list_documents()[0]
+
+    assert set(payload) == {
+        "schema_version",
+        "documents",
+        "_mutation_ids",
+    }
+    assert payload["schema_version"] == "knowledge_index.v2"
+    assert payload["_mutation_ids"]
+    assert record["_incarnation"]
+    assert record["_text_object"].startswith(
+        f"objects/{entry.doc_id}/{record['_incarnation']}/"
+    )
+    assert record["_style_object"].startswith(
+        f"objects/{entry.doc_id}/{record['_incarnation']}/"
+    )
+    assert not {"_incarnation", "_text_object", "_style_object"} & set(public)
+
+
+def test_lost_add_response_reconciles_after_successor_add() -> None:
+    backend, client = _s3_backend()
+    first = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+    successor = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=_s3_backend(client)[0],
+    )
+    index_fragment = f"{_knowledge_prefix()}/index.json"
+    client.fail_after_next_conditional_write(
+        key_fragment=index_fragment,
+        after_write=lambda: successor.add_document(
+            "successor.txt",
+            "successor content",
+        ),
+    )
+
+    created = first.add_document("first.txt", "first content")
+    documents = first.list_documents()
+
+    assert {item["filename"] for item in documents} == {
+        "first.txt",
+        "successor.txt",
+    }
+    assert first.get_document(created.doc_id).text == "first content"
+    assert len(_s3_index_payload(client)["_mutation_ids"]) == 2
+
+
+def test_lost_style_response_reconciles_after_successor_metadata_update() -> None:
+    backend, client = _s3_backend()
+    first = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+    successor = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=_s3_backend(client)[0],
+    )
+    entry = first.add_document("style.txt", "style content")
+    client.fail_after_next_conditional_write(
+        key_fragment=f"{_knowledge_prefix()}/index.json",
+        after_write=lambda: successor.update_metadata(
+            entry.doc_id,
+            notes="successor metadata",
+        ),
+    )
+
+    assert first.update_style(entry.doc_id, {"tone": "formal"}) is True
+    observed = first.get_document(entry.doc_id)
+
+    assert observed is not None
+    assert observed.style_profile == {"tone": "formal"}
+    assert observed.notes == "successor metadata"
+
+
+def test_lost_delete_response_reconciles_after_successor_add() -> None:
+    backend, client = _s3_backend()
+    first = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+    successor = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=_s3_backend(client)[0],
+    )
+    entry = first.add_document(
+        "delete.txt",
+        "delete content",
+        style_profile={"tone": "direct"},
+    )
+    record = _index_records(_s3_index_payload(client))[0]
+    retired_paths = [
+        f"{_knowledge_prefix()}/{record['_text_object']}",
+        f"{_knowledge_prefix()}/{record['_style_object']}",
+    ]
+    client.fail_after_next_conditional_write(
+        key_fragment=f"{_knowledge_prefix()}/index.json",
+        after_write=lambda: successor.add_document(
+            "successor.txt",
+            "successor content",
+        ),
+    )
+
+    assert first.delete_document(entry.doc_id) is True
+    assert [item["filename"] for item in first.list_documents()] == ["successor.txt"]
+    assert all(backend.read_bytes(path) is None for path in retired_paths)
+
+
+def test_cas_retry_preserves_successor_metadata_during_style_update() -> None:
+    backend, client = _s3_backend()
+    first = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+    successor = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=_s3_backend(client)[0],
+    )
+    entry = first.add_document("shared.txt", "shared content")
+    client.before_next_conditional_write(
+        key_fragment=f"{_knowledge_prefix()}/index.json",
+        callback=lambda: successor.update_metadata(
+            entry.doc_id,
+            notes="concurrent note",
+        ),
+    )
+
+    assert first.update_style(entry.doc_id, {"tone": "concise"}) is True
+    observed = first.get_document(entry.doc_id)
+
+    assert observed is not None
+    assert observed.notes == "concurrent note"
+    assert observed.style_profile == {"tone": "concise"}
+
+
+def test_replacement_identity_stops_stale_metadata_update(monkeypatch) -> None:
+    backend, client = _s3_backend()
+    first = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+    successor = KnowledgeStore(
+        "project-a",
+        data_dir="/virtual/data",
+        tenant_id="tenant-a",
+        backend=_s3_backend(client)[0],
+    )
+    original = first.add_document("original.txt", "original content")
+
+    def replace_document() -> None:
+        assert successor.delete_document(original.doc_id) is True
+        monkeypatch.setattr(
+            successor,
+            "_new_doc_id",
+            lambda _known_ids: original.doc_id,
+        )
+        successor.add_document("replacement.txt", "replacement content")
+
+    client.before_next_conditional_write(
+        key_fragment=f"{_knowledge_prefix()}/index.json",
+        callback=replace_document,
+    )
+
+    with pytest.raises(KnowledgeStoreError, match="identity changed"):
+        first.update_metadata(original.doc_id, notes="stale mutation")
+
+    replacement = first.get_document(original.doc_id)
+    assert replacement is not None
+    assert replacement.filename == "replacement.txt"
+    assert replacement.text == "replacement content"
+    assert replacement.notes == ""
+
+
+def test_knowledge_mutation_stops_after_bounded_conflicts(
+    tmp_path: Path,
+) -> None:
+    backend = ConflictingLocalBackend(
+        tmp_path,
+        conflict_suffix="/index.json",
+    )
+    store = KnowledgeStore(
+        "conflict-project",
+        data_dir=str(tmp_path),
+        tenant_id="tenant-a",
+        backend=backend,
+    )
+
+    with pytest.raises(KnowledgeStoreError, match="changed too many times"):
+        store.add_document("blocked.txt", "blocked content")
+
+    assert backend.attempts == 32
+    assert backend.list_prefix(_knowledge_prefix("conflict-project")) == []
+
+
+def test_mutation_receipts_are_private_bounded_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = _local_store(tmp_path)
+    entry = store.add_document("history.txt", "history content")
+    for index in range(70):
+        assert store.update_metadata(
+            entry.doc_id,
+            notes=f"mutation {index}",
+        )
+
+    payload = _index_payload(tmp_path)
+    assert len(payload["_mutation_ids"]) == 64
+    assert "_mutation_ids" not in store.list_documents()[0]
+
+    payload["_mutation_ids"][0] = payload["_mutation_ids"][1]
+    _persist_index(tmp_path, payload)
+    with pytest.raises(KnowledgeStoreError, match="mutation history"):
+        store.list_documents()
+    with pytest.raises(KnowledgeStoreError, match="mutation history"):
+        store.update_metadata(entry.doc_id, notes="blocked")
+
+
+def test_invalid_internal_object_binding_fails_closed(
+    tmp_path: Path,
+) -> None:
+    store = _local_store(tmp_path)
+    entry = store.add_document("trusted.txt", "trusted content")
+    payload = _index_payload(tmp_path)
+    payload["documents"][0]["_text_object"] = "../forged.txt"
+    _persist_index(tmp_path, payload)
+
+    with pytest.raises(KnowledgeStoreError, match="text object binding"):
+        store.get_document(entry.doc_id)
+    with pytest.raises(KnowledgeStoreError, match="text object binding"):
+        store.delete_document(entry.doc_id)
+
+
+def test_unreferenced_versioned_object_is_inert(
+    tmp_path: Path,
+) -> None:
+    store = _local_store(tmp_path)
+    entry = store.add_document(
+        "trusted.txt",
+        "trusted content",
+        style_profile={"tone": "current"},
+    )
+    inert = (
+        _index_path(tmp_path).parent
+        / "objects"
+        / "aaaaaaaaaaaa"
+        / ("b" * 32)
+        / "content.txt"
+    )
+    inert.parent.mkdir(parents=True)
+    inert.write_text("never indexed", encoding="utf-8")
+
+    observed = store.get_document(entry.doc_id)
+    assert observed is not None
+    assert observed.text == "trusted content"
+    assert observed.style_profile == {"tone": "current"}
+    assert "never indexed" not in store.build_context()
+
+    unexpected_legacy = _index_path(tmp_path).parent / f"{entry.doc_id}_style.json"
+    unexpected_legacy.write_text('{"tone":"stale"}', encoding="utf-8")
+    with pytest.raises(KnowledgeStoreError, match="Orphan knowledge content object"):
+        store.list_documents()
+
+
+def _create_client(
+    tmp_path: Path, monkeypatch, *, raise_server_exceptions: bool = True
+):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
@@ -401,9 +705,7 @@ def test_corrupt_s3_knowledge_index_returns_internal_error_without_replacement(
     client = _create_client(tmp_path, monkeypatch, raise_server_exceptions=False)
     backend, s3_client = _s3_backend()
     client.app.state.state_backend = backend
-    key = _s3_key(
-        f"{_knowledge_prefix(tenant_id='system')}/index.json"
-    )
+    key = _s3_key(f"{_knowledge_prefix(tenant_id='system')}/index.json")
     s3_client.objects[key] = b"{not-json"
 
     response = client.get("/knowledge/project-a/documents")
@@ -455,7 +757,9 @@ def test_generation_context_reads_knowledge_from_selected_backend(
     )
 
     assert "selected backend generation context" in payload["_knowledge_context"]
-    assert payload["_knowledge_ranked_documents"][0]["filename"] == "selected-backend.txt"
+    assert (
+        payload["_knowledge_ranked_documents"][0]["filename"] == "selected-backend.txt"
+    )
 
     index_key = _s3_key(
         f"{_knowledge_prefix('generation-project', tenant_id='system')}/index.json"

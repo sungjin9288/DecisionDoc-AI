@@ -26,6 +26,7 @@ class MemoryS3Client:
         self._lock = threading.Lock()
         self._before_key_fragment: str | None = None
         self._before_write: Callable[[], None] | None = None
+        self._fail_before_key_fragment: str | None = None
         self._fail_after_key_fragment: str | None = None
         self._after_failed_write: Callable[[], None] | None = None
 
@@ -47,6 +48,9 @@ class MemoryS3Client:
     ) -> None:
         self._fail_after_key_fragment = key_fragment
         self._after_failed_write = after_write
+
+    def fail_before_next_write(self, *, key_fragment: str) -> None:
+        self._fail_before_key_fragment = key_fragment
 
     def before_next_conditional_write(
         self,
@@ -85,6 +89,12 @@ class MemoryS3Client:
             before_write()
 
         with self._lock:
+            if (
+                self._fail_before_key_fragment is not None
+                and self._fail_before_key_fragment in Key
+            ):
+                self._fail_before_key_fragment = None
+                raise self._error("InternalError")
             current = self.objects.get((Bucket, Key))
             if IfNoneMatch == "*" and current is not None:
                 raise self._error("PreconditionFailed")
@@ -119,6 +129,26 @@ class MemoryS3Client:
         if data is None:
             raise self._error("NoSuchKey")
         return {"Body": _Body(data), "ETag": self._etag(data)}
+
+    def head_object(self, *, Bucket: str, Key: str) -> dict:
+        with self._lock:
+            data = self.objects.get((Bucket, Key))
+        if data is None:
+            raise self._error("NotFound")
+        return {"ETag": self._etag(data)}
+
+    def list_objects_v2(self, *, Bucket: str, Prefix: str) -> dict:
+        with self._lock:
+            keys = sorted(
+                key
+                for bucket, key in self.objects
+                if bucket == Bucket and key.startswith(Prefix)
+            )
+        return {"Contents": [{"Key": key} for key in keys]}
+
+    def delete_object(self, *, Bucket: str, Key: str) -> None:
+        with self._lock:
+            self.objects.pop((Bucket, Key), None)
 
 
 class ConflictingLocalBackend(LocalStateBackend):

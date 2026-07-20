@@ -12,7 +12,7 @@
 | 핵심 스택 | Python 3.12, FastAPI, Pydantic v2, Jinja2, provider abstraction, local/S3 storage, Docker Compose, AWS SAM, pytest |
 | 이력서 반영 가능 여부 | 조건부 가능 |
 
-판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-20 H71 기준 non-live 전체 게이트는 `4168 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. 잔여 paid provider proof와 G2B 실데이터, production deployment, 실제 사용자 성과 검증은 현재 보류했다.
+판단 이유: 코드상 FastAPI 앱, 문서 생성 API, provider/storage abstraction, export, static PWA, pytest 테스트가 존재하고 로컬 mock provider 기준으로 API 응답과 테스트를 검증했다. 2026-07-20 H72 기준 non-live 전체 게이트는 `4178 passed, 2 skipped, 4 deselected, 1 warning`으로 통과했고, static PWA는 CSP nonce와 inline handler 제거를 확인했다. 2026-07-13 OpenAI live generation은 1회 통과했지만 Gemini는 quota, Claude는 credit balance 때문에 blocked이며 fallback 성공 proof도 남아 있다. 잔여 paid provider proof와 G2B 실데이터, production deployment, 실제 사용자 성과 검증은 현재 보류했다.
 
 ## 2. 구현 증거가 필요한 기능
 
@@ -27,7 +27,7 @@
 | 사용자 템플릿 상태 무결성 | 검증 완료 | `app/storage/template_store.py`, `app/routers/templates.py`, `tests/test_template_store_integrity.py` | process lock 없는 local/fake-S3 20-way conditional create/CAS, use-count, bounded private receipt, successor mutation·immutable incarnation reconciliation, API 회귀와 mock/local HTTP lifecycle | CAS는 단일 template JSONL object 범위. 실제 AWS runtime은 범위 밖 |
 | 생성 이력 상태 무결성 | 검증 완료 | `app/storage/history_store.py`, `app/routers/history.py`, `app/routers/generate/_shared.py`, `tests/test_history_store_integrity.py` | process lock 없는 local/fake-S3 20-way conditional create/CAS, favorite parity, disjoint visual/promotion update, bounded private receipt, retention carry-forward·immutable incarnation reconciliation, API 회귀와 mock/local HTTP lifecycle | CAS는 단일 history JSONL object 범위. 실제 AWS runtime은 범위 밖 |
 | Tenant registry 상태 무결성 | 검증 완료 | `app/storage/tenant_store.py`, tenant admin/auth/middleware caller, `tests/test_tenant_store_integrity.py` | process lock 없는 local/fake-S3 conditional create/CAS, 20-way create/bootstrap, API key rotation, bounded private receipt·successor reconciliation과 caller 회귀 | CAS는 root registry 단일 object 범위. 실제 AWS runtime은 범위 밖 |
-| 프로젝트 지식 상태 무결성 | 검증 완료 | `app/storage/knowledge/`, `app/routers/knowledge.py`, generation/procurement/report workflow caller, `tests/test_knowledge_store_integrity.py` | local/fake-S3 index·content·style hash/size/ownership/duplicate/orphan·rollback·동시성·API·consumer 회귀 | distributed S3 multi-object transaction/CAS는 범위 밖 |
+| 프로젝트 지식 상태 무결성 | 검증 완료 | `app/storage/knowledge/`, `app/routers/knowledge.py`, generation/procurement/report workflow caller, `tests/test_knowledge_store_integrity.py` | local/fake-S3 v2 index conditional create/CAS, immutable content/style, hash/size/incarnation binding, 32회 conflict cap, 64개 private receipt, lost-response·successor·replacement·legacy migration·API/consumer 회귀 | CAS는 단일 index object 범위. Multi-object transaction, inert artifact 자동 GC와 실제 AWS runtime은 범위 밖 |
 | G2B 즐겨찾기 상태 무결성 | 검증 완료 | `app/storage/bookmark_store.py`, `app/routers/history.py`, `tests/test_bookmark_store_integrity.py` | process lock 없는 local/fake-S3 conditional create/CAS, owner/identity·20-way mutation·bounded receipt·successor reconciliation·API 회귀 | CAS는 단일 bookmark object 범위. 실제 G2B/AWS API는 범위 밖 |
 | 공공조달 판단 상태 무결성 | 검증 완료 | `app/storage/procurement_store.py`, procurement project/generation/Decision Council caller, `tests/test_procurement_store_integrity.py` | process lock 없는 local/fake-S3 conditional create/CAS, distinct/same-project 20-way mutation, bounded private receipt·conflict, commit-then-successor reconciliation, immutable snapshot lost-success, API/downstream 회귀와 mock/local HTTP lifecycle | CAS는 decision 단일 object 범위. Snapshot과의 transaction, 외부 원천 진위, 실제 AWS/G2B/provider API는 범위 밖 |
 | 공공조달 검토 증빙 상태 무결성 | 검증 완료 | `app/storage/procurement_review_store.py`, `app/storage/state_backend.py`, `app/services/procurement_review_evidence.py`, project review/generation caller, `tests/test_procurement_review_store.py` | local/fake-S3 record·packet·content-addressed package 손상/누락, exact orphan recovery, conditional create/ETag CAS, uncertain commit read-back, receipt/package semantic drift와 API 500 회귀 | multi-object distributed transaction과 실제 AWS/provider/G2B/입찰 실행은 범위 밖 |
@@ -82,7 +82,7 @@ python -m pytest tests/test_generate.py tests/test_auth_api_key.py tests/test_st
 pytest tests/ -m "not live" -q
 ```
 
-결과: `4168 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-20 H71 실측, 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정).
+결과: `4178 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-20 H72 실측, 외부 provider·G2B·Stripe key를 process에서 제거하고 provider capability를 mock으로 고정).
 
 ### CI advisory lint / security scan
 

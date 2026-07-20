@@ -3,6 +3,13 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone project knowledge cross-worker authority completion
+
+- `KnowledgeStore`의 add/style/metadata/delete mutation은 tenant/project별 단일 `index.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·document identity 위에 같은 operation을 최대 32회 재적용한다. Legacy list index는 읽되 첫 mutation에서 `knowledge_index.v2` envelope로 승격한다.
+- 신규 content/style은 private document incarnation 아래 versioned immutable object로 먼저 발행한다. Index는 canonical object path, size와 SHA-256을 결속하며 참조되지 않은 versioned object는 generation, procurement capability 평가와 report promotion authority가 아니다. 최근 64개 private mutation receipt와 incarnation은 API metadata에서 제거하고 commit 응답 유실 뒤 successor add/style/metadata/delete 또는 same-ID replacement를 조정한다. 정상 실패와 retire에서는 현재 index가 참조하지 않는 artifact만 정리한다.
+- H72 focused knowledge gate는 `72 passed, 1 warning`, generation·procurement·report workflow caller 확장 gate는 `143 passed, 1 warning`, full no-cost regression은 `4178 passed, 2 skipped, 4 deselected, 1 warning`이다. Independent local/fake-S3 backend mutation, add/style/delete commit-then-error 뒤 successor mutation, style/metadata CAS conflict, stale same-ID replacement 차단, 32회 conflict cap, 64개 receipt, legacy migration, private metadata 비노출과 corrupt binding fail-closed를 검증했다.
+- Conditional authority는 tenant/project별 단일 knowledge index object 범위다. Index와 여러 content/style artifact를 함께 묶는 distributed transaction, process crash나 cleanup failure 뒤 inert versioned object의 자동 GC, 64개를 넘는 successor reconciliation, retry backoff·fairness, 실제 AWS/provider/G2B/Stripe, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval과 contractual commitment는 실행하지 않았다.
+
 ## Post-milestone bookmark, style, SSO, and tenant registry cross-worker authority completion
 
 - `BookmarkStore`, `StyleStore`, `SSOStore`와 root-scoped `TenantStore` mutation은 각각 단일 state object의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·target identity 위에 같은 operation을 최대 32회 재적용한다.

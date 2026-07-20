@@ -5,9 +5,15 @@
 
 저장 구조 (local 또는 S3 StateBackend):
     tenants/{tenant_id}/knowledge/{project_id}/
-        index.json          — 문서 목록 및 메타데이터
-        {doc_id}.txt        — 추출된 원본 텍스트
-        {doc_id}_style.json — 스타일 프로필 (선택)
+        index.json
+        objects/{doc_id}/{incarnation}/
+            content.txt
+            style-{mutation_id}.json
+
+``index.json``은 문서 목록과 최근 mutation receipt를 보존하는 mutable
+authority다. Content/style object는 immutable conditional create로 발행하며,
+기존 ``{doc_id}.txt``와 ``{doc_id}_style.json``은 read compatibility를
+위해서만 유지한다.
 
 컨텍스트 주입 형식:
     [프로젝트 지식: {project_id}]
