@@ -75,6 +75,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - Trajectory Stats accepts only the latest same-tenant request outcome, so an older success or error cannot replace current accepted, pending, or export counts
 - the task-filtered Reviewed SFT export list accepts only the latest same-tenant export/freeze response, so an older success or error cannot replace current artifact rows or emit a stale failure notice
 - Training Readiness accepts only the latest same-tenant response, so an older success or error cannot restore a superseded export/freeze chain or expose an old freeze for dry-run approval
+- Training Audit Checklist accepts only the latest request for the current tenant and provider/model planning query; a planning change removes the previous audit action, and a completed audit export invalidates an older in-flight checklist read
 - reviewed exports can be frozen, and a matching verified freeze can receive a dry-run approval
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
@@ -223,9 +224,11 @@ Last local verification on 2026-07-21:
 - reviewed export list same-tenant Chromium gate: 1 passed
 - training readiness latest-response static gate: 1 passed, 1 warning
 - training readiness same-tenant Chromium gate: 1 passed
-- DocumentOps static expansion gate: 23 passed, 131 deselected, 1 warning
-- related DocumentOps Chromium expansion gate: 5 passed, 40 deselected
-- full repository non-live gate: 4229 passed, 2 skipped, 4 deselected, 1 warning
+- training audit checklist latest-response static gate: 1 passed, 1 warning
+- training audit checklist planning-context Chromium gate: 1 passed
+- DocumentOps static expansion gate: 24 passed, 131 deselected, 1 warning
+- related DocumentOps Chromium expansion gate: 6 passed, 40 deselected
+- full repository non-live gate: 4231 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

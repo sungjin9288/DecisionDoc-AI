@@ -7045,6 +7045,7 @@
   let _documentOpsGovernanceRequestVersion = 0;
   let _documentOpsExportListRequestVersion = 0;
   let _documentOpsReadinessRequestVersion = 0;
+  let _documentOpsAuditChecklistRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
   const _documentOpsReviewDrafts = new Map();
@@ -8056,25 +8057,63 @@
     el.querySelector('[data-docops-training-execution-refresh]')?.addEventListener('click', loadDocumentOpsTrainingExecutionRequests);
   }
 
+  function markDocumentOpsTrainingAuditChecklistStale(reason) {
+    _documentOpsAuditChecklistRequestVersion += 1;
+    const el = $id('document-ops-training-audit-checklist');
+    if (!el || el.style.display === 'none') return;
+    el.dataset.planningFresh = 'false';
+    el.innerHTML = `
+      <div data-docops-training-audit-stale style="border:1px solid rgba(146,64,14,.3);border-radius:8px;padding:.65rem;background:rgba(146,64,14,.07);">
+        <div style="display:flex;justify-content:space-between;gap:.65rem;align-items:start;flex-wrap:wrap;">
+          <div>
+            <strong style="font-size:.78rem;color:#92400e;">RECHECK REQUIRED</strong>
+            <div style="font-size:.72rem;color:#92400e;line-height:1.45;margin-top:.2rem;">${escapeHtml(reason)} 현재 planning 조건으로 Audit 검토를 다시 실행해야 합니다.</div>
+          </div>
+          <button class="action-btn" type="button" data-docops-training-audit-refresh style="font-size:.72rem;padding:.3rem .65rem;">다시 확인</button>
+        </div>
+      </div>
+    `;
+    el.querySelector('[data-docops-training-audit-refresh]')?.addEventListener(
+      'click',
+      loadDocumentOpsTrainingAuditChecklist,
+    );
+  }
+
   async function loadDocumentOpsTrainingAuditChecklist() {
     const el = $id('document-ops-training-audit-checklist');
     if (!el) return;
+    const requestVersion = ++_documentOpsAuditChecklistRequestVersion;
+    const tenantId = _currentTenantId;
+    const planningParams = documentOpsPlanningParams();
+    const planningQuery = planningParams.toString();
+    const requestIsCurrent = () => (
+      requestVersion === _documentOpsAuditChecklistRequestVersion
+      && tenantId === _currentTenantId
+      && planningQuery === documentOpsPlanningParams().toString()
+    );
     el.style.display = 'block';
+    el.dataset.planningFresh = 'false';
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">pre-execution audit checklist 로드 중...</div>';
     try {
-      const params = documentOpsPlanningParams();
       const [checklistRes, auditsRes] = await Promise.all([
-        fetch(`/api/agent/document-ops/trajectories/training-audit/checklist?${params}`, {
+        fetch(`/api/agent/document-ops/trajectories/training-audit/checklist?${planningQuery}`, {
           headers: getOpsAccessHeaders(),
         }),
         fetch('/api/agent/document-ops/trajectories/training-audits?limit=20', {
           headers: getOpsAccessHeaders(),
         }),
       ]);
+      if (!requestIsCurrent()) return;
       if (!checklistRes.ok) throw new Error(await checklistRes.text());
       if (!auditsRes.ok) throw new Error(await auditsRes.text());
-      renderDocumentOpsTrainingAuditChecklist(await checklistRes.json(), await auditsRes.json());
+      const [checklist, audits] = await Promise.all([
+        checklistRes.json(),
+        auditsRes.json(),
+      ]);
+      if (!requestIsCurrent()) return;
+      renderDocumentOpsTrainingAuditChecklist(checklist, audits);
     } catch (err) {
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;">Pre-execution audit checklist 실패: ops key 권한이 필요할 수 있습니다. ${escapeHtml(err.message || String(err))}</div>`;
       showNotification('Pre-execution audit checklist 실패: ' + (err.message || err), 'error');
     }
@@ -8101,6 +8140,7 @@
       if (!res.ok) throw new Error(await res.text());
       const audit = await res.json();
       markDocumentOpsGovernanceStale('Pre-execution audit 기록이 변경되었습니다.');
+      _documentOpsAuditChecklistRequestVersion += 1;
       renderDocumentOpsTrainingAuditExport(audit);
       showNotification('Pre-execution audit export를 저장했습니다. 학습/업로드/provider 호출은 시작되지 않았습니다.', 'success');
     } catch (err) {
@@ -8112,6 +8152,7 @@
     const el = $id('document-ops-training-audit-checklist');
     if (!el) return;
     el.style.display = 'block';
+    el.dataset.planningFresh = 'true';
     const ready = data?.status === 'ready_for_human_pre_execution_review';
     const checklist = Array.isArray(data?.checklist) ? data.checklist : [];
     const blockers = Array.isArray(data?.blockers) ? data.blockers : [];
@@ -8940,9 +8981,11 @@
 
   $id('docops-training-provider')?.addEventListener('change', () => {
     markDocumentOpsGovernanceStale('Planning provider 조건이 변경되었습니다.');
+    markDocumentOpsTrainingAuditChecklistStale('Planning provider 조건이 변경되었습니다.');
   });
   $id('docops-training-base-model')?.addEventListener('input', () => {
     markDocumentOpsGovernanceStale('Base model 조건이 변경되었습니다.');
+    markDocumentOpsTrainingAuditChecklistStale('Base model 조건이 변경되었습니다.');
   });
 
   /* ── Report Workflow ERP ─────────────────────────────────────── */

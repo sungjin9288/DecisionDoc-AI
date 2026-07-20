@@ -701,6 +701,41 @@ def test_index_html_document_ops_readiness_keeps_the_latest_same_tenant_response
     assert readiness_block.count("if (!requestIsCurrent()) return;") == 3
 
 
+def test_index_html_document_ops_audit_checklist_keeps_the_latest_planning_response():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadDocumentOpsTrainingAuditChecklist()")
+    end = content.index("async function exportDocumentOpsTrainingAudit", start)
+    checklist_block = content[start:end]
+
+    assert "let _documentOpsAuditChecklistRequestVersion = 0;" in content
+    assert (
+        "const requestVersion = ++_documentOpsAuditChecklistRequestVersion;"
+        in checklist_block
+    )
+    assert (
+        "requestVersion === _documentOpsAuditChecklistRequestVersion"
+        in checklist_block
+    )
+    assert "tenantId === _currentTenantId" in checklist_block
+    assert "planningQuery === documentOpsPlanningParams().toString()" in checklist_block
+    assert checklist_block.count("if (!requestIsCurrent()) return;") == 3
+    assert "function markDocumentOpsTrainingAuditChecklistStale(reason)" in content
+    assert "data-docops-training-audit-stale" in content
+    assert "Planning provider 조건이 변경되었습니다." in content
+    assert "Base model 조건이 변경되었습니다." in content
+    export_start = content.index("async function exportDocumentOpsTrainingAudit()")
+    export_end = content.index(
+        "function renderDocumentOpsTrainingAuditChecklist",
+        export_start,
+    )
+    export_block = content[export_start:export_end]
+    assert "_documentOpsAuditChecklistRequestVersion += 1;" in export_block
+    assert (
+        export_block.index("_documentOpsAuditChecklistRequestVersion += 1;")
+        < export_block.index("renderDocumentOpsTrainingAuditExport(audit);")
+    )
+
+
 def test_index_html_document_ops_marks_governance_stale_after_source_changes():
     content = open("app/static/index.html", encoding="utf-8").read()
 

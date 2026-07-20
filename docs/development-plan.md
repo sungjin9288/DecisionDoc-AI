@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,229 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H83) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,231 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H84) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-21 H83 실측: 4229 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-21 H84 실측: 4231 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -110,6 +110,7 @@ Providers (5)    Storage (45 modules)   Ops
 22. DocumentOps Trajectory Stats는 같은 tenant의 연속 조회마다 request version을 증가시키고, 가장 최근 요청의 성공 또는 오류만 화면에 반영한다. 이전 성공·실패와 tenant 전환 전 응답은 accepted·pending·export count나 오류 상태를 덮어쓰지 않는다.
 23. DocumentOps Reviewed SFT export 목록은 export와 freeze 목록을 함께 읽는 요청마다 version을 증가시키고 현재 tenant의 가장 최근 요청만 렌더링한다. 늦게 끝난 이전 성공, HTTP 오류, JSON parse 오류는 최신 task-filtered artifact 목록과 오류 surface를 덮어쓰거나 stale 알림을 만들지 않는다.
 24. DocumentOps Training Readiness는 같은 tenant의 연속 조회마다 독립 request version을 증가시키고 response, JSON parse, error branch에서 최신 여부를 다시 확인한다. 늦은 이전 성공이나 오류는 최신 export·freeze chain을 되돌리거나 과거 freeze를 dry-run 승인 대상으로 다시 노출하지 않는다.
+25. DocumentOps Training Audit Checklist는 request version, tenant, provider/model query가 모두 현재 조건과 일치할 때만 checklist와 audit 목록을 렌더링한다. Planning 조건이 바뀌면 열린 checklist를 `RECHECK REQUIRED`로 낮추고 `Audit 저장` action을 제거하며, 성공한 audit 저장은 진행 중 이전 read를 무효화해 새 evidence를 가리지 않게 한다.
 
 ---
 

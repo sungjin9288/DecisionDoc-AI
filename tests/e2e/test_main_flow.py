@@ -1454,6 +1454,172 @@ def test_document_ops_readiness_keeps_the_latest_same_tenant_response(page):
     assert "stale readiness failure" not in result["notifications"]
 
 
+def test_document_ops_audit_checklist_keeps_the_latest_planning_response(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingChecklists = [];
+          const pendingAudits = [];
+          const response = (body, status = 200) => new Response(
+            JSON.stringify(body),
+            { status, headers: { 'Content-Type': 'application/json' } },
+          );
+          const checklist = (requestId, freezeId) => ({
+            status: 'ready_for_human_pre_execution_review',
+            checklist: [{ id: 'latest_request', passed: true }],
+            blockers: [],
+            human_review_packet: {
+              latest_request_id: requestId,
+              dataset: {
+                freeze_manifest_id: freezeId,
+                export_filename: `${requestId}.jsonl`,
+              },
+              evaluation: {
+                suite: 'document_ops_offline_eval',
+                required_metrics: { schema_valid_rate: 1 },
+              },
+            },
+          });
+          const audits = auditId => ({
+            training_pre_execution_audits: [{
+              audit_id: auditId,
+              audit_file: `${auditId}.json`,
+              auditor: 'browser-auditor',
+              request_id: auditId.replace('audit', 'request'),
+              manifest_id: auditId.replace('audit', 'freeze'),
+              integrity_verified: true,
+              exists: true,
+              training_execution_allowed: false,
+              provider_api_calls_allowed: false,
+              provider_job_started: false,
+              external_upload_started: false,
+              model_promotion_allowed: false,
+            }],
+          });
+          try {
+            window.fetch = (input, options) => {
+              const url = String(input || '');
+              if (url.includes('/training-audit/checklist?')) {
+                return new Promise(resolve => pendingChecklists.push(resolve));
+              }
+              if (url === '/api/agent/document-ops/trajectories/training-audits?limit=20') {
+                return new Promise(resolve => pendingAudits.push(resolve));
+              }
+              if (url === '/api/agent/document-ops/trajectories/training-audit/export') {
+                return Promise.resolve(response({
+                  audit_id: 'audit-exported',
+                  audit_file: 'audit-exported.json',
+                  audit_gate: {
+                    auditor: 'browser-auditor',
+                    requester: 'browser-requester',
+                    prior_training_approver: 'browser-approver',
+                  },
+                  execution_guard: {
+                    training_execution_allowed: false,
+                    external_upload_started: false,
+                    provider_job_started: false,
+                    model_promotion_allowed: false,
+                  },
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-training-provider').value = 'openai';
+            document.querySelector('#docops-training-base-model').value = 'old-model';
+            const olderSuccess = loadDocumentOpsTrainingAuditChecklist();
+            document.querySelector('#docops-training-provider').value = 'gemini';
+            document.querySelector('#docops-training-base-model').value = 'new-model';
+            const newerSuccess = loadDocumentOpsTrainingAuditChecklist();
+            while (pendingChecklists.length < 2 || pendingAudits.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingChecklists[1](response(checklist('request-new', 'freeze-new')));
+            pendingAudits[1](response(audits('audit-new')));
+            await newerSuccess;
+            pendingChecklists[0](response(checklist('request-old', 'freeze-old')));
+            pendingAudits[0](response(audits('audit-old')));
+            await olderSuccess;
+            const successText = document.querySelector(
+              '#document-ops-training-audit-checklist',
+            ).textContent;
+
+            const providerInput = document.querySelector('#docops-training-provider');
+            providerInput.value = 'claude';
+            providerInput.dispatchEvent(new Event('change', { bubbles: true }));
+            const staleText = document.querySelector(
+              '#document-ops-training-audit-checklist',
+            ).textContent;
+            const staleExportPresent = Boolean(
+              document.querySelector('[data-docops-training-audit-export]'),
+            );
+
+            providerInput.value = 'openai';
+            document.querySelector('#docops-training-base-model').value = 'stale-model';
+            const olderFailure = loadDocumentOpsTrainingAuditChecklist();
+            providerInput.value = 'gemini';
+            document.querySelector('#docops-training-base-model').value = 'newest-model';
+            const newestSuccess = loadDocumentOpsTrainingAuditChecklist();
+            while (pendingChecklists.length < 4 || pendingAudits.length < 4) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            pendingChecklists[3](response(checklist('request-newest', 'freeze-newest')));
+            pendingAudits[3](response(audits('audit-newest')));
+            await newestSuccess;
+            pendingChecklists[2](response({ detail: 'stale audit failure' }, 503));
+            pendingAudits[2](response(audits('audit-stale')));
+            await olderFailure;
+            const finalText = document.querySelector(
+              '#document-ops-training-audit-checklist',
+            ).textContent;
+            const notifications = document.querySelector(
+              '#notification-container',
+            ).textContent;
+
+            const lateChecklist = loadDocumentOpsTrainingAuditChecklist();
+            while (pendingChecklists.length < 5 || pendingAudits.length < 5) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            document.querySelector('#docops-auditor').value = 'browser-auditor';
+            await exportDocumentOpsTrainingAudit();
+            pendingChecklists[4](response(checklist('request-late', 'freeze-late')));
+            pendingAudits[4](response(audits('audit-late')));
+            await lateChecklist;
+            const exportText = document.querySelector(
+              '#document-ops-training-audit-checklist',
+            ).textContent;
+
+            return {
+              successText,
+              staleText,
+              staleExportPresent,
+              finalText,
+              notifications,
+              exportText,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "request-new" in result["successText"]
+    assert "audit-new" in result["successText"]
+    assert "request-old" not in result["successText"]
+    assert "audit-old" not in result["successText"]
+    assert "RECHECK REQUIRED" in result["staleText"]
+    assert result["staleExportPresent"] is False
+    assert "request-newest" in result["finalText"]
+    assert "audit-newest" in result["finalText"]
+    assert "Pre-execution audit checklist 실패" not in result["finalText"]
+    assert "stale audit failure" not in result["notifications"]
+    assert "audit-exported" in result["exportText"]
+    assert "request-late" not in result["exportText"]
+
+
 def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []

@@ -48,6 +48,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-21 H81 완료: Trajectory Stats의 같은 tenant 요청이 겹칠 때 늦게 도착한 이전 success/error가 최신 accepted·pending·export count를 덮던 간극을 닫았다. Monotonic request version과 tenant/version predicate를 response, JSON parse, error branch에 공통 적용해 가장 최근 요청만 화면을 갱신한다. Failure-first Chromium으로 이전 success overwrite를 재현한 뒤 static contract `1 passed, 1 warning`, same-tenant success-success·stale-error Chromium `1 passed`, DocumentOps static 확장 `21 passed, 131 deselected, 1 warning`, 관련 Chromium 확장 `3 passed`를 no-cost로 확인했다.
 - 2026-07-21 H82 완료: Reviewed SFT export 목록에서 task filter가 다른 같은 tenant 조회가 겹칠 때 늦은 이전 success/error가 최신 artifact와 오류 상태를 덮던 간극을 닫았다. Export·freeze 응답을 함께 받은 뒤와 JSON parse 뒤, error branch에서 독립 request version과 tenant predicate를 확인해 최신 요청만 렌더링하고 stale 오류 알림도 억제한다. Failure-first Chromium으로 이전 task-filter success overwrite를 재현한 뒤 static contract `1 passed, 1 warning`, same-tenant success-success·stale-error Chromium `1 passed`, DocumentOps static 확장 `22 passed, 131 deselected, 1 warning`, 관련 Chromium 확장 `4 passed, 40 deselected`를 no-cost로 확인했다.
 - 2026-07-21 H83 완료: Training Readiness의 같은 tenant 조회가 겹칠 때 늦은 이전 success/error가 최신 export·freeze chain과 dry-run 승인 대상을 되돌리던 간극을 닫았다. Response 수신 뒤, JSON parse 뒤, error branch에서 독립 request version과 tenant predicate를 확인해 최신 readiness와 freeze 승인 control만 유지하고 stale 오류 알림을 억제한다. Failure-first Chromium으로 이전 freeze 승인 대상 overwrite를 재현한 뒤 static contract `1 passed, 1 warning`, same-tenant success-success·stale-error Chromium `1 passed`, DocumentOps static 확장 `23 passed, 131 deselected, 1 warning`, 관련 Chromium 확장 `5 passed, 40 deselected`를 no-cost로 확인했다.
+- 2026-07-21 H84 완료: Training Audit Checklist의 provider/model 조건이 다른 같은 tenant 조회가 겹칠 때 늦은 이전 success/error가 최신 checklist와 exported audit 목록을 되돌리던 간극을 닫았다. Request version, tenant, planning query를 response 수신·JSON parse·error branch에서 함께 확인하고, planning 조건 변경 시 열린 panel을 `RECHECK REQUIRED`로 낮춰 기존 `Audit 저장` control을 제거한다. 성공한 audit 저장도 진행 중 이전 read를 무효화해 새 evidence를 유지한다. Failure-first static/Chromium으로 이전 checklist overwrite를 재현한 뒤 focused static `1 passed, 1 warning`, focused Chromium `1 passed`, DocumentOps static 확장 `24 passed, 131 deselected, 1 warning`, 관련 Chromium 확장 `6 passed, 40 deselected`를 no-cost로 확인했다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -55,7 +56,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-21 H83 실측: 4229 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-21 H84 실측: 4231 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
