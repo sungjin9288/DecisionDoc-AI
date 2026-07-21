@@ -1083,7 +1083,7 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
     assert result["disabledAfter"] is False
 
 
-def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
+def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
 
@@ -1091,6 +1091,7 @@ def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
         """async () => {
           const nativeFetch = window.fetch;
           const postBodies = [];
+          const statusCacheModes = [];
           let statusReads = 0;
           const response = body => new Response(
             JSON.stringify(body),
@@ -1102,18 +1103,53 @@ def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
               const method = String(options?.method || 'GET').toUpperCase();
               if (url === '/api/agent/document-ops/run' && method === 'POST') {
                 postBodies.push(JSON.parse(String(options?.body || '{}')));
-                return Promise.reject(new TypeError('Failed to fetch'));
+                if (postBodies.length === 1) {
+                  return Promise.reject(new TypeError('Failed to fetch'));
+                }
+                return Promise.resolve(response({
+                  skill_name: 'decision-brief',
+                  task_type: 'decision_brief',
+                  provider_name: 'mock',
+                  plan: ['plan'],
+                  draft: 'recovered after status recheck',
+                  qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+                  evidence_status: {
+                    confirmed: [], assumptions: [], gaps: [], source_references: [],
+                  },
+                  quality_warnings: [],
+                  trajectory_id: 'trajectory-rechecked',
+                  trajectory_saved: true,
+                  operation_id: postBodies[1].operation_id,
+                  operation_replayed: true,
+                }));
               }
               if (url.startsWith('/api/agent/document-ops/run-operations/')) {
                 statusReads += 1;
+                statusCacheModes.push(options?.cache || '');
+                const requestedOperationId = postBodies[0].operation_id;
+                if (statusReads === 1) {
+                  return Promise.resolve(response({
+                    schema_version: 'document_ops_agent_operation_status_v1',
+                    operation_id: 'agent-run:another-operation',
+                    status: 'succeeded',
+                    started_at: '2026-07-21T00:00:00+00:00',
+                    completed_at: '2026-07-21T00:00:01+00:00',
+                    replay_available: true,
+                    next_action: 'replay_exact_request',
+                    read_only: true,
+                    provider_call_authorized: false,
+                    result_included: false,
+                  }));
+                }
+                const running = statusReads === 2;
                 return Promise.resolve(response({
                   schema_version: 'document_ops_agent_operation_status_v1',
-                  operation_id: postBodies[0].operation_id,
-                  status: 'running',
+                  operation_id: requestedOperationId,
+                  status: running ? 'running' : 'succeeded',
                   started_at: '2026-07-21T00:00:00+00:00',
-                  completed_at: null,
-                  replay_available: false,
-                  next_action: 'wait_and_recheck',
+                  completed_at: running ? null : '2026-07-21T00:00:01+00:00',
+                  replay_available: !running,
+                  next_action: running ? 'wait_and_recheck' : 'replay_exact_request',
                   read_only: true,
                   provider_call_authorized: false,
                   result_included: false,
@@ -1129,11 +1165,34 @@ def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
             while (button.disabled) {
               await new Promise(resolve => setTimeout(resolve, 0));
             }
+            const firstPostCount = postBodies.length;
+            const firstRecoveryVisible = !!document.querySelector('[data-docops-run-recovery]');
+
+            button.click();
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            const runningPostCount = postBodies.length;
+            const runningText = document.querySelector('#document-ops-result').textContent;
+            const recoveryButton = document.querySelector('[data-docops-run-recovery]');
+            recoveryButton.click();
+            button.click();
+            while (document.querySelector('[data-docops-run-recovery]') || button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
 
             return {
               postCount: postBodies.length,
+              firstPostCount,
+              runningPostCount,
+              sameOperationId: postBodies[0].operation_id === postBodies[1].operation_id,
+              samePayload: JSON.stringify(postBodies[0]) === JSON.stringify(postBodies[1]),
               statusReads,
+              statusCacheModes,
+              firstRecoveryVisible,
+              runningText,
               resultText: document.querySelector('#document-ops-result').textContent,
+              recoveryVisibleAfterSuccess: !!document.querySelector('[data-docops-run-recovery]'),
               disabledAfter: button.disabled,
             };
           } finally {
@@ -1142,10 +1201,18 @@ def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
         }"""
     )
 
-    assert result["postCount"] == 1
-    assert result["statusReads"] == 1
-    assert "status=running" in result["resultText"]
-    assert "next_action=wait_and_recheck" in result["resultText"]
+    assert result["firstPostCount"] == 1
+    assert result["firstRecoveryVisible"] is True
+    assert result["runningPostCount"] == 1
+    assert "status=running" in result["runningText"]
+    assert "next_action=wait_and_recheck" in result["runningText"]
+    assert result["postCount"] == 2
+    assert result["sameOperationId"] is True
+    assert result["samePayload"] is True
+    assert result["statusReads"] == 3
+    assert result["statusCacheModes"] == ["no-store", "no-store", "no-store"]
+    assert "recovered after status recheck" in result["resultText"]
+    assert result["recoveryVisibleAfterSuccess"] is False
     assert result["disabledAfter"] is False
 
 

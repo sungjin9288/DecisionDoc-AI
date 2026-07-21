@@ -935,9 +935,22 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "if (payload.capture_trajectory)" in run_block
     assert "payload.operation_id = createDocumentOpsOperationId('agent-run');" in run_block
     assert "readDocumentOpsRunOperationStatus(payload.operation_id, tenantId)" in run_block
-    assert "getAuthHeaders(tenantId)" in run_block
-    assert "status.replay_available !== true" in run_block
-    assert "body: JSON.stringify(payload)" in run_block
+    assert "documentOpsRunStatusMatches(status, payload.operation_id)" in run_block
+    assert "if (!payload.operation_id) throw initialError;" in run_block
+    assert "_documentOpsPendingRunRecovery = { tenantId, payload };" in run_block
+    assert "return recoverDocumentOpsAgentRun();" in run_block
+    assert "let _documentOpsPendingRunRecovery = null;" in content
+    assert "let _documentOpsRunRecoveryPromise = null;" in content
+    assert "status.operation_id !== operationId" in content
+    assert "status.read_only !== true" in content
+    assert "status.provider_call_authorized !== false" in content
+    assert "status.result_included !== false" in content
+    assert "cache: 'no-store'" in content
+    assert "body: JSON.stringify(payload)" in content
+    assert "data-docops-run-recovery" in content
+    assert "runDocumentOpsButtonAction(button, recoverDocumentOpsAgentRun)" in content
+    assert content.count("_documentOpsPendingRunRecovery = null;") >= 5
+    assert content.count("_documentOpsRunRecoveryPromise = null;") >= 4
     assert "_documentOpsLastResult" not in content
 
 

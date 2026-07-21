@@ -158,8 +158,13 @@ Work:
   another provider call; uncaptured runs retain the existing non-persisted behavior
 - expose only tenant-scoped retry-decision fields from an authenticated operation status read, and audit
   the operation identity and status without copying private owner, hash, or result data
-- after a lost browser response, replay the original captured request once only when the status read proves
-  a succeeded terminal receipt and no provider-call authority; never retry running, failed, missing, or corrupt state
+- after a lost browser response, require the status schema, exact operation identity, state-specific timestamps,
+  replay decision, next action, read-only flag, and provider-call denial to agree before acting
+- keep the captured tenant and payload only in current-page memory while status is mismatched, unavailable,
+  or running; let the Agent button and explicit status recheck share one recovery promise instead of creating a new operation
+- read recovery status without cache, exact-replay only a verified terminal success, end pending recovery with
+  an evidence-review warning for failed state, and clear pending data on logout or invalid session
+- keep reload recovery outside this browser contract; never retry corrupt state or treat a status read as execution authority
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
@@ -183,8 +188,9 @@ Acceptance:
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity
-- a lost successful response is recovered with the same operation identity and payload, while a running
-  receipt produces no second Agent POST
+- mismatched success and running status produce no Agent POST, while a later same-operation success recovers
+  the original payload and operation identity
+- simultaneous Agent-button and status-recheck actions join one status read and one exact replay
 - infrastructure and report-workflow integration tests pass
 
 ## Deferred Live Proof
