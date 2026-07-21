@@ -1212,8 +1212,12 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
               recoveryVisibleAfterSuccess: !!document.querySelector('[data-docops-run-recovery]'),
               markerAfterSuccess: {
                 parsed: readDocumentOpsPendingRunMarker(),
-                shared: localStorage.getItem('dd_document_ops_pending_run_v1'),
-                tab: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
+                shared: localStorage.getItem(
+                  documentOpsPendingRunMarkerKey(_currentTenantId),
+                ),
+                tab: sessionStorage.getItem(
+                  documentOpsPendingRunMarkerKey(_currentTenantId),
+                ),
               },
               disabledAfter: button.disabled,
             };
@@ -1328,6 +1332,7 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
 
     invalid_marker_results = page.evaluate(
         """marker => {
+          const markerKey = documentOpsPendingRunMarkerKey(marker.tenant_id);
           const invalidMarkers = [
             { ...marker, schema_version: 'wrong-schema' },
             { ...marker, tenant_id: 'wrong-tenant' },
@@ -1335,14 +1340,11 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
             { ...marker, payload: { title: 'must-not-persist' } },
           ];
           return invalidMarkers.map(invalidMarker => {
-            sessionStorage.setItem(
-              'dd_document_ops_pending_run_v1',
-              JSON.stringify(invalidMarker),
-            );
+            sessionStorage.setItem(markerKey, JSON.stringify(invalidMarker));
             const parsed = readDocumentOpsPendingRunMarker();
             return {
               parsed,
-              stored: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
+              stored: sessionStorage.getItem(markerKey),
             };
           });
         }""",
@@ -1375,15 +1377,16 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
             return originalRemoveItem.call(this, key);
           };
           try {
+            const markerKey = documentOpsPendingRunMarkerKey(tenantId);
             const remembered = rememberDocumentOpsPendingRunMarker(tenantId, operationId);
             const parsed = readDocumentOpsPendingRunMarker();
             const shared = originalGetItem.call(
               localStorage,
-              'dd_document_ops_pending_run_v1',
+              markerKey,
             );
             const tab = JSON.parse(originalGetItem.call(
               sessionStorage,
-              'dd_document_ops_pending_run_v1',
+              markerKey,
             ));
             const cleared = clearDocumentOpsPendingRunMarker(operationId);
             return {
@@ -1394,7 +1397,7 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
               cleared,
               tabAfter: originalGetItem.call(
                 sessionStorage,
-                'dd_document_ops_pending_run_v1',
+                markerKey,
               ),
             };
           } finally {
@@ -1472,7 +1475,9 @@ def test_document_ops_agent_shared_marker_survives_tab_close_and_blocks_another_
         """() => ({
           parsed: readDocumentOpsPendingRunMarker(),
           shared: JSON.parse(
-            localStorage.getItem('dd_document_ops_pending_run_v1') || 'null',
+            localStorage.getItem(
+              documentOpsPendingRunMarkerKey(_currentTenantId),
+            ) || 'null',
           ),
           postCount: window.__docopsFirstPostBodies.length,
         })"""
@@ -1543,7 +1548,7 @@ def test_document_ops_agent_shared_marker_survives_tab_close_and_blocks_another_
     second_page.once("dialog", lambda dialog: dialog.accept())
     second_page.locator("[data-docops-run-release]").click()
     assert second_page.evaluate(
-        "() => localStorage.getItem('dd_document_ops_pending_run_v1')"
+        "() => localStorage.getItem(documentOpsPendingRunMarkerKey(_currentTenantId))"
     ) is None
     second_page.close()
 
@@ -1637,10 +1642,110 @@ def test_document_ops_agent_cross_tab_claim_starts_one_post(page):
     blocked_page.once("dialog", lambda dialog: dialog.accept())
     blocked_page.locator("[data-docops-run-release]").click()
     assert blocked_page.evaluate(
-        "() => localStorage.getItem('dd_document_ops_pending_run_v1')"
+        "() => localStorage.getItem(documentOpsPendingRunMarkerKey(_currentTenantId))"
     ) is None
     if not blocked_page.is_closed():
         blocked_page.close()
+
+
+def test_document_ops_agent_pending_markers_are_isolated_by_tenant(page):
+    tenant_a = "marker-tenant-a"
+    tenant_b = "marker-tenant-b"
+    operation_a = "agent-run:11111111-2222-4333-8444-555555555555"
+    operation_b = "agent-run:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    operation_c = "agent-run:99999999-8888-4777-8666-555555555555"
+
+    result = page.evaluate(
+        """({ tenantA, tenantB, operationA, operationB, operationC }) => {
+          const markerPrefix = 'dd_document_ops_pending_run_v1';
+          const clearTestMarkers = storage => {
+            Object.keys(storage)
+              .filter(key => key === markerPrefix || key.startsWith(`${markerPrefix}:`))
+              .forEach(key => storage.removeItem(key));
+          };
+          clearTestMarkers(localStorage);
+          clearTestMarkers(sessionStorage);
+          try {
+            const rememberedA = rememberDocumentOpsPendingRunMarker(tenantA, operationA);
+            const markerA = readDocumentOpsPendingRunMarker(tenantA);
+            const markerBeforeB = readDocumentOpsPendingRunMarker(tenantB);
+            const markerAAfterBRead = readDocumentOpsPendingRunMarker(tenantA);
+
+            const rememberedB = rememberDocumentOpsPendingRunMarker(tenantB, operationB);
+            const scopedResult = {
+              rememberedA,
+              markerA,
+              markerBeforeB,
+              markerAAfterBRead,
+              rememberedB,
+              markerAAfterBWrite: readDocumentOpsPendingRunMarker(tenantA),
+              markerB: readDocumentOpsPendingRunMarker(tenantB),
+            };
+            const clearedA = clearDocumentOpsPendingRunMarker(operationA, tenantA);
+            const markerAAfterClear = readDocumentOpsPendingRunMarker(tenantA);
+            const markerBAfterAClear = readDocumentOpsPendingRunMarker(tenantB);
+
+            clearTestMarkers(localStorage);
+            clearTestMarkers(sessionStorage);
+            localStorage.setItem(markerPrefix, JSON.stringify(markerA));
+            const scopedMarker = { ...markerA, operation_id: operationC };
+            sessionStorage.setItem(
+              documentOpsPendingRunMarkerKey(tenantA),
+              JSON.stringify(scopedMarker),
+            );
+            return {
+              ...scopedResult,
+              clearedA,
+              markerAAfterClear,
+              markerBAfterAClear,
+              legacyMarkerBeforeB: readDocumentOpsPendingRunMarker(tenantB),
+              legacyMarkerAfterB: JSON.parse(localStorage.getItem(markerPrefix)),
+              scopedMarkerOverLegacy: readDocumentOpsPendingRunMarker(tenantA),
+            };
+          } finally {
+            clearTestMarkers(localStorage);
+            clearTestMarkers(sessionStorage);
+          }
+        }""",
+        {
+            "tenantA": tenant_a,
+            "tenantB": tenant_b,
+            "operationA": operation_a,
+            "operationB": operation_b,
+            "operationC": operation_c,
+        },
+    )
+
+    marker_a = {
+        "schema_version": "document_ops_agent_pending_run_marker_v1",
+        "tenant_id": tenant_a,
+        "operation_id": operation_a,
+    }
+    marker_b = {
+        "schema_version": "document_ops_agent_pending_run_marker_v1",
+        "tenant_id": tenant_b,
+        "operation_id": operation_b,
+    }
+    marker_c = {
+        "schema_version": "document_ops_agent_pending_run_marker_v1",
+        "tenant_id": tenant_a,
+        "operation_id": operation_c,
+    }
+    assert result == {
+        "rememberedA": True,
+        "markerA": marker_a,
+        "markerBeforeB": None,
+        "markerAAfterBRead": marker_a,
+        "rememberedB": True,
+        "markerAAfterBWrite": marker_a,
+        "markerB": marker_b,
+        "clearedA": True,
+        "markerAAfterClear": None,
+        "markerBAfterAClear": marker_b,
+        "legacyMarkerBeforeB": None,
+        "legacyMarkerAfterB": marker_a,
+        "scopedMarkerOverLegacy": marker_c,
+    }
 
 
 def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):

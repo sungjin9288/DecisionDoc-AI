@@ -166,6 +166,8 @@ Work:
   an evidence-review warning for failed state, and clear pending data on logout or invalid session
 - before a captured POST, persist only the marker schema, tenant, and operation identity in same-origin
   shared storage; never persist the request payload or treat this marker as replay authority
+- scope marker storage keys by tenant so foreign tenant reads, writes, and cleanup preserve each other;
+  clear only the previous context on an authorized switch and keep owner-only base-key compatibility
 - where supported, serialize marker inspection and claim with a tenant-scoped Web Lock so simultaneous tabs
   converge on one POST; use tab storage only when shared storage is unavailable
 - after reload, from another tab, or after the owner tab closes, inspect only the strict current-tenant status,
@@ -200,6 +202,8 @@ Acceptance:
 - simultaneous Agent-button and status-recheck actions join one status read and one exact replay
 - reload, another tab, and a page reopened after owner-tab close perform status reads and no Agent POST until
   explicit release; simultaneous Web-Lock-capable tabs produce one POST, while storage failure preserves same-page use
+- different tenant markers coexist in one origin, tenant-scoped cleanup preserves foreign markers, and a valid
+  legacy base-key marker remains visible only to its owning tenant
 - infrastructure and report-workflow integration tests pass
 
 ## Deferred Live Proof

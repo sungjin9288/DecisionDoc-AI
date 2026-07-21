@@ -7190,37 +7190,64 @@
     return false;
   }
 
-  function readDocumentOpsPendingRunMarkerFrom(storageName, tenantId) {
+  function documentOpsPendingRunMarkerKey(tenantId) {
+    return `${DOCUMENT_OPS_PENDING_RUN_MARKER_KEY}:${encodeURIComponent(String(tenantId || ''))}`;
+  }
+
+  function parseDocumentOpsPendingRunMarker(raw) {
     try {
-      const storage = window[storageName];
-      const raw = storage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
-      if (!raw) return null;
       const marker = JSON.parse(raw);
       const markerKeys = Object.keys(marker || {}).sort().join(',');
       if (
         marker?.schema_version !== DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA
-        || marker.tenant_id !== tenantId
+        || typeof marker.tenant_id !== 'string'
+        || !marker.tenant_id
         || typeof marker.operation_id !== 'string'
         || markerKeys !== 'operation_id,schema_version,tenant_id'
         || !/^agent-run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marker.operation_id)
-      ) {
+      ) return null;
+      return marker;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function readDocumentOpsPendingRunMarkerFrom(storageName, tenantId) {
+    try {
+      const storage = window[storageName];
+      const markerKey = documentOpsPendingRunMarkerKey(tenantId);
+      const raw = storage.getItem(markerKey);
+      if (raw === null) return null;
+      const marker = parseDocumentOpsPendingRunMarker(raw);
+      if (marker?.tenant_id === tenantId) return marker;
+      storage.removeItem(markerKey);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function readDocumentOpsLegacyPendingRunMarkerFrom(storageName, tenantId) {
+    try {
+      const storage = window[storageName];
+      const legacyRaw = storage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      if (legacyRaw === null) return null;
+      const legacyMarker = parseDocumentOpsPendingRunMarker(legacyRaw);
+      if (!legacyMarker) {
         storage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
         return null;
       }
-      return marker;
+      return legacyMarker.tenant_id === tenantId ? legacyMarker : null;
     } catch (_) {
-      try {
-        window[storageName].removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
-      } catch (_) {
-        // Browser privacy settings may make storage unavailable.
-      }
       return null;
     }
   }
 
   function readDocumentOpsPendingRunMarker(tenantId = _currentTenantId) {
     return readDocumentOpsPendingRunMarkerFrom('localStorage', tenantId)
-      || readDocumentOpsPendingRunMarkerFrom('sessionStorage', tenantId);
+      || readDocumentOpsPendingRunMarkerFrom('sessionStorage', tenantId)
+      || readDocumentOpsLegacyPendingRunMarkerFrom('localStorage', tenantId)
+      || readDocumentOpsLegacyPendingRunMarkerFrom('sessionStorage', tenantId);
   }
 
   function rememberDocumentOpsPendingRunMarker(tenantId, operationId) {
@@ -7230,13 +7257,18 @@
       tenant_id: tenantId,
       operation_id: operationId,
     });
+    const markerKey = documentOpsPendingRunMarkerKey(tenantId);
     try {
-      localStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, serializedMarker);
-      sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      localStorage.setItem(markerKey, serializedMarker);
+      try {
+        sessionStorage.removeItem(markerKey);
+      } catch (_) {
+        // The shared marker is authoritative when tab storage is unavailable.
+      }
       return true;
     } catch (_) {
       try {
-        sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, serializedMarker);
+        sessionStorage.setItem(markerKey, serializedMarker);
         return true;
       } catch (_) {
         return false;
@@ -7244,29 +7276,35 @@
     }
   }
 
-  function clearDocumentOpsPendingRunMarker(operationId = '') {
+  function clearDocumentOpsPendingRunMarkerFrom(storageName, tenantId) {
+    try {
+      const storage = window[storageName];
+      storage.removeItem(documentOpsPendingRunMarkerKey(tenantId));
+
+      const legacyRaw = storage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      if (legacyRaw === null) return true;
+      const legacyMarker = parseDocumentOpsPendingRunMarker(legacyRaw);
+      if (!legacyMarker || legacyMarker.tenant_id === tenantId) {
+        storage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function clearDocumentOpsPendingRunMarker(operationId = '', tenantId = _currentTenantId) {
     if (operationId) {
-      const marker = readDocumentOpsPendingRunMarker();
+      const marker = readDocumentOpsPendingRunMarker(tenantId);
       if (marker && marker.operation_id !== operationId) return false;
       if (!marker && _documentOpsPageRunMarkerOperationId !== operationId) return false;
     }
     if (!operationId || _documentOpsPageRunMarkerOperationId === operationId) {
       _documentOpsPageRunMarkerOperationId = null;
     }
-    let storageAvailable = false;
-    try {
-      localStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
-      storageAvailable = true;
-    } catch (_) {
-      // Continue so a tab-scoped fallback can still be removed.
-    }
-    try {
-      sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
-      storageAvailable = true;
-    } catch (_) {
-      // Both stores can be unavailable under browser privacy settings.
-    }
-    return storageAvailable;
+    const sharedStorageAvailable = clearDocumentOpsPendingRunMarkerFrom('localStorage', tenantId);
+    const tabStorageAvailable = clearDocumentOpsPendingRunMarkerFrom('sessionStorage', tenantId);
+    return sharedStorageAvailable || tabStorageAvailable;
   }
 
   async function claimDocumentOpsPendingRunMarker(tenantId, operationId) {
@@ -13455,12 +13493,12 @@
         return false;
       }
 
-      _currentTenantId = tenantId;
-      localStorage.setItem('dd_tenant_id', tenantId);
       _documentOpsReviewDrafts.clear();
-      clearDocumentOpsPendingRunMarker();
+      clearDocumentOpsPendingRunMarker('', previousTenantId);
       _documentOpsPendingRunRecovery = null;
       _documentOpsRunRecoveryPromise = null;
+      _currentTenantId = tenantId;
+      localStorage.setItem('dd_tenant_id', tenantId);
       window.location.reload();
       return true;
     } catch {

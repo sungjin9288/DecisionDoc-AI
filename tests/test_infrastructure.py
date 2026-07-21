@@ -502,7 +502,7 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
 
     assert content.count("syncTenantContextFromAccessToken(") == 6
     assert content.count("_documentOpsReviewDrafts.clear();") == 3
-    assert "clearDocumentOpsPendingRunMarker();" in change_block
+    assert "clearDocumentOpsPendingRunMarker('', previousTenantId);" in change_block
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
@@ -948,10 +948,13 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "let _documentOpsRunRecoveryPromise = null;" in content
     assert "const DOCUMENT_OPS_PENDING_RUN_MARKER_KEY = 'dd_document_ops_pending_run_v1';" in content
     assert "document_ops_agent_pending_run_marker_v1" in content
-    assert "localStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY" in content
-    assert "localStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY)" in content
-    assert "sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY" in content
-    assert "sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY)" in content
+    assert "function documentOpsPendingRunMarkerKey(tenantId)" in content
+    assert "`${DOCUMENT_OPS_PENDING_RUN_MARKER_KEY}:${encodeURIComponent(" in content
+    assert "localStorage.setItem(markerKey" in content
+    assert "sessionStorage.setItem(markerKey" in content
+    assert "function clearDocumentOpsPendingRunMarkerFrom(storageName, tenantId)" in content
+    assert "storage.removeItem(documentOpsPendingRunMarkerKey(tenantId))" in content
+    assert "return legacyMarker.tenant_id === tenantId ? legacyMarker : null;" in content
     assert "markerKeys !== 'operation_id,schema_version,tenant_id'" in content
     assert "^agent-run:[0-9a-f]{8}" in content
     assert "rememberDocumentOpsPendingRunMarker(tenantId, operationId);" in content
