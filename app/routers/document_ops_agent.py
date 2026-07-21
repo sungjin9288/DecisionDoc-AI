@@ -31,6 +31,8 @@ from app.schemas import (
 from app.services.document_ops_service import (
     DocumentOpsOperationConflictError,
     DocumentOpsReviewConflictError,
+    DocumentOpsRunStateError,
+    DocumentOpsRunUnavailableError,
 )
 from app.services.generation.context_store import record_direct_provider_usage
 
@@ -65,6 +67,10 @@ def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request
                 bundle_id="document-ops.agent-run",
             ),
         )
+    except DocumentOpsRunStateError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (DocumentOpsOperationConflictError, DocumentOpsRunUnavailableError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

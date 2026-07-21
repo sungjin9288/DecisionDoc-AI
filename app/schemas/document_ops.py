@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DocumentOpsAgentRunRequest(BaseModel):
@@ -15,6 +15,18 @@ class DocumentOpsAgentRunRequest(BaseModel):
     source_references: list[dict[str, Any]] = Field(default_factory=list)
     skill_name: str | None = None
     capture_trajectory: bool = False
+    operation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+
+    @model_validator(mode="after")
+    def require_capture_for_retry_identity(self) -> "DocumentOpsAgentRunRequest":
+        if self.operation_id is not None and not self.capture_trajectory:
+            raise ValueError("operation_id requires capture_trajectory=true.")
+        return self
 
 
 class DocumentOpsTrajectoryReviewRequest(BaseModel):

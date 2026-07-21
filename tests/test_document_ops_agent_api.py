@@ -127,6 +127,145 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert missing_view["detail"]["trajectory_id"] == "missing"
 
 
+def test_document_ops_run_operation_replays_without_provider_or_usage_duplication(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    original_generate_raw = provider.generate_raw
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(
+            prompt,
+            request_id=request_id,
+            max_output_tokens=max_output_tokens,
+        )
+
+    provider.generate_raw = counted_generate_raw
+    client.app.state.document_ops_service._agent._provider = provider
+    payload = {
+        "task_type": "decision_brief",
+        "requirements": {"title": "Agent retry identity"},
+        "capture_trajectory": True,
+        "operation_id": "agent-run:api-replay",
+    }
+
+    first = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=payload,
+    )
+    replay = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=payload,
+    )
+    conflict = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            **payload,
+            "requirements": {"title": "Changed retry payload"},
+        },
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert first.json()["operation_replayed"] is False
+    assert replay.json()["operation_replayed"] is True
+    assert {
+        key: value
+        for key, value in first.json().items()
+        if key != "operation_replayed"
+    } == {
+        key: value
+        for key, value in replay.json().items()
+        if key != "operation_replayed"
+    }
+    assert conflict.status_code == 409
+    assert calls == 1
+
+    from app.storage.usage_store import UsageStore
+
+    summary = UsageStore(tmp_path, tenant_id="system").get_current_month()
+    assert summary is not None
+    assert summary.total_generations == 1
+    assert client.get(
+        "/api/agent/document-ops/trajectories/stats",
+        headers=_api_headers(),
+    ).json()["total_records"] == 1
+
+
+def test_document_ops_run_operation_requires_trajectory_capture(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "decision_brief",
+            "requirements": {"title": "No persisted replay result"},
+            "capture_trajectory": False,
+            "operation_id": "agent-run:without-capture",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_document_ops_run_operation_state_corruption_fails_before_provider(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    original_generate_raw = provider.generate_raw
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(
+            prompt,
+            request_id=request_id,
+            max_output_tokens=max_output_tokens,
+        )
+
+    provider.generate_raw = counted_generate_raw
+    client.app.state.document_ops_service._agent._provider = provider
+
+    from app.storage.document_ops_run_operation_store import DocumentOpsRunOperationStore
+
+    store = DocumentOpsRunOperationStore(backend=client.app.state.state_backend)
+    operation_id = "agent-run:corrupt-api-state"
+    path = store.operation_path(tenant_id="system", operation_id=operation_id)
+    raw = '{"schema_version":"document_ops_agent_operation_v1","status":"running"}'
+    client.app.state.state_backend.write_text(path, raw)
+
+    response = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "decision_brief",
+            "requirements": {"title": "Corrupt operation state"},
+            "capture_trajectory": True,
+            "operation_id": operation_id,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "DocumentOps Agent retry state is unavailable."
+    assert calls == 0
+    assert client.app.state.state_backend.read_text(path) == raw
+
+
 def test_document_ops_trajectory_list_searches_filters_and_paginates_in_requested_order(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     created_ids: list[str] = []

@@ -20,10 +20,25 @@ from app.storage.trajectory_store import (
     TrajectoryReviewConflictError,
     TrajectoryStore,
 )
+from app.storage.document_ops_run_operation_store import (
+    DocumentOpsRunClaim,
+    DocumentOpsRunOperationConflictError,
+    DocumentOpsRunOperationStore,
+    DocumentOpsRunOperationStoreError,
+    DocumentOpsRunOperationUnavailableError,
+)
 
 
 class DocumentOpsOperationConflictError(ValueError):
     """Raised when a governance operation identity has conflicting input."""
+
+
+class DocumentOpsRunUnavailableError(RuntimeError):
+    """Raised when a prior Agent run cannot be replayed safely."""
+
+
+class DocumentOpsRunStateError(RuntimeError):
+    """Raised when Agent retry state cannot be trusted."""
 
 
 class DocumentOpsReviewConflictError(ValueError):
@@ -76,9 +91,11 @@ class DocumentOpsService:
         *,
         agent: DocumentOpsAgent,
         trajectory_store: TrajectoryStore,
+        run_operation_store: DocumentOpsRunOperationStore,
     ) -> None:
         self._agent = agent
         self._trajectory_store = trajectory_store
+        self._run_operation_store = run_operation_store
 
     def run(
         self,
@@ -88,22 +105,78 @@ class DocumentOpsService:
         request_id: str,
         record_provider_usage: Callable[[Provider], None] | None = None,
     ) -> dict[str, Any]:
-        req = DocumentOpsRequest.model_validate(payload)
-        result = self._agent.run(
-            req,
-            request_id=request_id,
+        request_payload = dict(payload)
+        operation_id = request_payload.pop("operation_id", None)
+        req = DocumentOpsRequest.model_validate(request_payload)
+        claim = self._claim_run_operation(
             tenant_id=tenant_id,
-            record_provider_usage=record_provider_usage,
+            operation_id=operation_id,
+            request_payload=req.model_dump(),
         )
-        body = self._serialize_result(result)
-        trajectory_id = ""
-        trajectory_saved = False
-        if req.capture_trajectory and result.trajectory:
-            trajectory_id = self._trajectory_store.save(result.trajectory, tenant_id=tenant_id)
-            trajectory_saved = True
-        body["trajectory_id"] = trajectory_id or ((result.trajectory or {}).get("trajectory_id") or "")
-        body["trajectory_saved"] = trajectory_saved
-        return body
+        if claim is not None and not claim.should_execute:
+            return {**(claim.result or {}), "operation_replayed": True}
+
+        try:
+            result = self._agent.run(
+                req,
+                request_id=request_id,
+                tenant_id=tenant_id,
+                record_provider_usage=record_provider_usage,
+            )
+            body = self._serialize_result(result)
+            trajectory_id = ""
+            trajectory_saved = False
+            if req.capture_trajectory and result.trajectory:
+                trajectory_id = self._trajectory_store.save(result.trajectory, tenant_id=tenant_id)
+                trajectory_saved = True
+            body["trajectory_id"] = trajectory_id or ((result.trajectory or {}).get("trajectory_id") or "")
+            body["trajectory_saved"] = trajectory_saved
+            if claim is not None:
+                body = self._run_operation_store.complete(claim, result=body)
+                body["operation_replayed"] = False
+            return body
+        except DocumentOpsRunOperationStoreError as exc:
+            if claim is not None:
+                self._fail_run_operation(claim)
+            raise DocumentOpsRunStateError(
+                "DocumentOps Agent retry state is unavailable."
+            ) from exc
+        except Exception:
+            if claim is not None:
+                self._fail_run_operation(claim)
+            raise
+
+    def _claim_run_operation(
+        self,
+        *,
+        tenant_id: str,
+        operation_id: str | None,
+        request_payload: dict[str, Any],
+    ) -> DocumentOpsRunClaim | None:
+        if operation_id is None:
+            return None
+        if request_payload.get("capture_trajectory") is not True:
+            raise ValueError("operation_id requires capture_trajectory=true.")
+        try:
+            return self._run_operation_store.claim(
+                tenant_id=tenant_id,
+                operation_id=operation_id,
+                request_payload=request_payload,
+            )
+        except DocumentOpsRunOperationConflictError as exc:
+            raise DocumentOpsOperationConflictError(str(exc)) from exc
+        except DocumentOpsRunOperationUnavailableError as exc:
+            raise DocumentOpsRunUnavailableError(str(exc)) from exc
+        except DocumentOpsRunOperationStoreError as exc:
+            raise DocumentOpsRunStateError(
+                "DocumentOps Agent retry state is unavailable."
+            ) from exc
+
+    def _fail_run_operation(self, claim: DocumentOpsRunClaim) -> None:
+        try:
+            self._run_operation_store.fail(claim)
+        except (DocumentOpsRunOperationStoreError, ValueError):
+            return
 
     def list_trajectories(
         self,

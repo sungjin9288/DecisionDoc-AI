@@ -7184,6 +7184,9 @@
       skill_name: skillName || null,
       capture_trajectory: !!$id('docops-capture-trajectory')?.checked,
     };
+    if (payload.capture_trajectory) {
+      payload.operation_id = createDocumentOpsOperationId('agent-run');
+    }
     try {
       const res = await fetch('/api/agent/document-ops/run', {
         method: 'POST',

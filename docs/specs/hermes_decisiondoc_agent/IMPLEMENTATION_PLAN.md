@@ -152,6 +152,10 @@ Work:
   bound to its exact provider/model query; replace open evidence with a recheck state when either input changes
 - keep export, freeze, dry-run approval, execution-request, audit-export, and provider-backed Agent controls
   single-flight while pending, restore their button after success or failure, and leave read-only refresh independent
+- for captured Agent runs, claim an optional payload-bound operation identity in the shared backend
+  before provider execution and replay only a verified terminal result
+- reject changed-payload reuse, concurrent duplicate execution, failed or corrupt retry state before
+  another provider call; uncaptured runs retain the existing non-persisted behavior
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
@@ -173,6 +177,8 @@ Acceptance:
 - stale local tenant state is replaced by the authenticated token tenant before tenant-scoped requests,
   while denied selector changes leave both the active context and persisted selector value unchanged
 - no hidden control can trigger upload, training, or production operations
+- an exact captured-run replay does not call the provider or record usage twice, while an uncertain
+  prior attempt requires explicit evidence review and a new operation identity
 - infrastructure and report-workflow integration tests pass
 
 ## Deferred Live Proof

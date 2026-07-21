@@ -240,9 +240,11 @@ def create_app() -> FastAPI:
     )
     from app.agents.document_ops_agent import DocumentOpsAgent
     from app.services.document_ops_service import DocumentOpsService
+    from app.storage.document_ops_run_operation_store import DocumentOpsRunOperationStore
     document_ops_service = DocumentOpsService(
         agent=DocumentOpsAgent(),
         trajectory_store=trajectory_store,
+        run_operation_store=DocumentOpsRunOperationStore(backend=state_backend),
     )
 
     @asynccontextmanager

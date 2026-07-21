@@ -865,6 +865,104 @@ def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_compl
     assert "이전 DocumentOps 실행이 실패했습니다." in result["finalNotifications"]
 
 
+def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingRuns = [];
+          const requestBodies = [];
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          const agentResult = {
+            skill_name: 'decision-brief',
+            task_type: 'decision_brief',
+            provider_name: 'mock',
+            plan: ['plan'],
+            draft: 'captured agent result',
+            qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+            evidence_status: {
+              confirmed: [], assumptions: [], gaps: [], source_references: [],
+            },
+            quality_warnings: [],
+            trajectory_id: 'trajectory-operation',
+            trajectory_saved: true,
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              const method = String(options?.method || 'GET').toUpperCase();
+              if (url === '/api/agent/document-ops/run' && method === 'POST') {
+                requestBodies.push(JSON.parse(String(options?.body || '{}')));
+                return new Promise(resolve => pendingRuns.push(resolve));
+              }
+              if (url === '/api/agent/document-ops/trajectories/stats') {
+                return Promise.resolve(response({
+                  total_records: 1,
+                  accepted_records: 0,
+                  pending_records: 1,
+                  export_count: 0,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                return Promise.resolve(response({
+                  trajectories: [], total: 0, offset: 0, returned: 0,
+                  has_more: false, order: 'newest',
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-title').value = 'Captured retry identity';
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            const button = document.querySelector('[data-docops-action="run-agent"]');
+            button.click();
+            button.click();
+            await new Promise(resolve => setTimeout(resolve, 25));
+            const capturedCount = pendingRuns.length;
+            const disabledDuring = button.disabled;
+            pendingRuns.shift()(response(agentResult));
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            document.querySelector('#docops-capture-trajectory').checked = false;
+            button.click();
+            await new Promise(resolve => setTimeout(resolve, 25));
+            pendingRuns.shift()(response({
+              ...agentResult,
+              trajectory_id: '',
+              trajectory_saved: false,
+            }));
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            return {
+              capturedCount,
+              operationId: requestBodies[0]?.operation_id || '',
+              uncapturedHasOperationId: Object.hasOwn(requestBodies[1] || {}, 'operation_id'),
+              disabledDuring,
+              disabledAfter: button.disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result["capturedCount"] == 1
+    assert result["operationId"].startswith("agent-run:")
+    assert len(result["operationId"].split(":", 1)[1]) == 36
+    assert result["uncapturedHasOperationId"] is False
+    assert result["disabledDuring"] is True
+    assert result["disabledAfter"] is False
+
+
 def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
