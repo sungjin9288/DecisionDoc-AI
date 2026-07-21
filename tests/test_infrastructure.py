@@ -948,11 +948,18 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "let _documentOpsRunRecoveryPromise = null;" in content
     assert "const DOCUMENT_OPS_PENDING_RUN_MARKER_KEY = 'dd_document_ops_pending_run_v1';" in content
     assert "document_ops_agent_pending_run_marker_v1" in content
+    assert "localStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY" in content
+    assert "localStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY)" in content
     assert "sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY" in content
     assert "sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY)" in content
     assert "markerKeys !== 'operation_id,schema_version,tenant_id'" in content
     assert "^agent-run:[0-9a-f]{8}" in content
-    assert "rememberDocumentOpsPendingRunMarker(tenantId, payload.operation_id);" in run_block
+    assert "rememberDocumentOpsPendingRunMarker(tenantId, operationId);" in content
+    assert "async function claimDocumentOpsPendingRunMarker(tenantId, operationId)" in content
+    assert "navigator.locks?.request" in content
+    assert "decisiondoc-document-ops-agent:${tenantId}" in content
+    assert "const blockingMarker = await claimDocumentOpsPendingRunMarker(" in run_block
+    assert "payload.operation_id," in run_block
     assert "const storedMarker = readDocumentOpsPendingRunMarker();" in run_block
     assert "storedMarker.operation_id !== _documentOpsPageRunMarkerOperationId" in run_block
     assert "async function inspectDocumentOpsStoredRunMarker()" in content

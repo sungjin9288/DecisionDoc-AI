@@ -7190,9 +7190,10 @@
     return false;
   }
 
-  function readDocumentOpsPendingRunMarker(tenantId = _currentTenantId) {
+  function readDocumentOpsPendingRunMarkerFrom(storageName, tenantId) {
     try {
-      const raw = sessionStorage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      const storage = window[storageName];
+      const raw = storage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
       if (!raw) return null;
       const marker = JSON.parse(raw);
       const markerKeys = Object.keys(marker || {}).sort().join(',');
@@ -7203,49 +7204,83 @@
         || markerKeys !== 'operation_id,schema_version,tenant_id'
         || !/^agent-run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marker.operation_id)
       ) {
-        sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+        storage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
         return null;
       }
       return marker;
     } catch (_) {
       try {
-        sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+        window[storageName].removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
       } catch (_) {
-        // Browser privacy settings may make sessionStorage unavailable.
+        // Browser privacy settings may make storage unavailable.
       }
       return null;
     }
   }
 
+  function readDocumentOpsPendingRunMarker(tenantId = _currentTenantId) {
+    return readDocumentOpsPendingRunMarkerFrom('localStorage', tenantId)
+      || readDocumentOpsPendingRunMarkerFrom('sessionStorage', tenantId);
+  }
+
   function rememberDocumentOpsPendingRunMarker(tenantId, operationId) {
     _documentOpsPageRunMarkerOperationId = operationId;
+    const serializedMarker = JSON.stringify({
+      schema_version: DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA,
+      tenant_id: tenantId,
+      operation_id: operationId,
+    });
     try {
-      sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, JSON.stringify({
-        schema_version: DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA,
-        tenant_id: tenantId,
-        operation_id: operationId,
-      }));
+      localStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, serializedMarker);
+      sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
       return true;
     } catch (_) {
-      return false;
+      try {
+        sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, serializedMarker);
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
   }
 
   function clearDocumentOpsPendingRunMarker(operationId = '') {
     if (operationId) {
       const marker = readDocumentOpsPendingRunMarker();
-      const pageMarkerMatches = _documentOpsPageRunMarkerOperationId === operationId;
-      if (marker?.operation_id !== operationId && !pageMarkerMatches) return false;
+      if (marker && marker.operation_id !== operationId) return false;
+      if (!marker && _documentOpsPageRunMarkerOperationId !== operationId) return false;
     }
     if (!operationId || _documentOpsPageRunMarkerOperationId === operationId) {
       _documentOpsPageRunMarkerOperationId = null;
     }
+    let storageAvailable = false;
+    try {
+      localStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      storageAvailable = true;
+    } catch (_) {
+      // Continue so a tab-scoped fallback can still be removed.
+    }
     try {
       sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
-      return true;
+      storageAvailable = true;
     } catch (_) {
-      return false;
+      // Both stores can be unavailable under browser privacy settings.
     }
+    return storageAvailable;
+  }
+
+  async function claimDocumentOpsPendingRunMarker(tenantId, operationId) {
+    const claim = () => {
+      const marker = readDocumentOpsPendingRunMarker(tenantId);
+      if (
+        marker
+        && marker.operation_id !== _documentOpsPageRunMarkerOperationId
+      ) return marker;
+      rememberDocumentOpsPendingRunMarker(tenantId, operationId);
+      return null;
+    };
+    if (!navigator.locks?.request) return claim();
+    return navigator.locks.request(`decisiondoc-document-ops-agent:${tenantId}`, claim);
   }
 
   async function readDocumentOpsRunOperationStatus(operationId, tenantId) {
@@ -7289,7 +7324,7 @@
         status=${escapeHtml(operationStatus)} · next_action=${escapeHtml(nextAction)}<br />
         payload_state=${payloadAvailable ? 'page_memory_available' : 'not_persisted'}
       </div>
-      ${payloadAvailable ? '' : '<div style="font-size:.74rem;color:#92400e;line-height:1.5;margin-top:.55rem;">원본 payload는 browser storage에 저장하지 않았습니다. 이 tab에서는 status만 확인할 수 있습니다.</div>'}
+      ${payloadAvailable ? '' : '<div style="font-size:.74rem;color:#92400e;line-height:1.5;margin-top:.55rem;">원본 payload는 browser storage에 저장하지 않았습니다. 이 browser에서는 status만 확인할 수 있습니다.</div>'}
       <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.7rem;">
         ${canRecheck ? '<button type="button" class="action-btn" data-docops-run-recovery aria-label="Agent 실행 상태 다시 확인" title="Agent 실행 상태 다시 확인">↻ 상태 다시 확인</button>' : ''}
         <button type="button" class="action-btn" data-docops-run-release aria-label="Agent 실행 상태 확인 종료" title="Agent 실행 상태 확인 종료">상태 확인 종료</button>
@@ -7471,7 +7506,11 @@
     };
     if (payload.capture_trajectory) {
       payload.operation_id = createDocumentOpsOperationId('agent-run');
-      rememberDocumentOpsPendingRunMarker(tenantId, payload.operation_id);
+      const blockingMarker = await claimDocumentOpsPendingRunMarker(
+        tenantId,
+        payload.operation_id,
+      );
+      if (blockingMarker) return recoverDocumentOpsAgentRun();
     }
     try {
       let data;

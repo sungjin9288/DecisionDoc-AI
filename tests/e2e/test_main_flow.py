@@ -1182,9 +1182,7 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
             }
             const firstPostCount = postBodies.length;
             const firstRecoveryVisible = !!document.querySelector('[data-docops-run-recovery]');
-            const firstMarker = JSON.parse(
-              sessionStorage.getItem('dd_document_ops_pending_run_v1') || 'null',
-            );
+            const firstMarker = readDocumentOpsPendingRunMarker();
 
             button.click();
             while (button.disabled) {
@@ -1212,7 +1210,11 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
               runningText,
               resultText: document.querySelector('#document-ops-result').textContent,
               recoveryVisibleAfterSuccess: !!document.querySelector('[data-docops-run-recovery]'),
-              markerAfterSuccess: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
+              markerAfterSuccess: {
+                parsed: readDocumentOpsPendingRunMarker(),
+                shared: localStorage.getItem('dd_document_ops_pending_run_v1'),
+                tab: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
+              },
               disabledAfter: button.disabled,
             };
           } finally {
@@ -1239,7 +1241,7 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
     assert result["statusCacheModes"] == ["no-store", "no-store", "no-store"]
     assert "recovered after status recheck" in result["resultText"]
     assert result["recoveryVisibleAfterSuccess"] is False
-    assert result["markerAfterSuccess"] is None
+    assert result["markerAfterSuccess"] == {"parsed": None, "shared": None, "tab": None}
     assert result["disabledAfter"] is False
 
 
@@ -1318,6 +1320,9 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
     assert page.evaluate(
         "() => sessionStorage.getItem('dd_document_ops_pending_run_v1')"
     ) is None
+    assert page.evaluate(
+        "() => localStorage.getItem('dd_document_ops_pending_run_v1')"
+    ) is None
     assert "상태 확인을 종료했습니다" in page.locator("#document-ops-result").inner_text()
     assert post_bodies == []
 
@@ -1350,6 +1355,65 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
         {"parsed": None, "stored": None},
     ]
 
+    tab_fallback_result = page.evaluate(
+        """({ tenantId, operationId }) => {
+          const storagePrototype = Object.getPrototypeOf(localStorage);
+          const originalGetItem = storagePrototype.getItem;
+          const originalSetItem = storagePrototype.setItem;
+          const originalRemoveItem = storagePrototype.removeItem;
+          const isSharedStorage = storage => storage === localStorage;
+          storagePrototype.getItem = function(key) {
+            if (isSharedStorage(this)) throw new Error('shared storage unavailable');
+            return originalGetItem.call(this, key);
+          };
+          storagePrototype.setItem = function(key, value) {
+            if (isSharedStorage(this)) throw new Error('shared storage unavailable');
+            return originalSetItem.call(this, key, value);
+          };
+          storagePrototype.removeItem = function(key) {
+            if (isSharedStorage(this)) throw new Error('shared storage unavailable');
+            return originalRemoveItem.call(this, key);
+          };
+          try {
+            const remembered = rememberDocumentOpsPendingRunMarker(tenantId, operationId);
+            const parsed = readDocumentOpsPendingRunMarker();
+            const shared = originalGetItem.call(
+              localStorage,
+              'dd_document_ops_pending_run_v1',
+            );
+            const tab = JSON.parse(originalGetItem.call(
+              sessionStorage,
+              'dd_document_ops_pending_run_v1',
+            ));
+            const cleared = clearDocumentOpsPendingRunMarker(operationId);
+            return {
+              remembered,
+              parsed,
+              shared,
+              tab,
+              cleared,
+              tabAfter: originalGetItem.call(
+                sessionStorage,
+                'dd_document_ops_pending_run_v1',
+              ),
+            };
+          } finally {
+            storagePrototype.getItem = originalGetItem;
+            storagePrototype.setItem = originalSetItem;
+            storagePrototype.removeItem = originalRemoveItem;
+          }
+        }""",
+        {"tenantId": tenant_id, "operationId": operation_id},
+    )
+    assert tab_fallback_result == {
+        "remembered": True,
+        "parsed": marker,
+        "shared": None,
+        "tab": marker,
+        "cleared": True,
+        "tabAfter": None,
+    }
+
     unavailable_storage_result = page.evaluate(
         """({ tenantId, operationId }) => {
           const storagePrototype = Object.getPrototypeOf(sessionStorage);
@@ -1378,6 +1442,205 @@ def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release
         "remembered": False,
         "cleared": False,
     }
+
+
+def test_document_ops_agent_shared_marker_survives_tab_close_and_blocks_another_tab(page):
+    context = page.context
+    base_url = page.url.split("?", 1)[0]
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+    page.evaluate(
+        """() => {
+          const nativeFetch = window.fetch;
+          window.__docopsFirstPostBodies = [];
+          window.fetch = (input, options) => {
+            const url = String(input || '');
+            if (url === '/api/agent/document-ops/run') {
+              window.__docopsFirstPostBodies.push(JSON.parse(options.body));
+              return new Promise(() => {});
+            }
+            return nativeFetch(input, options);
+          };
+          document.querySelector('#docops-title').value = 'Cross-tab pending run';
+          document.querySelector('#docops-capture-trajectory').checked = true;
+          void runDocumentOpsAgent();
+        }"""
+    )
+    page.wait_for_function("() => readDocumentOpsPendingRunMarker() !== null")
+
+    marker = page.evaluate(
+        """() => ({
+          parsed: readDocumentOpsPendingRunMarker(),
+          shared: JSON.parse(
+            localStorage.getItem('dd_document_ops_pending_run_v1') || 'null',
+          ),
+          postCount: window.__docopsFirstPostBodies.length,
+        })"""
+    )
+    assert marker["postCount"] == 1
+    assert marker["shared"] == marker["parsed"]
+    assert marker["shared"]["operation_id"].startswith("agent-run:")
+
+    page.close()
+    second_page = context.new_page()
+    second_page.goto(base_url)
+    second_page.wait_for_selector(".bundle-card", timeout=10000)
+    second_page.evaluate(
+        """() => {
+          const nativeFetch = window.fetch;
+          window.__docopsSecondPostBodies = [];
+          window.__docopsStatusReads = [];
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          window.fetch = (input, options) => {
+            const url = String(input || '');
+            if (url.startsWith('/api/agent/document-ops/run-operations/')) {
+              const operationId = decodeURIComponent(url.split('/').pop());
+              window.__docopsStatusReads.push(operationId);
+              return Promise.resolve(response({
+                schema_version: 'document_ops_agent_operation_status_v1',
+                operation_id: operationId,
+                status: 'running',
+                started_at: '2026-07-21T00:00:00+00:00',
+                completed_at: null,
+                replay_available: false,
+                next_action: 'wait_and_recheck',
+                read_only: true,
+                provider_call_authorized: false,
+                result_included: false,
+              }));
+            }
+            if (url === '/api/agent/document-ops/run') {
+              window.__docopsSecondPostBodies.push(JSON.parse(options.body));
+              return Promise.resolve(response({ detail: 'unexpected Agent POST' }));
+            }
+            return nativeFetch(input, options);
+          };
+        }"""
+    )
+    second_page.locator('[data-page="document-ops-page"]').click()
+    second_page.wait_for_selector("[data-docops-run-release]", timeout=5000)
+
+    second_result = second_page.evaluate(
+        """() => ({
+          marker: readDocumentOpsPendingRunMarker(),
+          statusReads: [...window.__docopsStatusReads],
+          postCount: window.__docopsSecondPostBodies.length,
+          resultText: document.querySelector('#document-ops-result').textContent,
+        })"""
+    )
+    assert second_result["marker"] == marker["shared"]
+    assert second_result["statusReads"] == [marker["shared"]["operation_id"]]
+    assert second_result["postCount"] == 0
+    assert "status=running" in second_result["resultText"]
+
+    second_page.evaluate("() => runDocumentOpsAgent()")
+    assert second_page.evaluate("() => window.__docopsStatusReads.length") == 2
+    assert second_page.evaluate("() => window.__docopsSecondPostBodies.length") == 0
+
+    second_page.once("dialog", lambda dialog: dialog.accept())
+    second_page.locator("[data-docops-run-release]").click()
+    assert second_page.evaluate(
+        "() => localStorage.getItem('dd_document_ops_pending_run_v1')"
+    ) is None
+    second_page.close()
+
+
+def test_document_ops_agent_cross_tab_claim_starts_one_post(page):
+    context = page.context
+    second_page = context.new_page()
+    second_page.goto(page.url.split("?", 1)[0])
+    second_page.wait_for_selector(".bundle-card", timeout=10000)
+
+    setup_script = """() => {
+      const nativeFetch = window.fetch;
+      window.__docopsClaimPosts = [];
+      window.__docopsClaimStatusReads = [];
+      const response = body => new Response(
+        JSON.stringify(body),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+      window.fetch = (input, options) => {
+        const url = String(input || '');
+        if (url === '/api/agent/document-ops/run') {
+          window.__docopsClaimPosts.push(JSON.parse(options.body));
+          return new Promise(() => {});
+        }
+        if (url.startsWith('/api/agent/document-ops/run-operations/')) {
+          const operationId = decodeURIComponent(url.split('/').pop());
+          window.__docopsClaimStatusReads.push(operationId);
+          return Promise.resolve(response({
+            schema_version: 'document_ops_agent_operation_status_v1',
+            operation_id: operationId,
+            status: 'running',
+            started_at: '2026-07-21T00:00:00+00:00',
+            completed_at: null,
+            replay_available: false,
+            next_action: 'wait_and_recheck',
+            read_only: true,
+            provider_call_authorized: false,
+            result_included: false,
+          }));
+        }
+        return nativeFetch(input, options);
+      };
+      document.querySelector('#docops-title').value = 'Atomic cross-tab claim';
+      document.querySelector('#docops-capture-trajectory').checked = true;
+    }"""
+    for current_page in (page, second_page):
+        current_page.locator('[data-page="document-ops-page"]').click()
+        current_page.wait_for_timeout(250)
+        current_page.evaluate(setup_script)
+
+    page.evaluate("() => { void runDocumentOpsAgent(); }")
+    second_page.evaluate("() => { void runDocumentOpsAgent(); }")
+    for _ in range(50):
+        post_count = sum(
+            current_page.evaluate("() => window.__docopsClaimPosts.length")
+            for current_page in (page, second_page)
+        )
+        status_count = sum(
+            current_page.evaluate("() => window.__docopsClaimStatusReads.length")
+            for current_page in (page, second_page)
+        )
+        if post_count == 1 and status_count == 1:
+            break
+        page.wait_for_timeout(100)
+
+    snapshots = [
+        current_page.evaluate(
+            """() => ({
+              marker: readDocumentOpsPendingRunMarker(),
+              posts: [...window.__docopsClaimPosts],
+              statusReads: [...window.__docopsClaimStatusReads],
+              resultText: document.querySelector('#document-ops-result').textContent,
+            })"""
+        )
+        for current_page in (page, second_page)
+    ]
+    assert sum(len(snapshot["posts"]) for snapshot in snapshots) == 1
+    assert sum(len(snapshot["statusReads"]) for snapshot in snapshots) == 1
+    assert snapshots[0]["marker"] == snapshots[1]["marker"]
+
+    owner_index = 0 if snapshots[0]["posts"] else 1
+    blocked_index = 1 - owner_index
+    owner_page = (page, second_page)[owner_index]
+    blocked_page = (page, second_page)[blocked_index]
+    assert snapshots[blocked_index]["statusReads"] == [
+        snapshots[owner_index]["posts"][0]["operation_id"]
+    ]
+    assert "status=running" in snapshots[blocked_index]["resultText"]
+
+    owner_page.close()
+    blocked_page.once("dialog", lambda dialog: dialog.accept())
+    blocked_page.locator("[data-docops-run-release]").click()
+    assert blocked_page.evaluate(
+        "() => localStorage.getItem('dd_document_ops_pending_run_v1')"
+    ) is None
+    if not blocked_page.is_closed():
+        blocked_page.close()
 
 
 def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):
