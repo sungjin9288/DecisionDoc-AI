@@ -53,7 +53,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 보고서 검토 이력 무결성 | 기획안·장표·댓글·승인 단계·시각자료 이력을 tenant에 결속하고, 손상·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
 | 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고 손상 문서·중복 identity를 fail closed 처리. 객체별 conditional create/CAS와 bounded private receipt로 worker 간 게시·수정·읽음·전송 상태 유실을 방지 |
 | 재현 가능한 제출형 export | 같은 runtime과 입력에서 DOCX·PDF·PPTX·XLSX·HWPX 반복 생성 bytes와 SHA-256을 안정적으로 유지 |
-| DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. |
+| DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Export·freeze·dry-run approval·execution request·audit export·Agent 실행 control은 pending 동안 single-flight로 잠가 accidental duplicate record/provider action을 줄이고 완료 후 다시 활성화한다. |
 
 ---
 
@@ -268,10 +268,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,490개**, **255개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,492개**, **255개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3490
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3492
 python3 scripts/count_readme_metrics.py --field test_files      # → 255
 ```
 
@@ -301,7 +301,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,243 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H89 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,245 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H90 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -373,4 +373,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 268 · 테스트 3,490 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 268 · 테스트 3,492 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

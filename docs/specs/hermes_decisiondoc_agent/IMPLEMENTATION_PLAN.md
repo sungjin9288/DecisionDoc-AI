@@ -150,6 +150,8 @@ Work:
   and replace old configuration or artifact evidence with an explicit recheck state when that context changes
 - keep SFT Export Preview and the reviewed artifact list bound to the selected task, and Training Plan Preview
   bound to its exact provider/model query; replace open evidence with a recheck state when either input changes
+- keep export, freeze, dry-run approval, execution-request, audit-export, and provider-backed Agent controls
+  single-flight while pending, restore their button after success or failure, and leave read-only refresh independent
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence

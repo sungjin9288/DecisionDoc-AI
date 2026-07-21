@@ -84,6 +84,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
 - trajectory history uses tenant/filter/search-aware totals, title/identifier/reviewer search,
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
 - each trajectory history response is accepted only while its tenant, task/review filters, search query, and ordering still match the browser, including the interval before a debounced search starts its replacement request
+- export, freeze, dry-run approval, execution-request, audit-export, and provider-backed Agent controls disable their initiating button while pending and restore it afterward, preventing an immediate second action from the same browser control without claiming backend idempotency
 - browser history requests summary records and loads the full tenant-scoped trajectory only when
   a reviewer opens its detail, while existing API callers retain the default full-list response
 - detail views and human review requests append success/failure audit events with trajectory and
@@ -237,9 +238,10 @@ Last local verification on 2026-07-21:
 - task/planning preview context focused gate: 4 passed, 1 warning
 - Agent latest-run result ownership focused gate: 2 passed, 1 warning
 - trajectory search context focused gate: 2 passed, 1 warning
-- DocumentOps static expansion gate: 29 passed, 131 deselected, 1 warning
-- DocumentOps Chromium expansion gate: 15 passed, 38 deselected
-- full repository non-live gate: 4243 passed, 2 skipped, 4 deselected, 1 warning
+- write action single-flight focused gate: 2 passed, 1 warning
+- DocumentOps static expansion gate: 30 passed, 131 deselected, 1 warning
+- DocumentOps Chromium expansion gate: 16 passed, 38 deselected
+- full repository non-live gate: 4245 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

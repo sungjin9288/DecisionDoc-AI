@@ -54,6 +54,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-21 H87 완료: SFT Export Preview와 Reviewed SFT artifact 목록이 task 선택 변경 뒤에도 이전 task evidence를 현재 결과처럼 보이거나, Training Plan Preview가 늦은 provider/model 응답으로 되돌아가던 간극을 닫았다. Export 화면은 독립 request version·tenant·task를, plan preview는 request version·tenant·planning query를 response, JSON parse, error branch에서 확인한다. Task 또는 planning 입력이 바뀌면 진행 중 응답을 무효화하고 열린 결과를 `RECHECK REQUIRED`로 교체한다. Failure-first static/Chromium으로 세 drift를 재현한 뒤 focused `4 passed, 1 warning`, DocumentOps static 확장 `27 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `13 passed, 38 deselected`를 no-cost로 확인했다.
 - 2026-07-21 H88 완료: 겹쳐 실행한 DocumentOps Agent 중 늦은 이전 success/error가 최신 draft·QA·결과 패널과 trajectory filter를 되돌리던 간극을 닫았다. Latest initiated run과 tenant만 결과 패널을 갱신하고, 늦은 same-tenant 저장 완료는 현재 filter/page를 보존한 목록 refresh와 info 알림으로 관측하며 stale failure는 warning만 남긴다. Failure-first static/Chromium으로 overwrite를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `28 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `14 passed, 38 deselected`를 no-cost로 확인했다.
 - 2026-07-21 H89 완료: Trajectory 검색어를 바꾼 뒤 250ms debounce가 새 요청을 시작하기 전에 늦은 이전 응답이 도착하면 새 검색어 아래 stale card를 렌더링하던 간극을 닫았다. 목록 요청 시점의 request version·tenant·task/review filter·query·order를 하나의 snapshot으로 보존하고, 현재 화면과 모두 일치할 때만 success/error를 반영한다. Failure-first static/Chromium으로 debounce-window overwrite를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `29 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `15 passed, 38 deselected`를 no-cost로 확인했다.
+- 2026-07-21 H90 완료: DocumentOps execution request control을 연속 클릭하면 같은 browser에서 record POST가 두 번 시작되고 pending 상태가 보이지 않던 간극을 닫았다. 공통 button action helper가 record를 생성하는 export·freeze·dry-run approval·execution request·audit export와 provider-backed Agent control을 동기적으로 잠그고 action의 성공·실패가 끝난 뒤 `finally`에서 복구한다. Read-only refresh는 기존 concurrency 확인을 위해 잠그지 않는다. Failure-first static/Chromium으로 duplicate POST를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `30 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `16 passed, 38 deselected`를 no-cost로 확인했다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -61,7 +62,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-21 H89 실측: 4243 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-21 H90 실측: 4245 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

@@ -7791,7 +7791,12 @@
 
   function wireDocumentOpsExportActions(container) {
     container.querySelectorAll('[data-docops-export-freeze]').forEach(btn => {
-      btn.addEventListener('click', () => freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || ''));
+      btn.addEventListener('click', () => {
+        void runDocumentOpsButtonAction(
+          btn,
+          () => freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || ''),
+        );
+      });
     });
     container.querySelectorAll('[data-docops-export-download]').forEach(btn => {
       btn.addEventListener('click', () => downloadDocumentOpsExport(btn.dataset.docopsExportDownload || ''));
@@ -7940,7 +7945,10 @@
       </div>` : '<div style="font-size:.76rem;color:#15803d;font-weight:850;">모든 read-only readiness gate가 충족되었습니다. 학습 실행은 별도 승인 단계입니다.</div>'}
     `;
     el.querySelector('[data-docops-training-approve]')?.addEventListener('click', event => {
-      approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || '');
+      void runDocumentOpsButtonAction(
+        event.currentTarget,
+        () => approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || ''),
+      );
     });
   }
 
@@ -8308,7 +8316,10 @@
     container.querySelectorAll('[data-docops-training-audit-download]').forEach(btn => {
       btn.addEventListener('click', () => downloadDocumentOpsTrainingAudit(btn.dataset.docopsTrainingAuditDownload || ''));
     });
-    container.querySelector('[data-docops-training-audit-export]')?.addEventListener('click', exportDocumentOpsTrainingAudit);
+    const exportButton = container.querySelector('[data-docops-training-audit-export]');
+    exportButton?.addEventListener('click', () => {
+      void runDocumentOpsButtonAction(exportButton, exportDocumentOpsTrainingAudit);
+    });
     container.querySelector('[data-docops-training-audit-refresh]')?.addEventListener('click', loadDocumentOpsTrainingAuditChecklist);
   }
 
@@ -9122,6 +9133,23 @@
     </div>`;
   }
 
+  async function runDocumentOpsButtonAction(button, action) {
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    try {
+      await action();
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  }
+
+  const DOCUMENT_OPS_SINGLE_FLIGHT_ACTIONS = new Set([
+    'export-trajectories',
+    'request-execution',
+    'export-audit',
+    'run-agent',
+  ]);
+
   const DOCUMENT_OPS_ACTIONS = {
     'load-trajectories': loadDocumentOpsTrajectories,
     'preview-export': previewDocumentOpsExport,
@@ -9141,8 +9169,14 @@
 
   document.querySelectorAll('[data-docops-action]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const action = DOCUMENT_OPS_ACTIONS[btn.dataset.docopsAction || ''];
-      if (action) action();
+      const actionName = btn.dataset.docopsAction || '';
+      const action = DOCUMENT_OPS_ACTIONS[actionName];
+      if (!action) return;
+      if (DOCUMENT_OPS_SINGLE_FLIGHT_ACTIONS.has(actionName)) {
+        void runDocumentOpsButtonAction(btn, action);
+        return;
+      }
+      action();
     });
   });
 

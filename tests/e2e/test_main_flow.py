@@ -1941,6 +1941,72 @@ def test_document_ops_execution_requests_keep_the_latest_same_tenant_response(pa
     assert "request-before-save" not in result["savedText"]
 
 
+def test_document_ops_execution_request_button_is_single_flight(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingRequests = [];
+          let listReadCount = 0;
+          const createUrl = '/api/agent/document-ops/trajectories/training-execution-requests';
+          const listUrl = `${createUrl}?limit=20`;
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              const method = String(options?.method || 'GET').toUpperCase();
+              if (url === createUrl && method === 'POST') {
+                return new Promise(resolve => pendingRequests.push(resolve));
+              }
+              if (url === listUrl && method === 'GET') {
+                listReadCount += 1;
+                return Promise.resolve(response({
+                  training_execution_requests: [],
+                  total: 0,
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-execution-requester').value = 'browser-requester';
+            const button = document.querySelector('[data-docops-action="request-execution"]');
+            button.click();
+            button.click();
+            await new Promise(resolve => setTimeout(resolve, 25));
+
+            const requestCount = pendingRequests.length;
+            const disabledDuring = button.disabled;
+            pendingRequests.forEach((resolve, index) => {
+              resolve(response({ request_id: `request-single-flight-${index}` }));
+            });
+            while (listReadCount < requestCount) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            return {
+              requestCount,
+              disabledDuring,
+              disabledAfter: button.disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result == {
+        "requestCount": 1,
+        "disabledDuring": True,
+        "disabledAfter": False,
+    }
+
+
 def _document_ops_adapter_contract(provider: str, base_model: str) -> dict[str, object]:
     return {
         "provider": provider,

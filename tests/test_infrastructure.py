@@ -2418,8 +2418,31 @@ def test_index_html_document_ops_action_wiring_exists():
     ):
         assert mapping in content
     assert "document.querySelectorAll('[data-docops-action]').forEach" in content
-    assert "const action = DOCUMENT_OPS_ACTIONS[btn.dataset.docopsAction || ''];" in content
-    assert "if (action) action();" in content
+    assert "const actionName = btn.dataset.docopsAction || '';" in content
+    assert "const action = DOCUMENT_OPS_ACTIONS[actionName];" in content
+    assert "if (!action) return;" in content
+    assert "action();" in content
+
+
+def test_index_html_document_ops_write_actions_are_single_flight():
+    content = open("app/static/index.html", encoding="utf-8").read()
+
+    for marker in (
+        "async function runDocumentOpsButtonAction(button, action)",
+        "if (!button || button.disabled) return;",
+        "button.disabled = true;",
+        "if (button.isConnected) button.disabled = false;",
+        "const DOCUMENT_OPS_SINGLE_FLIGHT_ACTIONS = new Set([",
+        "'export-trajectories'",
+        "'request-execution'",
+        "'export-audit'",
+        "'run-agent'",
+        "runDocumentOpsButtonAction(btn, action)",
+        "() => freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || '')",
+        "() => approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || '')",
+        "runDocumentOpsButtonAction(exportButton, exportDocumentOpsTrainingAudit)",
+    ):
+        assert marker in content
 
 
 def test_index_html_document_ops_trajectory_history_supports_search_order_filters_and_pagination():
@@ -2531,7 +2554,9 @@ def test_index_html_document_ops_dynamic_action_wiring_exists():
         "wireDocumentOpsTrainingAuditActions(el);",
         "function wireDocumentOpsTrainingAuditActions(container)",
         "downloadDocumentOpsTrainingAudit(btn.dataset.docopsTrainingAuditDownload || '')",
-        "container.querySelector('[data-docops-training-audit-export]')?.addEventListener('click', exportDocumentOpsTrainingAudit)",
+        "const exportButton = container.querySelector('[data-docops-training-audit-export]');",
+        "exportButton?.addEventListener('click', () => {",
+        "runDocumentOpsButtonAction(exportButton, exportDocumentOpsTrainingAudit)",
         "container.querySelector('[data-docops-training-audit-refresh]')?.addEventListener('click', loadDocumentOpsTrainingAuditChecklist)",
         "el.querySelector('[data-docops-governance-refresh]')?.addEventListener(",
         "'click',",
