@@ -934,6 +934,10 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다." in run_block
     assert "if (payload.capture_trajectory)" in run_block
     assert "payload.operation_id = createDocumentOpsOperationId('agent-run');" in run_block
+    assert "readDocumentOpsRunOperationStatus(payload.operation_id, tenantId)" in run_block
+    assert "getAuthHeaders(tenantId)" in run_block
+    assert "status.replay_available !== true" in run_block
+    assert "body: JSON.stringify(payload)" in run_block
     assert "_documentOpsLastResult" not in content
 
 

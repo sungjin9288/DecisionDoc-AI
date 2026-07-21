@@ -963,6 +963,192 @@ def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(pag
     assert result["disabledAfter"] is False
 
 
+def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_identity(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const previousTenant = _currentTenantId;
+          const originalTenant = 'tenant-recovery-original';
+          _currentTenantId = originalTenant;
+          const postBodies = [];
+          let statusReads = 0;
+          let statusTenant = '';
+          let replayTenant = '';
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          const agentResult = {
+            skill_name: 'decision-brief',
+            task_type: 'decision_brief',
+            provider_name: 'mock',
+            plan: ['plan'],
+            draft: 'recovered exact replay',
+            qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+            evidence_status: {
+              confirmed: [], assumptions: [], gaps: [], source_references: [],
+            },
+            quality_warnings: [],
+            trajectory_id: 'trajectory-recovered',
+            trajectory_saved: true,
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              const method = String(options?.method || 'GET').toUpperCase();
+              if (url === '/api/agent/document-ops/run' && method === 'POST') {
+                postBodies.push(JSON.parse(String(options?.body || '{}')));
+                if (postBodies.length === 1) {
+                  _currentTenantId = 'tenant-switched-during-recovery';
+                  return Promise.reject(new TypeError('Failed to fetch'));
+                }
+                replayTenant = String(options?.headers?.['X-Tenant-ID'] || '');
+                _currentTenantId = originalTenant;
+                return Promise.resolve(response({
+                  ...agentResult,
+                  operation_id: postBodies[1].operation_id,
+                  operation_replayed: true,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/run-operations/')) {
+                statusReads += 1;
+                statusTenant = String(options?.headers?.['X-Tenant-ID'] || '');
+                return Promise.resolve(response({
+                  schema_version: 'document_ops_agent_operation_status_v1',
+                  operation_id: postBodies[0].operation_id,
+                  status: 'succeeded',
+                  started_at: '2026-07-21T00:00:00+00:00',
+                  completed_at: '2026-07-21T00:00:01+00:00',
+                  replay_available: true,
+                  next_action: 'replay_exact_request',
+                  read_only: true,
+                  provider_call_authorized: false,
+                  result_included: false,
+                }));
+              }
+              if (url === '/api/agent/document-ops/trajectories/stats') {
+                return Promise.resolve(response({
+                  total_records: 1,
+                  accepted_records: 0,
+                  pending_records: 1,
+                  export_count: 0,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                return Promise.resolve(response({
+                  trajectories: [], total: 0, offset: 0, returned: 0,
+                  has_more: false, order: 'newest',
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-title').value = 'Recover lost response';
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            const button = document.querySelector('[data-docops-action="run-agent"]');
+            button.click();
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            return {
+              postCount: postBodies.length,
+              sameOperationId: postBodies[0].operation_id === postBodies[1].operation_id,
+              samePayload: JSON.stringify(postBodies[0]) === JSON.stringify(postBodies[1]),
+              statusReads,
+              originalTenant,
+              statusTenant,
+              replayTenant,
+              resultText: document.querySelector('#document-ops-result').textContent,
+              disabledAfter: button.disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+            _currentTenantId = previousTenant;
+          }
+        }"""
+    )
+
+    assert result["postCount"] == 2
+    assert result["sameOperationId"] is True
+    assert result["samePayload"] is True
+    assert result["statusReads"] == 1
+    assert result["statusTenant"] == result["originalTenant"]
+    assert result["replayTenant"] == result["originalTenant"]
+    assert "recovered exact replay" in result["resultText"]
+    assert "replay" in result["resultText"]
+    assert result["disabledAfter"] is False
+
+
+def test_document_ops_agent_does_not_retry_an_operation_still_running(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const postBodies = [];
+          let statusReads = 0;
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              const method = String(options?.method || 'GET').toUpperCase();
+              if (url === '/api/agent/document-ops/run' && method === 'POST') {
+                postBodies.push(JSON.parse(String(options?.body || '{}')));
+                return Promise.reject(new TypeError('Failed to fetch'));
+              }
+              if (url.startsWith('/api/agent/document-ops/run-operations/')) {
+                statusReads += 1;
+                return Promise.resolve(response({
+                  schema_version: 'document_ops_agent_operation_status_v1',
+                  operation_id: postBodies[0].operation_id,
+                  status: 'running',
+                  started_at: '2026-07-21T00:00:00+00:00',
+                  completed_at: null,
+                  replay_available: false,
+                  next_action: 'wait_and_recheck',
+                  read_only: true,
+                  provider_call_authorized: false,
+                  result_included: false,
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+
+            document.querySelector('#docops-title').value = 'Do not retry running operation';
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            const button = document.querySelector('[data-docops-action="run-agent"]');
+            button.click();
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            return {
+              postCount: postBodies.length,
+              statusReads,
+              resultText: document.querySelector('#document-ops-result').textContent,
+              disabledAfter: button.disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result["postCount"] == 1
+    assert result["statusReads"] == 1
+    assert "status=running" in result["resultText"]
+    assert "next_action=wait_and_recheck" in result["resultText"]
+    assert result["disabledAfter"] is False
+
+
 def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)

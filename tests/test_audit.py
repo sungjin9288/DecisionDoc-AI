@@ -554,6 +554,10 @@ def test_resolve_action_explicit_document_ops_events_preserves_access_failures()
     assert ACTION_TYPES["document_ops.trajectory_view"] == "DocumentOps 이력 상세 조회"
     assert ACTION_TYPES["document_ops.trajectory_review"] == "DocumentOps 사람 검토"
     assert (
+        ACTION_TYPES["document_ops.agent_run_operation_view"]
+        == "DocumentOps Agent 실행 상태 조회"
+    )
+    assert (
         _resolve_action(
             "GET",
             "/api/agent/document-ops/trajectories/governance/overview",

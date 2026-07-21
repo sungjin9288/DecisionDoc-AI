@@ -7152,6 +7152,18 @@
     </div>`;
   }
 
+  async function readDocumentOpsRunOperationStatus(operationId, tenantId) {
+    try {
+      const res = await fetch(
+        `/api/agent/document-ops/run-operations/${encodeURIComponent(operationId)}`,
+        { headers: getAuthHeaders(tenantId) },
+      );
+      return res.ok ? await res.json() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function runDocumentOpsAgent() {
     const taskType = ($id('docops-task-type')?.value || 'policy_planning_brief').trim();
     const title = ($id('docops-title')?.value || '').trim();
@@ -7187,14 +7199,38 @@
     if (payload.capture_trajectory) {
       payload.operation_id = createDocumentOpsOperationId('agent-run');
     }
-    try {
+    const sendRequest = async () => {
       const res = await fetch('/api/agent/document-ops/run', {
         method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(tenantId), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      return res.json();
+    };
+    try {
+      let data;
+      try {
+        data = await sendRequest();
+      } catch (initialError) {
+        const status = payload.operation_id
+          ? await readDocumentOpsRunOperationStatus(payload.operation_id, tenantId)
+          : null;
+        if (
+          status?.status !== 'succeeded'
+          || status.replay_available !== true
+          || status.provider_call_authorized !== false
+        ) {
+          if (status) {
+            throw new Error(
+              `${initialError.message || initialError} · operation_id=${status.operation_id}`
+              + ` · status=${status.status} · next_action=${status.next_action}`,
+            );
+          }
+          throw initialError;
+        }
+        data = await sendRequest();
+      }
       if (!runIsCurrent()) {
         if (data.trajectory_saved === true && tenantId === _currentTenantId) {
           await loadDocumentOpsTrajectories();
@@ -7206,7 +7242,14 @@
       }
       renderDocumentOpsResult(data);
       await loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
-      showNotification(data.trajectory_saved ? 'DocumentOps 결과와 trajectory를 저장했습니다.' : 'DocumentOps 결과를 생성했습니다.', 'success');
+      let successMessage = 'DocumentOps 결과를 생성했습니다.';
+      if (data.trajectory_saved) {
+        successMessage = 'DocumentOps 결과와 trajectory를 저장했습니다.';
+      }
+      if (data.operation_replayed) {
+        successMessage = '저장된 DocumentOps 결과를 안전하게 복구했습니다.';
+      }
+      showNotification(successMessage, 'success');
     } catch (err) {
       if (!runIsCurrent()) {
         showNotification('이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'warn');
@@ -7255,6 +7298,7 @@
       </div>` : ''}
       ${warnings.length ? `<div style="font-size:.72rem;color:#92400e;margin-top:.6rem;">Warnings: ${escapeHtml(warnings.join(', '))}</div>` : ''}
       ${data?.trajectory_id ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.45rem;">trajectory_id=${escapeHtml(data.trajectory_id)} · saved=${data.trajectory_saved ? 'yes' : 'no'}</div>` : ''}
+      ${data?.operation_id ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.3rem;">operation_id=${escapeHtml(data.operation_id)} · replay=${data.operation_replayed ? 'yes' : 'no'}</div>` : ''}
     `;
   }
 

@@ -85,7 +85,7 @@ The static DocumentOps workbench now follows the same no-execution governance ch
   task/review filters, and 10-record newest- or oldest-first pages so review evidence remains reachable
 - each trajectory history response is accepted only while its tenant, task/review filters, search query, and ordering still match the browser, including the interval before a debounced search starts its replacement request
 - export, freeze, dry-run approval, execution-request, audit-export, and provider-backed Agent controls disable their initiating button while pending and restore it afterward, preventing an immediate second action from the same browser control
-- captured provider-backed Agent runs can carry a browser-generated operation identity. The selected backend claims it before provider execution, binds it to the canonical request hash, replays only the stored trajectory-bound success, and returns `409` for changed input or an unfinished prior attempt. Corrupt retry state returns `503` before provider execution. Uncaptured runs do not persist a retry result, and this contract does not claim process-crash recovery, semantic deduplication across different operation IDs, exactly-once provider execution, or receipt GC
+- captured provider-backed Agent runs can carry a browser-generated operation identity. The selected backend claims it before provider execution, binds it to the canonical request hash, replays only the stored trajectory-bound success, and returns `409` for changed input or an unfinished prior attempt. Corrupt retry state returns `503` before provider execution. An API-key protected tenant-scoped status read exposes only operation ID, state, timestamps, replay availability, and next action, while its audit omits private owner/hash/result data. If the first browser response is lost, only a succeeded terminal receipt permits one exact replay of the original payload; running, failed, missing, and corrupt state do not start another POST. Uncaptured runs do not persist a retry result, and this contract does not claim process-crash recovery, semantic deduplication across different operation IDs, exactly-once provider execution, or receipt GC
 - browser history requests summary records and loads the full tenant-scoped trajectory only when
   a reviewer opens its detail, while existing API callers retain the default full-list response
 - detail views and human review requests append success/failure audit events with trajectory and
@@ -246,11 +246,15 @@ Last local verification on 2026-07-21:
 - captured Agent retry idempotency storage/API gate: 10 passed, 9 deselected, 1 warning
 - captured Agent retry idempotency static gate: 2 passed, 159 deselected, 1 warning
 - captured Agent retry idempotency Chromium gate: 1 passed, 54 deselected
+- captured Agent response-loss recovery backend/API/audit gate: 10 passed, 84 deselected, 1 warning
+- captured Agent response-loss recovery static gate: 2 passed, 159 deselected, 1 warning
+- captured Agent response-loss recovery Chromium gate: 3 passed, 54 deselected
 - DocumentOps static expansion gate: 30 passed, 131 deselected, 1 warning
 - DocumentOps Chromium expansion gate: 16 passed, 38 deselected
-- full repository non-live gate: 4261 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4265 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
+- captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0
 - no live-provider or external-runtime tests were run
 
 ## Deferred External Proof

@@ -113,6 +113,21 @@ def document_ops_audit_detail(request: Request) -> dict[str, Any]:
         "state_fingerprint_persisted",
         getattr(state, "document_ops_governance_fingerprint_persisted", None),
     )
+    _add_if_present(
+        detail,
+        "operation_id",
+        getattr(state, "document_ops_operation_id", ""),
+    )
+    _add_if_present(
+        detail,
+        "operation_status",
+        getattr(state, "document_ops_operation_status", ""),
+    )
+    _add_if_present(
+        detail,
+        "replay_available",
+        getattr(state, "document_ops_operation_replay_available", None),
+    )
     return detail
 
 
@@ -125,5 +140,8 @@ def document_ops_resource_identity(
     surface = getattr(request.state, "document_ops_governance_surface", "")
     if isinstance(surface, str) and surface:
         return "document_ops_governance", surface
+    operation_id = getattr(request.state, "document_ops_operation_id", "")
+    if isinstance(operation_id, str) and operation_id:
+        return "document_ops_agent_operation", operation_id
     trajectory_id = getattr(request.state, "document_ops_trajectory_id", "")
     return "document_ops_trajectory", str(trajectory_id or "")

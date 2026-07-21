@@ -8,6 +8,7 @@ import pytest
 
 from app.storage.document_ops_run_operation_store import (
     DocumentOpsRunOperationConflictError,
+    DocumentOpsRunOperationNotFoundError,
     DocumentOpsRunOperationStore,
     DocumentOpsRunOperationStoreError,
     DocumentOpsRunOperationUnavailableError,
@@ -225,3 +226,91 @@ def test_agent_run_operation_reconciles_lost_conditional_write_responses(
     )
     assert replay.should_execute is False
     assert replay.result == _result()
+
+
+def test_agent_run_operation_status_exposes_only_retry_decision_fields(
+    tmp_path: Path,
+) -> None:
+    store = DocumentOpsRunOperationStore(
+        backend=LocalStateBackend(tmp_path / "state"),
+    )
+    running_claim = store.claim(
+        tenant_id="alpha",
+        operation_id="agent-run:status-running",
+        request_payload=_request_payload(),
+    )
+
+    running = store.get_status(
+        tenant_id="alpha",
+        operation_id="agent-run:status-running",
+    )
+    assert running == {
+        "schema_version": "document_ops_agent_operation_status_v1",
+        "operation_id": "agent-run:status-running",
+        "status": "running",
+        "started_at": running["started_at"],
+        "completed_at": None,
+        "replay_available": False,
+        "next_action": "wait_and_recheck",
+        "read_only": True,
+        "provider_call_authorized": False,
+        "result_included": False,
+    }
+
+    store.complete(running_claim, result=_result())
+    succeeded = store.get_status(
+        tenant_id="alpha",
+        operation_id="agent-run:status-running",
+    )
+    assert succeeded["status"] == "succeeded"
+    assert succeeded["completed_at"]
+    assert succeeded["replay_available"] is True
+    assert succeeded["next_action"] == "replay_exact_request"
+    assert not {"owner_id", "request_sha256", "result", "result_sha256"} & succeeded.keys()
+
+    failed_claim = store.claim(
+        tenant_id="alpha",
+        operation_id="agent-run:status-failed",
+        request_payload=_request_payload(),
+    )
+    store.fail(failed_claim)
+    failed = store.get_status(
+        tenant_id="alpha",
+        operation_id="agent-run:status-failed",
+    )
+    assert failed["status"] == "failed"
+    assert failed["replay_available"] is False
+    assert failed["next_action"] == "inspect_evidence_before_new_operation"
+
+
+def test_agent_run_operation_status_is_tenant_scoped_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    backend = LocalStateBackend(tmp_path / "state")
+    store = DocumentOpsRunOperationStore(backend=backend)
+    store.claim(
+        tenant_id="alpha",
+        operation_id="agent-run:tenant-status",
+        request_payload=_request_payload(),
+    )
+
+    with pytest.raises(DocumentOpsRunOperationNotFoundError):
+        store.get_status(
+            tenant_id="beta",
+            operation_id="agent-run:tenant-status",
+        )
+
+    corrupt_path = store.operation_path(
+        tenant_id="alpha",
+        operation_id="agent-run:corrupt-status",
+    )
+    raw = '{"schema_version":"document_ops_agent_operation_v1","status":"running"}'
+    backend.write_text(corrupt_path, raw)
+
+    with pytest.raises(DocumentOpsRunOperationStoreError):
+        store.get_status(
+            tenant_id="alpha",
+            operation_id="agent-run:corrupt-status",
+        )
+
+    assert backend.read_text(corrupt_path) == raw

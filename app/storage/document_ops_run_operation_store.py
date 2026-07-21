@@ -29,6 +29,10 @@ class DocumentOpsRunOperationConflictError(ValueError):
     """Raised when one operation identity is reused for different input."""
 
 
+class DocumentOpsRunOperationNotFoundError(LookupError):
+    """Raised when the requested tenant has no operation receipt."""
+
+
 class DocumentOpsRunOperationUnavailableError(RuntimeError):
     """Raised when a prior attempt has not produced a reusable result."""
 
@@ -162,6 +166,39 @@ class DocumentOpsRunOperationStore:
         operation_id = self._validate_operation_id(operation_id)
         operation_key = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()
         return f"tenants/{tenant_id}/document_ops_agent_operations/{operation_key}.json"
+
+    def get_status(self, *, tenant_id: str, operation_id: str) -> dict[str, Any]:
+        tenant_id = require_tenant_id(tenant_id)
+        operation_id = self._validate_operation_id(operation_id)
+        path = self.operation_path(tenant_id=tenant_id, operation_id=operation_id)
+        raw = self._read_raw(path)
+        if raw is None:
+            raise DocumentOpsRunOperationNotFoundError(
+                "DocumentOps Agent operation was not found."
+            )
+        receipt = self._decode(raw)
+        if receipt.tenant_id != tenant_id or receipt.operation_id != operation_id:
+            raise DocumentOpsRunOperationStoreError(
+                "DocumentOps Agent operation receipt ownership does not match."
+            )
+
+        next_action = {
+            "running": "wait_and_recheck",
+            "succeeded": "replay_exact_request",
+            "failed": "inspect_evidence_before_new_operation",
+        }[receipt.status]
+        return {
+            "schema_version": "document_ops_agent_operation_status_v1",
+            "operation_id": receipt.operation_id,
+            "status": receipt.status,
+            "started_at": receipt.started_at,
+            "completed_at": receipt.completed_at,
+            "replay_available": receipt.status == "succeeded",
+            "next_action": next_action,
+            "read_only": True,
+            "provider_call_authorized": False,
+            "result_included": False,
+        }
 
     def claim(
         self,
@@ -320,17 +357,21 @@ class DocumentOpsRunOperationStore:
         return receipt
 
     def _read(self, path: str) -> tuple[str, _OperationReceipt]:
+        raw = self._read_raw(path)
+        if raw is None:
+            raise DocumentOpsRunOperationStoreError(
+                "DocumentOps Agent operation receipt is missing."
+            )
+        return raw, self._decode(raw)
+
+    def _read_raw(self, path: str) -> str | None:
         try:
             raw = self._backend.read_text(path)
         except (StateBackendError, UnicodeError) as exc:
             raise DocumentOpsRunOperationStoreError(
                 "DocumentOps Agent operation receipt could not be read."
             ) from exc
-        if raw is None:
-            raise DocumentOpsRunOperationStoreError(
-                "DocumentOps Agent operation receipt is missing."
-            )
-        return raw, self._decode(raw)
+        return raw
 
     @staticmethod
     def _decode(raw: str) -> _OperationReceipt:

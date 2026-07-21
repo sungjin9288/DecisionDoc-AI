@@ -175,6 +175,8 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
 
     assert first.status_code == 200
     assert replay.status_code == 200
+    assert first.json()["operation_id"] == payload["operation_id"]
+    assert replay.json()["operation_id"] == payload["operation_id"]
     assert first.json()["operation_replayed"] is False
     assert replay.json()["operation_replayed"] is True
     assert {
@@ -198,6 +200,51 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "/api/agent/document-ops/trajectories/stats",
         headers=_api_headers(),
     ).json()["total_records"] == 1
+
+    status_path = f"/api/agent/document-ops/run-operations/{payload['operation_id']}"
+    unauthorized = client.get(status_path)
+    status = client.get(status_path, headers=_api_headers())
+    missing = client.get(
+        "/api/agent/document-ops/run-operations/agent-run:missing",
+        headers=_api_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert status.status_code == 200
+    assert status.json() == {
+        "schema_version": "document_ops_agent_operation_status_v1",
+        "operation_id": payload["operation_id"],
+        "status": "succeeded",
+        "started_at": status.json()["started_at"],
+        "completed_at": status.json()["completed_at"],
+        "replay_available": True,
+        "next_action": "replay_exact_request",
+        "read_only": True,
+        "provider_call_authorized": False,
+        "result_included": False,
+    }
+    assert missing.status_code == 404
+
+    from app.storage.audit_store import AuditStore
+
+    status_audits = AuditStore("system").query(
+        filters={"action": "document_ops.agent_run_operation_view"},
+    )
+    assert len(status_audits) == 2
+    success_audit = next(item for item in status_audits if item["result"] == "success")
+    missing_audit = next(item for item in status_audits if item["result"] == "failure")
+    assert success_audit["resource_type"] == "document_ops_agent_operation"
+    assert success_audit["resource_id"] == payload["operation_id"]
+    assert success_audit["detail"]["operation_id"] == payload["operation_id"]
+    assert success_audit["detail"]["operation_status"] == "succeeded"
+    assert success_audit["detail"]["replay_available"] is True
+    assert missing_audit["resource_id"] == "agent-run:missing"
+    assert not {
+        "owner_id",
+        "request_sha256",
+        "result",
+        "result_sha256",
+    } & success_audit["detail"].keys()
 
 
 def test_document_ops_run_operation_requires_trajectory_capture(
@@ -263,6 +310,14 @@ def test_document_ops_run_operation_state_corruption_fails_before_provider(
     assert response.status_code == 503
     assert response.json()["detail"] == "DocumentOps Agent retry state is unavailable."
     assert calls == 0
+    assert client.app.state.state_backend.read_text(path) == raw
+
+    status_response = client.get(
+        f"/api/agent/document-ops/run-operations/{operation_id}",
+        headers=_api_headers(),
+    )
+    assert status_response.status_code == 503
+    assert status_response.json()["detail"] == "DocumentOps Agent retry state is unavailable."
     assert client.app.state.state_backend.read_text(path) == raw
 
 

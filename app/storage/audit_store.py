@@ -98,6 +98,7 @@ ACTION_TYPES: dict[str, str] = {
     # DocumentOps
     "document_ops.trajectory_view": "DocumentOps 이력 상세 조회",
     "document_ops.trajectory_review": "DocumentOps 사람 검토",
+    "document_ops.agent_run_operation_view": "DocumentOps Agent 실행 상태 조회",
     "document_ops.governance_view": "DocumentOps governance 조회",
     "document_ops.governance_handoff_download": "DocumentOps governance handoff 다운로드",
     # Approval

@@ -31,6 +31,7 @@ from app.schemas import (
 from app.services.document_ops_service import (
     DocumentOpsOperationConflictError,
     DocumentOpsReviewConflictError,
+    DocumentOpsRunNotFoundError,
     DocumentOpsRunStateError,
     DocumentOpsRunUnavailableError,
 )
@@ -75,6 +76,26 @@ def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/run-operations/{operation_id}", dependencies=[Depends(require_api_key)])
+def get_document_ops_run_operation_status(operation_id: str, request: Request) -> dict:
+    request.state.audit_action = "document_ops.agent_run_operation_view"
+    request.state.document_ops_operation_id = operation_id
+    try:
+        status = _service(request).get_run_operation_status(
+            tenant_id=get_tenant_id(request),
+            operation_id=operation_id,
+        )
+    except DocumentOpsRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DocumentOpsRunStateError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    request.state.document_ops_operation_status = status["status"]
+    request.state.document_ops_operation_replay_available = status["replay_available"]
+    return status
 
 
 @router.get("/trajectories", dependencies=[Depends(require_api_key)])

@@ -23,6 +23,7 @@ from app.storage.trajectory_store import (
 from app.storage.document_ops_run_operation_store import (
     DocumentOpsRunClaim,
     DocumentOpsRunOperationConflictError,
+    DocumentOpsRunOperationNotFoundError,
     DocumentOpsRunOperationStore,
     DocumentOpsRunOperationStoreError,
     DocumentOpsRunOperationUnavailableError,
@@ -35,6 +36,10 @@ class DocumentOpsOperationConflictError(ValueError):
 
 class DocumentOpsRunUnavailableError(RuntimeError):
     """Raised when a prior Agent run cannot be replayed safely."""
+
+
+class DocumentOpsRunNotFoundError(LookupError):
+    """Raised when the current tenant has no matching Agent run operation."""
 
 
 class DocumentOpsRunStateError(RuntimeError):
@@ -114,7 +119,11 @@ class DocumentOpsService:
             request_payload=req.model_dump(),
         )
         if claim is not None and not claim.should_execute:
-            return {**(claim.result or {}), "operation_replayed": True}
+            return {
+                **(claim.result or {}),
+                "operation_id": operation_id,
+                "operation_replayed": True,
+            }
 
         try:
             result = self._agent.run(
@@ -133,6 +142,7 @@ class DocumentOpsService:
             body["trajectory_saved"] = trajectory_saved
             if claim is not None:
                 body = self._run_operation_store.complete(claim, result=body)
+                body["operation_id"] = operation_id
                 body["operation_replayed"] = False
             return body
         except DocumentOpsRunOperationStoreError as exc:
@@ -177,6 +187,24 @@ class DocumentOpsService:
             self._run_operation_store.fail(claim)
         except (DocumentOpsRunOperationStoreError, ValueError):
             return
+
+    def get_run_operation_status(
+        self,
+        *,
+        tenant_id: str,
+        operation_id: str,
+    ) -> dict[str, Any]:
+        try:
+            return self._run_operation_store.get_status(
+                tenant_id=tenant_id,
+                operation_id=operation_id,
+            )
+        except DocumentOpsRunOperationNotFoundError as exc:
+            raise DocumentOpsRunNotFoundError(str(exc)) from exc
+        except DocumentOpsRunOperationStoreError as exc:
+            raise DocumentOpsRunStateError(
+                "DocumentOps Agent retry state is unavailable."
+            ) from exc
 
     def list_trajectories(
         self,
