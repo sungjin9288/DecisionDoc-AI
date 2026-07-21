@@ -7103,6 +7103,15 @@
     return String($id('docops-task-type')?.value || '').trim();
   }
 
+  function documentOpsTrajectoryFilters() {
+    return {
+      taskType: String($id('docops-trajectory-task-filter')?.value || '').trim(),
+      reviewStatus: String($id('docops-trajectory-review-filter')?.value || '').trim(),
+      query: String($id('docops-trajectory-query')?.value || '').trim(),
+      order: String($id('docops-trajectory-order')?.value || 'newest').trim(),
+    };
+  }
+
   function documentOpsPlanningParams() {
     const selection = documentOpsPlanningSelection();
     const params = new URLSearchParams({ limit: '20', provider: selection.provider });
@@ -7330,6 +7339,19 @@
     const el = $id('document-ops-trajectories');
     if (!el) return;
     const requestVersion = ++_documentOpsTrajectoryRequestVersion;
+    const tenantId = _currentTenantId;
+    const filters = documentOpsTrajectoryFilters();
+    const requestIsCurrent = () => {
+      const currentFilters = documentOpsTrajectoryFilters();
+      return (
+        requestVersion === _documentOpsTrajectoryRequestVersion
+        && tenantId === _currentTenantId
+        && filters.taskType === currentFilters.taskType
+        && filters.reviewStatus === currentFilters.reviewStatus
+        && filters.query === currentFilters.query
+        && filters.order === currentFilters.order
+      );
+    };
     el.innerHTML = '<div style="color:var(--muted);font-size:.84rem;">trajectory 목록 로드 중...</div>';
     try {
       const params = new URLSearchParams({
@@ -7337,18 +7359,16 @@
         limit: String(DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE),
         include_detail: 'false',
       });
-      const taskType = String($id('docops-trajectory-task-filter')?.value || '').trim();
-      const reviewStatus = String($id('docops-trajectory-review-filter')?.value || '').trim();
-      const query = String($id('docops-trajectory-query')?.value || '').trim();
-      const order = String($id('docops-trajectory-order')?.value || 'newest').trim();
+      const { taskType, reviewStatus, query, order } = filters;
       if (taskType) params.set('task_type', taskType);
       if (reviewStatus) params.set('human_review_status', reviewStatus);
       if (query) params.set('query', query);
       params.set('order', order);
       const res = await fetch(`/api/agent/document-ops/trajectories?${params}`, { headers: getAuthHeaders() });
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      if (requestVersion !== _documentOpsTrajectoryRequestVersion) return;
+      if (!requestIsCurrent()) return;
       const items = Array.isArray(data.trajectories) ? data.trajectories : [];
       const total = Number(data.total || 0);
       const responseOffset = Number(data.offset || 0);
@@ -7378,7 +7398,7 @@
       wireDocumentOpsTrajectoryReviewActions(el);
       wireDocumentOpsTrajectoryPageActions(el);
     } catch (err) {
-      if (requestVersion !== _documentOpsTrajectoryRequestVersion) return;
+      if (!requestIsCurrent()) return;
       el.innerHTML = `<div style="color:#ef4444;font-size:.84rem;">trajectory 로드 실패: ${escapeHtml(err.message || String(err))}</div>`;
     }
   }

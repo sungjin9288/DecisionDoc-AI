@@ -140,7 +140,7 @@ Work:
 - add browser QA only when the UI behavior changes
 - keep desktop and mobile controls readable without unrelated fixed navigation covering inputs
 - keep trajectory history pagination aligned across storage, API, and browser state
-- keep tenant-scoped search and newest/oldest ordering aligned across storage, API, and browser state
+- bind trajectory list responses to the exact tenant, task/review filters, search query, and newest/oldest ordering captured when the request starts, including the search debounce window
 - keep summary lists and lazy-loaded detail on the same tenant and review contract
 - keep training execution request records bound to the latest same-tenant read, and let the refresh
   after a successful record save supersede any read that began before the save

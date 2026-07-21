@@ -669,6 +669,25 @@ def test_index_html_document_ops_stats_keep_the_latest_same_tenant_response():
     assert stats_block.count("if (!requestIsCurrent()) return;") == 3
 
 
+def test_index_html_document_ops_trajectory_list_keeps_the_current_filter_context():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function loadDocumentOpsTrajectoryList")
+    end = content.index("function wireDocumentOpsTrajectoryPageActions", start)
+    list_block = content[start:end]
+
+    assert "const tenantId = _currentTenantId;" in list_block
+    assert "const requestIsCurrent = () => {" in list_block
+    assert "requestVersion === _documentOpsTrajectoryRequestVersion" in list_block
+    assert "tenantId === _currentTenantId" in list_block
+    assert "const filters = documentOpsTrajectoryFilters();" in list_block
+    assert "const currentFilters = documentOpsTrajectoryFilters();" in list_block
+    assert "filters.taskType === currentFilters.taskType" in list_block
+    assert "filters.reviewStatus === currentFilters.reviewStatus" in list_block
+    assert "filters.query === currentFilters.query" in list_block
+    assert "filters.order === currentFilters.order" in list_block
+    assert list_block.count("if (!requestIsCurrent()) return;") == 3
+
+
 def test_index_html_document_ops_exports_keep_the_latest_same_tenant_response():
     content = open("app/static/index.html", encoding="utf-8").read()
     start = content.index("async function loadDocumentOpsExports()")
@@ -2420,7 +2439,7 @@ def test_index_html_document_ops_trajectory_history_supports_search_order_filter
         "params.set('order', order)",
         "_documentOpsTrajectorySearchTimer = setTimeout(reloadDocumentOpsTrajectoriesFromFirstPage, 250)",
         "responseOrder === 'oldest'",
-        "requestVersion !== _documentOpsTrajectoryRequestVersion",
+        "requestVersion === _documentOpsTrajectoryRequestVersion",
         "tenantId === _currentTenantId",
         "return loadDocumentOpsTrajectoryList(lastPageOffset);",
         "data-docops-trajectory-detail",

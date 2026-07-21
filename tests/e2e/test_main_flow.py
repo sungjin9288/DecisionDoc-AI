@@ -865,6 +865,75 @@ def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_compl
     assert "이전 DocumentOps 실행이 실패했습니다." in result["finalNotifications"]
 
 
+def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pendingLists = [];
+          const listResponse = (title, query) => new Response(JSON.stringify({
+            trajectories: [{
+              trajectory_id: `trajectory-${query}`,
+              title,
+              task_type: 'decision_brief',
+              draft_preview: `${title} draft`,
+              human_review_status: 'pending',
+              qa: { hard_gate_pass: true, overall_score: 1 },
+            }],
+            total: 1,
+            offset: 0,
+            returned: 1,
+            has_more: false,
+            order: 'newest',
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          try {
+            window.fetch = (input, options) => {
+              const url = String(input || '');
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                return new Promise(resolve => pendingLists.push(resolve));
+              }
+              return nativeFetch(input, options);
+            };
+
+            const queryInput = document.querySelector('#docops-trajectory-query');
+            queryInput.value = 'old';
+            const oldRequest = loadDocumentOpsTrajectoryList(0);
+            while (pendingLists.length < 1) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            queryInput.value = 'new';
+            queryInput.dispatchEvent(new Event('input', { bubbles: true }));
+            pendingLists[0](listResponse('stale search result', 'old'));
+            await oldRequest;
+            const duringDebounce = document.querySelector('#document-ops-trajectories').textContent;
+
+            while (pendingLists.length < 2) {
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            pendingLists[1](listResponse('current search result', 'new'));
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+              const text = document.querySelector('#document-ops-trajectories').textContent;
+              if (text.includes('current search result')) break;
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            const finalText = document.querySelector('#document-ops-trajectories').textContent;
+            return { duringDebounce, finalText };
+          } finally {
+            clearTimeout(_documentOpsTrajectorySearchTimer);
+            _documentOpsTrajectorySearchTimer = null;
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert "stale search result" not in result["duringDebounce"]
+    assert "current search result" in result["finalText"]
+    assert "stale search result" not in result["finalText"]
+
+
 def test_document_ops_trajectory_history_searches_filters_and_paginates_without_mobile_overflow(page, tmp_path):
     console_errors: list[str] = []
     page_errors: list[str] = []
