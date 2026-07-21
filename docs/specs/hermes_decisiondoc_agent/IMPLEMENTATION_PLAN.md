@@ -164,7 +164,12 @@ Work:
   or running; let the Agent button and explicit status recheck share one recovery promise instead of creating a new operation
 - read recovery status without cache, exact-replay only a verified terminal success, end pending recovery with
   an evidence-review warning for failed state, and clear pending data on logout or invalid session
-- keep reload recovery outside this browser contract; never retry corrupt state or treat a status read as execution authority
+- before a captured POST, persist only the marker schema, tenant, and operation identity in tab-scoped storage;
+  never persist the request payload or treat this marker as replay authority
+- after reload, inspect only the strict current-tenant status, block a new POST, and require explicit confirmation
+  that backend execution is not canceled before releasing the marker; reject malformed or extra marker fields
+- keep payload-free reload exact replay, tab-close and cross-tab coordination outside this browser contract;
+  never retry corrupt state or treat a status read as execution authority
 - append detail views and review decisions to the tenant audit log without copying inputs, drafts, or review notes
 - compare the submitted review version inside the storage lock, preserve idempotent retries, and reject
   a different stale review with `409` before it can overwrite newer human evidence
@@ -191,6 +196,8 @@ Acceptance:
 - mismatched success and running status produce no Agent POST, while a later same-operation success recovers
   the original payload and operation identity
 - simultaneous Agent-button and status-recheck actions join one status read and one exact replay
+- reload with a valid tab marker performs one status read and no Agent POST until explicit release, while invalid
+  markers are removed and unavailable browser storage does not stop the same-page request
 - infrastructure and report-workflow integration tests pass
 
 ## Deferred Live Proof

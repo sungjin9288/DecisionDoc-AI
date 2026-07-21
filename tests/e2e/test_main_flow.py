@@ -781,6 +781,21 @@ def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_compl
               if (url === '/api/agent/document-ops/run') {
                 return new Promise(resolve => pendingRuns.push(resolve));
               }
+              if (url.startsWith('/api/agent/document-ops/run-operations/')) {
+                const operationId = decodeURIComponent(url.split('/').pop());
+                return Promise.resolve(response({
+                  schema_version: 'document_ops_agent_operation_status_v1',
+                  operation_id: operationId,
+                  status: 'failed',
+                  started_at: '2026-07-21T00:00:00+00:00',
+                  completed_at: '2026-07-21T00:00:01+00:00',
+                  replay_available: false,
+                  next_action: 'inspect_evidence_before_new_operation',
+                  read_only: true,
+                  provider_call_authorized: false,
+                  result_included: false,
+                }));
+              }
               if (url === '/api/agent/document-ops/trajectories/stats') {
                 return Promise.resolve(response({
                   total_records: 2,
@@ -1167,6 +1182,9 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
             }
             const firstPostCount = postBodies.length;
             const firstRecoveryVisible = !!document.querySelector('[data-docops-run-recovery]');
+            const firstMarker = JSON.parse(
+              sessionStorage.getItem('dd_document_ops_pending_run_v1') || 'null',
+            );
 
             button.click();
             while (button.disabled) {
@@ -1190,9 +1208,11 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
               statusReads,
               statusCacheModes,
               firstRecoveryVisible,
+              firstMarker,
               runningText,
               resultText: document.querySelector('#document-ops-result').textContent,
               recoveryVisibleAfterSuccess: !!document.querySelector('[data-docops-run-recovery]'),
+              markerAfterSuccess: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
               disabledAfter: button.disabled,
             };
           } finally {
@@ -1203,6 +1223,12 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
 
     assert result["firstPostCount"] == 1
     assert result["firstRecoveryVisible"] is True
+    assert result["firstMarker"] == {
+        "schema_version": "document_ops_agent_pending_run_marker_v1",
+        "tenant_id": "system",
+        "operation_id": result["firstMarker"]["operation_id"],
+    }
+    assert result["firstMarker"]["operation_id"].startswith("agent-run:")
     assert result["runningPostCount"] == 1
     assert "status=running" in result["runningText"]
     assert "next_action=wait_and_recheck" in result["runningText"]
@@ -1213,7 +1239,145 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
     assert result["statusCacheModes"] == ["no-store", "no-store", "no-store"]
     assert "recovered after status recheck" in result["resultText"]
     assert result["recoveryVisibleAfterSuccess"] is False
+    assert result["markerAfterSuccess"] is None
     assert result["disabledAfter"] is False
+
+
+def test_document_ops_agent_reload_marker_blocks_new_post_until_explicit_release(page):
+    operation_id = "agent-run:11111111-2222-4333-8444-555555555555"
+    tenant_id = page.evaluate("() => _currentTenantId")
+    marker = {
+        "schema_version": "document_ops_agent_pending_run_marker_v1",
+        "tenant_id": tenant_id,
+        "operation_id": operation_id,
+    }
+    status_reads: list[str] = []
+    post_bodies: list[dict] = []
+
+    def handle_status(route, request):
+        status_reads.append(request.url)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "schema_version": "document_ops_agent_operation_status_v1",
+                    "operation_id": operation_id,
+                    "status": "succeeded",
+                    "started_at": "2026-07-21T00:00:00+00:00",
+                    "completed_at": "2026-07-21T00:00:01+00:00",
+                    "replay_available": True,
+                    "next_action": "replay_exact_request",
+                    "read_only": True,
+                    "provider_call_authorized": False,
+                    "result_included": False,
+                }
+            ),
+        )
+
+    def handle_run(route, request):
+        post_bodies.append(request.post_data_json or {})
+        route.fulfill(status=500, content_type="application/json", body='{"detail":"unexpected"}')
+
+    page.route("**/api/agent/document-ops/run-operations/**", handle_status)
+    page.route("**/api/agent/document-ops/run", handle_run)
+    page.evaluate(
+        "marker => sessionStorage.setItem('dd_document_ops_pending_run_v1', JSON.stringify(marker))",
+        marker,
+    )
+
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector(".bundle-card", timeout=10000)
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_selector("[data-docops-run-release]", timeout=5000)
+
+    assert len(status_reads) == 1
+    assert post_bodies == []
+    assert page.evaluate(
+        "() => JSON.parse(sessionStorage.getItem('dd_document_ops_pending_run_v1'))"
+    ) == marker
+    result_text = page.locator("#document-ops-result").inner_text()
+    assert operation_id in result_text
+    assert "원본 payload는 browser storage에 저장하지 않았습니다" in result_text
+
+    page.evaluate("() => runDocumentOpsAgent()")
+    assert len(status_reads) == 2
+    assert post_bodies == []
+
+    dialog_messages: list[str] = []
+
+    def accept_release(dialog):
+        dialog_messages.append(dialog.message)
+        dialog.accept()
+
+    page.once("dialog", accept_release)
+    page.locator("[data-docops-run-release]").click()
+
+    assert dialog_messages
+    assert "backend 실행을 취소하지 않습니다" in dialog_messages[0]
+    assert page.evaluate(
+        "() => sessionStorage.getItem('dd_document_ops_pending_run_v1')"
+    ) is None
+    assert "상태 확인을 종료했습니다" in page.locator("#document-ops-result").inner_text()
+    assert post_bodies == []
+
+    invalid_marker_results = page.evaluate(
+        """marker => {
+          const invalidMarkers = [
+            { ...marker, schema_version: 'wrong-schema' },
+            { ...marker, tenant_id: 'wrong-tenant' },
+            { ...marker, operation_id: 'agent-run:not-a-browser-uuid' },
+            { ...marker, payload: { title: 'must-not-persist' } },
+          ];
+          return invalidMarkers.map(invalidMarker => {
+            sessionStorage.setItem(
+              'dd_document_ops_pending_run_v1',
+              JSON.stringify(invalidMarker),
+            );
+            const parsed = readDocumentOpsPendingRunMarker();
+            return {
+              parsed,
+              stored: sessionStorage.getItem('dd_document_ops_pending_run_v1'),
+            };
+          });
+        }""",
+        marker,
+    )
+    assert invalid_marker_results == [
+        {"parsed": None, "stored": None},
+        {"parsed": None, "stored": None},
+        {"parsed": None, "stored": None},
+        {"parsed": None, "stored": None},
+    ]
+
+    unavailable_storage_result = page.evaluate(
+        """({ tenantId, operationId }) => {
+          const storagePrototype = Object.getPrototypeOf(sessionStorage);
+          const originalGetItem = storagePrototype.getItem;
+          const originalSetItem = storagePrototype.setItem;
+          const originalRemoveItem = storagePrototype.removeItem;
+          storagePrototype.getItem = () => { throw new Error('storage unavailable'); };
+          storagePrototype.setItem = () => { throw new Error('storage unavailable'); };
+          storagePrototype.removeItem = () => { throw new Error('storage unavailable'); };
+          try {
+            return {
+              read: readDocumentOpsPendingRunMarker(),
+              remembered: rememberDocumentOpsPendingRunMarker(tenantId, operationId),
+              cleared: clearDocumentOpsPendingRunMarker(operationId),
+            };
+          } finally {
+            storagePrototype.getItem = originalGetItem;
+            storagePrototype.setItem = originalSetItem;
+            storagePrototype.removeItem = originalRemoveItem;
+          }
+        }""",
+        {"tenantId": tenant_id, "operationId": operation_id},
+    )
+    assert unavailable_storage_result == {
+        "read": None,
+        "remembered": False,
+        "cleared": False,
+    }
 
 
 def test_document_ops_trajectory_search_does_not_render_old_results_during_debounce(page):

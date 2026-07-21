@@ -7000,6 +7000,7 @@
       if (knowledgePage) knowledgePage.style.display = 'none';
       if (locationsPage) locationsPage.style.display = 'none';
       loadDocumentOpsTrajectories({ resetPage: true });
+      if (readDocumentOpsPendingRunMarker()) void recoverDocumentOpsAgentRun();
     } else if (page === 'knowledge-page') {
       if (main) main.style.display = 'none';
       if (perfDash) perfDash.style.display = 'none';
@@ -7038,7 +7039,10 @@
 
   /* ── DocumentOps Agent UI ─────────────────────────────────────── */
   const DOCUMENT_OPS_TRAJECTORY_PAGE_SIZE = 10;
+  const DOCUMENT_OPS_PENDING_RUN_MARKER_KEY = 'dd_document_ops_pending_run_v1';
+  const DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA = 'document_ops_agent_pending_run_marker_v1';
   let _documentOpsAgentRunVersion = 0;
+  let _documentOpsPageRunMarkerOperationId = null;
   let _documentOpsPendingRunRecovery = null;
   let _documentOpsRunRecoveryPromise = null;
   let _documentOpsTrajectoryOffset = 0;
@@ -7186,6 +7190,64 @@
     return false;
   }
 
+  function readDocumentOpsPendingRunMarker(tenantId = _currentTenantId) {
+    try {
+      const raw = sessionStorage.getItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      if (!raw) return null;
+      const marker = JSON.parse(raw);
+      const markerKeys = Object.keys(marker || {}).sort().join(',');
+      if (
+        marker?.schema_version !== DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA
+        || marker.tenant_id !== tenantId
+        || typeof marker.operation_id !== 'string'
+        || markerKeys !== 'operation_id,schema_version,tenant_id'
+        || !/^agent-run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(marker.operation_id)
+      ) {
+        sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+        return null;
+      }
+      return marker;
+    } catch (_) {
+      try {
+        sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      } catch (_) {
+        // Browser privacy settings may make sessionStorage unavailable.
+      }
+      return null;
+    }
+  }
+
+  function rememberDocumentOpsPendingRunMarker(tenantId, operationId) {
+    _documentOpsPageRunMarkerOperationId = operationId;
+    try {
+      sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY, JSON.stringify({
+        schema_version: DOCUMENT_OPS_PENDING_RUN_MARKER_SCHEMA,
+        tenant_id: tenantId,
+        operation_id: operationId,
+      }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function clearDocumentOpsPendingRunMarker(operationId = '') {
+    if (operationId) {
+      const marker = readDocumentOpsPendingRunMarker();
+      const pageMarkerMatches = _documentOpsPageRunMarkerOperationId === operationId;
+      if (marker?.operation_id !== operationId && !pageMarkerMatches) return false;
+    }
+    if (!operationId || _documentOpsPageRunMarkerOperationId === operationId) {
+      _documentOpsPageRunMarkerOperationId = null;
+    }
+    try {
+      sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function readDocumentOpsRunOperationStatus(operationId, tenantId) {
     try {
       const res = await fetch(
@@ -7214,19 +7276,79 @@
     const statusMatches = documentOpsRunStatusMatches(status, operationId);
     const operationStatus = statusMatches ? status.status : 'unavailable';
     const nextAction = statusMatches ? status.next_action : 'recheck_status';
-    const canRecheck = operationStatus !== 'failed';
+    const payloadAvailable = (
+      _documentOpsPendingRunRecovery?.tenantId === _currentTenantId
+      && _documentOpsPendingRunRecovery.payload?.operation_id === operationId
+    );
+    const canRecheck = operationStatus !== 'failed'
+      && (payloadAvailable || operationStatus !== 'succeeded');
     resultEl.innerHTML = `
       <div style="font-size:.78rem;font-weight:900;margin-bottom:.45rem;">Agent 실행 상태</div>
       <div style="font-size:.76rem;color:var(--muted);line-height:1.55;overflow-wrap:anywhere;">
         operation_id=${escapeHtml(operationId)}<br />
-        status=${escapeHtml(operationStatus)} · next_action=${escapeHtml(nextAction)}
+        status=${escapeHtml(operationStatus)} · next_action=${escapeHtml(nextAction)}<br />
+        payload_state=${payloadAvailable ? 'page_memory_available' : 'not_persisted'}
       </div>
-      ${canRecheck ? '<button type="button" class="action-btn" data-docops-run-recovery aria-label="Agent 실행 상태 다시 확인" title="Agent 실행 상태 다시 확인" style="margin-top:.7rem;">↻ 상태 다시 확인</button>' : ''}
+      ${payloadAvailable ? '' : '<div style="font-size:.74rem;color:#92400e;line-height:1.5;margin-top:.55rem;">원본 payload는 browser storage에 저장하지 않았습니다. 이 tab에서는 status만 확인할 수 있습니다.</div>'}
+      <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.7rem;">
+        ${canRecheck ? '<button type="button" class="action-btn" data-docops-run-recovery aria-label="Agent 실행 상태 다시 확인" title="Agent 실행 상태 다시 확인">↻ 상태 다시 확인</button>' : ''}
+        <button type="button" class="action-btn" data-docops-run-release aria-label="Agent 실행 상태 확인 종료" title="Agent 실행 상태 확인 종료">상태 확인 종료</button>
+      </div>
     `;
     const button = resultEl.querySelector('[data-docops-run-recovery]');
     button?.addEventListener('click', () => {
       void runDocumentOpsButtonAction(button, recoverDocumentOpsAgentRun);
     });
+    resultEl.querySelector('[data-docops-run-release]')?.addEventListener('click', () => {
+      releaseDocumentOpsPendingRunRecovery(operationId);
+    });
+  }
+
+  function releaseDocumentOpsPendingRunRecovery(operationId) {
+    const marker = readDocumentOpsPendingRunMarker();
+    if (marker?.operation_id !== operationId) {
+      showNotification('현재 인증 맥락의 Agent 실행 상태와 일치하지 않습니다.', 'warn');
+      return;
+    }
+    const confirmed = window.confirm(
+      `operation_id=${operationId}\n상태 확인 종료는 backend 실행을 취소하지 않습니다. trajectory와 audit 증거를 확인한 뒤 새 실행을 시작하세요.`,
+    );
+    if (!confirmed) return;
+    clearDocumentOpsPendingRunMarker(operationId);
+    _documentOpsPendingRunRecovery = null;
+    _documentOpsRunRecoveryPromise = null;
+    const resultEl = $id('document-ops-result');
+    if (resultEl) {
+      resultEl.innerHTML = `
+        <div style="font-size:.78rem;font-weight:900;margin-bottom:.4rem;">Agent 실행 상태 확인을 종료했습니다.</div>
+        <div style="font-size:.74rem;color:#92400e;line-height:1.5;overflow-wrap:anywhere;">
+          operation_id=${escapeHtml(operationId)}<br />
+          backend 실행은 취소되지 않았습니다. 새 실행 전 trajectory와 audit 증거를 확인하세요.
+        </div>`;
+    }
+    showNotification('Agent 실행 상태 확인을 종료했습니다.', 'warn');
+  }
+
+  async function inspectDocumentOpsStoredRunMarker() {
+    const marker = readDocumentOpsPendingRunMarker();
+    if (!marker) return false;
+    const tenantId = marker.tenant_id;
+    const status = await readDocumentOpsRunOperationStatus(marker.operation_id, tenantId);
+    const currentMarker = readDocumentOpsPendingRunMarker(tenantId);
+    if (
+      tenantId !== _currentTenantId
+      || currentMarker?.operation_id !== marker.operation_id
+    ) return true;
+    renderDocumentOpsRunRecovery(marker.operation_id, status);
+    const statusMatches = documentOpsRunStatusMatches(status, marker.operation_id);
+    if (!statusMatches) {
+      showNotification('이전 Agent 실행 상태를 확인하지 못했습니다.', 'warn');
+    } else if (status.status === 'running') {
+      showNotification('이전 Agent 실행이 아직 진행 중입니다.', 'info');
+    } else {
+      showNotification('이전 Agent 실행 증거를 확인한 뒤 상태 확인을 종료해주세요.', 'warn');
+    }
+    return true;
   }
 
   async function presentDocumentOpsAgentResult(data) {
@@ -7246,7 +7368,7 @@
     const pending = _documentOpsPendingRunRecovery;
     if (!pending || pending.tenantId !== _currentTenantId) {
       _documentOpsPendingRunRecovery = null;
-      showNotification('현재 인증 맥락에서 다시 확인할 Agent 실행이 없습니다.', 'warn');
+      await inspectDocumentOpsStoredRunMarker();
       return;
     }
 
@@ -7266,8 +7388,11 @@
     }
     if (status.status === 'failed') {
       _documentOpsPendingRunRecovery = null;
+      if (_documentOpsPageRunMarkerOperationId === operationId) {
+        _documentOpsPageRunMarkerOperationId = null;
+      }
       renderDocumentOpsRunRecovery(operationId, status);
-      showNotification('Agent 실행 실패 증거를 확인한 뒤 새 실행을 시작해주세요.', 'warn');
+      showNotification('Agent 실행 실패 증거를 확인한 뒤 상태 확인을 종료해주세요.', 'warn');
       return;
     }
 
@@ -7280,6 +7405,7 @@
         return;
       }
       await presentDocumentOpsAgentResult(data);
+      clearDocumentOpsPendingRunMarker(operationId);
       _documentOpsPendingRunRecovery = null;
     } catch (_) {
       renderDocumentOpsRunRecovery(operationId, status);
@@ -7305,6 +7431,13 @@
       return recoverDocumentOpsAgentRun();
     }
     _documentOpsPendingRunRecovery = null;
+    const storedMarker = readDocumentOpsPendingRunMarker();
+    if (
+      storedMarker
+      && storedMarker.operation_id !== _documentOpsPageRunMarkerOperationId
+    ) {
+      return recoverDocumentOpsAgentRun();
+    }
     const taskType = ($id('docops-task-type')?.value || 'policy_planning_brief').trim();
     const title = ($id('docops-title')?.value || '').trim();
     const goal = ($id('docops-goal')?.value || '').trim();
@@ -7338,6 +7471,7 @@
     };
     if (payload.capture_trajectory) {
       payload.operation_id = createDocumentOpsOperationId('agent-run');
+      rememberDocumentOpsPendingRunMarker(tenantId, payload.operation_id);
     }
     try {
       let data;
@@ -7359,10 +7493,17 @@
           return;
         }
         if (status.status === 'failed') {
-          throw new Error(
-            `${initialError.message || initialError} · operation_id=${status.operation_id}`
-            + ` · status=${status.status} · next_action=${status.next_action}`,
-          );
+          if (!runIsCurrent()) {
+            showNotification('이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'warn');
+            return;
+          }
+          _documentOpsPendingRunRecovery = null;
+          if (_documentOpsPageRunMarkerOperationId === payload.operation_id) {
+            _documentOpsPageRunMarkerOperationId = null;
+          }
+          renderDocumentOpsRunRecovery(payload.operation_id, status);
+          showNotification('Agent 실행 실패 증거를 확인한 뒤 상태 확인을 종료해주세요.', 'warn');
+          return;
         }
         try {
           data = await sendDocumentOpsAgentRequest(payload, tenantId);
@@ -7396,6 +7537,7 @@
         showNotification('저장된 Agent 결과의 operation identity를 확인하지 못했습니다.', 'error');
         return;
       }
+      if (payload.operation_id) clearDocumentOpsPendingRunMarker(payload.operation_id);
       _documentOpsPendingRunRecovery = null;
       await presentDocumentOpsAgentResult(data);
     } catch (err) {
@@ -13277,6 +13419,9 @@
       _currentTenantId = tenantId;
       localStorage.setItem('dd_tenant_id', tenantId);
       _documentOpsReviewDrafts.clear();
+      clearDocumentOpsPendingRunMarker();
+      _documentOpsPendingRunRecovery = null;
+      _documentOpsRunRecoveryPromise = null;
       window.location.reload();
       return true;
     } catch {
@@ -18048,6 +18193,7 @@
     _documentOpsGovernanceObservation = null;
     _documentOpsPendingRunRecovery = null;
     _documentOpsRunRecoveryPromise = null;
+    clearDocumentOpsPendingRunMarker();
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();
@@ -18068,6 +18214,7 @@
     _documentOpsGovernanceObservation = null;
     _documentOpsPendingRunRecovery = null;
     _documentOpsRunRecoveryPromise = null;
+    clearDocumentOpsPendingRunMarker();
     _currentUser = null;
     closeMyProfileModal();
     closeUserMenu();

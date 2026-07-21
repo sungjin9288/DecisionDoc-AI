@@ -482,6 +482,9 @@ def test_index_html_ops_tenant_list_preserves_admin_session_auth():
 
 def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches():
     content = open("app/static/index.html", encoding="utf-8").read()
+    change_start = content.index("async function changeTenantContext(nextTenantId, selector)")
+    change_end = content.index("async function loadTenantList()", change_start)
+    change_block = content[change_start:change_end]
 
     for marker in (
         "function getTenantHeaders(tenantId = _currentTenantId)",
@@ -499,6 +502,7 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
 
     assert content.count("syncTenantContextFromAccessToken(") == 6
     assert content.count("_documentOpsReviewDrafts.clear();") == 3
+    assert "clearDocumentOpsPendingRunMarker();" in change_block
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
@@ -927,7 +931,7 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "const tenantId = _currentTenantId;" in run_block
     assert "runVersion === _documentOpsAgentRunVersion" in run_block
     assert "tenantId === _currentTenantId" in run_block
-    assert run_block.count("if (!runIsCurrent()) {") == 2
+    assert run_block.count("if (!runIsCurrent()) {") == 3
     assert "await loadDocumentOpsTrajectories();" in run_block
     assert "이전 DocumentOps 실행의 trajectory 저장을 완료했습니다." in run_block
     assert "이전 DocumentOps 실행은 완료됐지만 현재 결과 화면은 더 최근 실행을 유지합니다." in run_block
@@ -939,8 +943,19 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "if (!payload.operation_id) throw initialError;" in run_block
     assert "_documentOpsPendingRunRecovery = { tenantId, payload };" in run_block
     assert "return recoverDocumentOpsAgentRun();" in run_block
+    assert "let _documentOpsPageRunMarkerOperationId = null;" in content
     assert "let _documentOpsPendingRunRecovery = null;" in content
     assert "let _documentOpsRunRecoveryPromise = null;" in content
+    assert "const DOCUMENT_OPS_PENDING_RUN_MARKER_KEY = 'dd_document_ops_pending_run_v1';" in content
+    assert "document_ops_agent_pending_run_marker_v1" in content
+    assert "sessionStorage.setItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY" in content
+    assert "sessionStorage.removeItem(DOCUMENT_OPS_PENDING_RUN_MARKER_KEY)" in content
+    assert "markerKeys !== 'operation_id,schema_version,tenant_id'" in content
+    assert "^agent-run:[0-9a-f]{8}" in content
+    assert "rememberDocumentOpsPendingRunMarker(tenantId, payload.operation_id);" in run_block
+    assert "const storedMarker = readDocumentOpsPendingRunMarker();" in run_block
+    assert "storedMarker.operation_id !== _documentOpsPageRunMarkerOperationId" in run_block
+    assert "async function inspectDocumentOpsStoredRunMarker()" in content
     assert "status.operation_id !== operationId" in content
     assert "status.read_only !== true" in content
     assert "status.provider_call_authorized !== false" in content
@@ -948,6 +963,8 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "cache: 'no-store'" in content
     assert "body: JSON.stringify(payload)" in content
     assert "data-docops-run-recovery" in content
+    assert "data-docops-run-release" in content
+    assert "backend 실행을 취소하지 않습니다" in content
     assert "runDocumentOpsButtonAction(button, recoverDocumentOpsAgentRun)" in content
     assert content.count("_documentOpsPendingRunRecovery = null;") >= 5
     assert content.count("_documentOpsRunRecoveryPromise = null;") >= 4
@@ -1034,6 +1051,12 @@ def test_index_html_result_download_action_wiring_exists():
 
 def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
     content = open("app/static/index.html", encoding="utf-8").read()
+    invalid_start = content.index("function handleInvalidAuthSession")
+    invalid_end = content.index("function logout()", invalid_start)
+    invalid_block = content[invalid_start:invalid_end]
+    logout_start = invalid_end
+    logout_end = content.index("function closeUserMenu()", logout_start)
+    logout_block = content[logout_start:logout_end]
     retry_fetch_fn = re.search(
         r"async function _fetchJsonWithProviderRetry\(fetcher,[\s\S]*?\) \{(?P<body>[\s\S]*?)\n  \}",
         content,
@@ -1058,6 +1081,8 @@ def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
     assert "handleInvalidAuthSession()" in retry_fetch_fn.group("body")
     assert "retry = await fetch('/auth/me'" in hydrate_fn.group("body")
     assert "handleInvalidAuthSession()" in parse_error_fn.group("body")
+    assert "clearDocumentOpsPendingRunMarker();" in invalid_block
+    assert "clearDocumentOpsPendingRunMarker();" in logout_block
 
 
 def test_index_html_rfp_parse_uses_auth_headers():
