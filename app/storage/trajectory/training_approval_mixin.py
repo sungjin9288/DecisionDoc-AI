@@ -11,6 +11,7 @@ from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
 from app.storage.trajectory.redaction import (
     _is_safe_manifest_id,
     _is_safe_training_approval_filename,
+    _json_sha256,
     _now_iso,
     _redact_input,
 )
@@ -102,6 +103,7 @@ class TrajectoryTrainingApprovalMixin:
         notes: str = "",
         dry_run: bool = True,
         start_training: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Record a manual training approval gate without starting a provider job."""
         if not _is_safe_manifest_id(manifest_id):
@@ -115,6 +117,40 @@ class TrajectoryTrainingApprovalMixin:
             raise ValueError("Phase 10 is no-provider-job mode; start_training requires a separate execution workflow.")
         if not dry_run:
             raise ValueError("Phase 10 only supports dry_run=true.")
+        redacted_eval_plan = _redact_input(eval_plan)
+        operation_payload_hash = (
+            _json_sha256(
+                {
+                    "action": "approve_training_from_freeze",
+                    "approver": approver,
+                    "dry_run": dry_run,
+                    "eval_plan": eval_plan,
+                    "manifest_id": manifest_id,
+                    "notes": notes,
+                    "start_training": start_training,
+                }
+            )
+            if operation_id is not None
+            else None
+        )
+        existing_operation = self._find_meta_operation_item(
+            tenant_id=tenant_id,
+            collection="training_approvals",
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
+        )
+        if existing_operation is not None:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_training_approval_artifact(
+                    tenant_id,
+                    str(existing_operation.get("approval_file") or ""),
+                ),
+                metadata=existing_operation,
+                tenant_id=tenant_id,
+                size_key="approval_size_bytes",
+                sha256_key="approval_sha256",
+                identity_key="approval_id",
+            )
         manifest = self._load_freeze_manifest_by_id(manifest_id, tenant_id=tenant_id)
         if manifest is None:
             return None
@@ -173,7 +209,7 @@ class TrajectoryTrainingApprovalMixin:
                 "approved_at": created_at,
                 "freeze_reviewer": freeze_reviewer,
             },
-            "eval_plan": _redact_input(eval_plan),
+            "eval_plan": redacted_eval_plan,
             "execution_guard": {
                 "dry_run": True,
                 "training_execution_allowed": False,
@@ -198,13 +234,27 @@ class TrajectoryTrainingApprovalMixin:
             ).encode("utf-8"),
             content_type="application/json; charset=utf-8",
         )
-        self._append_training_approval_meta(
+        selected = self._append_training_approval_meta(
             tenant_id,
             approval_file,
             approval,
             approval_size_bytes=artifact.size_bytes,
             approval_sha256=artifact.sha256,
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
         )
+        if selected.get("approval_id") != approval_id:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_training_approval_artifact(
+                    tenant_id,
+                    str(selected.get("approval_file") or ""),
+                ),
+                metadata=selected,
+                tenant_id=tenant_id,
+                size_key="approval_size_bytes",
+                sha256_key="approval_sha256",
+                identity_key="approval_id",
+            )
         return approval
 
     def training_readiness_summary(
@@ -456,7 +506,9 @@ class TrajectoryTrainingApprovalMixin:
         *,
         approval_size_bytes: int,
         approval_sha256: str,
-    ) -> None:
+        operation_id: str | None = None,
+        operation_payload_hash: str | None = None,
+    ) -> dict[str, Any]:
         manifest = (
             approval.get("manifest")
             if isinstance(approval.get("manifest"), dict)
@@ -509,12 +561,14 @@ class TrajectoryTrainingApprovalMixin:
             "created_at": approval.get("created_at"),
         }
         with self._lock:
-            self._append_meta_item(
+            return self._append_meta_item(
                 tenant_id=tenant_id,
                 collection="training_approvals",
                 count_key="training_approval_count",
                 item=item,
                 identity_keys=("approval_id", "approval_file"),
+                operation_id=operation_id,
+                operation_payload_hash=operation_payload_hash,
             )
 
     def _training_artifact_chain_summary(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -14,6 +15,9 @@ from app.storage.trajectory.state_mixin import TrajectoryStoreError
 from app.tenant import require_tenant_id
 
 _MAX_METADATA_MUTATION_ATTEMPTS = 32
+_OPERATION_ID_FIELD = "_operation_id"
+_OPERATION_PAYLOAD_HASH_FIELD = "_operation_payload_hash"
+_OPERATION_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,119}")
 _MutationResult = TypeVar("_MutationResult")
 _METADATA_COLLECTIONS = {
     "exports": (
@@ -68,6 +72,16 @@ class TrajectoryArtifact:
             return self.raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise TrajectoryStoreError("Trajectory artifact is not valid UTF-8") from exc
+
+
+class TrajectoryOperationConflictError(ValueError):
+    """Raised when one operation identity is reused for different input."""
+
+    def __init__(self, operation_id: str) -> None:
+        self.operation_id = operation_id
+        super().__init__(
+            "Trajectory operation identity was reused with a different payload."
+        )
 
 
 def _unique_metadata_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -204,6 +218,40 @@ class TrajectoryArtifactStateMixin:
                     raise TrajectoryStoreError(
                         f"Invalid trajectory artifact checksum: {collection}"
                     )
+                operation_id = entry.get(_OPERATION_ID_FIELD)
+                payload_hash = entry.get(_OPERATION_PAYLOAD_HASH_FIELD)
+                if (operation_id is None) != (payload_hash is None):
+                    raise TrajectoryStoreError(
+                        f"Incomplete trajectory metadata operation receipt: {collection}"
+                    )
+                if operation_id is not None:
+                    if (
+                        not isinstance(operation_id, str)
+                        or _OPERATION_ID_RE.fullmatch(operation_id) is None
+                    ):
+                        raise TrajectoryStoreError(
+                            f"Invalid trajectory metadata operation identity: {collection}"
+                        )
+                    if (
+                        not isinstance(payload_hash, str)
+                        or len(payload_hash) != 64
+                        or any(
+                            character not in "0123456789abcdef"
+                            for character in payload_hash
+                        )
+                    ):
+                        raise TrajectoryStoreError(
+                            f"Invalid trajectory metadata operation payload hash: {collection}"
+                        )
+            operation_ids = [
+                entry[_OPERATION_ID_FIELD]
+                for entry in owned
+                if _OPERATION_ID_FIELD in entry
+            ]
+            if len(operation_ids) != len(set(operation_ids)):
+                raise TrajectoryStoreError(
+                    f"Duplicate trajectory metadata operation identity: {collection}"
+                )
             if count_key in result and result[count_key] != len(owned):
                 raise TrajectoryStoreError(
                     f"Trajectory metadata count mismatch: {count_key}"
@@ -337,14 +385,25 @@ class TrajectoryArtifactStateMixin:
         count_key: str,
         item: dict[str, Any],
         identity_keys: tuple[str, ...],
-    ) -> None:
+        operation_id: str | None = None,
+        operation_payload_hash: str | None = None,
+    ) -> dict[str, Any]:
+        operation_id = self._validate_operation_receipt(
+            operation_id,
+            operation_payload_hash,
+        )
+        recorded_item = dict(item)
+        if operation_id is not None:
+            recorded_item[_OPERATION_ID_FIELD] = operation_id
+            recorded_item[_OPERATION_PAYLOAD_HASH_FIELD] = operation_payload_hash
+
         def same_identity(candidate: dict[str, Any]) -> bool:
             return any(
-                candidate.get(key) == item.get(key)
+                candidate.get(key) == recorded_item.get(key)
                 for key in identity_keys
             )
 
-        def append(meta: dict[str, Any]) -> tuple[None, bool]:
+        def append(meta: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             entries = meta.setdefault(collection, [])
             if not isinstance(entries, list):
                 raise TrajectoryStoreError(
@@ -356,33 +415,177 @@ class TrajectoryArtifactStateMixin:
                 if isinstance(entry, dict)
                 and entry.get("tenant_id") in (None, tenant_id)
             ]
+            existing_operation = self._select_operation_item(
+                owned,
+                operation_id=operation_id,
+                operation_payload_hash=operation_payload_hash,
+            )
+            if existing_operation is not None:
+                return dict(existing_operation), False
             existing = next(
                 (entry for entry in owned if same_identity(entry)),
                 None,
             )
             if existing is not None:
-                if existing != item:
+                if existing != recorded_item:
                     raise TrajectoryStoreError(
                         f"Trajectory metadata identity collision: {collection}"
                     )
-                return None, False
-            entries.append(item)
+                return dict(existing), False
+            entries.append(recorded_item)
             meta[count_key] = len(owned) + 1
-            return None, True
+            return dict(recorded_item), True
 
         def was_committed(meta: dict[str, Any]) -> bool:
             entries = meta.get(collection)
-            return isinstance(entries, list) and any(
-                entry == item
+            if not isinstance(entries, list):
+                return False
+            owned = [
+                entry
                 for entry in entries
                 if isinstance(entry, dict)
+                and entry.get("tenant_id") in (None, tenant_id)
+            ]
+            if operation_id is not None:
+                return self._select_operation_item(
+                    owned,
+                    operation_id=operation_id,
+                    operation_payload_hash=operation_payload_hash,
+                ) is not None
+            return any(
+                entry == recorded_item
+                for entry in owned
             )
 
-        self._mutate_meta(
+        selected = self._mutate_meta(
             tenant_id=tenant_id,
             change=append,
             committed=was_committed,
         )
+        if operation_id is None:
+            return selected
+
+        _, current = self._read_meta_state(tenant_id, for_update=False)
+        authoritative = self._select_operation_item(
+            self._owned_meta_items(current, collection, tenant_id),
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
+        )
+        if authoritative is None:
+            raise TrajectoryStoreError(
+                "Trajectory operation receipt could not be reconciled"
+            )
+        return dict(authoritative)
+
+    def _find_meta_operation_item(
+        self,
+        *,
+        tenant_id: str,
+        collection: str,
+        operation_id: str | None,
+        operation_payload_hash: str | None,
+    ) -> dict[str, Any] | None:
+        operation_id = self._validate_operation_receipt(
+            operation_id,
+            operation_payload_hash,
+        )
+        if operation_id is None:
+            return None
+        with self._lock:
+            meta = self._load_meta_unlocked(tenant_id)
+        selected = self._select_operation_item(
+            self._owned_meta_items(meta, collection, tenant_id),
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
+        )
+        return dict(selected) if selected is not None else None
+
+    @staticmethod
+    def _validate_operation_receipt(
+        operation_id: str | None,
+        operation_payload_hash: str | None,
+    ) -> str | None:
+        if operation_id is None:
+            if operation_payload_hash is not None:
+                raise ValueError("operation_payload_hash requires operation_id.")
+            return None
+        if (
+            not isinstance(operation_id, str)
+            or _OPERATION_ID_RE.fullmatch(operation_id) is None
+        ):
+            raise ValueError("Invalid operation_id.")
+        if (
+            not isinstance(operation_payload_hash, str)
+            or len(operation_payload_hash) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in operation_payload_hash
+            )
+        ):
+            raise ValueError("Invalid operation payload hash.")
+        return operation_id
+
+    @staticmethod
+    def _select_operation_item(
+        entries: list[dict[str, Any]],
+        *,
+        operation_id: str | None,
+        operation_payload_hash: str | None,
+    ) -> dict[str, Any] | None:
+        if operation_id is None:
+            return None
+        existing = next(
+            (
+                entry
+                for entry in entries
+                if entry.get(_OPERATION_ID_FIELD) == operation_id
+            ),
+            None,
+        )
+        if existing is None:
+            return None
+        if existing.get(_OPERATION_PAYLOAD_HASH_FIELD) != operation_payload_hash:
+            raise TrajectoryOperationConflictError(operation_id)
+        return existing
+
+    @staticmethod
+    def _load_bound_operation_artifact(
+        *,
+        artifact: TrajectoryArtifact | None,
+        metadata: dict[str, Any],
+        tenant_id: str,
+        size_key: str,
+        sha256_key: str,
+        identity_key: str,
+    ) -> dict[str, Any]:
+        expected_size = metadata.get(size_key)
+        expected_sha256 = metadata.get(sha256_key)
+        if (
+            artifact is None
+            or not isinstance(expected_size, int)
+            or isinstance(expected_size, bool)
+            or artifact.size_bytes != expected_size
+            or not isinstance(expected_sha256, str)
+            or artifact.sha256 != expected_sha256
+        ):
+            raise TrajectoryStoreError(
+                "Trajectory operation artifact integrity check failed"
+            )
+        try:
+            data = json.loads(artifact.text())
+        except (json.JSONDecodeError, TrajectoryStoreError) as exc:
+            raise TrajectoryStoreError(
+                "Trajectory operation artifact is invalid"
+            ) from exc
+        if (
+            not isinstance(data, dict)
+            or data.get("tenant_id") not in (None, tenant_id)
+            or data.get(identity_key) != metadata.get(identity_key)
+        ):
+            raise TrajectoryStoreError(
+                "Trajectory operation artifact binding check failed"
+            )
+        return data
 
     def _read_artifact(
         self,

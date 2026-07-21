@@ -54,6 +54,12 @@ class DocumentOpsDatasetFreezeRequest(BaseModel):
     notes: str = ""
     sample_limit: int = Field(default=5, ge=0, le=25)
     training_allowed: bool = False
+    operation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class DocumentOpsTrainingApprovalRequest(BaseModel):
@@ -64,6 +70,12 @@ class DocumentOpsTrainingApprovalRequest(BaseModel):
     notes: str = ""
     dry_run: bool = True
     start_training: bool = False
+    operation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class DocumentOpsTrainingExecutionRequest(BaseModel):
@@ -76,6 +88,12 @@ class DocumentOpsTrainingExecutionRequest(BaseModel):
     start_training: bool = False
     upload_dataset: bool = False
     call_provider_api: bool = False
+    operation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class DocumentOpsTrainingAuditExportRequest(BaseModel):
@@ -88,3 +106,9 @@ class DocumentOpsTrainingAuditExportRequest(BaseModel):
     start_training: bool = False
     upload_dataset: bool = False
     call_provider_api: bool = False
+    operation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )

@@ -80,6 +80,9 @@ from app.storage.trajectory.signoff import (
 from app.storage.trajectory.artifact_inventory_mixin import (
     TrajectoryArtifactInventoryMixin,
 )
+from app.storage.trajectory.artifact_state_mixin import (
+    TrajectoryOperationConflictError,
+)
 from app.storage.trajectory.core_mixin import TrajectoryCoreMixin, TrajectoryReviewConflictError, _log
 from app.storage.trajectory.state_mixin import TrajectoryStoreError
 from app.storage.trajectory.freeze_mixin import TrajectoryFreezeMixin
@@ -90,6 +93,7 @@ from app.storage.trajectory.training_audit_mixin import TrajectoryTrainingAuditM
 from app.storage.trajectory.training_execution_mixin import TrajectoryTrainingExecutionMixin
 
 __all__ = [
+    "TrajectoryOperationConflictError",
     "TrajectoryReviewConflictError",
     "TrajectoryStore",
     "TrajectoryStoreError",

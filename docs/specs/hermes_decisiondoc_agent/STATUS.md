@@ -193,7 +193,7 @@ pytest -q \
   tests/storage/test_trajectory_store_integrity.py
 ```
 
-The seven files currently define 94 test functions. Reproduce the source count with:
+The seven files currently define 97 test functions. Reproduce the source count with:
 
 ```bash
 python3 -c 'import ast, pathlib; files=[pathlib.Path(p) for p in ["tests/agents/test_document_ops_agent.py","tests/evals/test_document_ops_gates.py","tests/test_document_ops_agent_api.py","tests/test_document_ops_training_adapter.py","tests/storage/test_trajectory_store.py","tests/storage/test_trajectory_store_integrity.py","tests/storage/test_trajectory_artifact_authority.py"]]; print(sum(sum(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith("test_") for n in ast.walk(ast.parse(f.read_text()))) for f in files))'
@@ -239,9 +239,12 @@ Last local verification on 2026-07-21:
 - Agent latest-run result ownership focused gate: 2 passed, 1 warning
 - trajectory search context focused gate: 2 passed, 1 warning
 - write action single-flight focused gate: 2 passed, 1 warning
+- governance write idempotency storage/API gate: 98 passed, 1 warning
+- governance write idempotency static gate: 30 passed, 131 deselected, 1 warning
+- governance write idempotency Chromium gate: 16 passed, 38 deselected
 - DocumentOps static expansion gate: 30 passed, 131 deselected, 1 warning
 - DocumentOps Chromium expansion gate: 16 passed, 38 deselected
-- full repository non-live gate: 4245 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4250 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - no live-provider or external-runtime tests were run
 

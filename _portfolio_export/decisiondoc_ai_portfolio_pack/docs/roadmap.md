@@ -55,6 +55,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-21 H88 완료: 겹쳐 실행한 DocumentOps Agent 중 늦은 이전 success/error가 최신 draft·QA·결과 패널과 trajectory filter를 되돌리던 간극을 닫았다. Latest initiated run과 tenant만 결과 패널을 갱신하고, 늦은 same-tenant 저장 완료는 현재 filter/page를 보존한 목록 refresh와 info 알림으로 관측하며 stale failure는 warning만 남긴다. Failure-first static/Chromium으로 overwrite를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `28 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `14 passed, 38 deselected`를 no-cost로 확인했다.
 - 2026-07-21 H89 완료: Trajectory 검색어를 바꾼 뒤 250ms debounce가 새 요청을 시작하기 전에 늦은 이전 응답이 도착하면 새 검색어 아래 stale card를 렌더링하던 간극을 닫았다. 목록 요청 시점의 request version·tenant·task/review filter·query·order를 하나의 snapshot으로 보존하고, 현재 화면과 모두 일치할 때만 success/error를 반영한다. Failure-first static/Chromium으로 debounce-window overwrite를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `29 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `15 passed, 38 deselected`를 no-cost로 확인했다.
 - 2026-07-21 H90 완료: DocumentOps execution request control을 연속 클릭하면 같은 browser에서 record POST가 두 번 시작되고 pending 상태가 보이지 않던 간극을 닫았다. 공통 button action helper가 record를 생성하는 export·freeze·dry-run approval·execution request·audit export와 provider-backed Agent control을 동기적으로 잠그고 action의 성공·실패가 끝난 뒤 `finally`에서 복구한다. Read-only refresh는 기존 concurrency 확인을 위해 잠그지 않는다. Failure-first static/Chromium으로 duplicate POST를 재현한 뒤 focused `2 passed, 1 warning`, DocumentOps static 확장 `30 passed, 131 deselected, 1 warning`, DocumentOps Chromium 확장 `16 passed, 38 deselected`를 no-cost로 확인했다.
+- 2026-07-21 H91 완료: H90의 same-browser single-flight 밖에서 retry·multiple tab·multiple client가 같은 freeze·dry-run approval·execution request·audit export를 중복 기록할 수 있던 간극을 닫았다. Optional `operation_id`와 exact canonical request payload hash를 private metadata CAS에 결속하고, 동일 replay는 원래 size·SHA-256·tenant·identity가 검증된 artifact를 반환하며 changed payload는 service/API `409`로 차단한다. Browser는 네 governance write마다 UUID를 한 번 생성한다. Local/fake-S3 동시 replay, receipt 손상·중복 fail-closed, public 비노출을 포함한 storage/API gate `98 passed, 1 warning`, DocumentOps static `30 passed, 131 deselected, 1 warning`, Chromium `16 passed, 38 deselected`를 no-cost로 확인했다. Immutable publish가 metadata CAS보다 먼저이므로 concurrent loser orphan, distributed transaction, provider-backed Agent idempotency는 보장하지 않는다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -62,7 +63,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-21 H90 실측: 4245 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-21 H91 실측: 4250 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

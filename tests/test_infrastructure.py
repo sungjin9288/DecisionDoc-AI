@@ -2441,6 +2441,13 @@ def test_index_html_document_ops_write_actions_are_single_flight():
         "() => freezeDocumentOpsExport(btn.dataset.docopsExportFreeze || '')",
         "() => approveDocumentOpsTrainingFromFreeze(event.currentTarget.dataset.docopsTrainingApprove || '')",
         "runDocumentOpsButtonAction(exportButton, exportDocumentOpsTrainingAudit)",
+        "function createDocumentOpsOperationId(action)",
+        "return `${action}:${window.crypto.randomUUID()}`;",
+        "createDocumentOpsOperationId('freeze')",
+        "createDocumentOpsOperationId('approval')",
+        "createDocumentOpsOperationId('execution')",
+        "createDocumentOpsOperationId('audit')",
+        "operation_id: operationId",
     ):
         assert marker in content
 

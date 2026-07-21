@@ -28,7 +28,10 @@ from app.schemas import (
     DocumentOpsTrainingApprovalRequest,
     DocumentOpsTrainingExecutionRequest,
 )
-from app.services.document_ops_service import DocumentOpsReviewConflictError
+from app.services.document_ops_service import (
+    DocumentOpsOperationConflictError,
+    DocumentOpsReviewConflictError,
+)
 from app.services.generation.context_store import record_direct_provider_usage
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
@@ -174,7 +177,10 @@ def request_document_ops_training_execution(
             start_training=payload.start_training,
             upload_dataset=payload.upload_dataset,
             call_provider_api=payload.call_provider_api,
+            operation_id=payload.operation_id,
         )
+    except DocumentOpsOperationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -344,7 +350,10 @@ def export_document_ops_training_pre_execution_audit(
             start_training=payload.start_training,
             upload_dataset=payload.upload_dataset,
             call_provider_api=payload.call_provider_api,
+            operation_id=payload.operation_id,
         )
+    except DocumentOpsOperationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -381,7 +390,10 @@ def approve_document_ops_training_from_freeze(
             notes=payload.notes,
             dry_run=payload.dry_run,
             start_training=payload.start_training,
+            operation_id=payload.operation_id,
         )
+    except DocumentOpsOperationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if approval is None:
@@ -488,7 +500,10 @@ def freeze_document_ops_trajectory_export(
             notes=payload.notes,
             sample_limit=payload.sample_limit,
             training_allowed=payload.training_allowed,
+            operation_id=payload.operation_id,
         )
+    except DocumentOpsOperationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if manifest is None:

@@ -8,7 +8,11 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from app.storage.state_backend import LocalStateBackend, S3StateBackend
-from app.storage.trajectory_store import TrajectoryStore, TrajectoryStoreError
+from app.storage.trajectory_store import (
+    TrajectoryOperationConflictError,
+    TrajectoryStore,
+    TrajectoryStoreError,
+)
 from tests.conditional_state_support import (
     ConflictingLocalBackend,
     MemoryS3Client,
@@ -201,6 +205,195 @@ def test_concurrent_freezes_preserve_every_metadata_entry(
     assert all(item["integrity_verified"] is True for item in freezes)
 
 
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_governance_operation_replays_converge_on_one_artifact_chain(
+    tmp_path: Path,
+    backend_kind: str,
+) -> None:
+    client = MemoryS3Client(read_delay=0.001)
+    local_root = tmp_path / "state"
+
+    def backend() -> LocalStateBackend | S3StateBackend:
+        if backend_kind == "local":
+            return LocalStateBackend(local_root)
+        return _s3_backend(client)
+
+    filename = _reviewed_export(_store(tmp_path, backend()))
+
+    def freeze(_: int) -> dict:
+        manifest = _store(tmp_path, backend()).freeze_sft_export(
+            filename,
+            tenant_id="alpha",
+            reviewer="dataset-owner",
+            operation_id="freeze:shared-operation",
+        )
+        assert manifest is not None
+        return manifest
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        freezes = list(executor.map(freeze, range(2)))
+    assert len({item["manifest_id"] for item in freezes}) == 1
+    manifest_id = freezes[0]["manifest_id"]
+
+    def approve(_: int) -> dict:
+        approval = _store(tmp_path, backend()).approve_training_from_freeze(
+            manifest_id,
+            tenant_id="alpha",
+            approver="ml-owner",
+            eval_plan={
+                "suite": "document_ops_offline_eval",
+                "required_metrics": {"schema_valid_rate": 1.0},
+            },
+            operation_id="approval:shared-operation",
+        )
+        assert approval is not None
+        return approval
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        approvals = list(executor.map(approve, range(2)))
+    assert len({item["approval_id"] for item in approvals}) == 1
+
+    def request_execution(_: int) -> dict:
+        return _store(tmp_path, backend()).request_training_execution_from_plan(
+            tenant_id="alpha",
+            requester="ops-owner",
+            provider="openai",
+            base_model="gpt-test-base",
+            operation_id="execution:shared-operation",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        requests = list(executor.map(request_execution, range(2)))
+    assert len({item["request_id"] for item in requests}) == 1
+
+    def export_audit(_: int) -> dict:
+        return _store(tmp_path, backend()).export_training_pre_execution_audit(
+            tenant_id="alpha",
+            auditor="compliance-owner",
+            provider="openai",
+            base_model="gpt-test-base",
+            operation_id="audit:shared-operation",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        audits = list(executor.map(export_audit, range(2)))
+    assert len({item["audit_id"] for item in audits}) == 1
+
+    reader = _store(tmp_path, backend())
+    assert len(reader.list_dataset_freezes(tenant_id="alpha")) == 1
+    assert len(reader.list_training_approvals(tenant_id="alpha")) == 1
+    assert len(reader.list_training_execution_requests(tenant_id="alpha")) == 1
+    assert len(reader.list_training_pre_execution_audits(tenant_id="alpha")) == 1
+    public_records = (
+        reader.list_dataset_freezes(tenant_id="alpha")[0],
+        reader.list_training_approvals(tenant_id="alpha")[0],
+        reader.list_training_execution_requests(tenant_id="alpha")[0],
+        reader.list_training_pre_execution_audits(tenant_id="alpha")[0],
+    )
+    assert all(
+        "operation_id" not in item and "_operation_id" not in item
+        for item in public_records
+    )
+    assert reader.freeze_sft_export(
+        filename,
+        tenant_id="alpha",
+        reviewer="dataset-owner",
+        operation_id="freeze:shared-operation",
+    ) == freezes[0]
+
+    metadata_raw = backend().read_text("tenants/alpha/trajectory_metadata.json")
+    assert metadata_raw is not None
+    metadata = json.loads(metadata_raw)
+    for collection in (
+        "freezes",
+        "training_approvals",
+        "training_execution_requests",
+        "training_pre_execution_audits",
+    ):
+        assert len(metadata[collection]) == 1
+        assert metadata[collection][0]["_operation_id"]
+        assert len(metadata[collection][0]["_operation_payload_hash"]) == 64
+
+
+def test_governance_operation_id_rejects_a_different_payload(
+    tmp_path: Path,
+) -> None:
+    backend = LocalStateBackend(tmp_path / "state")
+    store = _store(tmp_path, backend)
+    filename, manifest, _approval = _approved_chain(store)
+    request = store.request_training_execution_from_plan(
+        tenant_id="alpha",
+        requester="ops-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+        operation_id="execution:payload-bound",
+    )
+    audit = store.export_training_pre_execution_audit(
+        tenant_id="alpha",
+        auditor="compliance-owner",
+        provider="openai",
+        base_model="gpt-test-base",
+        operation_id="audit:payload-bound",
+    )
+
+    freeze = store.freeze_sft_export(
+        filename,
+        tenant_id="alpha",
+        reviewer="dataset-owner",
+        operation_id="freeze:payload-bound",
+    )
+    assert freeze is not None
+    approval = store.approve_training_from_freeze(
+        manifest["manifest_id"],
+        tenant_id="alpha",
+        approver="ml-owner",
+        eval_plan={"suite": "document_ops_offline_eval"},
+        operation_id="approval:payload-bound",
+    )
+    assert approval is not None
+
+    calls = (
+        lambda: store.freeze_sft_export(
+            filename,
+            tenant_id="alpha",
+            reviewer="different-owner",
+            operation_id="freeze:payload-bound",
+        ),
+        lambda: store.approve_training_from_freeze(
+            manifest["manifest_id"],
+            tenant_id="alpha",
+            approver="ml-owner",
+            eval_plan={"suite": "different-suite"},
+            operation_id="approval:payload-bound",
+        ),
+        lambda: store.request_training_execution_from_plan(
+            tenant_id="alpha",
+            requester="ops-owner",
+            provider="openai",
+            base_model="gpt-test-base",
+            notes="different notes",
+            operation_id="execution:payload-bound",
+        ),
+        lambda: store.export_training_pre_execution_audit(
+            tenant_id="alpha",
+            auditor="compliance-owner",
+            provider="openai",
+            base_model="gpt-test-base",
+            notes="different notes",
+            operation_id="audit:payload-bound",
+        ),
+    )
+    for call in calls:
+        with pytest.raises(
+            TrajectoryOperationConflictError,
+            match="reused with a different payload",
+        ):
+            call()
+
+    assert request["request_id"]
+    assert audit["audit_id"]
+
+
 def test_lost_metadata_response_reconciles_after_successor_freeze(
     tmp_path: Path,
 ) -> None:
@@ -356,6 +549,48 @@ def test_legacy_hash_only_export_remains_readable_without_size_claim(
             {
                 "tenant_id": "alpha",
                 "freeze_count": 1,
+            }
+        ),
+        json.dumps(
+            {
+                "tenant_id": "alpha",
+                "export_count": 1,
+                "exports": [
+                    {
+                        "tenant_id": "alpha",
+                        "filename": "sft_operation.jsonl",
+                        "export_fingerprint": "operation-fingerprint",
+                        "size_bytes": 1,
+                        "content_sha256": "a" * 64,
+                        "_operation_id": "export:incomplete",
+                    }
+                ],
+            }
+        ),
+        json.dumps(
+            {
+                "tenant_id": "alpha",
+                "export_count": 2,
+                "exports": [
+                    {
+                        "tenant_id": "alpha",
+                        "filename": "sft_operation_first.jsonl",
+                        "export_fingerprint": "operation-first",
+                        "size_bytes": 1,
+                        "content_sha256": "a" * 64,
+                        "_operation_id": "export:duplicate",
+                        "_operation_payload_hash": "c" * 64,
+                    },
+                    {
+                        "tenant_id": "alpha",
+                        "filename": "sft_operation_second.jsonl",
+                        "export_fingerprint": "operation-second",
+                        "size_bytes": 1,
+                        "content_sha256": "b" * 64,
+                        "_operation_id": "export:duplicate",
+                        "_operation_payload_hash": "c" * 64,
+                    },
+                ],
             }
         ),
     ],

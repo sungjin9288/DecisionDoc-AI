@@ -91,6 +91,7 @@ class TrajectoryFreezeMixin:
         notes: str = "",
         sample_limit: int = 5,
         training_allowed: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Freeze a reviewed SFT export manifest without starting training."""
         if training_allowed:
@@ -98,6 +99,38 @@ class TrajectoryFreezeMixin:
         reviewer = reviewer.strip()
         if not reviewer:
             raise ValueError("reviewer is required.")
+        operation_payload_hash = (
+            _json_sha256(
+                {
+                    "action": "freeze_sft_export",
+                    "filename": filename,
+                    "notes": notes,
+                    "reviewer": reviewer,
+                    "sample_limit": sample_limit,
+                    "training_allowed": training_allowed,
+                }
+            )
+            if operation_id is not None
+            else None
+        )
+        existing_operation = self._find_meta_operation_item(
+            tenant_id=tenant_id,
+            collection="freezes",
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
+        )
+        if existing_operation is not None:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_freeze_artifact(
+                    tenant_id,
+                    str(existing_operation.get("manifest_file") or ""),
+                ),
+                metadata=existing_operation,
+                tenant_id=tenant_id,
+                size_key="manifest_size_bytes",
+                sha256_key="manifest_sha256",
+                identity_key="manifest_id",
+            )
         export_artifact = self._get_sft_export_artifact(
             filename,
             tenant_id=tenant_id,
@@ -166,13 +199,27 @@ class TrajectoryFreezeMixin:
             raw=raw,
             content_type="application/json; charset=utf-8",
         )
-        self._append_freeze_meta(
+        selected = self._append_freeze_meta(
             tenant_id,
             manifest_file,
             manifest,
             manifest_size_bytes=artifact.size_bytes,
             manifest_sha256=artifact.sha256,
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
         )
+        if selected.get("manifest_id") != manifest_id:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_freeze_artifact(
+                    tenant_id,
+                    str(selected.get("manifest_file") or ""),
+                ),
+                metadata=selected,
+                tenant_id=tenant_id,
+                size_key="manifest_size_bytes",
+                sha256_key="manifest_sha256",
+                identity_key="manifest_id",
+            )
         return manifest
 
     def _append_freeze_meta(
@@ -183,7 +230,9 @@ class TrajectoryFreezeMixin:
         *,
         manifest_size_bytes: int,
         manifest_sha256: str,
-    ) -> None:
+        operation_id: str | None = None,
+        operation_payload_hash: str | None = None,
+    ) -> dict[str, Any]:
         item = {
             "tenant_id": tenant_id,
             "manifest_id": manifest.get("manifest_id"),
@@ -212,12 +261,14 @@ class TrajectoryFreezeMixin:
             "created_at": manifest.get("created_at"),
         }
         with self._lock:
-            self._append_meta_item(
+            return self._append_meta_item(
                 tenant_id=tenant_id,
                 collection="freezes",
                 count_key="freeze_count",
                 item=item,
                 identity_keys=("manifest_id", "manifest_file"),
+                operation_id=operation_id,
+                operation_payload_hash=operation_payload_hash,
             )
 
     def _load_freeze_manifest_by_id(self, manifest_id: str, *, tenant_id: str) -> dict[str, Any] | None:

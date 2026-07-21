@@ -7807,6 +7807,7 @@
     if (!filename) return;
     const reviewer = documentOpsRequiredField('docops-freeze-reviewer', 'Dataset freeze 검토자');
     if (!reviewer) return;
+    const operationId = createDocumentOpsOperationId('freeze');
     try {
       const res = await fetch(`/api/agent/document-ops/trajectories/exports/${encodeURIComponent(filename)}/freeze`, {
         method: 'POST',
@@ -7816,6 +7817,7 @@
           notes: 'Local UI dataset freeze review',
           sample_limit: 5,
           training_allowed: false,
+          operation_id: operationId,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -7958,6 +7960,7 @@
     if (!approver) return;
     const evalPlan = documentOpsEvalPlan();
     if (!evalPlan) return;
+    const operationId = createDocumentOpsOperationId('approval');
     try {
       const res = await fetch(`/api/agent/document-ops/trajectories/freezes/${encodeURIComponent(manifestId)}/training-approval`, {
         method: 'POST',
@@ -7968,6 +7971,7 @@
           notes: 'Local UI dry-run approval',
           dry_run: true,
           start_training: false,
+          operation_id: operationId,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -8059,6 +8063,7 @@
     const requester = documentOpsRequiredField('docops-execution-requester', 'Execution request 기록자');
     if (!requester) return;
     const selection = documentOpsPlanningSelection();
+    const operationId = createDocumentOpsOperationId('execution');
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-execution-requests', {
         method: 'POST',
@@ -8071,6 +8076,7 @@
           start_training: false,
           upload_dataset: false,
           call_provider_api: false,
+          operation_id: operationId,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -8204,6 +8210,7 @@
     const auditor = documentOpsRequiredField('docops-auditor', 'Pre-execution 감사자');
     if (!auditor) return;
     const selection = documentOpsPlanningSelection();
+    const operationId = createDocumentOpsOperationId('audit');
     try {
       const res = await fetch('/api/agent/document-ops/trajectories/training-audit/export', {
         method: 'POST',
@@ -8216,6 +8223,7 @@
           start_training: false,
           upload_dataset: false,
           call_provider_api: false,
+          operation_id: operationId,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -9141,6 +9149,10 @@
     } finally {
       if (button.isConnected) button.disabled = false;
     }
+  }
+
+  function createDocumentOpsOperationId(action) {
+    return `${action}:${window.crypto.randomUUID()}`;
   }
 
   const DOCUMENT_OPS_SINGLE_FLIGHT_ACTIONS = new Set([

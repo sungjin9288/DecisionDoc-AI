@@ -10,6 +10,7 @@ from typing import Any
 from app.storage.trajectory.artifact_state_mixin import TrajectoryArtifact
 from app.storage.trajectory.redaction import (
     _is_safe_training_execution_request_filename,
+    _json_sha256,
 )
 
 
@@ -102,6 +103,7 @@ class TrajectoryTrainingExecutionMixin:
         start_training: bool = False,
         upload_dataset: bool = False,
         call_provider_api: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any]:
         """Record a two-person training execution request without execution side effects."""
         requester = requester.strip()
@@ -113,6 +115,42 @@ class TrajectoryTrainingExecutionMixin:
             raise ValueError("Training execution requests are no-upload; dataset upload requires a separate execution workflow.")
         if call_provider_api:
             raise ValueError("Training execution requests cannot call provider APIs.")
+
+        operation_payload_hash = (
+            _json_sha256(
+                {
+                    "action": "request_training_execution_from_plan",
+                    "base_model": base_model,
+                    "call_provider_api": call_provider_api,
+                    "limit": limit,
+                    "notes": notes,
+                    "provider": provider,
+                    "requester": requester,
+                    "start_training": start_training,
+                    "upload_dataset": upload_dataset,
+                }
+            )
+            if operation_id is not None
+            else None
+        )
+        existing_operation = self._find_meta_operation_item(
+            tenant_id=tenant_id,
+            collection="training_execution_requests",
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
+        )
+        if existing_operation is not None:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_training_execution_request_artifact(
+                    tenant_id,
+                    str(existing_operation.get("request_file") or ""),
+                ),
+                metadata=existing_operation,
+                tenant_id=tenant_id,
+                size_key="request_size_bytes",
+                sha256_key="request_sha256",
+                identity_key="request_id",
+            )
 
         plan_preview = self.training_execution_plan_preview(
             tenant_id=tenant_id,
@@ -187,13 +225,27 @@ class TrajectoryTrainingExecutionMixin:
             ).encode("utf-8"),
             content_type="application/json; charset=utf-8",
         )
-        self._append_training_execution_request_meta(
+        selected = self._append_training_execution_request_meta(
             tenant_id,
             request_file,
             request_record,
             request_size_bytes=artifact.size_bytes,
             request_sha256=artifact.sha256,
+            operation_id=operation_id,
+            operation_payload_hash=operation_payload_hash,
         )
+        if selected.get("request_id") != request_id:
+            return self._load_bound_operation_artifact(
+                artifact=self._read_training_execution_request_artifact(
+                    tenant_id,
+                    str(selected.get("request_file") or ""),
+                ),
+                metadata=selected,
+                tenant_id=tenant_id,
+                size_key="request_size_bytes",
+                sha256_key="request_sha256",
+                identity_key="request_id",
+            )
         return request_record
 
     def _append_training_execution_request_meta(
@@ -204,7 +256,9 @@ class TrajectoryTrainingExecutionMixin:
         *,
         request_size_bytes: int,
         request_sha256: str,
-    ) -> None:
+        operation_id: str | None = None,
+        operation_payload_hash: str | None = None,
+    ) -> dict[str, Any]:
         plan = (
             request_record.get("plan_preview")
             if isinstance(request_record.get("plan_preview"), dict)
@@ -271,12 +325,14 @@ class TrajectoryTrainingExecutionMixin:
             "created_at": request_record.get("created_at"),
         }
         with self._lock:
-            self._append_meta_item(
+            return self._append_meta_item(
                 tenant_id=tenant_id,
                 collection="training_execution_requests",
                 count_key="training_execution_request_count",
                 item=item,
                 identity_keys=("request_id", "request_file"),
+                operation_id=operation_id,
+                operation_payload_hash=operation_payload_hash,
             )
 
     def _resolve_training_execution_request_path(self, tenant_id: str, filename: str) -> Path | None:

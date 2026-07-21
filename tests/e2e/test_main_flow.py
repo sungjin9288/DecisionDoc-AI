@@ -1949,6 +1949,7 @@ def test_document_ops_execution_request_button_is_single_flight(page):
         """async () => {
           const nativeFetch = window.fetch;
           const pendingRequests = [];
+          const requestBodies = [];
           let listReadCount = 0;
           const createUrl = '/api/agent/document-ops/trajectories/training-execution-requests';
           const listUrl = `${createUrl}?limit=20`;
@@ -1961,6 +1962,7 @@ def test_document_ops_execution_request_button_is_single_flight(page):
               const url = String(input || '');
               const method = String(options?.method || 'GET').toUpperCase();
               if (url === createUrl && method === 'POST') {
+                requestBodies.push(JSON.parse(String(options?.body || '{}')));
                 return new Promise(resolve => pendingRequests.push(resolve));
               }
               if (url === listUrl && method === 'GET') {
@@ -1991,6 +1993,7 @@ def test_document_ops_execution_request_button_is_single_flight(page):
 
             return {
               requestCount,
+              operationId: requestBodies[0]?.operation_id || '',
               disabledDuring,
               disabledAfter: button.disabled,
             };
@@ -2000,11 +2003,11 @@ def test_document_ops_execution_request_button_is_single_flight(page):
         }"""
     )
 
-    assert result == {
-        "requestCount": 1,
-        "disabledDuring": True,
-        "disabledAfter": False,
-    }
+    assert result["requestCount"] == 1
+    assert result["operationId"].startswith("execution:")
+    assert len(result["operationId"].split(":", 1)[1]) == 36
+    assert result["disabledDuring"] is True
+    assert result["disabledAfter"] is False
 
 
 def _document_ops_adapter_contract(provider: str, base_model: str) -> dict[str, object]:

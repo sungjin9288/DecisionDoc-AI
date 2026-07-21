@@ -91,12 +91,14 @@ from app.storage.trajectory.signoff import (
 )
 from app.storage.trajectory.core_mixin import _log
 from app.storage.trajectory import (
+    TrajectoryOperationConflictError,
     TrajectoryReviewConflictError,
     TrajectoryStore,
     TrajectoryStoreError,
 )
 
 __all__ = [
+    "TrajectoryOperationConflictError",
     "TrajectoryReviewConflictError",
     "TrajectoryStore",
     "TrajectoryStoreError",

@@ -649,7 +649,12 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     frozen = client.post(
         f"/api/agent/document-ops/trajectories/exports/{filename}/freeze",
         headers=_ops_headers(),
-        json={"reviewer": "pm", "notes": "dataset freeze only", "sample_limit": 1},
+        json={
+            "reviewer": "pm",
+            "notes": "dataset freeze only",
+            "sample_limit": 1,
+            "operation_id": "freeze:api-replay",
+        },
     )
     assert frozen.status_code == 200
     frozen_body = frozen.json()
@@ -661,6 +666,29 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert frozen_body["review_gate"]["reviewer"] == "pm"
     assert frozen_body["training_guard"]["training_allowed"] is False
     assert frozen_body["training_guard"]["training_started"] is False
+    frozen_replay = client.post(
+        f"/api/agent/document-ops/trajectories/exports/{filename}/freeze",
+        headers=_ops_headers(),
+        json={
+            "reviewer": "pm",
+            "notes": "dataset freeze only",
+            "sample_limit": 1,
+            "operation_id": "freeze:api-replay",
+        },
+    )
+    assert frozen_replay.status_code == 200
+    assert frozen_replay.json()["manifest_id"] == frozen_body["manifest_id"]
+    frozen_conflict = client.post(
+        f"/api/agent/document-ops/trajectories/exports/{filename}/freeze",
+        headers=_ops_headers(),
+        json={
+            "reviewer": "different-reviewer",
+            "notes": "dataset freeze only",
+            "sample_limit": 1,
+            "operation_id": "freeze:api-replay",
+        },
+    )
+    assert frozen_conflict.status_code == 409
 
     freeze_list = client.get(
         "/api/agent/document-ops/trajectories/freezes",
@@ -716,6 +744,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
                 "required_metrics": {"schema_valid_rate": 1.0},
                 "source_document": "sensitive-eval-note",
             },
+            "operation_id": "approval:api-replay",
         },
     )
     assert training_approval.status_code == 200
@@ -727,6 +756,37 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert training_approval_body["execution_guard"]["dry_run"] is True
     assert training_approval_body["execution_guard"]["provider_job_started"] is False
     assert training_approval_body["execution_guard"]["model_promotion_allowed"] is False
+    training_approval_replay = client.post(
+        f"/api/agent/document-ops/trajectories/freezes/{frozen_body['manifest_id']}/training-approval",
+        headers=_ops_headers(),
+        json={
+            "approver": "ml-owner",
+            "notes": "dry-run approval gate",
+            "eval_plan": {
+                "suite": "document_ops_offline_eval",
+                "required_metrics": {"schema_valid_rate": 1.0},
+                "source_document": "sensitive-eval-note",
+            },
+            "operation_id": "approval:api-replay",
+        },
+    )
+    assert training_approval_replay.status_code == 200
+    assert training_approval_replay.json()["approval_id"] == training_approval_body["approval_id"]
+    training_approval_conflict = client.post(
+        f"/api/agent/document-ops/trajectories/freezes/{frozen_body['manifest_id']}/training-approval",
+        headers=_ops_headers(),
+        json={
+            "approver": "ml-owner",
+            "notes": "dry-run approval gate",
+            "eval_plan": {
+                "suite": "document_ops_offline_eval",
+                "required_metrics": {"schema_valid_rate": 1.0},
+                "source_document": "different-sensitive-eval-note",
+            },
+            "operation_id": "approval:api-replay",
+        },
+    )
+    assert training_approval_conflict.status_code == 409
 
     training_approval_list = client.get(
         "/api/agent/document-ops/trajectories/training-approvals",
@@ -834,6 +894,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
             "provider": "openai",
             "base_model": "gpt-test-base",
             "notes": "record only",
+            "operation_id": "execution:api-replay",
         },
     )
     assert training_execution_request.status_code == 200
@@ -849,6 +910,31 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert training_execution_request_body["execution_guard"]["provider_api_calls_allowed"] is False
     assert training_execution_request_body["execution_guard"]["provider_job_started"] is False
     assert training_execution_request_body["execution_guard"]["model_promotion_allowed"] is False
+    training_execution_replay = client.post(
+        "/api/agent/document-ops/trajectories/training-execution-requests",
+        headers=_ops_headers(),
+        json={
+            "requester": "ops-owner",
+            "provider": "openai",
+            "base_model": "gpt-test-base",
+            "notes": "record only",
+            "operation_id": "execution:api-replay",
+        },
+    )
+    assert training_execution_replay.status_code == 200
+    assert training_execution_replay.json()["request_id"] == training_execution_request_body["request_id"]
+    training_execution_conflict = client.post(
+        "/api/agent/document-ops/trajectories/training-execution-requests",
+        headers=_ops_headers(),
+        json={
+            "requester": "ops-owner",
+            "provider": "openai",
+            "base_model": "gpt-test-base",
+            "notes": "changed execution intent",
+            "operation_id": "execution:api-replay",
+        },
+    )
+    assert training_execution_conflict.status_code == 409
 
     training_execution_request_list = client.get(
         "/api/agent/document-ops/trajectories/training-execution-requests",
@@ -914,6 +1000,7 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
             "provider": "openai",
             "base_model": "gpt-test-base",
             "notes": "final packet only",
+            "operation_id": "audit:api-replay",
         },
     )
     assert audit_export.status_code == 200
@@ -928,6 +1015,31 @@ def test_document_ops_review_and_export_accepted_trajectory(tmp_path, monkeypatc
     assert audit_export_body["execution_guard"]["provider_api_calls_allowed"] is False
     assert audit_export_body["execution_guard"]["provider_job_started"] is False
     assert audit_export_body["execution_guard"]["model_promotion_allowed"] is False
+    audit_export_replay = client.post(
+        "/api/agent/document-ops/trajectories/training-audit/export",
+        headers=_ops_headers(),
+        json={
+            "auditor": "compliance-owner",
+            "provider": "openai",
+            "base_model": "gpt-test-base",
+            "notes": "final packet only",
+            "operation_id": "audit:api-replay",
+        },
+    )
+    assert audit_export_replay.status_code == 200
+    assert audit_export_replay.json()["audit_id"] == audit_export_body["audit_id"]
+    audit_export_conflict = client.post(
+        "/api/agent/document-ops/trajectories/training-audit/export",
+        headers=_ops_headers(),
+        json={
+            "auditor": "compliance-owner",
+            "provider": "openai",
+            "base_model": "gpt-test-base",
+            "notes": "changed audit intent",
+            "operation_id": "audit:api-replay",
+        },
+    )
+    assert audit_export_conflict.status_code == 409
 
     audit_list = client.get(
         "/api/agent/document-ops/trajectories/training-audits",

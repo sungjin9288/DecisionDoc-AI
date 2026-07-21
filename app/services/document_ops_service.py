@@ -15,7 +15,15 @@ from app.services.document_ops_training_adapter import (
     training_adapter_contract_summary,
     training_execution_rehearsal_summary,
 )
-from app.storage.trajectory_store import TrajectoryReviewConflictError, TrajectoryStore
+from app.storage.trajectory_store import (
+    TrajectoryOperationConflictError,
+    TrajectoryReviewConflictError,
+    TrajectoryStore,
+)
+
+
+class DocumentOpsOperationConflictError(ValueError):
+    """Raised when a governance operation identity has conflicting input."""
 
 
 class DocumentOpsReviewConflictError(ValueError):
@@ -299,18 +307,23 @@ class DocumentOpsService:
         start_training: bool = False,
         upload_dataset: bool = False,
         call_provider_api: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any]:
-        return self._trajectory_store.request_training_execution_from_plan(
-            tenant_id=tenant_id,
-            requester=requester,
-            provider=provider,
-            base_model=base_model,
-            notes=notes,
-            limit=limit,
-            start_training=start_training,
-            upload_dataset=upload_dataset,
-            call_provider_api=call_provider_api,
-        )
+        try:
+            return self._trajectory_store.request_training_execution_from_plan(
+                tenant_id=tenant_id,
+                requester=requester,
+                provider=provider,
+                base_model=base_model,
+                notes=notes,
+                limit=limit,
+                start_training=start_training,
+                upload_dataset=upload_dataset,
+                call_provider_api=call_provider_api,
+                operation_id=operation_id,
+            )
+        except TrajectoryOperationConflictError as exc:
+            raise DocumentOpsOperationConflictError(str(exc)) from exc
 
     def training_pre_execution_audit_checklist(
         self,
@@ -351,18 +364,23 @@ class DocumentOpsService:
         start_training: bool = False,
         upload_dataset: bool = False,
         call_provider_api: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any]:
-        return self._trajectory_store.export_training_pre_execution_audit(
-            tenant_id=tenant_id,
-            auditor=auditor,
-            provider=provider,
-            base_model=base_model,
-            notes=notes,
-            limit=limit,
-            start_training=start_training,
-            upload_dataset=upload_dataset,
-            call_provider_api=call_provider_api,
-        )
+        try:
+            return self._trajectory_store.export_training_pre_execution_audit(
+                tenant_id=tenant_id,
+                auditor=auditor,
+                provider=provider,
+                base_model=base_model,
+                notes=notes,
+                limit=limit,
+                start_training=start_training,
+                upload_dataset=upload_dataset,
+                call_provider_api=call_provider_api,
+                operation_id=operation_id,
+            )
+        except TrajectoryOperationConflictError as exc:
+            raise DocumentOpsOperationConflictError(str(exc)) from exc
 
     def get_training_pre_execution_audit_path(self, filename: str, *, tenant_id: str) -> Path | None:
         return self._trajectory_store.get_training_pre_execution_audit_path(filename, tenant_id=tenant_id)
@@ -533,15 +551,20 @@ class DocumentOpsService:
         notes: str = "",
         sample_limit: int = 5,
         training_allowed: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any] | None:
-        return self._trajectory_store.freeze_sft_export(
-            filename,
-            tenant_id=tenant_id,
-            reviewer=reviewer,
-            notes=notes,
-            sample_limit=sample_limit,
-            training_allowed=training_allowed,
-        )
+        try:
+            return self._trajectory_store.freeze_sft_export(
+                filename,
+                tenant_id=tenant_id,
+                reviewer=reviewer,
+                notes=notes,
+                sample_limit=sample_limit,
+                training_allowed=training_allowed,
+                operation_id=operation_id,
+            )
+        except TrajectoryOperationConflictError as exc:
+            raise DocumentOpsOperationConflictError(str(exc)) from exc
 
     def approve_training_from_freeze(
         self,
@@ -553,16 +576,21 @@ class DocumentOpsService:
         notes: str = "",
         dry_run: bool = True,
         start_training: bool = False,
+        operation_id: str | None = None,
     ) -> dict[str, Any] | None:
-        return self._trajectory_store.approve_training_from_freeze(
-            manifest_id,
-            tenant_id=tenant_id,
-            approver=approver,
-            eval_plan=eval_plan,
-            notes=notes,
-            dry_run=dry_run,
-            start_training=start_training,
-        )
+        try:
+            return self._trajectory_store.approve_training_from_freeze(
+                manifest_id,
+                tenant_id=tenant_id,
+                approver=approver,
+                eval_plan=eval_plan,
+                notes=notes,
+                dry_run=dry_run,
+                start_training=start_training,
+                operation_id=operation_id,
+            )
+        except TrajectoryOperationConflictError as exc:
+            raise DocumentOpsOperationConflictError(str(exc)) from exc
 
     def report_sft_export_quality(
         self,
