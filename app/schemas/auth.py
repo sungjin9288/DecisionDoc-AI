@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.auth.session_label import normalize_auth_session_label
+
 
 # ── Auth schemas ───────────────────────────────────────────────────────────────
 
@@ -46,16 +48,7 @@ class UpdateAuthSessionLabelRequest(BaseModel):
     @field_validator("label")
     @classmethod
     def normalize_label(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        label = value.strip()
-        if not label:
-            raise ValueError("label must not be empty")
-        if len(label) > 40:
-            raise ValueError("label must be at most 40 characters")
-        if any(ord(character) < 32 or ord(character) == 127 for character in label):
-            raise ValueError("label must not contain control characters")
-        return label
+        return normalize_auth_session_label(value)
 
 
 class RevokeOtherAuthSessionsRequest(BaseModel):

@@ -1013,7 +1013,7 @@ def test_auth_session_label_can_be_set_listed_and_cleared(tmp_path, monkeypatch)
     named = client.patch(
         "/auth/sessions/label",
         headers=headers,
-        json={"session_id": other_claims["session_id"], "label": "업무용 Mac"},
+        json={"session_id": other_claims["session_id"], "label": " 업무용 Mac "},
     )
     listed = client.get("/auth/sessions", headers=headers)
     cleared = client.patch(
@@ -1049,6 +1049,11 @@ def test_auth_session_label_can_be_set_listed_and_cleared(tmp_path, monkeypatch)
         {"session_id": "a" * 32, "label": ""},
         {"session_id": "a" * 32, "label": "a" * 41},
         {"session_id": "a" * 32, "label": 1},
+        {"session_id": "a" * 32, "label": "office\u0085laptop"},
+        {"session_id": "a" * 32, "label": "office\u0085"},
+        {"session_id": "a" * 32, "label": "office\u2028laptop"},
+        {"session_id": "a" * 32, "label": "office\u202elaptop"},
+        {"session_id": "a" * 32, "label": "office\u2066laptop"},
         {"session_id": "a" * 32, "label": "노트북", "extra": True},
     ],
 )

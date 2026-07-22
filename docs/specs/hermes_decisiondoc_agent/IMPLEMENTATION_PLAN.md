@@ -224,7 +224,7 @@ Acceptance:
 - corrupt or unavailable session state fails closed without changing the original object, and logout audit copies
   neither access/refresh credentials nor the private session identity
 - legacy sessionless credentials remain bounded by expiry and credential version but cannot use exact logout,
-  inventory, selected revoke, or bulk revoke; User-Agent/IP inventory, administrator mass revoke, expired-session
+  inventory, label, selected revoke, or bulk revoke; User-Agent/IP inventory, administrator mass revoke, expired-session
   GC, and immediate push stay outside this contract
 - self-service inventory validates every direct object under the selected-backend tenant session prefix before
   returning active current-version sessions; selected revoke preserves the current browser, hides foreign/missing
@@ -235,9 +235,12 @@ Acceptance:
 - strict-confirmed all-device revoke validates the same authority, writes current last, and clears local credentials
   and page-memory evidence only after success; earlier write failure preserves current when possible, but partial
   other-session progress and an uncertain current-write response are explicit non-transactional limits
-- the browser renders only current/other and start/expiry metadata, keeps session IDs out of the DOM, gives selected
-  and bulk actions one single-flight, and rejects stale list/revoke completions by token, modal, request, and revoke
-  generations; audit stores the bulk count without credentials or session IDs
+- new records use strict `auth-session.v2`; v1 remains exact-read compatible and upgrades on label mutation
+- API and storage share one label validator that trims at the request boundary, limits labels to 40 characters,
+  rejects Unicode display controls, and preserves ZWNJ/ZWJ for natural text and emoji composition
+- the browser renders current/other, label, and start/expiry metadata, keeps session IDs out of the DOM, gives label
+  and revoke actions one single-flight, and rejects stale completions by token, modal, request, and mutation
+  generations; audit stores the bulk count without credentials, session IDs, or labels
 - an open SSE subscription rechecks token expiry and persisted user/session authority within 15 seconds, stops application
   events on revocation or authority failure, and preserves browser credentials when the failure is retryable
 - no hidden control can trigger upload, training, or production operations

@@ -1308,6 +1308,22 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert "비밀번호는 변경되었지만 새 로그인 세션을 저장하지 못했습니다." in content
 
 
+def test_auth_session_label_contract_docs_match_the_v2_runtime():
+    root = Path(__file__).resolve().parents[1]
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+    implementation_plan = (
+        root / "docs" / "specs" / "hermes_decisiondoc_agent" / "IMPLEMENTATION_PLAN.md"
+    ).read_text(encoding="utf-8")
+
+    for document in (architecture, test_plan, implementation_plan):
+        assert "auth-session.v2" in document
+        assert "label" in document
+        assert "Unicode" in document
+    assert "H112 Auth session label Unicode display safety" in evidence
+
+
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     roster_start = content.index('<section id="ai-rank-roster"')

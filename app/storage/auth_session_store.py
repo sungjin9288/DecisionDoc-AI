@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from app.auth.session_label import require_canonical_auth_session_label
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
@@ -18,7 +19,6 @@ _CONTRACT_VERSION = "auth-session.v2"
 _LEGACY_CONTRACT_VERSION = "auth-session.v1"
 _SESSION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_LIFETIME = timedelta(days=30)
-_MAX_LABEL_LENGTH = 40
 _MAX_CREATE_ATTEMPTS = 4
 _MAX_MUTATION_ATTEMPTS = 32
 _LEGACY_RECORD_FIELDS = {
@@ -69,18 +69,6 @@ def _require_credential_version(credential_version: object) -> int:
     if type(credential_version) is not int or credential_version < 0:
         raise ValueError("credential_version must be a non-negative integer")
     return credential_version
-
-
-def _require_label(label: object) -> str | None:
-    if label is None:
-        return None
-    if not isinstance(label, str) or not label or label != label.strip():
-        raise ValueError("label must be a canonical non-empty string or null")
-    if len(label) > _MAX_LABEL_LENGTH:
-        raise ValueError(f"label must be at most {_MAX_LABEL_LENGTH} characters")
-    if any(ord(character) < 32 or ord(character) == 127 for character in label):
-        raise ValueError("label must not contain control characters")
-    return label
 
 
 def _parse_timestamp(value: object, *, field: str) -> datetime:
@@ -144,7 +132,7 @@ class AuthSessionStore:
             _require_user_id(record.get("user_id"))
             _require_credential_version(record.get("credential_version"))
             if contract_version == _CONTRACT_VERSION:
-                _require_label(record.get("label"))
+                require_canonical_auth_session_label(record.get("label"))
         except ValueError as exc:
             raise AuthSessionStoreError("Invalid authentication session authority") from exc
 
@@ -315,7 +303,7 @@ class AuthSessionStore:
         canonical_session_id = require_auth_session_id(session_id)
         canonical_user_id = _require_user_id(user_id)
         canonical_version = _require_credential_version(credential_version)
-        canonical_label = _require_label(label)
+        canonical_label = require_canonical_auth_session_label(label)
         relative_path = self._relative_path(canonical_session_id)
 
         for _ in range(_MAX_MUTATION_ATTEMPTS):

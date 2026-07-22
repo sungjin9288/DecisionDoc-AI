@@ -165,20 +165,23 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   tokens are rejected, the initiating browser commits a replacement pair, and another same-origin tab reloads
   on version drift.
 - New register, login, invite, LDAP, SAML, GCloud, and password-change token pairs share one tenant-scoped
-  persisted session identity. Refresh keeps that identity and `/auth/logout` revokes only the signed current
+  strict `auth-session.v2` identity. Existing v1 records remain exact-read compatible and upgrade on label mutation.
+  Refresh keeps that identity and `/auth/logout` revokes only the signed current
   session, so a separate login remains active. Same-session credentials copied to another context fail on their
   next protected request, refresh, or open-stream recheck. Corrupt or unavailable state fails closed without
   rewriting the original bytes; audit omits tokens and session IDs. Browser cleanup is immediate even when server
   revocation cannot be confirmed. Self-service inventory strict-validates the selected-backend tenant prefix and
   returns only active current-version sessions. Selected revoke preserves current and hides foreign versus missing
-  targets. Confirmed other-session bulk revoke uses the same snapshot to CAS-revoke every other candidate. Confirmed
+  targets. Label mutation trims the user value, limits it to 40 characters, and shares one API/storage validator
+  that rejects Unicode display controls while preserving ZWNJ/ZWJ. Confirmed other-session bulk revoke uses the same snapshot to CAS-revoke every other candidate. Confirmed
   all-device revoke writes every active same-user/current-version candidate with current last, so an earlier write
   failure preserves the initiating browser when possible. Neither path is a multi-object transaction: partial
   other-session progress can remain, current-write response loss can leave server and browser state temporarily
   different, and a session created after the snapshot remains for the next inspection. The profile renders no
-  session IDs, gives all actions one single-flight and stale-response guard, and clears browser credentials and
+  session IDs, displays the user label with current/other and start/expiry state, gives label/revoke actions one
+  single-flight and stale-response guard, and clears browser credentials and
   page-memory evidence only after confirmed all-device success. Audit retains aggregate counts without tokens or
-  session IDs. Legacy sessionless exact logout/inventory/selected/bulk revoke, User-Agent/IP inventory,
+  session IDs or labels. Legacy sessionless exact logout/inventory/label/selected/bulk revoke, User-Agent/IP inventory,
   administrator mass revoke, expired-session GC, and immediate cross-device push remain outside the local contract.
 - An open `/events` stream rechecks token expiry and the same persisted user/session authority at most every 15 seconds.
   Invalid access receives only an `auth_revoked` control event before unsubscribe; unavailable authority receives

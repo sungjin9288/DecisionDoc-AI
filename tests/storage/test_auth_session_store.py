@@ -111,6 +111,15 @@ def test_auth_session_store_sets_and_clears_owned_session_label(
     ) is True
     assert store.list_active(user_id="user-a", credential_version=3)[0]["label"] == "업무용 Mac"
 
+    family_emoji = "가족 👨‍👩‍👧‍👦"
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=3,
+        label=family_emoji,
+    ) is True
+    assert store.list_active(user_id="user-a", credential_version=3)[0]["label"] == family_emoji
+
     assert store.set_label(
         session_id,
         user_id="user-a",
@@ -118,6 +127,65 @@ def test_auth_session_store_sets_and_clears_owned_session_label(
         label=None,
     ) is True
     assert store.list_active(user_id="user-a", credential_version=3)[0]["label"] is None
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "office\u0085laptop",
+        "office\u0085",
+        "office\u2028laptop",
+        "office\u202elaptop",
+        "office\u2066laptop",
+    ],
+)
+def test_auth_session_store_rejects_display_control_characters_without_rewrite(
+    tmp_path,
+    label,
+):
+    store = _store(tmp_path)
+    session_id = store.create(user_id="user-a", credential_version=3)
+    path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{session_id}.json"
+    )
+    original = path.read_bytes()
+
+    with pytest.raises(ValueError, match="display control"):
+        store.set_label(
+            session_id,
+            user_id="user-a",
+            credential_version=3,
+            label=label,
+        )
+
+    assert path.read_bytes() == original
+
+
+def test_auth_session_store_rejects_persisted_display_control_without_rewrite(
+    tmp_path,
+):
+    store = _store(tmp_path)
+    session_id = store.create(user_id="user-a", credential_version=3)
+    path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{session_id}.json"
+    )
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["label"] = "office\u202elaptop"
+    path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    corrupted = path.read_bytes()
+
+    with pytest.raises(AuthSessionStoreError):
+        store.is_current(session_id, user_id="user-a", credential_version=3)
+
+    assert path.read_bytes() == corrupted
 
 
 def test_auth_session_store_upgrades_legacy_v1_record_when_label_is_set(tmp_path):
