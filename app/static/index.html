@@ -18769,6 +18769,44 @@
   let _sse = null;
   let _sseReconnectTimer = null;
 
+  function scheduleSSEReconnect() {
+    if (_sseReconnectTimer) return;
+    _sseReconnectTimer = setTimeout(() => {
+      _sseReconnectTimer = null;
+      startSSE();
+      startNotifPolling();
+    }, 5000);
+  }
+
+  async function recoverRevokedSSESession(source) {
+    if (_sse !== source) return;
+    stopSSE();
+
+    const result = await recoverAuthSessionOnce();
+    if (result === AUTH_REFRESH_RESULT.REFRESHED) {
+      startSSE();
+      return;
+    }
+    if (result === AUTH_REFRESH_RESULT.INVALID_SESSION) {
+      handleInvalidAuthSession(
+        '실시간 연결의 인증 상태가 변경되었습니다. 다시 로그인해주세요.',
+      );
+      return;
+    }
+
+    reportAuthRefreshFailure(result);
+    startNotifPolling();
+    scheduleSSEReconnect();
+  }
+
+  function retryUnavailableSSE(source) {
+    if (_sse !== source) return;
+    source.close();
+    _sse = null;
+    startNotifPolling();
+    scheduleSSEReconnect();
+  }
+
   function startSSE() {
     if (_sse) { _sse.close(); _sse = null; }
     if (_sseReconnectTimer) { clearTimeout(_sseReconnectTimer); _sseReconnectTimer = null; }
@@ -18777,13 +18815,16 @@
     if (!token) return;
 
     try {
-      _sse = new EventSource(`/events?token=${encodeURIComponent(token)}`);
+      const source = new EventSource(`/events?token=${encodeURIComponent(token)}`);
+      _sse = source;
 
-      _sse.addEventListener('notification', () => {
+      source.addEventListener('notification', () => {
+        if (_sse !== source) return;
         loadUnreadCount();
       });
 
-      _sse.addEventListener('approval_updated', (e) => {
+      source.addEventListener('approval_updated', (e) => {
+        if (_sse !== source) return;
         try {
           // Refresh approval list if on approval page
           const approvalPage = $id('approval-page');
@@ -18799,7 +18840,8 @@
         } catch(err) {}
       });
 
-      _sse.addEventListener('message_posted', (e) => {
+      source.addEventListener('message_posted', (e) => {
+        if (_sse !== source) return;
         try {
           const data = JSON.parse(e.data || '{}');
           const containerId = `msg-thread-${data.context_id}`;
@@ -18809,18 +18851,23 @@
         } catch(err) {}
       });
 
-      _sse.onerror = () => {
-        _sse.close();
+      source.addEventListener('auth_revoked', () => {
+        void recoverRevokedSSESession(source);
+      });
+
+      source.addEventListener('auth_unavailable', () => {
+        retryUnavailableSSE(source);
+      });
+
+      source.onerror = () => {
+        if (_sse !== source) return;
+        source.close();
         _sse = null;
-        // Reconnect after 5s, fallback to polling
-        _sseReconnectTimer = setTimeout(() => {
-          startSSE();
-          // If SSE fails consistently, keep poll as backup
-          startNotifPolling();
-        }, 5000);
+        scheduleSSEReconnect();
       };
 
-      _sse.onopen = () => {
+      source.onopen = () => {
+        if (_sse !== source) return;
         // SSE connected — stop redundant polling timer to save requests
         if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
       };

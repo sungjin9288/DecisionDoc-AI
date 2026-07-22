@@ -215,6 +215,8 @@ Acceptance:
 - a password change increments the persisted credential version with the password hash, rejects every older access
   and refresh token, commits a replacement pair in the initiating browser, and reloads another same-origin tab
   whose credential version is stale
+- an open SSE subscription rechecks token expiry and persisted user authority within 15 seconds, stops application
+  events on revocation or authority failure, and preserves browser credentials when the failure is retryable
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

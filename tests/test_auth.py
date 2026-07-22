@@ -16,8 +16,12 @@ Coverage:
 """
 from __future__ import annotations
 
+import queue
+
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.async_helper import run_async
 
 TEST_JWT_SECRET_KEY = "test-secret-key-auth-tests-32chars!!"
 TEST_JWT_EXPIRY_SECRET_KEY = "test-secret-key-auth-expiry-32chars!"
@@ -55,6 +59,42 @@ def _register_and_login(client: TestClient) -> dict:
         "/auth/login",
         json={"username": "admin", "password": "AdminPass1!"},
     ).json()
+
+
+class _EventRequest:
+    def __init__(self, *, disconnect_after: int | None = None):
+        self.disconnect_after = disconnect_after
+        self.checks = 0
+
+    async def is_disconnected(self):
+        self.checks += 1
+        return self.disconnect_after is not None and self.checks > self.disconnect_after
+
+
+class _RecordingEventBus:
+    def __init__(self):
+        self.unsubscribed = []
+
+    def unsubscribe(self, tenant_id, subscription):
+        self.unsubscribed.append((tenant_id, subscription))
+
+
+def _collect_event_stream(events, request, subscription):
+    bus = _RecordingEventBus()
+
+    async def collect():
+        return [
+            chunk
+            async for chunk in events._stream_events(
+                request,
+                token="test-access-token",
+                tenant_id="tenant-a",
+                bus=bus,
+                subscription=subscription,
+            )
+        ]
+
+    return run_async(collect()), bus
 
 
 # ── UserStore unit tests ───────────────────────────────────────────────────────
@@ -335,6 +375,82 @@ def test_events_reject_existing_access_token_after_user_deactivation(
     with pytest.raises(HTTPException) as inactive_error:
         events._resolve_event_tenant_id(token, data_dir=tmp_path)
     assert inactive_error.value.status_code == 401
+
+
+def test_open_events_stream_closes_after_access_authority_is_revoked(monkeypatch):
+    from app.routers import events
+
+    def reject_access(*args, **kwargs):
+        raise events._event_auth_error()
+
+    monkeypatch.setattr(events, "_AUTH_RECHECK_INTERVAL", 0.0)
+    monkeypatch.setattr(events, "_resolve_event_tenant_id", reject_access)
+    subscription = queue.SimpleQueue()
+    subscription.put_nowait(
+        {
+            "event_type": "notification",
+            "data": {"private_message": "must-not-be-delivered"},
+        }
+    )
+    chunks, bus = _collect_event_stream(events, _EventRequest(), subscription)
+
+    assert chunks == [
+        'event: auth_revoked\ndata: {"reason":"access_invalidated","refresh_allowed":true}\n\n'
+    ]
+    assert bus.unsubscribed == [("tenant-a", subscription)]
+
+
+def test_open_events_stream_fails_closed_when_auth_authority_is_unavailable(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import events
+
+    def fail_access_read(*args, **kwargs):
+        raise HTTPException(status_code=503, detail="auth unavailable")
+
+    monkeypatch.setattr(events, "_AUTH_RECHECK_INTERVAL", 0.0)
+    monkeypatch.setattr(events, "_resolve_event_tenant_id", fail_access_read)
+    subscription = queue.SimpleQueue()
+    subscription.put_nowait(
+        {
+            "event_type": "message_posted",
+            "data": {"private_message": "must-not-be-delivered"},
+        }
+    )
+    chunks, bus = _collect_event_stream(events, _EventRequest(), subscription)
+
+    assert chunks == [
+        'event: auth_unavailable\ndata: {"reason":"authority_unavailable","retryable":true}\n\n'
+    ]
+    assert bus.unsubscribed == [("tenant-a", subscription)]
+
+
+def test_open_events_stream_keeps_delivering_for_current_access(monkeypatch):
+    from app.routers import events
+
+    monkeypatch.setattr(events, "_AUTH_RECHECK_INTERVAL", 0.0)
+    monkeypatch.setattr(
+        events,
+        "_resolve_event_tenant_id",
+        lambda *args, **kwargs: "tenant-a",
+    )
+    subscription = queue.SimpleQueue()
+    subscription.put_nowait(
+        {
+            "event_type": "notification",
+            "data": {"notification_id": "notification-1"},
+        }
+    )
+    chunks, bus = _collect_event_stream(
+        events,
+        _EventRequest(disconnect_after=1),
+        subscription,
+    )
+
+    assert chunks == [
+        'event: notification\ndata: {"notification_id": "notification-1"}\n\n'
+    ]
+    assert bus.unsubscribed == [("tenant-a", subscription)]
 
 
 def test_missing_token_returns_401_when_users_exist(tmp_path, monkeypatch):

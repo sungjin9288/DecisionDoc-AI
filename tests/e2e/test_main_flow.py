@@ -1547,6 +1547,159 @@ def test_password_change_rotates_session_and_reloads_other_tabs(page, live_serve
         second_page.close()
 
 
+def test_open_sse_session_closes_after_password_credential_rotation(
+    page,
+    live_server,
+    monkeypatch,
+):
+    from app.routers import events
+
+    monkeypatch.setattr(events, "_AUTH_RECHECK_INTERVAL", 0.05, raising=False)
+    current = page.evaluate(
+        """() => ({
+          userId: _currentUser.user_id || _currentUser.sub,
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+        })"""
+    )
+    page.evaluate(
+        """() => {
+          _documentOpsReviewDrafts.set('open-sse-stale-auth-draft', {
+            notes: 'credential 폐기 전에 열어 둔 실시간 검토 메모',
+            scoreText: '0.8',
+          });
+          startSSE();
+        }"""
+    )
+    page.wait_for_function("() => _sse?.readyState === EventSource.OPEN", timeout=5000)
+
+    password_changed = False
+    try:
+        password_changed = live_server["user_store"].change_password(
+            current["userId"],
+            "AdminPass1!",
+            "SseRotatedPass2!",
+        )
+        assert password_changed is True
+
+        page.wait_for_selector("#login-screen", state="visible", timeout=5000)
+        result = page.evaluate(
+            """({ oldAccessToken, oldRefreshToken }) => ({
+              accessTokenCleared: localStorage.getItem('dd_access_token') === null,
+              refreshTokenCleared: localStorage.getItem('dd_refresh_token') === null,
+              oldAccessTokenWasReplaced:
+                localStorage.getItem('dd_access_token') !== oldAccessToken,
+              oldRefreshTokenWasReplaced:
+                localStorage.getItem('dd_refresh_token') !== oldRefreshToken,
+              currentUserCleared: _currentUser === null,
+              reviewDraftCount: _documentOpsReviewDrafts.size,
+              streamClosed: _sse === null,
+            })""",
+            {
+                "oldAccessToken": current["accessToken"],
+                "oldRefreshToken": current["refreshToken"],
+            },
+        )
+
+        assert result == {
+            "accessTokenCleared": True,
+            "refreshTokenCleared": True,
+            "oldAccessTokenWasReplaced": True,
+            "oldRefreshTokenWasReplaced": True,
+            "currentUserCleared": True,
+            "reviewDraftCount": 0,
+            "streamClosed": True,
+        }
+    finally:
+        if password_changed:
+            assert live_server["user_store"].change_password(
+                current["userId"],
+                "SseRotatedPass2!",
+                "AdminPass1!",
+            )
+
+
+def test_sse_stale_callbacks_do_not_close_replacement_session(page):
+    result = page.evaluate(
+        """() => {
+          stopSSE();
+          stopNotifPolling();
+          const NativeEventSource = window.EventSource;
+          const sources = [];
+
+          class FakeEventSource {
+            constructor(url) {
+              this.url = url;
+              this.closed = false;
+              this.listeners = new Map();
+              sources.push(this);
+            }
+            addEventListener(name, listener) {
+              this.listeners.set(name, listener);
+            }
+            close() {
+              this.closed = true;
+            }
+            emit(name) {
+              this.listeners.get(name)?.({ data: '{}' });
+            }
+          }
+
+          window.EventSource = FakeEventSource;
+          _documentOpsReviewDrafts.set('sse-authority-unavailable-draft', {
+            notes: '일시 장애 뒤에도 남아야 하는 검토 메모',
+            scoreText: '0.7',
+          });
+          startSSE();
+          const first = sources[0];
+          startSSE();
+          const replacement = sources[1];
+          first.onerror();
+          const staleCallback = {
+            firstClosed: first.closed,
+            replacementPreserved: _sse === replacement,
+            replacementClosed: replacement.closed,
+            reconnectScheduled: _sseReconnectTimer !== null,
+          };
+
+          replacement.emit('auth_unavailable');
+          const unavailable = {
+            accessTokenPreserved: Boolean(localStorage.getItem('dd_access_token')),
+            refreshTokenPreserved: Boolean(localStorage.getItem('dd_refresh_token')),
+            currentUserPreserved: Boolean(_currentUser),
+            reviewDraftCount: _documentOpsReviewDrafts.size,
+            replacementClosed: replacement.closed,
+            streamReleased: _sse === null,
+            reconnectScheduled: _sseReconnectTimer !== null,
+          };
+
+          stopSSE();
+          stopNotifPolling();
+          window.EventSource = NativeEventSource;
+          startSSE();
+          return { staleCallback, unavailable };
+        }"""
+    )
+
+    assert result == {
+        "staleCallback": {
+            "firstClosed": True,
+            "replacementPreserved": True,
+            "replacementClosed": False,
+            "reconnectScheduled": False,
+        },
+        "unavailable": {
+            "accessTokenPreserved": True,
+            "refreshTokenPreserved": True,
+            "currentUserPreserved": True,
+            "reviewDraftCount": 1,
+            "replacementClosed": True,
+            "streamReleased": True,
+            "reconnectScheduled": True,
+        },
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()
