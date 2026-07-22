@@ -1294,14 +1294,15 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert "document.querySelectorAll('[data-profile-close]').forEach" in content
     assert "$id('profile-form')?.addEventListener('submit', saveMyProfile)" in content
     assert "async function loadMyAuthSessions()" in content
+    assert "async function saveMyAuthSessionLabel(sessionId, label, button)" in content
     assert "async function revokeMyAuthSession(sessionId, button)" in content
     assert "async function revokeMyOtherAuthSessions(button)" in content
     assert "async function revokeAllMyAuthSessions(button)" in content
-    assert "async function runMyAuthSessionRevocation" in content
+    assert "async function runMyAuthSessionMutation" in content
     assert "function clearLocalAuthSession()" in content
     assert "_profileSessionRequestVersion" in content
-    assert "_profileSessionRevokeVersion" in content
-    assert "_profileSessionRevokeVersion === revokeVersion" in content
+    assert "_profileSessionMutationVersion" in content
+    assert "_profileSessionMutationVersion === mutationVersion" in content
     assert "localStorage.getItem('dd_access_token') !== accessToken" in content
     assert "persistAuthSession(passwordData.access_token" in content
     assert "비밀번호는 변경되었지만 새 로그인 세션을 저장하지 못했습니다." in content

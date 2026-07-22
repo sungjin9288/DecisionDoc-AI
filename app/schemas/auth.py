@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Auth schemas ───────────────────────────────────────────────────────────────
@@ -30,6 +30,32 @@ class RevokeAuthSessionRequest(BaseModel):
         max_length=32,
         pattern=r"^[0-9a-f]{32}$",
     )
+
+
+class UpdateAuthSessionLabelRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    session_id: str = Field(
+        ...,
+        min_length=32,
+        max_length=32,
+        pattern=r"^[0-9a-f]{32}$",
+    )
+    label: str | None
+
+    @field_validator("label")
+    @classmethod
+    def normalize_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        label = value.strip()
+        if not label:
+            raise ValueError("label must not be empty")
+        if len(label) > 40:
+            raise ValueError("label must be at most 40 characters")
+        if any(ord(character) < 32 or ord(character) == 127 for character in label):
+            raise ValueError("label must not contain control characters")
+        return label
 
 
 class RevokeOtherAuthSessionsRequest(BaseModel):

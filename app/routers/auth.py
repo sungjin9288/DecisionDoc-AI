@@ -24,6 +24,7 @@ from app.schemas import (
     RevokeAllAuthSessionsRequest,
     RevokeAuthSessionRequest,
     RevokeOtherAuthSessionsRequest,
+    UpdateAuthSessionLabelRequest,
     UpdateMyProfileRequest,
     UpdateUserRequest,
     WithdrawRequest,
@@ -285,11 +286,55 @@ async def list_auth_sessions(request: Request):
                     "session_id": record["session_id"],
                     "created_at": record["created_at"],
                     "expires_at": record["expires_at"],
+                    "label": record.get("label"),
                     "current": record["session_id"] == current_session_id,
                 }
                 for record in records
             ]
         },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.patch("/auth/sessions/label")
+async def update_auth_session_label(
+    request: Request,
+    body: UpdateAuthSessionLabelRequest,
+):
+    """Name one owned active session without collecting device metadata."""
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    tenant_id = get_tenant_id(request)
+    user_id, _ = _require_session_bound_user(request)
+    user = get_request_user_store(request, tenant_id).get_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    try:
+        updated = get_request_auth_session_store(request, tenant_id).set_label(
+            body.session_id,
+            user_id=user_id,
+            credential_version=user.credential_version,
+            label=body.label,
+        )
+    except (AuthSessionStoreError, ValueError) as exc:
+        logger.error(
+            "[Auth] Session label update failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션 이름을 일시적으로 저장할 수 없습니다.",
+        ) from exc
+    if not updated:
+        raise HTTPException(404, "로그인 세션을 찾을 수 없습니다.")
+
+    message = (
+        "로그인 세션 이름이 저장되었습니다."
+        if body.label is not None
+        else "로그인 세션 이름이 삭제되었습니다."
+    )
+    return JSONResponse(
+        content={"message": message, "label": body.label},
         headers={"Cache-Control": "no-store"},
     )
 

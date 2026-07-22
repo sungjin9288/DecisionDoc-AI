@@ -14,12 +14,14 @@ from app.storage.state_backend import StateBackend, StateBackendError, get_state
 from app.tenant import require_tenant_id
 
 
-_CONTRACT_VERSION = "auth-session.v1"
+_CONTRACT_VERSION = "auth-session.v2"
+_LEGACY_CONTRACT_VERSION = "auth-session.v1"
 _SESSION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_LIFETIME = timedelta(days=30)
+_MAX_LABEL_LENGTH = 40
 _MAX_CREATE_ATTEMPTS = 4
-_MAX_REVOKE_ATTEMPTS = 32
-_RECORD_FIELDS = {
+_MAX_MUTATION_ATTEMPTS = 32
+_LEGACY_RECORD_FIELDS = {
     "contract_version",
     "session_id",
     "tenant_id",
@@ -29,6 +31,7 @@ _RECORD_FIELDS = {
     "expires_at",
     "revoked_at",
 }
+_RECORD_FIELDS = _LEGACY_RECORD_FIELDS | {"label"}
 
 
 class AuthSessionStoreError(RuntimeError):
@@ -66,6 +69,18 @@ def _require_credential_version(credential_version: object) -> int:
     if type(credential_version) is not int or credential_version < 0:
         raise ValueError("credential_version must be a non-negative integer")
     return credential_version
+
+
+def _require_label(label: object) -> str | None:
+    if label is None:
+        return None
+    if not isinstance(label, str) or not label or label != label.strip():
+        raise ValueError("label must be a canonical non-empty string or null")
+    if len(label) > _MAX_LABEL_LENGTH:
+        raise ValueError(f"label must be at most {_MAX_LABEL_LENGTH} characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in label):
+        raise ValueError("label must not contain control characters")
+    return label
 
 
 def _parse_timestamp(value: object, *, field: str) -> datetime:
@@ -110,9 +125,16 @@ class AuthSessionStore:
         ).as_posix()
 
     def _validate_record(self, record: object, *, session_id: str) -> dict[str, Any]:
-        if not isinstance(record, dict) or set(record) != _RECORD_FIELDS:
+        if not isinstance(record, dict):
             raise AuthSessionStoreError("Invalid authentication session document")
-        if record.get("contract_version") != _CONTRACT_VERSION:
+        contract_version = record.get("contract_version")
+        if contract_version == _CONTRACT_VERSION:
+            expected_fields = _RECORD_FIELDS
+        elif contract_version == _LEGACY_CONTRACT_VERSION:
+            expected_fields = _LEGACY_RECORD_FIELDS
+        else:
+            raise AuthSessionStoreError("Invalid authentication session contract")
+        if set(record) != expected_fields:
             raise AuthSessionStoreError("Invalid authentication session contract")
         if record.get("session_id") != session_id:
             raise AuthSessionStoreError("Authentication session identity mismatch")
@@ -121,6 +143,8 @@ class AuthSessionStore:
         try:
             _require_user_id(record.get("user_id"))
             _require_credential_version(record.get("credential_version"))
+            if contract_version == _CONTRACT_VERSION:
+                _require_label(record.get("label"))
         except ValueError as exc:
             raise AuthSessionStoreError("Invalid authentication session authority") from exc
 
@@ -177,6 +201,7 @@ class AuthSessionStore:
                 "created_at": created_at.isoformat(),
                 "expires_at": expires_at.isoformat(),
                 "revoked_at": None,
+                "label": None,
             }
             payload = self._encode(record)
             try:
@@ -278,6 +303,84 @@ class AuthSessionStore:
         )
         return active
 
+    def set_label(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        credential_version: int,
+        label: str | None,
+    ) -> bool:
+        """Set an owned active session label with optimistic concurrency."""
+        canonical_session_id = require_auth_session_id(session_id)
+        canonical_user_id = _require_user_id(user_id)
+        canonical_version = _require_credential_version(credential_version)
+        canonical_label = _require_label(label)
+        relative_path = self._relative_path(canonical_session_id)
+
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
+            expected, record = self._read(canonical_session_id)
+            if (
+                record is None
+                or record["user_id"] != canonical_user_id
+                or record["credential_version"] != canonical_version
+                or record["revoked_at"] is not None
+                or _parse_timestamp(record["expires_at"], field="expires_at")
+                <= _utcnow()
+            ):
+                return False
+            if (
+                record["contract_version"] == _CONTRACT_VERSION
+                and record.get("label") == canonical_label
+            ):
+                return True
+
+            replacement_record = {
+                **record,
+                "contract_version": _CONTRACT_VERSION,
+                "label": canonical_label,
+            }
+            replacement = self._encode(replacement_record)
+            try:
+                replaced = self._backend.replace_text_if_equal(
+                    relative_path,
+                    expected=expected or "",
+                    replacement=replacement,
+                )
+            except StateBackendError as exc:
+                try:
+                    observed = self._backend.read_text(relative_path)
+                except (StateBackendError, UnicodeError):
+                    observed = None
+                if observed == replacement:
+                    return True
+                if observed is not None:
+                    try:
+                        observed_record = self._decode(
+                            observed,
+                            session_id=canonical_session_id,
+                        )
+                    except AuthSessionStoreError:
+                        pass
+                    else:
+                        if (
+                            observed_record["contract_version"] == _CONTRACT_VERSION
+                            and observed_record["user_id"] == canonical_user_id
+                            and observed_record["credential_version"]
+                            == canonical_version
+                            and observed_record.get("label") == canonical_label
+                        ):
+                            return True
+                raise AuthSessionStoreError(
+                    "Failed to update authentication session label"
+                ) from exc
+            if replaced:
+                return True
+
+        raise AuthSessionStoreError(
+            "Authentication session changed too many times to update safely"
+        )
+
     def revoke_others(
         self,
         *,
@@ -341,7 +444,7 @@ class AuthSessionStore:
         canonical_user_id = _require_user_id(user_id)
         relative_path = self._relative_path(canonical_session_id)
 
-        for _ in range(_MAX_REVOKE_ATTEMPTS):
+        for _ in range(_MAX_MUTATION_ATTEMPTS):
             expected, record = self._read(canonical_session_id)
             if record is None or record["user_id"] != canonical_user_id:
                 return False

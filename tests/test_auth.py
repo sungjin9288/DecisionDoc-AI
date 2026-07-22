@@ -930,7 +930,7 @@ def test_auth_sessions_list_marks_current_and_disables_response_caching(
     current = next(session for session in sessions if session["current"])
     assert current["session_id"] == second_claims["session_id"]
     assert all(
-        set(session) == {"session_id", "created_at", "expires_at", "current"}
+        set(session) == {"session_id", "created_at", "expires_at", "label", "current"}
         for session in sessions
     )
 
@@ -988,6 +988,157 @@ def test_auth_session_revoke_terminates_only_selected_other_session(
         "/auth/refresh",
         json={"refresh_token": second["refresh_token"]},
     ).status_code == 401
+
+
+def test_auth_session_label_can_be_set_listed_and_cleared(tmp_path, monkeypatch):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    current = _register_and_login(client)
+    other = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+    other_claims = verify_token(other["access_token"])
+    current_claims = verify_token(current["access_token"])
+    assert other_claims is not None
+    assert current_claims is not None
+    headers = {"Authorization": f"Bearer {current['access_token']}"}
+
+    current_named = client.patch(
+        "/auth/sessions/label",
+        headers=headers,
+        json={"session_id": current_claims["session_id"], "label": "현재 브라우저"},
+    )
+    named = client.patch(
+        "/auth/sessions/label",
+        headers=headers,
+        json={"session_id": other_claims["session_id"], "label": "업무용 Mac"},
+    )
+    listed = client.get("/auth/sessions", headers=headers)
+    cleared = client.patch(
+        "/auth/sessions/label",
+        headers=headers,
+        json={"session_id": other_claims["session_id"], "label": None},
+    )
+
+    assert current_named.status_code == 200
+    assert named.status_code == 200
+    assert named.headers["cache-control"] == "no-store"
+    assert named.json() == {
+        "message": "로그인 세션 이름이 저장되었습니다.",
+        "label": "업무용 Mac",
+    }
+    sessions = listed.json()["sessions"]
+    target = next(
+        session
+        for session in sessions
+        if session["session_id"] == other_claims["session_id"]
+    )
+    assert target["label"] == "업무용 Mac"
+    assert cleared.status_code == 200
+    assert cleared.json()["label"] is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"session_id": "a" * 32},
+        {"session_id": "A" * 32, "label": "노트북"},
+        {"session_id": "a" * 32, "label": ""},
+        {"session_id": "a" * 32, "label": "a" * 41},
+        {"session_id": "a" * 32, "label": 1},
+        {"session_id": "a" * 32, "label": "노트북", "extra": True},
+    ],
+)
+def test_auth_session_label_request_is_strict(tmp_path, monkeypatch, payload):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    response = client.patch(
+        "/auth/sessions/label",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_auth_session_label_hides_foreign_and_inactive_targets(tmp_path, monkeypatch):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    admin_claims = verify_token(admin["access_token"])
+    assert admin_claims is not None
+    client.post(
+        "/admin/users",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "username": "member_label",
+            "display_name": "Member",
+            "email": "member-label@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+        },
+    )
+    member = client.post(
+        "/auth/login",
+        json={"username": "member_label", "password": "MemberPass1!"},
+    ).json()
+    member_claims = verify_token(member["access_token"])
+    assert member_claims is not None
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    foreign = client.patch(
+        "/auth/sessions/label",
+        headers=headers,
+        json={"session_id": member_claims["session_id"], "label": "foreign"},
+    )
+    client.post("/auth/logout", headers=headers)
+    inactive = client.patch(
+        "/auth/sessions/label",
+        headers={"Authorization": f"Bearer {member['access_token']}"},
+        json={"session_id": admin_claims["session_id"], "label": "inactive"},
+    )
+
+    assert foreign.status_code == 404
+    assert inactive.status_code == 404
+
+
+def test_auth_session_label_fails_closed_without_rewriting_corrupt_target(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    current = _register_and_login(client)
+    other = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+    other_claims = verify_token(other["access_token"])
+    assert other_claims is not None
+    path = (
+        tmp_path
+        / "tenants"
+        / "system"
+        / "auth_sessions"
+        / f"{other_claims['session_id']}.json"
+    )
+    corrupt = b'{"label":"first","label":"forged"}'
+    path.write_bytes(corrupt)
+
+    response = client.patch(
+        "/auth/sessions/label",
+        headers={"Authorization": f"Bearer {current['access_token']}"},
+        json={"session_id": other_claims["session_id"], "label": "업무용 Mac"},
+    )
+
+    assert response.status_code == 503
+    assert path.read_bytes() == corrupt
 
 
 def test_auth_session_bulk_revoke_terminates_all_other_sessions_only(
@@ -1250,11 +1401,17 @@ def test_sessionless_legacy_token_cannot_list_or_revoke_auth_sessions(
         headers=headers,
         json={"confirm": True},
     )
+    labeled = client.patch(
+        "/auth/sessions/label",
+        headers=headers,
+        json={"session_id": claims["session_id"], "label": "legacy"},
+    )
 
     assert listed.status_code == 409
     assert revoked.status_code == 409
     assert bulk_revoked.status_code == 409
     assert all_revoked.status_code == 409
+    assert labeled.status_code == 409
     assert "기존 로그인 세션" in listed.json()["detail"]
     assert client.get("/auth/me", headers=headers).status_code == 200
 

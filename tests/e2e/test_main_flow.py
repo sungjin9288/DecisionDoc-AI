@@ -1459,16 +1459,16 @@ def test_profile_can_revoke_one_other_login_without_ending_current_session(
         page.click("#user-info")
         page.click('[data-user-menu-action="profile"]')
         page.wait_for_selector("#profile-modal", state="visible")
-        page.wait_for_selector("#profile-sessions-list button")
-        before_count = page.locator("#profile-sessions-list button").count()
+        page.wait_for_selector("#profile-sessions-list [data-session-revoke]")
+        before_count = page.locator("#profile-sessions-list [data-session-revoke]").count()
         session_markup = page.locator("#profile-sessions-list").inner_html()
 
         assert before_count >= 1
         assert other_claims["session_id"] not in session_markup
 
-        page.locator("#profile-sessions-list button").first.click()
+        page.locator("#profile-sessions-list [data-session-revoke]").first.click()
         page.wait_for_function(
-            "expected => document.querySelectorAll('#profile-sessions-list button').length === expected",
+            "expected => document.querySelectorAll('#profile-sessions-list [data-session-revoke]').length === expected",
             arg=before_count - 1,
         )
         result = page.evaluate(
@@ -1514,6 +1514,65 @@ def test_profile_can_revoke_one_other_login_without_ending_current_session(
         )
 
 
+def test_profile_can_name_a_login_without_exposing_its_session_id(page, live_server):
+    page.set_viewport_size({"width": 390, "height": 844})
+    label = "DecisionDoc-workstation-2026-primary"
+    other = page.evaluate(
+        """async ({ username, password }) => {
+          const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          return response.json();
+        }""",
+        live_server["auth"],
+    )
+    from app.services.auth_service import verify_token
+
+    other_claims = verify_token(other["access_token"])
+    assert other_claims is not None
+
+    page.click("#user-info")
+    page.click('[data-user-menu-action="profile"]')
+    page.wait_for_selector("#profile-modal", state="visible")
+    row = page.locator(".profile-session-row").filter(has_text="다른 로그인").first
+    label_input = row.locator("[data-session-label-input]")
+    label_input.fill(label)
+    row.locator("[data-session-label-save]").click()
+    page.wait_for_function(
+        "expected => [...document.querySelectorAll('.profile-session-title')].some(element => element.textContent.includes(expected))",
+        arg=label,
+    )
+
+    session_markup = page.locator("#profile-sessions-list").inner_html()
+    assert label in page.locator("#profile-sessions-list").inner_text()
+    assert other_claims["session_id"] not in session_markup
+    overflow = page.evaluate(
+        """() => ({
+          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          rows: [...document.querySelectorAll('.profile-session-row')].map(
+            row => Math.ceil(row.getBoundingClientRect().right - window.innerWidth),
+          ),
+        })"""
+    )
+    assert overflow["page"] <= 0
+    assert all(value <= 0 for value in overflow["rows"])
+
+    listed = page.evaluate(
+        """async () => {
+          const response = await fetch('/auth/sessions', { headers: getAuthHeaders() });
+          return response.json();
+        }"""
+    )
+    target = next(
+        session
+        for session in listed["sessions"]
+        if session["session_id"] == other_claims["session_id"]
+    )
+    assert target["label"] == label
+
+
 def test_profile_can_revoke_all_other_logins_without_ending_current_session(
     page,
     live_server,
@@ -1549,7 +1608,7 @@ def test_profile_can_revoke_all_other_logins_without_ending_current_session(
 
     page.click("#profile-sessions-revoke-others")
     page.wait_for_function(
-        "() => document.querySelectorAll('#profile-sessions-list button').length === 0",
+        "() => document.querySelectorAll('#profile-sessions-list [data-session-revoke]').length === 0",
     )
 
     result = page.evaluate(
@@ -1715,6 +1774,7 @@ def test_profile_session_inventory_ignores_a_late_stale_response(page):
               session_id: 'a'.repeat(32),
               created_at: createdAt,
               expires_at: '2026-08-21T12:00:00+00:00',
+              label: null,
               current: true,
             }],
           }), {
@@ -1784,7 +1844,7 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
             const second = revokeMyOtherAuthSessions();
             firstResolve(new Response('{}', { status: 200 }));
             await first;
-            const newerRequestStillLocked = _profileSessionRevokeInFlight;
+            const newerRequestStillLocked = _profileSessionMutationInFlight;
             secondResolve(new Response(JSON.stringify({ detail: 'expected test failure' }), {
               status: 503,
               headers: { 'Content-Type': 'application/json' },
@@ -1794,7 +1854,7 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
               requestCount,
               blockedBulkSkippedConfirmation,
               newerRequestStillLocked,
-              unlockedAfterCurrentRequest: !_profileSessionRevokeInFlight,
+              unlockedAfterCurrentRequest: !_profileSessionMutationInFlight,
             };
           } finally {
             window.fetch = originalFetch;

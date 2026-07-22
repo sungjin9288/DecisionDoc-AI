@@ -4167,7 +4167,12 @@
       border-radius: 8px;
       background: rgba(255,255,255,.72);
     }
-    .profile-session-copy { min-width: 0; }
+    .profile-session-copy {
+      display: grid;
+      gap: .45rem;
+      min-width: 0;
+      flex: 1;
+    }
     .profile-session-title {
       display: flex;
       align-items: center;
@@ -4177,6 +4182,7 @@
       font-size: .86rem;
       font-weight: 700;
       color: var(--text-strong);
+      overflow-wrap: anywhere;
     }
     .profile-session-current {
       display: inline-flex;
@@ -4193,12 +4199,42 @@
       font-size: .76rem;
       line-height: 1.45;
     }
+    .profile-session-label-controls {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      max-width: 360px;
+    }
+    .profile-session-label-input {
+      min-width: 0;
+      flex: 1;
+      height: 34px;
+      padding: .35rem .55rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text-strong);
+      font: inherit;
+      font-size: .78rem;
+    }
+    .profile-session-label-input:focus {
+      outline: 2px solid rgba(37,99,235,.18);
+      border-color: #2563eb;
+    }
+    .profile-session-actions {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      flex-shrink: 0;
+    }
     @media (max-width: 560px) {
       .profile-session-row {
         align-items: flex-start;
         flex-direction: column;
       }
-      .profile-session-row button { align-self: flex-end; }
+      .profile-session-copy,
+      .profile-session-label-controls { width: 100%; max-width: none; }
+      .profile-session-actions { align-self: flex-end; }
     }
 
     /* ── Notification bell ──────────────────────────────────────── */
@@ -18267,8 +18303,8 @@
   let _authSessionRecoveryPromise = null;
   let _crossTabAuthReloadRequested = false;
   let _profileSessionRequestVersion = 0;
-  let _profileSessionRevokeInFlight = false;
-  let _profileSessionRevokeVersion = 0;
+  let _profileSessionMutationInFlight = false;
+  let _profileSessionMutationVersion = 0;
   const AUTH_SESSION_STORAGE_KEYS = new Set([
     'dd_access_token',
     'dd_refresh_token',
@@ -18648,8 +18684,8 @@
 
   function resetMyAuthSessionState() {
     _profileSessionRequestVersion += 1;
-    _profileSessionRevokeVersion += 1;
-    _profileSessionRevokeInFlight = false;
+    _profileSessionMutationVersion += 1;
+    _profileSessionMutationInFlight = false;
     $id('profile-sessions-list')?.replaceChildren();
     const revokeOthersButton = $id('profile-sessions-revoke-others');
     if (revokeOthersButton) {
@@ -18689,6 +18725,15 @@
         || !/^[0-9a-f]{32}$/.test(session.session_id)
         || typeof session.created_at !== 'string'
         || typeof session.expires_at !== 'string'
+        || !(
+          session.label === null
+          || (
+            typeof session.label === 'string'
+            && session.label.length > 0
+            && session.label.length <= 40
+            && session.label === session.label.trim()
+          )
+        )
         || typeof session.current !== 'boolean'
       ) {
         throw new Error('로그인 세션 응답 형식이 올바르지 않습니다.');
@@ -18726,7 +18771,9 @@
       copy.className = 'profile-session-copy';
       const title = document.createElement('div');
       title.className = 'profile-session-title';
-      title.append(document.createTextNode(session.current ? '이 브라우저' : '다른 로그인'));
+      title.append(document.createTextNode(
+        session.label || (session.current ? '이 브라우저' : '다른 로그인'),
+      ));
       if (session.current) {
         const current = document.createElement('span');
         current.className = 'profile-session-current';
@@ -18736,20 +18783,48 @@
       const time = document.createElement('div');
       time.className = 'profile-session-time';
       time.textContent = `시작 ${formatAuthSessionTime(session.created_at)} · 만료 ${formatAuthSessionTime(session.expires_at)}`;
-      copy.append(title, time);
+      const labelControls = document.createElement('div');
+      labelControls.className = 'profile-session-label-controls';
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.className = 'profile-session-label-input';
+      labelInput.maxLength = 40;
+      labelInput.placeholder = '기기 이름';
+      labelInput.value = session.label || '';
+      labelInput.setAttribute('aria-label', '로그인 세션 기기 이름');
+      labelInput.setAttribute('data-session-label-input', '');
+      const labelButton = document.createElement('button');
+      labelButton.type = 'button';
+      labelButton.className = 'btn-secondary';
+      labelButton.textContent = '저장';
+      labelButton.setAttribute('data-session-label-save', '');
+      labelButton.addEventListener('click', () => {
+        void saveMyAuthSessionLabel(session.session_id, labelInput.value, labelButton);
+      });
+      labelInput.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        labelButton.click();
+      });
+      labelControls.append(labelInput, labelButton);
+      copy.append(title, time, labelControls);
       row.append(copy);
 
+      const actions = document.createElement('div');
+      actions.className = 'profile-session-actions';
       if (!session.current) {
         const revokeButton = document.createElement('button');
         revokeButton.type = 'button';
         revokeButton.className = 'btn-secondary';
         revokeButton.textContent = '종료';
         revokeButton.setAttribute('aria-label', '다른 로그인 세션 종료');
+        revokeButton.setAttribute('data-session-revoke', '');
         revokeButton.addEventListener('click', () => {
           void revokeMyAuthSession(session.session_id, revokeButton);
         });
-        row.append(revokeButton);
+        actions.append(revokeButton);
       }
+      row.append(actions);
       list.append(row);
     });
     setProfileSessionsStatus(`활성 세션 ${sessions.length}개`);
@@ -18798,36 +18873,38 @@
     }
   }
 
-  async function runMyAuthSessionRevocation({
+  async function runMyAuthSessionMutation({
     endpoint,
+    method = 'POST',
     payload,
     button,
     pendingMessage,
     successMessage,
     failureMessage,
     buttonLabel,
+    pendingButtonLabel = '처리 중...',
     afterSuccess = loadMyAuthSessions,
   }) {
-    if (_profileSessionRevokeInFlight) return;
+    if (_profileSessionMutationInFlight) return;
     const accessToken = localStorage.getItem('dd_access_token');
     if (!accessToken) return;
     const requestVersion = ++_profileSessionRequestVersion;
-    const revokeVersion = ++_profileSessionRevokeVersion;
-    _profileSessionRevokeInFlight = true;
+    const mutationVersion = ++_profileSessionMutationVersion;
+    _profileSessionMutationInFlight = true;
     const refreshButton = $id('profile-sessions-refresh');
     const revokeOthersButton = $id('profile-sessions-revoke-others');
     const revokeAllButton = $id('profile-sessions-revoke-all');
     if (refreshButton) refreshButton.disabled = true;
     if (revokeOthersButton) revokeOthersButton.disabled = true;
     if (revokeAllButton) revokeAllButton.disabled = true;
-    $id('profile-sessions-list')?.querySelectorAll('button').forEach(control => {
+    $id('profile-sessions-list')?.querySelectorAll('button, input').forEach(control => {
       control.disabled = true;
     });
-    if (button) button.textContent = '종료 중...';
+    if (button) button.textContent = pendingButtonLabel;
     setProfileSessionsStatus(pendingMessage);
     try {
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method,
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
@@ -18848,7 +18925,7 @@
         error.message || failureMessage,
         'error',
       );
-      $id('profile-sessions-list')?.querySelectorAll('button').forEach(control => {
+      $id('profile-sessions-list')?.querySelectorAll('button, input').forEach(control => {
         control.disabled = false;
       });
       if (button) button.textContent = buttonLabel;
@@ -18856,14 +18933,31 @@
       if (revokeOthersButton) revokeOthersButton.disabled = false;
       if (revokeAllButton) revokeAllButton.disabled = false;
     } finally {
-      if (_profileSessionRevokeVersion === revokeVersion) {
-        _profileSessionRevokeInFlight = false;
+      if (_profileSessionMutationVersion === mutationVersion) {
+        _profileSessionMutationInFlight = false;
       }
     }
   }
 
+  async function saveMyAuthSessionLabel(sessionId, label, button) {
+    const canonicalLabel = String(label || '').trim();
+    return runMyAuthSessionMutation({
+      endpoint: '/auth/sessions/label',
+      method: 'PATCH',
+      payload: { session_id: sessionId, label: canonicalLabel || null },
+      button,
+      pendingMessage: '로그인 세션 이름을 저장하는 중입니다...',
+      successMessage: canonicalLabel
+        ? '로그인 세션 이름을 저장했습니다.'
+        : '로그인 세션 이름을 삭제했습니다.',
+      failureMessage: '로그인 세션 이름을 저장하지 못했습니다.',
+      buttonLabel: '저장',
+      pendingButtonLabel: '저장 중...',
+    });
+  }
+
   async function revokeMyAuthSession(sessionId, button) {
-    return runMyAuthSessionRevocation({
+    return runMyAuthSessionMutation({
       endpoint: '/auth/sessions/revoke',
       payload: { session_id: sessionId },
       button,
@@ -18871,16 +18965,17 @@
       successMessage: '선택한 로그인 세션을 종료했습니다.',
       failureMessage: '로그인 세션을 종료하지 못했습니다.',
       buttonLabel: '종료',
+      pendingButtonLabel: '종료 중...',
     });
   }
 
   async function revokeMyOtherAuthSessions(button) {
-    if (_profileSessionRevokeInFlight) return;
+    if (_profileSessionMutationInFlight) return;
     const confirmed = window.confirm(
       '현재 브라우저는 유지하고 다른 로그인 세션을 모두 종료하시겠습니까?',
     );
     if (!confirmed) return;
-    return runMyAuthSessionRevocation({
+    return runMyAuthSessionMutation({
       endpoint: '/auth/sessions/revoke-others',
       payload: { confirm: true },
       button: button || $id('profile-sessions-revoke-others'),
@@ -18888,16 +18983,17 @@
       successMessage: '다른 로그인 세션을 모두 종료했습니다.',
       failureMessage: '다른 로그인 세션을 종료하지 못했습니다.',
       buttonLabel: '다른 세션 모두 종료',
+      pendingButtonLabel: '종료 중...',
     });
   }
 
   async function revokeAllMyAuthSessions(button) {
-    if (_profileSessionRevokeInFlight) return;
+    if (_profileSessionMutationInFlight) return;
     const confirmed = window.confirm(
       '현재 브라우저를 포함해 모든 기기에서 로그아웃하시겠습니까?',
     );
     if (!confirmed) return;
-    return runMyAuthSessionRevocation({
+    return runMyAuthSessionMutation({
       endpoint: '/auth/sessions/revoke-all',
       payload: { confirm: true },
       button: button || $id('profile-sessions-revoke-all'),
@@ -18905,6 +19001,7 @@
       successMessage: '모든 기기에서 로그아웃했습니다.',
       failureMessage: '모든 로그인 세션을 종료하지 못했습니다.',
       buttonLabel: '모든 기기에서 로그아웃',
+      pendingButtonLabel: '종료 중...',
       afterSuccess: () => {
         clearLocalAuthSession();
         return 'revoked_all';

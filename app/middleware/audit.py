@@ -26,6 +26,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/auth/login"): "user.login",
     ("POST", "/auth/logout"): "user.logout",
     ("GET", "/auth/sessions"): "user.session_list",
+    ("PATCH", "/auth/sessions/label"): "user.session_label_update",
     ("POST", "/auth/sessions/revoke"): "user.session_revoke",
     ("POST", "/auth/sessions/revoke-others"): "user.session_revoke_others",
     ("POST", "/auth/sessions/revoke-all"): "user.session_revoke_all",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import json
 
 import pytest
 
@@ -87,6 +88,105 @@ def test_auth_session_store_lists_and_revokes_selected_s3_backend_authority():
         record["session_id"]
         for record in store.list_active(user_id="user-a", credential_version=3)
     ] == [current]
+
+
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_sets_and_clears_owned_session_label(
+    tmp_path,
+    backend_kind,
+):
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+
+    session_id = store.create(user_id="user-a", credential_version=3)
+
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=3,
+        label="업무용 Mac",
+    ) is True
+    assert store.list_active(user_id="user-a", credential_version=3)[0]["label"] == "업무용 Mac"
+
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=3,
+        label=None,
+    ) is True
+    assert store.list_active(user_id="user-a", credential_version=3)[0]["label"] is None
+
+
+def test_auth_session_store_upgrades_legacy_v1_record_when_label_is_set(tmp_path):
+    store = _store(tmp_path)
+    session_id = store.create(user_id="user-a", credential_version=0)
+    path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{session_id}.json"
+    )
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    legacy["contract_version"] = "auth-session.v1"
+    legacy.pop("label", None)
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    assert store.is_current(session_id, user_id="user-a", credential_version=0)
+    assert store.list_active(user_id="user-a", credential_version=0)[0].get("label") is None
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=0,
+        label="회의실 PC",
+    ) is True
+
+    upgraded = json.loads(path.read_text(encoding="utf-8"))
+    assert upgraded["contract_version"] == "auth-session.v2"
+    assert upgraded["label"] == "회의실 PC"
+
+
+def test_auth_session_store_label_update_requires_current_owner_authority(tmp_path):
+    store = _store(tmp_path)
+    session_id = store.create(user_id="user-a", credential_version=2)
+
+    assert store.set_label(
+        session_id,
+        user_id="user-b",
+        credential_version=2,
+        label="foreign",
+    ) is False
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=3,
+        label="stale",
+    ) is False
+    assert store.revoke(session_id, user_id="user-a") is True
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=2,
+        label="revoked",
+    ) is False
+
+
+def test_auth_session_store_recovers_lost_s3_label_write_response():
+    backend, client = s3_backend()
+    store = AuthSessionStore("tenant-a", backend=backend)
+    session_id = store.create(user_id="user-a", credential_version=0)
+    client.fail_after_next_conditional_write(key_fragment=f"{session_id}.json")
+
+    assert store.set_label(
+        session_id,
+        user_id="user-a",
+        credential_version=0,
+        label="개인 노트북",
+    ) is True
+    assert store.list_active(user_id="user-a", credential_version=0)[0]["label"] == "개인 노트북"
 
 
 @pytest.mark.parametrize("backend_kind", ["local", "s3"])

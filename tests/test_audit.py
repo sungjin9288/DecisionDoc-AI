@@ -809,6 +809,12 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
     second_claims = verify_token(second["access_token"])
     assert second_claims is not None
     listed = client.get("/auth/sessions", headers=_auth(first))
+    label = "감사 로그에 남기지 않을 기기 이름"
+    labeled = client.patch(
+        "/auth/sessions/label",
+        headers=_auth(first),
+        json={"session_id": second_claims["session_id"], "label": label},
+    )
     revoked = client.post(
         "/auth/sessions/revoke",
         headers=_auth(first),
@@ -830,6 +836,7 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
         for entry in results
         if entry["action"] in {
             "user.session_list",
+            "user.session_label_update",
             "user.session_revoke",
             "user.session_revoke_others",
             "user.session_revoke_all",
@@ -838,11 +845,13 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
     serialized = json.dumps(session_entries, ensure_ascii=False)
 
     assert listed.status_code == 200
+    assert labeled.status_code == 200
     assert revoked.status_code == 200
     assert bulk_revoked.status_code == 200
     assert all_revoked.status_code == 200
     assert {entry["action"] for entry in session_entries} == {
         "user.session_list",
+        "user.session_label_update",
         "user.session_revoke",
         "user.session_revoke_others",
         "user.session_revoke_all",
@@ -854,6 +863,7 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
     assert third["access_token"] not in serialized
     assert third["refresh_token"] not in serialized
     assert second_claims["session_id"] not in serialized
+    assert label not in serialized
     bulk_entry = next(
         entry
         for entry in session_entries

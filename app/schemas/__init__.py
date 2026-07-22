@@ -98,6 +98,7 @@ from app.schemas.auth import (
     RevokeAllAuthSessionsRequest,
     RevokeAuthSessionRequest,
     RevokeOtherAuthSessionsRequest,
+    UpdateAuthSessionLabelRequest,
     UpdateMyProfileRequest,
     UpdateUserRequest,
 )
@@ -220,6 +221,7 @@ __all__ = [
     "RevokeAllAuthSessionsRequest",
     "RevokeAuthSessionRequest",
     "RevokeOtherAuthSessionsRequest",
+    "UpdateAuthSessionLabelRequest",
     "ChangePasswordRequest",
     "UpdateMyProfileRequest",
     "CreateUserRequest",
