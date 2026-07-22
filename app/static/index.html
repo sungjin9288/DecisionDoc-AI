@@ -13427,8 +13427,8 @@
       const claims = JSON.parse(atob(String(accessToken || '').split('.')[1]));
       const tenantId = String(claims.tenant_id || '').trim();
       if (!tenantId) return false;
-      _currentTenantId = tenantId;
       localStorage.setItem('dd_tenant_id', tenantId);
+      _currentTenantId = tenantId;
       return true;
     } catch {
       return false;
@@ -13481,7 +13481,14 @@
 
     if (selector) selector.disabled = true;
     try {
-      const accessCheck = await fetch('/bundles', { headers: getAuthHeaders(tenantId) });
+      let accessCheck;
+      try {
+        accessCheck = await fetch('/bundles', { headers: getAuthHeaders(tenantId) });
+      } catch {
+        if (selector) selector.value = previousTenantId;
+        showNotification('테넌트 전환 권한을 확인하지 못했습니다.', 'warn');
+        return false;
+      }
       if (!accessCheck.ok) {
         if (selector) selector.value = previousTenantId;
         showNotification(
@@ -13493,18 +13500,21 @@
         return false;
       }
 
+      try {
+        localStorage.setItem('dd_tenant_id', tenantId);
+      } catch {
+        if (selector) selector.value = previousTenantId;
+        showNotification('브라우저에 테넌트 전환 상태를 저장하지 못했습니다.', 'warn');
+        return false;
+      }
+
       _documentOpsReviewDrafts.clear();
       clearDocumentOpsPendingRunMarker('', previousTenantId);
       _documentOpsPendingRunRecovery = null;
       _documentOpsRunRecoveryPromise = null;
       _currentTenantId = tenantId;
-      localStorage.setItem('dd_tenant_id', tenantId);
       window.location.reload();
       return true;
-    } catch {
-      if (selector) selector.value = previousTenantId;
-      showNotification('테넌트 전환 권한을 확인하지 못했습니다.', 'warn');
-      return false;
     } finally {
       if (selector?.isConnected) selector.disabled = false;
     }

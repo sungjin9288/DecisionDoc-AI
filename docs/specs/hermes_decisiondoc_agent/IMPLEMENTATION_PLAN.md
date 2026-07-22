@@ -168,6 +168,8 @@ Work:
   shared storage; never persist the request payload or treat this marker as replay authority
 - scope marker storage keys by tenant so foreign tenant reads, writes, and cleanup preserve each other;
   clear only the previous context on an authorized switch and keep owner-only base-key compatibility
+- persist the next browser tenant before changing in-memory context or clearing previous-context evidence;
+  preserve the current tenant, draft, recovery promise, and marker when that storage write fails
 - where supported, serialize marker inspection and claim with a tenant-scoped Web Lock so simultaneous tabs
   converge on one POST; use tab storage only when shared storage is unavailable
 - after reload, from another tab, or after the owner tab closes, inspect only the strict current-tenant status,

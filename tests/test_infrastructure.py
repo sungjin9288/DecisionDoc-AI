@@ -503,6 +503,17 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
     assert content.count("syncTenantContextFromAccessToken(") == 6
     assert content.count("_documentOpsReviewDrafts.clear();") == 3
     assert "clearDocumentOpsPendingRunMarker('', previousTenantId);" in change_block
+    assert "브라우저에 테넌트 전환 상태를 저장하지 못했습니다." in change_block
+    assert change_block.index("localStorage.setItem('dd_tenant_id', tenantId);") < change_block.index(
+        "_documentOpsReviewDrafts.clear();"
+    )
+
+    sync_start = content.index("function syncTenantContextFromAccessToken(accessToken)")
+    sync_end = content.index("function getOpsKeyValue()", sync_start)
+    sync_block = content[sync_start:sync_end]
+    assert sync_block.index("localStorage.setItem('dd_tenant_id', tenantId);") < sync_block.index(
+        "_currentTenantId = tenantId;"
+    )
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():

@@ -37,7 +37,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - `DECISIONDOC_API_KEY` / `DECISIONDOC_API_KEYS` (API 인증)
   - `DECISIONDOC_OPS_KEY` (`/ops/*` 보호)
   - `/admin/tenants`를 포함한 admin endpoint는 인증된 admin JWT 또는 설정된 Ops key 중 하나를 요구한다. Ops UI는 공통 인증 header 조합을 사용해 로그인 세션을 보존하며 두 자격 증명을 동시에 요구하지 않는다.
-  - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다.
+  - Browser tenant header는 signed access token의 tenant claim과 동기화한다. JWT tenant와 다른 selector 전환은 access preflight에서 거부하고 기존 tenant로 rollback하며, admin JWT도 `TENANT_MISMATCH`를 우회하지 않는다. Token sync와 승인된 selector 전환은 tenant ID의 browser storage write가 성공한 뒤에만 in-memory context를 바꾼다. 저장 실패는 이전 tenant, 미저장 review draft, pending recovery와 marker를 그대로 두며 storage 값 자체를 authorization 근거로 사용하지 않는다.
   - DocumentOps 미저장 review draft는 사용자·tenant·trajectory page-memory key로만 유지하고 logout 또는 invalid session에서 폐기한다. localStorage와 server/audit에는 draft 본문을 저장하지 않는다.
 - DocumentOps trajectory 상태
   - Redacted trajectory와 사람 review 이력은 local `data/tenants/<tenant_id>/trajectories.jsonl` 또는 같은 relative path의 S3 state object에 저장한다.

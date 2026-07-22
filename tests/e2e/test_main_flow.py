@@ -451,6 +451,99 @@ def test_tenant_context_follows_authenticated_user_and_rejects_denied_switches(p
     ) == 200
 
 
+def test_tenant_context_storage_failure_preserves_current_evidence(page):
+    operation_id = "agent-run:11111111-2222-4333-8444-555555555555"
+
+    result = page.evaluate(
+        """async ({ operationId }) => {
+          const previousTenantId = _currentTenantId;
+          const nextTenantId = 'tenant-storage-write-failure';
+          const storagePrototype = Object.getPrototypeOf(localStorage);
+          const originalSetItem = storagePrototype.setItem;
+          const originalFetch = window.fetch;
+          originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+
+          const pendingRecovery = {
+            tenantId: previousTenantId,
+            operationId,
+            payload: { title: '현재 tenant에서 작성 중인 요청' },
+          };
+          const recoveryPromise = Promise.resolve(null);
+          _documentOpsReviewDrafts.clear();
+          _documentOpsReviewDrafts.set('storage-failure-draft', {
+            notes: '저장 실패 뒤에도 보존할 검토 메모',
+            scoreText: '0.8',
+          });
+          rememberDocumentOpsPendingRunMarker(previousTenantId, operationId);
+          _documentOpsPendingRunRecovery = pendingRecovery;
+          _documentOpsRunRecoveryPromise = recoveryPromise;
+
+          storagePrototype.setItem = function(key, value) {
+            if (this === localStorage && key === 'dd_tenant_id') {
+              throw new Error('tenant storage unavailable');
+            }
+            return originalSetItem.call(this, key, value);
+          };
+          window.fetch = async input => {
+            if (String(input) === '/bundles') return { ok: true, status: 200 };
+            return originalFetch(input);
+          };
+
+          try {
+            const encodedClaims = btoa(JSON.stringify({ tenant_id: nextTenantId }));
+            const syncResult = syncTenantContextFromAccessToken(`e30.${encodedClaims}.signature`);
+            const syncCurrentTenantId = _currentTenantId;
+            const syncStoredTenantId = localStorage.getItem('dd_tenant_id');
+
+            _currentTenantId = previousTenantId;
+            const switchResult = await changeTenantContext(nextTenantId);
+            return {
+              previousTenantId,
+              syncResult,
+              syncCurrentTenantId,
+              syncStoredTenantId,
+              switchResult,
+              switchCurrentTenantId: _currentTenantId,
+              switchStoredTenantId: localStorage.getItem('dd_tenant_id'),
+              draftPreserved: _documentOpsReviewDrafts.has('storage-failure-draft'),
+              markerAfterSwitch: readDocumentOpsPendingRunMarker(previousTenantId),
+              pendingRecoveryPreserved: _documentOpsPendingRunRecovery === pendingRecovery,
+              recoveryPromisePreserved: _documentOpsRunRecoveryPromise === recoveryPromise,
+            };
+          } finally {
+            storagePrototype.setItem = originalSetItem;
+            window.fetch = originalFetch;
+            _documentOpsReviewDrafts.clear();
+            clearDocumentOpsPendingRunMarker('', previousTenantId);
+            _documentOpsPendingRunRecovery = null;
+            _documentOpsRunRecoveryPromise = null;
+            _currentTenantId = previousTenantId;
+            originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+          }
+        }""",
+        {"operationId": operation_id},
+    )
+
+    previous_tenant_id = result["previousTenantId"]
+    assert result == {
+        "previousTenantId": previous_tenant_id,
+        "syncResult": False,
+        "syncCurrentTenantId": previous_tenant_id,
+        "syncStoredTenantId": previous_tenant_id,
+        "switchResult": False,
+        "switchCurrentTenantId": previous_tenant_id,
+        "switchStoredTenantId": previous_tenant_id,
+        "draftPreserved": True,
+        "markerAfterSwitch": {
+            "schema_version": "document_ops_agent_pending_run_marker_v1",
+            "tenant_id": previous_tenant_id,
+            "operation_id": operation_id,
+        },
+        "pendingRecoveryPreserved": True,
+        "recoveryPromisePreserved": True,
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()

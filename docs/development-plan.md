@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,269 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-21 H97) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,270 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H98) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-21 H97 실측: 4269 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-22 H98 실측: 4270 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -118,6 +118,7 @@ Providers (5)    Storage (46 modules)   Ops
 30. Captured Agent POST 직전에는 schema version, tenant ID, browser UUID operation ID만 browser marker로 남기고 payload는 browser storage에 저장하지 않는다. Marker는 strict `no-store` status 확인과 새 POST 차단에만 사용하며 exact replay authority가 아니다. Operator가 backend 실행 비취소와 evidence 확인 경고를 승인해 상태 추적을 종료해야 marker를 제거한다. Invalid marker와 auth/tenant context 변경은 marker를 폐기하고, storage 접근 실패는 same-page Agent 실행을 막지 않는다.
 31. Captured Agent browser marker는 same-origin `localStorage`를 shared primary로 사용하고 접근 실패 시 현재 tab의 `sessionStorage`로 내려간다. 지원 browser에서는 tenant별 Web Lock 안에서 기존 marker 확인과 새 marker 기록을 직렬화해 동시 tab 중 owner 하나만 POST를 시작하게 한다. 다른 tab과 owner tab 종료 뒤 다시 연 화면은 payload 없는 marker로 status만 조회하며 explicit release 전까지 새 POST를 막는다. 두 storage가 모두 막히면 reload/cross-tab guard는 없고, Web Locks 미지원 환경에서는 완전 동시 claim의 atomicity를 보장하지 않는다. 다른 browser/device, process-crash recovery, cross-ID semantic deduplication, exactly-once provider execution과 external provider authority도 이 marker가 제공하지 않는다.
 32. Captured Agent marker storage key는 tenant별로 분리한다. 같은 origin의 foreign tenant read/write/clear는 다른 tenant marker를 보존하고, 승인된 tenant 전환은 previous tenant marker만 제거한다. H96 base-key marker는 strict schema를 통과한 뒤 owning tenant만 legacy fallback으로 읽고 제거하며 foreign tenant는 이를 잘못된 marker로 삭제하지 않는다. Marker body의 exact 3-field payload-free contract와 backend operation authority는 바꾸지 않는다.
+33. Browser tenant context는 signed token 또는 selector access preflight만으로 부분 전환하지 않는다. `dd_tenant_id` 저장이 성공한 뒤에만 in-memory tenant와 previous-context draft/recovery/marker를 변경하며, storage write 실패는 기존 context evidence를 그대로 보존한다. Browser storage는 durable handoff를 위한 commit point일 뿐 authorization authority가 아니다.
 
 ---
 
