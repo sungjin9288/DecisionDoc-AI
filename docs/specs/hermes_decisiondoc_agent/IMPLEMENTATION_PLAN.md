@@ -204,6 +204,8 @@ Acceptance:
   and marker instead of exposing a partially refreshed identity
 - upper 401 recovery reports storage and temporary refresh failures without clearing those restored credentials or
   DocumentOps evidence, while an explicitly rejected refresh credential still ends the invalid session
+- concurrent 401 callers join one browser refresh; generic mutating requests require an explicit retry after refresh,
+  and a late refresh response cannot replace a newer login session
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

@@ -899,6 +899,236 @@ def test_auth_recovery_retries_refreshed_session_and_clears_invalid_session(page
     }
 
 
+def test_auth_recovery_coalesces_concurrent_refresh_requests(page):
+    result = page.evaluate(
+        """async () => {
+          const tenantId = _currentTenantId;
+          const originalFetch = window.fetch;
+          const encodedClaims = btoa(JSON.stringify({
+            sub: 'single-flight-user',
+            tenant_id: tenantId,
+          }));
+          const nextAccessToken = `e30.${encodedClaims}.signature`;
+          localStorage.setItem('dd_refresh_token', 'shared-refresh-token');
+
+          let releaseRefresh;
+          const refreshResponse = new Promise(resolve => {
+            releaseRefresh = resolve;
+          });
+          let refreshRequests = 0;
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              refreshRequests += 1;
+              return await refreshResponse;
+            }
+            return originalFetch(input);
+          };
+
+          let firstAttempts = 0;
+          let secondAttempts = 0;
+          const firstRecovery = _fetchJsonWithProviderRetry(async () => {
+            firstAttempts += 1;
+            if (firstAttempts === 1) {
+              return {
+                ok: false,
+                status: 401,
+                json: async () => ({ code: 'UNAUTHORIZED' }),
+              };
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ request: 'first' }),
+            };
+          });
+          const secondRecovery = _fetchJsonWithProviderRetry(async () => {
+            secondAttempts += 1;
+            if (secondAttempts === 1) {
+              return {
+                ok: false,
+                status: 401,
+                json: async () => ({ code: 'UNAUTHORIZED' }),
+              };
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ request: 'second' }),
+            };
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 0));
+          const requestsBeforeRelease = refreshRequests;
+          releaseRefresh({
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: nextAccessToken }),
+          });
+          const payloads = await Promise.all([firstRecovery, secondRecovery]);
+          const observed = {
+            requestsBeforeRelease,
+            refreshRequests,
+            firstAttempts,
+            secondAttempts,
+            payloads,
+            accessTokenUpdated: localStorage.getItem('dd_access_token') === nextAccessToken,
+            currentUser: _currentUser?.sub || null,
+            recoveryCleared: _authSessionRecoveryPromise === null,
+          };
+
+          window.fetch = originalFetch;
+          _currentUser = null;
+          localStorage.removeItem('dd_access_token');
+          localStorage.removeItem('dd_refresh_token');
+          return observed;
+        }"""
+    )
+
+    assert result == {
+        "requestsBeforeRelease": 1,
+        "refreshRequests": 1,
+        "firstAttempts": 2,
+        "secondAttempts": 2,
+        "payloads": [{"request": "first"}, {"request": "second"}],
+        "accessTokenUpdated": True,
+        "currentUser": "single-flight-user",
+        "recoveryCleared": True,
+    }
+
+
+def test_api_error_auth_recovery_requires_explicit_request_retry(page):
+    operation_id = "agent-run:55555555-6666-4777-8888-999999999999"
+
+    result = page.evaluate(
+        """async ({ operationId }) => {
+          const tenantId = _currentTenantId;
+          const originalFetch = window.fetch;
+          const encodedClaims = btoa(JSON.stringify({
+            sub: 'manual-retry-user',
+            tenant_id: tenantId,
+          }));
+          const nextAccessToken = `e30.${encodedClaims}.signature`;
+          localStorage.setItem('dd_refresh_token', 'manual-retry-refresh-token');
+          _documentOpsReviewDrafts.set('manual-retry-draft', {
+            notes: '자동 replay 없이 보존할 검토 메모',
+            scoreText: '0.88',
+          });
+          rememberDocumentOpsPendingRunMarker(tenantId, operationId);
+
+          let refreshRequests = 0;
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              refreshRequests += 1;
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({ access_token: nextAccessToken }),
+              };
+            }
+            return originalFetch(input);
+          };
+
+          const error = await resolveApiErrorResponse({
+            ok: false,
+            status: 401,
+            statusText: 'Unauthorized',
+            text: async () => JSON.stringify({ code: 'UNAUTHORIZED' }),
+          });
+          const observed = {
+            error,
+            refreshRequests,
+            accessTokenUpdated: localStorage.getItem('dd_access_token') === nextAccessToken,
+            currentUser: _currentUser?.sub || null,
+            draftPreserved: _documentOpsReviewDrafts.has('manual-retry-draft'),
+            markerTenantMatches: readDocumentOpsPendingRunMarker(tenantId)?.tenant_id === tenantId,
+            markerOperationId: readDocumentOpsPendingRunMarker(tenantId)?.operation_id || null,
+          };
+
+          window.fetch = originalFetch;
+          _documentOpsReviewDrafts.clear();
+          clearDocumentOpsPendingRunMarker('', tenantId);
+          _currentUser = null;
+          localStorage.removeItem('dd_access_token');
+          localStorage.removeItem('dd_refresh_token');
+          return observed;
+        }""",
+        {"operationId": operation_id},
+    )
+
+    assert result == {
+        "error": {
+            "code": "AUTH_REFRESHED_RETRY_REQUIRED",
+            "message": "인증 세션을 갱신했습니다. 안전을 위해 실패한 요청은 자동으로 다시 실행하지 않았습니다. 다시 시도하세요.",
+        },
+        "refreshRequests": 1,
+        "accessTokenUpdated": True,
+        "currentUser": "manual-retry-user",
+        "draftPreserved": True,
+        "markerTenantMatches": True,
+        "markerOperationId": operation_id,
+    }
+
+
+def test_late_auth_refresh_response_does_not_overwrite_new_session(page):
+    result = page.evaluate(
+        """async () => {
+          const tenantId = _currentTenantId;
+          const originalFetch = window.fetch;
+          const encodeToken = subject => {
+            const claims = btoa(JSON.stringify({ sub: subject, tenant_id: tenantId }));
+            return `e30.${claims}.signature`;
+          };
+          const staleAccessToken = encodeToken('stale-refresh-user');
+          const currentAccessToken = encodeToken('replacement-user');
+          localStorage.setItem('dd_access_token', encodeToken('original-user'));
+          localStorage.setItem('dd_refresh_token', 'original-refresh-token');
+
+          let releaseRefresh;
+          const refreshResponse = new Promise(resolve => {
+            releaseRefresh = resolve;
+          });
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') return await refreshResponse;
+            return originalFetch(input);
+          };
+
+          const recovery = recoverAuthSessionOnce();
+          await new Promise(resolve => setTimeout(resolve, 0));
+          const replacementClaims = persistAuthSession(currentAccessToken, {
+            refreshToken: 'original-refresh-token',
+          });
+          _currentUser = replacementClaims;
+          releaseRefresh({
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: staleAccessToken }),
+          });
+          const refreshResult = await recovery;
+          const observed = {
+            refreshResult,
+            replacementAccessTokenPreserved: localStorage.getItem('dd_access_token') === currentAccessToken,
+            storedRefreshToken: localStorage.getItem('dd_refresh_token'),
+            currentUser: _currentUser?.sub || null,
+            recoveryCleared: _authSessionRecoveryPromise === null,
+          };
+
+          window.fetch = originalFetch;
+          _currentUser = null;
+          localStorage.removeItem('dd_access_token');
+          localStorage.removeItem('dd_refresh_token');
+          return observed;
+        }"""
+    )
+
+    assert result == {
+        "refreshResult": "superseded",
+        "replacementAccessTokenPreserved": True,
+        "storedRefreshToken": "original-refresh-token",
+        "currentUser": "replacement-user",
+        "recoveryCleared": True,
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()

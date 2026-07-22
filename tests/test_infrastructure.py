@@ -1115,14 +1115,24 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
         r"async function parseApiErrorResponse\(res\) \{(?P<body>[\s\S]*?)\n  \}",
         content,
     )
+    resolve_error_fn = re.search(
+        r"async function resolveApiErrorResponse\(res\) \{(?P<body>[\s\S]*?)\n  \}",
+        content,
+    )
     assert retry_fetch_fn is not None
     assert hydrate_fn is not None
     assert parse_error_fn is not None
+    assert resolve_error_fn is not None
     assert "function handleInvalidAuthSession" in content
     assert "async function recoverAuthSessionOnce" in content
     assert "const AUTH_REFRESH_RESULT = Object.freeze({" in content
     assert "STORAGE_FAILED: 'storage_failed'" in content
+    assert "SUPERSEDED: 'superseded'" in content
     assert "UNAVAILABLE: 'unavailable'" in content
+    assert "let _authSessionRecoveryPromise = null;" in content
+    assert "let _authSessionRevision = 0;" in content
+    assert "_authSessionRevision !== sessionRevision" in content
+    assert content.count("_authSessionRevision += 1;") == 3
     assert "localStorage.removeItem('dd_access_token')" in content
     assert "localStorage.removeItem('dd_refresh_token')" in content
     assert "res.status === 401" in retry_fetch_fn.group("body")
@@ -1133,7 +1143,13 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "retry = await fetch('/auth/me'" in hydrate_fn.group("body")
     assert "refreshResult === AUTH_REFRESH_RESULT.INVALID_SESSION" in hydrate_fn.group("body")
     assert "reportAuthRefreshFailure(refreshResult)" in hydrate_fn.group("body")
-    assert "handleInvalidAuthSession()" in parse_error_fn.group("body")
+    assert "handleInvalidAuthSession()" not in parse_error_fn.group("body")
+    assert "await parseApiErrorResponse(res)" in resolve_error_fn.group("body")
+    assert "await recoverAuthSessionOnce()" in resolve_error_fn.group("body")
+    assert "AUTH_REFRESHED_RETRY_REQUIRED" in resolve_error_fn.group("body")
+    assert "handleInvalidAuthSession()" in resolve_error_fn.group("body")
+    assert "await resolveApiErrorResponse(" in content
+    assert content.count("parseApiErrorResponse(") == 2
     assert "clearDocumentOpsPendingRunMarker();" in invalid_block
     assert "clearDocumentOpsPendingRunMarker();" in logout_block
 
