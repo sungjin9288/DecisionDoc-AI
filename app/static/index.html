@@ -18202,13 +18202,17 @@
     const claims = readAccessTokenClaims(localStorage.getItem('dd_access_token'));
     const storedUserId = String(claims?.sub || '').trim();
     const storedTenantId = String(claims?.tenant_id || '').trim();
+    const storedRole = String(claims?.role || '').trim();
     const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '').trim();
+    const currentRole = String(_currentUser?.role || '').trim();
     return Boolean(
       storedUserId
       && storedTenantId
+      && storedRole
       && storedUserId === currentUserId
       && storedTenantId === _currentTenantId
       && storedTenantId === localStorage.getItem('dd_tenant_id')
+      && storedRole === currentRole
     );
   }
 

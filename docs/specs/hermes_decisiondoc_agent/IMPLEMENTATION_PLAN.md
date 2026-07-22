@@ -210,6 +210,8 @@ Acceptance:
   refresh-token bytes, while unrelated storage keys do not change auth revision
 - a different signed user or tenant from another tab reloads the receiving page once so page-memory evidence is
   rebuilt under the new session; same-identity token rotation stays quiet and preserves current work
+- a persisted role or active-state change takes effect on the next protected request and new SSE subscription;
+  another tab's role-changing token reloads stale page authorization state while same-role rotation stays quiet
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

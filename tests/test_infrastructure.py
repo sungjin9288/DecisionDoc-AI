@@ -1140,6 +1140,7 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "storedUserId === currentUserId" in content
     assert "storedTenantId === _currentTenantId" in content
     assert "storedTenantId === localStorage.getItem('dd_tenant_id')" in content
+    assert "storedRole === currentRole" in content
     assert "function reconcileCrossTabAuthContext()" in content
     assert "window.location.reload();" in content
     assert "function handleCrossTabAuthStorageChange(event)" in content

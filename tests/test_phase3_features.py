@@ -1,5 +1,4 @@
 """Tests for Phase 3 features: document sharing, favorites."""
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -8,7 +7,31 @@ client = TestClient(app)
 
 def _token(user="u1", tenant="system", role="member"):
     from app.services.auth_service import create_access_token
-    return create_access_token(user, tenant, role, user)
+    from app.storage.user_store import get_user_store
+
+    store = get_user_store(
+        tenant,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    persisted = store.get_by_username(user)
+    if persisted is None:
+        persisted = store.create(
+            username=user,
+            display_name=user,
+            email=f"{user}@test.local",
+            password="Phase3Test1!",
+            role=role,
+        )
+    elif persisted.role.value != role or not persisted.is_active:
+        persisted = store.update(persisted.user_id, role=role, is_active=True)
+    assert persisted is not None
+    return create_access_token(
+        persisted.user_id,
+        tenant,
+        persisted.role.value,
+        persisted.username,
+    )
 
 
 # ── Share API endpoints ───────────────────────────────────────────────────────
@@ -119,9 +142,12 @@ def test_shared_view_renders_procurement_review_warning_when_present():
 
 
 def test_revoke_share_link():
+    from app.services.auth_service import verify_token
     from app.storage.share_store import ShareStore
 
     token = _token()
+    claims = verify_token(token)
+    assert claims is not None
     create_res = client.post(
         "/share",
         json={"request_id": "req-revoke", "title": "취소할 문서"},
@@ -143,7 +169,7 @@ def test_revoke_share_link():
     assert revoked is not None
     assert revoked["is_active"] is False
     assert revoked["lifecycle_status"] == "revoked"
-    assert revoked["revoked_by"] == "u1"
+    assert revoked["revoked_by"] == claims["sub"]
     assert revoked["revoked_by_username"] == "u1"
     assert revoked["revoked_at"]
 

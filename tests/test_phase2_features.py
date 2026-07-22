@@ -27,8 +27,31 @@ def history_client(tmp_path, monkeypatch):
 
 def _token(user="u1", tenant="system", role="member"):
     from app.services.auth_service import create_access_token
+    from app.storage.user_store import get_user_store
 
-    return create_access_token(user, tenant, role, user)
+    store = get_user_store(
+        tenant,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    persisted = store.get_by_username(user)
+    if persisted is None:
+        persisted = store.create(
+            username=user,
+            display_name=user,
+            email=f"{user}@test.local",
+            password="Phase2Test1!",
+            role=role,
+        )
+    elif persisted.role.value != role or not persisted.is_active:
+        persisted = store.update(persisted.user_id, role=role, is_active=True)
+    assert persisted is not None
+    return create_access_token(
+        persisted.user_id,
+        tenant,
+        persisted.role.value,
+        persisted.username,
+    )
 
 
 # ── Feature 3: /generate/export-zip ──────────────────────────────────────────

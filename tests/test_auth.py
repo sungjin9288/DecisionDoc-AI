@@ -1,12 +1,12 @@
 """tests/test_auth.py — Tests for user accounts, JWT auth, and team messaging.
 
-Coverage (31 tests):
+Coverage:
   UserStore unit     : create, duplicate, verify_password, wrong_password,
                        list, update, deactivate, change_password, weak_password
   JWT service unit   : create/verify access token, expired token, invalid token,
                        refresh token type
-  Auth middleware    : public paths, missing token → 401, viewer POST → 403,
-                       viewer GET allowed
+  Auth middleware    : public paths, current role/active state, missing token → 401,
+                       viewer write restrictions, realtime query-token authority
   Login endpoint     : success returns tokens+user, wrong password, inactive user
   Register endpoint  : first user → admin, second call → 403
   Message tests      : post + get_thread, mention parsing, unread count
@@ -304,6 +304,35 @@ def test_events_query_token_requires_access_scope_and_valid_tenant(monkeypatch):
     assert missing_tenant_error.value.status_code == 401
 
 
+def test_events_reject_existing_access_token_after_user_deactivation(
+    tmp_path,
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    from app.routers import events
+    from app.storage.user_store import get_user_store
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    token = login["access_token"]
+    current_user = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+
+    assert events._resolve_event_tenant_id(token, data_dir=tmp_path) == "system"
+
+    get_user_store("system", data_dir=tmp_path).update(
+        current_user["user_id"],
+        is_active=False,
+    )
+
+    with pytest.raises(HTTPException) as inactive_error:
+        events._resolve_event_tenant_id(token, data_dir=tmp_path)
+    assert inactive_error.value.status_code == 401
+
+
 def test_missing_token_returns_401_when_users_exist(tmp_path, monkeypatch):
     """After users are registered, requests without JWT are rejected."""
     client = _make_client(tmp_path, monkeypatch)
@@ -377,6 +406,94 @@ def test_viewer_allowed_on_get_endpoints(tmp_path, monkeypatch):
 
     res = client.get("/auth/me", headers=viewer_headers)
     assert res.status_code == 200
+
+
+def test_role_change_applies_to_existing_access_token(tmp_path, monkeypatch):
+    """Persisted role changes must take effect before an access token expires."""
+    from app.storage.user_store import get_user_store
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    current_user = client.get("/auth/me", headers=admin_headers).json()
+
+    get_user_store("system", data_dir=tmp_path).update(
+        current_user["user_id"],
+        role="viewer",
+    )
+
+    response = client.get("/admin/users", headers=admin_headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "관리자 권한이 필요합니다."
+
+
+def test_inactive_user_cannot_reuse_existing_access_token(tmp_path, monkeypatch):
+    """Deactivation must revoke an already-issued access token immediately."""
+    from app.storage.user_store import get_user_store
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    current_user = client.get("/auth/me", headers=admin_headers).json()
+
+    get_user_store("system", data_dir=tmp_path).update(
+        current_user["user_id"],
+        is_active=False,
+    )
+
+    response = client.get("/auth/me", headers=admin_headers)
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "UNAUTHORIZED"
+
+
+def test_auth_routes_keep_using_the_app_selected_user_store(tmp_path, monkeypatch):
+    """Later environment drift must not split auth routes from middleware state."""
+    from app.storage.user_store import get_user_store
+
+    client = _make_client(tmp_path, monkeypatch)
+    foreign_data_dir = tmp_path / "foreign-data"
+    monkeypatch.setenv("DATA_DIR", str(foreign_data_dir))
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "username": "selected-store-admin",
+            "display_name": "Selected Store Admin",
+            "email": "selected-store-admin@test.com",
+            "password": "AdminPass1!",
+        },
+    )
+    assert registered.status_code == 200
+
+    app_user = get_user_store(
+        "system",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    ).get_by_username("selected-store-admin")
+    foreign_user = get_user_store(
+        "system",
+        data_dir=foreign_data_dir,
+    ).get_by_username("selected-store-admin")
+
+    assert app_user is not None
+    assert foreign_user is None
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "username": "selected-store-admin",
+            "password": "AdminPass1!",
+        },
+    )
+    assert login.status_code == 200
+    me = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["user_id"] == app_user.user_id
 
 
 # ── Login endpoint tests ───────────────────────────────────────────────────────

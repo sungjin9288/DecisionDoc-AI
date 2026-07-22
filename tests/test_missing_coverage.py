@@ -213,21 +213,23 @@ def test_rejected_doc_cannot_be_modified():
 def test_withdraw_wrong_password():
     """DELETE /auth/withdraw with wrong password should return 400.
 
-    Uses the system tenant (always registered). Creates a fresh user,
-    attempts withdrawal with wrong password, expects 400.
+    Creates a fresh persisted user in the app-selected store, attempts
+    withdrawal with a wrong password, and expects 400.
     """
-    username = f"wdtest_{uuid.uuid4().hex[:8]}"
+    from app.storage.user_store import get_user_store
 
-    # Register user in the system tenant (default — no X-Tenant-ID header)
-    reg = client.post("/auth/register", json={
-        "username": username,
-        "password": "ValidPass123!",
-        "display_name": "Withdraw Test",
-        "email": f"{username}@test.local",
-    })
-    if reg.status_code not in (200, 201):
-        # Another user already exists in system tenant (admin-only registration)
-        pytest.skip(f"Registration not available: {reg.status_code} — {reg.text[:100]}")
+    username = f"wdtest_{uuid.uuid4().hex[:8]}"
+    get_user_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).create(
+        username=username,
+        display_name="Withdraw Test",
+        email=f"{username}@test.local",
+        password="ValidPass123!",
+        role="member",
+    )
 
     # Login
     login = client.post("/auth/login", json={

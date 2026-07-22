@@ -171,6 +171,7 @@ def live_server(tmp_path_factory):
 
     from app.main import create_app
     from app.storage.billing_store import get_billing_store
+    from app.storage.user_store import get_user_store
 
     app = create_app()
     get_billing_store(
@@ -178,6 +179,11 @@ def live_server(tmp_path_factory):
         data_dir=app.state.data_dir,
         backend=app.state.state_backend,
     ).update_plan("enterprise")
+    user_store = get_user_store(
+        "system",
+        data_dir=app.state.data_dir,
+        backend=app.state.state_backend,
+    )
 
     port = _reserve_local_port()
     config = uvicorn.Config(
@@ -203,7 +209,12 @@ def live_server(tmp_path_factory):
     base_url = f"http://127.0.0.1:{port}"
     auth = _bootstrap_e2e_user(base_url)
 
-    yield {"base_url": base_url, "auth": auth, "ops_key": "ops-secret"}
+    yield {
+        "base_url": base_url,
+        "auth": auth,
+        "ops_key": "ops-secret",
+        "user_store": user_store,
+    }
 
     server.should_exit = True
     thread.join(timeout=5)

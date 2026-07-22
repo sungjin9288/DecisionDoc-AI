@@ -12,6 +12,7 @@ from fastapi.responses import Response
 
 from app.ai_profiles.catalog import list_ai_profiles
 from app.dependencies import get_tenant_id
+from app.services.auth_service import get_request_user_store
 from app.schemas import (
     ChangePasswordRequest,
     CreateUserRequest,
@@ -54,12 +55,11 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
     from app.storage.user_store import (
         UserStoreAlreadyInitialized,
         UserStoreError,
-        get_user_store,
     )
     from app.services.auth_service import create_access_token, create_refresh_token
 
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     try:
         user = user_store.create_first_admin(
             username=body.username,
@@ -86,11 +86,10 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
 @router.post("/auth/login")
 async def login(request: Request, body: LoginRequest):
     """Authenticate and return access + refresh tokens."""
-    from app.storage.user_store import get_user_store
     from app.services.auth_service import create_access_token, create_refresh_token
 
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user = user_store.get_by_username(body.username)
     if not user or not user.is_active:
         raise HTTPException(401, "아이디 또는 비밀번호가 올바르지 않습니다.")
@@ -107,15 +106,14 @@ async def login(request: Request, body: LoginRequest):
 
 
 @router.post("/auth/refresh")
-async def refresh_token(body: RefreshRequest):
+async def refresh_token(request: Request, body: RefreshRequest):
     """Exchange a refresh token for a new access token."""
-    from app.storage.user_store import get_user_store
     from app.services.auth_service import verify_token, create_access_token
 
     payload = verify_token(body.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(401, "유효하지 않은 리프레시 토큰입니다.")
-    user_store = get_user_store(payload["tenant_id"])
+    user_store = get_request_user_store(request, payload["tenant_id"])
     user = user_store.get_by_id(payload["sub"])
     if not user or not user.is_active:
         raise HTTPException(401, "사용자를 찾을 수 없습니다.")
@@ -129,10 +127,8 @@ async def refresh_token(body: RefreshRequest):
 @router.get("/auth/me")
 async def get_me(request: Request):
     """Return the current authenticated user's profile."""
-    from app.storage.user_store import get_user_store
-
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
@@ -145,10 +141,8 @@ async def get_me(request: Request):
 @router.patch("/auth/me")
 async def update_me(request: Request, body: UpdateMyProfileRequest):
     """Update the current authenticated user's editable profile fields."""
-    from app.storage.user_store import get_user_store
-
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
@@ -177,10 +171,8 @@ async def update_me(request: Request, body: UpdateMyProfileRequest):
 @router.post("/auth/change-password")
 async def change_password(request: Request, body: ChangePasswordRequest):
     """Change the current user's password."""
-    from app.storage.user_store import get_user_store
-
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
@@ -202,14 +194,13 @@ async def change_password(request: Request, body: ChangePasswordRequest):
 async def get_my_data(request: Request):
     """개인정보 열람권 — 본인의 저장 데이터 반환 (개인정보보호법 §35)."""
     from datetime import datetime as _dt
-    from app.storage.user_store import get_user_store
 
     tenant_id = get_tenant_id(request)
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
 
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user = user_store.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
@@ -291,14 +282,13 @@ async def withdraw_account(request: Request, body: WithdrawRequest):
     """회원 탈퇴 — 개인정보 삭제 처리 (개인정보보호법 §36)."""
     import uuid as _uuid
     from datetime import datetime as _dt
-    from app.storage.user_store import get_user_store
 
     tenant_id = get_tenant_id(request)
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(401, "인증이 필요합니다.")
 
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     user = user_store.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
@@ -379,12 +369,10 @@ async def withdraw_account(request: Request, body: WithdrawRequest):
 @router.get("/admin/users")
 async def list_users(request: Request):
     """List all users in the tenant (admin only)."""
-    from app.storage.user_store import get_user_store
-
     if getattr(request.state, "user_role", None) != "admin":
         raise HTTPException(403, "관리자 권한이 필요합니다.")
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     users = user_store.list_users()
     return {"users": [
         {
@@ -397,12 +385,10 @@ async def list_users(request: Request):
 @router.post("/admin/users")
 async def create_user(request: Request, body: CreateUserRequest):
     """Create a new user (admin only)."""
-    from app.storage.user_store import get_user_store
-
     if getattr(request.state, "user_role", None) != "admin":
         raise HTTPException(403, "관리자 권한이 필요합니다.")
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     try:
         user = user_store.create(
             username=body.username,
@@ -421,12 +407,10 @@ async def create_user(request: Request, body: CreateUserRequest):
 @router.patch("/admin/users/{user_id}")
 async def update_user(request: Request, user_id: str, body: UpdateUserRequest):
     """Update a user's role, active status, or profile (admin only)."""
-    from app.storage.user_store import get_user_store
-
     if getattr(request.state, "user_role", None) != "admin":
         raise HTTPException(403, "관리자 권한이 필요합니다.")
     tenant_id = get_tenant_id(request)
-    user_store = get_user_store(tenant_id)
+    user_store = get_request_user_store(request, tenant_id)
     try:
         user_store.update(user_id, **body.model_dump(exclude_none=True))
     except ValueError as exc:

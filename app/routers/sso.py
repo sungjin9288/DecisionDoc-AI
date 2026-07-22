@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse, Response
 from app.config import get_jwt_secret_key
 from app.dependencies import get_tenant_id, require_admin
 from app.schemas import LDAPLoginRequest, UpdateSSOConfigRequest
+from app.services.auth_service import get_request_user_store
 
 router = APIRouter(tags=["sso"])
 _MAX_SAML_RESPONSE_CHARACTERS = 1_500_000
@@ -114,12 +115,17 @@ def _apply_config_update(cfg, payload: dict, store) -> None:
 
 
 def _provision_sso_user(
-    tenant_id: str, username: str, display_name: str, email: str, role: str
+    request: Request,
+    tenant_id: str,
+    username: str,
+    display_name: str,
+    email: str,
+    role: str,
 ):
     """Create or update SSO user on first login."""
-    from app.storage.user_store import UserRole, get_user_store
+    from app.storage.user_store import UserRole
 
-    usr_store = get_user_store(tenant_id)
+    usr_store = get_request_user_store(request, tenant_id)
     user = usr_store.get_by_username(username)
     if user is None:
         random_pw = _secrets.token_urlsafe(32)
@@ -276,6 +282,7 @@ async def saml_acs(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="SAML authentication failed")
     provisioned = _provision_sso_user(
+        request,
         tenant_id, user.username, user.display_name, user.email, user.role
     )
     token = _create_jwt_for_user(provisioned)
@@ -315,6 +322,7 @@ async def ldap_login(request: Request, body: LDAPLoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid LDAP credentials")
     provisioned = _provision_sso_user(
+        request,
         tenant_id, user.username, user.display_name, user.email, user.role
     )
     token = _create_jwt_for_user(provisioned)
@@ -375,6 +383,7 @@ async def sso_gcloud_callback(request: Request, code: str = "", state: str = "")
     if not user_info:
         raise HTTPException(status_code=401, detail="Google authentication failed")
     provisioned = _provision_sso_user(
+        request,
         tenant_id,
         user_info["username"],
         user_info["display_name"],

@@ -1166,6 +1166,7 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
           return {
             tenantId,
             currentUserId,
+            currentRole: _currentUser.role,
             revision: _authSessionRevision,
           };
         }"""
@@ -1178,10 +1179,11 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
     second_page.evaluate("() => localStorage.removeItem('dd_ops_key')")
 
     replacement = second_page.evaluate(
-        """({ tenantId, currentUserId }) => {
+        """({ tenantId, currentUserId, currentRole }) => {
           const claims = btoa(JSON.stringify({
             sub: currentUserId,
             tenant_id: tenantId,
+            role: currentRole,
             session_id: 'cross-tab-replacement-session',
           }));
           const accessToken = `e30.${claims}.signature`;
@@ -1191,7 +1193,11 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
           _currentUser = committedClaims;
           return { accessToken, committed: Boolean(committedClaims) };
         }""",
-        {"tenantId": setup["tenantId"], "currentUserId": setup["currentUserId"]},
+        {
+            "tenantId": setup["tenantId"],
+            "currentUserId": setup["currentUserId"],
+            "currentRole": setup["currentRole"],
+        },
     )
     assert replacement["committed"] is True
     page.wait_for_function("() => window.__crossTabStorageEvents.includes('dd_access_token')")
@@ -1222,10 +1228,11 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
         }""",
         {
             "staleAccessToken": page.evaluate(
-                """({ tenantId, currentUserId }) => {
+                """({ tenantId, currentUserId, currentRole }) => {
                   const claims = btoa(JSON.stringify({
                     sub: currentUserId,
                     tenant_id: tenantId,
+                    role: currentRole,
                     session_id: 'cross-tab-stale-refresh-session',
                   }));
                   return `e30.${claims}.signature`;
@@ -1233,6 +1240,7 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
                 {
                     "tenantId": setup["tenantId"],
                     "currentUserId": setup["currentUserId"],
+                    "currentRole": setup["currentRole"],
                 },
             ),
             "replacementAccessToken": replacement["accessToken"],
@@ -1322,6 +1330,108 @@ def test_cross_tab_auth_identity_change_reloads_current_page_context(page):
         "reviewDraftCount": 0,
         "tenantMatches": True,
     }
+
+
+def test_cross_tab_auth_role_change_reloads_authorization_context(page, live_server):
+    current = page.evaluate(
+        """() => ({
+          userId: _currentUser.user_id || _currentUser.sub,
+          username: _currentUser.username,
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+          tenantId: _currentTenantId,
+          role: _currentUser.role,
+        })"""
+    )
+    context = page.context
+    second_page = context.new_page()
+    second_page.goto(page.url.split("?", 1)[0])
+    second_page.wait_for_selector("body.auth-ready", timeout=10000)
+
+    page.evaluate(
+        """() => {
+          stopNotifPolling();
+          stopSSE();
+          _documentOpsReviewDrafts.set('cross-tab-admin-role-draft', {
+            notes: '권한 변경 전에 열어 둔 관리자 검토 메모',
+            scoreText: '0.9',
+          });
+          window.__crossTabAdminRoleContext = true;
+        }"""
+    )
+    second_page.evaluate("() => { stopNotifPolling(); stopSSE(); }")
+
+    try:
+        demotion_status = page.evaluate(
+            """async ({ userId }) => {
+              const response = await fetch(`/admin/users/${userId}`, {
+                method: 'PATCH',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: 'viewer' }),
+              });
+              return response.status;
+            }""",
+            {"userId": current["userId"]},
+        )
+        assert demotion_status == 200
+
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=5000):
+            replacement = second_page.evaluate(
+                """async ({ refreshToken }) => {
+                  const response = await fetch('/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                  });
+                  const data = await response.json();
+                  const claims = response.ok
+                    ? persistAuthSession(data.access_token, { replaceRefreshToken: false })
+                    : null;
+                  _currentUser = claims;
+                  return {
+                    status: response.status,
+                    accessToken: data.access_token || null,
+                    role: claims?.role || null,
+                  };
+                }""",
+                {"refreshToken": current["refreshToken"]},
+            )
+
+        assert replacement["status"] == 200
+        assert replacement["role"] == "viewer"
+        page.wait_for_selector("body.auth-ready", timeout=10000)
+        page.wait_for_function("() => _currentUser?.role === 'viewer'")
+        result = page.evaluate(
+            """accessToken => ({
+              currentRole: _currentUser?.role || null,
+              storedRole: readAccessTokenClaims(
+                localStorage.getItem('dd_access_token'),
+              )?.role || null,
+              replacementAccessTokenPreserved:
+                localStorage.getItem('dd_access_token') === accessToken,
+              originalPageContextCleared:
+                typeof window.__crossTabAdminRoleContext === 'undefined',
+              reviewDraftCount: _documentOpsReviewDrafts.size,
+              locationsTabHidden:
+                getComputedStyle(document.getElementById('locations-tab')).display === 'none',
+            })""",
+            replacement["accessToken"],
+        )
+
+        assert result == {
+            "currentRole": "viewer",
+            "storedRole": "viewer",
+            "replacementAccessTokenPreserved": True,
+            "originalPageContextCleared": True,
+            "reviewDraftCount": 0,
+            "locationsTabHidden": True,
+        }
+    finally:
+        live_server["user_store"].update(
+            current["userId"],
+            role=current["role"],
+        )
+        second_page.close()
 
 
 def test_generate_landing_shows_ai_rank_roster(page):

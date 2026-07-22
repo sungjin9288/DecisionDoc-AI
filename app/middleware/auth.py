@@ -13,7 +13,11 @@ from fastapi.responses import JSONResponse
 
 from app.auth.api_key import has_valid_api_key_header
 from app.auth.ops_key import has_valid_ops_key_header
-from app.services.auth_service import get_current_user_from_request
+from app.services.auth_service import (
+    get_current_user_from_request,
+    get_request_user_store,
+    resolve_persisted_user,
+)
 
 # Paths that don't require a valid JWT
 PUBLIC_PATHS: frozenset[str] = frozenset({
@@ -60,6 +64,21 @@ _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
 )
 
 
+def _auth_unavailable_response(exc: Exception) -> JSONResponse:
+    import logging
+
+    logging.getLogger("decisiondoc.auth").error(
+        "[Auth] UserStore read failed — failing CLOSED: %s", exc
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "인증 서비스를 일시적으로 사용할 수 없습니다.",
+            "code": "AUTH_UNAVAILABLE",
+        },
+    )
+
+
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
     signed_billing_webhook = (
@@ -87,6 +106,16 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     user = get_current_user_from_request(request)
+    users_exist: bool | None = None
+    if user:
+        try:
+            user, users_exist = resolve_persisted_user(
+                user,
+                data_dir=getattr(request.app.state, "data_dir", None),
+                backend=getattr(request.app.state, "state_backend", None),
+            )
+        except Exception as exc:
+            return _auth_unavailable_response(exc)
 
     if not user:
         if has_valid_api_key_header(request) or has_valid_ops_key_header(request):
@@ -96,23 +125,17 @@ async def auth_middleware(request: Request, call_next):
         # This preserves backward compatibility with deployments that haven't
         # set up user accounts, and ensures existing tests continue to work
         # without JWT tokens.
-        tenant_id = request.headers.get("X-Tenant-ID", "system") or "system"
-        _users_exist = False
-        try:
-            from app.storage.user_store import get_user_store
+        if users_exist is None:
+            tenant_id = request.headers.get("X-Tenant-ID", "system") or "system"
+            try:
+                users_exist = get_request_user_store(
+                    request,
+                    tenant_id,
+                ).has_any_users()
+            except Exception as exc:
+                return _auth_unavailable_response(exc)
 
-            _users_exist = get_user_store(tenant_id).has_any_users()
-        except Exception as exc:
-            import logging as _logging
-            _logging.getLogger("decisiondoc.auth").error(
-                "[Auth] UserStore read failed — failing CLOSED: %s", exc
-            )
-            return JSONResponse(
-                status_code=503,
-                content={"error": "인증 서비스를 일시적으로 사용할 수 없습니다.", "code": "AUTH_UNAVAILABLE"},
-            )
-
-        if not _users_exist:
+        if not users_exist:
             return await call_next(request)
 
         return JSONResponse(

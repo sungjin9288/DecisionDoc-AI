@@ -18,6 +18,35 @@ def _app_style_store(tenant_id: str):
     )
 
 
+def _persisted_token(*, username: str, role: str) -> str:
+    from app.services.auth_service import create_access_token
+    from app.storage.user_store import get_user_store
+
+    store = get_user_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    user = store.get_by_username(username)
+    if user is None:
+        user = store.create(
+            username=username,
+            display_name=username,
+            email=f"{username}@test.local",
+            password="StyleTest1!",
+            role=role,
+        )
+    elif user.role.value != role or not user.is_active:
+        user = store.update(user.user_id, role=role, is_active=True)
+    assert user is not None
+    return create_access_token(
+        user.user_id,
+        "system",
+        user.role.value,
+        user.username,
+    )
+
+
 def test_default_styles_defined():
     """3 default profiles must be defined."""
     assert len(DEFAULT_STYLE_PROFILES) == 3
@@ -57,12 +86,10 @@ def test_all_profiles_are_system():
 
 def test_system_profiles_not_deletable():
     """System profiles should return 400 on delete attempt."""
-    from app.services.auth_service import create_access_token
-
     # Ensure defaults are present (lifespan not called in test client)
     _app_style_store("system").initialize_defaults()
 
-    token = create_access_token("user1", "system", "admin", "admin")
+    token = _persisted_token(username="style-admin", role="admin")
     res = client.delete(
         "/styles/default-official",
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "system"},
@@ -111,12 +138,10 @@ def test_initialize_defaults_adds_correct_fields():
 
 def test_style_profiles_listed_include_system_flag():
     """GET /styles response should include is_system field."""
-    from app.services.auth_service import create_access_token
-
     # Ensure defaults are present (lifespan not called in test client)
     _app_style_store("system").initialize_defaults()
 
-    token = create_access_token("user1", "system", "member", "user1")
+    token = _persisted_token(username="style-member", role="member")
     res = client.get(
         "/styles",
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "system"},
