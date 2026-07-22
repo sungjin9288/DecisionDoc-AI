@@ -27,6 +27,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/auth/logout"): "user.logout",
     ("GET", "/auth/sessions"): "user.session_list",
     ("POST", "/auth/sessions/revoke"): "user.session_revoke",
+    ("POST", "/auth/sessions/revoke-others"): "user.session_revoke_others",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",
@@ -295,6 +296,11 @@ def _append_audit_entries(
         user_id = getattr(request.state, "user_id", "anonymous") or "anonymous"
         username = getattr(request.state, "username", "anonymous") or "anonymous"
         user_role = getattr(request.state, "user_role", "unknown") or "unknown"
+        auth_session_revoked_count = getattr(
+            request.state,
+            "auth_session_revoked_count",
+            None,
+        )
 
         procurement_project_id = getattr(request.state, "procurement_project_id", "") or ""
         decision_council_project_id = getattr(request.state, "decision_council_project_id", "") or ""
@@ -427,6 +433,8 @@ def _append_audit_entries(
             "status_code": status_code,
             "duration_ms": round((time.time() - start_time) * 1000),
         }
+        if auth_session_revoked_count is not None:
+            detail["revoked_sessions"] = auth_session_revoked_count
         if procurement_error_code:
             detail["error_code"] = procurement_error_code
         if procurement_project_id:

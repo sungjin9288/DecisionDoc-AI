@@ -89,6 +89,67 @@ def test_auth_session_store_lists_and_revokes_selected_s3_backend_authority():
     ] == [current]
 
 
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_revokes_all_other_active_sessions(
+    tmp_path,
+    backend_kind,
+):
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+
+    current = store.create(user_id="user-a", credential_version=3)
+    first_other = store.create(user_id="user-a", credential_version=3)
+    second_other = store.create(user_id="user-a", credential_version=3)
+    foreign = store.create(user_id="user-b", credential_version=3)
+    older_version = store.create(user_id="user-a", credential_version=2)
+
+    assert store.revoke_others(
+        current_session_id=current,
+        user_id="user-a",
+        credential_version=3,
+    ) == 2
+    assert store.revoke_others(
+        current_session_id=current,
+        user_id="user-a",
+        credential_version=3,
+    ) == 0
+
+    assert store.is_current(current, user_id="user-a", credential_version=3)
+    assert not store.is_current(first_other, user_id="user-a", credential_version=3)
+    assert not store.is_current(second_other, user_id="user-a", credential_version=3)
+    assert store.is_current(foreign, user_id="user-b", credential_version=3)
+    assert store.is_current(older_version, user_id="user-a", credential_version=2)
+
+
+def test_auth_session_store_bulk_revoke_validates_prefix_before_mutation(tmp_path):
+    store = _store(tmp_path)
+    current = store.create(user_id="user-a", credential_version=0)
+    other = store.create(user_id="user-a", credential_version=0)
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    with pytest.raises(AuthSessionStoreError):
+        store.revoke_others(
+            current_session_id=current,
+            user_id="user-a",
+            credential_version=0,
+        )
+
+    assert store.is_current(current, user_id="user-a", credential_version=0)
+    assert store.is_current(other, user_id="user-a", credential_version=0)
+    assert corrupt_path.read_bytes() == corrupt
+
+
 def test_auth_session_store_rejects_wrong_authority_without_mutation(tmp_path):
     store = _store(tmp_path)
     session_id = store.create(user_id="user-a", credential_version=2)

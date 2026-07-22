@@ -1,5 +1,7 @@
 """Authentication and user management schemas."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -28,6 +30,12 @@ class RevokeAuthSessionRequest(BaseModel):
         max_length=32,
         pattern=r"^[0-9a-f]{32}$",
     )
+
+
+class RevokeOtherAuthSessionsRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    confirm: Literal[True]
 
 
 class UpdateMyProfileRequest(BaseModel):

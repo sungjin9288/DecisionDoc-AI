@@ -278,6 +278,32 @@ class AuthSessionStore:
         )
         return active
 
+    def revoke_others(
+        self,
+        *,
+        current_session_id: str,
+        user_id: str,
+        credential_version: int,
+    ) -> int:
+        """Revoke the active sessions visible before this operation, except current."""
+        canonical_current_id = require_auth_session_id(current_session_id)
+        records = self.list_active(
+            user_id=user_id,
+            credential_version=credential_version,
+        )
+        other_session_ids = [
+            record["session_id"]
+            for record in records
+            if record["session_id"] != canonical_current_id
+        ]
+
+        for session_id in other_session_ids:
+            if not self.revoke(session_id, user_id=user_id):
+                raise AuthSessionStoreError(
+                    "Authentication session authority changed during bulk revocation"
+                )
+        return len(other_session_ids)
+
     def revoke(self, session_id: str, *, user_id: str) -> bool:
         canonical_session_id = require_auth_session_id(session_id)
         canonical_user_id = _require_user_id(user_id)

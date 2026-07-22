@@ -170,10 +170,14 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   next protected request, refresh, or open-stream recheck. Corrupt or unavailable state fails closed without
   rewriting the original bytes; audit omits tokens and session IDs. Browser cleanup is immediate even when server
   revocation cannot be confirmed. Self-service inventory strict-validates the selected-backend tenant prefix and
-  returns only active current-version sessions; selected revoke preserves the current browser and hides foreign
-  versus missing targets. The profile renders no session IDs and discards stale list or revoke completions.
-  Legacy sessionless exact logout/inventory/selected revoke, User-Agent/IP inventory, all-device or administrator
-  mass revoke, expired-session GC, and immediate cross-device push remain outside the local contract.
+  returns only active current-version sessions. Selected revoke preserves current and hides foreign versus missing
+  targets. Confirmed bulk revoke uses the same snapshot to CAS-revoke every other candidate and converges to count
+  zero on retry. It is not a multi-object transaction, so a mid-write failure can leave partial progress and a
+  session created after the snapshot remains for the next inspection. The profile renders no session IDs and gives
+  selected and bulk actions one single-flight and stale-response guard. Audit retains the bulk count without tokens
+  or session IDs. Legacy sessionless exact logout/inventory/selected/bulk revoke, User-Agent/IP inventory,
+  current-inclusive all-device logout, administrator mass revoke, expired-session GC, and immediate cross-device
+  push remain outside the local contract.
 - An open `/events` stream rechecks token expiry and the same persisted user/session authority at most every 15 seconds.
   Invalid access receives only an `auth_revoked` control event before unsubscribe; unavailable authority receives
   `auth_unavailable` and no further application event. The browser refreshes once for revocation, clears session
@@ -306,7 +310,11 @@ Last local verification on 2026-07-22:
 - self-service session full main-flow Chromium gate: 79 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4329 passed, 2 skipped, 4 deselected, 1 warning
+- self-service bulk other-session backend/static gate: 12 passed, 306 deselected, 1 warning
+- self-service bulk other-session focused Chromium gate: 2 passed, 79 deselected
+- self-service bulk other-session broad auth/security gate: 473 passed, 1 warning
+- self-service bulk other-session full main-flow Chromium gate: 80 passed, 1 skipped
+- full repository non-live gate: 4339 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0

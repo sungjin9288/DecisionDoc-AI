@@ -1514,6 +1514,70 @@ def test_profile_can_revoke_one_other_login_without_ending_current_session(
         )
 
 
+def test_profile_can_revoke_all_other_logins_without_ending_current_session(
+    page,
+    live_server,
+):
+    others = [
+        page.evaluate(
+            """async ({ username, password }) => {
+              const response = await fetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+              });
+              return response.json();
+            }""",
+            live_server["auth"],
+        )
+        for _ in range(2)
+    ]
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.click("#user-info")
+    page.click('[data-user-menu-action="profile"]')
+    page.wait_for_selector("#profile-modal", state="visible")
+    page.wait_for_selector("#profile-sessions-revoke-others", state="visible")
+    session_markup = page.locator("#profile-sessions-list").inner_html()
+
+    from app.services.auth_service import verify_token
+
+    for session in others:
+        claims = verify_token(session["access_token"])
+        assert claims is not None
+        assert claims["session_id"] not in session_markup
+
+    page.click("#profile-sessions-revoke-others")
+    page.wait_for_function(
+        "() => document.querySelectorAll('#profile-sessions-list button').length === 0",
+    )
+
+    result = page.evaluate(
+        """async sessions => {
+          const statuses = [];
+          for (const session of sessions) {
+            const access = await fetch('/auth/me', {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            const refresh = await fetch('/auth/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh_token: session.refresh_token }),
+            });
+            statuses.push([access.status, refresh.status]);
+          }
+          const current = await fetch('/auth/me', { headers: getAuthHeaders() });
+          return { statuses, currentStatus: current.status };
+        }""",
+        others,
+    )
+
+    assert result == {
+        "statuses": [[401, 401], [401, 401]],
+        "currentStatus": 200,
+    }
+
+
 def test_profile_session_inventory_ignores_a_late_stale_response(page):
     result = page.evaluate(
         """async () => {
@@ -1573,8 +1637,13 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
           let firstResolve;
           let secondResolve;
           let requestCount = 0;
+          let confirmCount = 0;
+          window.confirm = () => {
+            confirmCount += 1;
+            return true;
+          };
           window.fetch = (url, options) => {
-            if (url !== '/auth/sessions/revoke') return originalFetch(url, options);
+            if (!url.startsWith('/auth/sessions/revoke')) return originalFetch(url, options);
             requestCount += 1;
             return new Promise(resolve => {
               if (requestCount === 1) firstResolve = resolve;
@@ -1584,9 +1653,11 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
           document.getElementById('profile-modal').style.display = 'flex';
           try {
             const first = revokeMyAuthSession('b'.repeat(32));
+            await revokeMyOtherAuthSessions();
+            const blockedBulkSkippedConfirmation = confirmCount === 0 && requestCount === 1;
             closeMyProfileModal();
             document.getElementById('profile-modal').style.display = 'flex';
-            const second = revokeMyAuthSession('c'.repeat(32));
+            const second = revokeMyOtherAuthSessions();
             firstResolve(new Response('{}', { status: 200 }));
             await first;
             const newerRequestStillLocked = _profileSessionRevokeInFlight;
@@ -1597,6 +1668,7 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
             await second;
             return {
               requestCount,
+              blockedBulkSkippedConfirmation,
               newerRequestStillLocked,
               unlockedAfterCurrentRequest: !_profileSessionRevokeInFlight,
             };
@@ -1609,6 +1681,7 @@ def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
 
     assert result == {
         "requestCount": 2,
+        "blockedBulkSkippedConfirmation": True,
         "newerRequestStillLocked": True,
         "unlockedAfterCurrentRequest": True,
     }

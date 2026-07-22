@@ -1275,12 +1275,15 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert 'id="profile-sessions-list"' in modal_block
     assert 'id="profile-sessions-status"' in modal_block
     assert 'id="profile-sessions-refresh"' in modal_block
+    assert 'id="profile-sessions-revoke-others"' in modal_block
     assert "$id('profile-modal')?.addEventListener('click'" in content
     assert "event.target === event.currentTarget" in content
     assert "document.querySelectorAll('[data-profile-close]').forEach" in content
     assert "$id('profile-form')?.addEventListener('submit', saveMyProfile)" in content
     assert "async function loadMyAuthSessions()" in content
     assert "async function revokeMyAuthSession(sessionId, button)" in content
+    assert "async function revokeMyOtherAuthSessions(button)" in content
+    assert "async function runMyAuthSessionRevocation" in content
     assert "_profileSessionRequestVersion" in content
     assert "_profileSessionRevokeVersion" in content
     assert "_profileSessionRevokeVersion === revokeVersion" in content

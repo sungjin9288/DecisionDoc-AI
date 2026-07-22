@@ -224,13 +224,17 @@ Acceptance:
 - corrupt or unavailable session state fails closed without changing the original object, and logout audit copies
   neither access/refresh credentials nor the private session identity
 - legacy sessionless credentials remain bounded by expiry and credential version but cannot use exact logout,
-  inventory, or selected revoke; User-Agent/IP inventory, all-device or administrator mass revoke,
-  expired-session GC, and immediate push stay outside this contract
+  inventory, selected revoke, or bulk revoke; User-Agent/IP inventory, current-inclusive all-device logout,
+  administrator mass revoke, expired-session GC, and immediate push stay outside this contract
 - self-service inventory validates every direct object under the selected-backend tenant session prefix before
   returning active current-version sessions; selected revoke preserves the current browser, hides foreign/missing
   target differences, and treats an already-revoked owned target as retry-safe success
-- the browser renders only current/other and start/expiry metadata, keeps session IDs out of the DOM, and rejects
-  stale list and revoke completions by token, modal, request, and revoke generations
+- strict-confirmed bulk revoke preserves current, revokes every other session in the validated snapshot, converges
+  to count zero on retry, and fails before mutation when the prefix is corrupt; sequential writes do not claim a
+  multi-object transaction or include sessions created after the snapshot
+- the browser renders only current/other and start/expiry metadata, keeps session IDs out of the DOM, gives selected
+  and bulk actions one single-flight, and rejects stale list/revoke completions by token, modal, request, and revoke
+  generations; audit stores the bulk count without credentials or session IDs
 - an open SSE subscription rechecks token expiry and persisted user/session authority within 15 seconds, stops application
   events on revocation or authority failure, and preserves browser credentials when the failure is retryable
 - no hidden control can trigger upload, training, or production operations

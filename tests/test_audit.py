@@ -798,6 +798,10 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
         "/auth/login",
         json={"username": "admin", "password": "AdminPass1!"},
     ).json()
+    third = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
 
     from app.services.auth_service import verify_token
     from app.storage.audit_store import AuditStore
@@ -810,25 +814,44 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
         headers=_auth(first),
         json={"session_id": second_claims["session_id"]},
     )
+    bulk_revoked = client.post(
+        "/auth/sessions/revoke-others",
+        headers=_auth(first),
+        json={"confirm": True},
+    )
     results = AuditStore("system").query()
     session_entries = [
         entry
         for entry in results
-        if entry["action"] in {"user.session_list", "user.session_revoke"}
+        if entry["action"] in {
+            "user.session_list",
+            "user.session_revoke",
+            "user.session_revoke_others",
+        }
     ]
     serialized = json.dumps(session_entries, ensure_ascii=False)
 
     assert listed.status_code == 200
     assert revoked.status_code == 200
+    assert bulk_revoked.status_code == 200
     assert {entry["action"] for entry in session_entries} == {
         "user.session_list",
         "user.session_revoke",
+        "user.session_revoke_others",
     }
     assert first["access_token"] not in serialized
     assert first["refresh_token"] not in serialized
     assert second["access_token"] not in serialized
     assert second["refresh_token"] not in serialized
+    assert third["access_token"] not in serialized
+    assert third["refresh_token"] not in serialized
     assert second_claims["session_id"] not in serialized
+    bulk_entry = next(
+        entry
+        for entry in session_entries
+        if entry["action"] == "user.session_revoke_others"
+    )
+    assert bulk_entry["detail"]["revoked_sessions"] == 2
 
 
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
