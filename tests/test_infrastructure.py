@@ -1135,9 +1135,17 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert content.count("_authSessionRevision += 1;") == 4
     assert "const AUTH_SESSION_STORAGE_KEYS = new Set([" in content
     assert "'dd_access_token',\n    'dd_refresh_token',\n    'dd_tenant_id'," in content
+    assert "let _crossTabAuthReloadRequested = false;" in content
+    assert "function storedAuthContextMatchesCurrentPage()" in content
+    assert "storedUserId === currentUserId" in content
+    assert "storedTenantId === _currentTenantId" in content
+    assert "storedTenantId === localStorage.getItem('dd_tenant_id')" in content
+    assert "function reconcileCrossTabAuthContext()" in content
+    assert "window.location.reload();" in content
     assert "function handleCrossTabAuthStorageChange(event)" in content
     assert "event.storageArea !== localStorage" in content
     assert "event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)" in content
+    assert "reconcileCrossTabAuthContext();" in content
     assert "window.addEventListener('storage', handleCrossTabAuthStorageChange);" in content
     assert "localStorage.removeItem('dd_access_token')" in content
     assert "localStorage.removeItem('dd_refresh_token')" in content

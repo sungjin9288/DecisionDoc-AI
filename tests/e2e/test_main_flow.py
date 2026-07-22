@@ -1138,15 +1138,12 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
     setup = page.evaluate(
         """() => {
           const tenantId = _currentTenantId;
-          const encodeToken = subject => {
-            const claims = btoa(JSON.stringify({ sub: subject, tenant_id: tenantId }));
-            return `e30.${claims}.signature`;
-          };
-          const originalAccessToken = encodeToken('cross-tab-original-user');
+          const currentUserId = _currentUser.sub;
+          const originalAccessToken = localStorage.getItem('dd_access_token');
           const originalClaims = persistAuthSession(originalAccessToken, {
             refreshToken: 'cross-tab-shared-refresh-token',
           });
-          _currentUser = originalClaims;
+          _currentUser = { ..._currentUser, ...originalClaims };
 
           const nativeFetch = window.fetch;
           window.__crossTabNativeFetch = nativeFetch;
@@ -1168,6 +1165,7 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
           window.__crossTabRecovery = recoverAuthSessionOnce();
           return {
             tenantId,
+            currentUserId,
             revision: _authSessionRevision,
           };
         }"""
@@ -1180,10 +1178,11 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
     second_page.evaluate("() => localStorage.removeItem('dd_ops_key')")
 
     replacement = second_page.evaluate(
-        """({ tenantId }) => {
+        """({ tenantId, currentUserId }) => {
           const claims = btoa(JSON.stringify({
-            sub: 'cross-tab-replacement-user',
+            sub: currentUserId,
             tenant_id: tenantId,
+            session_id: 'cross-tab-replacement-session',
           }));
           const accessToken = `e30.${claims}.signature`;
           const committedClaims = persistAuthSession(accessToken, {
@@ -1192,7 +1191,7 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
           _currentUser = committedClaims;
           return { accessToken, committed: Boolean(committedClaims) };
         }""",
-        {"tenantId": setup["tenantId"]},
+        {"tenantId": setup["tenantId"], "currentUserId": setup["currentUserId"]},
     )
     assert replacement["committed"] is True
     page.wait_for_function("() => window.__crossTabStorageEvents.includes('dd_access_token')")
@@ -1223,14 +1222,18 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
         }""",
         {
             "staleAccessToken": page.evaluate(
-                """({ tenantId }) => {
+                """({ tenantId, currentUserId }) => {
                   const claims = btoa(JSON.stringify({
-                    sub: 'cross-tab-stale-refresh-user',
+                    sub: currentUserId,
                     tenant_id: tenantId,
+                    session_id: 'cross-tab-stale-refresh-session',
                   }));
                   return `e30.${claims}.signature`;
                 }""",
-                {"tenantId": setup["tenantId"]},
+                {
+                    "tenantId": setup["tenantId"],
+                    "currentUserId": setup["currentUserId"],
+                },
             ),
             "replacementAccessToken": replacement["accessToken"],
             "previousRevision": setup["revision"],
@@ -1242,8 +1245,82 @@ def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
         "refreshResult": "superseded",
         "revisionAdvanced": True,
         "replacementAccessTokenPreserved": True,
-        "currentUser": "cross-tab-original-user",
+        "currentUser": setup["currentUserId"],
         "recoveryCleared": True,
+    }
+
+
+def test_cross_tab_auth_identity_change_reloads_current_page_context(page):
+    suffix = uuid.uuid4().hex[:10]
+    tenant_id = f"e2e-auth-context-{suffix}"
+    auth = _create_tenant_member_auth(
+        page,
+        tenant_id=tenant_id,
+        username=f"auth_context_member_{suffix}",
+    )
+    expected_user_id = auth["user"]["user_id"]
+
+    context = page.context
+    second_page = context.new_page()
+    second_page.goto(page.url.split("?", 1)[0])
+    second_page.wait_for_selector("body.auth-ready", timeout=10000)
+
+    page.evaluate(
+        """() => {
+          stopNotifPolling();
+          stopSSE();
+          _documentOpsReviewDrafts.set('cross-tab-original-context-draft', {
+            notes: '새 인증 맥락에 넘기지 않을 검토 메모',
+            scoreText: '0.7',
+          });
+          window.__crossTabOriginalPageContext = true;
+        }"""
+    )
+    second_page.evaluate("() => { stopNotifPolling(); stopSSE(); }")
+
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=5000):
+        replacement = second_page.evaluate(
+            """({ accessToken, refreshToken }) => {
+              const claims = persistAuthSession(accessToken, { refreshToken });
+              _currentUser = claims;
+              return Boolean(claims);
+            }""",
+            {
+                "accessToken": auth["access_token"],
+                "refreshToken": auth["refresh_token"],
+            },
+        )
+
+    assert replacement is True
+    page.wait_for_selector("body.auth-ready", timeout=10000)
+    page.wait_for_function(
+        "expectedUserId => _currentUser?.sub === expectedUserId",
+        arg=expected_user_id,
+    )
+    result = page.evaluate(
+        """({ accessToken, expectedTenantId }) => ({
+          currentUserId: _currentUser?.sub || null,
+          currentTenantId: _currentTenantId,
+          storedTenantId: localStorage.getItem('dd_tenant_id'),
+          replacementAccessTokenPreserved:
+            localStorage.getItem('dd_access_token') === accessToken,
+          originalPageContextCleared:
+            typeof window.__crossTabOriginalPageContext === 'undefined',
+          reviewDraftCount: _documentOpsReviewDrafts.size,
+          tenantMatches: _currentTenantId === expectedTenantId,
+        })""",
+        {"accessToken": auth["access_token"], "expectedTenantId": tenant_id},
+    )
+    second_page.close()
+
+    assert result == {
+        "currentUserId": expected_user_id,
+        "currentTenantId": tenant_id,
+        "storedTenantId": tenant_id,
+        "replacementAccessTokenPreserved": True,
+        "originalPageContextCleared": True,
+        "reviewDraftCount": 0,
+        "tenantMatches": True,
     }
 
 

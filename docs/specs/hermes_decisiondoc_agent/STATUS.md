@@ -110,6 +110,8 @@ The static DocumentOps workbench now follows the same no-execution governance ch
   `TENANT_MISMATCH`, while an allowed change reloads the whole app so prior-tenant state cannot remain visible
 - same-origin access-token, refresh-token, tenant, and full local-storage changes advance the receiving tab's auth
   revision, so an older in-flight refresh cannot overwrite another tab's replacement session; unrelated keys are ignored
+- if the other tab's final signed user or tenant differs from the current page, the receiving page reloads once and
+  rebuilds page-memory evidence under that session; same-identity token rotation does not reload
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
 - readiness and governance panels show checksum and current-chain consistency for freeze,
@@ -265,12 +267,13 @@ Last local verification on 2026-07-22:
 - auth recovery outcome focused gate: 4 passed, 1 warning
 - auth recovery coordination focused Chromium gate: 6 passed, 62 deselected
 - cross-tab auth refresh ordering focused Chromium gate: 7 passed, 62 deselected
+- auth ordering and cross-tab identity reconciliation focused Chromium gate: 8 passed, 62 deselected
 - auth/tenant/SSO/infrastructure expansion gate: 380 passed, 1 warning
 - auth/tenant related Chromium gate: 9 passed, 54 deselected
-- full main-flow Chromium gate: 68 passed, 1 skipped
+- full main-flow Chromium gate: 69 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4277 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4278 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0

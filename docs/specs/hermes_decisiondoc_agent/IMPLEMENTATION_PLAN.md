@@ -208,6 +208,8 @@ Acceptance:
   and a late refresh response cannot replace a newer login session
 - same-origin auth storage changes invalidate an older in-flight refresh even when another tab reuses the same
   refresh-token bytes, while unrelated storage keys do not change auth revision
+- a different signed user or tenant from another tab reloads the receiving page once so page-memory evidence is
+  rebuilt under the new session; same-identity token rotation stays quiet and preserves current work
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

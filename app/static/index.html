@@ -18191,16 +18191,38 @@
   let _currentUser = null;
   let _authSessionRevision = 0;
   let _authSessionRecoveryPromise = null;
+  let _crossTabAuthReloadRequested = false;
   const AUTH_SESSION_STORAGE_KEYS = new Set([
     'dd_access_token',
     'dd_refresh_token',
     'dd_tenant_id',
   ]);
 
+  function storedAuthContextMatchesCurrentPage() {
+    const claims = readAccessTokenClaims(localStorage.getItem('dd_access_token'));
+    const storedUserId = String(claims?.sub || '').trim();
+    const storedTenantId = String(claims?.tenant_id || '').trim();
+    const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '').trim();
+    return Boolean(
+      storedUserId
+      && storedTenantId
+      && storedUserId === currentUserId
+      && storedTenantId === _currentTenantId
+      && storedTenantId === localStorage.getItem('dd_tenant_id')
+    );
+  }
+
+  function reconcileCrossTabAuthContext() {
+    if (_crossTabAuthReloadRequested || storedAuthContextMatchesCurrentPage()) return;
+    _crossTabAuthReloadRequested = true;
+    window.location.reload();
+  }
+
   function handleCrossTabAuthStorageChange(event) {
     if (event.storageArea !== localStorage) return;
     if (event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)) return;
     _authSessionRevision += 1;
+    reconcileCrossTabAuthContext();
   }
 
   window.addEventListener('storage', handleCrossTabAuthStorageChange);
