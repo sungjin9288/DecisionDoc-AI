@@ -1095,7 +1095,7 @@ def test_index_html_result_download_action_wiring_exists():
         assert marker in content
 
 
-def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
+def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures():
     content = open("app/static/index.html", encoding="utf-8").read()
     invalid_start = content.index("function handleInvalidAuthSession")
     invalid_end = content.index("function logout()", invalid_start)
@@ -1120,12 +1120,19 @@ def test_index_html_recovers_or_resets_invalid_auth_session_on_401():
     assert parse_error_fn is not None
     assert "function handleInvalidAuthSession" in content
     assert "async function recoverAuthSessionOnce" in content
+    assert "const AUTH_REFRESH_RESULT = Object.freeze({" in content
+    assert "STORAGE_FAILED: 'storage_failed'" in content
+    assert "UNAVAILABLE: 'unavailable'" in content
     assert "localStorage.removeItem('dd_access_token')" in content
     assert "localStorage.removeItem('dd_refresh_token')" in content
     assert "res.status === 401" in retry_fetch_fn.group("body")
     assert "await recoverAuthSessionOnce()" in retry_fetch_fn.group("body")
+    assert "refreshResult !== AUTH_REFRESH_RESULT.INVALID_SESSION" in retry_fetch_fn.group("body")
+    assert "throw createAuthRefreshError(refreshResult)" in retry_fetch_fn.group("body")
     assert "handleInvalidAuthSession()" in retry_fetch_fn.group("body")
     assert "retry = await fetch('/auth/me'" in hydrate_fn.group("body")
+    assert "refreshResult === AUTH_REFRESH_RESULT.INVALID_SESSION" in hydrate_fn.group("body")
+    assert "reportAuthRefreshFailure(refreshResult)" in hydrate_fn.group("body")
     assert "handleInvalidAuthSession()" in parse_error_fn.group("body")
     assert "clearDocumentOpsPendingRunMarker();" in invalid_block
     assert "clearDocumentOpsPendingRunMarker();" in logout_block

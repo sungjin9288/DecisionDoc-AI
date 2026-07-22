@@ -13422,6 +13422,34 @@
     };
   }
 
+  const AUTH_REFRESH_RESULT = Object.freeze({
+    REFRESHED: 'refreshed',
+    INVALID_SESSION: 'invalid_session',
+    UNAVAILABLE: 'unavailable',
+    STORAGE_FAILED: 'storage_failed',
+  });
+
+  function getAuthRefreshFailureMessage(result) {
+    if (result === AUTH_REFRESH_RESULT.STORAGE_FAILED) {
+      return '브라우저에 갱신된 인증 상태를 저장하지 못했습니다. 기존 세션과 작업 내용은 보존되었습니다.';
+    }
+    return '인증 세션을 갱신하지 못했습니다. 기존 세션과 작업 내용은 보존되었습니다. 잠시 후 다시 시도하세요.';
+  }
+
+  function reportAuthRefreshFailure(result) {
+    const message = getAuthRefreshFailureMessage(result);
+    const level = result === AUTH_REFRESH_RESULT.STORAGE_FAILED ? 'error' : 'warn';
+    setStatus(`⚠️ ${message}`, level);
+    showNotification(message, level);
+  }
+
+  function createAuthRefreshError(result) {
+    const code = result === AUTH_REFRESH_RESULT.STORAGE_FAILED
+      ? 'AUTH_SESSION_STORAGE_FAILED'
+      : 'AUTH_REFRESH_UNAVAILABLE';
+    return Object.assign(new Error(getAuthRefreshFailureMessage(result)), { code, status: 401 });
+  }
+
   function readAccessTokenClaims(accessToken) {
     try {
       const claims = JSON.parse(atob(String(accessToken || '').split('.')[1]));
@@ -13946,7 +13974,8 @@
     try {
       const res = await fetch('/auth/me', { headers: getAuthHeaders() });
       if (res.status === 401) {
-        if (await recoverAuthSessionOnce()) {
+        const refreshResult = await recoverAuthSessionOnce();
+        if (refreshResult === AUTH_REFRESH_RESULT.REFRESHED) {
           const retry = await fetch('/auth/me', { headers: getAuthHeaders() });
           if (retry.ok) {
             const data = await retry.json();
@@ -13957,8 +13986,14 @@
             };
             return data;
           }
+          if (retry.status === 401) handleInvalidAuthSession();
+          return null;
         }
-        handleInvalidAuthSession();
+        if (refreshResult === AUTH_REFRESH_RESULT.INVALID_SESSION) {
+          handleInvalidAuthSession();
+        } else {
+          reportAuthRefreshFailure(refreshResult);
+        }
         return null;
       }
       if (!res.ok) return null;
@@ -14787,9 +14822,16 @@
       if (res.ok) return await res.json();
       const err = await res.json().catch(() => ({}));
       if (res.status === 401 || err?.code === 'UNAUTHORIZED') {
-        if (!authRetried && await recoverAuthSessionOnce()) {
-          authRetried = true;
-          continue;
+        if (!authRetried) {
+          const refreshResult = await recoverAuthSessionOnce();
+          if (refreshResult === AUTH_REFRESH_RESULT.REFRESHED) {
+            authRetried = true;
+            continue;
+          }
+          if (refreshResult !== AUTH_REFRESH_RESULT.INVALID_SESSION) {
+            reportAuthRefreshFailure(refreshResult);
+            throw createAuthRefreshError(refreshResult);
+          }
         }
         handleInvalidAuthSession();
         throw Object.assign(new Error(_formatApiErrorMessage(err, res.status)), {
@@ -18154,7 +18196,16 @@
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       if (payload.exp * 1000 < Date.now()) {
-        refreshAccessToken().then(ok => { if (ok) initApp(); else showLoginScreen(); });
+        refreshAccessToken().then(result => {
+          if (result === AUTH_REFRESH_RESULT.REFRESHED) {
+            initApp();
+          } else if (result === AUTH_REFRESH_RESULT.INVALID_SESSION) {
+            handleInvalidAuthSession();
+          } else {
+            showLoginScreen();
+            reportAuthRefreshFailure(result);
+          }
+        });
         return;
       }
       _currentUser = payload;
@@ -18306,27 +18357,34 @@
 
   async function refreshAccessToken() {
     const refreshToken = localStorage.getItem('dd_refresh_token');
-    if (!refreshToken) return false;
+    if (!refreshToken) return AUTH_REFRESH_RESULT.INVALID_SESSION;
     try {
       const res = await fetch('/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken })
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        return [400, 401, 403].includes(res.status)
+          ? AUTH_REFRESH_RESULT.INVALID_SESSION
+          : AUTH_REFRESH_RESULT.UNAVAILABLE;
+      }
       const data = await res.json();
+      if (!readAccessTokenClaims(data.access_token)) return AUTH_REFRESH_RESULT.UNAVAILABLE;
       const claims = persistAuthSession(data.access_token, { replaceRefreshToken: false });
-      if (!claims) return false;
+      if (!claims) return AUTH_REFRESH_RESULT.STORAGE_FAILED;
       _currentUser = claims;
-      return true;
-    } catch(e) { return false; }
+      return AUTH_REFRESH_RESULT.REFRESHED;
+    } catch(e) {
+      return AUTH_REFRESH_RESULT.UNAVAILABLE;
+    }
   }
 
   async function recoverAuthSessionOnce() {
     try {
       return await refreshAccessToken();
     } catch (_) {
-      return false;
+      return AUTH_REFRESH_RESULT.UNAVAILABLE;
     }
   }
 

@@ -633,7 +633,7 @@ def test_auth_refresh_tenant_commit_failure_restores_previous_session(page):
     previous_tenant_id = result["previousTenantId"]
     assert result == {
         "previousTenantId": previous_tenant_id,
-        "refreshResult": False,
+        "refreshResult": "storage_failed",
         "currentTenantId": previous_tenant_id,
         "storedTenantId": previous_tenant_id,
         "storedAccessToken": "previous-access-token",
@@ -647,6 +647,255 @@ def test_auth_refresh_tenant_commit_failure_restores_previous_session(page):
         },
         "pendingRecoveryPreserved": True,
         "recoveryPromisePreserved": True,
+    }
+
+
+def test_auth_recovery_storage_failure_preserves_session_evidence(page):
+    operation_id = "agent-run:33333333-4444-4555-8666-777777777777"
+
+    result = page.evaluate(
+        """async ({ operationId }) => {
+          const previousTenantId = _currentTenantId;
+          const nextTenantId = 'tenant-recovery-write-failure';
+          const previousAccessToken = 'previous-recovery-access-token';
+          const previousRefreshToken = 'previous-recovery-refresh-token';
+          const previousUser = { sub: 'previous-recovery-user', tenant_id: previousTenantId };
+          const storagePrototype = Object.getPrototypeOf(localStorage);
+          const originalSetItem = storagePrototype.setItem;
+          const originalFetch = window.fetch;
+          originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+          originalSetItem.call(localStorage, 'dd_access_token', previousAccessToken);
+          originalSetItem.call(localStorage, 'dd_refresh_token', previousRefreshToken);
+
+          const pendingRecovery = {
+            tenantId: previousTenantId,
+            operationId,
+            payload: { title: '상위 recovery 실패 뒤에도 보존할 요청' },
+          };
+          const recoveryPromise = Promise.resolve(null);
+          _currentUser = previousUser;
+          _documentOpsReviewDrafts.clear();
+          _documentOpsReviewDrafts.set('recovery-storage-failure-draft', {
+            notes: '상위 recovery 실패 뒤에도 보존할 검토 메모',
+            scoreText: '0.91',
+          });
+          rememberDocumentOpsPendingRunMarker(previousTenantId, operationId);
+          _documentOpsPendingRunRecovery = pendingRecovery;
+          _documentOpsRunRecoveryPromise = recoveryPromise;
+
+          const encodedClaims = btoa(JSON.stringify({
+            sub: 'next-recovery-user',
+            tenant_id: nextTenantId,
+          }));
+          const nextAccessToken = `e30.${encodedClaims}.signature`;
+          storagePrototype.setItem = function(key, value) {
+            if (this === localStorage && key === 'dd_tenant_id') {
+              throw new Error('tenant storage unavailable');
+            }
+            return originalSetItem.call(this, key, value);
+          };
+
+          let refreshRequests = 0;
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              refreshRequests += 1;
+              return {
+                ok: true,
+                json: async () => ({ access_token: nextAccessToken }),
+              };
+            }
+            return originalFetch(input);
+          };
+
+          let fetchAttempts = 0;
+          const fetcher = async () => {
+            fetchAttempts += 1;
+            return {
+              ok: false,
+              status: 401,
+              json: async () => ({ code: 'UNAUTHORIZED' }),
+            };
+          };
+
+          try {
+            let errorCode = '';
+            try {
+              await _fetchJsonWithProviderRetry(fetcher);
+            } catch (error) {
+              errorCode = error.code || '';
+            }
+            return {
+              previousTenantId,
+              errorCode,
+              fetchAttempts,
+              refreshRequests,
+              currentTenantId: _currentTenantId,
+              storedTenantId: localStorage.getItem('dd_tenant_id'),
+              storedAccessToken: localStorage.getItem('dd_access_token'),
+              storedRefreshToken: localStorage.getItem('dd_refresh_token'),
+              previousUserPreserved: _currentUser === previousUser,
+              draftPreserved: _documentOpsReviewDrafts.has('recovery-storage-failure-draft'),
+              markerPreserved: readDocumentOpsPendingRunMarker(previousTenantId),
+              pendingRecoveryPreserved: _documentOpsPendingRunRecovery === pendingRecovery,
+              recoveryPromisePreserved: _documentOpsRunRecoveryPromise === recoveryPromise,
+            };
+          } finally {
+            storagePrototype.setItem = originalSetItem;
+            window.fetch = originalFetch;
+            _documentOpsReviewDrafts.clear();
+            clearDocumentOpsPendingRunMarker('', previousTenantId);
+            _documentOpsPendingRunRecovery = null;
+            _documentOpsRunRecoveryPromise = null;
+            _currentUser = null;
+            _currentTenantId = previousTenantId;
+            originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+            localStorage.removeItem('dd_access_token');
+            localStorage.removeItem('dd_refresh_token');
+          }
+        }""",
+        {"operationId": operation_id},
+    )
+
+    previous_tenant_id = result["previousTenantId"]
+    assert result == {
+        "previousTenantId": previous_tenant_id,
+        "errorCode": "AUTH_SESSION_STORAGE_FAILED",
+        "fetchAttempts": 1,
+        "refreshRequests": 1,
+        "currentTenantId": previous_tenant_id,
+        "storedTenantId": previous_tenant_id,
+        "storedAccessToken": "previous-recovery-access-token",
+        "storedRefreshToken": "previous-recovery-refresh-token",
+        "previousUserPreserved": True,
+        "draftPreserved": True,
+        "markerPreserved": {
+            "schema_version": "document_ops_agent_pending_run_marker_v1",
+            "tenant_id": previous_tenant_id,
+            "operation_id": operation_id,
+        },
+        "pendingRecoveryPreserved": True,
+        "recoveryPromisePreserved": True,
+    }
+
+
+def test_auth_recovery_retries_refreshed_session_and_clears_invalid_session(page):
+    operation_id = "agent-run:44444444-5555-4666-8777-888888888888"
+
+    result = page.evaluate(
+        """async ({ operationId }) => {
+          const tenantId = _currentTenantId;
+          const originalFetch = window.fetch;
+          const encodedClaims = btoa(JSON.stringify({
+            sub: 'refreshed-user',
+            tenant_id: tenantId,
+          }));
+          const nextAccessToken = `e30.${encodedClaims}.signature`;
+          localStorage.setItem('dd_refresh_token', 'valid-refresh-token');
+
+          let refreshRequests = 0;
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              refreshRequests += 1;
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({ access_token: nextAccessToken }),
+              };
+            }
+            return originalFetch(input);
+          };
+
+          let successfulFetchAttempts = 0;
+          const recoveredPayload = await _fetchJsonWithProviderRetry(async () => {
+            successfulFetchAttempts += 1;
+            if (successfulFetchAttempts === 1) {
+              return {
+                ok: false,
+                status: 401,
+                json: async () => ({ code: 'UNAUTHORIZED' }),
+              };
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ recovered: true }),
+            };
+          });
+          const accessTokenUpdated = localStorage.getItem('dd_access_token') === nextAccessToken;
+          const currentUserUpdated = _currentUser?.sub === 'refreshed-user';
+
+          _documentOpsReviewDrafts.set('invalid-refresh-draft', {
+            notes: '유효하지 않은 세션과 함께 정리할 메모',
+            scoreText: '0.2',
+          });
+          rememberDocumentOpsPendingRunMarker(tenantId, operationId);
+          _documentOpsPendingRunRecovery = { tenantId, operationId };
+          _documentOpsRunRecoveryPromise = Promise.resolve(null);
+          localStorage.setItem('dd_refresh_token', 'invalid-refresh-token');
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              refreshRequests += 1;
+              return { ok: false, status: 401 };
+            }
+            return originalFetch(input);
+          };
+
+          let invalidErrorCode = '';
+          try {
+            await _fetchJsonWithProviderRetry(async () => ({
+              ok: false,
+              status: 401,
+              json: async () => ({ code: 'UNAUTHORIZED' }),
+            }));
+          } catch (error) {
+            invalidErrorCode = error.code || '';
+          }
+
+          const observed = {
+            recoveredPayload,
+            successfulFetchAttempts,
+            refreshRequests,
+            accessTokenUpdated,
+            currentUserUpdated,
+            invalidErrorCode,
+            storedAccessToken: localStorage.getItem('dd_access_token'),
+            storedRefreshToken: localStorage.getItem('dd_refresh_token'),
+            currentUser: _currentUser,
+            draftPreserved: _documentOpsReviewDrafts.has('invalid-refresh-draft'),
+            markerPreserved: readDocumentOpsPendingRunMarker(tenantId),
+            pendingRecovery: _documentOpsPendingRunRecovery,
+            recoveryPromise: _documentOpsRunRecoveryPromise,
+          };
+
+          window.fetch = originalFetch;
+          _documentOpsReviewDrafts.clear();
+          clearDocumentOpsPendingRunMarker('', tenantId);
+          _documentOpsPendingRunRecovery = null;
+          _documentOpsRunRecoveryPromise = null;
+          _currentUser = null;
+          _currentTenantId = tenantId;
+          localStorage.setItem('dd_tenant_id', tenantId);
+          localStorage.removeItem('dd_access_token');
+          localStorage.removeItem('dd_refresh_token');
+          return observed;
+        }""",
+        {"operationId": operation_id},
+    )
+
+    assert result == {
+        "recoveredPayload": {"recovered": True},
+        "successfulFetchAttempts": 2,
+        "refreshRequests": 2,
+        "accessTokenUpdated": True,
+        "currentUserUpdated": True,
+        "invalidErrorCode": "UNAUTHORIZED",
+        "storedAccessToken": None,
+        "storedRefreshToken": None,
+        "currentUser": None,
+        "draftPreserved": False,
+        "markerPreserved": None,
+        "pendingRecovery": None,
+        "recoveryPromise": None,
     }
 
 

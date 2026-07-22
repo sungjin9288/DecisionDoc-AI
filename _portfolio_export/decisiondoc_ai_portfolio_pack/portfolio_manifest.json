@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "f9112ba134c48badbdb4775a6bff89dd6802c6fdf2a53be046b75798907f2305",
-      "size_bytes": 69787
+      "sha256": "f3ea7f5318e4daa2f8c79e25b159c14c093d4d642ec4a0fac5004643333fb396",
+      "size_bytes": 69964
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "74d8ce4538281dc2fc5c38126a29d78946202ba8c3d4ac6d3b4501fb2afbfdcc",
-      "size_bytes": 34952
+      "sha256": "c91178bafcb38dd5b34f0c25e30d68a5924e8e283cf04965c5b9794893dffd2c",
+      "size_bytes": 35242
     },
     {
       "path": "docs/case-study.md",
@@ -35,18 +35,18 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "0e17a90dc15439ea2842e89b0a370a34ae8c27ced96abfdb4d941e123df67bd9",
-      "size_bytes": 27041
+      "sha256": "de74479ad8dceb06df464b32c43a4af488f51a33bfcb229195079520a431649e",
+      "size_bytes": 27127
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "4a423ce7842dfa3bdb36c4b34a57158ff691a9f16ce87972cd869dc70d4d940e",
-      "size_bytes": 29612
+      "sha256": "1df255bd7aad09500a62a721f39481019bac969f6f8a8ad4f5a61712e7afd6c9",
+      "size_bytes": 30044
     },
     {
       "path": "docs/evidence-checklist.md",
-      "sha256": "f877721a6708292b3fe9ceade87d56a5135bcc9cfb6b98f81bce1cc973253455",
-      "size_bytes": 41797
+      "sha256": "c2b39c88a72a5755f8c1776c1a1417a371e7679c6978fa1cc9cd0f41b8883438",
+      "size_bytes": 42560
     },
     {
       "path": "docs/evidence-gallery.md",
@@ -55,8 +55,8 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "6fe45725e5368459f308690c00f371085101261b53690d1011db653f6505440c",
-      "size_bytes": 38294
+      "sha256": "bfe163993b883821909a6b141844ad8d55d6f2bc9a54548f6a4a5588f5cdb28d",
+      "size_bytes": 38451
     },
     {
       "path": "docs/inspection-20260630.md",
@@ -75,13 +75,13 @@
     },
     {
       "path": "docs/product_direction.md",
-      "sha256": "b1ba0e3eb7084c3c3e5f4b2fefba9792bcc9ff15ef403678a5374ede846b1b08",
-      "size_bytes": 19470
+      "sha256": "2cb72ffd84d179b75e047a966472e766ac345e73ebe9cb43cadb07ef3e6b55d1",
+      "size_bytes": 19829
     },
     {
       "path": "docs/product_execution_plan.md",
-      "sha256": "5bf82926f4670f272a4da5d9833194190368d3d8c6f7a3035587e46968022a57",
-      "size_bytes": 27842
+      "sha256": "2d113e04a90eedf25f7cfd398ac71861b11d3d950e08ddf98c389c1aa9357afd",
+      "size_bytes": 28122
     },
     {
       "path": "docs/product_local_demo_runbook.md",
@@ -100,8 +100,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "cdb18915d509da153767ba4880ed3ed4fdc17a4d6dcac0e77eb45349dc0964d3",
-      "size_bytes": 117810
+      "sha256": "d644d7430166f0e096fb81e19b2ad8725bf80d4539b2ce71d92d6e4b3b2a7b8d",
+      "size_bytes": 118742
     },
     {
       "path": "docs/samples/bundle_quality_evidence/current/human_review.html",

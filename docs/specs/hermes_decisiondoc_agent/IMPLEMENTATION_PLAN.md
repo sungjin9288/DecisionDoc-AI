@@ -172,6 +172,8 @@ Work:
   preserve the current tenant, draft, recovery promise, and marker when that storage write fails
 - commit login, registration, refresh, and LDAP browser sessions through one helper after token-claim validation;
   restore the previous access/refresh credentials and tenant when any browser write fails
+- return an explicit refresh outcome to 401 callers; retry only a refreshed session, clear evidence only for rejected
+  credentials, and preserve the previous session for endpoint or browser-storage failures
 - where supported, serialize marker inspection and claim with a tenant-scoped Web Lock so simultaneous tabs
   converge on one POST; use tab storage only when shared storage is unavailable
 - after reload, from another tab, or after the owner tab closes, inspect only the strict current-tenant status,
@@ -200,6 +202,8 @@ Acceptance:
   while denied selector changes leave both the active context and persisted selector value unchanged
 - a failed auth-session tenant commit keeps the prior credentials, current user, draft, recovery promise,
   and marker instead of exposing a partially refreshed identity
+- upper 401 recovery reports storage and temporary refresh failures without clearing those restored credentials or
+  DocumentOps evidence, while an explicitly rejected refresh credential still ends the invalid session
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

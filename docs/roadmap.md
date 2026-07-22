@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 마지막으로 문서화한 main 자동화 증적: commit `78c60a8` 기준 GitHub Actions CI `29810817044` success, CD `29810817004` success. CI는 `4267 passed, 5 skipped`, CD image digest는 `sha256:82cb4a0d469abad014441e5118d296d313cfece2b39b963a29647d37480a8fb9`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
+- 마지막으로 문서화한 main 자동화 증적: commit `ee4f9e8` 기준 GitHub Actions CI `29881470754` success, CD `29881470750` success. CI는 `4272 passed, 5 skipped`, CD image digest는 `sha256:801316bafbfa0ce5ced6dd1e0320103e936d08d25e4b4fcdd5cafe0874ff31ae`이며 staging deploy/smoke와 production deploy는 skip되어 M6 proof는 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 2026-07-17 H50 완료: project knowledge index와 content/style object를 tenant/project별 selected StateBackend에 결속하고 hash·size·ownership·duplicate·orphan을 fail closed로 검증한다. Knowledge API, generation context, procurement evaluator, report promotion도 같은 backend를 사용하며 local/fake-S3 rollback·동시성·API 회귀를 추가했다.
 - 2026-07-17 H51 완료: G2B bookmark state를 tenant/user별 selected StateBackend에 결속하고 malformed·invalid UTF-8·duplicate·owned identity drift를 fail closed로 검증한다. Legacy owner 없는 record와 explicit foreign owner 보존, local/fake-S3 동시성, API 오류 경계를 no-cost로 확인했다.
@@ -64,6 +64,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-21 H97 완료: H96 shared marker가 origin 전체의 단일 key를 사용해 foreign tenant read가 기존 tenant marker를 wrong-tenant 값으로 삭제하던 간극을 닫았다. Marker body의 exact 3-field payload-free contract는 유지하고 storage key만 tenant별로 분리했다. 같은 origin에서 tenant A/B marker가 공존하며 foreign read/write/clear가 서로를 삭제하지 않는다. 승인된 tenant 전환은 previous tenant marker만 정리하고 H96 base-key marker는 strict decode 뒤 owning tenant만 호환해 읽고 제거한다. Failure-first Chromium 재현 뒤 tenant isolation `1 passed, 60 deselected`, H88-H97 Agent Chromium `8 passed, 53 deselected`, DocumentOps static `30 passed, 131 deselected, 1 warning`, DocumentOps Chromium `23 passed, 38 deselected`를 no-cost로 확인했다. Backend receipt, provider authority, payload persistence와 외부 실행 경계는 바꾸지 않았다.
 - 2026-07-22 H98 완료: signed-token tenant sync와 승인된 selector 전환이 browser tenant 저장보다 먼저 in-memory context와 DocumentOps evidence를 바꾸던 간극을 닫았다. `dd_tenant_id` write를 commit point로 두고 성공한 뒤에만 current tenant, draft와 pending recovery를 전환한다. Storage write 실패는 previous tenant, review draft, recovery promise와 payload-free marker를 보존한다. Failure-first Chromium에서 부분 전환을 재현한 뒤 focused Chromium `1 passed, 61 deselected`, tenant/DocumentOps static `31 passed, 130 deselected, 1 warning`, tenant/DocumentOps Chromium `25 passed, 37 deselected`를 no-cost로 확인했다. Signed access preflight와 backend/provider authority는 바꾸지 않았다.
 - 2026-07-22 H99 완료: auth caller가 tenant storage 실패를 무시해 refresh를 성공으로 보고하고 새 access token과 current user만 부분 적용하던 간극을 닫았다. Login·register·refresh·LDAP login을 하나의 browser session commit helper로 모으고 claims 검증, token write, signed tenant write 순서를 고정했다. 실패 시 이전 access/refresh token과 tenant를 복원하며 current user, review draft, pending recovery promise와 marker를 보존한다. Failure-first Chromium 재현 뒤 focused Chromium `2 passed, 61 deselected`, auth/tenant/SSO/infrastructure `380 passed, 1 warning`, 관련 Chromium `9 passed, 54 deselected`, 전체 main-flow Chromium `62 passed, 1 skipped`를 no-cost로 확인했다. 외부 identity provider, provider API와 runtime은 호출하지 않았다.
+- 2026-07-22 H100 완료: H99 refresh가 tenant storage 실패를 정확히 반환해도 상위 401 recovery가 boolean false를 invalid session으로 해석해 token, current user, review draft와 pending recovery evidence를 모두 지우던 간극을 닫았다. Refresh 결과를 `refreshed`, `invalid_session`, `unavailable`, `storage_failed`로 구분하고 성공만 원 요청을 한 번 재시도하며 refresh credential의 400/401/403만 destructive cleanup으로 연결했다. Storage failure는 `AUTH_SESSION_STORAGE_FAILED`, endpoint·response 장애는 `AUTH_REFRESH_UNAVAILABLE`로 보고하면서 이전 session과 작업을 보존한다. Failure-first 포함 focused auth recovery `4 passed, 1 warning`, auth/tenant/SSO/infrastructure `380 passed, 1 warning`, 전체 main-flow Chromium `64 passed, 1 skipped`를 no-cost로 확인했다. 외부 identity provider, provider API와 runtime은 호출하지 않았다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -71,7 +72,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-22 H99 실측: 4271 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-22 H100 실측: 4273 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

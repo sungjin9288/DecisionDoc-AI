@@ -104,7 +104,9 @@ The static DocumentOps workbench now follows the same no-execution governance ch
   context; empty inputs, a successful write, logout, or invalid session clear the applicable draft state
 - the browser aligns its tenant header context from the signed access token during login, registration,
   refresh, and LDAP login. One helper validates claims, commits access/refresh credentials and tenant, and restores
-  the previous session if browser storage fails. Denied selector changes still roll back without weakening
+  the previous session if browser storage fails. Upper 401 recovery retries only an explicitly refreshed session,
+  clears auth-context evidence only when refresh credentials are rejected, and preserves the prior session when the
+  endpoint or browser storage is unavailable. Denied selector changes still roll back without weakening
   `TENANT_MISMATCH`, while an allowed change reloads the whole app so prior-tenant state cannot remain visible
 - each trajectory exposes stored input, full draft, plan, evidence status, QA issues, and review
   history before the browser accepts reviewer notes and an explicit human quality score
@@ -258,12 +260,13 @@ Last local verification on 2026-07-22:
 - tenant-scoped marker Chromium gate: 1 passed, 60 deselected
 - tenant storage failure Chromium gate: 1 passed, 61 deselected
 - auth session storage failure focused Chromium gate: 2 passed, 61 deselected
+- auth recovery outcome focused gate: 4 passed, 1 warning
 - auth/tenant/SSO/infrastructure expansion gate: 380 passed, 1 warning
 - auth/tenant related Chromium gate: 9 passed, 54 deselected
-- full main-flow Chromium gate: 62 passed, 1 skipped
+- full main-flow Chromium gate: 64 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4271 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4273 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0
