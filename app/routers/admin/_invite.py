@@ -200,9 +200,17 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
             return {
                 "message": "계정이 생성되었습니다.",
                 "access_token": create_access_token(
-                    user.user_id, tenant.tenant_id, user.role.value, user.username
+                    user.user_id,
+                    tenant.tenant_id,
+                    user.role.value,
+                    user.username,
+                    credential_version=user.credential_version,
                 ),
-                "refresh_token": create_refresh_token(user.user_id, tenant.tenant_id),
+                "refresh_token": create_refresh_token(
+                    user.user_id,
+                    tenant.tenant_id,
+                    credential_version=user.credential_version,
+                ),
                 "user": {
                     "user_id": user.user_id,
                     "username": user.username,

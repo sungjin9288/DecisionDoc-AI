@@ -1,8 +1,8 @@
 """app/services/auth_service.py — JWT token creation and verification.
 
 Tokens:
-  access  — 8 hours, carries user_id/tenant_id/role/username
-  refresh — 30 days, carries user_id/tenant_id only
+  access  — 8 hours, carries user/tenant/role and credential version
+  refresh — 30 days, carries user/tenant and credential version
 """
 from __future__ import annotations
 
@@ -27,22 +27,42 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_access_token(user_id: str, tenant_id: str, role: str, username: str) -> str:
+def _require_credential_version(credential_version: int) -> int:
+    if type(credential_version) is not int or credential_version < 0:
+        raise ValueError("credential_version must be a non-negative integer")
+    return credential_version
+
+
+def create_access_token(
+    user_id: str,
+    tenant_id: str,
+    role: str,
+    username: str,
+    *,
+    credential_version: int = 0,
+) -> str:
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
         "role": role,
         "username": username,
+        "credential_version": _require_credential_version(credential_version),
         "type": "access",
         "exp": _utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, get_jwt_secret_key(), algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: str, tenant_id: str) -> str:
+def create_refresh_token(
+    user_id: str,
+    tenant_id: str,
+    *,
+    credential_version: int = 0,
+) -> str:
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
+        "credential_version": _require_credential_version(credential_version),
         "type": "refresh",
         "exp": _utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     }
@@ -86,6 +106,16 @@ def get_request_user_store(request, tenant_id: str):
     )
 
 
+def credentials_are_current(token_payload: dict, persisted_user) -> bool:
+    """Accept legacy versionless tokens only while credentials remain at version 0."""
+    token_version = token_payload.get("credential_version", 0)
+    return (
+        type(token_version) is int
+        and token_version >= 0
+        and token_version == persisted_user.credential_version
+    )
+
+
 def resolve_persisted_user(
     token_user: dict,
     *,
@@ -117,7 +147,11 @@ def resolve_persisted_user(
         return token_user, False
 
     persisted_user = user_store.get_by_id(user_id)
-    if not persisted_user or not persisted_user.is_active:
+    if (
+        not persisted_user
+        or not persisted_user.is_active
+        or not credentials_are_current(token_user, persisted_user)
+    ):
         return None, True
 
     return {

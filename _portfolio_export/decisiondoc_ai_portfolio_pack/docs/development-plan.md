@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,283 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H104) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,292 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H105) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-22 H104 실측: 4283 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-22 H105 실측: 4292 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -119,9 +119,10 @@ Providers (5)    Storage (46 modules)   Ops
 31. Captured Agent browser marker는 same-origin `localStorage`를 shared primary로 사용하고 접근 실패 시 현재 tab의 `sessionStorage`로 내려간다. 지원 browser에서는 tenant별 Web Lock 안에서 기존 marker 확인과 새 marker 기록을 직렬화해 동시 tab 중 owner 하나만 POST를 시작하게 한다. 다른 tab과 owner tab 종료 뒤 다시 연 화면은 payload 없는 marker로 status만 조회하며 explicit release 전까지 새 POST를 막는다. 두 storage가 모두 막히면 reload/cross-tab guard는 없고, Web Locks 미지원 환경에서는 완전 동시 claim의 atomicity를 보장하지 않는다. 다른 browser/device, process-crash recovery, cross-ID semantic deduplication, exactly-once provider execution과 external provider authority도 이 marker가 제공하지 않는다.
 32. Captured Agent marker storage key는 tenant별로 분리한다. 같은 origin의 foreign tenant read/write/clear는 다른 tenant marker를 보존하고, 승인된 tenant 전환은 previous tenant marker만 제거한다. H96 base-key marker는 strict schema를 통과한 뒤 owning tenant만 legacy fallback으로 읽고 제거하며 foreign tenant는 이를 잘못된 marker로 삭제하지 않는다. Marker body의 exact 3-field payload-free contract와 backend operation authority는 바꾸지 않는다.
 33. Browser tenant context는 signed token 또는 selector access preflight만으로 부분 전환하지 않는다. `dd_tenant_id` 저장이 성공한 뒤에만 in-memory tenant와 previous-context draft/recovery/marker를 변경하며, storage write 실패는 기존 context evidence를 그대로 보존한다. Browser storage는 durable handoff를 위한 commit point일 뿐 authorization authority가 아니다.
-34. Browser auth session은 login, register, refresh, LDAP login 모두 같은 commit helper를 사용한다. Token claims를 먼저 검증하고 access/refresh token을 쓴 뒤 signed tenant ID를 마지막 commit point로 저장한다. Snapshot을 확보한 뒤 write가 하나라도 실패하면 이전 access/refresh token과 tenant를 복원하고 current user와 DocumentOps evidence를 바꾸지 않는다. 동시 401은 tab 내 하나의 refresh promise에 합류한다. Generic API 오류 경로는 refresh 성공 뒤에도 실패한 mutating request를 자동 replay하지 않고 명시적 재시도를 요구한다. 현재 tab의 commit/cleanup뿐 아니라 같은 origin의 다른 tab에서 access token, refresh token, tenant ID 또는 전체 local storage가 바뀌어도 session revision을 올려 진행 중인 이전 refresh 응답을 폐기하며, unrelated storage key는 revision에 영향을 주지 않는다. 다른 tab의 최종 signed user·tenant·role이 현재 page와 다르면 reload를 한 번만 요청해 page-memory evidence를 새 authorization context에서 다시 구성하고, 같은 identity·role의 token rotation은 reload하지 않는다.
+34. Browser auth session은 login, register, refresh, LDAP login 모두 같은 commit helper를 사용한다. Token claims를 먼저 검증하고 access/refresh token을 쓴 뒤 signed tenant ID를 마지막 commit point로 저장한다. Snapshot을 확보한 뒤 write가 하나라도 실패하면 이전 access/refresh token과 tenant를 복원하고 current user와 DocumentOps evidence를 바꾸지 않는다. 동시 401은 tab 내 하나의 refresh promise에 합류한다. Generic API 오류 경로는 refresh 성공 뒤에도 실패한 mutating request를 자동 replay하지 않고 명시적 재시도를 요구한다. 현재 tab의 commit/cleanup뿐 아니라 같은 origin의 다른 tab에서 access token, refresh token, tenant ID 또는 전체 local storage가 바뀌어도 session revision을 올려 진행 중인 이전 refresh 응답을 폐기하며, unrelated storage key는 revision에 영향을 주지 않는다. 다른 tab의 최종 signed user·tenant·role·credential version이 현재 page와 다르면 reload를 한 번만 요청해 page-memory evidence를 새 authorization context에서 다시 구성하고, 네 값이 같은 token rotation은 reload하지 않는다.
 35. Browser 401 recovery는 refresh 결과를 성공, credential 거절, 일시적 endpoint 장애, browser storage commit 실패로 구분한다. 성공만 원 요청을 한 번 재시도하고 credential 거절만 invalid-session cleanup을 수행한다. 일시 장애와 storage 실패는 기존 token, tenant, current user, review draft와 pending recovery evidence를 보존하고 재시도 가능한 오류를 표시한다.
 36. Protected request authorization은 access token의 signed tenant/user identity를 tenant `UserStore`의 현재 role과 `is_active`에 다시 결속한다. Persisted user가 없거나 비활성이면 token 만료 전에도 `401`, role이 바뀌면 현재 role로 RBAC를 적용하고 state read가 실패하면 `503`으로 fail closed 처리한다. Middleware public 예외인 `/events`도 query access token을 같은 authority로 검사한다. Auth와 SSO user lifecycle route는 앱이 생성될 때 확정한 data root와 `StateBackend`를 공유하므로 process env drift가 request authority를 분리하지 않는다. Fresh install에 user state가 전혀 없는 legacy compatibility만 token payload를 유지하며, 별도 revocation table이나 cross-device push invalidation은 제공하지 않는다.
+37. Password change는 password hash와 persisted `credential_version` 증가를 한 user-state CAS mutation으로 확정한다. Access/refresh token은 발급 시 version을 포함하고 protected request, SSE query token, refresh exchange가 현재 user version과 다르면 `401`로 거부한다. 변경 요청을 보낸 browser만 응답의 새 token pair를 atomic session helper로 commit하고, 같은 origin의 다른 tab은 version mismatch에서 reload한다. Legacy versionless record/token은 현재 version 0일 때만 호환한다. 이는 password change 기반 전체 token 폐기이며 per-session 선택 revocation, 열린 SSE 강제 종료, cross-device push invalidation은 아니다.
 
 ---
 

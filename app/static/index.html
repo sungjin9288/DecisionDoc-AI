@@ -18203,16 +18203,23 @@
     const storedUserId = String(claims?.sub || '').trim();
     const storedTenantId = String(claims?.tenant_id || '').trim();
     const storedRole = String(claims?.role || '').trim();
+    const storedCredentialVersion = claims?.credential_version ?? 0;
     const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '').trim();
     const currentRole = String(_currentUser?.role || '').trim();
+    const currentCredentialVersion = _currentUser?.credential_version ?? 0;
     return Boolean(
       storedUserId
       && storedTenantId
       && storedRole
+      && Number.isInteger(storedCredentialVersion)
+      && storedCredentialVersion >= 0
+      && Number.isInteger(currentCredentialVersion)
+      && currentCredentialVersion >= 0
       && storedUserId === currentUserId
       && storedTenantId === _currentTenantId
       && storedTenantId === localStorage.getItem('dd_tenant_id')
       && storedRole === currentRole
+      && storedCredentialVersion === currentCredentialVersion
     );
   }
 
@@ -18392,6 +18399,7 @@
       if (!claims) throw new Error('브라우저에 인증 상태를 저장하지 못했습니다.');
       _currentUser = {
         ...data.user,
+        ...claims,
         sub: data.user.user_id,
       };
       document.getElementById('login-screen')?.remove();
@@ -18590,7 +18598,6 @@
 
     try {
       const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
-      let latestUser = _currentUser;
       if (displayName !== (_currentUser.display_name || '') || email !== (_currentUser.email || '')) {
         const profileRes = await fetch('/auth/me', {
           method: 'PATCH',
@@ -18601,7 +18608,7 @@
           const err = await resolveApiErrorResponse(profileRes);
           throw new Error(err.message || `HTTP ${profileRes.status}`);
         }
-        latestUser = await profileRes.json();
+        const latestUser = await profileRes.json();
         _currentUser = { ..._currentUser, ...latestUser, sub: latestUser.user_id || _currentUser.sub };
         renderUserInfo();
       }
@@ -18615,6 +18622,19 @@
           const err = await resolveApiErrorResponse(passwordRes);
           throw new Error(err.message || `HTTP ${passwordRes.status}`);
         }
+        const passwordData = await passwordRes.json();
+        const previousUser = _currentUser;
+        const claims = persistAuthSession(passwordData.access_token, {
+          refreshToken: passwordData.refresh_token,
+        });
+        if (!claims) {
+          handleInvalidAuthSession(
+            '비밀번호는 변경되었지만 새 로그인 세션을 저장하지 못했습니다. 새 비밀번호로 다시 로그인하세요.',
+          );
+          return;
+        }
+        _currentUser = { ...previousUser, ...claims };
+        renderUserInfo();
       }
       populateMyProfileModal();
       setProfileStatus('내 정보가 저장되었습니다.', 'success');

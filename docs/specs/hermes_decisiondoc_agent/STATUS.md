@@ -161,6 +161,9 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
 - Protected requests and `/events` query-token subscriptions re-resolve the signed user against the current
   tenant user store. Current role replaces a stale token role, inactive users are rejected, and store failures
   fail closed. This does not terminate an already-open SSE stream or provide cross-device push revocation.
+- Password changes advance a persisted credential version with the password hash. Older access and refresh
+  tokens are rejected, the initiating browser commits a replacement pair, and another same-origin tab reloads
+  on version drift. Per-session selection and cross-device push revocation remain outside the local contract.
 - Training request schemas and storage reject `start_training`, `upload_dataset`, and
   `call_provider_api` attempts in this local workflow.
 
@@ -272,11 +275,13 @@ Last local verification on 2026-07-22:
 - cross-tab auth refresh ordering focused Chromium gate: 7 passed, 62 deselected
 - auth ordering and cross-tab identity reconciliation focused Chromium gate: 8 passed, 62 deselected
 - auth/tenant/SSO/infrastructure expansion gate: 485 passed, 1 warning
+- password credential auth/identity/security/infrastructure gate: 312 passed, 1 warning
+- credential-version cross-tab focused Chromium gate: 3 passed
 - auth/tenant related Chromium gate: 9 passed, 54 deselected
-- full main-flow Chromium gate: 70 passed, 1 skipped
+- full main-flow Chromium gate: 71 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4283 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4292 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0

@@ -502,7 +502,7 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
         assert marker in content
 
     assert content.count("syncTenantContextFromAccessToken(") == 2
-    assert content.count("persistAuthSession(") == 5
+    assert content.count("persistAuthSession(") == 6
     assert content.count("localStorage.setItem('dd_access_token',") == 1
     assert content.count("localStorage.setItem('dd_refresh_token',") == 1
     assert content.count("_documentOpsReviewDrafts.clear();") == 3
@@ -1263,6 +1263,8 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert "event.target === event.currentTarget" in content
     assert "document.querySelectorAll('[data-profile-close]').forEach" in content
     assert "$id('profile-form')?.addEventListener('submit', saveMyProfile)" in content
+    assert "persistAuthSession(passwordData.access_token" in content
+    assert "비밀번호는 변경되었지만 새 로그인 세션을 저장하지 못했습니다." in content
 
 
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():

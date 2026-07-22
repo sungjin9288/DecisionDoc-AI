@@ -1434,6 +1434,119 @@ def test_cross_tab_auth_role_change_reloads_authorization_context(page, live_ser
         second_page.close()
 
 
+def test_password_change_rotates_session_and_reloads_other_tabs(page, live_server):
+    current = page.evaluate(
+        """() => ({
+          userId: _currentUser.user_id || _currentUser.sub,
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+          credentialVersion: readAccessTokenClaims(
+            localStorage.getItem('dd_access_token'),
+          ).credential_version,
+        })"""
+    )
+    context = page.context
+    second_page = context.new_page()
+    second_page.goto(page.url.split("?", 1)[0])
+    second_page.wait_for_selector("body.auth-ready", timeout=10000)
+    second_page.evaluate(
+        """() => {
+          stopNotifPolling();
+          stopSSE();
+          _documentOpsReviewDrafts.set('pre-password-rotation-draft', {
+            notes: 'credential 변경 전 다른 탭의 검토 메모',
+            scoreText: '0.8',
+          });
+          window.__prePasswordRotationContext = true;
+        }"""
+    )
+
+    try:
+        page.click("#user-info")
+        page.click('[data-user-menu-action="profile"]')
+        page.wait_for_selector("#profile-modal", state="visible")
+        page.fill("#profile-old-password", "AdminPass1!")
+        page.fill("#profile-new-password", "RotatedPass2!")
+        page.fill("#profile-new-password-confirm", "RotatedPass2!")
+
+        with second_page.expect_navigation(wait_until="domcontentloaded", timeout=5000):
+            page.click("#profile-save-btn")
+
+        _wait_until_text_contains(page, "#profile-status", "내 정보가 저장되었습니다.")
+        second_page.wait_for_selector("body.auth-ready", timeout=10000)
+        second_page.wait_for_function(
+            "expected => _currentUser?.credential_version === expected",
+            arg=current["credentialVersion"] + 1,
+        )
+
+        result = page.evaluate(
+            """async ({ oldAccessToken, oldRefreshToken, previousVersion }) => {
+              const accessToken = localStorage.getItem('dd_access_token');
+              const refreshToken = localStorage.getItem('dd_refresh_token');
+              const claims = readAccessTokenClaims(accessToken);
+              const oldAccess = await fetch('/auth/me', {
+                headers: { Authorization: `Bearer ${oldAccessToken}` },
+              });
+              const oldRefresh = await fetch('/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: oldRefreshToken }),
+              });
+              const currentAccess = await fetch('/auth/me', {
+                headers: getAuthHeaders(),
+              });
+              return {
+                accessTokenRotated: accessToken !== oldAccessToken,
+                refreshTokenRotated: refreshToken !== oldRefreshToken,
+                credentialVersion: claims?.credential_version ?? null,
+                currentUserVersion: _currentUser?.credential_version ?? null,
+                expectedVersion: previousVersion + 1,
+                oldAccessStatus: oldAccess.status,
+                oldRefreshStatus: oldRefresh.status,
+                currentAccessStatus: currentAccess.status,
+              };
+            }""",
+            {
+                "oldAccessToken": current["accessToken"],
+                "oldRefreshToken": current["refreshToken"],
+                "previousVersion": current["credentialVersion"],
+            },
+        )
+        other_tab = second_page.evaluate(
+            """() => ({
+              credentialVersion: _currentUser?.credential_version ?? null,
+              priorContextCleared:
+                typeof window.__prePasswordRotationContext === 'undefined',
+              reviewDraftCount: _documentOpsReviewDrafts.size,
+            })"""
+        )
+
+        assert result == {
+            "accessTokenRotated": True,
+            "refreshTokenRotated": True,
+            "credentialVersion": current["credentialVersion"] + 1,
+            "currentUserVersion": current["credentialVersion"] + 1,
+            "expectedVersion": current["credentialVersion"] + 1,
+            "oldAccessStatus": 401,
+            "oldRefreshStatus": 401,
+            "currentAccessStatus": 200,
+        }
+        assert other_tab == {
+            "credentialVersion": current["credentialVersion"] + 1,
+            "priorContextCleared": True,
+            "reviewDraftCount": 0,
+        }
+    finally:
+        user_store = live_server["user_store"]
+        if user_store.verify_password(current["userId"], "RotatedPass2!"):
+            assert user_store.change_password(
+                current["userId"],
+                "RotatedPass2!",
+                "AdminPass1!",
+            )
+        second_page.close()
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()

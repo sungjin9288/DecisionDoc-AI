@@ -154,6 +154,7 @@ def _create_jwt_for_user(user) -> str:
         "username": user.username,
         "role": user.role.value if hasattr(user.role, "value") else user.role,
         "tenant_id": user.tenant_id,
+        "credential_version": user.credential_version,
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),
     }
@@ -331,7 +332,11 @@ async def ldap_login(request: Request, body: LDAPLoginRequest):
     return {
         "token": token,
         "access_token": token,
-        "refresh_token": create_refresh_token(provisioned.user_id, tenant_id),
+        "refresh_token": create_refresh_token(
+            provisioned.user_id,
+            tenant_id,
+            credential_version=provisioned.credential_version,
+        ),
         "user": {
             "username": provisioned.username,
             "display_name": provisioned.display_name,

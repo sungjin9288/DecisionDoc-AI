@@ -89,6 +89,7 @@ class User:
     created_at: str
     last_login: str | None
     avatar_color: str      # hex color for avatar placeholder
+    credential_version: int = 0
     job_title: str = ""
     assigned_ai_profiles: list[str] = dc_field(default_factory=list)
 
@@ -178,6 +179,9 @@ class UserStore:
         job_title = record.get("job_title", "")
         if not isinstance(job_title, str):
             raise UserStoreError("Invalid user job title")
+        credential_version = record.get("credential_version", 0)
+        if type(credential_version) is not int or credential_version < 0:
+            raise UserStoreError("Invalid user credential version")
         profiles = record.get("assigned_ai_profiles", [])
         if not isinstance(profiles, list) or any(
             not isinstance(profile, str) for profile in profiles
@@ -328,6 +332,7 @@ class UserStore:
             created_at=d["created_at"],
             last_login=d.get("last_login"),
             avatar_color=d["avatar_color"],
+            credential_version=d.get("credential_version", 0),
             job_title=d.get("job_title", ""),
             assigned_ai_profiles=d.get("assigned_ai_profiles", []),
         )
@@ -441,6 +446,7 @@ class UserStore:
                     created_at=_now_iso(),
                     last_login=None,
                     avatar_color=_pick_avatar_color(username),
+                    credential_version=0,
                     job_title=(job_title or "").strip(),
                     assigned_ai_profiles=normalized_profiles,
                 )
@@ -565,6 +571,7 @@ class UserStore:
                 new_password_hash = _hash_password(new_password)
             updated = dict(record)
             updated["password_hash"] = new_password_hash
+            updated["credential_version"] = record.get("credential_version", 0) + 1
             data[user_id] = self._record_mutation(
                 updated,
                 previous=record,

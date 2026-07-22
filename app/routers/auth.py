@@ -76,9 +76,17 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
     user_store.update_last_login(user.user_id)
     return {
         "access_token": create_access_token(
-            user.user_id, tenant_id, user.role.value, user.username
+            user.user_id,
+            tenant_id,
+            user.role.value,
+            user.username,
+            credential_version=user.credential_version,
         ),
-        "refresh_token": create_refresh_token(user.user_id, tenant_id),
+        "refresh_token": create_refresh_token(
+            user.user_id,
+            tenant_id,
+            credential_version=user.credential_version,
+        ),
         "message": "관리자 계정이 생성되었습니다.",
     }
 
@@ -98,9 +106,17 @@ async def login(request: Request, body: LoginRequest):
     user_store.update_last_login(user.user_id)
     return {
         "access_token": create_access_token(
-            user.user_id, tenant_id, user.role.value, user.username
+            user.user_id,
+            tenant_id,
+            user.role.value,
+            user.username,
+            credential_version=user.credential_version,
         ),
-        "refresh_token": create_refresh_token(user.user_id, tenant_id),
+        "refresh_token": create_refresh_token(
+            user.user_id,
+            tenant_id,
+            credential_version=user.credential_version,
+        ),
         "user": _serialize_user_for_client(user),
     }
 
@@ -108,18 +124,26 @@ async def login(request: Request, body: LoginRequest):
 @router.post("/auth/refresh")
 async def refresh_token(request: Request, body: RefreshRequest):
     """Exchange a refresh token for a new access token."""
-    from app.services.auth_service import verify_token, create_access_token
+    from app.services.auth_service import (
+        create_access_token,
+        credentials_are_current,
+        verify_token,
+    )
 
     payload = verify_token(body.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(401, "유효하지 않은 리프레시 토큰입니다.")
     user_store = get_request_user_store(request, payload["tenant_id"])
     user = user_store.get_by_id(payload["sub"])
-    if not user or not user.is_active:
+    if not user or not user.is_active or not credentials_are_current(payload, user):
         raise HTTPException(401, "사용자를 찾을 수 없습니다.")
     return {
         "access_token": create_access_token(
-            user.user_id, user.tenant_id, user.role.value, user.username
+            user.user_id,
+            user.tenant_id,
+            user.role.value,
+            user.username,
+            credential_version=user.credential_version,
         )
     }
 
@@ -170,7 +194,9 @@ async def update_me(request: Request, body: UpdateMyProfileRequest):
 
 @router.post("/auth/change-password")
 async def change_password(request: Request, body: ChangePasswordRequest):
-    """Change the current user's password."""
+    """Change the password, revoke older tokens, and rotate this session."""
+    from app.services.auth_service import create_access_token, create_refresh_token
+
     tenant_id = get_tenant_id(request)
     user_store = get_request_user_store(request, tenant_id)
     user_id = getattr(request.state, "user_id", None)
@@ -184,7 +210,24 @@ async def change_password(request: Request, body: ChangePasswordRequest):
         raise HTTPException(400, str(exc))
     if not success:
         raise HTTPException(400, "현재 비밀번호가 올바르지 않습니다.")
-    return {"message": "비밀번호가 변경되었습니다."}
+    user = user_store.get_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    return {
+        "message": "비밀번호가 변경되었습니다.",
+        "access_token": create_access_token(
+            user.user_id,
+            user.tenant_id,
+            user.role.value,
+            user.username,
+            credential_version=user.credential_version,
+        ),
+        "refresh_token": create_refresh_token(
+            user.user_id,
+            user.tenant_id,
+            credential_version=user.credential_version,
+        ),
+    }
 
 
 # ── Personal data rights (개인정보보호법 §35, §35의2, §36) ─────────────────

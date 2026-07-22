@@ -140,10 +140,14 @@ def test_user_store_change_password(tmp_path):
 
     store = UserStore(tmp_path / "t1")
     user = store.create("grace", "Grace", "grace@test.com", "OldPass123!", UserRole.MEMBER)
+    assert user.credential_version == 0
     result = store.change_password(user.user_id, "OldPass123!", "NewPass456!")
     assert result is True
     assert store.verify_password(user.user_id, "NewPass456!") is True
     assert store.verify_password(user.user_id, "OldPass123!") is False
+    changed_user = store.get_by_id(user.user_id)
+    assert changed_user is not None
+    assert changed_user.credential_version == 1
 
 
 def test_user_store_password_too_short_raises(tmp_path):
@@ -659,6 +663,116 @@ def test_invalid_refresh_token_returns_401(tmp_path, monkeypatch):
     )
     res = client.post("/auth/refresh", json={"refresh_token": "not-a-valid-token"})
     assert res.status_code == 401
+
+
+def test_password_change_rotates_credentials_and_revokes_existing_tokens(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    old_access_token = login["access_token"]
+    old_refresh_token = login["refresh_token"]
+
+    changed = client.post(
+        "/auth/change-password",
+        headers={"Authorization": f"Bearer {old_access_token}"},
+        json={
+            "old_password": "AdminPass1!",
+            "new_password": "RotatedPass2!",
+        },
+    )
+
+    assert changed.status_code == 200
+    changed_data = changed.json()
+    new_access_token = changed_data["access_token"]
+    new_refresh_token = changed_data["refresh_token"]
+    assert new_access_token != old_access_token
+    assert new_refresh_token != old_refresh_token
+    assert verify_token(new_access_token)["credential_version"] == 1
+    assert verify_token(new_refresh_token)["credential_version"] == 1
+
+    old_access = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {old_access_token}"},
+    )
+    old_refresh = client.post(
+        "/auth/refresh",
+        json={"refresh_token": old_refresh_token},
+    )
+    new_access = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {new_access_token}"},
+    )
+    new_refresh = client.post(
+        "/auth/refresh",
+        json={"refresh_token": new_refresh_token},
+    )
+
+    assert old_access.status_code == 401
+    assert old_refresh.status_code == 401
+    assert new_access.status_code == 200
+    assert new_refresh.status_code == 200
+    assert verify_token(new_refresh.json()["access_token"])["credential_version"] == 1
+    assert client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).status_code == 401
+    rotated_login = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "RotatedPass2!"},
+    )
+    assert rotated_login.status_code == 200
+    assert verify_token(rotated_login.json()["access_token"])["credential_version"] == 1
+    assert verify_token(rotated_login.json()["refresh_token"])["credential_version"] == 1
+
+
+@pytest.mark.parametrize(
+    ("token_type", "credential_version"),
+    [
+        ("access", True),
+        ("access", "0"),
+        ("refresh", -1),
+    ],
+)
+def test_signed_token_with_invalid_credential_version_is_rejected(
+    tmp_path,
+    monkeypatch,
+    token_type,
+    credential_version,
+):
+    import jwt
+
+    from app.config import get_jwt_secret_key
+    from app.services.auth_service import ALGORITHM, verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    user_id = verify_token(login["access_token"])["sub"]
+    payload = {
+        "sub": user_id,
+        "tenant_id": "system",
+        "credential_version": credential_version,
+        "type": token_type,
+    }
+    if token_type == "access":
+        payload.update({"role": "admin", "username": "admin"})
+    token = jwt.encode(payload, get_jwt_secret_key(), algorithm=ALGORITHM)
+
+    if token_type == "access":
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    else:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": token},
+        )
+
+    assert response.status_code == 401
 
 
 # ── /auth/me tests ─────────────────────────────────────────────────────────────

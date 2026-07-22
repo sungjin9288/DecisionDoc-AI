@@ -182,6 +182,40 @@ def _user_record(
     }
 
 
+def test_legacy_user_record_defaults_credential_version_to_zero(tmp_path: Path) -> None:
+    tenant_dir = tmp_path / "tenants" / "alpha"
+    tenant_dir.mkdir(parents=True)
+    record = _user_record("user-1")
+    (tenant_dir / "users.json").write_text(
+        json.dumps({"user-1": record}),
+        encoding="utf-8",
+    )
+
+    user = UserStore(tenant_dir).get_by_id("user-1")
+
+    assert user is not None
+    assert user.credential_version == 0
+
+
+@pytest.mark.parametrize("credential_version", [True, -1, "0"])
+def test_invalid_credential_version_fails_closed_without_rewriting_state(
+    tmp_path: Path,
+    credential_version: object,
+) -> None:
+    tenant_dir = tmp_path / "tenants" / "alpha"
+    tenant_dir.mkdir(parents=True)
+    path = tenant_dir / "users.json"
+    record = _user_record("user-1")
+    record["credential_version"] = credential_version
+    original = json.dumps({"user-1": record})
+    path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(UserStoreError, match="credential version"):
+        UserStore(tenant_dir).get_by_id("user-1")
+
+    assert path.read_text(encoding="utf-8") == original
+
+
 def _invite_record(
     invite_id: str,
     *,
@@ -729,6 +763,7 @@ def test_fake_s3_user_updates_preserve_password_and_profile_changes(
     assert reloaded is not None
     assert reloaded.display_name == "Alice Updated"
     assert reloaded.job_title == "Reviewer"
+    assert reloaded.credential_version == 1
     assert bootstrap.verify_password(user.user_id, "Password2") is True
 
 
