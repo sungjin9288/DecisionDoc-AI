@@ -304,6 +304,38 @@ class AuthSessionStore:
                 )
         return len(other_session_ids)
 
+    def revoke_all(
+        self,
+        *,
+        current_session_id: str,
+        user_id: str,
+        credential_version: int,
+    ) -> int:
+        """Revoke every active session, keeping current usable until the final write."""
+        canonical_current_id = require_auth_session_id(current_session_id)
+        records = self.list_active(
+            user_id=user_id,
+            credential_version=credential_version,
+        )
+        active_session_ids = [record["session_id"] for record in records]
+        if canonical_current_id not in active_session_ids:
+            raise AuthSessionStoreError(
+                "Current authentication session is not active in the validated snapshot"
+            )
+        ordered_session_ids = [
+            session_id
+            for session_id in active_session_ids
+            if session_id != canonical_current_id
+        ]
+        ordered_session_ids.append(canonical_current_id)
+
+        for session_id in ordered_session_ids:
+            if not self.revoke(session_id, user_id=user_id):
+                raise AuthSessionStoreError(
+                    "Authentication session authority changed during full revocation"
+                )
+        return len(ordered_session_ids)
+
     def revoke(self, session_id: str, *, user_id: str) -> bool:
         canonical_session_id = require_auth_session_id(session_id)
         canonical_user_id = _require_user_id(user_id)

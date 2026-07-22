@@ -1073,6 +1073,77 @@ def test_auth_session_bulk_revoke_request_requires_strict_confirmation(
     assert response.status_code == 422
 
 
+def test_auth_session_revoke_all_terminates_current_and_other_sessions(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    current = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    ).json()
+    others = [
+        client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "AdminPass1!"},
+        ).json()
+        for _ in range(2)
+    ]
+    headers = {"Authorization": f"Bearer {current['access_token']}"}
+
+    response = client.post(
+        "/auth/sessions/revoke-all",
+        headers=headers,
+        json={"confirm": True},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "message": "모든 로그인 세션 3개가 종료되었습니다.",
+        "revoked_sessions": 3,
+    }
+    for session in (current, *others):
+        assert client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        ).status_code == 401
+        assert client.post(
+            "/auth/refresh",
+            json={"refresh_token": session["refresh_token"]},
+        ).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"confirm": False},
+        {"confirm": True, "include_current": False},
+    ],
+)
+def test_auth_session_revoke_all_requires_strict_confirmation(
+    tmp_path,
+    monkeypatch,
+    payload,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    response = client.post(
+        "/auth/sessions/revoke-all",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -1174,10 +1245,16 @@ def test_sessionless_legacy_token_cannot_list_or_revoke_auth_sessions(
         headers=headers,
         json={"confirm": True},
     )
+    all_revoked = client.post(
+        "/auth/sessions/revoke-all",
+        headers=headers,
+        json={"confirm": True},
+    )
 
     assert listed.status_code == 409
     assert revoked.status_code == 409
     assert bulk_revoked.status_code == 409
+    assert all_revoked.status_code == 409
     assert "기존 로그인 세션" in listed.json()["detail"]
     assert client.get("/auth/me", headers=headers).status_code == 200
 
@@ -1267,6 +1344,44 @@ def test_viewer_can_revoke_all_other_owned_auth_sessions(tmp_path, monkeypatch):
     ).status_code == 401
 
 
+def test_viewer_can_revoke_all_owned_auth_sessions(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    created = client.post(
+        "/admin/users",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "username": "viewer_all",
+            "display_name": "Viewer",
+            "email": "viewer-all@test.com",
+            "password": "ViewerPass1!",
+            "role": "viewer",
+        },
+    )
+    assert created.status_code == 200
+    sessions = [
+        client.post(
+            "/auth/login",
+            json={"username": "viewer_all", "password": "ViewerPass1!"},
+        ).json()
+        for _ in range(2)
+    ]
+
+    response = client.post(
+        "/auth/sessions/revoke-all",
+        headers={"Authorization": f"Bearer {sessions[0]['access_token']}"},
+        json={"confirm": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["revoked_sessions"] == 2
+    for session in sessions:
+        assert client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        ).status_code == 401
+
+
 def test_auth_session_list_fails_closed_on_corrupt_unrelated_state(
     tmp_path,
     monkeypatch,
@@ -1324,6 +1439,41 @@ def test_auth_session_bulk_revoke_fails_before_mutation_on_corrupt_state(
         "/auth/me",
         headers={"Authorization": f"Bearer {other['access_token']}"},
     ).status_code == 200
+
+
+def test_auth_session_revoke_all_fails_before_mutation_on_corrupt_state(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    current = _register_and_login(client)
+    other = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "system"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    response = client.post(
+        "/auth/sessions/revoke-all",
+        headers={"Authorization": f"Bearer {current['access_token']}"},
+        json={"confirm": True},
+    )
+
+    assert response.status_code == 503
+    assert corrupt_path.read_bytes() == corrupt
+    for session in (current, other):
+        assert client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        ).status_code == 200
 
 
 def test_logout_revokes_realtime_event_authority(tmp_path, monkeypatch):

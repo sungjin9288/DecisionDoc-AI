@@ -21,6 +21,7 @@ from app.schemas import (
     CreateUserRequest,
     LoginRequest,
     RefreshRequest,
+    RevokeAllAuthSessionsRequest,
     RevokeAuthSessionRequest,
     RevokeOtherAuthSessionsRequest,
     UpdateMyProfileRequest,
@@ -372,6 +373,48 @@ async def revoke_other_auth_sessions(
     return JSONResponse(
         content={
             "message": message,
+            "revoked_sessions": revoked_sessions,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/auth/sessions/revoke-all")
+async def revoke_all_auth_sessions(
+    request: Request,
+    body: RevokeAllAuthSessionsRequest,
+):
+    """Revoke every active session owned by the current user, including current."""
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    tenant_id = get_tenant_id(request)
+    user_id, current_session_id = _require_session_bound_user(request)
+    user = get_request_user_store(request, tenant_id).get_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    try:
+        revoked_sessions = get_request_auth_session_store(
+            request,
+            tenant_id,
+        ).revoke_all(
+            current_session_id=current_session_id,
+            user_id=user_id,
+            credential_version=user.credential_version,
+        )
+    except (AuthSessionStoreError, ValueError) as exc:
+        logger.error(
+            "[Auth] Full session revocation failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="모든 로그인 세션을 일시적으로 종료할 수 없습니다.",
+        ) from exc
+
+    request.state.auth_session_revoked_count = revoked_sessions
+    return JSONResponse(
+        content={
+            "message": f"모든 로그인 세션 {revoked_sessions}개가 종료되었습니다.",
             "revoked_sessions": revoked_sessions,
         },
         headers={"Cache-Control": "no-store"},

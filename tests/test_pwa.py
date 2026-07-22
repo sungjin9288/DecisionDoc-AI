@@ -18,9 +18,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
-import sys
 
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -428,8 +426,12 @@ def test_index_html_restarts_notification_polling_on_visibility_change():
 
 def test_index_html_stops_notification_polling_on_logout():
     content = open("app/static/index.html").read()
+    clear_start = content.index("function clearLocalAuthSession()")
+    clear_end = content.index("function handleInvalidAuthSession", clear_start)
+    clear_block = content[clear_start:clear_end]
     start = content.index("function logout()")
     end = content.index("function toggleUserMenu")
     logout_block = content[start:end]
-    assert "stopNotifPolling();" in logout_block
-    assert "stopSSE();" in logout_block
+    assert "stopNotifPolling();" in clear_block
+    assert "stopSSE();" in clear_block
+    assert "clearLocalAuthSession();" in logout_block

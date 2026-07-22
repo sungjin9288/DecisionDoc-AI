@@ -1578,6 +1578,130 @@ def test_profile_can_revoke_all_other_logins_without_ending_current_session(
     }
 
 
+def test_profile_can_log_out_all_devices_and_clear_current_browser_evidence(
+    page,
+    live_server,
+):
+    current = page.evaluate(
+        """() => ({
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+        })"""
+    )
+    others = [
+        page.evaluate(
+            """async ({ username, password }) => {
+              const response = await fetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+              });
+              return response.json();
+            }""",
+            live_server["auth"],
+        )
+        for _ in range(2)
+    ]
+    page.evaluate(
+        """() => {
+          _documentOpsReviewDrafts.set('revoke-all-draft', {
+            notes: '모든 기기 로그아웃 뒤 제거할 검토 메모',
+            scoreText: '0.9',
+          });
+        }"""
+    )
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.click("#user-info")
+    page.click('[data-user-menu-action="profile"]')
+    page.wait_for_selector("#profile-modal", state="visible")
+    page.click("#profile-sessions-revoke-all")
+    page.wait_for_selector("#login-screen", state="visible")
+
+    result = page.evaluate(
+        """async sessions => {
+          const statuses = [];
+          for (const session of sessions) {
+            const access = await fetch('/auth/me', {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            const refresh = await fetch('/auth/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh_token: session.refresh_token }),
+            });
+            statuses.push([access.status, refresh.status]);
+          }
+          return {
+            statuses,
+            accessTokenCleared: localStorage.getItem('dd_access_token') === null,
+            refreshTokenCleared: localStorage.getItem('dd_refresh_token') === null,
+            currentUserCleared: _currentUser === null,
+            reviewDraftCount: _documentOpsReviewDrafts.size,
+          };
+        }""",
+        [
+            {
+                "access_token": current["accessToken"],
+                "refresh_token": current["refreshToken"],
+            },
+            *others,
+        ],
+    )
+
+    assert result == {
+        "statuses": [[401, 401], [401, 401], [401, 401]],
+        "accessTokenCleared": True,
+        "refreshTokenCleared": True,
+        "currentUserCleared": True,
+        "reviewDraftCount": 0,
+    }
+
+
+def test_profile_revoke_all_failure_preserves_current_browser_evidence(page):
+    result = page.evaluate(
+        """async () => {
+          stopNotifPolling();
+          stopSSE();
+          const originalFetch = window.fetch;
+          const accessToken = localStorage.getItem('dd_access_token');
+          const refreshToken = localStorage.getItem('dd_refresh_token');
+          window.confirm = () => true;
+          window.fetch = async (url, options) => {
+            if (url === '/auth/sessions/revoke-all') {
+              return new Response(JSON.stringify({ detail: 'temporary failure' }), {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+            return originalFetch(url, options);
+          };
+          document.getElementById('profile-modal').style.display = 'flex';
+          try {
+            await revokeAllMyAuthSessions();
+            return {
+              accessTokenPreserved: localStorage.getItem('dd_access_token') === accessToken,
+              refreshTokenPreserved: localStorage.getItem('dd_refresh_token') === refreshToken,
+              currentUserPreserved: _currentUser !== null,
+              profileVisible: document.getElementById('profile-modal').style.display === 'flex',
+              status: document.getElementById('profile-sessions-status').textContent,
+            };
+          } finally {
+            window.fetch = originalFetch;
+            closeMyProfileModal();
+          }
+        }"""
+    )
+
+    assert result == {
+        "accessTokenPreserved": True,
+        "refreshTokenPreserved": True,
+        "currentUserPreserved": True,
+        "profileVisible": True,
+        "status": "temporary failure",
+    }
+
+
 def test_profile_session_inventory_ignores_a_late_stale_response(page):
     result = page.evaluate(
         """async () => {

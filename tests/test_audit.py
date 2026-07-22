@@ -819,6 +819,11 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
         headers=_auth(first),
         json={"confirm": True},
     )
+    all_revoked = client.post(
+        "/auth/sessions/revoke-all",
+        headers=_auth(first),
+        json={"confirm": True},
+    )
     results = AuditStore("system").query()
     session_entries = [
         entry
@@ -827,6 +832,7 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
             "user.session_list",
             "user.session_revoke",
             "user.session_revoke_others",
+            "user.session_revoke_all",
         }
     ]
     serialized = json.dumps(session_entries, ensure_ascii=False)
@@ -834,10 +840,12 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
     assert listed.status_code == 200
     assert revoked.status_code == 200
     assert bulk_revoked.status_code == 200
+    assert all_revoked.status_code == 200
     assert {entry["action"] for entry in session_entries} == {
         "user.session_list",
         "user.session_revoke",
         "user.session_revoke_others",
+        "user.session_revoke_all",
     }
     assert first["access_token"] not in serialized
     assert first["refresh_token"] not in serialized
@@ -852,6 +860,12 @@ def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
         if entry["action"] == "user.session_revoke_others"
     )
     assert bulk_entry["detail"]["revoked_sessions"] == 2
+    all_entry = next(
+        entry
+        for entry in session_entries
+        if entry["action"] == "user.session_revoke_all"
+    )
+    assert all_entry["detail"]["revoked_sessions"] == 1
 
 
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):

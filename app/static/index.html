@@ -5102,6 +5102,7 @@
         <div class="profile-sessions-header">
           <h4 id="profile-sessions-heading" class="profile-section-title">로그인 세션</h4>
           <div class="profile-sessions-actions">
+            <button id="profile-sessions-revoke-all" type="button" class="btn-danger" hidden>모든 기기에서 로그아웃</button>
             <button id="profile-sessions-revoke-others" type="button" class="btn-secondary" hidden>다른 세션 모두 종료</button>
             <button id="profile-sessions-refresh" type="button" class="btn-secondary">새로고침</button>
           </div>
@@ -18535,7 +18536,7 @@
     }
   }
 
-  function handleInvalidAuthSession(message = '로그인 세션이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.') {
+  function clearLocalAuthSession() {
     stopNotifPolling();
     stopSSE();
     localStorage.removeItem('dd_access_token');
@@ -18553,6 +18554,10 @@
     if (userInfo) userInfo.style.display = 'none';
     setAppShellAuthenticated(false);
     showLoginScreen();
+  }
+
+  function handleInvalidAuthSession(message = '로그인 세션이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.') {
+    clearLocalAuthSession();
     setStatus(`⚠️ ${message}`, 'error');
     showNotification(message, 'error');
   }
@@ -18584,22 +18589,7 @@
   function logout() {
     const accessToken = localStorage.getItem('dd_access_token');
     const revocation = revokeCurrentAuthSession(accessToken);
-    stopNotifPolling();
-    stopSSE();
-    localStorage.removeItem('dd_access_token');
-    localStorage.removeItem('dd_refresh_token');
-    _authSessionRevision += 1;
-    _documentOpsReviewDrafts.clear();
-    _documentOpsGovernanceObservation = null;
-    _documentOpsPendingRunRecovery = null;
-    _documentOpsRunRecoveryPromise = null;
-    clearDocumentOpsPendingRunMarker();
-    _currentUser = null;
-    closeMyProfileModal();
-    closeUserMenu();
-    const userInfo = document.getElementById('user-info');
-    if (userInfo) userInfo.style.display = 'none';
-    showLoginScreen();
+    clearLocalAuthSession();
     return revocation;
   }
 
@@ -18667,6 +18657,12 @@
       revokeOthersButton.disabled = false;
       revokeOthersButton.textContent = '다른 세션 모두 종료';
     }
+    const revokeAllButton = $id('profile-sessions-revoke-all');
+    if (revokeAllButton) {
+      revokeAllButton.hidden = true;
+      revokeAllButton.disabled = false;
+      revokeAllButton.textContent = '모든 기기에서 로그아웃';
+    }
     setProfileSessionsStatus('');
   }
 
@@ -18706,11 +18702,17 @@
     if (!list) return;
     list.replaceChildren();
     const revokeOthersButton = $id('profile-sessions-revoke-others');
+    const revokeAllButton = $id('profile-sessions-revoke-all');
     const otherSessionCount = sessions.filter(session => !session.current).length;
     if (revokeOthersButton) {
       revokeOthersButton.hidden = otherSessionCount === 0;
       revokeOthersButton.disabled = false;
       revokeOthersButton.textContent = '다른 세션 모두 종료';
+    }
+    if (revokeAllButton) {
+      revokeAllButton.hidden = sessions.length === 0;
+      revokeAllButton.disabled = false;
+      revokeAllButton.textContent = '모든 기기에서 로그아웃';
     }
     if (!sessions.length) {
       setProfileSessionsStatus('확인 가능한 활성 로그인 세션이 없습니다.');
@@ -18759,8 +18761,10 @@
     const requestVersion = ++_profileSessionRequestVersion;
     const refreshButton = $id('profile-sessions-refresh');
     const revokeOthersButton = $id('profile-sessions-revoke-others');
+    const revokeAllButton = $id('profile-sessions-revoke-all');
     if (refreshButton) refreshButton.disabled = true;
     if (revokeOthersButton) revokeOthersButton.disabled = true;
+    if (revokeAllButton) revokeAllButton.disabled = true;
     setProfileSessionsStatus('로그인 세션을 확인하는 중입니다...');
     try {
       const response = await fetch('/auth/sessions', {
@@ -18788,6 +18792,9 @@
       if (!profileSessionRequestIsStale(requestVersion, accessToken) && revokeOthersButton) {
         revokeOthersButton.disabled = false;
       }
+      if (!profileSessionRequestIsStale(requestVersion, accessToken) && revokeAllButton) {
+        revokeAllButton.disabled = false;
+      }
     }
   }
 
@@ -18799,6 +18806,7 @@
     successMessage,
     failureMessage,
     buttonLabel,
+    afterSuccess = loadMyAuthSessions,
   }) {
     if (_profileSessionRevokeInFlight) return;
     const accessToken = localStorage.getItem('dd_access_token');
@@ -18808,8 +18816,10 @@
     _profileSessionRevokeInFlight = true;
     const refreshButton = $id('profile-sessions-refresh');
     const revokeOthersButton = $id('profile-sessions-revoke-others');
+    const revokeAllButton = $id('profile-sessions-revoke-all');
     if (refreshButton) refreshButton.disabled = true;
     if (revokeOthersButton) revokeOthersButton.disabled = true;
+    if (revokeAllButton) revokeAllButton.disabled = true;
     $id('profile-sessions-list')?.querySelectorAll('button').forEach(control => {
       control.disabled = true;
     });
@@ -18831,7 +18841,7 @@
       }
       if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
       showNotification(successMessage, 'success');
-      await loadMyAuthSessions();
+      return await afterSuccess();
     } catch (error) {
       if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
       setProfileSessionsStatus(
@@ -18844,6 +18854,7 @@
       if (button) button.textContent = buttonLabel;
       if (refreshButton) refreshButton.disabled = false;
       if (revokeOthersButton) revokeOthersButton.disabled = false;
+      if (revokeAllButton) revokeAllButton.disabled = false;
     } finally {
       if (_profileSessionRevokeVersion === revokeVersion) {
         _profileSessionRevokeInFlight = false;
@@ -18877,6 +18888,27 @@
       successMessage: '다른 로그인 세션을 모두 종료했습니다.',
       failureMessage: '다른 로그인 세션을 종료하지 못했습니다.',
       buttonLabel: '다른 세션 모두 종료',
+    });
+  }
+
+  async function revokeAllMyAuthSessions(button) {
+    if (_profileSessionRevokeInFlight) return;
+    const confirmed = window.confirm(
+      '현재 브라우저를 포함해 모든 기기에서 로그아웃하시겠습니까?',
+    );
+    if (!confirmed) return;
+    return runMyAuthSessionRevocation({
+      endpoint: '/auth/sessions/revoke-all',
+      payload: { confirm: true },
+      button: button || $id('profile-sessions-revoke-all'),
+      pendingMessage: '모든 로그인 세션을 종료하는 중입니다...',
+      successMessage: '모든 기기에서 로그아웃했습니다.',
+      failureMessage: '모든 로그인 세션을 종료하지 못했습니다.',
+      buttonLabel: '모든 기기에서 로그아웃',
+      afterSuccess: () => {
+        clearLocalAuthSession();
+        return 'revoked_all';
+      },
     });
   }
 
@@ -19012,6 +19044,9 @@
   });
   $id('profile-sessions-revoke-others')?.addEventListener('click', event => {
     void revokeMyOtherAuthSessions(event.currentTarget);
+  });
+  $id('profile-sessions-revoke-all')?.addEventListener('click', event => {
+    void revokeAllMyAuthSessions(event.currentTarget);
   });
 
   function renderUserInfo() {

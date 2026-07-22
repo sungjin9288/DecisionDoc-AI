@@ -54,7 +54,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고 손상 문서·중복 identity를 fail closed 처리. 객체별 conditional create/CAS와 bounded private receipt로 worker 간 게시·수정·읽음·전송 상태 유실을 방지 |
 | 재현 가능한 제출형 export | 같은 runtime과 입력에서 DOCX·PDF·PPTX·XLSX·HWPX 반복 생성 bytes와 SHA-256을 안정적으로 유지 |
 | Auth authority·browser 전환 일관성 | Protected request와 `/events` query-token 구독은 signed JWT의 장기 role claim만 신뢰하지 않고 tenant `UserStore`의 현재 role·`is_active`·`credential_version`을 다시 확인한다. 열린 SSE도 최대 15초 간격으로 같은 authority와 token expiry를 재검증해 invalid credential에는 고정 `auth_revoked` control event만 보낸 뒤 닫고, state를 신뢰할 수 없으면 application event를 더 보내지 않은 채 `auth_unavailable`로 닫는다. Browser는 revoked 연결에서 refresh를 한 번 시도하고 refresh credential이 거절된 경우에만 session과 page-memory evidence를 정리한다. 일시 장애는 기존 credential과 작업을 보존하고 polling과 SSE reconnect로 복구한다. 비밀번호 변경은 persisted credential version을 같은 CAS mutation에서 증가시켜 이전 access/refresh token을 모두 거부하고 현재 browser에는 새 token pair를 반환한다. Login·register·refresh·LDAP session은 access/refresh token과 signed tenant를 하나의 browser commit으로 저장하며 실패하면 이전 session과 미저장 evidence를 복원한다. 동시에 발생한 401은 한 refresh에 합류하고 generic mutating request는 자동 replay하지 않는다. 다른 tab의 signed user·tenant·role·credential version이 현재 page와 달라지면 앱을 한 번 reload해 page-memory evidence를 새 authorization context에서 다시 구성하며, 네 값이 같은 token rotation은 현재 작업을 유지한다 |
-| 로그인 세션별 서버 폐기·본인 세션 관리 | Register·login·invite·LDAP·SAML·GCloud·password-change가 발급하는 access/refresh pair는 같은 random session ID와 tenant-scoped `auth-session.v1` state에 결속되고 refresh도 그 ID를 유지한다. `POST /auth/logout`은 현재 token의 session만 CAS로 폐기한다. `GET /auth/sessions`와 `POST /auth/sessions/revoke`는 현재 credential version의 본인 활성 세션을 조회해 다른 로그인 하나를 종료하고, `POST /auth/sessions/revoke-others`는 strict confirmation 뒤 current를 제외한 active snapshot 전체를 종료한다. Profile UI는 session ID를 DOM에 넣지 않고 현재/다른 로그인과 시작·만료 시각만 표시하며 개별·일괄 action이 같은 single-flight와 stale-response guard를 공유한다. 복사된 same-session credential은 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부된다. 손상·unavailable session state는 mutation 전에 원본 보존 `503`으로 닫는다. Legacy sessionless token은 exact logout·목록·선택/일괄 종료를 사용할 수 없다. 일괄 종료는 multi-object transaction이 아니므로 write failure 뒤 재시도가 필요할 수 있고 요청 뒤 생긴 session은 다음 조회 대상이다. User-Agent/IP, current-inclusive 전체 로그아웃, admin mass revoke, 만료 state GC와 즉시 push는 제공하지 않는다 |
+| 로그인 세션별 서버 폐기·본인 세션 관리 | Register·login·invite·LDAP·SAML·GCloud·password-change가 발급하는 access/refresh pair는 같은 random session ID와 tenant-scoped `auth-session.v1` state에 결속되고 refresh도 그 ID를 유지한다. `POST /auth/logout`은 현재 token의 session만 CAS로 폐기한다. `GET /auth/sessions`와 `POST /auth/sessions/revoke`는 현재 credential version의 본인 활성 세션을 조회해 다른 로그인 하나를 종료하고, `POST /auth/sessions/revoke-others`는 current를 보존한 채 나머지를 종료한다. `POST /auth/sessions/revoke-all`은 strict confirmation 뒤 현재 session을 마지막에 써서 snapshot의 본인 active session 전체를 종료한다. 성공한 Profile action은 browser credential, current user, 미저장 draft·recovery evidence를 정리하고 로그인 화면으로 전환한다. Profile UI는 session ID를 DOM에 넣지 않으며 모든 session action이 같은 single-flight와 stale-response guard를 공유한다. 손상·unavailable session state는 mutation 전에 원본 보존 `503`으로 닫고 legacy sessionless token은 exact session API를 사용할 수 없다. 일괄 종료는 multi-object transaction이 아니므로 중간 실패 뒤 일부 다른 session이 이미 종료됐을 수 있고, 요청 뒤 생긴 session은 다음 요청 대상이다. User-Agent/IP, admin mass revoke, 만료 state GC와 즉시 push는 제공하지 않는다 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Freeze·dry-run approval·execution request·audit export는 optional `operation_id`와 private payload hash를 metadata CAS에 결속해 동일 payload replay를 원래 verified artifact로 수렴시키고 다른 payload 재사용을 `409`로 차단한다. Trajectory capture를 선택한 Agent run도 provider 호출 전에 private shared-backend claim을 선점해 exact replay는 저장된 결과를 반환하고, 실행 중·불확실한 이전 시도는 자동 재호출하지 않는다. Browser는 각 write에 UUID를 보내고 pending 동안 initiating control을 single-flight로 잠근다. Captured run의 응답을 잃으면 operation/schema/state가 결속된 redacted status만 `no-store`로 읽고, terminal success가 확인된 경우에만 같은 operation ID와 payload를 replay한다. Mismatched·unavailable·running 상태는 payload를 page memory에 보존해 Agent 버튼과 상태 재확인 버튼이 새 실행 대신 같은 operation을 다시 확인하며, 두 control은 recovery promise 하나를 공유한다. Captured POST 직전에는 payload를 제외한 schema·tenant·operation ID marker만 tenant-scoped same-origin browser storage에 기록한다. Shared storage가 가능하면 tenant-scoped Web Lock 안에서 marker claim을 직렬화해 동시 tab 중 하나만 POST를 시작하고, 나머지 tab과 tab-close 뒤 다시 연 화면은 같은 status만 확인한다. 서로 다른 tenant marker는 같은 origin에서도 독립적으로 유지하며 tenant 전환은 이전 tenant marker만 정리한다. Shared storage가 막히면 기존 tab-scoped fallback을 유지한다. Operator가 backend 실행은 취소되지 않는다는 경고를 확인해 상태 추적을 명시적으로 종료해야 새 operation을 시작할 수 있다. |
 
 ---
@@ -86,7 +86,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 구성 (10개 파일): request_id / observability / security_headers
   │     / rate_limit / audit / auth / tenant / billing / metrics / document_ops_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 273): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 274): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -165,10 +165,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **273개**입니다.
+FastAPI 라우트는 **274개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 273
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 274
 ```
 
 대표 도메인:
@@ -270,10 +270,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,572개**, **257개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,581개**, **257개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3572
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3581
 python3 scripts/count_readme_metrics.py --field test_files      # → 257
 ```
 
@@ -303,7 +303,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,339 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H109 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,351 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H110 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -338,7 +338,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
-- 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 활성 session을 확인해 다른 로그인 하나 또는 현재 browser를 제외한 active snapshot 전체를 종료할 수 있습니다. 목록은 시작·만료 시각만 제공하고 User-Agent·IP를 수집하지 않습니다. Prefix 전체는 mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 중간 write failure는 일부 종료를 남길 수 있으므로 상태 복구 뒤 재시도해야 하며, 요청 시작 뒤 생긴 session은 다음 조회 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·선택/일괄 종료, current-inclusive 전체 로그아웃, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
+- 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 목록은 시작·만료 시각만 제공하고 User-Agent·IP를 수집하지 않습니다. Prefix 전체는 mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 - 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. Mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌할 때마다 최신 state의 ownership·schema·transition을 다시 검증합니다. 최근 mutation receipt는 64개로 제한해 후속 CAS 뒤에도 불확실한 commit을 조정하며, 손상 receipt는 원본을 보존하고 fail closed 처리합니다. 이 보장은 tenant별 단일 report workflow state object에 한정되고 실제 AWS runtime과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 CAS를 적용하며, 충돌 시 최신 JSONL을 다시 검증하고 append를 재적용합니다. Commit 응답이 불확실하면 `log_id`와 exact entry를 read-back해 후속 append 뒤에도 성공을 조정합니다. 이 보장은 tenant별 단일 audit JSONL object 범위이며 실제 AWS runtime은 검증하지 않았습니다.
@@ -378,4 +378,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 273 · 테스트 3,572 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 274 · 테스트 3,581 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

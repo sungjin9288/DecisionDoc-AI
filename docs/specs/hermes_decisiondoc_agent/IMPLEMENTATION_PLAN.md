@@ -224,14 +224,17 @@ Acceptance:
 - corrupt or unavailable session state fails closed without changing the original object, and logout audit copies
   neither access/refresh credentials nor the private session identity
 - legacy sessionless credentials remain bounded by expiry and credential version but cannot use exact logout,
-  inventory, selected revoke, or bulk revoke; User-Agent/IP inventory, current-inclusive all-device logout,
-  administrator mass revoke, expired-session GC, and immediate push stay outside this contract
+  inventory, selected revoke, or bulk revoke; User-Agent/IP inventory, administrator mass revoke, expired-session
+  GC, and immediate push stay outside this contract
 - self-service inventory validates every direct object under the selected-backend tenant session prefix before
   returning active current-version sessions; selected revoke preserves the current browser, hides foreign/missing
   target differences, and treats an already-revoked owned target as retry-safe success
 - strict-confirmed bulk revoke preserves current, revokes every other session in the validated snapshot, converges
   to count zero on retry, and fails before mutation when the prefix is corrupt; sequential writes do not claim a
   multi-object transaction or include sessions created after the snapshot
+- strict-confirmed all-device revoke validates the same authority, writes current last, and clears local credentials
+  and page-memory evidence only after success; earlier write failure preserves current when possible, but partial
+  other-session progress and an uncertain current-write response are explicit non-transactional limits
 - the browser renders only current/other and start/expiry metadata, keeps session IDs out of the DOM, gives selected
   and bulk actions one single-flight, and rejects stale list/revoke completions by token, modal, request, and revoke
   generations; audit stores the bulk count without credentials or session IDs

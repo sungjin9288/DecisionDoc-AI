@@ -28,6 +28,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("GET", "/auth/sessions"): "user.session_list",
     ("POST", "/auth/sessions/revoke"): "user.session_revoke",
     ("POST", "/auth/sessions/revoke-others"): "user.session_revoke_others",
+    ("POST", "/auth/sessions/revoke-all"): "user.session_revoke_all",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",

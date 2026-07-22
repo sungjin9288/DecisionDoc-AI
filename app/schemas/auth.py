@@ -38,6 +38,12 @@ class RevokeOtherAuthSessionsRequest(BaseModel):
     confirm: Literal[True]
 
 
+class RevokeAllAuthSessionsRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    confirm: Literal[True]
+
+
 class UpdateMyProfileRequest(BaseModel):
     display_name: str | None = None
     email: str | None = None

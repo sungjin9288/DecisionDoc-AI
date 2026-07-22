@@ -485,6 +485,9 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
     change_start = content.index("async function changeTenantContext(nextTenantId, selector)")
     change_end = content.index("async function loadTenantList()", change_start)
     change_block = content[change_start:change_end]
+    clear_start = content.index("function clearLocalAuthSession()")
+    clear_end = content.index("function handleInvalidAuthSession", clear_start)
+    clear_block = content[clear_start:clear_end]
 
     for marker in (
         "function getTenantHeaders(tenantId = _currentTenantId)",
@@ -505,7 +508,8 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
     assert content.count("persistAuthSession(") == 6
     assert content.count("localStorage.setItem('dd_access_token',") == 1
     assert content.count("localStorage.setItem('dd_refresh_token',") == 1
-    assert content.count("_documentOpsReviewDrafts.clear();") == 3
+    assert "_documentOpsReviewDrafts.clear();" in change_block
+    assert "_documentOpsReviewDrafts.clear();" in clear_block
     assert "clearDocumentOpsPendingRunMarker('', previousTenantId);" in change_block
     assert "브라우저에 테넌트 전환 상태를 저장하지 못했습니다." in change_block
     assert change_block.index("localStorage.setItem('dd_tenant_id', tenantId);") < change_block.index(
@@ -675,6 +679,9 @@ def test_index_html_document_ops_shows_training_governance_dashboard_summary():
 
 def test_index_html_document_ops_loads_one_governance_review_overview():
     content = open("app/static/index.html", encoding="utf-8").read()
+    clear_start = content.index("function clearLocalAuthSession()")
+    clear_end = content.index("function handleInvalidAuthSession", clear_start)
+    clear_block = content[clear_start:clear_end]
 
     assert 'id="document-ops-governance-overview"' in content
     assert "Governance Review Overview" in content
@@ -690,7 +697,8 @@ def test_index_html_document_ops_loads_one_governance_review_overview():
     assert "직전 재확인과 검토 상태가 동일합니다." in content
     assert "직전 재확인 이후 검토 상태가 달라졌습니다." in content
     assert "현재 browser memory에서만 비교 · persisted=false · 생성 시각 제외" in content
-    assert content.count("_documentOpsGovernanceObservation = null;") == 3
+    assert "let _documentOpsGovernanceObservation = null;" in content
+    assert "_documentOpsGovernanceObservation = null;" in clear_block
     assert "const authorizationFields = [" in content
     assert "field => authorization[field] === false" in content
     assert "external authorization all false=" in content
@@ -1097,6 +1105,9 @@ def test_index_html_result_download_action_wiring_exists():
 
 def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures():
     content = open("app/static/index.html", encoding="utf-8").read()
+    clear_start = content.index("function clearLocalAuthSession()")
+    clear_end = content.index("function handleInvalidAuthSession", clear_start)
+    clear_block = content[clear_start:clear_end]
     invalid_start = content.index("function handleInvalidAuthSession")
     invalid_end = content.index("function logout()", invalid_start)
     invalid_block = content[invalid_start:invalid_end]
@@ -1132,7 +1143,7 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "let _authSessionRecoveryPromise = null;" in content
     assert "let _authSessionRevision = 0;" in content
     assert "_authSessionRevision !== sessionRevision" in content
-    assert content.count("_authSessionRevision += 1;") == 4
+    assert "_authSessionRevision += 1;" in clear_block
     assert "const AUTH_SESSION_STORAGE_KEYS = new Set([" in content
     assert "'dd_access_token',\n    'dd_refresh_token',\n    'dd_tenant_id'," in content
     assert "let _crossTabAuthReloadRequested = false;" in content
@@ -1148,8 +1159,8 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)" in content
     assert "reconcileCrossTabAuthContext();" in content
     assert "window.addEventListener('storage', handleCrossTabAuthStorageChange);" in content
-    assert "localStorage.removeItem('dd_access_token')" in content
-    assert "localStorage.removeItem('dd_refresh_token')" in content
+    assert "localStorage.removeItem('dd_access_token')" in clear_block
+    assert "localStorage.removeItem('dd_refresh_token')" in clear_block
     assert "res.status === 401" in retry_fetch_fn.group("body")
     assert "await recoverAuthSessionOnce()" in retry_fetch_fn.group("body")
     assert "refreshResult !== AUTH_REFRESH_RESULT.INVALID_SESSION" in retry_fetch_fn.group("body")
@@ -1165,8 +1176,9 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "handleInvalidAuthSession()" in resolve_error_fn.group("body")
     assert "await resolveApiErrorResponse(" in content
     assert content.count("parseApiErrorResponse(") == 2
-    assert "clearDocumentOpsPendingRunMarker();" in invalid_block
-    assert "clearDocumentOpsPendingRunMarker();" in logout_block
+    assert "clearDocumentOpsPendingRunMarker();" in clear_block
+    assert "clearLocalAuthSession();" in invalid_block
+    assert "clearLocalAuthSession();" in logout_block
     revoke_start = content.index("async function revokeCurrentAuthSession")
     revoke_end = content.index("function logout()", revoke_start)
     revoke_block = content[revoke_start:revoke_end]
@@ -1176,7 +1188,7 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "if (response.ok) return 'revoked';" in revoke_block
     assert "return 'unavailable';" in revoke_block
     assert logout_block.index("const accessToken = localStorage.getItem('dd_access_token');") < logout_block.index(
-        "localStorage.removeItem('dd_access_token')"
+        "clearLocalAuthSession();"
     )
     assert "const revocation = revokeCurrentAuthSession(accessToken);" in logout_block
     assert "return revocation;" in logout_block
@@ -1276,6 +1288,7 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert 'id="profile-sessions-status"' in modal_block
     assert 'id="profile-sessions-refresh"' in modal_block
     assert 'id="profile-sessions-revoke-others"' in modal_block
+    assert 'id="profile-sessions-revoke-all"' in modal_block
     assert "$id('profile-modal')?.addEventListener('click'" in content
     assert "event.target === event.currentTarget" in content
     assert "document.querySelectorAll('[data-profile-close]').forEach" in content
@@ -1283,7 +1296,9 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
     assert "async function loadMyAuthSessions()" in content
     assert "async function revokeMyAuthSession(sessionId, button)" in content
     assert "async function revokeMyOtherAuthSessions(button)" in content
+    assert "async function revokeAllMyAuthSessions(button)" in content
     assert "async function runMyAuthSessionRevocation" in content
+    assert "function clearLocalAuthSession()" in content
     assert "_profileSessionRequestVersion" in content
     assert "_profileSessionRevokeVersion" in content
     assert "_profileSessionRevokeVersion === revokeVersion" in content

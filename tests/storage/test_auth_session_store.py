@@ -150,6 +150,95 @@ def test_auth_session_store_bulk_revoke_validates_prefix_before_mutation(tmp_pat
     assert corrupt_path.read_bytes() == corrupt
 
 
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_revokes_all_active_sessions(
+    tmp_path,
+    backend_kind,
+):
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+
+    current = store.create(user_id="user-a", credential_version=3)
+    first_other = store.create(user_id="user-a", credential_version=3)
+    second_other = store.create(user_id="user-a", credential_version=3)
+    foreign = store.create(user_id="user-b", credential_version=3)
+    older_version = store.create(user_id="user-a", credential_version=2)
+
+    assert store.revoke_all(
+        current_session_id=current,
+        user_id="user-a",
+        credential_version=3,
+    ) == 3
+
+    assert not store.is_current(current, user_id="user-a", credential_version=3)
+    assert not store.is_current(first_other, user_id="user-a", credential_version=3)
+    assert not store.is_current(second_other, user_id="user-a", credential_version=3)
+    assert store.is_current(foreign, user_id="user-b", credential_version=3)
+    assert store.is_current(older_version, user_id="user-a", credential_version=2)
+
+
+def test_auth_session_store_revoke_all_keeps_current_until_other_writes_finish(
+    tmp_path,
+    monkeypatch,
+):
+    store = _store(tmp_path)
+    current = store.create(user_id="user-a", credential_version=0)
+    store.create(user_id="user-a", credential_version=0)
+    store.create(user_id="user-a", credential_version=0)
+    original_revoke = store.revoke
+    calls: list[str] = []
+
+    def fail_after_one_other(session_id: str, *, user_id: str) -> bool:
+        calls.append(session_id)
+        if len(calls) == 2:
+            raise AuthSessionStoreError("injected write failure")
+        return original_revoke(session_id, user_id=user_id)
+
+    monkeypatch.setattr(store, "revoke", fail_after_one_other)
+
+    with pytest.raises(AuthSessionStoreError, match="injected write failure"):
+        store.revoke_all(
+            current_session_id=current,
+            user_id="user-a",
+            credential_version=0,
+        )
+
+    assert len(calls) == 2
+    assert current not in calls
+    assert not store.is_current(calls[0], user_id="user-a", credential_version=0)
+    assert store.is_current(calls[1], user_id="user-a", credential_version=0)
+    assert store.is_current(current, user_id="user-a", credential_version=0)
+
+
+def test_auth_session_store_revoke_all_validates_prefix_before_mutation(tmp_path):
+    store = _store(tmp_path)
+    current = store.create(user_id="user-a", credential_version=0)
+    other = store.create(user_id="user-a", credential_version=0)
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    with pytest.raises(AuthSessionStoreError):
+        store.revoke_all(
+            current_session_id=current,
+            user_id="user-a",
+            credential_version=0,
+        )
+
+    assert store.is_current(current, user_id="user-a", credential_version=0)
+    assert store.is_current(other, user_id="user-a", credential_version=0)
+    assert corrupt_path.read_bytes() == corrupt
+
+
 def test_auth_session_store_rejects_wrong_authority_without_mutation(tmp_path):
     store = _store(tmp_path)
     session_id = store.create(user_id="user-a", credential_version=2)
