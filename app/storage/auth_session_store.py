@@ -104,6 +104,11 @@ class AuthSessionStore:
             / f"{require_auth_session_id(session_id)}.json"
         ).as_posix()
 
+    def _relative_prefix(self) -> str:
+        return (
+            Path("tenants") / self._tenant_id / "auth_sessions"
+        ).as_posix()
+
     def _validate_record(self, record: object, *, session_id: str) -> dict[str, Any]:
         if not isinstance(record, dict) or set(record) != _RECORD_FIELDS:
             raise AuthSessionStoreError("Invalid authentication session document")
@@ -212,6 +217,66 @@ class AuthSessionStore:
             and record["revoked_at"] is None
             and _parse_timestamp(record["expires_at"], field="expires_at") > _utcnow()
         )
+
+    def list_active(
+        self,
+        *,
+        user_id: str,
+        credential_version: int,
+    ) -> list[dict[str, Any]]:
+        """Return current-version sessions after validating the whole tenant prefix."""
+        canonical_user_id = _require_user_id(user_id)
+        canonical_version = _require_credential_version(credential_version)
+        prefix = self._relative_prefix()
+        child_prefix = f"{prefix}/"
+        try:
+            paths = self._backend.list_prefix(prefix)
+        except StateBackendError as exc:
+            raise AuthSessionStoreError(
+                "Failed to list authentication session state"
+            ) from exc
+
+        now = _utcnow()
+        active: list[dict[str, Any]] = []
+        for relative_path in paths:
+            if not relative_path.startswith(child_prefix):
+                raise AuthSessionStoreError(
+                    "Authentication session prefix contains an unexpected object"
+                )
+            filename = relative_path.removeprefix(child_prefix)
+            if "/" in filename or not filename.endswith(".json"):
+                raise AuthSessionStoreError(
+                    "Authentication session prefix contains an unexpected object"
+                )
+            session_id = filename.removesuffix(".json")
+            try:
+                canonical_session_id = require_auth_session_id(session_id)
+                raw = self._backend.read_text(relative_path)
+            except (StateBackendError, UnicodeError, ValueError) as exc:
+                raise AuthSessionStoreError(
+                    "Failed to read authentication session inventory"
+                ) from exc
+            if raw is None:
+                raise AuthSessionStoreError(
+                    "Authentication session inventory changed during inspection"
+                )
+            record = self._decode(raw, session_id=canonical_session_id)
+            if (
+                record["user_id"] == canonical_user_id
+                and record["credential_version"] == canonical_version
+                and record["revoked_at"] is None
+                and _parse_timestamp(record["expires_at"], field="expires_at") > now
+            ):
+                active.append(record)
+
+        active.sort(
+            key=lambda record: (
+                _parse_timestamp(record["created_at"], field="created_at"),
+                record["session_id"],
+            ),
+            reverse=True,
+        )
+        return active
 
     def revoke(self, session_id: str, *, user_id: str) -> bool:
         canonical_session_id = require_auth_session_id(session_id)

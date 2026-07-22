@@ -787,6 +787,50 @@ def test_audit_logout_records_action_without_session_credentials(tmp_path, monke
     assert claims["session_id"] not in serialized
 
 
+def test_audit_session_inventory_and_revoke_do_not_copy_session_credentials(
+    tmp_path,
+    monkeypatch,
+):
+    """Self-service session controls are auditable without stored bearer IDs."""
+    client = _make_client(tmp_path, monkeypatch)
+    first = _register_and_login(client)
+    second = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+
+    from app.services.auth_service import verify_token
+    from app.storage.audit_store import AuditStore
+
+    second_claims = verify_token(second["access_token"])
+    assert second_claims is not None
+    listed = client.get("/auth/sessions", headers=_auth(first))
+    revoked = client.post(
+        "/auth/sessions/revoke",
+        headers=_auth(first),
+        json={"session_id": second_claims["session_id"]},
+    )
+    results = AuditStore("system").query()
+    session_entries = [
+        entry
+        for entry in results
+        if entry["action"] in {"user.session_list", "user.session_revoke"}
+    ]
+    serialized = json.dumps(session_entries, ensure_ascii=False)
+
+    assert listed.status_code == 200
+    assert revoked.status_code == 200
+    assert {entry["action"] for entry in session_entries} == {
+        "user.session_list",
+        "user.session_revoke",
+    }
+    assert first["access_token"] not in serialized
+    assert first["refresh_token"] not in serialized
+    assert second["access_token"] not in serialized
+    assert second["refresh_token"] not in serialized
+    assert second_claims["session_id"] not in serialized
+
+
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
     """Accessing an admin endpoint without admin role logs access.blocked."""
     client = _make_client(tmp_path, monkeypatch)

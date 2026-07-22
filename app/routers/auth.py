@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from app.ai_profiles.catalog import list_ai_profiles
 from app.dependencies import get_tenant_id
@@ -21,6 +21,7 @@ from app.schemas import (
     CreateUserRequest,
     LoginRequest,
     RefreshRequest,
+    RevokeAuthSessionRequest,
     UpdateMyProfileRequest,
     UpdateUserRequest,
     WithdrawRequest,
@@ -235,6 +236,98 @@ async def change_password(request: Request, body: ChangePasswordRequest):
         "message": "비밀번호가 변경되었습니다.",
         **tokens,
     }
+
+
+def _require_session_bound_user(request: Request) -> tuple[str, str]:
+    user_id = getattr(request.state, "user_id", None)
+    session_id = getattr(request.state, "auth_session_id", None)
+    if not user_id:
+        raise HTTPException(401, "인증이 필요합니다.")
+    if not session_id:
+        raise HTTPException(
+            status_code=409,
+            detail="기존 로그인 세션은 세션 관리 기능을 사용할 수 없습니다. 다시 로그인해주세요.",
+        )
+    return user_id, session_id
+
+
+@router.get("/auth/sessions")
+async def list_auth_sessions(request: Request):
+    """List active server-backed sessions owned by the current user."""
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    tenant_id = get_tenant_id(request)
+    user_id, current_session_id = _require_session_bound_user(request)
+    user = get_request_user_store(request, tenant_id).get_by_id(user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    try:
+        records = get_request_auth_session_store(request, tenant_id).list_active(
+            user_id=user_id,
+            credential_version=user.credential_version,
+        )
+    except (AuthSessionStoreError, ValueError) as exc:
+        logger.error(
+            "[Auth] Session inventory failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션 목록을 일시적으로 확인할 수 없습니다.",
+        ) from exc
+
+    return JSONResponse(
+        content={
+            "sessions": [
+                {
+                    "session_id": record["session_id"],
+                    "created_at": record["created_at"],
+                    "expires_at": record["expires_at"],
+                    "current": record["session_id"] == current_session_id,
+                }
+                for record in records
+            ]
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/auth/sessions/revoke")
+async def revoke_auth_session(request: Request, body: RevokeAuthSessionRequest):
+    """Revoke one owned session while preserving the current browser session."""
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    tenant_id = get_tenant_id(request)
+    user_id, current_session_id = _require_session_bound_user(request)
+    if body.session_id == current_session_id:
+        raise HTTPException(
+            status_code=409,
+            detail="현재 로그인 세션은 로그아웃으로 종료해주세요.",
+        )
+    try:
+        revoked = get_request_auth_session_store(request, tenant_id).revoke(
+            body.session_id,
+            user_id=user_id,
+        )
+    except (AuthSessionStoreError, ValueError) as exc:
+        logger.error(
+            "[Auth] Selected session revocation failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션을 일시적으로 종료할 수 없습니다.",
+        ) from exc
+    if not revoked:
+        raise HTTPException(404, "로그인 세션을 찾을 수 없습니다.")
+
+    return JSONResponse(
+        content={
+            "message": "선택한 로그인 세션이 종료되었습니다.",
+            "session_revoked": True,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/auth/logout")

@@ -1434,6 +1434,186 @@ def test_cross_tab_auth_role_change_reloads_authorization_context(page, live_ser
         second_page.close()
 
 
+def test_profile_can_revoke_one_other_login_without_ending_current_session(
+    page,
+    live_server,
+):
+    other = page.evaluate(
+        """async ({ username, password }) => {
+          const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          return response.json();
+        }""",
+        live_server["auth"],
+    )
+    other_claims = page.evaluate(
+        """accessToken => readAccessTokenClaims(accessToken)""",
+        other["access_token"],
+    )
+    assert other_claims is not None
+
+    try:
+        page.click("#user-info")
+        page.click('[data-user-menu-action="profile"]')
+        page.wait_for_selector("#profile-modal", state="visible")
+        page.wait_for_selector("#profile-sessions-list button")
+        before_count = page.locator("#profile-sessions-list button").count()
+        session_markup = page.locator("#profile-sessions-list").inner_html()
+
+        assert before_count >= 1
+        assert other_claims["session_id"] not in session_markup
+
+        page.locator("#profile-sessions-list button").first.click()
+        page.wait_for_function(
+            "expected => document.querySelectorAll('#profile-sessions-list button').length === expected",
+            arg=before_count - 1,
+        )
+        result = page.evaluate(
+            """async ({ accessToken, refreshToken }) => {
+              const otherAccess = await fetch('/auth/me', {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              const otherRefresh = await fetch('/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+              });
+              const currentAccess = await fetch('/auth/me', {
+                headers: getAuthHeaders(),
+              });
+              return {
+                otherAccessStatus: otherAccess.status,
+                otherRefreshStatus: otherRefresh.status,
+                currentAccessStatus: currentAccess.status,
+              };
+            }""",
+            {
+                "accessToken": other["access_token"],
+                "refreshToken": other["refresh_token"],
+            },
+        )
+
+        assert result == {
+            "otherAccessStatus": 401,
+            "otherRefreshStatus": 401,
+            "currentAccessStatus": 200,
+        }
+    finally:
+        page.evaluate(
+            """async sessionId => {
+              await fetch('/auth/sessions/revoke', {
+                method: 'POST',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId }),
+              });
+            }""",
+            other_claims["session_id"],
+        )
+
+
+def test_profile_session_inventory_ignores_a_late_stale_response(page):
+    result = page.evaluate(
+        """async () => {
+          stopNotifPolling();
+          stopSSE();
+          const originalFetch = window.fetch;
+          let firstResolve;
+          let requestCount = 0;
+          const responseFor = createdAt => new Response(JSON.stringify({
+            sessions: [{
+              session_id: 'a'.repeat(32),
+              created_at: createdAt,
+              expires_at: '2026-08-21T12:00:00+00:00',
+              current: true,
+            }],
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          window.fetch = (url, options) => {
+            if (url !== '/auth/sessions') return originalFetch(url, options);
+            requestCount += 1;
+            if (requestCount === 1) {
+              return new Promise(resolve => { firstResolve = resolve; });
+            }
+            return Promise.resolve(responseFor('2026-07-22T12:00:00+00:00'));
+          };
+          document.getElementById('profile-modal').style.display = 'flex';
+          try {
+            const first = loadMyAuthSessions();
+            const second = loadMyAuthSessions();
+            await second;
+            firstResolve(responseFor('2020-01-01T00:00:00+00:00'));
+            await first;
+            return {
+              requestCount,
+              text: document.getElementById('profile-sessions-list').innerText,
+            };
+          } finally {
+            window.fetch = originalFetch;
+            closeMyProfileModal();
+          }
+        }"""
+    )
+
+    assert result["requestCount"] == 2
+    assert "2026" in result["text"]
+    assert "2020" not in result["text"]
+
+
+def test_profile_late_revoke_cannot_unlock_a_newer_revoke(page):
+    result = page.evaluate(
+        """async () => {
+          stopNotifPolling();
+          stopSSE();
+          const originalFetch = window.fetch;
+          let firstResolve;
+          let secondResolve;
+          let requestCount = 0;
+          window.fetch = (url, options) => {
+            if (url !== '/auth/sessions/revoke') return originalFetch(url, options);
+            requestCount += 1;
+            return new Promise(resolve => {
+              if (requestCount === 1) firstResolve = resolve;
+              else secondResolve = resolve;
+            });
+          };
+          document.getElementById('profile-modal').style.display = 'flex';
+          try {
+            const first = revokeMyAuthSession('b'.repeat(32));
+            closeMyProfileModal();
+            document.getElementById('profile-modal').style.display = 'flex';
+            const second = revokeMyAuthSession('c'.repeat(32));
+            firstResolve(new Response('{}', { status: 200 }));
+            await first;
+            const newerRequestStillLocked = _profileSessionRevokeInFlight;
+            secondResolve(new Response(JSON.stringify({ detail: 'expected test failure' }), {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' },
+            }));
+            await second;
+            return {
+              requestCount,
+              newerRequestStillLocked,
+              unlockedAfterCurrentRequest: !_profileSessionRevokeInFlight,
+            };
+          } finally {
+            window.fetch = originalFetch;
+            closeMyProfileModal();
+          }
+        }"""
+    )
+
+    assert result == {
+        "requestCount": 2,
+        "newerRequestStillLocked": True,
+        "unlockedAfterCurrentRequest": True,
+    }
+
+
 def test_password_change_rotates_session_and_reloads_other_tabs(page, live_server):
     current = page.evaluate(
         """() => ({

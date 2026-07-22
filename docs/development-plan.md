@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,314 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H107) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,329 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H108) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-22 H107 실측: 4314 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-22 H108 실측: 4329 passed, 2 skipped, 4 deselected, 1 warning
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -44,7 +44,7 @@ python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-
 python3 scripts/count_readme_metrics.py --field service_files     # → 44 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 47 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 10 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 270 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 272 (라우트)
 ```
 
 ```text
@@ -58,7 +58,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │       → rate_limit → auth → tenant → billing → audit → metrics
   │     audit context helper: document_ops_audit
   │
-  ├─ Routers (23 top-level files, 라우트 270):
+  ├─ Routers (23 top-level files, 라우트 272):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
@@ -124,7 +124,7 @@ Providers (5)    Storage (47 modules)   Ops
 36. Protected request authorization은 access token의 signed tenant/user identity를 tenant `UserStore`의 현재 role과 `is_active`에 다시 결속한다. Persisted user가 없거나 비활성이면 token 만료 전에도 `401`, role이 바뀌면 현재 role로 RBAC를 적용하고 state read가 실패하면 `503`으로 fail closed 처리한다. Middleware public 예외인 `/events`도 query access token을 같은 authority로 검사한다. Auth와 SSO user lifecycle route는 앱이 생성될 때 확정한 data root와 `StateBackend`를 공유하므로 process env drift가 request authority를 분리하지 않는다. Fresh install에 user state가 전혀 없는 legacy compatibility만 token payload를 유지하며, 별도 revocation table이나 cross-device push invalidation은 제공하지 않는다.
 37. Password change는 password hash와 persisted `credential_version` 증가를 한 user-state CAS mutation으로 확정한다. Access/refresh token은 발급 시 version을 포함하고 protected request, SSE query token, refresh exchange가 현재 user version과 다르면 `401`로 거부한다. 변경 요청을 보낸 browser만 응답의 새 token pair를 atomic session helper로 commit하고, 같은 origin의 다른 tab은 version mismatch에서 reload한다. Legacy versionless record/token은 현재 version 0일 때만 호환한다. 이는 password change 기반 전체 token 폐기이며 exact-session 선택 폐기는 다음 불변식에서 별도로 정의한다.
 38. 열린 `/events` SSE는 연결 시점의 인증만으로 계속 전달하지 않는다. 최대 15초 간격으로 같은 query token의 expiry와 persisted user/session authority를 다시 확인하고, invalid이면 `auth_revoked`, authority read가 실패하면 `auth_unavailable` control event만 보낸 뒤 unsubscribe한다. Browser는 revoked event를 기존 single-flight refresh에 연결하고 refresh credential 거절만 invalid-session cleanup으로 처리한다. Temporary authority·endpoint·storage failure는 token, current user와 page-memory evidence를 보존하고 polling과 reconnect를 사용한다. Stale source callback은 현재 replacement EventSource를 닫거나 reconnect timer를 만들 수 없다. 이는 bounded revalidation이며 즉시 cross-device push나 15초보다 짧은 termination SLA는 제공하지 않는다.
-39. Register·login·invite·LDAP·SAML·GCloud·password-change token pair는 selected local/S3 backend에 conditional create한 tenant-scoped `auth-session.v1` object의 random session ID를 공유하고 refresh도 그 ID를 유지한다. Protected request, refresh와 `/events`는 exact owner·credential version·expiry·revoked state를 확인한다. `/auth/logout`은 현재 signed session만 CAS로 폐기하고 다른 로그인 session을 보존한다. Corrupt·unavailable state는 원본을 보존하고 `503`으로 fail closed하며 audit은 token과 session ID를 복사하지 않는다. Browser는 revoke 결과를 기다리지 않고 local credential과 page-memory evidence를 지우고, endpoint failure는 서버 폐기 미확인 경고로 구분한다. Legacy sessionless token은 credential epoch와 만료 전까지 호환하지만 exact logout은 `409`이다. Session inventory, admin mass revoke, expired-session GC와 즉시 push는 제공하지 않는다.
+39. Register·login·invite·LDAP·SAML·GCloud·password-change token pair는 selected local/S3 backend에 conditional create한 tenant-scoped `auth-session.v1` object의 random session ID를 공유하고 refresh도 그 ID를 유지한다. Protected request, refresh와 `/events`는 exact owner·credential version·expiry·revoked state를 확인한다. `/auth/logout`은 현재 signed session만 CAS로 폐기하고 다른 로그인 session을 보존한다. 본인 session inventory는 tenant prefix 전체를 strict 검증한 뒤 현재 credential version의 active record만 `no-store`로 반환하고, selected revoke는 current target을 `409`, foreign/missing target을 같은 `404`로 거부하며 already-revoked owned target을 retry-safe success로 조정한다. Browser profile은 current/other와 시작·만료만 표시하고 ID를 DOM에 넣지 않으며 request·token·modal generation이 바뀐 늦은 list/revoke 결과를 폐기한다. Corrupt·unavailable state는 원본을 보존하고 `503`으로 fail closed하며 audit은 token과 target session ID를 복사하지 않는다. Prefix inventory는 multi-object atomic snapshot이 아니고 User-Agent/IP를 수집하지 않는다. Browser logout은 revoke 결과를 기다리지 않고 local credential과 page-memory evidence를 지우고, endpoint failure는 서버 폐기 미확인 경고로 구분한다. Legacy sessionless token은 credential epoch와 만료 전까지 호환하지만 exact logout·inventory·selected revoke는 `409`이다. 전체 기기 또는 admin mass revoke, expired-session GC와 즉시 push는 제공하지 않는다.
 
 ---
 

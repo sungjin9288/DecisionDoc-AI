@@ -889,6 +889,280 @@ def test_logout_revokes_only_the_authenticated_session(tmp_path, monkeypatch):
     assert second_refresh.status_code == 200
 
 
+def test_auth_sessions_list_marks_current_and_disables_response_caching(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    first = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    ).json()
+    second = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+    first_claims = verify_token(first["access_token"])
+    second_claims = verify_token(second["access_token"])
+    assert first_claims is not None
+    assert second_claims is not None
+
+    response = client.get(
+        "/auth/sessions",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    sessions = response.json()["sessions"]
+    assert {session["session_id"] for session in sessions} == {
+        first_claims["session_id"],
+        second_claims["session_id"],
+    }
+    assert [session["current"] for session in sessions].count(True) == 1
+    current = next(session for session in sessions if session["current"])
+    assert current["session_id"] == second_claims["session_id"]
+    assert all(
+        set(session) == {"session_id", "created_at", "expires_at", "current"}
+        for session in sessions
+    )
+
+
+def test_auth_session_revoke_terminates_only_selected_other_session(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    first = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "display_name": "Admin",
+            "email": "admin@test.com",
+            "password": "AdminPass1!",
+        },
+    ).json()
+    second = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+    second_claims = verify_token(second["access_token"])
+    assert second_claims is not None
+
+    revoked = client.post(
+        "/auth/sessions/revoke",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+        json={"session_id": second_claims["session_id"]},
+    )
+    revoked_again = client.post(
+        "/auth/sessions/revoke",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+        json={"session_id": second_claims["session_id"]},
+    )
+
+    assert revoked.status_code == 200
+    assert revoked_again.status_code == 200
+    assert revoked.headers["cache-control"] == "no-store"
+    assert revoked.json() == {
+        "message": "선택한 로그인 세션이 종료되었습니다.",
+        "session_revoked": True,
+    }
+    assert client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+    ).status_code == 200
+    assert client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    ).status_code == 401
+    assert client.post(
+        "/auth/refresh",
+        json={"refresh_token": second["refresh_token"]},
+    ).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"session_id": "A" * 32},
+        {"session_id": "a" * 32, "revoke_all": True},
+    ],
+)
+def test_auth_session_revoke_request_is_strict(tmp_path, monkeypatch, payload):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    response = client.post(
+        "/auth/sessions/revoke",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_auth_session_revoke_rejects_current_and_foreign_sessions(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    admin_claims = verify_token(admin["access_token"])
+    assert admin_claims is not None
+    created = client.post(
+        "/admin/users",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "username": "member",
+            "display_name": "Member",
+            "email": "member@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+        },
+    )
+    assert created.status_code == 200
+    member = client.post(
+        "/auth/login",
+        json={"username": "member", "password": "MemberPass1!"},
+    ).json()
+    member_claims = verify_token(member["access_token"])
+    assert member_claims is not None
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    current = client.post(
+        "/auth/sessions/revoke",
+        headers=headers,
+        json={"session_id": admin_claims["session_id"]},
+    )
+    foreign = client.post(
+        "/auth/sessions/revoke",
+        headers=headers,
+        json={"session_id": member_claims["session_id"]},
+    )
+
+    assert current.status_code == 409
+    assert "현재 로그인 세션" in current.json()["detail"]
+    assert foreign.status_code == 404
+    assert client.get("/auth/me", headers=headers).status_code == 200
+    assert client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {member['access_token']}"},
+    ).status_code == 200
+
+
+def test_sessionless_legacy_token_cannot_list_or_revoke_auth_sessions(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import create_access_token, verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    claims = verify_token(login["access_token"])
+    assert claims is not None
+    legacy_token = create_access_token(
+        claims["sub"],
+        claims["tenant_id"],
+        claims["role"],
+        claims["username"],
+        credential_version=claims["credential_version"],
+    )
+    headers = {"Authorization": f"Bearer {legacy_token}"}
+
+    listed = client.get("/auth/sessions", headers=headers)
+    revoked = client.post(
+        "/auth/sessions/revoke",
+        headers=headers,
+        json={"session_id": claims["session_id"]},
+    )
+
+    assert listed.status_code == 409
+    assert revoked.status_code == 409
+    assert "기존 로그인 세션" in listed.json()["detail"]
+    assert client.get("/auth/me", headers=headers).status_code == 200
+
+
+def test_viewer_can_revoke_another_owned_auth_session(tmp_path, monkeypatch):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    created = client.post(
+        "/admin/users",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "username": "viewer",
+            "display_name": "Viewer",
+            "email": "viewer@test.com",
+            "password": "ViewerPass1!",
+            "role": "viewer",
+        },
+    )
+    assert created.status_code == 200
+    first = client.post(
+        "/auth/login",
+        json={"username": "viewer", "password": "ViewerPass1!"},
+    ).json()
+    second = client.post(
+        "/auth/login",
+        json={"username": "viewer", "password": "ViewerPass1!"},
+    ).json()
+    second_claims = verify_token(second["access_token"])
+    assert second_claims is not None
+
+    response = client.post(
+        "/auth/sessions/revoke",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+        json={"session_id": second_claims["session_id"]},
+    )
+
+    assert response.status_code == 200
+    assert client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+    ).status_code == 200
+    assert client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    ).status_code == 401
+
+
+def test_auth_session_list_fails_closed_on_corrupt_unrelated_state(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "system"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    response = client.get(
+        "/auth/sessions",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+    )
+
+    assert response.status_code == 503
+    assert corrupt_path.read_bytes() == corrupt
+
+
 def test_logout_revokes_realtime_event_authority(tmp_path, monkeypatch):
     from fastapi import HTTPException
 

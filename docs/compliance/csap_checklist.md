@@ -20,7 +20,7 @@
 | 권한 관리 | ✅ RBAC (admin/member/viewer) | auth.py |
 | 비밀번호 정책 | ✅ 8자+숫자+문자 | user_store.py |
 | 접근 기록 | ✅ 감사 로그 | audit_store.py |
-| 세션 관리 | ✅ JWT 8h 만료 | auth_service.py |
+| 세션 관리 | ✅ JWT 만료 + tenant-scoped persisted session + 본인 선택 폐기 | auth_service.py, auth_session_store.py |
 | SSO 지원 | ⚠️ LDAP/GCloud 구현, SAML signed assertion verifier 별도 필요 | sso/ |
 
 ---

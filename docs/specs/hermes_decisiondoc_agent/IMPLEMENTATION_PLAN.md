@@ -223,8 +223,14 @@ Acceptance:
   credentials fail on the next protected request, refresh, or open SSE recheck
 - corrupt or unavailable session state fails closed without changing the original object, and logout audit copies
   neither access/refresh credentials nor the private session identity
-- legacy sessionless credentials remain bounded by expiry and credential version but cannot claim exact logout;
-  session inventory, mass revoke, expired-session GC, and immediate push stay outside this contract
+- legacy sessionless credentials remain bounded by expiry and credential version but cannot use exact logout,
+  inventory, or selected revoke; User-Agent/IP inventory, all-device or administrator mass revoke,
+  expired-session GC, and immediate push stay outside this contract
+- self-service inventory validates every direct object under the selected-backend tenant session prefix before
+  returning active current-version sessions; selected revoke preserves the current browser, hides foreign/missing
+  target differences, and treats an already-revoked owned target as retry-safe success
+- the browser renders only current/other and start/expiry metadata, keeps session IDs out of the DOM, and rejects
+  stale list and revoke completions by token, modal, request, and revoke generations
 - an open SSE subscription rechecks token expiry and persisted user/session authority within 15 seconds, stops application
   events on revocation or authority failure, and preserves browser credentials when the failure is retryable
 - no hidden control can trigger upload, training, or production operations

@@ -169,8 +169,11 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   session, so a separate login remains active. Same-session credentials copied to another context fail on their
   next protected request, refresh, or open-stream recheck. Corrupt or unavailable state fails closed without
   rewriting the original bytes; audit omits tokens and session IDs. Browser cleanup is immediate even when server
-  revocation cannot be confirmed. Legacy sessionless exact logout, session inventory, mass revoke, expired-session
-  GC, and immediate cross-device push remain outside the local contract.
+  revocation cannot be confirmed. Self-service inventory strict-validates the selected-backend tenant prefix and
+  returns only active current-version sessions; selected revoke preserves the current browser and hides foreign
+  versus missing targets. The profile renders no session IDs and discards stale list or revoke completions.
+  Legacy sessionless exact logout/inventory/selected revoke, User-Agent/IP inventory, all-device or administrator
+  mass revoke, expired-session GC, and immediate cross-device push remain outside the local contract.
 - An open `/events` stream rechecks token expiry and the same persisted user/session authority at most every 15 seconds.
   Invalid access receives only an `auth_revoked` control event before unsubscribe; unavailable authority receives
   `auth_unavailable` and no further application event. The browser refreshes once for revocation, clears session
@@ -296,9 +299,14 @@ Last local verification on 2026-07-22:
 - exact-session auth/SSO/invite gate: 158 passed, 1 warning
 - exact-session broad backend/security gate: 449 passed, 1 warning
 - exact-session full main-flow Chromium gate: 76 passed, 1 skipped
+- self-service session local/S3 store gate: 7 passed
+- self-service session focused auth gate: 11 passed, 55 deselected, 1 warning
+- self-service session profile Chromium gate: 3 passed, 77 deselected
+- self-service session broad auth/security gate: 309 passed, 1 warning
+- self-service session full main-flow Chromium gate: 79 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4314 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4329 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0

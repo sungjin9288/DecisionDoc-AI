@@ -25,6 +25,8 @@ _log = logging.getLogger("decisiondoc.audit")
 AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/auth/login"): "user.login",
     ("POST", "/auth/logout"): "user.logout",
+    ("GET", "/auth/sessions"): "user.session_list",
+    ("POST", "/auth/sessions/revoke"): "user.session_revoke",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",

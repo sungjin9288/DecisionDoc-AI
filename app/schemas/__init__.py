@@ -95,6 +95,7 @@ from app.schemas.auth import (
     CreateUserRequest,
     LoginRequest,
     RefreshRequest,
+    RevokeAuthSessionRequest,
     UpdateMyProfileRequest,
     UpdateUserRequest,
 )
@@ -214,6 +215,7 @@ __all__ = [
     "ProcurementDecisionRecord",
     "LoginRequest",
     "RefreshRequest",
+    "RevokeAuthSessionRequest",
     "ChangePasswordRequest",
     "UpdateMyProfileRequest",
     "CreateUserRequest",

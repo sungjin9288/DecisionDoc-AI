@@ -60,6 +60,7 @@ _WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # Paths where viewers are still allowed to POST/PUT/PATCH
 _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
     "/auth/logout",
+    "/auth/sessions/revoke",
     "/generate/stream",
     "/generate/sketch",
 )

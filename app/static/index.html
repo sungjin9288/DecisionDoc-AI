@@ -4138,6 +4138,61 @@
       font-size: .82rem;
       color: var(--muted);
     }
+    .profile-sessions-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .75rem;
+    }
+    .profile-sessions-header .profile-section-title { margin: 0; }
+    .profile-sessions-list {
+      display: grid;
+      gap: .55rem;
+    }
+    .profile-session-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .85rem;
+      padding: .75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+    }
+    .profile-session-copy { min-width: 0; }
+    .profile-session-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .45rem;
+      margin-bottom: .2rem;
+      font-size: .86rem;
+      font-weight: 700;
+      color: var(--text-strong);
+    }
+    .profile-session-current {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(21,128,61,.1);
+      color: #15803d;
+      font-size: .7rem;
+      font-weight: 700;
+    }
+    .profile-session-time {
+      color: var(--muted);
+      font-size: .76rem;
+      line-height: 1.45;
+    }
+    @media (max-width: 560px) {
+      .profile-session-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .profile-session-row button { align-self: flex-end; }
+    }
 
     /* ── Notification bell ──────────────────────────────────────── */
     .notif-bell {
@@ -5036,6 +5091,14 @@
         </div>
         <p class="profile-help-text">비밀번호를 바꾸지 않으려면 이 영역은 비워두세요.</p>
       </div>
+      <section style="padding:1rem; border:1px solid var(--border,#e5e7eb); border-radius:8px; background:rgba(255,255,255,.58); margin-bottom:1rem;" aria-labelledby="profile-sessions-heading">
+        <div class="profile-sessions-header">
+          <h4 id="profile-sessions-heading" class="profile-section-title">로그인 세션</h4>
+          <button id="profile-sessions-refresh" type="button" class="btn-secondary">새로고침</button>
+        </div>
+        <div id="profile-sessions-status" class="profile-status-text" aria-live="polite"></div>
+        <div id="profile-sessions-list" class="profile-sessions-list"></div>
+      </section>
       <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
         <div id="profile-status" class="profile-status-text"></div>
         <div style="display:flex; gap:.5rem;">
@@ -18192,6 +18255,9 @@
   let _authSessionRevision = 0;
   let _authSessionRecoveryPromise = null;
   let _crossTabAuthReloadRequested = false;
+  let _profileSessionRequestVersion = 0;
+  let _profileSessionRevokeInFlight = false;
+  let _profileSessionRevokeVersion = 0;
   const AUTH_SESSION_STORAGE_KEYS = new Set([
     'dd_access_token',
     'dd_refresh_token',
@@ -18562,6 +18628,190 @@
       'var(--muted)';
   }
 
+  function setProfileSessionsStatus(message = '', type = 'muted') {
+    const statusEl = $id('profile-sessions-status');
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.style.color =
+      type === 'error' ? '#dc2626' :
+      type === 'success' ? '#15803d' :
+      'var(--muted)';
+  }
+
+  function profileSessionRequestIsStale(requestVersion, accessToken) {
+    return (
+      _profileSessionRequestVersion !== requestVersion
+      || localStorage.getItem('dd_access_token') !== accessToken
+      || $id('profile-modal')?.style.display !== 'flex'
+    );
+  }
+
+  function resetMyAuthSessionState() {
+    _profileSessionRequestVersion += 1;
+    _profileSessionRevokeVersion += 1;
+    _profileSessionRevokeInFlight = false;
+    $id('profile-sessions-list')?.replaceChildren();
+    setProfileSessionsStatus('');
+  }
+
+  function formatAuthSessionTime(value) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function normalizeMyAuthSessions(payload) {
+    if (!payload || !Array.isArray(payload.sessions)) {
+      throw new Error('로그인 세션 응답 형식이 올바르지 않습니다.');
+    }
+    return payload.sessions.map(session => {
+      if (
+        !session
+        || typeof session.session_id !== 'string'
+        || !/^[0-9a-f]{32}$/.test(session.session_id)
+        || typeof session.created_at !== 'string'
+        || typeof session.expires_at !== 'string'
+        || typeof session.current !== 'boolean'
+      ) {
+        throw new Error('로그인 세션 응답 형식이 올바르지 않습니다.');
+      }
+      return session;
+    });
+  }
+
+  function renderMyAuthSessions(sessions) {
+    const list = $id('profile-sessions-list');
+    if (!list) return;
+    list.replaceChildren();
+    if (!sessions.length) {
+      setProfileSessionsStatus('확인 가능한 활성 로그인 세션이 없습니다.');
+      return;
+    }
+
+    sessions.forEach(session => {
+      const row = document.createElement('div');
+      row.className = 'profile-session-row';
+      const copy = document.createElement('div');
+      copy.className = 'profile-session-copy';
+      const title = document.createElement('div');
+      title.className = 'profile-session-title';
+      title.append(document.createTextNode(session.current ? '이 브라우저' : '다른 로그인'));
+      if (session.current) {
+        const current = document.createElement('span');
+        current.className = 'profile-session-current';
+        current.textContent = '현재 세션';
+        title.append(current);
+      }
+      const time = document.createElement('div');
+      time.className = 'profile-session-time';
+      time.textContent = `시작 ${formatAuthSessionTime(session.created_at)} · 만료 ${formatAuthSessionTime(session.expires_at)}`;
+      copy.append(title, time);
+      row.append(copy);
+
+      if (!session.current) {
+        const revokeButton = document.createElement('button');
+        revokeButton.type = 'button';
+        revokeButton.className = 'btn-secondary';
+        revokeButton.textContent = '종료';
+        revokeButton.setAttribute('aria-label', '다른 로그인 세션 종료');
+        revokeButton.addEventListener('click', () => {
+          void revokeMyAuthSession(session.session_id, revokeButton);
+        });
+        row.append(revokeButton);
+      }
+      list.append(row);
+    });
+    setProfileSessionsStatus(`활성 세션 ${sessions.length}개`);
+  }
+
+  async function loadMyAuthSessions() {
+    const accessToken = localStorage.getItem('dd_access_token');
+    if (!accessToken || !$id('profile-sessions-list')) return;
+    const requestVersion = ++_profileSessionRequestVersion;
+    const refreshButton = $id('profile-sessions-refresh');
+    if (refreshButton) refreshButton.disabled = true;
+    setProfileSessionsStatus('로그인 세션을 확인하는 중입니다...');
+    try {
+      const response = await fetch('/auth/sessions', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        throw new Error(error.message || `HTTP ${response.status}`);
+      }
+      const sessions = normalizeMyAuthSessions(await response.json());
+      if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
+      renderMyAuthSessions(sessions);
+    } catch (error) {
+      if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
+      $id('profile-sessions-list')?.replaceChildren();
+      setProfileSessionsStatus(
+        error.message || '로그인 세션을 확인하지 못했습니다.',
+        'error',
+      );
+    } finally {
+      if (!profileSessionRequestIsStale(requestVersion, accessToken) && refreshButton) {
+        refreshButton.disabled = false;
+      }
+    }
+  }
+
+  async function revokeMyAuthSession(sessionId, button) {
+    if (_profileSessionRevokeInFlight) return;
+    const accessToken = localStorage.getItem('dd_access_token');
+    if (!accessToken) return;
+    const requestVersion = ++_profileSessionRequestVersion;
+    const revokeVersion = ++_profileSessionRevokeVersion;
+    _profileSessionRevokeInFlight = true;
+    const refreshButton = $id('profile-sessions-refresh');
+    if (refreshButton) refreshButton.disabled = true;
+    $id('profile-sessions-list')?.querySelectorAll('button').forEach(control => {
+      control.disabled = true;
+    });
+    if (button) button.textContent = '종료 중...';
+    setProfileSessionsStatus('선택한 로그인 세션을 종료하는 중입니다...');
+    try {
+      const response = await fetch('/auth/sessions/revoke', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ session_id: sessionId }),
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        throw new Error(error.message || `HTTP ${response.status}`);
+      }
+      if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
+      showNotification('선택한 로그인 세션을 종료했습니다.', 'success');
+      await loadMyAuthSessions();
+    } catch (error) {
+      if (profileSessionRequestIsStale(requestVersion, accessToken)) return;
+      setProfileSessionsStatus(
+        error.message || '로그인 세션을 종료하지 못했습니다.',
+        'error',
+      );
+      $id('profile-sessions-list')?.querySelectorAll('button').forEach(control => {
+        control.disabled = false;
+      });
+      if (button) button.textContent = '종료';
+      if (refreshButton) refreshButton.disabled = false;
+    } finally {
+      if (_profileSessionRevokeVersion === revokeVersion) {
+        _profileSessionRevokeInFlight = false;
+      }
+    }
+  }
+
   function populateMyProfileModal() {
     if (!_currentUser) return;
     $id('profile-username') && ($id('profile-username').textContent = _currentUser.username || '-');
@@ -18583,9 +18833,11 @@
     populateMyProfileModal();
     const modal = $id('profile-modal');
     if (modal) modal.style.display = 'flex';
+    await loadMyAuthSessions();
   }
 
   function closeMyProfileModal() {
+    resetMyAuthSessionState();
     const modal = $id('profile-modal');
     if (modal) modal.style.display = 'none';
     setProfileStatus('');
@@ -18664,6 +18916,7 @@
         renderUserInfo();
       }
       populateMyProfileModal();
+      if (wantsPasswordChange) await loadMyAuthSessions();
       setProfileStatus('내 정보가 저장되었습니다.', 'success');
       showNotification('내 정보가 저장되었습니다.', 'success');
       if (!wantsPasswordChange) {
@@ -18686,6 +18939,9 @@
     btn.addEventListener('click', closeMyProfileModal);
   });
   $id('profile-form')?.addEventListener('submit', saveMyProfile);
+  $id('profile-sessions-refresh')?.addEventListener('click', () => {
+    void loadMyAuthSessions();
+  });
 
   function renderUserInfo() {
     if (!_currentUser) return;
