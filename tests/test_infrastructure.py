@@ -1311,13 +1311,25 @@ def test_index_html_profile_modal_uses_event_listeners_not_inline_handlers():
 def test_auth_session_label_contract_docs_match_the_v2_runtime():
     root = Path(__file__).resolve().parents[1]
     architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    product_direction = (root / "docs" / "product_direction.md").read_text(
+        encoding="utf-8"
+    )
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
     test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
     evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
     implementation_plan = (
         root / "docs" / "specs" / "hermes_decisiondoc_agent" / "IMPLEMENTATION_PLAN.md"
     ).read_text(encoding="utf-8")
 
-    for document in (architecture, test_plan, implementation_plan):
+    for document in (
+        architecture,
+        product_direction,
+        security_policy,
+        test_plan,
+        implementation_plan,
+    ):
         assert "auth-session.v2" in document
         assert "label" in document
         assert "Unicode" in document
