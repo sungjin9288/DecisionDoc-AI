@@ -206,6 +206,8 @@ Acceptance:
   DocumentOps evidence, while an explicitly rejected refresh credential still ends the invalid session
 - concurrent 401 callers join one browser refresh; generic mutating requests require an explicit retry after refresh,
   and a late refresh response cannot replace a newer login session
+- same-origin auth storage changes invalidate an older in-flight refresh even when another tab reuses the same
+  refresh-token bytes, while unrelated storage keys do not change auth revision
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

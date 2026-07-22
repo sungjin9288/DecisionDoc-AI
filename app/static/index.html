@@ -18191,6 +18191,19 @@
   let _currentUser = null;
   let _authSessionRevision = 0;
   let _authSessionRecoveryPromise = null;
+  const AUTH_SESSION_STORAGE_KEYS = new Set([
+    'dd_access_token',
+    'dd_refresh_token',
+    'dd_tenant_id',
+  ]);
+
+  function handleCrossTabAuthStorageChange(event) {
+    if (event.storageArea !== localStorage) return;
+    if (event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)) return;
+    _authSessionRevision += 1;
+  }
+
+  window.addEventListener('storage', handleCrossTabAuthStorageChange);
 
   function setAppShellAuthenticated(authenticated) {
     document.body.classList.toggle('auth-pending', !authenticated);

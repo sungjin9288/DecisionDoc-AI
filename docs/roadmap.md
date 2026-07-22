@@ -66,6 +66,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 - 2026-07-22 H99 완료: auth caller가 tenant storage 실패를 무시해 refresh를 성공으로 보고하고 새 access token과 current user만 부분 적용하던 간극을 닫았다. Login·register·refresh·LDAP login을 하나의 browser session commit helper로 모으고 claims 검증, token write, signed tenant write 순서를 고정했다. 실패 시 이전 access/refresh token과 tenant를 복원하며 current user, review draft, pending recovery promise와 marker를 보존한다. Failure-first Chromium 재현 뒤 focused Chromium `2 passed, 61 deselected`, auth/tenant/SSO/infrastructure `380 passed, 1 warning`, 관련 Chromium `9 passed, 54 deselected`, 전체 main-flow Chromium `62 passed, 1 skipped`를 no-cost로 확인했다. 외부 identity provider, provider API와 runtime은 호출하지 않았다.
 - 2026-07-22 H100 완료: H99 refresh가 tenant storage 실패를 정확히 반환해도 상위 401 recovery가 boolean false를 invalid session으로 해석해 token, current user, review draft와 pending recovery evidence를 모두 지우던 간극을 닫았다. Refresh 결과를 `refreshed`, `invalid_session`, `unavailable`, `storage_failed`로 구분하고 성공만 원 요청을 한 번 재시도하며 refresh credential의 400/401/403만 destructive cleanup으로 연결했다. Storage failure는 `AUTH_SESSION_STORAGE_FAILED`, endpoint·response 장애는 `AUTH_REFRESH_UNAVAILABLE`로 보고하면서 이전 session과 작업을 보존한다. Failure-first 포함 focused auth recovery `4 passed, 1 warning`, auth/tenant/SSO/infrastructure `380 passed, 1 warning`, 전체 main-flow Chromium `64 passed, 1 skipped`를 no-cost로 확인했다. 외부 identity provider, provider API와 runtime은 호출하지 않았다.
 - 2026-07-22 H101 완료: 여러 caller가 같은 만료 session에서 동시에 401을 받으면 refresh 요청을 중복 실행하고, 일반 API 오류 parser는 refresh 가능성을 확인하지 않은 채 session evidence를 즉시 지우며, refresh 중 새 login이 확정되어도 늦은 응답이 새 credential을 덮어쓸 수 있던 간극을 닫았다. Tab 내 refresh를 하나의 promise로 합치고, session revision 또는 refresh token snapshot이 바뀐 응답은 `superseded`로 폐기한다. Generic request는 refresh 성공 뒤 `AUTH_REFRESHED_RETRY_REQUIRED`를 반환해 mutating request를 자동 replay하지 않는다. Failure-first 포함 focused H99-H101 Chromium `6 passed, 62 deselected`, auth/tenant/SSO/infrastructure `380 passed, 1 warning`, 전체 main-flow Chromium `67 passed, 1 skipped`를 no-cost로 확인했다. 외부 identity provider, provider API와 runtime은 호출하지 않았다.
+- 2026-07-22 H102 완료: H101 session revision이 tab-local이라 같은 origin의 다른 tab이 동일 refresh token으로 새 session을 commit해도 진행 중인 이전 refresh 응답이 이를 덮어쓸 수 있던 간극을 닫았다. Browser `storage` event에서 access token, refresh token, tenant ID와 `localStorage.clear()`만 monotonic revision에 반영하고 unrelated storage key는 무시한다. 실제 두-page Chromium failure-first에서 stale overwrite를 재현한 뒤 늦은 응답이 `superseded`로 폐기되고 replacement token이 보존되는지 확인했다. 이 guard는 in-flight refresh 무효화 범위이며 browser storage를 authorization authority로 승격하거나 cross-device session coordination을 제공하지 않는다.
 - 미검증/외부 의존: Gemini/Claude 및 성공 fallback proof(M1), G2B 실데이터 end-to-end(M2), 배포 접근성 및 post-deploy smoke(M6)
 - 미구현 또는 증거 없음: 실제 사용자 성과 수치, 포트폴리오용 데모 영상, 현재 운영 URL 접근 검증 자료, 사용자 피드백 기반 개선 사례
 
@@ -73,7 +74,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 ```bash
 pytest tests/ -m "not live" -q
-# 2026-07-22 H101 실측: 4276 passed, 2 skipped, 4 deselected, 1 warning
+# 2026-07-22 H102 실측: 4277 passed, 2 skipped, 4 deselected, 1 warning
 
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json

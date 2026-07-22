@@ -53,7 +53,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 보고서 검토 이력 무결성 | 기획안·장표·댓글·승인 단계·시각자료 이력을 tenant에 결속하고, 손상·중복 identity는 원본을 덮어쓰지 않은 채 fail closed 처리 |
 | 협업 상태 무결성 | 메시지·알림을 tenant별 local/S3 state에 결속하고 손상 문서·중복 identity를 fail closed 처리. 객체별 conditional create/CAS와 bounded private receipt로 worker 간 게시·수정·읽음·전송 상태 유실을 방지 |
 | 재현 가능한 제출형 export | 같은 runtime과 입력에서 DOCX·PDF·PPTX·XLSX·HWPX 반복 생성 bytes와 SHA-256을 안정적으로 유지 |
-| Browser auth·tenant 전환 일관성 | Login·register·refresh·LDAP session은 access/refresh token과 signed tenant를 하나의 browser commit으로 저장한다. Tenant 저장이 실패하면 이전 token과 tenant를 복원하고 current user와 미저장 DocumentOps evidence를 바꾸지 않는다. 동시에 발생한 401은 한 refresh에 합류하고, generic mutating request는 refresh 뒤에도 자동 replay하지 않는다. 늦게 도착한 이전 refresh 응답은 새 session을 덮어쓰지 않으며, credential이 거절된 경우에만 session evidence를 정리한다. Selector 전환도 tenant 저장 성공 뒤에만 current context를 바꾼다 |
+| Browser auth·tenant 전환 일관성 | Login·register·refresh·LDAP session은 access/refresh token과 signed tenant를 하나의 browser commit으로 저장한다. Tenant 저장이 실패하면 이전 token과 tenant를 복원하고 current user와 미저장 DocumentOps evidence를 바꾸지 않는다. 동시에 발생한 401은 한 refresh에 합류하고, generic mutating request는 refresh 뒤에도 자동 replay하지 않는다. 현재 tab 또는 같은 origin의 다른 tab에서 auth session이 바뀌면 진행 중인 이전 refresh 응답을 폐기하며, credential이 거절된 경우에만 session evidence를 정리한다. Selector 전환도 tenant 저장 성공 뒤에만 current context를 바꾼다 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Freeze·dry-run approval·execution request·audit export는 optional `operation_id`와 private payload hash를 metadata CAS에 결속해 동일 payload replay를 원래 verified artifact로 수렴시키고 다른 payload 재사용을 `409`로 차단한다. Trajectory capture를 선택한 Agent run도 provider 호출 전에 private shared-backend claim을 선점해 exact replay는 저장된 결과를 반환하고, 실행 중·불확실한 이전 시도는 자동 재호출하지 않는다. Browser는 각 write에 UUID를 보내고 pending 동안 initiating control을 single-flight로 잠근다. Captured run의 응답을 잃으면 operation/schema/state가 결속된 redacted status만 `no-store`로 읽고, terminal success가 확인된 경우에만 같은 operation ID와 payload를 replay한다. Mismatched·unavailable·running 상태는 payload를 page memory에 보존해 Agent 버튼과 상태 재확인 버튼이 새 실행 대신 같은 operation을 다시 확인하며, 두 control은 recovery promise 하나를 공유한다. Captured POST 직전에는 payload를 제외한 schema·tenant·operation ID marker만 tenant-scoped same-origin browser storage에 기록한다. Shared storage가 가능하면 tenant-scoped Web Lock 안에서 marker claim을 직렬화해 동시 tab 중 하나만 POST를 시작하고, 나머지 tab과 tab-close 뒤 다시 연 화면은 같은 status만 확인한다. 서로 다른 tenant marker는 같은 origin에서도 독립적으로 유지하며 tenant 전환은 이전 tenant marker만 정리한다. Shared storage가 막히면 기존 tab-scoped fallback을 유지한다. Operator가 backend 실행은 취소되지 않는다는 경고를 확인해 상태 추적을 명시적으로 종료해야 새 operation을 시작할 수 있다. |
 
 ---
@@ -269,10 +269,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,518개**, **256개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,519개**, **256개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3518
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3519
 python3 scripts/count_readme_metrics.py --field test_files      # → 256
 ```
 
@@ -302,7 +302,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,276 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H101 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,277 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-22 H102 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -376,4 +376,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 269 · 테스트 3,518 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 269 · 테스트 3,519 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

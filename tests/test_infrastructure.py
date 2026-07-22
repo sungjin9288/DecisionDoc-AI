@@ -1132,7 +1132,13 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert "let _authSessionRecoveryPromise = null;" in content
     assert "let _authSessionRevision = 0;" in content
     assert "_authSessionRevision !== sessionRevision" in content
-    assert content.count("_authSessionRevision += 1;") == 3
+    assert content.count("_authSessionRevision += 1;") == 4
+    assert "const AUTH_SESSION_STORAGE_KEYS = new Set([" in content
+    assert "'dd_access_token',\n    'dd_refresh_token',\n    'dd_tenant_id'," in content
+    assert "function handleCrossTabAuthStorageChange(event)" in content
+    assert "event.storageArea !== localStorage" in content
+    assert "event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)" in content
+    assert "window.addEventListener('storage', handleCrossTabAuthStorageChange);" in content
     assert "localStorage.removeItem('dd_access_token')" in content
     assert "localStorage.removeItem('dd_refresh_token')" in content
     assert "res.status === 401" in retry_fetch_fn.group("body")

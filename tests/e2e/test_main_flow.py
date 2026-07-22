@@ -1129,6 +1129,124 @@ def test_late_auth_refresh_response_does_not_overwrite_new_session(page):
     }
 
 
+def test_cross_tab_session_change_supersedes_late_auth_refresh(page):
+    context = page.context
+    second_page = context.new_page()
+    second_page.goto(page.url.split("?", 1)[0])
+    second_page.wait_for_selector("body.auth-ready", timeout=10000)
+
+    setup = page.evaluate(
+        """() => {
+          const tenantId = _currentTenantId;
+          const encodeToken = subject => {
+            const claims = btoa(JSON.stringify({ sub: subject, tenant_id: tenantId }));
+            return `e30.${claims}.signature`;
+          };
+          const originalAccessToken = encodeToken('cross-tab-original-user');
+          const originalClaims = persistAuthSession(originalAccessToken, {
+            refreshToken: 'cross-tab-shared-refresh-token',
+          });
+          _currentUser = originalClaims;
+
+          const nativeFetch = window.fetch;
+          window.__crossTabNativeFetch = nativeFetch;
+          window.__crossTabRefreshRequests = 0;
+          window.__crossTabStorageEvents = [];
+          window.addEventListener('storage', event => {
+            window.__crossTabStorageEvents.push(event.key);
+          });
+          window.__crossTabRefreshResponse = new Promise(resolve => {
+            window.__releaseCrossTabRefresh = resolve;
+          });
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              window.__crossTabRefreshRequests += 1;
+              return await window.__crossTabRefreshResponse;
+            }
+            return nativeFetch(input);
+          };
+          window.__crossTabRecovery = recoverAuthSessionOnce();
+          return {
+            tenantId,
+            revision: _authSessionRevision,
+          };
+        }"""
+    )
+    page.wait_for_function("() => window.__crossTabRefreshRequests === 1")
+
+    second_page.evaluate("() => localStorage.setItem('dd_ops_key', 'unrelated-cross-tab-value')")
+    page.wait_for_function("() => window.__crossTabStorageEvents.includes('dd_ops_key')")
+    assert page.evaluate("() => _authSessionRevision") == setup["revision"]
+    second_page.evaluate("() => localStorage.removeItem('dd_ops_key')")
+
+    replacement = second_page.evaluate(
+        """({ tenantId }) => {
+          const claims = btoa(JSON.stringify({
+            sub: 'cross-tab-replacement-user',
+            tenant_id: tenantId,
+          }));
+          const accessToken = `e30.${claims}.signature`;
+          const committedClaims = persistAuthSession(accessToken, {
+            refreshToken: 'cross-tab-shared-refresh-token',
+          });
+          _currentUser = committedClaims;
+          return { accessToken, committed: Boolean(committedClaims) };
+        }""",
+        {"tenantId": setup["tenantId"]},
+    )
+    assert replacement["committed"] is True
+    page.wait_for_function("() => window.__crossTabStorageEvents.includes('dd_access_token')")
+    assert page.evaluate("() => localStorage.getItem('dd_access_token')") == replacement["accessToken"]
+
+    result = page.evaluate(
+        """async ({ staleAccessToken, replacementAccessToken, previousRevision }) => {
+          window.__releaseCrossTabRefresh({
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: staleAccessToken }),
+          });
+          const refreshResult = await window.__crossTabRecovery;
+          const observed = {
+            refreshResult,
+            revisionAdvanced: _authSessionRevision > previousRevision,
+            replacementAccessTokenPreserved:
+              localStorage.getItem('dd_access_token') === replacementAccessToken,
+            currentUser: _currentUser?.sub || null,
+            recoveryCleared: _authSessionRecoveryPromise === null,
+          };
+
+          window.fetch = window.__crossTabNativeFetch;
+          _currentUser = null;
+          localStorage.removeItem('dd_access_token');
+          localStorage.removeItem('dd_refresh_token');
+          return observed;
+        }""",
+        {
+            "staleAccessToken": page.evaluate(
+                """({ tenantId }) => {
+                  const claims = btoa(JSON.stringify({
+                    sub: 'cross-tab-stale-refresh-user',
+                    tenant_id: tenantId,
+                  }));
+                  return `e30.${claims}.signature`;
+                }""",
+                {"tenantId": setup["tenantId"]},
+            ),
+            "replacementAccessToken": replacement["accessToken"],
+            "previousRevision": setup["revision"],
+        },
+    )
+    second_page.close()
+
+    assert result == {
+        "refreshResult": "superseded",
+        "revisionAdvanced": True,
+        "replacementAccessTokenPreserved": True,
+        "currentUser": "cross-tab-original-user",
+        "recoveryCleared": True,
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()
