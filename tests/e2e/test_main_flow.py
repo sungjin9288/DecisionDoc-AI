@@ -544,6 +544,112 @@ def test_tenant_context_storage_failure_preserves_current_evidence(page):
     }
 
 
+def test_auth_refresh_tenant_commit_failure_restores_previous_session(page):
+    operation_id = "agent-run:22222222-3333-4444-8555-666666666666"
+
+    result = page.evaluate(
+        """async ({ operationId }) => {
+          const previousTenantId = _currentTenantId;
+          const nextTenantId = 'tenant-refresh-write-failure';
+          const previousAccessToken = 'previous-access-token';
+          const previousRefreshToken = 'previous-refresh-token';
+          const previousUser = { sub: 'previous-user', tenant_id: previousTenantId };
+          const storagePrototype = Object.getPrototypeOf(localStorage);
+          const originalSetItem = storagePrototype.setItem;
+          const originalFetch = window.fetch;
+          originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+          originalSetItem.call(localStorage, 'dd_access_token', previousAccessToken);
+          originalSetItem.call(localStorage, 'dd_refresh_token', previousRefreshToken);
+
+          const pendingRecovery = {
+            tenantId: previousTenantId,
+            operationId,
+            payload: { title: 'refresh 실패 뒤에도 보존할 요청' },
+          };
+          const recoveryPromise = Promise.resolve(null);
+          _currentUser = previousUser;
+          _documentOpsReviewDrafts.clear();
+          _documentOpsReviewDrafts.set('refresh-storage-failure-draft', {
+            notes: 'refresh 실패 뒤에도 보존할 검토 메모',
+            scoreText: '0.9',
+          });
+          rememberDocumentOpsPendingRunMarker(previousTenantId, operationId);
+          _documentOpsPendingRunRecovery = pendingRecovery;
+          _documentOpsRunRecoveryPromise = recoveryPromise;
+
+          const encodedClaims = btoa(JSON.stringify({
+            sub: 'next-user',
+            tenant_id: nextTenantId,
+          }));
+          const nextAccessToken = `e30.${encodedClaims}.signature`;
+          storagePrototype.setItem = function(key, value) {
+            if (this === localStorage && key === 'dd_tenant_id') {
+              throw new Error('tenant storage unavailable');
+            }
+            return originalSetItem.call(this, key, value);
+          };
+          window.fetch = async input => {
+            if (String(input) === '/auth/refresh') {
+              return {
+                ok: true,
+                json: async () => ({ access_token: nextAccessToken }),
+              };
+            }
+            return originalFetch(input);
+          };
+
+          try {
+            const refreshResult = await refreshAccessToken();
+            return {
+              previousTenantId,
+              refreshResult,
+              currentTenantId: _currentTenantId,
+              storedTenantId: localStorage.getItem('dd_tenant_id'),
+              storedAccessToken: localStorage.getItem('dd_access_token'),
+              storedRefreshToken: localStorage.getItem('dd_refresh_token'),
+              previousUserPreserved: _currentUser === previousUser,
+              draftPreserved: _documentOpsReviewDrafts.has('refresh-storage-failure-draft'),
+              markerPreserved: readDocumentOpsPendingRunMarker(previousTenantId),
+              pendingRecoveryPreserved: _documentOpsPendingRunRecovery === pendingRecovery,
+              recoveryPromisePreserved: _documentOpsRunRecoveryPromise === recoveryPromise,
+            };
+          } finally {
+            storagePrototype.setItem = originalSetItem;
+            window.fetch = originalFetch;
+            _documentOpsReviewDrafts.clear();
+            clearDocumentOpsPendingRunMarker('', previousTenantId);
+            _documentOpsPendingRunRecovery = null;
+            _documentOpsRunRecoveryPromise = null;
+            _currentUser = null;
+            _currentTenantId = previousTenantId;
+            originalSetItem.call(localStorage, 'dd_tenant_id', previousTenantId);
+            localStorage.removeItem('dd_access_token');
+            localStorage.removeItem('dd_refresh_token');
+          }
+        }""",
+        {"operationId": operation_id},
+    )
+
+    previous_tenant_id = result["previousTenantId"]
+    assert result == {
+        "previousTenantId": previous_tenant_id,
+        "refreshResult": False,
+        "currentTenantId": previous_tenant_id,
+        "storedTenantId": previous_tenant_id,
+        "storedAccessToken": "previous-access-token",
+        "storedRefreshToken": "previous-refresh-token",
+        "previousUserPreserved": True,
+        "draftPreserved": True,
+        "markerPreserved": {
+            "schema_version": "document_ops_agent_pending_run_marker_v1",
+            "tenant_id": previous_tenant_id,
+            "operation_id": operation_id,
+        },
+        "pendingRecoveryPreserved": True,
+        "recoveryPromisePreserved": True,
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()

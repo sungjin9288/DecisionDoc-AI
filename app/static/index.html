@@ -13422,16 +13422,73 @@
     };
   }
 
-  function syncTenantContextFromAccessToken(accessToken) {
+  function readAccessTokenClaims(accessToken) {
     try {
       const claims = JSON.parse(atob(String(accessToken || '').split('.')[1]));
-      const tenantId = String(claims.tenant_id || '').trim();
-      if (!tenantId) return false;
+      return String(claims.tenant_id || '').trim() ? claims : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function storeTenantContext(tenantId) {
+    try {
       localStorage.setItem('dd_tenant_id', tenantId);
       _currentTenantId = tenantId;
       return true;
     } catch {
       return false;
+    }
+  }
+
+  function syncTenantContextFromAccessToken(accessToken) {
+    const claims = readAccessTokenClaims(accessToken);
+    return claims ? storeTenantContext(String(claims.tenant_id).trim()) : false;
+  }
+
+  function restoreLocalStorageValue(key, value) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch (_) {
+      // Restoration is best-effort when browser storage itself is unavailable.
+    }
+  }
+
+  function persistAuthSession(
+    accessToken,
+    { refreshToken = '', replaceRefreshToken = true } = {},
+  ) {
+    const claims = readAccessTokenClaims(accessToken);
+    if (!claims) return null;
+
+    const previousTenantId = _currentTenantId;
+    let previousAccessToken;
+    let previousRefreshToken;
+    let previousStoredTenantId;
+    let snapshotComplete = false;
+    try {
+      previousAccessToken = localStorage.getItem('dd_access_token');
+      previousRefreshToken = localStorage.getItem('dd_refresh_token');
+      previousStoredTenantId = localStorage.getItem('dd_tenant_id');
+      snapshotComplete = true;
+      localStorage.setItem('dd_access_token', accessToken);
+      if (replaceRefreshToken) {
+        if (refreshToken) localStorage.setItem('dd_refresh_token', refreshToken);
+        else localStorage.removeItem('dd_refresh_token');
+      }
+      if (!storeTenantContext(String(claims.tenant_id).trim())) {
+        throw new Error('tenant context storage failed');
+      }
+      return claims;
+    } catch (_) {
+      if (snapshotComplete) {
+        restoreLocalStorageValue('dd_access_token', previousAccessToken);
+        restoreLocalStorageValue('dd_refresh_token', previousRefreshToken);
+        restoreLocalStorageValue('dd_tenant_id', previousStoredTenantId);
+      }
+      _currentTenantId = previousTenantId;
+      return null;
     }
   }
 
@@ -18101,7 +18158,12 @@
         return;
       }
       _currentUser = payload;
-      syncTenantContextFromAccessToken(token);
+      if (!syncTenantContextFromAccessToken(token)) {
+        _currentUser = null;
+        showLoginScreen();
+        setStatus('⚠️ 브라우저에 인증 테넌트 상태를 저장하지 못했습니다.', 'error');
+        return;
+      }
       initApp();
     } catch(e) { showLoginScreen(); }
   }
@@ -18203,11 +18265,9 @@
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || err.error || '생성 실패'); }
       const data = await res.json();
-      localStorage.setItem('dd_access_token', data.access_token);
-      if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
-      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
-      _currentUser = payload;
-      syncTenantContextFromAccessToken(data.access_token);
+      const claims = persistAuthSession(data.access_token, { refreshToken: data.refresh_token });
+      if (!claims) throw new Error('브라우저에 인증 상태를 저장하지 못했습니다.');
+      _currentUser = claims;
       document.getElementById('login-screen')?.remove();
       await initApp();
       showNotification('관리자 계정이 생성되었습니다!', 'success');
@@ -18229,13 +18289,12 @@
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || err.error || '로그인 실패'); }
       const data = await res.json();
-      localStorage.setItem('dd_access_token', data.access_token);
-      if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
+      const claims = persistAuthSession(data.access_token, { refreshToken: data.refresh_token });
+      if (!claims) throw new Error('브라우저에 인증 상태를 저장하지 못했습니다.');
       _currentUser = {
         ...data.user,
         sub: data.user.user_id,
       };
-      syncTenantContextFromAccessToken(data.access_token);
       document.getElementById('login-screen')?.remove();
       await initApp();
       showNotification(`${data.user.display_name}님, 환영합니다!`, 'success');
@@ -18256,9 +18315,9 @@
       });
       if (!res.ok) return false;
       const data = await res.json();
-      localStorage.setItem('dd_access_token', data.access_token);
-      _currentUser = JSON.parse(atob(data.access_token.split('.')[1]));
-      syncTenantContextFromAccessToken(data.access_token);
+      const claims = persistAuthSession(data.access_token, { replaceRefreshToken: false });
+      if (!claims) return false;
+      _currentUser = claims;
       return true;
     } catch(e) { return false; }
   }
@@ -30237,10 +30296,9 @@ async function submitLDAPLogin() {
     if (res.ok) {
       const data = await res.json();
       if (data.access_token) {
-        localStorage.setItem('dd_access_token', data.access_token);
-        if (data.refresh_token) localStorage.setItem('dd_refresh_token', data.refresh_token);
-        _currentUser = JSON.parse(atob(data.access_token.split('.')[1]));
-        syncTenantContextFromAccessToken(data.access_token);
+        const claims = persistAuthSession(data.access_token, { refreshToken: data.refresh_token });
+        if (!claims) throw new Error('브라우저에 인증 상태를 저장하지 못했습니다.');
+        _currentUser = claims;
         document.getElementById('login-screen')?.remove();
         await initApp();
       }

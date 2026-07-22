@@ -170,6 +170,8 @@ Work:
   clear only the previous context on an authorized switch and keep owner-only base-key compatibility
 - persist the next browser tenant before changing in-memory context or clearing previous-context evidence;
   preserve the current tenant, draft, recovery promise, and marker when that storage write fails
+- commit login, registration, refresh, and LDAP browser sessions through one helper after token-claim validation;
+  restore the previous access/refresh credentials and tenant when any browser write fails
 - where supported, serialize marker inspection and claim with a tenant-scoped Web Lock so simultaneous tabs
   converge on one POST; use tab storage only when shared storage is unavailable
 - after reload, from another tab, or after the owner tab closes, inspect only the strict current-tenant status,
@@ -196,6 +198,8 @@ Acceptance:
   completing a write, logout, or session invalidation removes the draft, and another auth context cannot read it
 - stale local tenant state is replaced by the authenticated token tenant before tenant-scoped requests,
   while denied selector changes leave both the active context and persisted selector value unchanged
+- a failed auth-session tenant commit keeps the prior credentials, current user, draft, recovery promise,
+  and marker instead of exposing a partially refreshed identity
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain
   prior attempt requires explicit evidence review and a new operation identity

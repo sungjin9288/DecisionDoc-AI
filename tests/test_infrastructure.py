@@ -490,6 +490,7 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
         "function getTenantHeaders(tenantId = _currentTenantId)",
         "function getAuthHeaders(tenantId = _currentTenantId)",
         "function syncTenantContextFromAccessToken(accessToken)",
+        "function persistAuthSession(",
         "localStorage.setItem('dd_tenant_id', tenantId);",
         "async function changeTenantContext(nextTenantId, selector)",
         "fetch('/bundles', { headers: getAuthHeaders(tenantId) })",
@@ -500,7 +501,10 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
     ):
         assert marker in content
 
-    assert content.count("syncTenantContextFromAccessToken(") == 6
+    assert content.count("syncTenantContextFromAccessToken(") == 2
+    assert content.count("persistAuthSession(") == 5
+    assert content.count("localStorage.setItem('dd_access_token',") == 1
+    assert content.count("localStorage.setItem('dd_refresh_token',") == 1
     assert content.count("_documentOpsReviewDrafts.clear();") == 3
     assert "clearDocumentOpsPendingRunMarker('', previousTenantId);" in change_block
     assert "브라우저에 테넌트 전환 상태를 저장하지 못했습니다." in change_block
@@ -508,12 +512,33 @@ def test_index_html_tenant_context_follows_auth_and_rolls_back_denied_switches()
         "_documentOpsReviewDrafts.clear();"
     )
 
-    sync_start = content.index("function syncTenantContextFromAccessToken(accessToken)")
-    sync_end = content.index("function getOpsKeyValue()", sync_start)
-    sync_block = content[sync_start:sync_end]
-    assert sync_block.index("localStorage.setItem('dd_tenant_id', tenantId);") < sync_block.index(
+    store_start = content.index("function storeTenantContext(tenantId)")
+    store_end = content.index("function syncTenantContextFromAccessToken(accessToken)", store_start)
+    store_block = content[store_start:store_end]
+    assert store_block.index("localStorage.setItem('dd_tenant_id', tenantId);") < store_block.index(
         "_currentTenantId = tenantId;"
     )
+
+    persist_start = content.index("function persistAuthSession(")
+    persist_end = content.index("function getOpsKeyValue()", persist_start)
+    persist_block = content[persist_start:persist_end]
+    for marker in (
+        "replaceRefreshToken = true",
+        "let snapshotComplete = false;",
+        "snapshotComplete = true;",
+        "localStorage.setItem('dd_access_token', accessToken);",
+        "if (!storeTenantContext(String(claims.tenant_id).trim()))",
+        "restoreLocalStorageValue('dd_access_token', previousAccessToken);",
+        "restoreLocalStorageValue('dd_refresh_token', previousRefreshToken);",
+        "restoreLocalStorageValue('dd_tenant_id', previousStoredTenantId);",
+        "_currentTenantId = previousTenantId;",
+    ):
+        assert marker in persist_block
+    assert "if (snapshotComplete) {" in persist_block
+    assert persist_block.index("localStorage.setItem('dd_access_token', accessToken);") < persist_block.index(
+        "if (!storeTenantContext(String(claims.tenant_id).trim()))"
+    )
+    assert "persistAuthSession(data.access_token, { replaceRefreshToken: false })" in content
 
 
 def test_index_html_document_ops_supports_develop_quality_improvement_mode():
@@ -2210,8 +2235,9 @@ def test_index_html_sso_billing_dynamic_action_wiring_exists():
     ldap_start = content.index("async function submitLDAPLogin()")
     ldap_end = content.index("// ── SSO Config", ldap_start)
     ldap_block = content[ldap_start:ldap_end]
-    assert "_currentUser = JSON.parse(atob(data.access_token.split('.')[1]));" in ldap_block
-    assert "syncTenantContextFromAccessToken(data.access_token);" in ldap_block
+    assert "const claims = persistAuthSession(data.access_token, { refreshToken: data.refresh_token });" in ldap_block
+    assert "if (!claims) throw new Error('브라우저에 인증 상태를 저장하지 못했습니다.');" in ldap_block
+    assert "_currentUser = claims;" in ldap_block
     assert "await initApp();" in ldap_block
     assert "function wireSSOFormActions(container) {" in content
     assert "'test-ldap': testLDAPConnection" in content
