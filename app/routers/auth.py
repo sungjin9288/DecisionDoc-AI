@@ -12,7 +12,10 @@ from fastapi.responses import Response
 
 from app.ai_profiles.catalog import list_ai_profiles
 from app.dependencies import get_tenant_id
-from app.services.auth_service import get_request_user_store
+from app.services.auth_service import (
+    get_request_auth_session_store,
+    get_request_user_store,
+)
 from app.schemas import (
     ChangePasswordRequest,
     CreateUserRequest,
@@ -26,6 +29,27 @@ from app.schemas import (
 logger = logging.getLogger("decisiondoc.generate")
 
 router = APIRouter(tags=["auth"])
+
+
+def _issue_request_token_pair(request: Request, user) -> dict[str, str]:
+    from app.services.auth_service import issue_auth_token_pair
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    try:
+        return issue_auth_token_pair(
+            user,
+            data_dir=getattr(request.app.state, "data_dir", None),
+            backend=getattr(request.app.state, "state_backend", None),
+        )
+    except AuthSessionStoreError as exc:
+        logger.error(
+            "[Auth] Session issuance failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="인증 세션을 일시적으로 생성할 수 없습니다.",
+        ) from exc
 
 
 def _serialize_user_for_client(user) -> dict:
@@ -56,8 +80,6 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
         UserStoreAlreadyInitialized,
         UserStoreError,
     )
-    from app.services.auth_service import create_access_token, create_refresh_token
-
     tenant_id = get_tenant_id(request)
     user_store = get_request_user_store(request, tenant_id)
     try:
@@ -74,19 +96,9 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     user_store.update_last_login(user.user_id)
+    tokens = _issue_request_token_pair(request, user)
     return {
-        "access_token": create_access_token(
-            user.user_id,
-            tenant_id,
-            user.role.value,
-            user.username,
-            credential_version=user.credential_version,
-        ),
-        "refresh_token": create_refresh_token(
-            user.user_id,
-            tenant_id,
-            credential_version=user.credential_version,
-        ),
+        **tokens,
         "message": "관리자 계정이 생성되었습니다.",
     }
 
@@ -94,8 +106,6 @@ async def register_first_admin(request: Request, body: CreateUserRequest):
 @router.post("/auth/login")
 async def login(request: Request, body: LoginRequest):
     """Authenticate and return access + refresh tokens."""
-    from app.services.auth_service import create_access_token, create_refresh_token
-
     tenant_id = get_tenant_id(request)
     user_store = get_request_user_store(request, tenant_id)
     user = user_store.get_by_username(body.username)
@@ -104,19 +114,9 @@ async def login(request: Request, body: LoginRequest):
     if not user_store.verify_password(user.user_id, body.password):
         raise HTTPException(401, "아이디 또는 비밀번호가 올바르지 않습니다.")
     user_store.update_last_login(user.user_id)
+    tokens = _issue_request_token_pair(request, user)
     return {
-        "access_token": create_access_token(
-            user.user_id,
-            tenant_id,
-            user.role.value,
-            user.username,
-            credential_version=user.credential_version,
-        ),
-        "refresh_token": create_refresh_token(
-            user.user_id,
-            tenant_id,
-            credential_version=user.credential_version,
-        ),
+        **tokens,
         "user": _serialize_user_for_client(user),
     }
 
@@ -126,16 +126,34 @@ async def refresh_token(request: Request, body: RefreshRequest):
     """Exchange a refresh token for a new access token."""
     from app.services.auth_service import (
         create_access_token,
-        credentials_are_current,
+        resolve_persisted_user,
         verify_token,
     )
+    from app.storage.auth_session_store import AuthSessionStoreError
 
     payload = verify_token(body.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(401, "유효하지 않은 리프레시 토큰입니다.")
-    user_store = get_request_user_store(request, payload["tenant_id"])
-    user = user_store.get_by_id(payload["sub"])
-    if not user or not user.is_active or not credentials_are_current(payload, user):
+    try:
+        current_user, _ = resolve_persisted_user(
+            payload,
+            data_dir=getattr(request.app.state, "data_dir", None),
+            backend=getattr(request.app.state, "state_backend", None),
+        )
+    except AuthSessionStoreError as exc:
+        logger.error(
+            "[Auth] Session refresh authority read failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="인증 서비스를 일시적으로 사용할 수 없습니다.",
+        ) from exc
+    if not current_user:
+        raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    user_store = get_request_user_store(request, current_user["tenant_id"])
+    user = user_store.get_by_id(current_user["sub"])
+    if not user:
         raise HTTPException(401, "사용자를 찾을 수 없습니다.")
     return {
         "access_token": create_access_token(
@@ -144,6 +162,7 @@ async def refresh_token(request: Request, body: RefreshRequest):
             user.role.value,
             user.username,
             credential_version=user.credential_version,
+            session_id=payload.get("session_id"),
         )
     }
 
@@ -195,8 +214,6 @@ async def update_me(request: Request, body: UpdateMyProfileRequest):
 @router.post("/auth/change-password")
 async def change_password(request: Request, body: ChangePasswordRequest):
     """Change the password, revoke older tokens, and rotate this session."""
-    from app.services.auth_service import create_access_token, create_refresh_token
-
     tenant_id = get_tenant_id(request)
     user_store = get_request_user_store(request, tenant_id)
     user_id = getattr(request.state, "user_id", None)
@@ -213,20 +230,50 @@ async def change_password(request: Request, body: ChangePasswordRequest):
     user = user_store.get_by_id(user_id)
     if not user or not user.is_active:
         raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    tokens = _issue_request_token_pair(request, user)
     return {
         "message": "비밀번호가 변경되었습니다.",
-        "access_token": create_access_token(
-            user.user_id,
-            user.tenant_id,
-            user.role.value,
-            user.username,
-            credential_version=user.credential_version,
-        ),
-        "refresh_token": create_refresh_token(
-            user.user_id,
-            user.tenant_id,
-            credential_version=user.credential_version,
-        ),
+        **tokens,
+    }
+
+
+@router.post("/auth/logout")
+async def logout(request: Request):
+    """Revoke only the persisted session represented by the access token."""
+    from app.storage.auth_session_store import AuthSessionStoreError
+
+    tenant_id = get_tenant_id(request)
+    user_id = getattr(request.state, "user_id", None)
+    session_id = getattr(request.state, "auth_session_id", None)
+    if not user_id:
+        raise HTTPException(401, "인증이 필요합니다.")
+    if not session_id:
+        raise HTTPException(
+            status_code=409,
+            detail="기존 로그인 세션은 개별 종료할 수 없습니다. 다시 로그인해주세요.",
+        )
+
+    try:
+        revoked = get_request_auth_session_store(request, tenant_id).revoke(
+            session_id,
+            user_id=user_id,
+        )
+    except (AuthSessionStoreError, ValueError) as exc:
+        logger.error(
+            "[Auth] Session revocation failed — failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션을 일시적으로 종료할 수 없습니다.",
+        ) from exc
+    if not revoked:
+        raise HTTPException(401, "로그인 세션을 찾을 수 없습니다.")
+
+    request.state.auth_session_revoked = True
+    return {
+        "message": "현재 로그인 세션이 종료되었습니다.",
+        "session_revoked": True,
     }
 
 

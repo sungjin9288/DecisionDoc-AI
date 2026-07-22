@@ -163,12 +163,19 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   fail closed.
 - Password changes advance a persisted credential version with the password hash. Older access and refresh
   tokens are rejected, the initiating browser commits a replacement pair, and another same-origin tab reloads
-  on version drift. Per-session selection and cross-device push revocation remain outside the local contract.
-- An open `/events` stream rechecks token expiry and the same persisted authority at most every 15 seconds.
+  on version drift.
+- New register, login, invite, LDAP, SAML, GCloud, and password-change token pairs share one tenant-scoped
+  persisted session identity. Refresh keeps that identity and `/auth/logout` revokes only the signed current
+  session, so a separate login remains active. Same-session credentials copied to another context fail on their
+  next protected request, refresh, or open-stream recheck. Corrupt or unavailable state fails closed without
+  rewriting the original bytes; audit omits tokens and session IDs. Browser cleanup is immediate even when server
+  revocation cannot be confirmed. Legacy sessionless exact logout, session inventory, mass revoke, expired-session
+  GC, and immediate cross-device push remain outside the local contract.
+- An open `/events` stream rechecks token expiry and the same persisted user/session authority at most every 15 seconds.
   Invalid access receives only an `auth_revoked` control event before unsubscribe; unavailable authority receives
   `auth_unavailable` and no further application event. The browser refreshes once for revocation, clears session
   evidence only after explicit refresh rejection, preserves it on temporary failure, and isolates stale source
-  callbacks. This is bounded termination, not immediate cross-device push or per-session revocation.
+  callbacks. This is bounded termination, not immediate cross-device push or a sub-15-second guarantee.
 - Training request schemas and storage reject `start_training`, `upload_dataset`, and
   `call_provider_api` attempts in this local workflow.
 
@@ -284,9 +291,14 @@ Last local verification on 2026-07-22:
 - credential-version cross-tab focused Chromium gate: 3 passed
 - auth/tenant related Chromium gate: 9 passed, 54 deselected
 - full main-flow Chromium gate: 73 passed, 1 skipped
+- exact-session auth focused server gate: 3 passed, 1 warning
+- exact-session auth integrity/viewer/corrupt/legacy gate: 7 passed, 1 warning
+- exact-session auth/SSO/invite gate: 158 passed, 1 warning
+- exact-session broad backend/security gate: 449 passed, 1 warning
+- exact-session full main-flow Chromium gate: 76 passed, 1 skipped
 - DocumentOps and tenant static expansion gate: 31 passed, 130 deselected, 1 warning
 - DocumentOps and tenant Chromium expansion gate: 25 passed, 37 deselected
-- full repository non-live gate: 4297 passed, 2 skipped, 4 deselected, 1 warning
+- full repository non-live gate: 4314 passed, 2 skipped, 4 deselected, 1 warning
 - mock/local uvicorn lifecycle: capture/detail/review version 1/stale `409`, private receipt persisted and public-hidden, external calls 0
 - captured Agent retry mock/local uvicorn lifecycle: first `200`, exact replay `200`, changed payload `409`, same trajectory ID, persisted provider usage 1, trajectory count 1
 - captured Agent response-loss recovery mock/local uvicorn lifecycle: first `200`, redacted status `succeeded`, exact replay `200`, missing `404`, same trajectory ID, status audit 2, external provider calls 0

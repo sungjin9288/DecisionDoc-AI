@@ -18481,7 +18481,33 @@
     showNotification(message, 'error');
   }
 
+  async function revokeCurrentAuthSession(accessToken) {
+    if (!accessToken) return 'missing';
+    try {
+      const response = await fetch('/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (response.ok) return 'revoked';
+      if (response.status === 401) return 'already_invalid';
+      if (response.status === 409) {
+        const message = '기존 로그인 세션은 서버에서 개별 종료되지 않았습니다. 다시 로그인하면 새 세션 보호가 적용됩니다.';
+        setStatus(`⚠️ ${message}`, 'error');
+        showNotification(message, 'error');
+        return 'legacy';
+      }
+    } catch (_) {
+      // Local logout still completes when server authority is unavailable.
+    }
+    const message = '로그아웃은 완료했지만 서버 세션 종료는 확인하지 못했습니다.';
+    setStatus(`⚠️ ${message}`, 'error');
+    showNotification(message, 'error');
+    return 'unavailable';
+  }
+
   function logout() {
+    const accessToken = localStorage.getItem('dd_access_token');
+    const revocation = revokeCurrentAuthSession(accessToken);
     stopNotifPolling();
     stopSSE();
     localStorage.removeItem('dd_access_token');
@@ -18498,6 +18524,7 @@
     const userInfo = document.getElementById('user-info');
     if (userInfo) userInfo.style.display = 'none';
     showLoginScreen();
+    return revocation;
   }
 
   function closeUserMenu() {

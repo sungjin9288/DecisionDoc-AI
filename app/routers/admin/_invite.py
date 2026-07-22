@@ -167,7 +167,8 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
     """Accept invite and create account."""
     from app.storage.invite_store import InviteStore
     from app.storage.user_store import UserStore
-    from app.services.auth_service import create_access_token, create_refresh_token
+    from app.services.auth_service import issue_auth_token_pair
+    from app.storage.auth_session_store import AuthSessionStoreError
     tenant_store = request.app.state.tenant_store
     for tenant in tenant_store.list_tenants():
         store = InviteStore(
@@ -197,20 +198,20 @@ async def accept_invite(invite_id: str, body: AcceptInviteRequest, request: Requ
 
         user = store.accept(invite_id, create_account)
         if user is not None:
+            try:
+                tokens = issue_auth_token_pair(
+                    user,
+                    data_dir=request.app.state.data_dir,
+                    backend=request.app.state.state_backend,
+                )
+            except AuthSessionStoreError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="인증 세션을 일시적으로 생성할 수 없습니다.",
+                ) from exc
             return {
                 "message": "계정이 생성되었습니다.",
-                "access_token": create_access_token(
-                    user.user_id,
-                    tenant.tenant_id,
-                    user.role.value,
-                    user.username,
-                    credential_version=user.credential_version,
-                ),
-                "refresh_token": create_refresh_token(
-                    user.user_id,
-                    tenant.tenant_id,
-                    credential_version=user.credential_version,
-                ),
+                **tokens,
                 "user": {
                     "user_id": user.user_id,
                     "username": user.username,

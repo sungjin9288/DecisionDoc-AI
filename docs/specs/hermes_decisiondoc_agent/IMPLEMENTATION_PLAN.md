@@ -172,6 +172,10 @@ Work:
   preserve the current tenant, draft, recovery promise, and marker when that storage write fails
 - commit login, registration, refresh, and LDAP browser sessions through one helper after token-claim validation;
   restore the previous access/refresh credentials and tenant when any browser write fails
+- issue new register, login, invite, LDAP, SAML, GCloud, and password-change token pairs against one
+  tenant-scoped persisted session identity; preserve it across refresh and revoke only that exact session on logout
+- start exact-session server revocation before local logout cleanup, but never retain browser credentials or
+  page-memory evidence while waiting; report an unavailable endpoint as unconfirmed server revocation
 - return an explicit refresh outcome to 401 callers; retry only a refreshed session, clear evidence only for rejected
   credentials, and preserve the previous session for endpoint or browser-storage failures
 - where supported, serialize marker inspection and claim with a tenant-scoped Web Lock so simultaneous tabs
@@ -215,7 +219,13 @@ Acceptance:
 - a password change increments the persisted credential version with the password hash, rejects every older access
   and refresh token, commits a replacement pair in the initiating browser, and reloads another same-origin tab
   whose credential version is stale
-- an open SSE subscription rechecks token expiry and persisted user authority within 15 seconds, stops application
+- exact logout rejects the signed current session without invalidating a separate login; copied same-session
+  credentials fail on the next protected request, refresh, or open SSE recheck
+- corrupt or unavailable session state fails closed without changing the original object, and logout audit copies
+  neither access/refresh credentials nor the private session identity
+- legacy sessionless credentials remain bounded by expiry and credential version but cannot claim exact logout;
+  session inventory, mass revoke, expired-session GC, and immediate push stay outside this contract
+- an open SSE subscription rechecks token expiry and persisted user/session authority within 15 seconds, stops application
   events on revocation or authority failure, and preserves browser credentials when the failure is retryable
 - no hidden control can trigger upload, training, or production operations
 - an exact captured-run replay does not call the provider or record usage twice, while an uncertain

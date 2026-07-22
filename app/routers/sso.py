@@ -147,7 +147,7 @@ def _provision_sso_user(
     return user
 
 
-def _create_jwt_for_user(user) -> str:
+def _create_jwt_for_user(user, *, session_id: str) -> str:
     """Create JWT token for a provisioned user."""
     payload = {
         "sub": user.user_id,
@@ -155,10 +155,44 @@ def _create_jwt_for_user(user) -> str:
         "role": user.role.value if hasattr(user.role, "value") else user.role,
         "tenant_id": user.tenant_id,
         "credential_version": user.credential_version,
+        "session_id": session_id,
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),
     }
     return pyjwt.encode(payload, get_jwt_secret_key(), algorithm="HS256")
+
+
+def _issue_sso_tokens(request: Request, user) -> dict[str, str]:
+    from app.services.auth_service import create_refresh_token
+    from app.storage.auth_session_store import (
+        AuthSessionStoreError,
+        get_auth_session_store,
+    )
+
+    try:
+        session_id = get_auth_session_store(
+            user.tenant_id,
+            data_dir=getattr(request.app.state, "data_dir", None),
+            backend=getattr(request.app.state, "state_backend", None),
+        ).create(
+            user_id=user.user_id,
+            credential_version=user.credential_version,
+        )
+    except AuthSessionStoreError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="인증 세션을 일시적으로 생성할 수 없습니다.",
+        ) from exc
+
+    return {
+        "access_token": _create_jwt_for_user(user, session_id=session_id),
+        "refresh_token": create_refresh_token(
+            user.user_id,
+            user.tenant_id,
+            credential_version=user.credential_version,
+            session_id=session_id,
+        ),
+    }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -286,7 +320,7 @@ async def saml_acs(request: Request):
         request,
         tenant_id, user.username, user.display_name, user.email, user.role
     )
-    token = _create_jwt_for_user(provisioned)
+    token = _issue_sso_tokens(request, provisioned)["access_token"]
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie("dd_token", token, httponly=True, samesite="lax")
     resp.delete_cookie("saml_relay_state")
@@ -326,17 +360,13 @@ async def ldap_login(request: Request, body: LDAPLoginRequest):
         request,
         tenant_id, user.username, user.display_name, user.email, user.role
     )
-    token = _create_jwt_for_user(provisioned)
-    from app.services.auth_service import create_refresh_token
+    tokens = _issue_sso_tokens(request, provisioned)
+    token = tokens["access_token"]
 
     return {
         "token": token,
         "access_token": token,
-        "refresh_token": create_refresh_token(
-            provisioned.user_id,
-            tenant_id,
-            credential_version=provisioned.credential_version,
-        ),
+        "refresh_token": tokens["refresh_token"],
         "user": {
             "username": provisioned.username,
             "display_name": provisioned.display_name,
@@ -395,7 +425,7 @@ async def sso_gcloud_callback(request: Request, code: str = "", state: str = "")
         user_info["email"],
         user_info["role"],
     )
-    token = _create_jwt_for_user(provisioned)
+    token = _issue_sso_tokens(request, provisioned)["access_token"]
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie("dd_token", token, httponly=True, samesite="lax")
     resp.delete_cookie("gcloud_state")

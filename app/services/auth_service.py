@@ -40,6 +40,7 @@ def create_access_token(
     username: str,
     *,
     credential_version: int = 0,
+    session_id: str | None = None,
 ) -> str:
     payload = {
         "sub": user_id,
@@ -50,6 +51,10 @@ def create_access_token(
         "type": "access",
         "exp": _utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
+    if session_id is not None:
+        from app.storage.auth_session_store import require_auth_session_id
+
+        payload["session_id"] = require_auth_session_id(session_id)
     return jwt.encode(payload, get_jwt_secret_key(), algorithm=ALGORITHM)
 
 
@@ -58,6 +63,7 @@ def create_refresh_token(
     tenant_id: str,
     *,
     credential_version: int = 0,
+    session_id: str | None = None,
 ) -> str:
     payload = {
         "sub": user_id,
@@ -66,6 +72,10 @@ def create_refresh_token(
         "type": "refresh",
         "exp": _utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     }
+    if session_id is not None:
+        from app.storage.auth_session_store import require_auth_session_id
+
+        payload["session_id"] = require_auth_session_id(session_id)
     return jwt.encode(payload, get_jwt_secret_key(), algorithm=ALGORITHM)
 
 
@@ -106,6 +116,56 @@ def get_request_user_store(request, tenant_id: str):
     )
 
 
+def get_request_auth_session_store(request, tenant_id: str):
+    """Return the auth session store selected when the application was created."""
+    from app.storage.auth_session_store import get_auth_session_store
+
+    return get_auth_session_store(
+        tenant_id,
+        data_dir=getattr(request.app.state, "data_dir", None),
+        backend=getattr(request.app.state, "state_backend", None),
+    )
+
+
+def issue_auth_token_pair(
+    persisted_user,
+    *,
+    data_dir: str | Path | None = None,
+    backend: StateBackend | None = None,
+) -> dict[str, str]:
+    """Create one persisted login session and bind both tokens to it."""
+    from app.storage.auth_session_store import get_auth_session_store
+
+    tenant_id = require_tenant_id(persisted_user.tenant_id)
+    credential_version = _require_credential_version(
+        persisted_user.credential_version
+    )
+    session_id = get_auth_session_store(
+        tenant_id,
+        data_dir=data_dir,
+        backend=backend,
+    ).create(
+        user_id=persisted_user.user_id,
+        credential_version=credential_version,
+    )
+    return {
+        "access_token": create_access_token(
+            persisted_user.user_id,
+            tenant_id,
+            persisted_user.role.value,
+            persisted_user.username,
+            credential_version=credential_version,
+            session_id=session_id,
+        ),
+        "refresh_token": create_refresh_token(
+            persisted_user.user_id,
+            tenant_id,
+            credential_version=credential_version,
+            session_id=session_id,
+        ),
+    }
+
+
 def credentials_are_current(token_payload: dict, persisted_user) -> bool:
     """Accept legacy versionless tokens only while credentials remain at version 0."""
     token_version = token_payload.get("credential_version", 0)
@@ -143,6 +203,31 @@ def resolve_persisted_user(
         backend=backend,
     )
     users_exist = user_store.has_any_users()
+    if "session_id" in token_user:
+        from app.storage.auth_session_store import (
+            get_auth_session_store,
+            require_auth_session_id,
+        )
+
+        try:
+            session_id = require_auth_session_id(token_user["session_id"])
+            credential_version = _require_credential_version(
+                token_user.get("credential_version", 0)
+            )
+        except ValueError:
+            return None, users_exist
+        session_store = get_auth_session_store(
+            tenant_id,
+            data_dir=data_dir,
+            backend=backend,
+        )
+        if not session_store.is_current(
+            session_id,
+            user_id=user_id,
+            credential_version=credential_version,
+        ):
+            return None, users_exist
+
     if not users_exist:
         return token_user, False
 

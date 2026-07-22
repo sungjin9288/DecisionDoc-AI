@@ -528,6 +528,35 @@ def test_viewer_allowed_on_get_endpoints(tmp_path, monkeypatch):
     assert res.status_code == 200
 
 
+def test_viewer_can_logout_its_current_session(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    admin_login = _register_and_login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    client.post(
+        "/admin/users",
+        headers=admin_headers,
+        json={
+            "username": "viewer_logout",
+            "display_name": "Viewer Logout",
+            "email": "viewer-logout@test.com",
+            "password": "ViewerPass2!",
+            "role": "viewer",
+        },
+    )
+    viewer_login = client.post(
+        "/auth/login",
+        json={"username": "viewer_logout", "password": "ViewerPass2!"},
+    ).json()
+
+    response = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {viewer_login['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["session_revoked"] is True
+
+
 def test_role_change_applies_to_existing_access_token(tmp_path, monkeypatch):
     """Persisted role changes must take effect before an access token expires."""
     from app.storage.user_store import get_user_store
@@ -570,6 +599,8 @@ def test_inactive_user_cannot_reuse_existing_access_token(tmp_path, monkeypatch)
 
 def test_auth_routes_keep_using_the_app_selected_user_store(tmp_path, monkeypatch):
     """Later environment drift must not split auth routes from middleware state."""
+    from app.services.auth_service import verify_token
+    from app.storage.auth_session_store import get_auth_session_store
     from app.storage.user_store import get_user_store
 
     client = _make_client(tmp_path, monkeypatch)
@@ -614,6 +645,25 @@ def test_auth_routes_keep_using_the_app_selected_user_store(tmp_path, monkeypatc
     )
     assert me.status_code == 200
     assert me.json()["user_id"] == app_user.user_id
+    claims = verify_token(login.json()["access_token"])
+    assert claims is not None
+    assert get_auth_session_store(
+        "system",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    ).is_current(
+        claims["session_id"],
+        user_id=claims["sub"],
+        credential_version=claims["credential_version"],
+    )
+    assert get_auth_session_store(
+        "system",
+        data_dir=foreign_data_dir,
+    ).is_current(
+        claims["session_id"],
+        user_id=claims["sub"],
+        credential_version=claims["credential_version"],
+    ) is False
 
 
 # ── Login endpoint tests ───────────────────────────────────────────────────────
@@ -644,6 +694,31 @@ def test_login_success_returns_tokens_and_user(tmp_path, monkeypatch):
         "delivery_pm",
         "executive",
     ]
+
+
+def test_login_tokens_share_one_persisted_auth_session(tmp_path, monkeypatch):
+    from app.services.auth_service import verify_token
+    from app.storage.auth_session_store import AuthSessionStore
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    access_claims = verify_token(login["access_token"])
+    refresh_claims = verify_token(login["refresh_token"])
+
+    assert access_claims is not None
+    assert refresh_claims is not None
+    assert access_claims["session_id"] == refresh_claims["session_id"]
+
+    store = AuthSessionStore(
+        "system",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    )
+    assert store.is_current(
+        access_claims["session_id"],
+        user_id=access_claims["sub"],
+        credential_version=access_claims["credential_version"],
+    )
 
 
 def test_login_wrong_password_returns_401(tmp_path, monkeypatch):
@@ -763,6 +838,166 @@ def test_refresh_token_returns_new_access_token(tmp_path, monkeypatch):
     res = client.post("/auth/refresh", json={"refresh_token": login["refresh_token"]})
     assert res.status_code == 200
     assert "access_token" in res.json()
+
+
+def test_logout_revokes_only_the_authenticated_session(tmp_path, monkeypatch):
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    first = _register_and_login(client)
+    second = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "AdminPass1!"},
+    ).json()
+
+    first_claims = verify_token(first["access_token"])
+    second_claims = verify_token(second["access_token"])
+    assert first_claims is not None
+    assert second_claims is not None
+    assert first_claims["session_id"] != second_claims["session_id"]
+
+    logged_out = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+    )
+
+    first_access = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+    )
+    first_refresh = client.post(
+        "/auth/refresh",
+        json={"refresh_token": first["refresh_token"]},
+    )
+    second_access = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    )
+    second_refresh = client.post(
+        "/auth/refresh",
+        json={"refresh_token": second["refresh_token"]},
+    )
+
+    assert logged_out.status_code == 200
+    assert logged_out.json() == {
+        "message": "현재 로그인 세션이 종료되었습니다.",
+        "session_revoked": True,
+    }
+    assert first_access.status_code == 401
+    assert first_refresh.status_code == 401
+    assert second_access.status_code == 200
+    assert second_refresh.status_code == 200
+
+
+def test_logout_revokes_realtime_event_authority(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import events
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    assert events._resolve_event_tenant_id(
+        login["access_token"],
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    ) == "system"
+
+    logged_out = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+    )
+    assert logged_out.status_code == 200
+
+    with pytest.raises(HTTPException) as revoked:
+        events._resolve_event_tenant_id(
+            login["access_token"],
+            data_dir=tmp_path,
+            backend=client.app.state.state_backend,
+        )
+    assert revoked.value.status_code == 401
+
+
+def test_corrupt_auth_session_state_fails_closed_without_rewrite(
+    tmp_path,
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    from app.routers import events
+    from app.services.auth_service import verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    claims = verify_token(login["access_token"])
+    assert claims is not None
+    session_path = (
+        tmp_path
+        / "tenants"
+        / "system"
+        / "auth_sessions"
+        / f"{claims['session_id']}.json"
+    )
+    corrupt = b'{"contract_version":"auth-session.v1","session_id":"duplicate","session_id":"forged"}'
+    session_path.write_bytes(corrupt)
+
+    access = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {login['access_token']}"},
+    )
+    refresh = client.post(
+        "/auth/refresh",
+        json={"refresh_token": login["refresh_token"]},
+    )
+    with pytest.raises(HTTPException) as event_access:
+        events._resolve_event_tenant_id(
+            login["access_token"],
+            data_dir=tmp_path,
+            backend=client.app.state.state_backend,
+        )
+
+    assert access.status_code == 503
+    assert access.json()["code"] == "AUTH_UNAVAILABLE"
+    assert refresh.status_code == 503
+    assert event_access.value.status_code == 503
+    assert session_path.read_bytes() == corrupt
+
+
+def test_sessionless_legacy_token_remains_valid_but_cannot_claim_logout(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import create_access_token, verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    claims = verify_token(login["access_token"])
+    assert claims is not None
+    legacy_token = create_access_token(
+        claims["sub"],
+        claims["tenant_id"],
+        claims["role"],
+        claims["username"],
+        credential_version=claims["credential_version"],
+    )
+
+    before = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {legacy_token}"},
+    )
+    logout_response = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {legacy_token}"},
+    )
+    after = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {legacy_token}"},
+    )
+
+    assert before.status_code == 200
+    assert logout_response.status_code == 409
+    assert "기존 로그인 세션" in logout_response.json()["detail"]
+    assert after.status_code == 200
 
 
 def test_invalid_refresh_token_returns_401(tmp_path, monkeypatch):
@@ -889,6 +1124,72 @@ def test_signed_token_with_invalid_credential_version_is_rejected(
         )
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("token_type", ["access", "refresh"])
+def test_signed_token_with_invalid_session_identity_is_rejected(
+    tmp_path,
+    monkeypatch,
+    token_type,
+):
+    import jwt
+
+    from app.config import get_jwt_secret_key
+    from app.services.auth_service import ALGORITHM, verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    current = verify_token(login["access_token"])
+    assert current is not None
+    payload = {
+        "sub": current["sub"],
+        "tenant_id": current["tenant_id"],
+        "credential_version": current["credential_version"],
+        "session_id": "not-a-canonical-session-id",
+        "type": token_type,
+    }
+    if token_type == "access":
+        payload.update({"role": current["role"], "username": current["username"]})
+    token = jwt.encode(payload, get_jwt_secret_key(), algorithm=ALGORITHM)
+
+    if token_type == "access":
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    else:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": token},
+        )
+
+    assert response.status_code == 401
+
+
+def test_persisted_session_is_checked_before_fresh_install_compatibility(tmp_path):
+    from app.services.auth_service import resolve_persisted_user
+    from app.storage.auth_session_store import AuthSessionStore
+
+    store = AuthSessionStore("system", data_dir=tmp_path)
+    session_id = store.create(user_id="removed-user", credential_version=0)
+    token_user = {
+        "sub": "removed-user",
+        "username": "removed-user",
+        "role": "admin",
+        "tenant_id": "system",
+        "credential_version": 0,
+        "session_id": session_id,
+        "type": "access",
+    }
+
+    current, users_exist = resolve_persisted_user(token_user, data_dir=tmp_path)
+    assert current == token_user
+    assert users_exist is False
+
+    assert store.revoke(session_id, user_id="removed-user") is True
+    revoked, users_exist = resolve_persisted_user(token_user, data_dir=tmp_path)
+    assert revoked is None
+    assert users_exist is False
 
 
 # ── /auth/me tests ─────────────────────────────────────────────────────────────

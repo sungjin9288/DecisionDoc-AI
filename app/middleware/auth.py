@@ -59,6 +59,7 @@ _WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Paths where viewers are still allowed to POST/PUT/PATCH
 _VIEWER_WRITE_ALLOWED_PREFIXES: tuple[str, ...] = (
+    "/auth/logout",
     "/generate/stream",
     "/generate/sketch",
 )
@@ -90,6 +91,7 @@ async def auth_middleware(request: Request, call_next):
         request.state.user_id = user_payload["sub"]
         request.state.username = user_payload["username"]
         request.state.user_role = user_payload["role"]
+        request.state.auth_session_id = user_payload.get("session_id")
 
     # Static files, explicit public endpoints, invite acceptance pages, and
     # shared document views must be reachable before a JWT session exists.

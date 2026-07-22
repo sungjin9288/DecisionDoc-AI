@@ -1700,6 +1700,205 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
     }
 
 
+def test_logout_revokes_only_the_current_browser_session(page, live_server):
+    current = page.evaluate(
+        """() => ({
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+        })"""
+    )
+    second = page.evaluate(
+        """async ({ username, password }) => {
+          const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
+            body: JSON.stringify({ username, password }),
+          });
+          if (!response.ok) throw new Error(`second login failed: ${response.status}`);
+          return response.json();
+        }""",
+        {
+            "username": live_server["auth"]["username"],
+            "password": live_server["auth"]["password"],
+        },
+    )
+
+    result = page.evaluate(
+        """async ({ currentAccess, currentRefresh, secondAccess, secondRefresh }) => {
+          _documentOpsReviewDrafts.set('logout-session-draft', {
+            notes: 'logout과 함께 지워질 현재 세션 검토 메모',
+            scoreText: '0.8',
+          });
+
+          const revocation = await logout();
+          const currentAccessResponse = await fetch('/auth/me', {
+            headers: { Authorization: `Bearer ${currentAccess}` },
+          });
+          const currentRefreshResponse = await fetch('/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: currentRefresh }),
+          });
+          const secondAccessResponse = await fetch('/auth/me', {
+            headers: { Authorization: `Bearer ${secondAccess}` },
+          });
+          const secondRefreshResponse = await fetch('/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: secondRefresh }),
+          });
+
+          return {
+            revocation,
+            accessTokenCleared: localStorage.getItem('dd_access_token') === null,
+            refreshTokenCleared: localStorage.getItem('dd_refresh_token') === null,
+            currentUserCleared: _currentUser === null,
+            reviewDraftCount: _documentOpsReviewDrafts.size,
+            loginScreenVisible: Boolean(document.getElementById('login-screen')),
+            currentAccessStatus: currentAccessResponse.status,
+            currentRefreshStatus: currentRefreshResponse.status,
+            secondAccessStatus: secondAccessResponse.status,
+            secondRefreshStatus: secondRefreshResponse.status,
+          };
+        }""",
+        {
+            "currentAccess": current["accessToken"],
+            "currentRefresh": current["refreshToken"],
+            "secondAccess": second["access_token"],
+            "secondRefresh": second["refresh_token"],
+        },
+    )
+
+    assert result == {
+        "revocation": "revoked",
+        "accessTokenCleared": True,
+        "refreshTokenCleared": True,
+        "currentUserCleared": True,
+        "reviewDraftCount": 0,
+        "loginScreenVisible": True,
+        "currentAccessStatus": 401,
+        "currentRefreshStatus": 401,
+        "secondAccessStatus": 200,
+        "secondRefreshStatus": 200,
+    }
+
+
+def test_logout_closes_same_session_in_another_browser_context(
+    page,
+    live_server,
+    monkeypatch,
+):
+    from app.routers import events
+
+    monkeypatch.setattr(events, "_AUTH_RECHECK_INTERVAL", 0.05, raising=False)
+    current = page.evaluate(
+        """() => ({
+          accessToken: localStorage.getItem('dd_access_token'),
+          refreshToken: localStorage.getItem('dd_refresh_token'),
+          tenantId: localStorage.getItem('dd_tenant_id'),
+        })"""
+    )
+    browser = page.context.browser
+    assert browser is not None
+    copied_context = browser.new_context()
+    copied_context.add_init_script("localStorage.setItem('onboarding_done', '1');")
+    copied_page = copied_context.new_page()
+
+    try:
+        copied_page.goto(live_server["base_url"])
+        copied_page.evaluate(
+            """({ accessToken, refreshToken, tenantId }) => {
+              localStorage.setItem('dd_access_token', accessToken);
+              localStorage.setItem('dd_refresh_token', refreshToken);
+              localStorage.setItem('dd_tenant_id', tenantId);
+            }""",
+            current,
+        )
+        copied_page.reload()
+        copied_page.wait_for_selector("body.auth-ready", timeout=10000)
+        copied_page.evaluate(
+            """() => {
+              _documentOpsReviewDrafts.set('copied-session-draft', {
+                notes: '다른 browser context에 남으면 안 되는 검토 메모',
+                scoreText: '0.9',
+              });
+              startSSE();
+            }"""
+        )
+        copied_page.wait_for_function(
+            "() => _sse?.readyState === EventSource.OPEN",
+            timeout=5000,
+        )
+
+        assert page.evaluate("async () => await logout()") == "revoked"
+
+        copied_page.wait_for_selector("#login-screen", state="visible", timeout=5000)
+        result = copied_page.evaluate(
+            """() => ({
+              accessTokenCleared: localStorage.getItem('dd_access_token') === null,
+              refreshTokenCleared: localStorage.getItem('dd_refresh_token') === null,
+              currentUserCleared: _currentUser === null,
+              reviewDraftCount: _documentOpsReviewDrafts.size,
+              streamClosed: _sse === null,
+            })"""
+        )
+        assert result == {
+            "accessTokenCleared": True,
+            "refreshTokenCleared": True,
+            "currentUserCleared": True,
+            "reviewDraftCount": 0,
+            "streamClosed": True,
+        }
+    finally:
+        copied_context.close()
+
+
+def test_logout_clears_browser_state_when_server_revocation_is_unavailable(page):
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          window.fetch = async (input, init) => {
+            if (String(input) === '/auth/logout') {
+              return new Response('{}', {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+            return nativeFetch(input, init);
+          };
+          _documentOpsReviewDrafts.set('unavailable-logout-draft', {
+            notes: 'local logout에서 지워져야 하는 검토 메모',
+            scoreText: '0.7',
+          });
+
+          try {
+            const revocation = await logout();
+            return {
+              revocation,
+              accessTokenCleared: localStorage.getItem('dd_access_token') === null,
+              refreshTokenCleared: localStorage.getItem('dd_refresh_token') === null,
+              currentUserCleared: _currentUser === null,
+              reviewDraftCount: _documentOpsReviewDrafts.size,
+              loginScreenVisible: Boolean(document.getElementById('login-screen')),
+              status: document.getElementById('status')?.textContent || '',
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result == {
+        "revocation": "unavailable",
+        "accessTokenCleared": True,
+        "refreshTokenCleared": True,
+        "currentUserCleared": True,
+        "reviewDraftCount": 0,
+        "loginScreenVisible": True,
+        "status": "⚠️ 로그아웃은 완료했지만 서버 세션 종료는 확인하지 못했습니다.",
+    }
+
+
 def test_generate_landing_shows_ai_rank_roster(page):
     page.wait_for_selector("#ai-rank-roster", timeout=5000)
     assert page.locator("#ai-rank-roster").is_visible()

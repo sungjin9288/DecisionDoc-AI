@@ -1167,6 +1167,19 @@ def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures(
     assert content.count("parseApiErrorResponse(") == 2
     assert "clearDocumentOpsPendingRunMarker();" in invalid_block
     assert "clearDocumentOpsPendingRunMarker();" in logout_block
+    revoke_start = content.index("async function revokeCurrentAuthSession")
+    revoke_end = content.index("function logout()", revoke_start)
+    revoke_block = content[revoke_start:revoke_end]
+    assert "fetch('/auth/logout'" in revoke_block
+    assert "method: 'POST'" in revoke_block
+    assert "Authorization: `Bearer ${accessToken}`" in revoke_block
+    assert "if (response.ok) return 'revoked';" in revoke_block
+    assert "return 'unavailable';" in revoke_block
+    assert logout_block.index("const accessToken = localStorage.getItem('dd_access_token');") < logout_block.index(
+        "localStorage.removeItem('dd_access_token')"
+    )
+    assert "const revocation = revokeCurrentAuthSession(accessToken);" in logout_block
+    assert "return revocation;" in logout_block
 
 
 def test_index_html_rfp_parse_uses_auth_headers():

@@ -764,6 +764,29 @@ def test_audit_login_fail_logged(tmp_path, monkeypatch):
     assert results[0]["result"] == "blocked"
 
 
+def test_audit_logout_records_action_without_session_credentials(tmp_path, monkeypatch):
+    """Server-side logout is auditable without copying bearer authority."""
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+
+    response = client.post("/auth/logout", headers=_auth(login))
+
+    from app.services.auth_service import verify_token
+    from app.storage.audit_store import AuditStore
+
+    claims = verify_token(login["access_token"])
+    results = AuditStore("system").query(filters={"action": "user.logout"})
+    serialized = json.dumps(results, ensure_ascii=False)
+
+    assert response.status_code == 200
+    assert claims is not None
+    assert len(results) >= 1
+    assert results[0]["result"] == "success"
+    assert login["access_token"] not in serialized
+    assert login["refresh_token"] not in serialized
+    assert claims["session_id"] not in serialized
+
+
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
     """Accessing an admin endpoint without admin role logs access.blocked."""
     client = _make_client(tmp_path, monkeypatch)
