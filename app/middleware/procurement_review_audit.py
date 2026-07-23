@@ -48,6 +48,7 @@ def procurement_review_audit_detail(
         "procurement_reviewed_package_sha256": (
             "reviewed_package_sha256"
         ),
+        "procurement_review_access_scope": "access_scope",
     }
     for state_field, detail_field in text_fields.items():
         value = getattr(request.state, state_field, "") or ""
@@ -62,6 +63,7 @@ def procurement_review_audit_detail(
         "procurement_review_total": "review_total",
         "procurement_review_pending_count": "review_pending_count",
         "procurement_review_completed_count": "review_completed_count",
+        "procurement_review_authorized_count": "authorized_review_count",
     }
     for state_field, detail_field in optional_fields.items():
         value = getattr(request.state, state_field, None)

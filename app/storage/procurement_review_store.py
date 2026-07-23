@@ -6,7 +6,6 @@ from typing import Any, Callable, Mapping
 
 from app.storage.procurement_review_models import (
     REVIEW_RECORD_SCHEMA_VERSION_V1,
-    SHA256_PATTERN as _SHA256_PATTERN,
     ProcurementReviewRecord,
     ProcurementReviewStoreError,
     build_completed_review_record,
@@ -22,6 +21,11 @@ from app.storage.procurement_review_models import (
     unique_object as _unique_object,
     upgrade_pending_reviewer_assignment,
     validate_record,
+)
+from app.storage.procurement_review_query import (
+    has_project_review_records,
+    list_project_review_records,
+    list_tenant_review_records,
 )
 from app.storage.state_backend import (
     StateBackend,
@@ -463,75 +467,39 @@ class ProcurementReviewStore:
         *,
         tenant_id: str,
         project_id: str,
+        reviewer_user_id: str | None = None,
     ) -> list[ProcurementReviewRecord]:
-        tenant_id = require_tenant_id(tenant_id)
-        project_id = self._safe_segment(project_id, field="project_id")
-        prefix = self._review_prefix(tenant_id=tenant_id, project_id=project_id)
-        records: list[ProcurementReviewRecord] = []
-        try:
-            paths = self._backend.list_prefix(str(prefix))
-        except StateBackendError as exc:
-            raise ProcurementReviewStoreError(
-                "Failed to list procurement review records"
-            ) from exc
-        for path in paths:
-            try:
-                packet_sha256, filename = Path(path).relative_to(prefix).parts
-            except (ValueError, TypeError):
-                continue
-            if (
-                filename != "record.json"
-                or not _SHA256_PATTERN.fullmatch(packet_sha256)
-            ):
-                continue
-            record = self.get(
-                tenant_id=tenant_id,
-                project_id=project_id,
-                packet_sha256=packet_sha256,
-            )
-            if record is not None:
-                self._validate_record_evidence(record)
-                records.append(record)
-        return sorted(
-            records,
-            key=lambda item: (item.prepared_at, item.packet_sha256),
-            reverse=True,
+        return list_project_review_records(
+            self,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            reviewer_user_id=reviewer_user_id,
         )
 
-    def list_by_tenant(self, *, tenant_id: str) -> list[ProcurementReviewRecord]:
+    def list_by_tenant(
+        self,
+        *,
+        tenant_id: str,
+        reviewer_user_id: str | None = None,
+    ) -> list[ProcurementReviewRecord]:
         """List every packet-bound review owned by one tenant."""
-        tenant_id = require_tenant_id(tenant_id)
-        prefix = self._tenant_review_prefix(tenant_id=tenant_id)
-        records: list[ProcurementReviewRecord] = []
-        try:
-            paths = self._backend.list_prefix(str(prefix))
-        except StateBackendError as exc:
-            raise ProcurementReviewStoreError(
-                "Failed to list procurement review records"
-            ) from exc
-        for path in paths:
-            try:
-                project_id, packet_sha256, filename = Path(path).relative_to(prefix).parts
-            except (ValueError, TypeError):
-                continue
-            if filename != "record.json" or not _SHA256_PATTERN.fullmatch(packet_sha256):
-                continue
-            try:
-                project_id = self._safe_segment(project_id, field="project_id")
-            except ValueError:
-                continue
-            record = self.get(
-                tenant_id=tenant_id,
-                project_id=project_id,
-                packet_sha256=packet_sha256,
-            )
-            if record is not None:
-                self._validate_record_evidence(record)
-                records.append(record)
-        return sorted(
-            records,
-            key=lambda item: (item.prepared_at, item.packet_sha256),
-            reverse=True,
+        return list_tenant_review_records(
+            self,
+            tenant_id=tenant_id,
+            reviewer_user_id=reviewer_user_id,
+        )
+
+    def has_records_by_project(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+    ) -> bool:
+        """Report record presence without reading packet or package artifacts."""
+        return has_project_review_records(
+            self,
+            tenant_id=tenant_id,
+            project_id=project_id,
         )
 
     def read_packet(

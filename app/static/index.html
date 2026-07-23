@@ -7167,6 +7167,7 @@
   let _procurementReviewInboxQuery = '';
   let _procurementReviewInboxPayload = null;
   let _procurementReviewInboxLoadId = 0;
+  let _projectDetailLoadId = 0;
   let _approvalRequestSource = null;
   let _knowledgePromotionTarget = null;
   let _serverVersionInfo = {
@@ -13780,6 +13781,7 @@
         throw new Error('tenant context storage failed');
       }
       _authSessionRevision += 1;
+      invalidateProcurementReviewViews();
       return claims;
     } catch (_) {
       if (snapshotComplete) {
@@ -13878,6 +13880,7 @@
       _documentOpsPendingRunRecovery = null;
       _documentOpsRunRecoveryPromise = null;
       _currentTenantId = tenantId;
+      invalidateProcurementReviewViews();
       window.location.reload();
       return true;
     } finally {
@@ -18748,6 +18751,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _authSessionRevision += 1;
+    invalidateProcurementReviewViews();
     window.invalidateAuthSessionRetentionHandoff?.();
     _documentOpsReviewDrafts.clear();
     _documentOpsGovernanceObservation = null;
@@ -20899,7 +20903,7 @@
     if (!query) return reviews;
     return reviews.filter(review => {
       const project = review?.project || {};
-      return [project.name, project.client, review?.reviewer, review?.package_id]
+      return [project.name, project.client, review?.assigned_reviewer, review?.completed_by, review?.package_id]
         .some(value => String(value || '').toLocaleLowerCase().includes(query));
     });
   }
@@ -20956,7 +20960,7 @@
           </div>
           <div class="procurement-review-inbox-meta">
             <span><span class="procurement-review-status ${completed ? 'completed' : ''}">${escapeHtml(getProcurementReviewInboxStatusLabel(review?.review_status))}</span></span>
-            <span>${escapeHtml(String(review?.reviewer || 'reviewer 미지정'))}${review?.reviewer_identity_bound === true ? ' · 계정 지정' : ' · 기존 증빙'}${completed ? ` · ${escapeHtml(getProcurementReviewDecisionLabel(review?.decision))}` : ''}</span>
+            <span>${escapeHtml(String(review?.completed_by || review?.assigned_reviewer || 'reviewer 미지정'))}${review?.reviewer_identity_bound === true ? ' · 계정 지정' : ' · 기존 증빙'}${completed ? ` · ${escapeHtml(getProcurementReviewDecisionLabel(review?.decision))}` : ''}</span>
             <span>${escapeHtml(String((review?.reviewed_at || review?.prepared_at || '')).replace('T', ' ').slice(0, 16))}</span>
           </div>
           <div class="procurement-review-inbox-actions">
@@ -20986,6 +20990,15 @@
     section.style.display = 'grid';
     listEl.innerHTML = '<p class="procurement-review-inbox-empty">검토함을 불러오는 중입니다.</p>';
     const loadId = ++_procurementReviewInboxLoadId;
+    const authRevision = _authSessionRevision;
+    const tenantId = _currentTenantId;
+    const userId = String(_currentUser?.sub || _currentUser?.user_id || '');
+    const requestIsCurrent = () => (
+      loadId === _procurementReviewInboxLoadId
+      && authRevision === _authSessionRevision
+      && tenantId === _currentTenantId
+      && userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+    );
     const params = new URLSearchParams({
       review_status: _procurementReviewInboxStatus,
       limit: '200',
@@ -20997,15 +21010,21 @@
         throw new Error(error.message);
       }
       const payload = await response.json();
-      if (loadId !== _procurementReviewInboxLoadId) return;
+      if (!requestIsCurrent()) return;
       _procurementReviewInboxPayload = payload;
       renderProcurementReviewInbox();
     } catch (error) {
-      if (loadId !== _procurementReviewInboxLoadId) return;
+      if (!requestIsCurrent()) return;
       _procurementReviewInboxPayload = null;
       listEl.innerHTML = `<p class="procurement-review-inbox-empty">${escapeHtml(error.message || '검토함을 불러오지 못했습니다.')}</p>`;
       wireProcurementReviewInboxActions(section);
     }
+  }
+
+  function invalidateProcurementReviewViews() {
+    _procurementReviewInboxLoadId += 1;
+    _procurementReviewInboxPayload = null;
+    _projectDetailLoadId += 1;
   }
 
   function wireProcurementReviewInboxActions(section) {
@@ -23362,13 +23381,11 @@
 
     const pendingHtml = pendingReviews.map(review => {
       const packetSha256 = String(review.packet_sha256 || '');
-      const reviewer = String(review.reviewer || '');
-      const assignedUserId = String(review?.reviewer_assignment?.user_id || '');
-      const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
+      const reviewer = String(review?.assigned_reviewer || '');
       const canComplete = Boolean(
         review?.reviewer_identity_bound === true
-        && assignedUserId
-        && assignedUserId === currentUserId
+        && review?.assigned_to_current_user === true
+        && ['tenant', 'assigned'].includes(String(review?.access_scope || ''))
         && ['admin', 'member'].includes(String(_currentUser?.role || '')),
       );
       const decisionId = `procurement-review-decision-${packetSha256}`;
@@ -23416,7 +23433,7 @@
               <div class="procurement-review-record-header">
                 <span class="procurement-review-status completed">검토 완료</span>
                 <strong>${escapeHtml(getProcurementReviewDecisionLabel(review.decision))}</strong>
-                <span class="procurement-review-record-meta">${escapeHtml(review?.reviewer_attestation?.reviewer?.username || review.reviewer || '')} · ${review?.reviewer_identity_bound === true ? '계정 증명됨' : '기존 증빙'} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+                <span class="procurement-review-record-meta">${escapeHtml(review?.completed_by || review?.assigned_reviewer || '')} · ${review?.reviewer_session_bound === true ? '세션 증명됨' : '기존 증빙'} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
               </div>
               <button
                 type="button"
@@ -23445,6 +23462,8 @@
       return;
     }
 
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
     downloadButton.disabled = true;
     setProcurementActionStatus('검토 패킷을 로컬에서 조립하고 검증하는 중입니다...', 'loading');
     try {
@@ -23456,12 +23475,15 @@
           body: JSON.stringify({ reviewer }),
         },
       );
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
+        if (!requestIsCurrent()) return;
         throw Object.assign(new Error(err.message), { code: err.code });
       }
 
       const blob = await res.blob();
+      if (!requestIsCurrent()) return;
       const fallback = `procurement_review_packet_${projectId}.zip`;
       const filename = _filenameFromContentDisposition(
         res.headers.get('Content-Disposition'),
@@ -23478,6 +23500,7 @@
         'success',
       );
     } catch (error) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(error.code, error.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -23505,6 +23528,8 @@
     );
     if (!confirmed) return;
 
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
     button.disabled = true;
     setProcurementActionStatus('검토 결과와 완료 패키지를 검증하는 중입니다...', 'loading');
     try {
@@ -23519,12 +23544,15 @@
           }),
         },
       );
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
+        if (!requestIsCurrent()) return;
         throw Object.assign(new Error(err.message), { code: err.code });
       }
 
       const blob = await res.blob();
+      if (!requestIsCurrent()) return;
       const fallback = `procurement_reviewed_package_${packetSha256.slice(0, 12)}.zip`;
       const filename = _filenameFromContentDisposition(
         res.headers.get('Content-Disposition'),
@@ -23541,6 +23569,7 @@
         'success',
       );
     } catch (error) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(error.code, error.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -23553,6 +23582,8 @@
     const button = document.querySelector(
       `[data-project-detail-action="procurement-reviewed-package-download"][data-packet-sha256="${packetSha256}"]`,
     );
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
     if (button) button.disabled = true;
     setProcurementActionStatus('저장된 완료 패키지를 다시 검증하는 중입니다...', 'loading');
     try {
@@ -23560,12 +23591,15 @@
         `/projects/${encodeURIComponent(projectId)}/procurement/reviews/${encodeURIComponent(packetSha256)}/reviewed-package`,
         { headers: getAuthHeaders() },
       );
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
+        if (!requestIsCurrent()) return;
         throw Object.assign(new Error(err.message), { code: err.code });
       }
 
       const blob = await res.blob();
+      if (!requestIsCurrent()) return;
       const fallback = `procurement_reviewed_package_${packetSha256.slice(0, 12)}.zip`;
       const filename = _filenameFromContentDisposition(
         res.headers.get('Content-Disposition'),
@@ -23576,12 +23610,31 @@
       });
       setProcurementActionStatus('완료 패키지를 재검증하고 다운로드했습니다.', 'success');
     } catch (error) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(error.code, error.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
     } finally {
       if (button) button.disabled = false;
     }
+  }
+
+  function captureProcurementReviewRequestContext() {
+    return {
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectDetailLoadId: _projectDetailLoadId,
+    };
+  }
+
+  function isProcurementReviewRequestCurrent(context) {
+    return (
+      context?.authRevision === _authSessionRevision
+      && context?.tenantId === _currentTenantId
+      && context?.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && context?.projectDetailLoadId === _projectDetailLoadId
+    );
   }
 
   async function saveProjectProcurementOverrideReason(projectId) {
@@ -23924,43 +23977,66 @@
   }
 
   async function loadProjectDetail(projectId) {
+    const loadId = ++_projectDetailLoadId;
+    const authRevision = _authSessionRevision;
+    const tenantId = _currentTenantId;
+    const userId = String(_currentUser?.sub || _currentUser?.user_id || '');
+    const requestIsCurrent = () => (
+      loadId === _projectDetailLoadId
+      && authRevision === _authSessionRevision
+      && tenantId === _currentTenantId
+      && userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+    );
     try {
       await loadServerVersionInfo();
+      if (!requestIsCurrent()) return;
       const res = await fetch(`/projects/${projectId}`, { headers: getAuthHeaders()});
+      if (!requestIsCurrent()) return;
       if (!res.ok) throw new Error(await res.text());
       const project = await res.json();
+      if (!requestIsCurrent()) return;
       let procurementDecision = null;
       let procurementReviews = [];
       let decisionCouncilSession = null;
       if (isProcurementCopilotEnabled()) {
         const procurementRes = await fetch(`/projects/${projectId}/procurement`, { headers: getAuthHeaders() });
+        if (!requestIsCurrent()) return;
         if (procurementRes.ok) {
           const procurementPayload = await procurementRes.json();
+          if (!requestIsCurrent()) return;
           procurementDecision = procurementPayload?.decision || null;
         } else {
           const err = await resolveApiErrorResponse(procurementRes);
+          if (!requestIsCurrent()) return;
           showNotification('조달 의사결정 상태 로드 실패: ' + err.message, 'error');
         }
         const reviewsRes = await fetch(`/projects/${projectId}/procurement/reviews`, { headers: getAuthHeaders() });
+        if (!requestIsCurrent()) return;
         if (reviewsRes.ok) {
           const reviewsPayload = await reviewsRes.json();
+          if (!requestIsCurrent()) return;
           procurementReviews = Array.isArray(reviewsPayload?.reviews) ? reviewsPayload.reviews : [];
         } else {
           const err = await resolveApiErrorResponse(reviewsRes);
+          if (!requestIsCurrent()) return;
           showNotification('조달 검토 이력 로드 실패: ' + err.message, 'error');
         }
         if (procurementDecision?.opportunity && procurementDecision?.recommendation?.value) {
           const councilRes = await fetch(`/projects/${projectId}/decision-council`, { headers: getAuthHeaders() });
+          if (!requestIsCurrent()) return;
           if (councilRes.ok) {
             decisionCouncilSession = await councilRes.json();
+            if (!requestIsCurrent()) return;
           } else {
             const err = await resolveApiErrorResponse(councilRes);
+            if (!requestIsCurrent()) return;
             if (!['decision_council_not_found', 'decision_council_procurement_context_required'].includes(err.code || '')) {
               showNotification('Decision Council 상태 로드 실패: ' + err.message, 'error');
             }
           }
         }
       }
+      if (!requestIsCurrent()) return;
       renderProjectDetail(project, procurementDecision, {
         procurementEnabled: isProcurementCopilotEnabled(),
         procurementReviews,
@@ -23971,6 +24047,7 @@
       if (listEl) listEl.style.display = 'none';
       if (detailEl) detailEl.style.display = 'block';
     } catch(e) {
+      if (!requestIsCurrent()) return;
       showNotification('프로젝트 상세 로드 실패', 'error');
     }
   }

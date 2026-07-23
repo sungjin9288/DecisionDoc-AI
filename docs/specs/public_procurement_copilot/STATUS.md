@@ -12020,3 +12020,16 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - focused H120 tests passed: 64 passed; auth/security/tenant regression passed: 216 passed; focused Chromium assignee/payload regression passed: 1 passed
   - final full non-live gate passed: 4,437 passed, 1 skipped, 4 deselected; Ruff, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
   - provider API, AWS runtime, G2B live API, Stripe, Statuspage, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain out of scope
+
+- H121 session-bound procurement review access policy
+  - review packet preparation, tenant inbox, project review history, and reviewed-package download now require a current session-bound admin or member; API key, Ops key, sessionless JWT, and viewer credentials do not grant this access
+  - admins can assign any active tenant admin/member and inspect the tenant scope; members can self-assign and receive only v2 records bound to their own stable identity; v1 reviewed packages remain admin-only
+  - HTTP summaries and browser controls use assigned reviewer, current-user assignment, completed-by name, identity/session-bound flags, and access scope while excluding receipt, rationale, stable target ID, attestation body/hash, and session/network metadata
+  - audit keeps the actor, safe evidence hashes, decision, access scope, and authorized counts without persisting target stable identity, attestation, rationale, session ID, IP, or User-Agent
+  - access-aware storage queries filter valid record metadata by stable reviewer assignment before packet/package verification; a foreign corrupted package does not block the member's own inbox/history, while the tenant-wide admin view remains fail closed
+  - browser request generations bind inbox, project detail, packet creation, completion, and package download to the initiating auth revision, tenant, user, and project-detail generation; late responses and blobs are discarded after context changes
+  - Luna review identified the late completion/download blob P2; regression coverage now includes the read-route credential matrix, unauthorized pre-byte-read denial, foreign package corruption isolation, v1 member hiding, and stale browser blobs
+  - focused procurement/auth/storage regression passed: 191 tests; focused Chromium passed: 3 tests
+  - the first full non-live run found three coupled count/UI-marker/800-line contract drifts; after extracting access-aware query logic and resynchronizing docs/contracts, the final gate passed: 4,444 passed, 2 skipped, 4 deselected
+  - Ruff E/F/W, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
+  - paid providers, G2B live API, AWS runtime, Stripe, Statuspage, deployment, service resume, dataset upload, training execution, model promotion, bid submission, legal approval, and contractual commitment were not executed

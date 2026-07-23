@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Any, Literal, Mapping
 
 from app.tenant import require_tenant_id
@@ -182,6 +183,53 @@ def require_sha256(value: str, *, field: str = "packet_sha256") -> str:
     if not isinstance(value, str) or not SHA256_PATTERN.fullmatch(value):
         raise ValueError(f"{field} is invalid")
     return value
+
+
+def require_reviewer_user_id(reviewer_user_id: str | None) -> str | None:
+    if reviewer_user_id is None:
+        return None
+    if not isinstance(reviewer_user_id, str) or not reviewer_user_id.strip():
+        raise ValueError("reviewer_user_id must be a non-empty string")
+    return reviewer_user_id
+
+
+def review_record_is_assigned_to(
+    record: ProcurementReviewRecord,
+    reviewer_user_id: str | None,
+) -> bool:
+    if reviewer_user_id is None:
+        return True
+    assignment = record.reviewer_assignment
+    return (
+        record.reviewer_identity_bound
+        and assignment is not None
+        and assignment["user_id"] == reviewer_user_id
+    )
+
+
+def project_review_record_reference(path: str, *, prefix: Path) -> str | None:
+    try:
+        packet_sha256, filename = Path(path).relative_to(prefix).parts
+    except (ValueError, TypeError):
+        return None
+    if filename != "record.json" or not SHA256_PATTERN.fullmatch(packet_sha256):
+        return None
+    return packet_sha256
+
+
+def tenant_review_record_reference(
+    path: str,
+    *,
+    prefix: Path,
+) -> tuple[str, str] | None:
+    try:
+        project_id, packet_sha256, filename = Path(path).relative_to(prefix).parts
+        project_id = safe_segment(project_id, field="project_id")
+    except (ValueError, TypeError):
+        return None
+    if filename != "record.json" or not SHA256_PATTERN.fullmatch(packet_sha256):
+        return None
+    return project_id, packet_sha256
 
 
 def _require_reviewer_assignment(value: object) -> dict[str, str]:

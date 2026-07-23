@@ -94,6 +94,7 @@ Needs:
 - approval / share / history / audit reuse
 - evaluation coverage for core decision behavior
 - additive rollout behind a feature flag
+- session-bound procurement review assignment, read, and download policy
 
 ## 5.2 Out of scope for v1
 

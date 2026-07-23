@@ -1214,8 +1214,27 @@ def test_procurement_review_api_preserves_corrupt_state_as_internal_error(
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
+    from app.services.auth_service import issue_auth_token_pair
+    from app.storage.user_store import get_user_store
 
     client = TestClient(create_app(), raise_server_exceptions=False)
+    user_store = get_user_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    admin = user_store.create_first_admin(
+        username="corrupt-review-admin",
+        display_name="Corrupt Review Admin",
+        email="corrupt-review-admin@example.com",
+        password="StrongPassword123!",
+    )
+    tokens = issue_auth_token_pair(
+        admin,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     project = client.app.state.project_store.create(
         "system",
         name="Corrupt review project",
@@ -1233,11 +1252,15 @@ def test_procurement_review_api_preserves_corrupt_state_as_internal_error(
     record_path.write_bytes(b"{not-json")
 
     responses = (
-        client.get("/procurement/reviews"),
-        client.get(f"/projects/{project.project_id}/procurement/reviews"),
+        client.get("/procurement/reviews", headers=headers),
+        client.get(
+            f"/projects/{project.project_id}/procurement/reviews",
+            headers=headers,
+        ),
         client.get(
             f"/projects/{project.project_id}/procurement/reviews/"
-            f"{PACKET_SHA256}/reviewed-package"
+            f"{PACKET_SHA256}/reviewed-package",
+            headers=headers,
         ),
     )
 

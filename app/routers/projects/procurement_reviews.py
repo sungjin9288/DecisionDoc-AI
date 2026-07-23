@@ -9,7 +9,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from app.auth.api_key import require_api_key
 from app.dependencies import (
     get_tenant_id,
     require_session_bound_procurement_reviewer,
@@ -23,6 +22,16 @@ from app.schemas import (
     ExportProjectProcurementReviewPacketRequest,
 )
 from app.services.auth_service import get_request_user_store
+from app.services.procurement_review_access import (
+    authorized_review_records,
+    get_procurement_review_access,
+    require_assignment_access,
+    require_assignment_request_access,
+    require_project_review_access,
+    require_reviewer_filter_access,
+    require_reviewed_package_access,
+    review_summary,
+)
 
 
 router = APIRouter()
@@ -116,7 +125,7 @@ def _resolve_reviewer_assignment(
 
 @router.get(
     "/procurement/reviews",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
 def list_procurement_review_inbox_endpoint(
     request: Request,
@@ -129,10 +138,15 @@ def list_procurement_review_inbox_endpoint(
     _ensure_procurement_copilot_enabled(request)
     request.state.procurement_action = "review_inbox"
     tenant_id = get_tenant_id(request)
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_access_scope = access.scope
+    require_reviewer_filter_access(access, reviewer)
 
     records = request.app.state.procurement_review_store.list_by_tenant(
         tenant_id=tenant_id,
+        reviewer_user_id=None if access.is_admin else access.user_id,
     )
+    records = authorized_review_records(records, access)
     summary = {
         "total": len(records),
         "pending": sum(record.review_status == "pending" for record in records),
@@ -158,7 +172,7 @@ def list_procurement_review_inbox_endpoint(
     reviews = []
     for record in page:
         project = project_by_id.get(record.project_id)
-        item = record.to_public_dict()
+        item = review_summary(record, access)
         item["project"] = (
             {
                 "project_id": project.project_id,
@@ -176,6 +190,7 @@ def list_procurement_review_inbox_endpoint(
     request.state.procurement_review_total = summary["total"]
     request.state.procurement_review_pending_count = summary["pending"]
     request.state.procurement_review_completed_count = summary["completed"]
+    request.state.procurement_review_authorized_count = len(records)
     return {
         "reviews": reviews,
         "summary": summary,
@@ -189,7 +204,7 @@ def list_procurement_review_inbox_endpoint(
 
 @router.post(
     "/projects/{project_id}/procurement/review-packet",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
 def export_project_procurement_review_packet_endpoint(
     project_id: str,
@@ -212,6 +227,8 @@ def export_project_procurement_review_packet_endpoint(
         project_id=project_id,
     )
     tenant_id = get_tenant_id(request)
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_access_scope = access.scope
     _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
@@ -233,11 +250,13 @@ def export_project_procurement_review_packet_endpoint(
                 ],
             },
         )
+    require_assignment_request_access(access, payload.reviewer)
     reviewer_assignment = _resolve_reviewer_assignment(
         request,
         tenant_id=tenant_id,
         reviewer_username=payload.reviewer,
     )
+    require_assignment_access(access, reviewer_assignment)
 
     try:
         packet = build_project_procurement_review_packet(
@@ -296,7 +315,7 @@ def export_project_procurement_review_packet_endpoint(
 
 @router.get(
     "/projects/{project_id}/procurement/reviews",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
 def list_project_procurement_reviews_endpoint(project_id: str, request: Request) -> dict:
     """List packet-bound procurement review history for the current tenant."""
@@ -307,15 +326,41 @@ def list_project_procurement_reviews_endpoint(project_id: str, request: Request)
         project_id=project_id,
     )
     tenant_id = get_tenant_id(request)
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_access_scope = access.scope
     _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
-    records = request.app.state.procurement_review_store.list_by_project(
+    review_store = request.app.state.procurement_review_store
+    has_records = (
+        review_store.has_records_by_project(
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+        if not access.is_admin
+        else False
+    )
+    records = review_store.list_by_project(
         tenant_id=tenant_id,
         project_id=project_id,
+        reviewer_user_id=None if access.is_admin else access.user_id,
     )
+    authorized = authorized_review_records(records, access)
+    require_project_review_access(
+        has_records=has_records,
+        authorized=authorized,
+        access=access,
+    )
+    request.state.procurement_review_total = len(authorized)
+    request.state.procurement_review_pending_count = sum(
+        record.review_status == "pending" for record in authorized
+    )
+    request.state.procurement_review_completed_count = sum(
+        record.review_status == "completed" for record in authorized
+    )
+    request.state.procurement_review_authorized_count = len(authorized)
     return {
         "project_id": project_id,
-        "reviews": [record.to_public_dict() for record in records],
+        "reviews": [review_summary(record, access) for record in authorized],
         "operational_approval": False,
     }
 
@@ -573,7 +618,7 @@ def complete_project_procurement_review_endpoint(
 
 @router.get(
     "/projects/{project_id}/procurement/reviews/{packet_sha256}/reviewed-package",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
 def download_project_procurement_reviewed_package_endpoint(
     project_id: str,
@@ -594,6 +639,8 @@ def download_project_procurement_reviewed_package_endpoint(
         packet_sha256=packet_sha256,
     )
     tenant_id = get_tenant_id(request)
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_access_scope = access.scope
     _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     review_store = request.app.state.procurement_review_store
@@ -610,6 +657,7 @@ def download_project_procurement_reviewed_package_endpoint(
                 "message": "검토 기록을 찾을 수 없습니다.",
             },
         )
+    require_reviewed_package_access(review_record, access)
     if review_record.review_status != "completed":
         raise HTTPException(
             status_code=409,

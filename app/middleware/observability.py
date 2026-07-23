@@ -43,6 +43,8 @@ OPTIONAL_STATE_KEYS = [
     "procurement_review_total",
     "procurement_review_pending_count",
     "procurement_review_completed_count",
+    "procurement_review_authorized_count",
+    "procurement_review_access_scope",
     "meeting_recording_action",
     "meeting_recording_project_id",
     "meeting_recording_recording_id",

@@ -45,7 +45,7 @@ def require_session_bound_procurement_reviewer(request: Request) -> None:
     if getattr(request.state, "user_role", "") not in {"admin", "member"}:
         raise HTTPException(
             status_code=403,
-            detail="검토 완료에는 관리자 또는 멤버 권한이 필요합니다.",
+            detail="Procurement 검토에는 관리자 또는 멤버 권한이 필요합니다.",
         )
     session_id = getattr(request.state, "auth_session_id", None)
     if not isinstance(session_id, str) or not session_id:

@@ -1082,7 +1082,7 @@ class TestProjectProcurementApi:
 
         reviews = client.get(
             f"/projects/{pid}/procurement/reviews",
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert reviews.status_code == 200
         assert reviews.json()["operational_approval"] is False
@@ -1147,7 +1147,7 @@ class TestProjectProcurementApi:
 
         reviews = client.get(
             f"/projects/{pid}/procurement/reviews",
-            headers=HEADERS,
+            headers=reviewer_headers,
         ).json()["reviews"]
         assert reviews[0]["review_status"] == "completed"
         assert reviews[0]["decision"] == "accepted"
@@ -1157,7 +1157,7 @@ class TestProjectProcurementApi:
 
         downloaded = client.get(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/reviewed-package",
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert downloaded.status_code == 200
         assert downloaded.content == completed.content
@@ -1173,7 +1173,7 @@ class TestProjectProcurementApi:
         assert len(
             client.get(
                 f"/projects/{pid}/procurement/reviews",
-                headers=HEADERS,
+                headers=reviewer_headers,
             ).json()["reviews"]
         ) == 1
 
@@ -1242,10 +1242,10 @@ class TestProjectProcurementApi:
 
         probe_client = TestClient(client.app, raise_server_exceptions=False)
         responses = (
-            probe_client.get("/procurement/reviews", headers=HEADERS),
+            probe_client.get("/procurement/reviews", headers=reviewer_headers),
             probe_client.get(
                 f"/projects/{pid}/procurement/reviews/{packet_sha256}/reviewed-package",
-                headers=HEADERS,
+                headers=reviewer_headers,
             ),
         )
 
@@ -1294,7 +1294,7 @@ class TestProjectProcurementApi:
         original = record_path.read_bytes()
 
         probe_client = TestClient(client.app, raise_server_exceptions=False)
-        inbox = probe_client.get("/procurement/reviews", headers=HEADERS)
+        inbox = probe_client.get("/procurement/reviews", headers=reviewer_headers)
         generated = probe_client.post(
             "/generate",
             json={
@@ -1791,6 +1791,7 @@ class TestProjectProcurementApi:
 
         self._ready_decision(client, pending_project_id)
         self._ready_decision(client, completed_project_id)
+        admin_headers = self._reviewer_headers(client, "review-inbox-admin")
         pending_headers = self._reviewer_headers(client, "pending-owner")
         completed_headers = self._reviewer_headers(client, "completed-owner")
         pending_packet = client.post(
@@ -1815,7 +1816,7 @@ class TestProjectProcurementApi:
         assert pending_packet.status_code == 200
         assert completed.status_code == 200
 
-        inbox = client.get("/procurement/reviews", headers=HEADERS)
+        inbox = client.get("/procurement/reviews", headers=admin_headers)
 
         assert inbox.status_code == 200
         payload = inbox.json()
@@ -1841,7 +1842,7 @@ class TestProjectProcurementApi:
 
         pending = client.get(
             "/procurement/reviews?review_status=pending&reviewer=PENDING-OWNER",
-            headers=HEADERS,
+            headers=admin_headers,
         )
         assert pending.status_code == 200
         assert pending.json()["total"] == 1
@@ -1849,7 +1850,7 @@ class TestProjectProcurementApi:
 
         completed_only = client.get(
             "/procurement/reviews?review_status=completed&limit=1&offset=0",
-            headers=HEADERS,
+            headers=admin_headers,
         )
         assert completed_only.status_code == 200
         assert completed_only.json()["total"] == 1
@@ -1857,7 +1858,7 @@ class TestProjectProcurementApi:
 
         first_page = client.get(
             "/procurement/reviews?review_status=all&limit=1",
-            headers=HEADERS,
+            headers=admin_headers,
         )
         assert first_page.status_code == 200
         assert first_page.json()["total"] == 2
@@ -1865,13 +1866,14 @@ class TestProjectProcurementApi:
         assert first_page.json()["has_more"] is True
 
     def test_review_inbox_rejects_invalid_filters(self, client):
+        reviewer_headers = self._reviewer_headers(client, "review-filter-owner")
         invalid_status = client.get(
             "/procurement/reviews?review_status=unknown",
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         invalid_limit = client.get(
             "/procurement/reviews?limit=201",
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert invalid_status.status_code == 422
@@ -1902,7 +1904,7 @@ class TestProjectProcurementApi:
         assert response.json()["detail"]["code"] == "procurement_reviewer_mismatch"
         reviews = client.get(
             f"/projects/{pid}/procurement/reviews",
-            headers=HEADERS,
+            headers=requested_headers,
         ).json()["reviews"]
         assert reviews[0]["review_status"] == "pending"
 
@@ -1931,7 +1933,7 @@ class TestProjectProcurementApi:
         assert response.json()["detail"]["code"] == "procurement_review_source_changed"
         reviews = client.get(
             f"/projects/{pid}/procurement/reviews",
-            headers=HEADERS,
+            headers=reviewer_headers,
         ).json()["reviews"]
         assert reviews[0]["review_status"] == "pending"
 
@@ -1954,7 +1956,7 @@ class TestProjectProcurementApi:
         unknown_sha = "a" * 64
         unknown = client.get(
             f"/projects/{pid}/procurement/reviews/{unknown_sha}/reviewed-package",
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert unknown.status_code == 404
         assert unknown.json()["detail"]["code"] == "procurement_review_not_found"
@@ -1993,11 +1995,12 @@ class TestProjectProcurementApi:
     def test_review_packet_export_rejects_blank_reviewer(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(client, "blank-review-owner")
 
         response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "   "},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 422
@@ -2170,7 +2173,7 @@ class TestProjectProcurementFeatureFlag:
         )
 
         responses = [
-            client.get("/procurement/reviews", headers=HEADERS),
+            client.get("/procurement/reviews", headers=reviewer_headers),
             client.get(f"/projects/{pid}/procurement", headers=HEADERS),
             client.post(
                 f"/projects/{pid}/imports/g2b-opportunity",
@@ -2186,7 +2189,7 @@ class TestProjectProcurementFeatureFlag:
             ),
             client.get(
                 f"/projects/{pid}/procurement/reviews",
-                headers=HEADERS,
+                headers=reviewer_headers,
             ),
             client.post(
                 f"/projects/{pid}/procurement/reviews/{'a' * 64}/complete",
@@ -2198,7 +2201,7 @@ class TestProjectProcurementFeatureFlag:
             ),
             client.get(
                 f"/projects/{pid}/procurement/reviews/{'a' * 64}/reviewed-package",
-                headers=HEADERS,
+                headers=reviewer_headers,
             ),
         ]
 

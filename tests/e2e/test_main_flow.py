@@ -64,30 +64,25 @@ def test_procurement_review_completion_ui_uses_current_assignee_only(page):
     )
     page.evaluate(
         """({ projectId, packetSha256 }) => {
-          const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
           _currentUser = { ..._currentUser, role: 'admin' };
           const reviews = [
             {
               packet_sha256: packetSha256,
-              reviewer: _currentUser.username,
+              assigned_reviewer: _currentUser.username,
               review_status: 'pending',
               prepared_at: '2026-07-23T00:00:00Z',
               reviewer_identity_bound: true,
-              reviewer_assignment: {
-                user_id: currentUserId,
-                username: _currentUser.username,
-              },
+              assigned_to_current_user: true,
+              access_scope: 'tenant',
             },
             {
               packet_sha256: 'c'.repeat(64),
-              reviewer: 'different-reviewer',
+              assigned_reviewer: 'different-reviewer',
               review_status: 'pending',
               prepared_at: '2026-07-23T00:00:00Z',
               reviewer_identity_bound: true,
-              reviewer_assignment: {
-                user_id: 'different-user-id',
-                username: 'different-reviewer',
-              },
+              assigned_to_current_user: false,
+              access_scope: 'tenant',
             },
           ];
           const host = document.createElement('div');
@@ -136,6 +131,193 @@ def test_procurement_review_completion_ui_uses_current_assignee_only(page):
         "decision": "changes_requested",
         "rationale": "Evidence requires one correction.",
     }
+
+
+def test_procurement_review_views_discard_late_identity_bound_responses(page):
+    page.evaluate(
+        """() => {
+          const originalFetch = window.fetch.bind(window);
+          window.__h121OriginalFetch = originalFetch;
+          window.fetch = (url, options) => {
+            if (String(url).startsWith('/procurement/reviews?')) {
+              return new Promise(resolve => { window.__h121ResolveInbox = resolve; });
+            }
+            return originalFetch(url, options);
+          };
+          window.__h121InboxPromise = loadProcurementReviewInbox();
+        }"""
+    )
+    page.wait_for_function("() => typeof window.__h121ResolveInbox === 'function'")
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'replacement-user' };
+          invalidateProcurementReviewViews();
+          window.__h121ResolveInbox({
+            ok: true,
+            json: async () => ({
+              reviews: [{
+                project_id: 'late-project',
+                packet_sha256: 'a'.repeat(64),
+                assigned_reviewer: 'late-reviewer',
+                assigned_to_current_user: false,
+                access_scope: 'tenant',
+                review_status: 'pending',
+                project: { project_id: 'late-project', name: 'Late foreign review' },
+              }],
+              summary: { total: 1, pending: 1, completed: 0 },
+              total: 1,
+              has_more: false,
+            }),
+          });
+        }"""
+    )
+    page.evaluate("() => window.__h121InboxPromise")
+
+    assert page.evaluate("() => _procurementReviewInboxPayload") is None
+    assert "Late foreign review" not in page.locator(
+        "#procurement-review-inbox-list"
+    ).inner_text()
+
+    page.evaluate(
+        """() => {
+          const originalFetch = window.__h121OriginalFetch;
+          window.fetch = (url, options) => {
+            const path = String(url);
+            if (path === '/projects/late-project') {
+              return Promise.resolve({
+                ok: true,
+                json: async () => ({
+                  project_id: 'late-project',
+                  name: 'Late project detail',
+                  documents: [],
+                  meeting_recordings: [],
+                }),
+              });
+            }
+            if (path === '/projects/late-project/procurement') {
+              return Promise.resolve({
+                ok: true,
+                json: async () => ({ decision: null }),
+              });
+            }
+            if (path === '/projects/late-project/procurement/reviews') {
+              return new Promise(resolve => { window.__h121ResolveProjectReviews = resolve; });
+            }
+            return originalFetch(url, options);
+          };
+          window.__h121ProjectPromise = loadProjectDetail('late-project');
+        }"""
+    )
+    page.wait_for_function(
+        "() => typeof window.__h121ResolveProjectReviews === 'function'"
+    )
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'third-user' };
+          invalidateProcurementReviewViews();
+          window.__h121ResolveProjectReviews({
+            ok: true,
+            json: async () => ({
+              reviews: [{
+                project_id: 'late-project',
+                packet_sha256: 'b'.repeat(64),
+                assigned_reviewer: 'late-reviewer',
+                assigned_to_current_user: false,
+                access_scope: 'tenant',
+                review_status: 'pending',
+              }],
+            }),
+          });
+        }"""
+    )
+    page.evaluate("() => window.__h121ProjectPromise")
+
+    assert "Late project detail" not in page.locator("#project-detail").inner_text()
+
+
+def test_procurement_review_package_actions_discard_late_identity_bound_blobs(page):
+    packet_sha256 = "d" * 64
+    project_id = "late-package-project"
+    page.evaluate(
+        """({ projectId, packetSha256 }) => {
+          const originalFetch = window.fetch.bind(window);
+          window.__h121PackageDownloads = 0;
+          _triggerBrowserDownload = () => { window.__h121PackageDownloads += 1; };
+          window.fetch = (url, options) => {
+            const path = String(url);
+            if (path.endsWith('/reviewed-package')) {
+              return new Promise(resolve => { window.__h121ResolveDownload = resolve; });
+            }
+            if (path.endsWith('/complete')) {
+              return new Promise(resolve => { window.__h121ResolveComplete = resolve; });
+            }
+            return originalFetch(url, options);
+          };
+          const host = document.createElement('div');
+          host.id = 'h121-late-package-actions';
+          host.innerHTML = renderProjectProcurementReviewWorkspace(projectId, [{
+            packet_sha256: packetSha256,
+            assigned_reviewer: _currentUser.username,
+            assigned_to_current_user: true,
+            access_scope: 'assigned',
+            review_status: 'pending',
+            reviewer_identity_bound: true,
+          }]);
+          document.body.appendChild(host);
+          window.confirm = () => true;
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+
+    page.evaluate(
+        """({ projectId, packetSha256 }) => {
+          window.__h121DownloadPromise =
+            downloadProjectProcurementReviewedPackage(projectId, packetSha256);
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+    page.wait_for_function("() => typeof window.__h121ResolveDownload === 'function'")
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'download-replacement-user' };
+          invalidateProcurementReviewViews();
+          window.__h121ResolveDownload({
+            ok: true,
+            headers: new Headers({
+              'Content-Disposition': 'attachment; filename="late-download.zip"',
+            }),
+            blob: async () => new Blob(['late-download']),
+          });
+        }"""
+    )
+    page.evaluate("() => window.__h121DownloadPromise")
+    assert page.evaluate("() => window.__h121PackageDownloads") == 0
+
+    page.fill(f"#procurement-review-rationale-{packet_sha256}", "Late completion.")
+    page.evaluate(
+        """({ projectId, packetSha256 }) => {
+          window.__h121CompletePromise =
+            completeProjectProcurementReview(projectId, packetSha256);
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+    page.wait_for_function("() => typeof window.__h121ResolveComplete === 'function'")
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'complete-replacement-user' };
+          invalidateProcurementReviewViews();
+          window.__h121ResolveComplete({
+            ok: true,
+            headers: new Headers({
+              'Content-Disposition': 'attachment; filename="late-complete.zip"',
+              'X-DecisionDoc-Reviewed-Package-SHA256': 'e'.repeat(64),
+            }),
+            blob: async () => new Blob(['late-complete']),
+          });
+        }"""
+    )
+    page.evaluate("() => window.__h121CompletePromise")
+    assert page.evaluate("() => window.__h121PackageDownloads") == 0
 
 
 def _governance_inventory_payload(*, attention_required: bool) -> dict:

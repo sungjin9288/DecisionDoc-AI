@@ -521,11 +521,12 @@ def test_project_completion_requires_assigned_session_principal_and_records_rena
         f"/projects/{project_id}/procurement/reviews",
         headers=assigned_headers,
     ).json()["reviews"]
-    assert reviews[0]["reviewer_assignment"]["user_id"] == user.user_id
-    assert reviews[0]["reviewer_attestation"]["reviewer"]["user_id"] == user.user_id
-    assert (
-        reviews[0]["reviewer_attestation"]["reviewer"]["username"] == "renamed-reviewer"
-    )
+    assert reviews[0]["assigned_reviewer"] == "assigned-reviewer"
+    assert reviews[0]["completed_by"] == "renamed-reviewer"
+    assert reviews[0]["assigned_to_current_user"] is True
+    assert reviews[0]["access_scope"] == "tenant"
+    assert "reviewer_assignment" not in reviews[0]
+    assert "reviewer_attestation" not in reviews[0]
     audit = AuditStore("system", data_dir=client.app.state.data_dir).find_latest_entry(
         actions=("procurement.review_completed",),
         result="success",
@@ -611,7 +612,8 @@ def test_completed_v1_review_remains_listable_and_downloadable(
         headers=reviewer_headers,
     )
     assert listed.status_code == 200
-    assert listed.json()["reviews"][0]["schema_version"].endswith(".v1")
+    assert listed.json()["reviews"][0]["reviewer_identity_bound"] is False
+    assert listed.json()["reviews"][0]["completed_by"] is None
     downloaded = client.get(
         (
             f"/projects/{project_id}/procurement/reviews/"
@@ -622,12 +624,51 @@ def test_completed_v1_review_remains_listable_and_downloadable(
     assert downloaded.status_code == 200
     assert downloaded.content == reviewed_package
 
+    created_member = client.post(
+        "/admin/users",
+        json={
+            "username": "legacy-review-member",
+            "display_name": "legacy-review-member",
+            "email": "legacy-review-member@example.com",
+            "password": "Password123!",
+            "role": "member",
+        },
+        headers=reviewer_headers,
+    )
+    assert created_member.status_code == 200
+    member_login = client.post(
+        "/auth/login",
+        json={"username": "legacy-review-member", "password": "Password123!"},
+    )
+    assert member_login.status_code == 200
+    member_headers = {"Authorization": f"Bearer {member_login.json()['access_token']}"}
+    forbidden = client.get(
+        (
+            f"/projects/{project_id}/procurement/reviews/"
+            f"{packet.sha256}/reviewed-package"
+        ),
+        headers=member_headers,
+    )
+    assert forbidden.status_code == 403
+    member_inbox = client.get("/procurement/reviews", headers=member_headers)
+    assert member_inbox.status_code == 200
+    assert member_inbox.json()["summary"] == {
+        "total": 0,
+        "pending": 0,
+        "completed": 0,
+    }
+    member_history = client.get(
+        f"/projects/{project_id}/procurement/reviews",
+        headers=member_headers,
+    )
+    assert member_history.status_code == 403
+
 
 def test_procurement_review_ui_requires_assignee_and_omits_reviewer_payload() -> None:
     source = (Path(__file__).parents[1] / "app" / "static" / "index.html").read_text(
         encoding="utf-8"
     )
 
-    assert "assignedUserId === currentUserId" in source
-    assert "review?.reviewer_attestation?.reviewer?.username" in source
+    assert "review?.assigned_to_current_user === true" in source
+    assert "review?.completed_by || review?.assigned_reviewer" in source
     assert "reviewer,\n            decision: decisionInput.value" not in source
