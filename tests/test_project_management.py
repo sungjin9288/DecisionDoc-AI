@@ -26,7 +26,6 @@ import json
 import threading
 import time
 import zipfile
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -58,6 +57,40 @@ YEAR = datetime.now().year
 
 def _store(tmp_path: Path) -> ProjectStore:
     return ProjectStore(base_dir=str(tmp_path))
+
+
+def _session_reviewer_headers(client, username: str) -> dict[str, str]:
+    from app.services.auth_service import issue_auth_token_pair
+    from app.storage.user_store import get_user_store
+
+    user_store = get_user_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    user = user_store.get_by_username(username)
+    if user is None:
+        if user_store.has_any_users():
+            user = user_store.create(
+                username=username,
+                display_name=username,
+                email=f"{username}@example.com",
+                password="Password123!",
+                role="member",
+            )
+        else:
+            user = user_store.create_first_admin(
+                username=username,
+                display_name=username,
+                email=f"{username}@example.com",
+                password="Password123!",
+            )
+    tokens = issue_auth_token_pair(
+        user,
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
 def _create(store: ProjectStore, tenant: str = "t1", **kwargs) -> Project:
@@ -170,7 +203,7 @@ class TestProjectStoreRead:
 
     def test_list_sorted_newest_first(self, tmp_path):
         store = _store(tmp_path)
-        p1 = _create(store, name="첫째")
+        _create(store, name="첫째")
         time.sleep(0.01)
         p2 = _create(store, name="둘째")
         recs = store.list_by_tenant("t1")
@@ -672,6 +705,9 @@ class TestProjectProcurementApi:
     def _pid(self, client) -> str:
         return client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
 
+    def _reviewer_headers(self, client, username: str) -> dict[str, str]:
+        return _session_reviewer_headers(client, username)
+
     def _ready_decision(self, client, project_id: str, *, tenant_id: str = "system"):
         return client.app.state.procurement_store.upsert(
             ProcurementDecisionUpsert(
@@ -1016,11 +1052,15 @@ class TestProjectProcurementApi:
 
         pid = self._pid(client)
         record = self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
 
         response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "  proposal-review-owner  "},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 200
@@ -1060,21 +1100,24 @@ class TestProjectProcurementApi:
 
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet_response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet_response.headers["x-decisiondoc-packet-sha256"]
 
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "근거와 보완 조건을 확인했습니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert completed.status_code == 200
@@ -1085,7 +1128,19 @@ class TestProjectProcurementApi:
         assert completed.headers["x-decisiondoc-reviewed-package-sha256"] == hashlib.sha256(
             completed.content
         ).hexdigest()
-        verification = verify_procurement_reviewed_package(completed.content)
+        stored_review = client.app.state.procurement_review_store.get(
+            tenant_id="system",
+            project_id=pid,
+            packet_sha256=packet_sha256,
+        )
+        assert stored_review is not None
+        assert stored_review.reviewer_assignment is not None
+        verification = verify_procurement_reviewed_package(
+            completed.content,
+            expected_tenant_id="system",
+            expected_project_id=pid,
+            expected_reviewer_user_id=stored_review.reviewer_assignment["user_id"],
+        )
         assert verification["package_verified"] is True
         assert verification["decision"] == "accepted"
         assert verification["operational_approval"] is False
@@ -1110,7 +1165,7 @@ class TestProjectProcurementApi:
         packet_again = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert packet_again.status_code == 200
         assert packet_again.content == packet_response.content
@@ -1125,11 +1180,10 @@ class TestProjectProcurementApi:
         repeated = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "rejected",
                 "rationale": "두 번째 변경은 허용되지 않아야 합니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert repeated.status_code == 409
         assert repeated.json()["detail"]["code"] == "procurement_review_already_completed"
@@ -1140,20 +1194,23 @@ class TestProjectProcurementApi:
     ):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "저장 증빙의 semantic 검증을 확인합니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert completed.status_code == 200
 
@@ -1202,20 +1259,23 @@ class TestProjectProcurementApi:
     ):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "원래 검토 근거입니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert completed.status_code == 200
 
@@ -1258,20 +1318,23 @@ class TestProjectProcurementApi:
     ):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "공유와 결재 freshness에 사용할 검토 근거입니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert completed.status_code == 200
         generated = client.post(
@@ -1300,7 +1363,7 @@ class TestProjectProcurementApi:
                 "project_id": pid,
                 "project_document_id": proposal["doc_id"],
             },
-            headers=_auth_headers(client),
+            headers=reviewer_headers,
         )
         assert shared.status_code == 200
         approval = client.post(
@@ -1355,10 +1418,14 @@ class TestProjectProcurementApi:
     ):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         record_path = (
@@ -1384,11 +1451,10 @@ class TestProjectProcurementApi:
         response = probe_client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "record 소실을 persisted state 오류로 확인합니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 500
@@ -1398,20 +1464,23 @@ class TestProjectProcurementApi:
     def test_completed_review_provenance_is_saved_on_downstream_project_document(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "제안서 drafting에 사용할 검토 근거를 확인했습니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert completed.status_code == 200
 
@@ -1454,7 +1523,7 @@ class TestProjectProcurementApi:
                 "procurement_review_document_status": "stale_procurement_review",
                 "procurement_review_document_status_tone": "danger",
             },
-            headers=_auth_headers(client),
+            headers=reviewer_headers,
         )
         assert shared.status_code == 200
         assert shared.json()["project_document_binding_status"] == "current"
@@ -1524,20 +1593,23 @@ class TestProjectProcurementApi:
     def test_stale_review_bound_approval_requires_explicit_final_acknowledgement(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "proposal-review-owner",
+        )
         packet = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "proposal-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "proposal-review-owner",
                 "decision": "accepted",
                 "rationale": "현재 procurement 근거를 확인했습니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert completed.status_code == 200
 
@@ -1719,25 +1791,26 @@ class TestProjectProcurementApi:
 
         self._ready_decision(client, pending_project_id)
         self._ready_decision(client, completed_project_id)
+        pending_headers = self._reviewer_headers(client, "pending-owner")
+        completed_headers = self._reviewer_headers(client, "completed-owner")
         pending_packet = client.post(
             f"/projects/{pending_project_id}/procurement/review-packet",
             json={"reviewer": "pending-owner"},
-            headers=HEADERS,
+            headers=pending_headers,
         )
         completed_packet = client.post(
             f"/projects/{completed_project_id}/procurement/review-packet",
             json={"reviewer": "completed-owner"},
-            headers=HEADERS,
+            headers=completed_headers,
         )
         completed_sha256 = completed_packet.headers["x-decisiondoc-packet-sha256"]
         completed = client.post(
             f"/projects/{completed_project_id}/procurement/reviews/{completed_sha256}/complete",
             json={
-                "reviewer": "completed-owner",
                 "decision": "accepted",
                 "rationale": "검토함 완료 상태를 확인합니다.",
             },
-            headers=HEADERS,
+            headers=completed_headers,
         )
         assert pending_packet.status_code == 200
         assert completed.status_code == 200
@@ -1807,25 +1880,26 @@ class TestProjectProcurementApi:
     def test_review_completion_rejects_reviewer_mismatch_and_keeps_pending(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        requested_headers = self._reviewer_headers(client, "requested-owner")
+        different_headers = self._reviewer_headers(client, "different-owner")
         packet_response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "requested-owner"},
-            headers=HEADERS,
+            headers=requested_headers,
         )
         packet_sha256 = packet_response.headers["x-decisiondoc-packet-sha256"]
 
         response = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "different-owner",
                 "decision": "changes_requested",
                 "rationale": "담당자가 다릅니다.",
             },
-            headers=HEADERS,
+            headers=different_headers,
         )
 
         assert response.status_code == 409
-        assert response.json()["detail"]["code"] == "procurement_review_completion_rejected"
+        assert response.json()["detail"]["code"] == "procurement_reviewer_mismatch"
         reviews = client.get(
             f"/projects/{pid}/procurement/reviews",
             headers=HEADERS,
@@ -1835,10 +1909,11 @@ class TestProjectProcurementApi:
     def test_review_completion_rejects_changed_source_decision(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(client, "review-owner")
         packet_response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         packet_sha256 = packet_response.headers["x-decisiondoc-packet-sha256"]
         self._ready_decision(client, pid)
@@ -1846,11 +1921,10 @@ class TestProjectProcurementApi:
         response = client.post(
             f"/projects/{pid}/procurement/reviews/{packet_sha256}/complete",
             json={
-                "reviewer": "review-owner",
                 "decision": "accepted",
                 "rationale": "변경 전 패킷은 완료할 수 없어야 합니다.",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 409
@@ -1864,15 +1938,15 @@ class TestProjectProcurementApi:
     def test_review_routes_reject_invalid_or_unknown_packet_hash(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid)
+        reviewer_headers = self._reviewer_headers(client, "review-owner")
 
         invalid = client.post(
             f"/projects/{pid}/procurement/reviews/not-a-sha/complete",
             json={
-                "reviewer": "review-owner",
                 "decision": "accepted",
                 "rationale": "형식 검증",
             },
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
         assert invalid.status_code == 422
         assert invalid.json()["detail"]["code"] == "invalid_procurement_review_packet_sha256"
@@ -1887,6 +1961,7 @@ class TestProjectProcurementApi:
 
     def test_review_packet_export_requires_recommendation(self, client):
         pid = self._pid(client)
+        reviewer_headers = self._reviewer_headers(client, "review-owner")
         client.app.state.procurement_store.upsert(
             ProcurementDecisionUpsert(
                 project_id=pid,
@@ -1903,7 +1978,7 @@ class TestProjectProcurementApi:
         response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 409
@@ -1930,11 +2005,15 @@ class TestProjectProcurementApi:
     def test_review_packet_export_does_not_read_another_tenant_record(self, client):
         pid = self._pid(client)
         self._ready_decision(client, pid, tenant_id="tenant-b")
+        reviewer_headers = self._reviewer_headers(
+            client,
+            "system-review-owner",
+        )
 
         response = client.post(
             f"/projects/{pid}/procurement/review-packet",
             json={"reviewer": "system-review-owner"},
-            headers=HEADERS,
+            headers=reviewer_headers,
         )
 
         assert response.status_code == 409
@@ -2085,6 +2164,10 @@ class TestProjectProcurementFeatureFlag:
     def test_procurement_routes_return_feature_disabled_when_flag_is_off(self, tmp_path, monkeypatch):
         client = _disabled_procurement_client(tmp_path, monkeypatch)
         pid = client.post("/projects", json=PROJ_PAYLOAD, headers=HEADERS).json()["project_id"]
+        reviewer_headers = _session_reviewer_headers(
+            client,
+            "review-owner",
+        )
 
         responses = [
             client.get("/procurement/reviews", headers=HEADERS),
@@ -2099,7 +2182,7 @@ class TestProjectProcurementFeatureFlag:
             client.post(
                 f"/projects/{pid}/procurement/review-packet",
                 json={"reviewer": "review-owner"},
-                headers=HEADERS,
+                headers=reviewer_headers,
             ),
             client.get(
                 f"/projects/{pid}/procurement/reviews",
@@ -2108,11 +2191,10 @@ class TestProjectProcurementFeatureFlag:
             client.post(
                 f"/projects/{pid}/procurement/reviews/{'a' * 64}/complete",
                 json={
-                    "reviewer": "review-owner",
                     "decision": "accepted",
                     "rationale": "feature flag test",
                 },
-                headers=HEADERS,
+                headers=reviewer_headers,
             ),
             client.get(
                 f"/projects/{pid}/procurement/reviews/{'a' * 64}/reviewed-package",

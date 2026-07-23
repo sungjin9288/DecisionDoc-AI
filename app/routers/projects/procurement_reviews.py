@@ -1,6 +1,7 @@
 """Project-scoped procurement review packet and receipt endpoints."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -9,7 +10,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.auth.api_key import require_api_key
-from app.dependencies import get_tenant_id
+from app.dependencies import (
+    get_tenant_id,
+    require_session_bound_procurement_reviewer,
+)
 from app.routers.projects.procurement import (
     _apply_procurement_observability,
     _ensure_procurement_copilot_enabled,
@@ -18,6 +22,7 @@ from app.schemas import (
     CompleteProjectProcurementReviewRequest,
     ExportProjectProcurementReviewPacketRequest,
 )
+from app.services.auth_service import get_request_user_store
 
 
 router = APIRouter()
@@ -30,6 +35,33 @@ def _canonical_json_bytes(value: dict) -> bytes:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _reviewed_package_response(
+    *,
+    packet_sha256: str,
+    reviewed_package: bytes,
+    reviewed_package_sha256: str,
+    verification: dict,
+    reviewer_identity_bound: bool,
+) -> Response:
+    filename = f"procurement_reviewed_package_{packet_sha256[:12]}.zip"
+    return Response(
+        content=reviewed_package,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "X-DecisionDoc-Packet-SHA256": packet_sha256,
+            "X-DecisionDoc-Reviewed-Package-SHA256": reviewed_package_sha256,
+            "X-DecisionDoc-Review-Status": verification["reviewed_package_status"],
+            "X-DecisionDoc-Review-Decision": verification["decision"],
+            "X-DecisionDoc-Reviewer-Identity-Bound": str(
+                reviewer_identity_bound
+            ).lower(),
+            "X-DecisionDoc-Operational-Approval": "false",
+        },
+    )
 
 
 def _require_packet_sha256(packet_sha256: str) -> str:
@@ -48,6 +80,38 @@ def _ensure_project_exists(request: Request, *, project_id: str, tenant_id: str)
     project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
+
+
+def _resolve_reviewer_assignment(
+    request: Request,
+    *,
+    tenant_id: str,
+    reviewer_username: str,
+) -> dict[str, str]:
+    """Resolve one active tenant reviewer to its stable account identity."""
+    user = get_request_user_store(
+        request,
+        tenant_id,
+    ).get_by_username(reviewer_username)
+    if (
+        user is None
+        or not user.is_active
+        or user.role.value not in {"admin", "member"}
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "procurement_reviewer_assignment_invalid",
+                "message": (
+                    "검토 담당자는 현재 tenant의 활성 관리자 또는 "
+                    "멤버여야 합니다."
+                ),
+            },
+        )
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+    }
 
 
 @router.get(
@@ -169,11 +233,16 @@ def export_project_procurement_review_packet_endpoint(
                 ],
             },
         )
+    reviewer_assignment = _resolve_reviewer_assignment(
+        request,
+        tenant_id=tenant_id,
+        reviewer_username=payload.reviewer,
+    )
 
     try:
         packet = build_project_procurement_review_packet(
             record,
-            reviewer_owner=payload.reviewer,
+            reviewer_owner=reviewer_assignment["username"],
         )
         receipt = build_pending_procurement_review_receipt(packet.content)
         validate_procurement_review_receipt(receipt, packet.content)
@@ -183,6 +252,7 @@ def export_project_procurement_review_packet_endpoint(
             packet_content=packet.content,
             receipt=receipt,
             prepared_at=_utc_now(),
+            reviewer_assignment=reviewer_assignment,
         )
     except ValueError as exc:
         request.state.error_code = "procurement_review_packet_not_ready"
@@ -216,6 +286,9 @@ def export_project_procurement_review_packet_endpoint(
             "X-DecisionDoc-Package-Id": packet.verification["package_id"],
             "X-DecisionDoc-Artifact-Count": str(packet.verification["artifact_count"]),
             "X-DecisionDoc-Review-Status": review_record.review_status,
+            "X-DecisionDoc-Reviewer-Identity-Bound": str(
+                review_record.reviewer_identity_bound
+            ).lower(),
             "X-DecisionDoc-Operational-Approval": "false",
         },
     )
@@ -249,7 +322,7 @@ def list_project_procurement_reviews_endpoint(project_id: str, request: Request)
 
 @router.post(
     "/projects/{project_id}/procurement/reviews/{packet_sha256}/complete",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
 def complete_project_procurement_review_endpoint(
     project_id: str,
@@ -268,6 +341,9 @@ def complete_project_procurement_review_endpoint(
     from app.services.procurement_decision_package.reviewed_package import (
         build_procurement_reviewed_package,
         verify_procurement_reviewed_package,
+    )
+    from app.services.procurement_decision_package.reviewer_attestation import (
+        build_procurement_reviewer_attestation,
     )
 
     _ensure_procurement_copilot_enabled(request)
@@ -296,14 +372,82 @@ def complete_project_procurement_review_endpoint(
                 "message": "검토 기록을 찾을 수 없습니다.",
             },
         )
-    if review_record.review_status != "pending":
-        request.state.error_code = "procurement_review_already_completed"
+    assignment = review_record.reviewer_assignment
+    if (
+        not review_record.reviewer_identity_bound
+        or not isinstance(assignment, dict)
+    ):
+        request.state.error_code = "procurement_reviewer_identity_required"
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "procurement_review_already_completed",
-                "message": "이미 완료된 검토 기록은 다시 변경할 수 없습니다.",
+                "code": "procurement_reviewer_identity_required",
+                "message": (
+                    "기존 검토 기록은 담당자를 다시 지정한 뒤 "
+                    "완료할 수 있습니다."
+                ),
             },
+        )
+    if assignment["user_id"] != request.state.user_id:
+        request.state.error_code = "procurement_reviewer_mismatch"
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "procurement_reviewer_mismatch",
+                "message": (
+                    "지정된 검토 담당자만 이 패킷을 완료할 수 있습니다."
+                ),
+            },
+        )
+
+    if review_record.review_status == "completed":
+        if (
+            review_record.decision != payload.decision
+            or review_record.receipt["rationale"] != payload.rationale
+        ):
+            request.state.error_code = "procurement_review_already_completed"
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "procurement_review_already_completed",
+                    "message": "완료된 검토에는 동일한 요청만 재전송할 수 있습니다.",
+                },
+            )
+        reviewed_package = review_store.read_reviewed_package(
+            review_record,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+        )
+        verification = verify_procurement_reviewed_package(
+            reviewed_package,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_reviewer_user_id=request.state.user_id,
+        )
+        _apply_procurement_observability(
+            request,
+            action="review_completed",
+            project_id=project_id,
+            operation="replayed",
+            packet_sha256=packet_sha256,
+            review_status=review_record.review_status,
+            review_decision=review_record.decision,
+        )
+        request.state.procurement_review_packet_sha256 = packet_sha256
+        request.state.procurement_review_decision = review_record.decision
+        request.state.procurement_review_identity_bound = True
+        request.state.procurement_reviewed_package_sha256 = (
+            review_record.reviewed_package_sha256
+        )
+        return _reviewed_package_response(
+            packet_sha256=packet_sha256,
+            reviewed_package=reviewed_package,
+            reviewed_package_sha256=(
+                review_record.reviewed_package_sha256 or ""
+            ),
+            verification=verification,
+            reviewer_identity_bound=True,
         )
 
     decision_record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
@@ -345,18 +489,40 @@ def complete_project_procurement_review_endpoint(
         completed_receipt = record_procurement_review_decision(
             review_record.receipt,
             packet_content,
-            reviewer=payload.reviewer,
+            reviewer=review_record.reviewer,
             decision=payload.decision,
             rationale=payload.rationale,
             reviewed_at=_utc_now(),
         )
         receipt_content = _canonical_json_bytes(completed_receipt)
+        reviewer_attestation = build_procurement_reviewer_attestation(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+            completed_receipt_sha256=hashlib.sha256(
+                receipt_content
+            ).hexdigest(),
+            decision=payload.decision,
+            reviewed_at=completed_receipt["reviewed_at"],
+            reviewer_user_id=request.state.user_id,
+            reviewer_username=request.state.username,
+            reviewer_role=request.state.user_role,
+        )
         reviewed_package, _manifest = build_procurement_reviewed_package(
             packet_content,
             completed_receipt,
             receipt_content=receipt_content,
+            reviewer_attestation=reviewer_attestation,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_reviewer_user_id=request.state.user_id,
         )
-        verification = verify_procurement_reviewed_package(reviewed_package)
+        verification = verify_procurement_reviewed_package(
+            reviewed_package,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_reviewer_user_id=request.state.user_id,
+        )
         completed_record = review_store.complete(
             tenant_id=tenant_id,
             project_id=project_id,
@@ -364,6 +530,7 @@ def complete_project_procurement_review_endpoint(
             current=review_record,
             completed_receipt=completed_receipt,
             reviewed_package_content=reviewed_package,
+            reviewer_attestation=reviewer_attestation,
         )
     except HTTPException:
         raise
@@ -387,19 +554,20 @@ def complete_project_procurement_review_endpoint(
         review_status=completed_record.review_status,
         review_decision=completed_record.decision,
     )
-    filename = f"procurement_reviewed_package_{packet_sha256[:12]}.zip"
-    return Response(
-        content=reviewed_package,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "X-DecisionDoc-Packet-SHA256": packet_sha256,
-            "X-DecisionDoc-Reviewed-Package-SHA256": completed_record.reviewed_package_sha256 or "",
-            "X-DecisionDoc-Review-Status": verification["reviewed_package_status"],
-            "X-DecisionDoc-Review-Decision": verification["decision"],
-            "X-DecisionDoc-Operational-Approval": "false",
-        },
+    request.state.procurement_review_packet_sha256 = packet_sha256
+    request.state.procurement_review_decision = completed_record.decision
+    request.state.procurement_review_identity_bound = (
+        completed_record.reviewer_identity_bound
+    )
+    request.state.procurement_reviewed_package_sha256 = (
+        completed_record.reviewed_package_sha256
+    )
+    return _reviewed_package_response(
+        packet_sha256=packet_sha256,
+        reviewed_package=reviewed_package,
+        reviewed_package_sha256=completed_record.reviewed_package_sha256 or "",
+        verification=verification,
+        reviewer_identity_bound=completed_record.reviewer_identity_bound,
     )
 
 
@@ -458,7 +626,16 @@ def download_project_procurement_reviewed_package_endpoint(
             project_id=project_id,
             packet_sha256=packet_sha256,
         )
-        verification = verify_procurement_reviewed_package(reviewed_package)
+        verification = verify_procurement_reviewed_package(
+            reviewed_package,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_reviewer_user_id=(
+                review_record.reviewer_assignment["user_id"]
+                if review_record.reviewer_assignment is not None
+                else None
+            ),
+        )
     except (KeyError, ValueError) as exc:
         request.state.error_code = "procurement_reviewed_package_invalid"
         raise HTTPException(
@@ -489,6 +666,9 @@ def download_project_procurement_reviewed_package_endpoint(
             "X-DecisionDoc-Reviewed-Package-SHA256": review_record.reviewed_package_sha256 or "",
             "X-DecisionDoc-Review-Status": verification["reviewed_package_status"],
             "X-DecisionDoc-Review-Decision": verification["decision"],
+            "X-DecisionDoc-Reviewer-Identity-Bound": str(
+                review_record.reviewer_identity_bound
+            ).lower(),
             "X-DecisionDoc-Operational-Approval": "false",
         },
     )

@@ -266,4 +266,6 @@ The product execution plan is working when the repository contains:
 
 H119 adds a local immutable reviewer-evidence step after H118: validate the exact source, conditionally create one canonical record, then list/read/download it without policy mutation, provider calls, training, deployment, or service resume.
 
+H120 adds the project procurement counterpart: packet preparation resolves an active tenant admin/member to a stable reviewer identity, and completion accepts only that current session-bound principal. The v2 reviewed package adds a deterministic reviewer attestation while preserving v1 local CLI artifacts and all approval, bid, legal, contractual, provider, training, deployment, and service-resume boundaries as false or unavailable.
+
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.

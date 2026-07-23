@@ -3690,7 +3690,7 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
     assert discovered == {
         "read_packet": 6,
         "complete": 1,
-        "read_reviewed_package": 3,
+        "read_reviewed_package": 4,
     }
     assert incomplete_calls == []
 

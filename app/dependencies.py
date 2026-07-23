@@ -39,6 +39,22 @@ def require_session_bound_admin(request: Request) -> None:
         raise HTTPException(status_code=401, detail="세션 결합 관리자 로그인이 필요합니다.")
 
 
+def require_session_bound_procurement_reviewer(request: Request) -> None:
+    """Require a current admin or member session for durable review evidence."""
+    require_auth(request)
+    if getattr(request.state, "user_role", "") not in {"admin", "member"}:
+        raise HTTPException(
+            status_code=403,
+            detail="검토 완료에는 관리자 또는 멤버 권한이 필요합니다.",
+        )
+    session_id = getattr(request.state, "auth_session_id", None)
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(
+            status_code=401,
+            detail="세션 결합 검토자 로그인이 필요합니다.",
+        )
+
+
 def get_tenant_id(request: Request) -> str:
     """Extract the current tenant ID from request state, defaulting to 'system'."""
     return getattr(request.state, "tenant_id", "system") or "system"

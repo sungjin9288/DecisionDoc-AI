@@ -342,4 +342,8 @@ This narrative should guide roadmap, README, UI, demo, and implementation priori
 
 ## H119 Reviewer Evidence Boundary
 
-H119 turns a verified H118 disposition into reviewer-attributed durable evidence without turning it into approval or execution authority. Only a current admin login session may register or read the tenant record; Ops Key remains limited to H113-H118 read-only evidence. A username is historical display data, while the stable user ID remains the replay binding.
+H119 turns a verified H118 retention disposition into reviewer-attributed durable evidence without turning it into approval or execution authority. Only a current admin login session may register or read the tenant record; Ops Key remains limited to H113-H118 read-only evidence. A username is historical display data, while the stable user ID remains the replay binding. H119 does not assign or complete project procurement reviews; that separate session-bound contract begins with H120.
+
+## H120 Procurement Reviewer Attestation
+
+H120 applies the same evidence principle to project procurement review. A packet reviewer is assigned as an active tenant admin/member stable user ID; completion requires the matching current JWT session and records a canonical completion-time principal attestation. API keys, Ops keys, sessionless JWTs, viewers, and client-supplied reviewer text cannot complete the review. The reviewed package remains evidence only: approval, operational approval, bid submission, legal commitment, and contractual commitment remain false.

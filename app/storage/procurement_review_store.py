@@ -1,23 +1,26 @@
 """Tenant-scoped persistence for packet-bound procurement reviews."""
 from __future__ import annotations
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from app.storage.procurement_review_models import (
-    REVIEW_RECORD_SCHEMA_VERSION,
+    REVIEW_RECORD_SCHEMA_VERSION_V1,
     SHA256_PATTERN as _SHA256_PATTERN,
     ProcurementReviewRecord,
     ProcurementReviewStoreError,
+    build_completed_review_record,
+    build_pending_review_record,
     delete_unreferenced_review_artifact,
     ensure_review_artifact,
     record_from_dict,
     read_review_artifact,
     require_sha256,
     safe_segment,
+    serialize_review_record,
     sha256_content,
     unique_object as _unique_object,
+    upgrade_pending_reviewer_assignment,
     validate_record,
 )
 from app.storage.state_backend import (
@@ -159,15 +162,6 @@ class ProcurementReviewStore:
             filename=f"reviewed_packages/{reviewed_package_sha256}.zip",
         )
 
-    def _serialize_record(self, record: ProcurementReviewRecord) -> str:
-        self._validate_record(record)
-        try:
-            return json.dumps(asdict(record), ensure_ascii=False, indent=2)
-        except (TypeError, ValueError) as exc:
-            raise ProcurementReviewStoreError(
-                "Failed to serialize procurement review record"
-            ) from exc
-
     def _read_record_raw(
         self,
         *,
@@ -255,7 +249,7 @@ class ProcurementReviewStore:
         *,
         expected_raw: str | None,
     ) -> bool:
-        replacement = self._serialize_record(record)
+        replacement = serialize_review_record(record)
         relative_path = self._record_path(
             tenant_id=record.tenant_id,
             project_id=record.project_id,
@@ -328,38 +322,33 @@ class ProcurementReviewStore:
         packet_content: bytes,
         receipt: Mapping[str, Any],
         prepared_at: str,
+        reviewer_assignment: Mapping[str, str] | None = None,
     ) -> tuple[ProcurementReviewRecord, bool]:
         """Create an idempotent pending review bound to exact packet bytes."""
         tenant_id = require_tenant_id(tenant_id)
         project_id = self._safe_segment(project_id, field="project_id")
         packet_sha256 = sha256_content(packet_content)
-        pending_receipt = dict(receipt)
-        record = ProcurementReviewRecord(
-            schema_version=REVIEW_RECORD_SCHEMA_VERSION,
+        assignment = (
+            dict(reviewer_assignment)
+            if reviewer_assignment is not None
+            else None
+        )
+        record = build_pending_review_record(
             tenant_id=tenant_id,
             project_id=project_id,
             packet_sha256=packet_sha256,
             packet_size_bytes=len(packet_content),
-            package_id=pending_receipt.get("package_id", ""),
-            recommendation=pending_receipt.get("recommendation", ""),
-            reviewer=pending_receipt.get("reviewer", ""),
-            review_status=pending_receipt.get("status", ""),
-            decision=pending_receipt.get("decision"),
+            receipt=receipt,
             prepared_at=prepared_at,
-            reviewed_at=pending_receipt.get("reviewed_at"),
-            reviewed_package_sha256=None,
-            reviewed_package_size_bytes=None,
-            operational_approval=False,
-            receipt=pending_receipt,
+            reviewer_assignment=assignment,
         )
-        self._validate_record(record)
 
         with self._review_lock(
             tenant_id=tenant_id,
             project_id=project_id,
             packet_sha256=packet_sha256,
         ):
-            existing, _existing_raw = self._load_record(
+            existing, existing_raw = self._load_record(
                 tenant_id=tenant_id,
                 project_id=project_id,
                 packet_sha256=packet_sha256,
@@ -373,6 +362,31 @@ class ProcurementReviewStore:
                 )
                 if stored_packet != packet_content:
                     raise ValueError("stored procurement review packet content is inconsistent")
+                if (
+                    assignment is not None
+                    and existing.schema_version
+                    == REVIEW_RECORD_SCHEMA_VERSION_V1
+                    and existing.review_status == "pending"
+                ):
+                    upgraded = upgrade_pending_reviewer_assignment(
+                        existing,
+                        assignment,
+                    )
+                    if self._save_record_if_current(
+                        upgraded,
+                        expected_raw=existing_raw,
+                    ):
+                        return upgraded, False
+                    observed, _observed_raw = self._load_record(
+                        tenant_id=tenant_id,
+                        project_id=project_id,
+                        packet_sha256=packet_sha256,
+                    )
+                    if observed == upgraded:
+                        return observed, False
+                    raise ProcurementReviewStoreError(
+                        "Procurement review record changed during assignment upgrade"
+                    )
                 return existing, False
 
             packet_path = self._relative_path(
@@ -589,6 +603,7 @@ class ProcurementReviewStore:
         current: ProcurementReviewRecord,
         completed_receipt: Mapping[str, Any],
         reviewed_package_content: bytes,
+        reviewer_attestation: Mapping[str, Any] | None = None,
     ) -> ProcurementReviewRecord:
         """Persist one completed decision after its reviewed package is built."""
         tenant_id, project_id, packet_sha256 = self._require_record_scope(
@@ -597,18 +612,12 @@ class ProcurementReviewStore:
             project_id=project_id,
             packet_sha256=packet_sha256,
         )
-        completed = ProcurementReviewRecord(
-            **{
-                **asdict(current),
-                "review_status": completed_receipt.get("status"),
-                "decision": completed_receipt.get("decision"),
-                "reviewed_at": completed_receipt.get("reviewed_at"),
-                "reviewed_package_sha256": sha256_content(reviewed_package_content),
-                "reviewed_package_size_bytes": len(reviewed_package_content),
-                "receipt": dict(completed_receipt),
-            }
+        completed = build_completed_review_record(
+            current,
+            completed_receipt=completed_receipt,
+            reviewed_package_content=reviewed_package_content,
+            reviewer_attestation=reviewer_attestation,
         )
-        self._validate_record(completed)
         if self._reviewed_package_evidence_validator is not None:
             try:
                 self._reviewed_package_evidence_validator(
@@ -689,16 +698,11 @@ class ProcurementReviewStore:
                 raise ProcurementReviewStoreError(
                     "Procurement review record disappeared during completion"
                 )
-            if (
-                observed.review_status == "completed"
-                and observed.reviewed_package_sha256
-                != completed.reviewed_package_sha256
-            ):
-                delete_unreferenced_review_artifact(
-                    self._backend,
-                    immutable_package_path,
-                    label="procurement reviewed package",
-                )
+            delete_unreferenced_review_artifact(
+                self._backend,
+                immutable_package_path,
+                label="procurement reviewed package",
+            )
             raise ValueError(
                 "procurement review record changed before completion"
             )

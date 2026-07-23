@@ -68,6 +68,35 @@ def _create_project(client: TestClient) -> str:
     return response.json()["project_id"]
 
 
+def _reviewer_headers(
+    client: TestClient,
+    username: str,
+) -> dict[str, str]:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "display_name": username,
+            "email": f"{username}@example.com",
+            "password": "Password123!",
+            "role": "admin",
+        },
+        headers=HEADERS,
+    )
+    assert registered.status_code == 200
+    login = client.post(
+        "/auth/login",
+        json={
+            "username": username,
+            "password": "Password123!",
+        },
+    )
+    assert login.status_code == 200
+    return {
+        "Authorization": f"Bearer {login.json()['access_token']}",
+    }
+
+
 def _seed_procurement_decision(client: TestClient, project_id: str) -> None:
     store = client.app.state.procurement_store
     snapshot = store.save_source_snapshot(
@@ -195,21 +224,24 @@ def _seed_procurement_decision(client: TestClient, project_id: str) -> None:
 
 
 def _complete_procurement_review(client: TestClient, project_id: str) -> str:
+    reviewer_headers = _reviewer_headers(
+        client,
+        "proposal-review-owner",
+    )
     packet = client.post(
         f"/projects/{project_id}/procurement/review-packet",
         json={"reviewer": "proposal-review-owner"},
-        headers=HEADERS,
+        headers=reviewer_headers,
     )
     assert packet.status_code == 200
     packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
     completed = client.post(
         f"/projects/{project_id}/procurement/reviews/{packet_sha256}/complete",
         json={
-            "reviewer": "proposal-review-owner",
             "decision": "changes_requested",
             "rationale": "파트너 확약서 갱신 내용을 제안서 위험과 다음 조치에 반영하세요.",
         },
-        headers=HEADERS,
+        headers=reviewer_headers,
     )
     assert completed.status_code == 200
     assert completed.headers["x-decisiondoc-operational-approval"] == "false"

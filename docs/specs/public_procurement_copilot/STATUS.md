@@ -12009,3 +12009,14 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - full relevant 19-file procurement/README gate passed: 323 passed in 14.82s
   - `python3 scripts/count_readme_metrics.py --json` reports 254 routes, 91 env keys, 38 top-level service files, 2,619 test functions, and 219 test files
   - paid provider tests remain deferred by user request; AWS runtime, G2B live API, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment were not executed
+
+- H120 session-bound procurement reviewer attestation
+  - project review records now use `decisiondoc.procurement_project_review_record.v2` when packet preparation resolves an active tenant admin/member username to a stable user ID; v1 records and standalone CLI reviewed packages remain readable without rewrite
+  - completion accepts only the matching current session-bound admin/member JWT and rejects API-key-only, Ops-key-only, sessionless, viewer, and non-assignee requests before business-state mutation
+  - deterministic project reviewed packages use `decisiondoc.procurement_reviewed_package.v2` and ordered packet, receipt, `procurement_reviewer_attestation.json`, manifest entries; the attestation binds tenant, project, packet, completed receipt, decision, review time, and completion-time principal while keeping all operational/approval/bid/legal/contractual flags false
+  - v2 build/verify requires trusted tenant, project, and stable reviewer user scope; exact same-principal decision/rationale retry returns the reverified persisted package without a second mutation, changed replay remains rejected, and a confirmed CAS loser package is removed
+  - audit retains only the authenticated actor, packet SHA256, decision, identity-bound state, and reviewed-package SHA256; rationale, attestation body, session ID, token, IP, and User-Agent are excluded from the full persisted entry
+  - completed v1 records remain listable and downloadable through the HTTP surface, while the existing standalone three-entry CLI package remains unchanged
+  - focused H120 tests passed: 64 passed; auth/security/tenant regression passed: 216 passed; focused Chromium assignee/payload regression passed: 1 passed
+  - final full non-live gate passed: 4,437 passed, 1 skipped, 4 deselected; Ruff, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
+  - provider API, AWS runtime, G2B live API, Stripe, Statuspage, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, and contractual commitment remain out of scope

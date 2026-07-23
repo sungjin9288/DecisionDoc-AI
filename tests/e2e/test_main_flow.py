@@ -36,6 +36,108 @@ def _wait_until_text_contains(page, selector: str, expected: str, *, timeout_ms:
     raise AssertionError(f"{selector} did not contain {expected!r} within {timeout_ms}ms")
 
 
+def test_procurement_review_completion_ui_uses_current_assignee_only(page):
+    packet_sha256 = "a" * 64
+    project_id = "project-h120-ui"
+    observed_payload: dict[str, str] = {}
+
+    def fulfill_completion(route):
+        observed_payload.update(route.request.post_data_json)
+        route.fulfill(
+            status=200,
+            body=b"reviewed-package",
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": (
+                    'attachment; filename="procurement_reviewed_package.zip"'
+                ),
+                "X-DecisionDoc-Reviewed-Package-SHA256": "b" * 64,
+            },
+        )
+
+    page.route(
+        (
+            f"**/projects/{project_id}/procurement/reviews/"
+            f"{packet_sha256}/complete"
+        ),
+        fulfill_completion,
+    )
+    page.evaluate(
+        """({ projectId, packetSha256 }) => {
+          const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
+          _currentUser = { ..._currentUser, role: 'admin' };
+          const reviews = [
+            {
+              packet_sha256: packetSha256,
+              reviewer: _currentUser.username,
+              review_status: 'pending',
+              prepared_at: '2026-07-23T00:00:00Z',
+              reviewer_identity_bound: true,
+              reviewer_assignment: {
+                user_id: currentUserId,
+                username: _currentUser.username,
+              },
+            },
+            {
+              packet_sha256: 'c'.repeat(64),
+              reviewer: 'different-reviewer',
+              review_status: 'pending',
+              prepared_at: '2026-07-23T00:00:00Z',
+              reviewer_identity_bound: true,
+              reviewer_assignment: {
+                user_id: 'different-user-id',
+                username: 'different-reviewer',
+              },
+            },
+          ];
+          const host = document.createElement('div');
+          host.id = 'h120-review-workspace-test';
+          host.innerHTML = renderProjectProcurementReviewWorkspace(projectId, reviews);
+          document.body.appendChild(host);
+          window.confirm = () => true;
+          loadProjectDetail = async () => {};
+          _triggerBrowserDownload = () => {};
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+
+    assigned_button = page.locator(
+        (
+            '#h120-review-workspace-test '
+            f'[data-packet-sha256="{packet_sha256}"] '
+            '[data-project-detail-action="procurement-review-complete"]'
+        )
+    )
+    unassigned_button = page.locator(
+        (
+            '#h120-review-workspace-test '
+            f'[data-packet-sha256="{"c" * 64}"] '
+            '[data-project-detail-action="procurement-review-complete"]'
+        )
+    )
+    assert assigned_button.is_enabled()
+    assert unassigned_button.is_disabled()
+
+    page.select_option(
+        f"#procurement-review-decision-{packet_sha256}",
+        "changes_requested",
+    )
+    page.fill(
+        f"#procurement-review-rationale-{packet_sha256}",
+        "Evidence requires one correction.",
+    )
+    page.evaluate(
+        """({ projectId, packetSha256 }) =>
+          completeProjectProcurementReview(projectId, packetSha256)""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+
+    assert observed_payload == {
+        "decision": "changes_requested",
+        "rationale": "Evidence requires one correction.",
+    }
+
+
 def _governance_inventory_payload(*, attention_required: bool) -> dict:
     directories = {
         "exports": "trajectory_exports",

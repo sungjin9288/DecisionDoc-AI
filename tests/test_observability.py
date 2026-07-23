@@ -67,6 +67,34 @@ def _create_project(client: TestClient) -> str:
     return response.json()["project_id"]
 
 
+def _reviewer_headers(
+    client: TestClient,
+    username: str,
+) -> dict[str, str]:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "display_name": username,
+            "email": f"{username}@example.com",
+            "password": "Password123!",
+            "role": "admin",
+        },
+    )
+    assert registered.status_code == 200
+    login = client.post(
+        "/auth/login",
+        json={
+            "username": username,
+            "password": "Password123!",
+        },
+    )
+    assert login.status_code == 200
+    return {
+        "Authorization": f"Bearer {login.json()['access_token']}",
+    }
+
+
 def _install_transcription_transport(
     client: TestClient,
     *,
@@ -212,22 +240,30 @@ def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monk
 
     recommended = client.post(f"/projects/{project_id}/procurement/recommend")
     assert recommended.status_code == 200
+    reviewer_headers = _reviewer_headers(
+        client,
+        "observability-reviewer",
+    )
     packet = client.post(
         f"/projects/{project_id}/procurement/review-packet",
         json={"reviewer": "observability-reviewer"},
+        headers=reviewer_headers,
     )
     assert packet.status_code == 200
     packet_sha256 = packet.headers["x-decisiondoc-packet-sha256"]
     completed_review = client.post(
         f"/projects/{project_id}/procurement/reviews/{packet_sha256}/complete",
         json={
-            "reviewer": "observability-reviewer",
             "decision": "accepted",
             "rationale": "observability contract proof",
         },
+        headers=reviewer_headers,
     )
     assert completed_review.status_code == 200
-    review_inbox = client.get("/procurement/reviews")
+    review_inbox = client.get(
+        "/procurement/reviews",
+        headers=reviewer_headers,
+    )
     assert review_inbox.status_code == 200
 
     events = _captured_events(caplog, capsys)

@@ -52,11 +52,10 @@ class CompleteProjectProcurementReviewRequest(BaseModel):
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    reviewer: str = Field(..., min_length=1, max_length=120)
     decision: Literal["accepted", "changes_requested", "rejected"]
     rationale: str = Field(..., min_length=1, max_length=4000)
 
-    @field_validator("reviewer", "rationale")
+    @field_validator("rationale")
     @classmethod
     def normalize_required_text(cls, value: str) -> str:
         normalized = value.strip()

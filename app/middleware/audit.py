@@ -18,6 +18,11 @@ from app.middleware.document_ops_audit import (
     document_ops_audit_detail,
     document_ops_resource_identity,
 )
+from app.middleware.procurement_review_audit import (
+    procurement_review_audit_detail,
+    procurement_review_audit_network,
+    procurement_review_audit_principal,
+)
 _log = logging.getLogger("decisiondoc.audit")
 # ── Audit rules — (HTTP method, path pattern) → action type ────────────────────
 
@@ -309,6 +314,13 @@ def _append_audit_entries(
         username = getattr(request.state, "username", "anonymous") or "anonymous"
         user_role = getattr(request.state, "user_role", "unknown") or "unknown"
         user_id, username, user_role, session_id = auth_session_retention_audit_principal(action, user_id, username, user_role, session_id)
+        user_id, username, user_role, session_id = procurement_review_audit_principal(
+            action,
+            user_id,
+            username,
+            user_role,
+            session_id,
+        )
         auth_session_revoked_count = getattr(
             request.state,
             "auth_session_revoked_count",
@@ -353,31 +365,6 @@ def _append_audit_entries(
         procurement_packet_sha256 = getattr(
             request.state, "procurement_packet_sha256", ""
         ) or ""
-        procurement_review_status = getattr(
-            request.state, "procurement_review_status", ""
-        ) or ""
-        procurement_review_decision = getattr(
-            request.state, "procurement_review_decision", ""
-        ) or ""
-        procurement_review_handoff_skipped_reason = getattr(
-            request.state, "procurement_review_handoff_skipped_reason", ""
-        ) or ""
-        procurement_review_packet_sha256 = getattr(
-            request.state, "procurement_review_packet_sha256", ""
-        ) or ""
-        procurement_reviewed_at = getattr(
-            request.state, "procurement_reviewed_at", ""
-        ) or ""
-        procurement_review_operational_approval = getattr(
-            request.state, "procurement_review_operational_approval", None
-        )
-        procurement_review_total = getattr(request.state, "procurement_review_total", None)
-        procurement_review_pending_count = getattr(
-            request.state, "procurement_review_pending_count", None
-        )
-        procurement_review_completed_count = getattr(
-            request.state, "procurement_review_completed_count", None
-        )
         decision_council_session_id = getattr(request.state, "decision_council_session_id", "") or ""
         decision_council_session_revision = getattr(
             request.state, "decision_council_session_revision", None
@@ -507,30 +494,7 @@ def _append_audit_entries(
             detail["recommendation"] = procurement_recommendation
         if procurement_packet_sha256:
             detail["packet_sha256"] = procurement_packet_sha256
-        if procurement_review_status:
-            detail["review_status"] = procurement_review_status
-        if procurement_review_decision:
-            detail["review_decision"] = procurement_review_decision
-        if procurement_review_handoff_used:
-            detail["procurement_review_handoff_used"] = True
-        if procurement_review_handoff_skipped_reason:
-            detail["procurement_review_handoff_skipped_reason"] = (
-                procurement_review_handoff_skipped_reason
-            )
-        if procurement_review_packet_sha256:
-            detail["procurement_review_packet_sha256"] = procurement_review_packet_sha256
-        if procurement_reviewed_at:
-            detail["procurement_reviewed_at"] = procurement_reviewed_at
-        if procurement_review_operational_approval is not None:
-            detail["procurement_review_operational_approval"] = (
-                procurement_review_operational_approval
-            )
-        if procurement_review_total is not None:
-            detail["review_total"] = procurement_review_total
-        if procurement_review_pending_count is not None:
-            detail["review_pending_count"] = procurement_review_pending_count
-        if procurement_review_completed_count is not None:
-            detail["review_completed_count"] = procurement_review_completed_count
+        detail.update(procurement_review_audit_detail(request))
         if decision_council_project_id:
             detail["project_id"] = decision_council_project_id
         if decision_council_session_id:
@@ -725,7 +689,16 @@ def _build_audit_log(
     document_ops_identity = document_ops_resource_identity(request, action)
     if document_ops_identity is not None:
         resource_type, resource_id = document_ops_identity
-    ip_address, user_agent = auth_session_retention_audit_network(action, _get_client_ip(request), request.headers.get("user-agent", "")[:200])
+    ip_address, user_agent = auth_session_retention_audit_network(
+        action,
+        _get_client_ip(request),
+        request.headers.get("user-agent", "")[:200],
+    )
+    ip_address, user_agent = procurement_review_audit_network(
+        action,
+        ip_address,
+        user_agent,
+    )
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import zipfile
 from typing import TYPE_CHECKING, Any
@@ -12,6 +13,10 @@ from app.services.procurement_decision_package.review_receipt import (
 from app.services.procurement_decision_package.reviewed_package import (
     REVIEWED_PACKAGE_RECEIPT_NAME,
     verify_procurement_reviewed_package,
+)
+from app.services.procurement_decision_package.reviewer_attestation import (
+    canonical_attestation_bytes,
+    validate_procurement_reviewer_attestation,
 )
 
 if TYPE_CHECKING:
@@ -57,6 +62,13 @@ def validate_persisted_procurement_reviewed_package(
     """Require package semantics and embedded receipt to match the record."""
     verification = verify_procurement_reviewed_package(
         reviewed_package_content,
+        expected_tenant_id=record.tenant_id,
+        expected_project_id=record.project_id,
+        expected_reviewer_user_id=(
+            record.reviewer_assignment["user_id"]
+            if record.reviewer_assignment is not None
+            else None
+        ),
     )
     expected = {
         "package_id": record.package_id,
@@ -68,6 +80,36 @@ def validate_persisted_procurement_reviewed_package(
     }
     if any(verification[field] != value for field, value in expected.items()):
         raise ValueError("persisted procurement reviewed package binding is inconsistent")
+
+    if record.reviewer_identity_bound:
+        attestation = record.reviewer_attestation
+        if (
+            not isinstance(attestation, dict)
+            or verification.get("reviewer_attestation") != attestation
+        ):
+            raise ValueError(
+                "persisted procurement reviewer attestation is inconsistent"
+            )
+        receipt_content = (
+            json.dumps(record.receipt, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        validate_procurement_reviewer_attestation(
+            attestation,
+            expected_tenant_id=record.tenant_id,
+            expected_project_id=record.project_id,
+            expected_packet_sha256=record.packet_sha256,
+            expected_receipt_sha256=hashlib.sha256(
+                receipt_content
+            ).hexdigest(),
+            expected_decision=record.decision,
+            expected_reviewed_at=record.reviewed_at,
+        )
+        if record.reviewer_attestation_sha256 != hashlib.sha256(
+            canonical_attestation_bytes(attestation)
+        ).hexdigest():
+            raise ValueError(
+                "persisted procurement reviewer attestation hash is inconsistent"
+            )
 
     try:
         with zipfile.ZipFile(io.BytesIO(reviewed_package_content)) as archive:

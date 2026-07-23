@@ -22,6 +22,9 @@ from app.storage.state_backend import (
     S3StateBackend,
     StateBackendError,
 )
+from app.services.procurement_decision_package.reviewer_attestation import (
+    build_procurement_reviewer_attestation,
+)
 
 
 TENANT_ID = "alpha"
@@ -98,6 +101,18 @@ class _FailingLocalBackend(LocalStateBackend):
         if self._operation == "list":
             raise StateBackendError("simulated list failure")
         return super().list_prefix(relative_prefix)
+
+
+class _CasLosingLocalBackend(LocalStateBackend):
+    def replace_text_if_equal(
+        self,
+        relative_path: str,
+        *,
+        expected: str,
+        replacement: str,
+        content_type: str = "application/json; charset=utf-8",
+    ) -> bool:
+        return False
 
 
 class _Body:
@@ -249,6 +264,44 @@ def _completed_receipt(record: ProcurementReviewRecord) -> dict:
         "rationale": "Verified against the packet evidence.",
         "reviewed_at": "2026-07-16T00:01:00Z",
     }
+
+
+def _identity_bound_prepare(
+    store: ProcurementReviewStore,
+) -> ProcurementReviewRecord:
+    record, created = store.prepare(
+        tenant_id=TENANT_ID,
+        project_id=PROJECT_ID,
+        packet_content=PACKET_CONTENT,
+        receipt=_pending_receipt(),
+        prepared_at="2026-07-16T00:00:00Z",
+        reviewer_assignment={
+            "user_id": "reviewer-stable-id",
+            "username": "review-owner",
+        },
+    )
+    assert created is True
+    return record
+
+
+def _attestation_for(record: ProcurementReviewRecord) -> dict:
+    receipt = _completed_receipt(record)
+    receipt_content = (
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+    return build_procurement_reviewer_attestation(
+        tenant_id=record.tenant_id,
+        project_id=record.project_id,
+        packet_sha256=record.packet_sha256,
+        completed_receipt_sha256=hashlib.sha256(
+            receipt_content
+        ).hexdigest(),
+        decision="accepted",
+        reviewed_at=receipt["reviewed_at"],
+        reviewer_user_id="reviewer-stable-id",
+        reviewer_username="review-owner",
+        reviewer_role="member",
+    )
 
 
 @pytest.mark.parametrize(
@@ -522,9 +575,10 @@ def test_procurement_review_store_concurrent_completion_succeeds_once(
     tmp_path: Path,
 ) -> None:
     owner = ProcurementReviewStore(base_dir=str(tmp_path))
-    pending = _prepare(owner)
+    pending = _identity_bound_prepare(owner)
     stores = [ProcurementReviewStore(base_dir=str(tmp_path)) for _ in range(20)]
     ready = threading.Barrier(len(stores))
+    reviewer_attestation = _attestation_for(pending)
 
     def complete(index: int) -> tuple[str, int, bytes]:
         reviewed_package = f"reviewed package {index}".encode()
@@ -537,6 +591,7 @@ def test_procurement_review_store_concurrent_completion_succeeds_once(
                 current=pending,
                 completed_receipt=_completed_receipt(pending),
                 reviewed_package_content=reviewed_package,
+                reviewer_attestation=reviewer_attestation,
             )
         except ValueError:
             return "rejected", index, reviewed_package
@@ -554,6 +609,8 @@ def test_procurement_review_store_concurrent_completion_succeeds_once(
     )
     assert completed is not None
     assert completed.review_status == "completed"
+    assert completed.reviewer_session_bound is True
+    assert completed.reviewer_attestation == reviewer_attestation
     assert owner.read_reviewed_package(
         completed,
         tenant_id=TENANT_ID,
@@ -889,6 +946,38 @@ def test_completion_recovers_immutable_package_after_record_write_fails(
     )
     assert recovered.review_status == "completed"
 
+
+def test_completion_removes_unreferenced_package_after_confirmed_cas_loss(
+    tmp_path: Path,
+) -> None:
+    pending = _prepare(ProcurementReviewStore(base_dir=str(tmp_path)))
+    reviewed_package = b"cas-loser reviewed package"
+    store = ProcurementReviewStore(
+        base_dir=str(tmp_path),
+        backend=_CasLosingLocalBackend(tmp_path),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="record changed before completion",
+    ):
+        store.complete(
+            tenant_id=TENANT_ID,
+            project_id=PROJECT_ID,
+            packet_sha256=PACKET_SHA256,
+            current=pending,
+            completed_receipt=_completed_receipt(pending),
+            reviewed_package_content=reviewed_package,
+        )
+
+    assert not _reviewed_package_path(tmp_path, reviewed_package).exists()
+    assert store.get(
+        tenant_id=TENANT_ID,
+        project_id=PROJECT_ID,
+        packet_sha256=PACKET_SHA256,
+    ) == pending
+
+
 def test_prepare_adopts_exact_packet_artifact_without_overwriting_it(
     tmp_path: Path,
 ) -> None:
@@ -1043,7 +1132,7 @@ def test_s3_conditional_completion_succeeds_once_without_process_lock(
         lambda *_args, **_kwargs: nullcontext(),
     )
     client = _MemoryS3Client(read_delay=0.005)
-    pending = _prepare(
+    pending = _identity_bound_prepare(
         ProcurementReviewStore(
             base_dir="/virtual/bootstrap",
             backend=_s3_backend(client),
@@ -1057,6 +1146,7 @@ def test_s3_conditional_completion_succeeds_once_without_process_lock(
         for index in range(20)
     ]
     ready = threading.Barrier(len(stores))
+    reviewer_attestation = _attestation_for(pending)
 
     def complete(index: int) -> tuple[str, bytes]:
         package = f"reviewed package {index}".encode()
@@ -1069,6 +1159,7 @@ def test_s3_conditional_completion_succeeds_once_without_process_lock(
                 current=pending,
                 completed_receipt=_completed_receipt(pending),
                 reviewed_package_content=package,
+                reviewer_attestation=reviewer_attestation,
             )
         except ValueError:
             return "rejected", package
@@ -1093,6 +1184,9 @@ def test_s3_conditional_completion_succeeds_once_without_process_lock(
         packet_sha256=PACKET_SHA256,
     )
     assert completed is not None
+    assert completed.reviewer_identity_bound is True
+    assert completed.reviewer_session_bound is True
+    assert completed.reviewer_attestation == reviewer_attestation
     assert reloaded_store.read_reviewed_package(
         completed,
         tenant_id=TENANT_ID,

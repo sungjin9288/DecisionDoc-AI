@@ -20956,7 +20956,7 @@
           </div>
           <div class="procurement-review-inbox-meta">
             <span><span class="procurement-review-status ${completed ? 'completed' : ''}">${escapeHtml(getProcurementReviewInboxStatusLabel(review?.review_status))}</span></span>
-            <span>${escapeHtml(String(review?.reviewer || 'reviewer 미지정'))}${completed ? ` · ${escapeHtml(getProcurementReviewDecisionLabel(review?.decision))}` : ''}</span>
+            <span>${escapeHtml(String(review?.reviewer || 'reviewer 미지정'))}${review?.reviewer_identity_bound === true ? ' · 계정 지정' : ' · 기존 증빙'}${completed ? ` · ${escapeHtml(getProcurementReviewDecisionLabel(review?.decision))}` : ''}</span>
             <span>${escapeHtml(String((review?.reviewed_at || review?.prepared_at || '')).replace('T', ' ').slice(0, 16))}</span>
           </div>
           <div class="procurement-review-inbox-actions">
@@ -23363,6 +23363,14 @@
     const pendingHtml = pendingReviews.map(review => {
       const packetSha256 = String(review.packet_sha256 || '');
       const reviewer = String(review.reviewer || '');
+      const assignedUserId = String(review?.reviewer_assignment?.user_id || '');
+      const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
+      const canComplete = Boolean(
+        review?.reviewer_identity_bound === true
+        && assignedUserId
+        && assignedUserId === currentUserId
+        && ['admin', 'member'].includes(String(_currentUser?.role || '')),
+      );
       const decisionId = `procurement-review-decision-${packetSha256}`;
       const rationaleId = `procurement-review-rationale-${packetSha256}`;
       return `
@@ -23370,12 +23378,13 @@
           <div class="procurement-review-record-header">
             <span class="procurement-review-status">검토 대기</span>
             <strong>${escapeHtml(reviewer)}</strong>
+            <span class="procurement-review-record-meta">${review?.reviewer_identity_bound === true ? '계정 지정 검토' : '기존 미결 검토'}</span>
             <span class="procurement-review-record-meta">${escapeHtml(formatProcurementActivityTime(review.prepared_at, '준비됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
           </div>
           <div class="procurement-review-complete-form">
             <label for="${escapeHtml(decisionId)}">
               검토 결과
-              <select id="${escapeHtml(decisionId)}">
+              <select id="${escapeHtml(decisionId)}" ${canComplete ? '' : 'disabled'}>
                 <option value="accepted">수락</option>
                 <option value="changes_requested">수정 요청</option>
                 <option value="rejected">반려</option>
@@ -23383,17 +23392,17 @@
             </label>
             <label for="${escapeHtml(rationaleId)}">
               검토 근거
-              <textarea id="${escapeHtml(rationaleId)}" maxlength="4000" placeholder="확인한 근거와 필요한 후속 조치를 기록하세요."></textarea>
+              <textarea id="${escapeHtml(rationaleId)}" maxlength="4000" placeholder="확인한 근거와 필요한 후속 조치를 기록하세요." ${canComplete ? '' : 'disabled'}></textarea>
             </label>
             <button
               type="button"
               data-project-detail-action="procurement-review-complete"
               data-project-id="${escapeHtml(projectId)}"
               data-packet-sha256="${escapeHtml(packetSha256)}"
-              data-reviewer="${escapeHtml(reviewer)}"
+              ${canComplete ? '' : 'disabled'}
             >검토 완료 ZIP</button>
           </div>
-          <p class="procurement-review-export-note">완료 기록은 한 번만 저장되며 원본 packet SHA256에 묶입니다. 이 검토 증빙은 운영 승인이나 입찰 제출 권한을 부여하지 않습니다.</p>
+          <p class="procurement-review-export-note">${canComplete ? '현재 로그인한 지정 담당자만 완료할 수 있습니다.' : '지정 담당자 계정으로 로그인하면 완료할 수 있습니다.'} 완료 기록은 원본 packet SHA256에 묶이며 운영 승인이나 입찰 제출 권한을 부여하지 않습니다.</p>
         </section>
       `;
     }).join('');
@@ -23407,7 +23416,7 @@
               <div class="procurement-review-record-header">
                 <span class="procurement-review-status completed">검토 완료</span>
                 <strong>${escapeHtml(getProcurementReviewDecisionLabel(review.decision))}</strong>
-                <span class="procurement-review-record-meta">${escapeHtml(review.reviewer || '')} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+                <span class="procurement-review-record-meta">${escapeHtml(review?.reviewer_attestation?.reviewer?.username || review.reviewer || '')} · ${review?.reviewer_identity_bound === true ? '계정 증명됨' : '기존 증빙'} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
               </div>
               <button
                 type="button"
@@ -23477,7 +23486,7 @@
     }
   }
 
-  async function completeProjectProcurementReview(projectId, packetSha256, reviewer) {
+  async function completeProjectProcurementReview(projectId, packetSha256) {
     const decisionInput = document.getElementById(`procurement-review-decision-${packetSha256}`);
     const rationaleInput = document.getElementById(`procurement-review-rationale-${packetSha256}`);
     const button = document.querySelector(
@@ -23505,7 +23514,6 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
-            reviewer,
             decision: decisionInput.value,
             rationale,
           }),
@@ -24116,8 +24124,8 @@
 	        </div>
         <div class="procurement-review-export">
           <label>
-            검토 담당자
-            <input id="project-procurement-reviewer-input" type="text" maxlength="120" autocomplete="name" placeholder="예: proposal-review-owner">
+            검토 담당자 사용자명
+            <input id="project-procurement-reviewer-input" type="text" maxlength="120" autocomplete="username" placeholder="활성 tenant 사용자명">
           </label>
           <button
             id="project-procurement-review-packet-submit"
@@ -24263,7 +24271,6 @@
 	      completeProjectProcurementReview(
 	        projectId,
 	        btn.dataset.packetSha256 || '',
-	        btn.dataset.reviewer || '',
 	      );
 	      return;
 	    }

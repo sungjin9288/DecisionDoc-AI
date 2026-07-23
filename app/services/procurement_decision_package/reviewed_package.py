@@ -25,16 +25,29 @@ from app.services.procurement_decision_package.review_receipt import (
     REVIEW_RECEIPT_SCHEMA_VERSION,
     validate_procurement_review_receipt,
 )
+from app.services.procurement_decision_package.reviewer_attestation import (
+    REVIEWER_ATTESTATION_SCHEMA_VERSION,
+    canonical_attestation_bytes,
+    validate_procurement_reviewer_attestation,
+)
 
 
 REVIEWED_PACKAGE_SCHEMA_VERSION = "decisiondoc.procurement_reviewed_package.v1"
+REVIEWED_PACKAGE_SCHEMA_VERSION_V2 = "decisiondoc.procurement_reviewed_package.v2"
 REVIEWED_PACKAGE_STATUS = "review_completed"
 REVIEWED_PACKAGE_PACKET_NAME = "procurement_review_packet.zip"
 REVIEWED_PACKAGE_RECEIPT_NAME = "procurement_review_receipt.json"
+REVIEWED_PACKAGE_ATTESTATION_NAME = "procurement_reviewer_attestation.json"
 REVIEWED_PACKAGE_MANIFEST_NAME = "reviewed_package_manifest.json"
 REVIEWED_PACKAGE_ENTRY_ORDER = (
     REVIEWED_PACKAGE_PACKET_NAME,
     REVIEWED_PACKAGE_RECEIPT_NAME,
+    REVIEWED_PACKAGE_MANIFEST_NAME,
+)
+REVIEWED_PACKAGE_V2_ENTRY_ORDER = (
+    REVIEWED_PACKAGE_PACKET_NAME,
+    REVIEWED_PACKAGE_RECEIPT_NAME,
+    REVIEWED_PACKAGE_ATTESTATION_NAME,
     REVIEWED_PACKAGE_MANIFEST_NAME,
 )
 REVIEWED_PACKAGE_MANIFEST_FIELD_ORDER = (
@@ -58,9 +71,19 @@ REVIEWED_PACKAGE_SOURCE_FIELD_ORDER = (
     "receipt_size_bytes",
     "receipt_schema_version",
 )
+REVIEWED_PACKAGE_V2_SOURCE_FIELD_ORDER = (
+    *REVIEWED_PACKAGE_SOURCE_FIELD_ORDER,
+    "reviewer_attestation_sha256",
+    "reviewer_attestation_size_bytes",
+    "reviewer_attestation_schema_version",
+)
 MAX_RECEIPT_SIZE_BYTES = 1024 * 1024
+MAX_ATTESTATION_SIZE_BYTES = 64 * 1024
 MAX_REVIEWED_PACKAGE_SIZE_BYTES = (
-    MAX_PACKET_SIZE_BYTES + MAX_RECEIPT_SIZE_BYTES + 128 * 1024
+    MAX_PACKET_SIZE_BYTES
+    + MAX_RECEIPT_SIZE_BYTES
+    + MAX_ATTESTATION_SIZE_BYTES
+    + 128 * 1024
 )
 
 
@@ -70,6 +93,24 @@ def _sha256(content: bytes) -> str:
 
 def _load_json_object(content: bytes, *, label: str) -> dict[str, Any]:
     return load_json_object_content(content, label=label)
+
+
+def _require_attestation_scope(
+    *,
+    expected_tenant_id: str | None,
+    expected_project_id: str | None,
+    expected_reviewer_user_id: str | None,
+) -> tuple[str, str, str]:
+    values = (
+        expected_tenant_id,
+        expected_project_id,
+        expected_reviewer_user_id,
+    )
+    if any(not isinstance(value, str) or not value for value in values):
+        raise ValueError(
+            "procurement reviewer attestation trusted scope is required"
+        )
+    return values
 
 
 def _review_context(
@@ -103,25 +144,40 @@ def _build_manifest(
     packet_content: bytes,
     receipt_content: bytes,
     context: Mapping[str, Any],
+    *,
+    attestation_content: bytes | None = None,
 ) -> dict[str, Any]:
     packet = context["packet"]
     review = context["review"]
+    source = {
+        "packet_sha256": _sha256(packet_content),
+        "packet_size_bytes": len(packet_content),
+        "packet_schema_version": packet["schema_version"],
+        "receipt_sha256": _sha256(receipt_content),
+        "receipt_size_bytes": len(receipt_content),
+        "receipt_schema_version": REVIEW_RECEIPT_SCHEMA_VERSION,
+    }
+    if attestation_content is not None:
+        source.update(
+            reviewer_attestation_sha256=_sha256(attestation_content),
+            reviewer_attestation_size_bytes=len(attestation_content),
+            reviewer_attestation_schema_version=(
+                REVIEWER_ATTESTATION_SCHEMA_VERSION
+            ),
+        )
     return {
-        "schema_version": REVIEWED_PACKAGE_SCHEMA_VERSION,
+        "schema_version": (
+            REVIEWED_PACKAGE_SCHEMA_VERSION_V2
+            if attestation_content is not None
+            else REVIEWED_PACKAGE_SCHEMA_VERSION
+        ),
         "status": REVIEWED_PACKAGE_STATUS,
         "package_id": review["package_id"],
         "recommendation": review["recommendation"],
         "reviewer": review["reviewer"],
         "decision": review["decision"],
         "reviewed_at": review["reviewed_at"],
-        "source": {
-            "packet_sha256": _sha256(packet_content),
-            "packet_size_bytes": len(packet_content),
-            "packet_schema_version": packet["schema_version"],
-            "receipt_sha256": _sha256(receipt_content),
-            "receipt_size_bytes": len(receipt_content),
-            "receipt_schema_version": REVIEW_RECEIPT_SCHEMA_VERSION,
-        },
+        "source": source,
         "excluded_actions": list(EXCLUDED_ACTION_ORDER),
         "authorization_boundary": EXPLICIT_AUTHORIZATION_BOUNDARY,
         "operational_approval": False,
@@ -133,10 +189,39 @@ def build_procurement_reviewed_package(
     receipt: Mapping[str, Any],
     *,
     receipt_content: bytes,
+    reviewer_attestation: Mapping[str, Any] | None = None,
+    expected_tenant_id: str | None = None,
+    expected_project_id: str | None = None,
+    expected_reviewer_user_id: str | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
     """Return a deterministic audit envelope for a completed review."""
     context = _review_context(packet_content, receipt, receipt_content)
-    manifest = _build_manifest(packet_content, receipt_content, context)
+    attestation_content: bytes | None = None
+    if reviewer_attestation is not None:
+        tenant_id, project_id, reviewer_user_id = _require_attestation_scope(
+            expected_tenant_id=expected_tenant_id,
+            expected_project_id=expected_project_id,
+            expected_reviewer_user_id=expected_reviewer_user_id,
+        )
+        validate_procurement_reviewer_attestation(
+            reviewer_attestation,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_packet_sha256=_sha256(packet_content),
+            expected_receipt_sha256=_sha256(receipt_content),
+            expected_decision=context["review"]["decision"],
+            expected_reviewed_at=context["review"]["reviewed_at"],
+            expected_reviewer_user_id=reviewer_user_id,
+        )
+        attestation_content = canonical_attestation_bytes(
+            reviewer_attestation
+        )
+    manifest = _build_manifest(
+        packet_content,
+        receipt_content,
+        context,
+        attestation_content=attestation_content,
+    )
     manifest_content = (
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
     ).encode("utf-8")
@@ -153,6 +238,12 @@ def build_procurement_reviewed_package(
             path=REVIEWED_PACKAGE_RECEIPT_NAME,
             content=receipt_content,
         )
+        if attestation_content is not None:
+            _write_zip_entry(
+                archive,
+                path=REVIEWED_PACKAGE_ATTESTATION_NAME,
+                content=attestation_content,
+            )
         _write_zip_entry(
             archive,
             path=REVIEWED_PACKAGE_MANIFEST_NAME,
@@ -168,7 +259,10 @@ def _read_entries(content: bytes) -> dict[str, bytes]:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             infos = archive.infolist()
             names = [info.filename for info in infos]
-            if names != list(REVIEWED_PACKAGE_ENTRY_ORDER):
+            if names not in (
+                list(REVIEWED_PACKAGE_ENTRY_ORDER),
+                list(REVIEWED_PACKAGE_V2_ENTRY_ORDER),
+            ):
                 raise ValueError(
                     "procurement reviewed package entries must match the expected order"
                 )
@@ -178,6 +272,13 @@ def _read_entries(content: bytes) -> dict[str, bytes]:
                 raise ValueError("procurement reviewed package packet entry is too large")
             if infos[1].file_size > MAX_RECEIPT_SIZE_BYTES:
                 raise ValueError("procurement reviewed package receipt entry is too large")
+            if (
+                len(infos) == len(REVIEWED_PACKAGE_V2_ENTRY_ORDER)
+                and infos[2].file_size > MAX_ATTESTATION_SIZE_BYTES
+            ):
+                raise ValueError(
+                    "procurement reviewed package attestation entry is too large"
+                )
             return {name: archive.read(name) for name in names}
     except zipfile.BadZipFile as exc:
         raise ValueError(f"invalid procurement reviewed package: {exc}") from exc
@@ -194,13 +295,26 @@ def _validate_manifest(
         raise ValueError("procurement reviewed package manifest must be an object")
     if tuple(manifest) != REVIEWED_PACKAGE_MANIFEST_FIELD_ORDER:
         raise ValueError("procurement reviewed package manifest fields are invalid")
-    if manifest["schema_version"] != REVIEWED_PACKAGE_SCHEMA_VERSION:
+    attestation_content = context["entries"].get(
+        REVIEWED_PACKAGE_ATTESTATION_NAME
+    )
+    expected_schema_version = (
+        REVIEWED_PACKAGE_SCHEMA_VERSION_V2
+        if attestation_content is not None
+        else REVIEWED_PACKAGE_SCHEMA_VERSION
+    )
+    if manifest["schema_version"] != expected_schema_version:
         raise ValueError("procurement reviewed package schema_version is invalid")
     if manifest["status"] != REVIEWED_PACKAGE_STATUS:
         raise ValueError("procurement reviewed package status is invalid")
 
     source = manifest["source"]
-    if not isinstance(source, dict) or tuple(source) != REVIEWED_PACKAGE_SOURCE_FIELD_ORDER:
+    expected_source_fields = (
+        REVIEWED_PACKAGE_V2_SOURCE_FIELD_ORDER
+        if attestation_content is not None
+        else REVIEWED_PACKAGE_SOURCE_FIELD_ORDER
+    )
+    if not isinstance(source, dict) or tuple(source) != expected_source_fields:
         raise ValueError("procurement reviewed package source fields are invalid")
     packet = context["packet"]
     review = context["review"]
@@ -212,6 +326,14 @@ def _validate_manifest(
         "receipt_size_bytes": len(receipt_content),
         "receipt_schema_version": REVIEW_RECEIPT_SCHEMA_VERSION,
     }
+    if attestation_content is not None:
+        expected_source.update(
+            reviewer_attestation_sha256=_sha256(attestation_content),
+            reviewer_attestation_size_bytes=len(attestation_content),
+            reviewer_attestation_schema_version=(
+                REVIEWER_ATTESTATION_SCHEMA_VERSION
+            ),
+        )
     for field, expected in expected_source.items():
         if source[field] != expected:
             raise ValueError(f"procurement reviewed package source.{field} is invalid")
@@ -237,7 +359,13 @@ def _validate_manifest(
     return manifest
 
 
-def verify_procurement_reviewed_package(content: bytes) -> dict[str, Any]:
+def verify_procurement_reviewed_package(
+    content: bytes,
+    *,
+    expected_tenant_id: str | None = None,
+    expected_project_id: str | None = None,
+    expected_reviewer_user_id: str | None = None,
+) -> dict[str, Any]:
     """Verify outer membership, source hashes, completed review, and authority."""
     entries = _read_entries(content)
     packet_content = entries[REVIEWED_PACKAGE_PACKET_NAME]
@@ -247,6 +375,7 @@ def verify_procurement_reviewed_package(content: bytes) -> dict[str, Any]:
         label="procurement review receipt",
     )
     context = _review_context(packet_content, receipt, receipt_content)
+    context["entries"] = entries
     manifest = _load_json_object(
         entries[REVIEWED_PACKAGE_MANIFEST_NAME],
         label="procurement reviewed package manifest",
@@ -257,7 +386,33 @@ def verify_procurement_reviewed_package(content: bytes) -> dict[str, Any]:
         receipt_content=receipt_content,
         context=context,
     )
-    return {
+    attestation = None
+    attestation_content = entries.get(REVIEWED_PACKAGE_ATTESTATION_NAME)
+    if attestation_content is not None:
+        tenant_id, project_id, reviewer_user_id = _require_attestation_scope(
+            expected_tenant_id=expected_tenant_id,
+            expected_project_id=expected_project_id,
+            expected_reviewer_user_id=expected_reviewer_user_id,
+        )
+        attestation = _load_json_object(
+            attestation_content,
+            label="procurement reviewer attestation",
+        )
+        if canonical_attestation_bytes(attestation) != attestation_content:
+            raise ValueError(
+                "procurement reviewer attestation is not canonical"
+            )
+        validate_procurement_reviewer_attestation(
+            attestation,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+            expected_packet_sha256=_sha256(packet_content),
+            expected_receipt_sha256=_sha256(receipt_content),
+            expected_decision=manifest["decision"],
+            expected_reviewed_at=manifest["reviewed_at"],
+            expected_reviewer_user_id=reviewer_user_id,
+        )
+    result = {
         "schema_version": manifest["schema_version"],
         "reviewed_package_status": manifest["status"],
         "package_id": manifest["package_id"],
@@ -270,3 +425,10 @@ def verify_procurement_reviewed_package(content: bytes) -> dict[str, Any]:
         "operational_approval": manifest["operational_approval"],
         "package_verified": True,
     }
+    if attestation is not None:
+        result.update(
+            reviewer_identity_bound=True,
+            reviewer_session_bound=True,
+            reviewer_attestation=attestation,
+        )
+    return result
