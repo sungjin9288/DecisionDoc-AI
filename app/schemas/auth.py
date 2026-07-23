@@ -78,6 +78,28 @@ class AuthSessionRetentionRecheckRequest(BaseModel):
     )
 
 
+class AuthSessionRetentionReviewDispositionRequest(BaseModel):
+    """A browser-held H117 receipt submitted for a non-authoritative review record."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    contract_version: Literal[
+        "auth-session-retention-review-disposition-request.v1"
+    ]
+    source_recheck_receipt: dict[str, Any]
+    source_recheck_receipt_sha256: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    review_disposition: Literal[
+        "acknowledged_unchanged",
+        "new_handoff_required",
+        "review_deferred",
+    ]
+
+
 class UpdateMyProfileRequest(BaseModel):
     display_name: str | None = None
     email: str | None = None

@@ -16,6 +16,14 @@ AUTH_SESSION_RETENTION_POLICY_DAYS = (30, 90, 180, 365)
 RETENTION_COMPARISON_CONTRACT_VERSION = "auth-session-retention-comparison.v1"
 RETENTION_REVIEW_HANDOFF_CONTRACT_VERSION = "auth-session-retention-review-handoff.v2"
 RETENTION_RECHECK_RECEIPT_CONTRACT_VERSION = "auth-session-retention-recheck-receipt.v1"
+RETENTION_REVIEW_DISPOSITION_RECEIPT_CONTRACT_VERSION = (
+    "auth-session-retention-review-disposition-receipt.v1"
+)
+RETENTION_REVIEW_DISPOSITIONS = (
+    "acknowledged_unchanged",
+    "new_handoff_required",
+    "review_deferred",
+)
 RETENTION_RECHECK_VOLATILE_FIELDS = [
     "comparison.generated_at",
     "comparison.policies[*].eligible_before",
@@ -166,6 +174,161 @@ def build_retention_recheck_receipt(
         "requires_recheck_before_mutation": True,
         "recheck_persisted": False,
     }
+
+
+def build_retention_review_disposition_receipt(
+    *,
+    source_recheck_receipt: object,
+    source_recheck_receipt_sha256: object,
+    expected_tenant_id: str,
+    review_disposition: object,
+) -> dict[str, Any]:
+    """Bind a non-authoritative operator disposition to one verified recheck."""
+    source_sha256 = _require_sha256(
+        source_recheck_receipt_sha256,
+        field="source_recheck_receipt_sha256",
+    )
+    receipt = validate_retention_recheck_receipt(
+        source_recheck_receipt,
+        expected_tenant_id=expected_tenant_id,
+        expected_sha256=source_sha256,
+    )
+    disposition = _require_review_disposition(review_disposition)
+    aggregate_status = receipt["aggregate_status"]
+    _validate_review_disposition(
+        aggregate_status=aggregate_status,
+        review_disposition=disposition,
+    )
+
+    current_handoff = receipt["current_handoff"]
+    current_handoff_sha256 = receipt["current_handoff_sha256"]
+    current_aggregate_fingerprint_sha256 = receipt[
+        "current_aggregate_fingerprint_sha256"
+    ]
+    selected_policy_days = current_handoff["selected_policy_days"]
+    disposition_binding = {
+        "tenant_id": expected_tenant_id,
+        "source_recheck_receipt_sha256": source_sha256,
+        "current_handoff_sha256": current_handoff_sha256,
+        "current_aggregate_fingerprint_sha256": current_aggregate_fingerprint_sha256,
+        "selected_policy_days": selected_policy_days,
+        "aggregate_status": aggregate_status,
+        "review_disposition": disposition,
+    }
+    return {
+        "contract_version": RETENTION_REVIEW_DISPOSITION_RECEIPT_CONTRACT_VERSION,
+        "tenant_id": expected_tenant_id,
+        "source_recheck_receipt": receipt,
+        "source_recheck_receipt_sha256": source_sha256,
+        "current_handoff_sha256": current_handoff_sha256,
+        "current_aggregate_fingerprint_sha256": current_aggregate_fingerprint_sha256,
+        "selected_policy_days": selected_policy_days,
+        "aggregate_status": aggregate_status,
+        "review_disposition": disposition,
+        "disposition_binding_sha256": retention_sha256(disposition_binding),
+        "receipt_status": "issued",
+        "review_only": True,
+        "reviewer_identity_bound": False,
+        "approval_granted": False,
+        "execution_authorized": False,
+        "policy_change_authorized": False,
+        "deletion_authorized": False,
+        "scheduler_authorized": False,
+        "mass_revoke_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+        "decision_receipt_persisted": False,
+    }
+
+
+def validate_retention_recheck_receipt(
+    receipt: object,
+    *,
+    expected_tenant_id: str,
+    expected_sha256: object,
+) -> dict[str, Any]:
+    """Validate the complete H117 receipt before issuing a disposition record."""
+    receipt_sha256 = _require_sha256(
+        expected_sha256,
+        field="source_recheck_receipt_sha256",
+    )
+    receipt = _require_exact_object(
+        receipt,
+        {
+            "contract_version",
+            "source_handoff",
+            "source_handoff_sha256",
+            "current_handoff",
+            "current_handoff_sha256",
+            "source_aggregate_fingerprint_sha256",
+            "current_aggregate_fingerprint_sha256",
+            "aggregate_status",
+            "fingerprint_algorithm",
+            "volatile_fields_excluded",
+            "aggregate_only",
+            "review_only",
+            "policy_change_authorized",
+            "deletion_authorized",
+            "scheduler_authorized",
+            "snapshot_atomic",
+            "requires_recheck_before_mutation",
+            "recheck_persisted",
+        },
+        message="Invalid authentication-session retention recheck receipt",
+    )
+    if retention_sha256(receipt) != receipt_sha256:
+        raise AuthSessionRetentionContractError(
+            "source_recheck_receipt_sha256 does not match"
+        )
+    if (
+        receipt["contract_version"] != RETENTION_RECHECK_RECEIPT_CONTRACT_VERSION
+        or receipt["fingerprint_algorithm"] != "sha256"
+        or receipt["volatile_fields_excluded"] != RETENTION_RECHECK_VOLATILE_FIELDS
+        or receipt["aggregate_only"] is not True
+        or receipt["review_only"] is not True
+        or receipt["policy_change_authorized"] is not False
+        or receipt["deletion_authorized"] is not False
+        or receipt["scheduler_authorized"] is not False
+        or receipt["snapshot_atomic"] is not False
+        or receipt["requires_recheck_before_mutation"] is not True
+        or receipt["recheck_persisted"] is not False
+    ):
+        raise AuthSessionRetentionContractError("Invalid retention recheck authority")
+
+    source = validate_retention_review_handoff(
+        receipt["source_handoff"],
+        expected_tenant_id=expected_tenant_id,
+        expected_sha256=receipt["source_handoff_sha256"],
+    )
+    current = validate_retention_review_handoff(
+        receipt["current_handoff"],
+        expected_tenant_id=expected_tenant_id,
+        expected_sha256=receipt["current_handoff_sha256"],
+    )
+    if source["selected_policy_days"] != current["selected_policy_days"]:
+        raise AuthSessionRetentionContractError("Retention recheck policy mismatch")
+
+    source_fingerprint_sha256 = retention_sha256(
+        retention_aggregate_fingerprint(source["comparison"])
+    )
+    current_fingerprint_sha256 = retention_sha256(
+        retention_aggregate_fingerprint(current["comparison"])
+    )
+    if (
+        receipt["source_aggregate_fingerprint_sha256"]
+        != source_fingerprint_sha256
+        or receipt["current_aggregate_fingerprint_sha256"]
+        != current_fingerprint_sha256
+    ):
+        raise AuthSessionRetentionContractError("Invalid retention aggregate fingerprint")
+    expected_status = (
+        "unchanged"
+        if source_fingerprint_sha256 == current_fingerprint_sha256
+        else "changed"
+    )
+    if receipt["aggregate_status"] != expected_status:
+        raise AuthSessionRetentionContractError("Invalid retention aggregate status")
+    return receipt
 
 
 def retention_aggregate_fingerprint(comparison: object) -> dict[str, Any]:
@@ -326,6 +489,27 @@ def _require_sha256(value: object, *, field: str) -> str:
     if type(value) is not str or not _SHA256_PATTERN.fullmatch(value):
         raise AuthSessionRetentionContractError(f"Invalid {field}")
     return value
+
+
+def _require_review_disposition(value: object) -> str:
+    if value not in RETENTION_REVIEW_DISPOSITIONS:
+        raise AuthSessionRetentionContractError("Invalid retention review disposition")
+    return value
+
+
+def _validate_review_disposition(
+    *,
+    aggregate_status: object,
+    review_disposition: str,
+) -> None:
+    allowed_dispositions = {
+        "unchanged": {"acknowledged_unchanged", "review_deferred"},
+        "changed": {"new_handoff_required", "review_deferred"},
+    }
+    if review_disposition not in allowed_dispositions.get(aggregate_status, set()):
+        raise AuthSessionRetentionContractError(
+            "Retention review disposition is incompatible with aggregate status"
+        )
 
 
 def _parse_timestamp(value: object, *, field: str) -> datetime:

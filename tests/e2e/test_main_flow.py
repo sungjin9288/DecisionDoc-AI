@@ -2769,6 +2769,53 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+    recheck_sha256 = hashlib.sha256(recheck_body).hexdigest()
+    disposition_binding = {
+        "tenant_id": "system",
+        "source_recheck_receipt_sha256": recheck_sha256,
+        "current_handoff_sha256": handoff_sha256,
+        "current_aggregate_fingerprint_sha256": aggregate_fingerprint_sha256,
+        "selected_policy_days": 90,
+        "aggregate_status": "unchanged",
+        "review_disposition": "acknowledged_unchanged",
+    }
+    review_disposition_payload = {
+        "contract_version": "auth-session-retention-review-disposition-receipt.v1",
+        "tenant_id": "system",
+        "source_recheck_receipt": recheck_payload,
+        "source_recheck_receipt_sha256": recheck_sha256,
+        "current_handoff_sha256": handoff_sha256,
+        "current_aggregate_fingerprint_sha256": aggregate_fingerprint_sha256,
+        "selected_policy_days": 90,
+        "aggregate_status": "unchanged",
+        "review_disposition": "acknowledged_unchanged",
+        "disposition_binding_sha256": hashlib.sha256(
+            json.dumps(
+                disposition_binding,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+        "receipt_status": "issued",
+        "review_only": True,
+        "reviewer_identity_bound": False,
+        "approval_granted": False,
+        "execution_authorized": False,
+        "policy_change_authorized": False,
+        "deletion_authorized": False,
+        "scheduler_authorized": False,
+        "mass_revoke_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+        "decision_receipt_persisted": False,
+    }
+    review_disposition_body = json.dumps(
+        review_disposition_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
     def fulfill_handoff(route):
         nonlocal handoff_requests
@@ -2808,9 +2855,34 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
             },
         )
 
+    def fulfill_review_disposition(route):
+        assert route.request.post_data_json == {
+            "contract_version": "auth-session-retention-review-disposition-request.v1",
+            "source_recheck_receipt": recheck_payload,
+            "source_recheck_receipt_sha256": recheck_sha256,
+            "review_disposition": "acknowledged_unchanged",
+        }
+        route.fulfill(
+            status=200,
+            body=review_disposition_body,
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Content-Disposition": (
+                    'attachment; filename="auth-session-retention-review-disposition-receipt-90d.json"'
+                ),
+                "X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Receipt-SHA256": (
+                    hashlib.sha256(review_disposition_body).hexdigest()
+                ),
+            },
+        )
+
     page.route("**/admin/auth-sessions/retention-comparison", fulfill_comparison)
     page.route("**/admin/auth-sessions/retention-handoff?*", fulfill_handoff)
     page.route("**/admin/auth-sessions/retention-handoff/recheck", fulfill_recheck)
+    page.route(
+        "**/admin/auth-sessions/retention-handoff/review-disposition",
+        fulfill_review_disposition,
+    )
     page.goto(f"{live_server['base_url']}?ops=1")
     page.wait_for_selector(
         '#ops-auth-session-retention-result[data-state="ready"]',
@@ -2826,7 +2898,7 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.locator('[data-auth-retention-metric="revoked"] dd').inner_text() == "1"
     assert "읽기 전용" in panel_text
     assert "삭제 권한 없음" in panel_text
-    assert panel.get_by_role("button").count() == 3
+    assert panel.get_by_role("button").count() == 4
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 상태 새로고침",
@@ -2839,6 +2911,11 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
         "button",
         name="로그인 세션 보존 검토 자료 재확인",
     ).count() == 1
+    assert panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 검토 처리 기록 내보내기",
+    ).count() == 1
+    assert panel.locator("#ops-auth-session-retention-review-disposition").count() == 1
     assert panel.locator("[data-auth-retention-policy]").count() == 4
 
     page.select_option("#ops-auth-session-retention-days", "90")
@@ -2872,6 +2949,311 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     recheck_download.save_as(str(recheck_path))
     assert recheck_path.read_bytes() == recheck_body
     assert "session set identity 또는 변경 안전성을 의미하지 않습니다." in panel.inner_text()
+    assert panel.locator(
+        '#ops-auth-session-retention-review-disposition '
+        'option[value="new_handoff_required"]',
+    ).evaluate("option => option.disabled") is True
+
+    with page.expect_download() as disposition_download_info:
+        panel.get_by_role(
+            "button",
+            name="로그인 세션 보존 검토 처리 기록 내보내기",
+        ).click()
+    disposition_download = disposition_download_info.value
+    disposition_path = tmp_path / disposition_download.suggested_filename
+    disposition_download.save_as(str(disposition_path))
+    assert disposition_path.read_bytes() == review_disposition_body
+    assert "검토 처리: acknowledged_unchanged" in panel.inner_text()
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert panel.evaluate("element => element.scrollWidth <= element.clientWidth")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+    disposition_rejection = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const nativeCreateObjectUrl = URL.createObjectURL;
+          const originalHandoff = _authSessionRetentionVerifiedHandoff;
+          const originalComparison = _authSessionRetentionComparison;
+          const originalComparisonTenant = _authSessionRetentionComparisonTenant;
+          const previousOpsKey = localStorage.getItem('dd_ops_key');
+          const opsInput = document.querySelector('#ops-key-input');
+          const previousOpsInput = opsInput?.value || '';
+          let objectUrlCalls = 0;
+          URL.createObjectURL = (...args) => {
+            objectUrlCalls += 1;
+            return nativeCreateObjectUrl(...args);
+          };
+          const encode = value => new TextEncoder().encode(
+            canonicalAuthSessionRetentionJson(value),
+          );
+          const sourceHandoff = originalHandoff.handoff;
+          const handoffSha256 = await sha256Hex(encode(sourceHandoff));
+          const fingerprintSha256 = await sha256Hex(encode(
+            authSessionRetentionAggregateFingerprint(sourceHandoff.comparison),
+          ));
+          const sourceReceipt = {
+            contract_version: 'auth-session-retention-recheck-receipt.v1',
+            source_handoff: sourceHandoff,
+            source_handoff_sha256: handoffSha256,
+            current_handoff: sourceHandoff,
+            current_handoff_sha256: handoffSha256,
+            source_aggregate_fingerprint_sha256: fingerprintSha256,
+            current_aggregate_fingerprint_sha256: fingerprintSha256,
+            aggregate_status: 'unchanged',
+            fingerprint_algorithm: 'sha256',
+            volatile_fields_excluded: [
+              'comparison.generated_at',
+              'comparison.policies[*].eligible_before',
+            ],
+            aggregate_only: true,
+            review_only: true,
+            policy_change_authorized: false,
+            deletion_authorized: false,
+            scheduler_authorized: false,
+            snapshot_atomic: false,
+            requires_recheck_before_mutation: true,
+            recheck_persisted: false,
+          };
+          const sourceReceiptBytes = encode(sourceReceipt);
+          const source = {
+            receipt: sourceReceipt,
+            bodyBytes: sourceReceiptBytes,
+            bodySha256: await sha256Hex(sourceReceiptBytes),
+            tenantId: 'system',
+            selectedPolicyDays: 90,
+            aggregateStatus: 'unchanged',
+          };
+          const restoreSource = () => {
+            _authSessionRetentionVerifiedRecheckReceipt = source;
+          };
+          const responseFor = async (changes = {}, headerSha256 = '') => {
+            const binding = {
+              tenant_id: source.tenantId,
+              source_recheck_receipt_sha256: source.bodySha256,
+              current_handoff_sha256: handoffSha256,
+              current_aggregate_fingerprint_sha256: fingerprintSha256,
+              selected_policy_days: source.selectedPolicyDays,
+              aggregate_status: source.aggregateStatus,
+              review_disposition: 'acknowledged_unchanged',
+            };
+            const receipt = {
+              contract_version: 'auth-session-retention-review-disposition-receipt.v1',
+              tenant_id: source.tenantId,
+              source_recheck_receipt: source.receipt,
+              source_recheck_receipt_sha256: source.bodySha256,
+              current_handoff_sha256: handoffSha256,
+              current_aggregate_fingerprint_sha256: fingerprintSha256,
+              selected_policy_days: source.selectedPolicyDays,
+              aggregate_status: source.aggregateStatus,
+              review_disposition: 'acknowledged_unchanged',
+              disposition_binding_sha256: await sha256Hex(encode(binding)),
+              receipt_status: 'issued',
+              review_only: true,
+              reviewer_identity_bound: false,
+              approval_granted: false,
+              execution_authorized: false,
+              policy_change_authorized: false,
+              deletion_authorized: false,
+              scheduler_authorized: false,
+              mass_revoke_authorized: false,
+              snapshot_atomic: false,
+              requires_recheck_before_mutation: true,
+              decision_receipt_persisted: false,
+              ...changes,
+            };
+            const body = new TextEncoder().encode(JSON.stringify(receipt));
+            return new Response(body, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Receipt-SHA256': (
+                  headerSha256 || await sha256Hex(body)
+                ),
+              },
+            });
+          };
+          const reviewText = () => document.querySelector(
+            '#ops-auth-session-retention-result',
+          )?.innerText.includes('검토 처리: acknowledged_unchanged');
+          try {
+            _authSessionRetentionVerifiedHandoff = originalHandoff;
+            restoreSource();
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return responseFor({ approval_granted: true });
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionReviewDisposition();
+            const afterAuthorityTamper = reviewText();
+
+            restoreSource();
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return responseFor({}, '0'.repeat(64));
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionReviewDisposition();
+            const afterBodyHashTamper = reviewText();
+
+            restoreSource();
+            window.fetch = async url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff?')) {
+                return new Response('', { status: 422 });
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionHandoff();
+            const sourceClearedByNewHandoff = _authSessionRetentionVerifiedRecheckReceipt === null;
+
+            _authSessionRetentionVerifiedHandoff = originalHandoff;
+            restoreSource();
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return new Response('', { status: 422 });
+              }
+              return nativeFetch(url);
+            };
+            await recheckAuthSessionRetentionHandoff();
+            const sourceClearedByNewRecheck = _authSessionRetentionVerifiedRecheckReceipt === null;
+
+            restoreSource();
+            window.fetch = nativeFetch;
+            await loadAuthSessionRetentionComparison();
+            const sourceClearedByRefresh = _authSessionRetentionVerifiedRecheckReceipt === null;
+
+            restoreSource();
+            let resolveStale;
+            window.fetch = url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return new Promise(resolve => { resolveStale = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const staleRequest = downloadAuthSessionRetentionReviewDisposition();
+            selectAuthSessionRetentionPolicy();
+            resolveStale(await responseFor());
+            await staleRequest;
+            const afterPolicyChange = reviewText();
+
+            restoreSource();
+            const dispositionSelect = document.querySelector(
+              '#ops-auth-session-retention-review-disposition',
+            );
+            dispositionSelect.value = 'acknowledged_unchanged';
+            let resolveDispositionStale;
+            window.fetch = url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return new Promise(resolve => { resolveDispositionStale = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const dispositionStaleRequest = downloadAuthSessionRetentionReviewDisposition();
+            dispositionSelect.value = 'review_deferred';
+            dispositionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            resolveDispositionStale(await responseFor());
+            await dispositionStaleRequest;
+            const afterDispositionChange = reviewText();
+
+            restoreSource();
+            dispositionSelect.value = 'acknowledged_unchanged';
+            let resolveOpsKeyStale;
+            window.fetch = url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return new Promise(resolve => { resolveOpsKeyStale = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const beforeOpsKeyGeneration = _authSessionRetentionRequestGeneration;
+            const opsKeyStaleRequest = downloadAuthSessionRetentionReviewDisposition();
+            opsInput.value = 'rotated-retention-ops-key';
+            persistOpsKey(opsInput);
+            resolveOpsKeyStale(await responseFor());
+            await opsKeyStaleRequest;
+            const afterOpsKeyChange = reviewText();
+            const opsKeyRetentionInvalidated = (
+              _authSessionRetentionRequestGeneration > beforeOpsKeyGeneration
+              && _authSessionRetentionVerifiedRecheckReceipt === null
+            );
+
+            restoreSource();
+            const beforeCrossTabGeneration = _authSessionRetentionRequestGeneration;
+            handleCrossTabAuthStorageChange({
+              storageArea: localStorage,
+              key: 'dd_ops_key',
+            });
+            const crossTabOpsKeyInvalidated = (
+              _authSessionRetentionRequestGeneration > beforeCrossTabGeneration
+              && _authSessionRetentionVerifiedRecheckReceipt === null
+            );
+
+            restoreSource();
+            let resolveAuthStale;
+            window.fetch = url => {
+              if (String(url).endsWith('/retention-handoff/review-disposition')) {
+                return new Promise(resolve => { resolveAuthStale = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const authStaleRequest = downloadAuthSessionRetentionReviewDisposition();
+            window.invalidateAuthSessionRetentionHandoff();
+            resolveAuthStale(await responseFor());
+            await authStaleRequest;
+            return {
+              afterAuthorityTamper,
+              afterBodyHashTamper,
+              afterPolicyChange,
+              afterDispositionChange,
+              afterOpsKeyChange,
+              opsKeyRetentionInvalidated,
+              crossTabOpsKeyInvalidated,
+              sourceClearedByNewHandoff,
+              sourceClearedByNewRecheck,
+              sourceClearedByRefresh,
+              sourceClearedAfterAuthChange: _authSessionRetentionVerifiedRecheckReceipt === null,
+              objectUrlCalls,
+              sourceInBrowserStorage: [localStorage, sessionStorage].some(storage => (
+                Array.from({ length: storage.length }, (_, index) => (
+                  storage.getItem(storage.key(index))
+                )).some(value => String(value).includes(source.bodySha256))
+              )),
+            };
+          } finally {
+            if (previousOpsKey === null) localStorage.removeItem('dd_ops_key');
+            else localStorage.setItem('dd_ops_key', previousOpsKey);
+            document.querySelectorAll(
+              '#ops-key-input, #docops-ops-key-input',
+            ).forEach(input => { input.value = previousOpsInput; });
+            _authSessionRetentionVerifiedHandoff = originalHandoff;
+            _authSessionRetentionVerifiedRecheckReceipt = null;
+            _authSessionRetentionComparison = originalComparison;
+            _authSessionRetentionComparisonTenant = originalComparisonTenant;
+            if (originalComparison) {
+              renderAuthSessionRetentionComparison(originalComparison, {
+                aggregateStatus: 'unchanged',
+              });
+            }
+            URL.createObjectURL = nativeCreateObjectUrl;
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert disposition_rejection == {
+        "afterAuthorityTamper": True,
+        "afterBodyHashTamper": True,
+        "afterPolicyChange": False,
+        "afterDispositionChange": False,
+        "afterOpsKeyChange": False,
+        "opsKeyRetentionInvalidated": True,
+        "crossTabOpsKeyInvalidated": True,
+        "sourceClearedByNewHandoff": True,
+        "sourceClearedByNewRecheck": True,
+        "sourceClearedByRefresh": True,
+        "sourceClearedAfterAuthChange": True,
+        "objectUrlCalls": 0,
+        "sourceInBrowserStorage": False,
+    }
 
     recheck_rejection = page.evaluate(
         """async () => {

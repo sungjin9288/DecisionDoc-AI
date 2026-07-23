@@ -1115,6 +1115,91 @@ def test_audit_auth_session_retention_recheck_records_only_current_aggregate(
     assert login["refresh_token"] not in serialized
 
 
+def test_audit_auth_session_retention_review_disposition_records_bound_aggregate_only(
+    tmp_path,
+    monkeypatch,
+):
+    from app.storage.audit_store import AuditStore
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client, username="review-disposition-operator")
+    source = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(login),
+        params={"retention_days": 90},
+    ).json()
+    source_sha256 = hashlib.sha256(
+        json.dumps(
+            source,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    recheck = client.post(
+        "/admin/auth-sessions/retention-handoff/recheck",
+        headers=_auth(login),
+        json={
+            "contract_version": "auth-session-retention-recheck-request.v1",
+            "source_handoff": source,
+            "source_handoff_sha256": source_sha256,
+        },
+    )
+    assert recheck.status_code == 200
+    recheck_receipt = recheck.json()
+    recheck_receipt_sha256 = hashlib.sha256(recheck.content).hexdigest()
+
+    from app.services.auth_service import verify_token
+
+    claims = verify_token(login["access_token"])
+    response = client.post(
+        "/admin/auth-sessions/retention-handoff/review-disposition",
+        headers={**_auth(login), "User-Agent": "private-retention-review-agent"},
+        json={
+            "contract_version": "auth-session-retention-review-disposition-request.v1",
+            "source_recheck_receipt": recheck_receipt,
+            "source_recheck_receipt_sha256": recheck_receipt_sha256,
+            "review_disposition": "acknowledged_unchanged",
+        },
+    )
+    entries = AuditStore("system").query(
+        filters={"action": "auth_session.retention_review_disposition"}
+    )
+    serialized = json.dumps(entries, ensure_ascii=False)
+
+    assert response.status_code == 200
+    assert len(entries) == 1
+    assert claims is not None
+    assert entries[0]["user_id"] == ""
+    assert entries[0]["username"] == ""
+    assert entries[0]["session_id"] == ""
+    assert entries[0]["ip_address"] == ""
+    assert entries[0]["user_agent"] == ""
+    assert entries[0]["detail"] == {
+        "method": "POST",
+        "path": "/admin/auth-sessions/retention-handoff/review-disposition",
+        "status_code": 200,
+        "duration_ms": entries[0]["detail"]["duration_ms"],
+        "selected_policy_days": 90,
+        "aggregate_status": "unchanged",
+        "review_disposition": "acknowledged_unchanged",
+        "source_recheck_receipt_sha256": recheck_receipt_sha256,
+        "receipt_sha256": hashlib.sha256(response.content).hexdigest(),
+        "review_only": True,
+    }
+    for forbidden_value in (
+        source_sha256,
+        json.dumps(recheck_receipt, ensure_ascii=False),
+        claims["sub"],
+        claims["session_id"],
+        "review-disposition-operator",
+        "private-retention-review-agent",
+        login["access_token"],
+        login["refresh_token"],
+    ):
+        assert forbidden_value not in serialized
+
+
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
     """Accessing an admin endpoint without admin role logs access.blocked."""
     client = _make_client(tmp_path, monkeypatch)

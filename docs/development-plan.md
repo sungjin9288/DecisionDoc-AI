@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-21** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), 2026-07-02 정리 커밋, M4 CSP nonce 완료, 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-07-23** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H118 local verification과 최근 확인한 CI/CD success 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,411 passed, 1 skipped, 4 deselected, 2026-07-23 H117) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,416 passed, 1 skipped, 4 deselected, 2026-07-23 H118) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-23 H117 실측: 4411 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-23 H118 실측: 4416 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -33,6 +33,10 @@ python3 scripts/check_completion_readiness.py --env-file .env.prod --json --outp
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
 ```
 
+### H118 local slice
+
+`auth-session-retention-review-disposition-receipt.v1`은 H117 recheck receipt에 제한된 operator review disposition을 묶는 no-cost local slice다. Receipt는 deterministic하고 server-side persistence나 execution authority를 만들지 않는다. Focused backend `24 passed`, broad auth/security `474 passed`, 전체 Chromium `84 passed, 1 skipped`, 전체 non-live `4416 passed, 1 skipped, 4 deselected`로 검증했다.
+
 ---
 
 ## 2. 현재 아키텍처 (실측 기반)
@@ -43,8 +47,8 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 44 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 48 (top-level storage modules)
-python3 scripts/count_readme_metrics.py --field middleware_files  # → 10 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 279 (라우트)
+python3 scripts/count_readme_metrics.py --field middleware_files  # → 11 (미들웨어)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 280 (라우트)
 ```
 
 ```text
@@ -53,12 +57,12 @@ Client (Web UI / CLI / API)
   ▼
 FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │
-  ├─ Middleware layer (10개 Python 모듈)
+  ├─ Middleware layer (11개 Python 모듈)
   │     request chain: CORS → observability → request_id → security_headers
   │       → rate_limit → auth → tenant → billing → audit → metrics
-  │     audit context helper: document_ops_audit
+  │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │
-  ├─ Routers (23 top-level files, 라우트 279):
+  ├─ Routers (23 top-level files, 라우트 280):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

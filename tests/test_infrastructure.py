@@ -1348,7 +1348,7 @@ def test_auth_session_retention_preview_contract_is_read_only_and_documented():
     test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
     evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
 
-    assert 'router.get("/admin/auth-sessions/retention-preview")' in router
+    assert '"/admin/auth-sessions/retention-preview",' in router
     for document in (architecture, security_policy, test_plan):
         assert "auth-session-retention-preview.v1" in document
         assert "deletion_authorized=false" in document
@@ -1398,7 +1398,7 @@ def test_auth_session_retention_comparison_uses_one_read_only_inspection():
     test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
     evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
 
-    assert 'router.get("/admin/auth-sessions/retention-comparison")' in router
+    assert '"/admin/auth-sessions/retention-comparison",' in router
     assert "auth-session-retention-comparison.v1" in content
     assert "fetch('/admin/auth-sessions/retention-comparison'" in content
     assert "payload.snapshot_atomic !== false" in content
@@ -1427,7 +1427,7 @@ def test_auth_session_retention_handoff_download_is_hash_bound_and_review_only()
     test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
     evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
 
-    assert 'router.get("/admin/auth-sessions/retention-handoff")' in router
+    assert '"/admin/auth-sessions/retention-handoff",' in router
     assert "auth-session-retention-review-handoff.v2" in content
     assert "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256" in router
     assert "X-Content-Type-Options" in router
@@ -1474,6 +1474,52 @@ def test_auth_session_retention_recheck_receipt_is_hash_bound_and_read_only():
         assert "aggregate_only=true" in document
         assert "recheck_persisted=false" in document
     assert "H117 Auth session retention handoff freshness recheck receipt" in evidence
+
+
+def test_auth_session_retention_review_disposition_receipt_stays_read_only():
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    retention_start = content.index('<section class="ops-section" id="ops-auth-session-retention-section">')
+    retention_end = content.index("<!-- ── 로컬 LLM 상태 패널", retention_start)
+    retention_section = content[retention_start:retention_end]
+    root = Path(__file__).resolve().parents[1]
+    router = (root / "app" / "routers" / "admin" / "_auth_sessions.py").read_text(
+        encoding="utf-8"
+    )
+    audit = (root / "app" / "middleware" / "audit.py").read_text(encoding="utf-8")
+    audit_helper = (
+        root / "app" / "middleware" / "auth_session_retention_audit.py"
+    ).read_text(encoding="utf-8")
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+
+    assert '"/admin/auth-sessions/retention-handoff/review-disposition",' in router
+    assert "dependencies=[Depends(require_admin)]" in router
+    assert "auth-session-retention-review-disposition-receipt.v1" in content
+    assert "X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Receipt-SHA256" in router
+    assert 'id="ops-auth-session-retention-review-disposition"' in content
+    assert 'id="ops-auth-session-retention-review-disposition-export"' in content
+    assert "downloadAuthSessionRetentionReviewDisposition" in content
+    assert "auth_session.retention_review_disposition" in audit
+    assert "auth_session_retention_audit_detail" in audit
+    assert "auth_session_retention_audit_identity" in audit
+    assert "source_recheck_receipt_sha256" in audit_helper
+    assert "receipt_sha256" in audit_helper
+    assert "selectAuthSessionRetentionReviewDisposition" in content
+    assert "opsKey !== previousOpsKey" in content
+    assert "event.key === 'dd_ops_key'" in content
+    assert "approval_granted" in content
+    assert "mass_revoke_authorized" in content
+    assert 'value="approved"' not in retention_section
+    assert 'value="accepted"' not in retention_section
+    for document in (architecture, security_policy, test_plan):
+        assert "auth-session-retention-review-disposition-receipt.v1" in document
+        assert "decision_receipt_persisted=false" in document
+        assert "approval_granted=false" in document
+    assert "H118 Auth-session retention operator review disposition receipt" in evidence
 
 
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():

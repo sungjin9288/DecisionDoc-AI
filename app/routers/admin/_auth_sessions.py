@@ -10,8 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from app.dependencies import get_tenant_id, require_admin
-from app.schemas.auth import AuthSessionRetentionRecheckRequest
-from app.storage.auth_session_retention import AUTH_SESSION_RETENTION_DEFAULT_DAYS
+from app.schemas.auth import (
+    AuthSessionRetentionRecheckRequest,
+    AuthSessionRetentionReviewDispositionRequest,
+)
+from app.storage.auth_session_retention import (
+    AUTH_SESSION_RETENTION_DEFAULT_DAYS,
+    AuthSessionRetentionContractError,
+    build_retention_review_disposition_receipt,
+    canonical_retention_json_bytes,
+)
 from app.storage.auth_session_store import (
     AUTH_SESSION_RETENTION_MAX_DAYS,
     AUTH_SESSION_RETENTION_MIN_DAYS,
@@ -26,7 +34,10 @@ logger = logging.getLogger("decisiondoc.auth")
 router = APIRouter()
 
 
-@router.get("/admin/auth-sessions/retention-preview")
+@router.get(
+    "/admin/auth-sessions/retention-preview",
+    dependencies=[Depends(require_admin)],
+)
 def preview_auth_session_retention(
     request: Request,
     retention_days: Annotated[
@@ -38,7 +49,6 @@ def preview_auth_session_retention(
     ] = AUTH_SESSION_RETENTION_DEFAULT_DAYS,
 ) -> JSONResponse:
     """Return redacted cleanup candidates without authorizing deletion."""
-    require_admin(request)
     tenant_id = get_tenant_id(request)
     try:
         preview = get_auth_session_store(
@@ -67,10 +77,12 @@ def preview_auth_session_retention(
     return JSONResponse(content=preview, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/admin/auth-sessions/retention-comparison")
+@router.get(
+    "/admin/auth-sessions/retention-comparison",
+    dependencies=[Depends(require_admin)],
+)
 def compare_auth_session_retention(request: Request) -> JSONResponse:
     """Compare fixed cleanup policies against one redacted inspection."""
-    require_admin(request)
     tenant_id = get_tenant_id(request)
     try:
         comparison = get_auth_session_store(
@@ -100,7 +112,10 @@ def compare_auth_session_retention(request: Request) -> JSONResponse:
     return JSONResponse(content=comparison, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/admin/auth-sessions/retention-handoff")
+@router.get(
+    "/admin/auth-sessions/retention-handoff",
+    dependencies=[Depends(require_admin)],
+)
 def download_auth_session_retention_handoff(
     request: Request,
     retention_days: Annotated[
@@ -109,7 +124,6 @@ def download_auth_session_retention_handoff(
     ] = AUTH_SESSION_RETENTION_POLICY_DAYS[0],
 ) -> Response:
     """Download one read-only retention comparison for human review."""
-    require_admin(request)
     if retention_days not in AUTH_SESSION_RETENTION_POLICY_DAYS:
         raise HTTPException(
             status_code=422,
@@ -231,6 +245,56 @@ def recheck_auth_session_retention_handoff(
             ),
             "X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256": (
                 hashlib.sha256(body).hexdigest()
+            ),
+        },
+    )
+
+
+@router.post(
+    "/admin/auth-sessions/retention-handoff/review-disposition",
+    dependencies=[Depends(require_admin)],
+)
+def download_auth_session_retention_review_disposition(
+    request: Request,
+    payload: AuthSessionRetentionReviewDispositionRequest,
+) -> Response:
+    """Issue a deterministic operator disposition record without state mutation."""
+    tenant_id = get_tenant_id(request)
+    try:
+        receipt = build_retention_review_disposition_receipt(
+            source_recheck_receipt=payload.source_recheck_receipt,
+            source_recheck_receipt_sha256=payload.source_recheck_receipt_sha256,
+            expected_tenant_id=tenant_id,
+            review_disposition=payload.review_disposition,
+        )
+    except AuthSessionRetentionContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="로그인 세션 보존 재확인 영수증을 검증하지 못했습니다.",
+        ) from exc
+
+    body = canonical_retention_json_bytes(receipt)
+    body_sha256 = hashlib.sha256(body).hexdigest()
+    request.state.auth_session_retention_review_disposition = {
+        "selected_policy_days": receipt["selected_policy_days"],
+        "aggregate_status": receipt["aggregate_status"],
+        "review_disposition": receipt["review_disposition"],
+        "source_recheck_receipt_sha256": receipt["source_recheck_receipt_sha256"],
+        "receipt_sha256": body_sha256,
+        "review_only": True,
+    }
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                "attachment; filename=\"auth-session-retention-review-disposition-"
+                f"receipt-{receipt['selected_policy_days']}d.json\""
+            ),
+            "X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Receipt-SHA256": (
+                body_sha256
             ),
         },
     )

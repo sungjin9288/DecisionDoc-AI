@@ -13,13 +13,12 @@ from datetime import datetime, timezone
 
 from fastapi import Request
 
+from app.middleware.auth_session_retention_audit import auth_session_retention_audit_detail, auth_session_retention_audit_identity
 from app.middleware.document_ops_audit import (
     document_ops_audit_detail,
     document_ops_resource_identity,
 )
-
 _log = logging.getLogger("decisiondoc.audit")
-
 # ── Audit rules — (HTTP method, path pattern) → action type ────────────────────
 
 AUDIT_RULES: dict[tuple[str, str], str] = {
@@ -43,6 +42,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
         "/admin/auth-sessions/retention-handoff",
     ): "auth_session.retention_handoff",
     ("POST", "/admin/auth-sessions/retention-handoff/recheck"): "auth_session.retention_recheck",
+    ("POST", "/admin/auth-sessions/retention-handoff/review-disposition"): "auth_session.retention_review_disposition",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",
@@ -89,7 +89,6 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
         "/report-workflows/learning/correction-artifacts/pilot-export",
     ): "report_quality.pilot_export",
 }
-
 # Paths that must always be audited
 ALWAYS_AUDIT_PREFIXES: tuple[str, ...] = (
     "/admin/",
@@ -618,6 +617,7 @@ def _append_audit_entries(
             )
         if report_quality_pilot_preview_verified is not None:
             detail["pilot_preview_verified"] = report_quality_pilot_preview_verified
+        detail.update(auth_session_retention_audit_detail(request))
         detail.update(document_ops_audit_detail(request))
 
         store = AuditStore(tenant_id)
@@ -726,6 +726,7 @@ def _build_audit_log(
     document_ops_identity = document_ops_resource_identity(request, action)
     if document_ops_identity is not None:
         resource_type, resource_id = document_ops_identity
+    ip_address, user_agent = auth_session_retention_audit_identity(action, _get_client_ip(request), request.headers.get("user-agent", "")[:200])
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -733,8 +734,8 @@ def _build_audit_log(
         user_id=user_id,
         username=username,
         user_role=user_role,
-        ip_address=_get_client_ip(request),
-        user_agent=request.headers.get("user-agent", "")[:200],
+        ip_address=ip_address,
+        user_agent=user_agent,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -743,7 +744,6 @@ def _build_audit_log(
         detail=dict(detail),
         session_id=session_id,
     )
-
 
 def _resolve_result(status_code: int) -> str:
     if status_code < 400:
