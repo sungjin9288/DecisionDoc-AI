@@ -359,7 +359,8 @@ def test_auth_session_store_builds_read_only_retention_review_handoff(
         sort_keys=True,
     ).encode("utf-8")
     assert handoff == {
-        "contract_version": "auth-session-retention-review-handoff.v1",
+        "contract_version": "auth-session-retention-review-handoff.v2",
+        "tenant_id": "tenant-a",
         "selected_policy_days": 90,
         "comparison": comparison,
         "comparison_sha256": hashlib.sha256(canonical_comparison).hexdigest(),
@@ -379,6 +380,147 @@ def test_auth_session_store_builds_read_only_retention_review_handoff(
 
     with pytest.raises(ValueError, match="retention_days"):
         store.build_retention_review_handoff(retention_days=31)
+
+
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_retention_rechecks_v2_handoff_without_persisting_state(
+    tmp_path,
+    monkeypatch,
+    backend_kind,
+):
+    import app.storage.auth_session_store as auth_session_module
+
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+        backend = store._backend
+
+    now = datetime(2026, 7, 23, 12, tzinfo=timezone.utc)
+    clock = [now]
+    monkeypatch.setattr(auth_session_module, "_utcnow", lambda: clock[0])
+    session_id = store.create(user_id="private-user", credential_version=0)
+    assert store.set_label(
+        session_id,
+        user_id="private-user",
+        credential_version=0,
+        label="private label",
+    )
+    prefix = "tenants/tenant-a/auth_sessions"
+    paths = backend.list_prefix(prefix)
+    original = {path: backend.read_text(path) for path in paths}
+
+    source_handoff = store.build_retention_review_handoff(retention_days=90)
+    source_handoff_sha256 = hashlib.sha256(
+        store.serialize_retention_review_handoff(source_handoff)
+    ).hexdigest()
+    clock[0] = now + timedelta(hours=1)
+    receipt = store.recheck_retention_review_handoff(
+        source_handoff=source_handoff,
+        source_handoff_sha256=source_handoff_sha256,
+    )
+
+    assert source_handoff["contract_version"] == "auth-session-retention-review-handoff.v2"
+    assert source_handoff["tenant_id"] == "tenant-a"
+    assert set(receipt) == {
+        "contract_version",
+        "source_handoff",
+        "source_handoff_sha256",
+        "current_handoff",
+        "current_handoff_sha256",
+        "source_aggregate_fingerprint_sha256",
+        "current_aggregate_fingerprint_sha256",
+        "aggregate_status",
+        "fingerprint_algorithm",
+        "volatile_fields_excluded",
+        "aggregate_only",
+        "review_only",
+        "policy_change_authorized",
+        "deletion_authorized",
+        "scheduler_authorized",
+        "snapshot_atomic",
+        "requires_recheck_before_mutation",
+        "recheck_persisted",
+    }
+    assert receipt["contract_version"] == "auth-session-retention-recheck-receipt.v1"
+    assert receipt["source_handoff"] == source_handoff
+    assert receipt["source_handoff_sha256"] == source_handoff_sha256
+    assert (
+        receipt["source_handoff"]["comparison"]["generated_at"]
+        != receipt["current_handoff"]["comparison"]["generated_at"]
+    )
+    assert (
+        receipt["source_handoff"]["comparison"]["policies"][0]["eligible_before"]
+        != receipt["current_handoff"]["comparison"]["policies"][0]["eligible_before"]
+    )
+    assert receipt["current_handoff_sha256"] == hashlib.sha256(
+        store.serialize_retention_review_handoff(receipt["current_handoff"])
+    ).hexdigest()
+    assert receipt["aggregate_status"] == "unchanged"
+    assert receipt["fingerprint_algorithm"] == "sha256"
+    assert receipt["volatile_fields_excluded"] == [
+        "comparison.generated_at",
+        "comparison.policies[*].eligible_before",
+    ]
+    assert receipt["aggregate_only"] is True
+    assert receipt["review_only"] is True
+    assert receipt["policy_change_authorized"] is False
+    assert receipt["deletion_authorized"] is False
+    assert receipt["scheduler_authorized"] is False
+    assert receipt["snapshot_atomic"] is False
+    assert receipt["requires_recheck_before_mutation"] is True
+    assert receipt["recheck_persisted"] is False
+    serialized = json.dumps(receipt, ensure_ascii=False)
+    assert session_id not in serialized
+    assert "private-user" not in serialized
+    assert "private label" not in serialized
+    assert {path: backend.read_text(path) for path in paths} == original
+
+
+def test_auth_session_store_retention_recheck_rejects_hash_drift_and_preserves_corruption(
+    tmp_path,
+):
+    store = _store(tmp_path)
+    store.create(user_id="user-a", credential_version=0)
+    source_handoff = store.build_retention_review_handoff(retention_days=30)
+    valid_source_handoff = json.loads(json.dumps(source_handoff))
+
+    with pytest.raises(ValueError, match="source_handoff_sha256"):
+        store.recheck_retention_review_handoff(
+            source_handoff=source_handoff,
+            source_handoff_sha256="0" * 64,
+        )
+
+    source_handoff["comparison_sha256"] = "0" * 64
+    comparison_hash_drift = hashlib.sha256(
+        store.serialize_retention_review_handoff(source_handoff)
+    ).hexdigest()
+    with pytest.raises(ValueError, match="comparison SHA-256"):
+        store.recheck_retention_review_handoff(
+            source_handoff=source_handoff,
+            source_handoff_sha256=comparison_hash_drift,
+        )
+
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    with pytest.raises(AuthSessionStoreError):
+        store.recheck_retention_review_handoff(
+            source_handoff=valid_source_handoff,
+            source_handoff_sha256=hashlib.sha256(
+                store.serialize_retention_review_handoff(valid_source_handoff)
+            ).hexdigest(),
+        )
+
+    assert corrupt_path.read_bytes() == corrupt
 
 
 @pytest.mark.parametrize("backend_kind", ["local", "s3"])

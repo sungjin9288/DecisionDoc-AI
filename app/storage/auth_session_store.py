@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -12,6 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from app.auth.session_label import require_canonical_auth_session_label
+from app.storage.auth_session_retention import (
+    AUTH_SESSION_RETENTION_MAX_DAYS,
+    AUTH_SESSION_RETENTION_MIN_DAYS,
+    AUTH_SESSION_RETENTION_POLICY_DAYS,
+    build_retention_recheck_receipt,
+    build_retention_review_handoff,
+    canonical_retention_json_bytes,
+    validate_retention_review_handoff,
+)
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
@@ -22,13 +30,8 @@ _SESSION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_LIFETIME = timedelta(days=30)
 _MAX_CREATE_ATTEMPTS = 4
 _MAX_MUTATION_ATTEMPTS = 32
-AUTH_SESSION_RETENTION_DEFAULT_DAYS = 30
-AUTH_SESSION_RETENTION_MIN_DAYS = 1
-AUTH_SESSION_RETENTION_MAX_DAYS = 3650
-AUTH_SESSION_RETENTION_POLICY_DAYS = (30, 90, 180, 365)
 _RETENTION_PREVIEW_CONTRACT_VERSION = "auth-session-retention-preview.v1"
 _RETENTION_COMPARISON_CONTRACT_VERSION = "auth-session-retention-comparison.v1"
-_RETENTION_REVIEW_HANDOFF_CONTRACT_VERSION = "auth-session-retention-review-handoff.v1"
 _LEGACY_RECORD_FIELDS = {
     "contract_version",
     "session_id",
@@ -91,15 +94,6 @@ def _parse_timestamp(value: object, *, field: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise AuthSessionStoreError(f"Invalid authentication session {field}")
     return parsed.astimezone(timezone.utc)
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
 
 
 class AuthSessionStore:
@@ -374,32 +368,41 @@ class AuthSessionStore:
 
     def build_retention_review_handoff(self, *, retention_days: int) -> dict[str, Any]:
         """Create review evidence from one read-only retention inspection."""
-        if retention_days not in AUTH_SESSION_RETENTION_POLICY_DAYS:
-            raise ValueError(
-                "retention_days must be one of "
-                f"{', '.join(map(str, AUTH_SESSION_RETENTION_POLICY_DAYS))}"
-            )
-
         comparison = self.compare_retention_policies()
-        return {
-            "contract_version": _RETENTION_REVIEW_HANDOFF_CONTRACT_VERSION,
-            "selected_policy_days": retention_days,
-            "comparison": comparison,
-            "comparison_sha256": hashlib.sha256(
-                _canonical_json_bytes(comparison)
-            ).hexdigest(),
-            "review_only": True,
-            "policy_change_authorized": False,
-            "deletion_authorized": False,
-            "scheduler_authorized": False,
-            "snapshot_atomic": False,
-            "requires_recheck_before_mutation": True,
-            "handoff_persisted": False,
-        }
+        return build_retention_review_handoff(
+            tenant_id=self._tenant_id,
+            retention_days=retention_days,
+            comparison=comparison,
+        )
 
     @staticmethod
     def serialize_retention_review_handoff(handoff: dict[str, Any]) -> bytes:
-        return _canonical_json_bytes(handoff)
+        return canonical_retention_json_bytes(handoff)
+
+    def recheck_retention_review_handoff(
+        self,
+        *,
+        source_handoff: object,
+        source_handoff_sha256: object,
+    ) -> dict[str, Any]:
+        """Compare a verified handoff with one fresh read-only inspection."""
+        source = validate_retention_review_handoff(
+            source_handoff,
+            expected_tenant_id=self._tenant_id,
+            expected_sha256=source_handoff_sha256,
+        )
+        current = self.build_retention_review_handoff(
+            retention_days=source["selected_policy_days"]
+        )
+        return build_retention_recheck_receipt(
+            source_handoff=source,
+            source_handoff_sha256=source_handoff_sha256,
+            current_handoff=current,
+        )
+
+    @staticmethod
+    def serialize_retention_recheck_receipt(receipt: dict[str, Any]) -> bytes:
+        return canonical_retention_json_bytes(receipt)
 
     def _inspect_retention_state(
         self,

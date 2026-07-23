@@ -42,6 +42,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
         "GET",
         "/admin/auth-sessions/retention-handoff",
     ): "auth_session.retention_handoff",
+    ("POST", "/admin/auth-sessions/retention-handoff/recheck"): "auth_session.retention_recheck",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",
@@ -99,7 +100,6 @@ ALWAYS_AUDIT_PREFIXES: tuple[str, ...] = (
 
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
-
 
 async def audit_middleware(request: Request, call_next):
     """ASGI middleware: capture request metadata + append audit log entry."""
@@ -175,7 +175,6 @@ async def audit_middleware(request: Request, call_next):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
 
 def _get_client_ip(request: Request) -> str:
     from app.middleware.rate_limit import _get_client_ip as _rl_get_ip
@@ -310,6 +309,8 @@ def _append_audit_entries(
         user_id = getattr(request.state, "user_id", "anonymous") or "anonymous"
         username = getattr(request.state, "username", "anonymous") or "anonymous"
         user_role = getattr(request.state, "user_role", "unknown") or "unknown"
+        if action.startswith("auth_session.retention_"):
+            user_id = username = session_id = ""
         auth_session_revoked_count = getattr(
             request.state,
             "auth_session_revoked_count",
@@ -344,7 +345,7 @@ def _append_audit_entries(
         auth_session_retention_snapshot_atomic = getattr(
             request.state, "auth_session_retention_snapshot_atomic", None
         )
-
+        auth_session_retention_aggregate_status = getattr(request.state, "auth_session_retention_aggregate_status", None)
         procurement_project_id = getattr(request.state, "procurement_project_id", "") or ""
         decision_council_project_id = getattr(request.state, "decision_council_project_id", "") or ""
         bundle_type = getattr(request.state, "bundle_type", "") or ""
@@ -492,6 +493,8 @@ def _append_audit_entries(
             detail["eligible_sessions_by_policy"] = auth_session_retention_eligible_counts
         if auth_session_retention_snapshot_atomic is not None:
             detail["snapshot_atomic"] = auth_session_retention_snapshot_atomic
+        if auth_session_retention_aggregate_status is not None:
+            detail["aggregate_status"] = auth_session_retention_aggregate_status
         if procurement_error_code:
             detail["error_code"] = procurement_error_code
         if procurement_project_id:

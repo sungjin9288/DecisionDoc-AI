@@ -1,6 +1,6 @@
 """Authentication and user management schemas."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -61,6 +61,21 @@ class RevokeAllAuthSessionsRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     confirm: Literal[True]
+
+
+class AuthSessionRetentionRecheckRequest(BaseModel):
+    """A browser-held v2 retention handoff submitted for fresh comparison."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    contract_version: Literal["auth-session-retention-recheck-request.v1"]
+    source_handoff: dict[str, Any]
+    source_handoff_sha256: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
 
 
 class UpdateMyProfileRequest(BaseModel):

@@ -21,6 +21,7 @@ Coverage:
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -1026,6 +1027,9 @@ def test_audit_auth_session_retention_handoff_records_only_review_aggregate(
 
     assert response.status_code == 200
     assert len(entries) == 1
+    assert entries[0]["user_id"] == ""
+    assert entries[0]["username"] == ""
+    assert entries[0]["session_id"] == ""
     assert entries[0]["detail"] == {
         "method": "GET",
         "path": "/admin/auth-sessions/retention-handoff",
@@ -1041,6 +1045,72 @@ def test_audit_auth_session_retention_handoff_records_only_review_aggregate(
     assert session_id not in serialized
     assert candidate_user_id not in serialized
     assert label not in serialized
+    assert login["access_token"] not in serialized
+    assert login["refresh_token"] not in serialized
+
+
+def test_audit_auth_session_retention_recheck_records_only_current_aggregate(
+    tmp_path,
+    monkeypatch,
+):
+    from app.storage.audit_store import AuditStore
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client, username="retention-operator")
+    source = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(login),
+        params={"retention_days": 90},
+    ).json()
+    source_sha256 = hashlib.sha256(
+        json.dumps(
+            source,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    from app.services.auth_service import verify_token
+
+    claims = verify_token(login["access_token"])
+    response = client.post(
+        "/admin/auth-sessions/retention-handoff/recheck",
+        headers=_auth(login),
+        json={
+            "contract_version": "auth-session-retention-recheck-request.v1",
+            "source_handoff": source,
+            "source_handoff_sha256": source_sha256,
+        },
+    )
+    entries = AuditStore("system").query(
+        filters={"action": "auth_session.retention_recheck"}
+    )
+    serialized = json.dumps(entries, ensure_ascii=False)
+
+    assert response.status_code == 200
+    assert len(entries) == 1
+    assert claims is not None
+    assert entries[0]["user_id"] == ""
+    assert entries[0]["username"] == ""
+    assert entries[0]["session_id"] == ""
+    assert entries[0]["detail"] == {
+        "method": "POST",
+        "path": "/admin/auth-sessions/retention-handoff/recheck",
+        "status_code": 200,
+        "duration_ms": entries[0]["detail"]["duration_ms"],
+        "retention_days": 90,
+        "inspected_sessions": 2,
+        "eligible_sessions": 0,
+        "aggregate_status": "unchanged",
+        "read_only": True,
+        "snapshot_atomic": False,
+    }
+    assert source_sha256 not in serialized
+    assert "source_handoff" not in serialized
+    assert claims["sub"] not in serialized
+    assert claims["session_id"] not in serialized
+    assert "retention-operator" not in serialized
     assert login["access_token"] not in serialized
     assert login["refresh_token"] not in serialized
 

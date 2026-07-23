@@ -6,12 +6,13 @@ import hashlib
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from app.dependencies import get_tenant_id, require_admin
+from app.schemas.auth import AuthSessionRetentionRecheckRequest
+from app.storage.auth_session_retention import AUTH_SESSION_RETENTION_DEFAULT_DAYS
 from app.storage.auth_session_store import (
-    AUTH_SESSION_RETENTION_DEFAULT_DAYS,
     AUTH_SESSION_RETENTION_MAX_DAYS,
     AUTH_SESSION_RETENTION_MIN_DAYS,
     AUTH_SESSION_RETENTION_POLICY_DAYS,
@@ -158,6 +159,77 @@ def download_auth_session_retention_handoff(
                 f"{retention_days}d.json\""
             ),
             "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256": (
+                hashlib.sha256(body).hexdigest()
+            ),
+        },
+    )
+
+
+@router.post(
+    "/admin/auth-sessions/retention-handoff/recheck",
+    dependencies=[Depends(require_admin)],
+)
+def recheck_auth_session_retention_handoff(
+    request: Request,
+    payload: AuthSessionRetentionRecheckRequest,
+) -> Response:
+    """Recheck one tenant-bound review handoff without changing session state."""
+    tenant_id = get_tenant_id(request)
+    store = get_auth_session_store(
+        tenant_id,
+        data_dir=request.app.state.data_dir,
+        backend=request.app.state.state_backend,
+    )
+    try:
+        receipt = store.recheck_retention_review_handoff(
+            source_handoff=payload.source_handoff,
+            source_handoff_sha256=payload.source_handoff_sha256,
+        )
+        body = AuthSessionStore.serialize_retention_recheck_receipt(receipt)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="로그인 세션 보존 검토 자료를 검증하지 못했습니다.",
+        ) from exc
+    except AuthSessionStoreError as exc:
+        logger.error(
+            "[Auth] Session retention recheck failed - failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션 보존 상태를 일시적으로 재확인할 수 없습니다.",
+        ) from exc
+
+    current_handoff = receipt["current_handoff"]
+    comparison = current_handoff["comparison"]
+    selected_policy_days = current_handoff["selected_policy_days"]
+    selected_policy = next(
+        policy
+        for policy in comparison["policies"]
+        if policy["retention_days"] == selected_policy_days
+    )
+    request.state.auth_session_retention_days = selected_policy_days
+    request.state.auth_session_retention_inspected_count = comparison[
+        "inspected_sessions"
+    ]
+    request.state.auth_session_retention_eligible_count = selected_policy[
+        "eligible_sessions"
+    ]
+    request.state.auth_session_retention_aggregate_status = receipt["aggregate_status"]
+    request.state.auth_session_retention_read_only = True
+    request.state.auth_session_retention_snapshot_atomic = False
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                'attachment; filename="auth-session-retention-recheck-receipt-'
+                f"{selected_policy_days}d.json\""
+            ),
+            "X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256": (
                 hashlib.sha256(body).hexdigest()
             ),
         },

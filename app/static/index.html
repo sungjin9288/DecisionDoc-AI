@@ -6995,6 +6995,13 @@
           type="button"
           aria-label="로그인 세션 보존 검토용 JSON 내보내기"
         >검토용 JSON 내보내기</button>
+        <button
+          id="ops-auth-session-retention-recheck"
+          class="auth-retention-handoff"
+          type="button"
+          aria-label="로그인 세션 보존 검토 자료 재확인"
+          disabled
+        >검토 자료 재확인</button>
       </div>
     </div>
     <div
@@ -7040,6 +7047,7 @@
         <option value="auth_session.retention_preview">로그인 세션 보존 상태 조회</option>
         <option value="auth_session.retention_comparison">로그인 세션 보존 정책 비교</option>
         <option value="auth_session.retention_handoff">로그인 세션 보존 검토 자료 내보내기</option>
+        <option value="auth_session.retention_recheck">로그인 세션 보존 검토 자료 재확인</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -13694,6 +13702,7 @@
     try {
       localStorage.setItem('dd_tenant_id', tenantId);
       _currentTenantId = tenantId;
+      window.invalidateAuthSessionRetentionHandoff?.();
       return true;
     } catch {
       return false;
@@ -18700,6 +18709,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _authSessionRevision += 1;
+    window.invalidateAuthSessionRetentionHandoff?.();
     _documentOpsReviewDrafts.clear();
     _documentOpsGovernanceObservation = null;
     _documentOpsPendingRunRecovery = null;
@@ -29511,12 +29521,19 @@ document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
 ════════════════════════════════════════════════════════════════ */
 
 const AUTH_SESSION_RETENTION_COMPARISON_CONTRACT = 'auth-session-retention-comparison.v1';
-const AUTH_SESSION_RETENTION_HANDOFF_CONTRACT = 'auth-session-retention-review-handoff.v1';
+const AUTH_SESSION_RETENTION_HANDOFF_CONTRACT = 'auth-session-retention-review-handoff.v2';
 const AUTH_SESSION_RETENTION_HANDOFF_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256';
+const AUTH_SESSION_RETENTION_RECHECK_RECEIPT_CONTRACT = 'auth-session-retention-recheck-receipt.v1';
+const AUTH_SESSION_RETENTION_RECHECK_RECEIPT_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256';
+const AUTH_SESSION_RETENTION_RECHECK_VOLATILE_FIELDS = Object.freeze([
+  'comparison.generated_at',
+  'comparison.policies[*].eligible_before',
+]);
 const AUTH_SESSION_RETENTION_POLICY_DAYS = Object.freeze([30, 90, 180, 365]);
 let _authSessionRetentionRequestGeneration = 0;
 let _authSessionRetentionComparison = null;
 let _authSessionRetentionComparisonTenant = '';
+let _authSessionRetentionVerifiedHandoff = null;
 
 function normalizeAuthSessionRetentionComparison(payload) {
   const expectedKeys = [
@@ -29651,7 +29668,7 @@ function canonicalAuthSessionRetentionJson(value) {
 
 async function normalizeAuthSessionRetentionHandoff(payload) {
   const expectedKeys = [
-    'contract_version', 'selected_policy_days', 'comparison', 'comparison_sha256',
+    'contract_version', 'tenant_id', 'selected_policy_days', 'comparison', 'comparison_sha256',
     'review_only', 'policy_change_authorized', 'deletion_authorized',
     'scheduler_authorized', 'snapshot_atomic', 'requires_recheck_before_mutation',
     'handoff_persisted',
@@ -29665,12 +29682,15 @@ async function normalizeAuthSessionRetentionHandoff(payload) {
   }
   const comparison = normalizeAuthSessionRetentionComparison(payload.comparison);
   const selectedPolicyDays = payload.selected_policy_days;
+  const tenantId = payload.tenant_id;
   const comparisonSha256 = String(payload.comparison_sha256 || '').toLowerCase();
   const canonicalComparison = new TextEncoder().encode(
     canonicalAuthSessionRetentionJson(comparison),
   );
   if (
     payload.contract_version !== AUTH_SESSION_RETENTION_HANDOFF_CONTRACT
+    || typeof tenantId !== 'string'
+    || !tenantId
     || !AUTH_SESSION_RETENTION_POLICY_DAYS.includes(selectedPolicyDays)
     || !/^[a-f0-9]{64}$/.test(comparisonSha256)
     || comparisonSha256 !== await sha256Hex(canonicalComparison)
@@ -29687,10 +29707,153 @@ async function normalizeAuthSessionRetentionHandoff(payload) {
   ) {
     throw new Error('로그인 세션 보존 검토 자료 응답을 검증하지 못했습니다.');
   }
-  return { comparison, selectedPolicyDays };
+  return { handoff: payload, comparison, selectedPolicyDays, tenantId };
 }
 
-function renderAuthSessionRetentionComparison(payload) {
+function authSessionRetentionAggregateFingerprint(comparison) {
+  return {
+    contract_version: comparison.contract_version,
+    policy_days: [...comparison.policy_days],
+    inspected_sessions: comparison.inspected_sessions,
+    active_sessions: comparison.active_sessions,
+    policies: comparison.policies.map(policy => ({
+      retention_days: policy.retention_days,
+      eligible_sessions: policy.eligible_sessions,
+      eligible_by_reason: { ...policy.eligible_by_reason },
+      retained_inactive_sessions: policy.retained_inactive_sessions,
+      oldest_eligible_inactive_at: policy.oldest_eligible_inactive_at,
+    })),
+    read_only: comparison.read_only,
+    deletion_authorized: comparison.deletion_authorized,
+    snapshot_atomic: comparison.snapshot_atomic,
+    requires_recheck_before_mutation: comparison.requires_recheck_before_mutation,
+  };
+}
+
+function rememberAuthSessionRetentionHandoff({
+  handoff,
+  bodyBytes,
+  bodySha256,
+  tenantId,
+  selectedPolicyDays,
+}) {
+  _authSessionRetentionVerifiedHandoff = {
+    handoff,
+    bodyBytes: new Uint8Array(bodyBytes),
+    bodySha256,
+    tenantId,
+    selectedPolicyDays,
+  };
+}
+
+function clearAuthSessionRetentionHandoff() {
+  _authSessionRetentionVerifiedHandoff = null;
+  const recheckButton = $id('ops-auth-session-retention-recheck');
+  if (recheckButton) recheckButton.disabled = true;
+}
+
+function invalidateAuthSessionRetentionHandoff() {
+  ++_authSessionRetentionRequestGeneration;
+  clearAuthSessionRetentionHandoff();
+}
+
+function hasCurrentAuthSessionRetentionHandoff(tenantId, retentionDays) {
+  const source = _authSessionRetentionVerifiedHandoff;
+  return Boolean(
+    source
+    && source.tenantId === tenantId
+    && source.handoff?.tenant_id === tenantId
+    && source.selectedPolicyDays === retentionDays
+    && source.handoff?.selected_policy_days === retentionDays
+    && /^[a-f0-9]{64}$/.test(source.bodySha256),
+  );
+}
+
+async function normalizeAuthSessionRetentionRecheckReceipt(payload) {
+  const expectedKeys = [
+    'contract_version', 'source_handoff', 'source_handoff_sha256',
+    'current_handoff', 'current_handoff_sha256',
+    'source_aggregate_fingerprint_sha256',
+    'current_aggregate_fingerprint_sha256', 'aggregate_status',
+    'fingerprint_algorithm', 'volatile_fields_excluded', 'aggregate_only',
+    'review_only', 'policy_change_authorized', 'deletion_authorized',
+    'scheduler_authorized', 'snapshot_atomic', 'requires_recheck_before_mutation',
+    'recheck_persisted',
+  ];
+  if (
+    !payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+  ) {
+    throw new Error('로그인 세션 보존 재확인 영수증을 검증하지 못했습니다.');
+  }
+
+  const source = await normalizeAuthSessionRetentionHandoff(payload.source_handoff);
+  const current = await normalizeAuthSessionRetentionHandoff(payload.current_handoff);
+  const sourceHandoffSha256 = String(payload.source_handoff_sha256 || '').toLowerCase();
+  const currentHandoffSha256 = String(payload.current_handoff_sha256 || '').toLowerCase();
+  const sourceFingerprintSha256 = String(
+    payload.source_aggregate_fingerprint_sha256 || '',
+  ).toLowerCase();
+  const currentFingerprintSha256 = String(
+    payload.current_aggregate_fingerprint_sha256 || '',
+  ).toLowerCase();
+  const fingerprints = [
+    sourceHandoffSha256,
+    currentHandoffSha256,
+    sourceFingerprintSha256,
+    currentFingerprintSha256,
+  ];
+  const sourceCanonical = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(source.handoff),
+  );
+  const currentCanonical = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(current.handoff),
+  );
+  const sourceFingerprint = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(
+      authSessionRetentionAggregateFingerprint(source.comparison),
+    ),
+  );
+  const currentFingerprint = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(
+      authSessionRetentionAggregateFingerprint(current.comparison),
+    ),
+  );
+  const aggregateStatus = sourceFingerprintSha256 === currentFingerprintSha256
+    ? 'unchanged'
+    : 'changed';
+  if (
+    payload.contract_version !== AUTH_SESSION_RETENTION_RECHECK_RECEIPT_CONTRACT
+    || fingerprints.some(value => !/^[a-f0-9]{64}$/.test(value))
+    || sourceHandoffSha256 !== await sha256Hex(sourceCanonical)
+    || currentHandoffSha256 !== await sha256Hex(currentCanonical)
+    || sourceFingerprintSha256 !== await sha256Hex(sourceFingerprint)
+    || currentFingerprintSha256 !== await sha256Hex(currentFingerprint)
+    || source.tenantId !== current.tenantId
+    || source.selectedPolicyDays !== current.selectedPolicyDays
+    || payload.aggregate_status !== aggregateStatus
+    || payload.fingerprint_algorithm !== 'sha256'
+    || !Array.isArray(payload.volatile_fields_excluded)
+    || payload.volatile_fields_excluded.length !== AUTH_SESSION_RETENTION_RECHECK_VOLATILE_FIELDS.length
+    || payload.volatile_fields_excluded.some(
+      (field, index) => field !== AUTH_SESSION_RETENTION_RECHECK_VOLATILE_FIELDS[index],
+    )
+    || payload.aggregate_only !== true
+    || payload.review_only !== true
+    || payload.policy_change_authorized !== false
+    || payload.deletion_authorized !== false
+    || payload.scheduler_authorized !== false
+    || payload.snapshot_atomic !== false
+    || payload.requires_recheck_before_mutation !== true
+    || payload.recheck_persisted !== false
+  ) {
+    throw new Error('로그인 세션 보존 재확인 영수증을 검증하지 못했습니다.');
+  }
+  return { receipt: payload, source, current, aggregateStatus };
+}
+
+function renderAuthSessionRetentionComparison(payload, { aggregateStatus = '' } = {}) {
   const result = $id('ops-auth-session-retention-result');
   const daysSelect = $id('ops-auth-session-retention-days');
   if (!result || !daysSelect) return;
@@ -29741,6 +29904,12 @@ function renderAuthSessionRetentionComparison(payload) {
       </tbody>
     </table>
     <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음 · 변경 전 재확인 필요</p>
+    ${aggregateStatus === 'changed' ? `
+      <p class="auth-retention-boundary">집계가 변경되어 새 검토 자료가 필요합니다. 이 결과는 승인 상태가 아닙니다.</p>
+    ` : ''}
+    ${aggregateStatus === 'unchanged' ? `
+      <p class="auth-retention-boundary">집계는 동일하지만 session set identity 또는 변경 안전성을 의미하지 않습니다.</p>
+    ` : ''}
   `;
 }
 
@@ -29755,9 +29924,12 @@ async function loadAuthSessionRetentionComparison() {
   const daysSelect = $id('ops-auth-session-retention-days');
   const refreshButton = $id('ops-auth-session-retention-refresh');
   const handoffButton = $id('ops-auth-session-retention-handoff');
-  if (!result || !daysSelect || !refreshButton || !handoffButton) return;
+  const recheckButton = $id('ops-auth-session-retention-recheck');
+  if (!result || !daysSelect || !refreshButton || !handoffButton || !recheckButton) return;
 
   const requestGeneration = ++_authSessionRetentionRequestGeneration;
+  const authSessionRevision = _authSessionRevision;
+  clearAuthSessionRetentionHandoff();
   if (!hasOpsAccessCredential()) {
     _authSessionRetentionComparison = null;
     _authSessionRetentionComparisonTenant = '';
@@ -29769,6 +29941,7 @@ async function loadAuthSessionRetentionComparison() {
     `;
     refreshButton.disabled = false;
     handoffButton.disabled = false;
+    recheckButton.disabled = true;
     return;
   }
 
@@ -29780,6 +29953,7 @@ async function loadAuthSessionRetentionComparison() {
   result.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">보존 상태 확인 중...</p>';
   refreshButton.disabled = true;
   handoffButton.disabled = true;
+  recheckButton.disabled = true;
 
   try {
     const response = await fetch('/admin/auth-sessions/retention-comparison', {
@@ -29787,12 +29961,14 @@ async function loadAuthSessionRetentionComparison() {
     });
     if (
       requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
     if (!response.ok) throw new Error(authSessionRetentionErrorMessage(response.status));
     const payload = normalizeAuthSessionRetentionComparison(await response.json());
     if (
       requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
     _authSessionRetentionComparison = payload;
@@ -29801,6 +29977,7 @@ async function loadAuthSessionRetentionComparison() {
   } catch (error) {
     if (
       requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
     _authSessionRetentionComparison = null;
@@ -29808,9 +29985,16 @@ async function loadAuthSessionRetentionComparison() {
     result.dataset.state = 'error';
     result.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.82rem;">${escapeHtml(error.message || String(error))}</p>`;
   } finally {
-    if (requestGeneration === _authSessionRetentionRequestGeneration) {
+    if (
+      requestGeneration === _authSessionRetentionRequestGeneration
+      && authSessionRevision === _authSessionRevision
+    ) {
       refreshButton.disabled = false;
       handoffButton.disabled = false;
+      recheckButton.disabled = !hasCurrentAuthSessionRetentionHandoff(
+        _currentTenantId,
+        Number(daysSelect.value),
+      );
     }
   }
 }
@@ -29819,7 +30003,8 @@ async function downloadAuthSessionRetentionHandoff() {
   const result = $id('ops-auth-session-retention-result');
   const daysSelect = $id('ops-auth-session-retention-days');
   const handoffButton = $id('ops-auth-session-retention-handoff');
-  if (!result || !daysSelect || !handoffButton) return;
+  const recheckButton = $id('ops-auth-session-retention-recheck');
+  if (!result || !daysSelect || !handoffButton || !recheckButton) return;
   if (!hasOpsAccessCredential()) {
     showNotification('관리자 세션 또는 유효한 Ops Key가 필요합니다.', 'error');
     return;
@@ -29827,8 +30012,11 @@ async function downloadAuthSessionRetentionHandoff() {
 
   const tenantId = _currentTenantId;
   const requestGeneration = ++_authSessionRetentionRequestGeneration;
+  const authSessionRevision = _authSessionRevision;
   const retentionDays = Number(daysSelect.value);
+  clearAuthSessionRetentionHandoff();
   handoffButton.disabled = true;
+  recheckButton.disabled = true;
   try {
     const response = await fetch(
       `/admin/auth-sessions/retention-handoff?retention_days=${encodeURIComponent(String(retentionDays))}`,
@@ -29836,6 +30024,7 @@ async function downloadAuthSessionRetentionHandoff() {
     );
     if (
       requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
     if (!response.ok) throw new Error(authSessionRetentionErrorMessage(response.status));
@@ -29854,9 +30043,18 @@ async function downloadAuthSessionRetentionHandoff() {
     );
     if (
       handoff.selectedPolicyDays !== retentionDays
+      || handoff.tenantId !== tenantId
       || requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
+    rememberAuthSessionRetentionHandoff({
+      handoff: handoff.handoff,
+      bodyBytes,
+      bodySha256: responseSha256,
+      tenantId,
+      selectedPolicyDays: retentionDays,
+    });
     _authSessionRetentionComparison = handoff.comparison;
     _authSessionRetentionComparisonTenant = tenantId;
     renderAuthSessionRetentionComparison(handoff.comparison);
@@ -29871,18 +30069,137 @@ async function downloadAuthSessionRetentionHandoff() {
   } catch (error) {
     if (
       requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
       || tenantId !== _currentTenantId
     ) return;
     showNotification(error.message || String(error), 'error');
   } finally {
-    if (requestGeneration === _authSessionRetentionRequestGeneration) {
+    if (
+      requestGeneration === _authSessionRetentionRequestGeneration
+      && authSessionRevision === _authSessionRevision
+    ) {
       handoffButton.disabled = false;
+      recheckButton.disabled = !hasCurrentAuthSessionRetentionHandoff(
+        _currentTenantId,
+        Number(daysSelect.value),
+      );
+    }
+  }
+}
+
+async function recheckAuthSessionRetentionHandoff() {
+  const result = $id('ops-auth-session-retention-result');
+  const daysSelect = $id('ops-auth-session-retention-days');
+  const recheckButton = $id('ops-auth-session-retention-recheck');
+  if (!result || !daysSelect || !recheckButton) return;
+  if (!hasOpsAccessCredential()) {
+    showNotification('관리자 세션 또는 유효한 Ops Key가 필요합니다.', 'error');
+    return;
+  }
+
+  const tenantId = _currentTenantId;
+  const retentionDays = Number(daysSelect.value);
+  if (!hasCurrentAuthSessionRetentionHandoff(tenantId, retentionDays)) {
+    clearAuthSessionRetentionHandoff();
+    showNotification('현재 tenant와 보존 기준에 맞는 검토 자료를 먼저 내보내세요.', 'error');
+    return;
+  }
+
+  const source = _authSessionRetentionVerifiedHandoff;
+  const requestGeneration = ++_authSessionRetentionRequestGeneration;
+  const authSessionRevision = _authSessionRevision;
+  recheckButton.disabled = true;
+  try {
+    const response = await fetch('/admin/auth-sessions/retention-handoff/recheck', {
+      method: 'POST',
+      headers: {
+        ...getOpsAccessHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contract_version: 'auth-session-retention-recheck-request.v1',
+        source_handoff: source.handoff,
+        source_handoff_sha256: source.bodySha256,
+      }),
+    });
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
+      || source !== _authSessionRetentionVerifiedHandoff
+      || tenantId !== _currentTenantId
+    ) return;
+    if (!response.ok) throw new Error(authSessionRetentionErrorMessage(response.status));
+    const bodyBytes = new Uint8Array(await response.arrayBuffer());
+    const responseSha256 = String(
+      response.headers.get(AUTH_SESSION_RETENTION_RECHECK_RECEIPT_SHA256_HEADER) || '',
+    ).trim().toLowerCase();
+    if (
+      !/^[a-f0-9]{64}$/.test(responseSha256)
+      || responseSha256 !== await sha256Hex(bodyBytes)
+    ) {
+      throw new Error('로그인 세션 보존 재확인 영수증의 SHA-256을 검증하지 못했습니다.');
+    }
+    const recheck = await normalizeAuthSessionRetentionRecheckReceipt(
+      JSON.parse(new TextDecoder().decode(bodyBytes)),
+    );
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
+      || source !== _authSessionRetentionVerifiedHandoff
+      || tenantId !== _currentTenantId
+      || recheck.source.tenantId !== tenantId
+      || recheck.current.tenantId !== tenantId
+      || recheck.source.selectedPolicyDays !== retentionDays
+      || recheck.current.selectedPolicyDays !== retentionDays
+      || recheck.receipt.source_handoff_sha256 !== source.bodySha256
+    ) return;
+    const currentHandoffBytes = new TextEncoder().encode(
+      canonicalAuthSessionRetentionJson(recheck.current.handoff),
+    );
+    rememberAuthSessionRetentionHandoff({
+      handoff: recheck.current.handoff,
+      bodyBytes: currentHandoffBytes,
+      bodySha256: recheck.receipt.current_handoff_sha256,
+      tenantId,
+      selectedPolicyDays: retentionDays,
+    });
+    _authSessionRetentionComparison = recheck.current.comparison;
+    _authSessionRetentionComparisonTenant = tenantId;
+    renderAuthSessionRetentionComparison(recheck.current.comparison, {
+      aggregateStatus: recheck.aggregateStatus,
+    });
+    _triggerBrowserDownload(
+      new Blob([bodyBytes], { type: 'application/json' }),
+      _filenameFromContentDisposition(
+        response.headers.get('Content-Disposition'),
+        `auth-session-retention-recheck-receipt-${retentionDays}d.json`,
+      ),
+      '로그인 세션 보존 재확인 영수증',
+    );
+  } catch (error) {
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || authSessionRevision !== _authSessionRevision
+      || source !== _authSessionRetentionVerifiedHandoff
+      || tenantId !== _currentTenantId
+    ) return;
+    showNotification(error.message || String(error), 'error');
+  } finally {
+    if (
+      requestGeneration === _authSessionRetentionRequestGeneration
+      && authSessionRevision === _authSessionRevision
+    ) {
+      recheckButton.disabled = !hasCurrentAuthSessionRetentionHandoff(
+        _currentTenantId,
+        Number(daysSelect.value),
+      );
     }
   }
 }
 
 function selectAuthSessionRetentionPolicy() {
   const result = $id('ops-auth-session-retention-result');
+  invalidateAuthSessionRetentionHandoff();
   if (
     _authSessionRetentionComparison
     && _authSessionRetentionComparisonTenant === _currentTenantId
@@ -29895,6 +30212,7 @@ function selectAuthSessionRetentionPolicy() {
 
 window.loadAuthSessionRetentionComparison = loadAuthSessionRetentionComparison;
 window.loadAuthSessionRetentionPreview = loadAuthSessionRetentionComparison;
+window.invalidateAuthSessionRetentionHandoff = invalidateAuthSessionRetentionHandoff;
 $id('ops-auth-session-retention-refresh')?.addEventListener(
   'click',
   loadAuthSessionRetentionComparison,
@@ -29906,6 +30224,10 @@ $id('ops-auth-session-retention-days')?.addEventListener(
 $id('ops-auth-session-retention-handoff')?.addEventListener(
   'click',
   downloadAuthSessionRetentionHandoff,
+);
+$id('ops-auth-session-retention-recheck')?.addEventListener(
+  'click',
+  recheckAuthSessionRetentionHandoff,
 );
 
 /* ════════════════════════════════════════════════════════════════
@@ -30021,6 +30343,17 @@ function renderAuditEvidence(log, detail) {
       `retention_days=${detail.retention_days ?? '-'}`,
       `eligible_by_policy=${Array.isArray(detail.eligible_sessions_by_policy) ? detail.eligible_sessions_by_policy.join(',') : '-'}`,
       `inspected_sessions=${detail.inspected_sessions ?? '-'}`,
+      `read_only=${String(detail.read_only === true)}`,
+      `snapshot_atomic=${String(detail.snapshot_atomic === true)}`,
+    ];
+    return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
+  }
+  if (log?.action === 'auth_session.retention_recheck') {
+    const evidence = [
+      `retention_days=${detail.retention_days ?? '-'}`,
+      `inspected_sessions=${detail.inspected_sessions ?? '-'}`,
+      `eligible_sessions=${detail.eligible_sessions ?? '-'}`,
+      `aggregate_status=${detail.aggregate_status || '-'}`,
       `read_only=${String(detail.read_only === true)}`,
       `snapshot_atomic=${String(detail.snapshot_atomic === true)}`,
     ];

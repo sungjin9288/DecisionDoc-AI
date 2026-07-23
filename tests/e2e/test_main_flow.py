@@ -2690,7 +2690,8 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
         sort_keys=True,
     ).encode("utf-8")
     handoff_payload = {
-        "contract_version": "auth-session-retention-review-handoff.v1",
+        "contract_version": "auth-session-retention-review-handoff.v2",
+        "tenant_id": "system",
         "selected_policy_days": 90,
         "comparison": handoff_comparison,
         "comparison_sha256": hashlib.sha256(canonical_comparison).hexdigest(),
@@ -2708,6 +2709,66 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+    handoff_sha256 = hashlib.sha256(handoff_body).hexdigest()
+    aggregate_fingerprint = {
+        "contract_version": handoff_comparison["contract_version"],
+        "policy_days": handoff_comparison["policy_days"],
+        "inspected_sessions": handoff_comparison["inspected_sessions"],
+        "active_sessions": handoff_comparison["active_sessions"],
+        "policies": [
+            {
+                "retention_days": policy["retention_days"],
+                "eligible_sessions": policy["eligible_sessions"],
+                "eligible_by_reason": policy["eligible_by_reason"],
+                "retained_inactive_sessions": policy["retained_inactive_sessions"],
+                "oldest_eligible_inactive_at": policy[
+                    "oldest_eligible_inactive_at"
+                ],
+            }
+            for policy in handoff_comparison["policies"]
+        ],
+        "read_only": True,
+        "deletion_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+    }
+    aggregate_fingerprint_sha256 = hashlib.sha256(
+        json.dumps(
+            aggregate_fingerprint,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    recheck_payload = {
+        "contract_version": "auth-session-retention-recheck-receipt.v1",
+        "source_handoff": handoff_payload,
+        "source_handoff_sha256": handoff_sha256,
+        "current_handoff": handoff_payload,
+        "current_handoff_sha256": handoff_sha256,
+        "source_aggregate_fingerprint_sha256": aggregate_fingerprint_sha256,
+        "current_aggregate_fingerprint_sha256": aggregate_fingerprint_sha256,
+        "aggregate_status": "unchanged",
+        "fingerprint_algorithm": "sha256",
+        "volatile_fields_excluded": [
+            "comparison.generated_at",
+            "comparison.policies[*].eligible_before",
+        ],
+        "aggregate_only": True,
+        "review_only": True,
+        "policy_change_authorized": False,
+        "deletion_authorized": False,
+        "scheduler_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+        "recheck_persisted": False,
+    }
+    recheck_body = json.dumps(
+        recheck_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
     def fulfill_handoff(route):
         nonlocal handoff_requests
@@ -2721,13 +2782,35 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
                     'attachment; filename="auth-session-retention-review-handoff-90d.json"'
                 ),
                 "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256": (
-                    hashlib.sha256(handoff_body).hexdigest()
+                    handoff_sha256
+                ),
+            },
+        )
+
+    def fulfill_recheck(route):
+        request_payload = route.request.post_data_json
+        assert request_payload == {
+            "contract_version": "auth-session-retention-recheck-request.v1",
+            "source_handoff": handoff_payload,
+            "source_handoff_sha256": handoff_sha256,
+        }
+        route.fulfill(
+            status=200,
+            body=recheck_body,
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Content-Disposition": (
+                    'attachment; filename="auth-session-retention-recheck-receipt-90d.json"'
+                ),
+                "X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256": (
+                    hashlib.sha256(recheck_body).hexdigest()
                 ),
             },
         )
 
     page.route("**/admin/auth-sessions/retention-comparison", fulfill_comparison)
     page.route("**/admin/auth-sessions/retention-handoff?*", fulfill_handoff)
+    page.route("**/admin/auth-sessions/retention-handoff/recheck", fulfill_recheck)
     page.goto(f"{live_server['base_url']}?ops=1")
     page.wait_for_selector(
         '#ops-auth-session-retention-result[data-state="ready"]',
@@ -2743,7 +2826,7 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.locator('[data-auth-retention-metric="revoked"] dd').inner_text() == "1"
     assert "읽기 전용" in panel_text
     assert "삭제 권한 없음" in panel_text
-    assert panel.get_by_role("button").count() == 2
+    assert panel.get_by_role("button").count() == 3
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 상태 새로고침",
@@ -2751,6 +2834,10 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 검토용 JSON 내보내기",
+    ).count() == 1
+    assert panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 검토 자료 재확인",
     ).count() == 1
     assert panel.locator("[data-auth-retention-policy]").count() == 4
 
@@ -2774,6 +2861,163 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert handoff_requests == 1
     assert downloaded_path.read_bytes() == handoff_body
     assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "3"
+
+    with page.expect_download() as recheck_download_info:
+        panel.get_by_role(
+            "button",
+            name="로그인 세션 보존 검토 자료 재확인",
+        ).click()
+    recheck_download = recheck_download_info.value
+    recheck_path = tmp_path / recheck_download.suggested_filename
+    recheck_download.save_as(str(recheck_path))
+    assert recheck_path.read_bytes() == recheck_body
+    assert "session set identity 또는 변경 안전성을 의미하지 않습니다." in panel.inner_text()
+
+    recheck_rejection = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const nativeCreateObjectUrl = URL.createObjectURL;
+          let objectUrlCalls = 0;
+          URL.createObjectURL = (...args) => {
+            objectUrlCalls += 1;
+            return nativeCreateObjectUrl(...args);
+          };
+          const source = _authSessionRetentionVerifiedHandoff;
+          const encode = value => new TextEncoder().encode(
+            canonicalAuthSessionRetentionJson(value),
+          );
+          const buildReceipt = async (currentHandoff = source.handoff, changes = {}) => {
+            const sourceFingerprint = authSessionRetentionAggregateFingerprint(
+              source.handoff.comparison,
+            );
+            const currentFingerprint = authSessionRetentionAggregateFingerprint(
+              currentHandoff.comparison,
+            );
+            const sourceFingerprintSha256 = await sha256Hex(encode(sourceFingerprint));
+            const currentFingerprintSha256 = await sha256Hex(encode(currentFingerprint));
+            return {
+              contract_version: 'auth-session-retention-recheck-receipt.v1',
+              source_handoff: source.handoff,
+              source_handoff_sha256: source.bodySha256,
+              current_handoff: currentHandoff,
+              current_handoff_sha256: await sha256Hex(encode(currentHandoff)),
+              source_aggregate_fingerprint_sha256: sourceFingerprintSha256,
+              current_aggregate_fingerprint_sha256: currentFingerprintSha256,
+              aggregate_status: sourceFingerprintSha256 === currentFingerprintSha256
+                ? 'unchanged'
+                : 'changed',
+              fingerprint_algorithm: 'sha256',
+              volatile_fields_excluded: [
+                'comparison.generated_at',
+                'comparison.policies[*].eligible_before',
+              ],
+              aggregate_only: true,
+              review_only: true,
+              policy_change_authorized: false,
+              deletion_authorized: false,
+              scheduler_authorized: false,
+              snapshot_atomic: false,
+              requires_recheck_before_mutation: true,
+              recheck_persisted: false,
+              ...changes,
+            };
+          };
+          const responseFor = async (currentHandoff, changes = {}, headerSha256 = '') => {
+            const receipt = await buildReceipt(currentHandoff, changes);
+            const body = new TextEncoder().encode(JSON.stringify(receipt));
+            return new Response(body, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256': (
+                  headerSha256 || await sha256Hex(body)
+                ),
+              },
+            });
+          };
+          const eligibleMetric = () => document.querySelector(
+            '[data-auth-retention-metric="eligible"] dd',
+          )?.textContent;
+          try {
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return responseFor(source.handoff, { deletion_authorized: true });
+              }
+              return nativeFetch(url);
+            };
+            await recheckAuthSessionRetentionHandoff();
+            const afterAuthorityTamper = eligibleMetric();
+
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return responseFor(
+                  { ...source.handoff, tenant_id: 'other-tenant' },
+                );
+              }
+              return nativeFetch(url);
+            };
+            await recheckAuthSessionRetentionHandoff();
+            const afterTenantTamper = eligibleMetric();
+
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return responseFor(source.handoff, {
+                  source_aggregate_fingerprint_sha256: '0'.repeat(64),
+                });
+              }
+              return nativeFetch(url);
+            };
+            await recheckAuthSessionRetentionHandoff();
+            const afterFingerprintTamper = eligibleMetric();
+
+            window.fetch = async url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return responseFor(source.handoff, {}, '0'.repeat(64));
+              }
+              return nativeFetch(url);
+            };
+            await recheckAuthSessionRetentionHandoff();
+            const afterBodyHashTamper = eligibleMetric();
+
+            let resolveStale;
+            window.fetch = url => {
+              if (String(url).endsWith('/retention-handoff/recheck')) {
+                return new Promise(resolve => { resolveStale = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const staleRecheck = recheckAuthSessionRetentionHandoff();
+            await loadAuthSessionRetentionComparison();
+            resolveStale(await responseFor(source.handoff));
+            await staleRecheck;
+            return {
+              afterAuthorityTamper,
+              afterTenantTamper,
+              afterFingerprintTamper,
+              afterBodyHashTamper,
+              afterRefreshWins: eligibleMetric(),
+              objectUrlCalls,
+              handoffInBrowserStorage: [localStorage, sessionStorage].some(storage => (
+                Array.from({ length: storage.length }, (_, index) => (
+                  storage.getItem(storage.key(index))
+                )).some(value => String(value).includes(source.bodySha256))
+              )),
+            };
+          } finally {
+            URL.createObjectURL = nativeCreateObjectUrl;
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert recheck_rejection == {
+        "afterAuthorityTamper": "3",
+        "afterTenantTamper": "3",
+        "afterFingerprintTamper": "3",
+        "afterBodyHashTamper": "3",
+        "afterRefreshWins": "1",
+        "objectUrlCalls": 0,
+        "handoffInBrowserStorage": False,
+    }
 
     stale_result = page.evaluate(
         """async () => {
@@ -2845,7 +3089,8 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
           };
           const responseFor = async (changes = {}, headerSha256 = '') => {
             const handoff = {
-              contract_version: 'auth-session-retention-review-handoff.v1',
+              contract_version: 'auth-session-retention-review-handoff.v2',
+              tenant_id: 'system',
               selected_policy_days: 90,
               comparison,
               comparison_sha256: await sha256Hex(
@@ -3057,6 +3302,98 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert invalid_contract["state"] == "error"
     assert "응답을 검증하지 못했습니다" in invalid_contract["text"]
     assert invalid_contract["metrics"] == 0
+
+    with page.expect_download():
+        page.evaluate("downloadAuthSessionRetentionHandoff()")
+    page.select_option("#ops-auth-session-retention-days", "180")
+    assert page.evaluate(
+        """() => ({
+          sourceCleared: _authSessionRetentionVerifiedHandoff === null,
+          recheckDisabled: document.querySelector(
+            '#ops-auth-session-retention-recheck',
+          )?.disabled,
+        })"""
+    ) == {
+        "sourceCleared": True,
+        "recheckDisabled": True,
+    }
+    page.select_option("#ops-auth-session-retention-days", "90")
+    with page.expect_download():
+        page.evaluate("downloadAuthSessionRetentionHandoff()")
+
+    auth_cleanup = page.evaluate(
+        """async () => {
+          const source = _authSessionRetentionVerifiedHandoff;
+          const prepared = await fetch('/admin/auth-sessions/retention-handoff/recheck', {
+            method: 'POST',
+            headers: {
+              ...getOpsAccessHeaders(),
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contract_version: 'auth-session-retention-recheck-request.v1',
+              source_handoff: source.handoff,
+              source_handoff_sha256: source.bodySha256,
+            }),
+          });
+          const preparedBody = new Uint8Array(await prepared.arrayBuffer());
+          const preparedHash = prepared.headers.get(
+            'X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256',
+          );
+          const nativeFetch = window.fetch;
+          const nativeCreateObjectUrl = URL.createObjectURL;
+          let resolveDelayed;
+          let objectUrlCalls = 0;
+          window.fetch = url => (
+            String(url).endsWith('/retention-handoff/recheck')
+              ? new Promise(resolve => { resolveDelayed = resolve; })
+              : nativeFetch(url)
+          );
+          URL.createObjectURL = (...args) => {
+            objectUrlCalls += 1;
+            return nativeCreateObjectUrl(...args);
+          };
+          const result = document.querySelector('#ops-auth-session-retention-result');
+          const beforeText = result?.textContent;
+          const beforeGeneration = _authSessionRetentionRequestGeneration;
+          const beforeRevision = _authSessionRevision;
+          try {
+            const pending = recheckAuthSessionRetentionHandoff();
+            await Promise.resolve();
+            clearLocalAuthSession();
+            resolveDelayed(new Response(preparedBody, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256': preparedHash,
+              },
+            }));
+            await pending;
+            return {
+              sourceCleared: _authSessionRetentionVerifiedHandoff === null,
+              recheckDisabled: document.querySelector(
+                '#ops-auth-session-retention-recheck',
+              )?.disabled,
+              generationAdvanced: _authSessionRetentionRequestGeneration > beforeGeneration,
+              revisionAdvanced: _authSessionRevision > beforeRevision,
+              panelUnchanged: result?.textContent === beforeText,
+              objectUrlCalls,
+            };
+          } finally {
+            URL.createObjectURL = nativeCreateObjectUrl;
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert auth_cleanup == {
+        "sourceCleared": True,
+        "recheckDisabled": True,
+        "generationAdvanced": True,
+        "revisionAdvanced": True,
+        "panelUnchanged": True,
+        "objectUrlCalls": 0,
+    }
+
     assert all(url.endswith("/billing/plans") for url in unauthorized_urls)
     unexpected_console_errors = [
         message for message in console_errors if "401 (Unauthorized)" not in message

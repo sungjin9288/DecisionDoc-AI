@@ -1428,21 +1428,52 @@ def test_auth_session_retention_handoff_download_is_hash_bound_and_review_only()
     evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
 
     assert 'router.get("/admin/auth-sessions/retention-handoff")' in router
-    assert "auth-session-retention-review-handoff.v1" in content
+    assert "auth-session-retention-review-handoff.v2" in content
     assert "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256" in router
     assert "X-Content-Type-Options" in router
     assert 'id="ops-auth-session-retention-handoff"' in content
     assert "downloadAuthSessionRetentionHandoff" in content
     assert "auth_session.retention_handoff" in content
     assert "comparison_sha256" in content
+    assert "tenant_id" in content
     assert "policy_change_authorized" in content
     assert "scheduler_authorized" in content
     assert "handoff_persisted" in content
     for document in (architecture, security_policy, test_plan):
-        assert "auth-session-retention-review-handoff.v1" in document
+        assert "auth-session-retention-review-handoff.v2" in document
         assert "handoff_persisted=false" in document
         assert "policy_change_authorized=false" in document
     assert "H116 Auth session retention review handoff" in evidence
+
+
+def test_auth_session_retention_recheck_receipt_is_hash_bound_and_read_only():
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    router = (root / "app" / "routers" / "admin" / "_auth_sessions.py").read_text(
+        encoding="utf-8"
+    )
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+
+    assert '"/admin/auth-sessions/retention-handoff/recheck",' in router
+    assert "dependencies=[Depends(require_admin)]" in router
+    assert "auth-session-retention-review-handoff.v2" in content
+    assert "auth-session-retention-recheck-receipt.v1" in content
+    assert "X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256" in router
+    assert 'id="ops-auth-session-retention-recheck"' in content
+    assert "recheckAuthSessionRetentionHandoff" in content
+    assert "auth_session.retention_recheck" in content
+    assert "source_aggregate_fingerprint_sha256" in content
+    assert "recheck_persisted" in content
+    for document in (architecture, security_policy, test_plan):
+        assert "auth-session-retention-recheck-receipt.v1" in document
+        assert "aggregate_only=true" in document
+        assert "recheck_persisted=false" in document
+    assert "H117 Auth session retention handoff freshness recheck receipt" in evidence
 
 
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
