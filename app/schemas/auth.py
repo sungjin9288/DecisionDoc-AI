@@ -100,6 +100,24 @@ class AuthSessionRetentionReviewDispositionRequest(BaseModel):
     ]
 
 
+class AuthSessionRetentionReviewDispositionRecordRequest(BaseModel):
+    """One exact H118 receipt submitted for an immutable H119 reviewer record."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    contract_version: Literal[
+        "auth-session-retention-review-disposition-record-request.v1"
+    ]
+    operation_id: str = Field(min_length=36, max_length=36)
+    source_disposition_receipt: dict[str, Any]
+    source_disposition_receipt_sha256: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+
+
 class UpdateMyProfileRequest(BaseModel):
     display_name: str | None = None
     email: str | None = None

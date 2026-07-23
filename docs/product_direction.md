@@ -339,3 +339,7 @@ DecisionDoc AI should be described as follows:
 > DecisionDoc AI turns source material and project context into reviewable decision packages. It keeps evidence, validation, reviewer sign-off, and operational boundaries attached so teams can move from draft to decision without losing traceability.
 
 This narrative should guide roadmap, README, UI, demo, and implementation priorities.
+
+## H119 Reviewer Evidence Boundary
+
+H119 turns a verified H118 disposition into reviewer-attributed durable evidence without turning it into approval or execution authority. Only a current admin login session may register or read the tenant record; Ops Key remains limited to H113-H118 read-only evidence. A username is historical display data, while the stable user ID remains the replay binding.

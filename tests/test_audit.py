@@ -1200,6 +1200,82 @@ def test_audit_auth_session_retention_review_disposition_records_bound_aggregate
         assert forbidden_value not in serialized
 
 
+def test_audit_h119_retention_registry_keeps_reviewer_but_redacts_session_network_and_receipt(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import verify_token
+    from app.storage.audit_store import AuditStore
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client, username="registry-audited-reviewer")
+    handoff = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(login),
+        params={"retention_days": 90},
+    ).json()
+    recheck = client.post(
+        "/admin/auth-sessions/retention-handoff/recheck",
+        headers=_auth(login),
+        json={
+            "contract_version": "auth-session-retention-recheck-request.v1",
+            "source_handoff": handoff,
+            "source_handoff_sha256": hashlib.sha256(
+                json.dumps(handoff, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        },
+    ).json()
+    disposition = client.post(
+        "/admin/auth-sessions/retention-handoff/review-disposition",
+        headers=_auth(login),
+        json={
+            "contract_version": "auth-session-retention-review-disposition-request.v1",
+            "source_recheck_receipt": recheck,
+            "source_recheck_receipt_sha256": hashlib.sha256(
+                json.dumps(recheck, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+            "review_disposition": "acknowledged_unchanged",
+        },
+    ).json()
+    claims = verify_token(login["access_token"])
+    response = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers={**_auth(login), "User-Agent": "private-h119-reviewer-agent"},
+        json={
+            "contract_version": "auth-session-retention-review-disposition-record-request.v1",
+            "operation_id": "f8c788a7-1d1b-4d09-a1f6-f642e6fd49f1",
+            "source_disposition_receipt": disposition,
+            "source_disposition_receipt_sha256": hashlib.sha256(
+                json.dumps(disposition, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        },
+    )
+    entries = AuditStore("system").query(
+        filters={"action": "auth_session.retention_registry_create"}
+    )
+    serialized = json.dumps(entries, ensure_ascii=False)
+
+    assert response.status_code == 201
+    assert claims is not None
+    assert len(entries) == 1
+    assert entries[0]["user_id"] == claims["sub"]
+    assert entries[0]["username"] == "registry-audited-reviewer"
+    assert entries[0]["user_role"] == "admin"
+    assert entries[0]["session_id"] == ""
+    assert entries[0]["ip_address"] == ""
+    assert entries[0]["user_agent"] == ""
+    assert entries[0]["detail"]["operation_id"] == "f8c788a7-1d1b-4d09-a1f6-f642e6fd49f1"
+    assert entries[0]["detail"]["replay"] is False
+    for forbidden_value in (
+        claims["session_id"],
+        "private-h119-reviewer-agent",
+        login["access_token"],
+        login["refresh_token"],
+        json.dumps(disposition, ensure_ascii=False),
+    ):
+        assert forbidden_value not in serialized
+
+
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
     """Accessing an admin endpoint without admin role logs access.blocked."""
     client = _make_client(tmp_path, monkeypatch)

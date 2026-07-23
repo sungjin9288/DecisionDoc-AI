@@ -2898,7 +2898,7 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.locator('[data-auth-retention-metric="revoked"] dd').inner_text() == "1"
     assert "읽기 전용" in panel_text
     assert "삭제 권한 없음" in panel_text
-    assert panel.get_by_role("button").count() == 4
+    assert panel.get_by_role("button").count() == 6
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 상태 새로고침",
@@ -2914,6 +2914,10 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 검토 처리 기록 내보내기",
+    ).count() == 1
+    assert panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 검토 처리 이력 등록",
     ).count() == 1
     assert panel.locator("#ops-auth-session-retention-review-disposition").count() == 1
     assert panel.locator("[data-auth-retention-policy]").count() == 4
@@ -2964,6 +2968,70 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     disposition_download.save_as(str(disposition_path))
     assert disposition_path.read_bytes() == review_disposition_body
     assert "검토 처리: acknowledged_unchanged" in panel.inner_text()
+    registry_create = panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 검토 처리 이력 등록",
+    )
+    assert registry_create.is_enabled()
+    registry_create.click()
+    panel.locator(
+        "#ops-auth-session-retention-registry "
+        "[data-auth-retention-record-download]",
+    ).wait_for(timeout=10000)
+    registry_rows = panel.locator("#ops-auth-session-retention-registry tbody tr")
+    assert registry_rows.count() == 1
+    assert live_server["auth"]["username"] in registry_rows.first.inner_text()
+
+    with page.expect_download() as registry_download_info:
+        registry_rows.first.get_by_role("button", name="다운로드").click()
+    registry_download = registry_download_info.value
+    registry_path = tmp_path / registry_download.suggested_filename
+    registry_download.save_as(str(registry_path))
+    registry_record = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert registry_record["source_disposition_receipt"] == review_disposition_payload
+    assert registry_record["reviewer_identity_bound"] is True
+    assert registry_record["registry_record_persisted"] is True
+    assert all(
+        registry_record[field] is False
+        for field in (
+            "approval_granted",
+            "execution_authorized",
+            "policy_change_authorized",
+            "deletion_authorized",
+            "scheduler_authorized",
+            "mass_revoke_authorized",
+        )
+    )
+    assert "session_id" not in registry_record
+    rename_replay = page.evaluate(
+        """async operationId => {
+          const source = _authSessionRetentionVerifiedDisposition;
+          const originalUser = _currentUser;
+          const reviewerUserId = originalUser?.sub || originalUser?.user_id;
+          _authSessionRetentionRegistryPending = {
+            source,
+            tenantId: _currentTenantId,
+            reviewerUserId,
+            reviewerUsername: originalUser.username,
+            operationId,
+          };
+          _currentUser = { ...originalUser, username: 'renamed-ui-reviewer' };
+          try {
+            await createAuthSessionRetentionRegistryRecord();
+            return {
+              pendingCleared: _authSessionRetentionRegistryPending === null,
+              recordCount: document.querySelectorAll(
+                '#ops-auth-session-retention-registry tbody tr',
+              ).length,
+            };
+          } finally {
+            _currentUser = originalUser;
+            updateAuthSessionRetentionRegistryControls();
+          }
+        }""",
+        registry_record["operation_id"],
+    )
+    assert rename_replay == {"pendingCleared": True, "recordCount": 1}
     page.set_viewport_size({"width": 390, "height": 844})
     assert panel.evaluate("element => element.scrollWidth <= element.clientWidth")
     page.set_viewport_size({"width": 1280, "height": 900})

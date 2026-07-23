@@ -1505,7 +1505,8 @@ def test_auth_session_retention_review_disposition_receipt_stays_read_only():
     assert "downloadAuthSessionRetentionReviewDisposition" in content
     assert "auth_session.retention_review_disposition" in audit
     assert "auth_session_retention_audit_detail" in audit
-    assert "auth_session_retention_audit_identity" in audit
+    assert "auth_session_retention_audit_principal" in audit
+    assert "auth_session_retention_audit_network" in audit
     assert "source_recheck_receipt_sha256" in audit_helper
     assert "receipt_sha256" in audit_helper
     assert "selectAuthSessionRetentionReviewDisposition" in content

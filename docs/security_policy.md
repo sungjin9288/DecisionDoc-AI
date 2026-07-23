@@ -169,3 +169,4 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 | 버전 | 날짜 | 내용 |
 |------|------|------|
 | 1.0 | 2025-03 | 최초 작성 |
+| 1.1 | 2026-07 | H119 retention disposition registry는 Ops Key가 아닌 session-bound admin JWT만 허용한다. Session ID, token, IP, User-Agent와 nested receipt body를 persistence/audit에서 제외하고, H119 audit은 reviewer principal만 남긴다. |

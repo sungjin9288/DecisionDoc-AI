@@ -19,6 +19,9 @@ RETENTION_RECHECK_RECEIPT_CONTRACT_VERSION = "auth-session-retention-recheck-rec
 RETENTION_REVIEW_DISPOSITION_RECEIPT_CONTRACT_VERSION = (
     "auth-session-retention-review-disposition-receipt.v1"
 )
+RETENTION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION = (
+    "auth-session-retention-review-disposition-record.v1"
+)
 RETENTION_REVIEW_DISPOSITIONS = (
     "acknowledged_unchanged",
     "new_handoff_required",
@@ -239,6 +242,104 @@ def build_retention_review_disposition_receipt(
         "requires_recheck_before_mutation": True,
         "decision_receipt_persisted": False,
     }
+
+
+def validate_retention_review_disposition_receipt(
+    receipt: object,
+    *,
+    expected_tenant_id: str,
+    expected_sha256: object,
+) -> dict[str, Any]:
+    """Validate the exact non-persistent H118 receipt before registry storage."""
+    receipt_sha256 = _require_sha256(
+        expected_sha256,
+        field="source_disposition_receipt_sha256",
+    )
+    receipt = _require_exact_object(
+        receipt,
+        {
+            "contract_version",
+            "tenant_id",
+            "source_recheck_receipt",
+            "source_recheck_receipt_sha256",
+            "current_handoff_sha256",
+            "current_aggregate_fingerprint_sha256",
+            "selected_policy_days",
+            "aggregate_status",
+            "review_disposition",
+            "disposition_binding_sha256",
+            "receipt_status",
+            "review_only",
+            "reviewer_identity_bound",
+            "approval_granted",
+            "execution_authorized",
+            "policy_change_authorized",
+            "deletion_authorized",
+            "scheduler_authorized",
+            "mass_revoke_authorized",
+            "snapshot_atomic",
+            "requires_recheck_before_mutation",
+            "decision_receipt_persisted",
+        },
+        message="Invalid authentication-session retention review disposition receipt",
+    )
+    if retention_sha256(receipt) != receipt_sha256:
+        raise AuthSessionRetentionContractError(
+            "source_disposition_receipt_sha256 does not match"
+        )
+    if (
+        receipt["contract_version"]
+        != RETENTION_REVIEW_DISPOSITION_RECEIPT_CONTRACT_VERSION
+        or receipt["tenant_id"] != expected_tenant_id
+        or receipt["receipt_status"] != "issued"
+        or receipt["review_only"] is not True
+        or receipt["reviewer_identity_bound"] is not False
+        or receipt["approval_granted"] is not False
+        or receipt["execution_authorized"] is not False
+        or receipt["policy_change_authorized"] is not False
+        or receipt["deletion_authorized"] is not False
+        or receipt["scheduler_authorized"] is not False
+        or receipt["mass_revoke_authorized"] is not False
+        or receipt["snapshot_atomic"] is not False
+        or receipt["requires_recheck_before_mutation"] is not True
+        or receipt["decision_receipt_persisted"] is not False
+    ):
+        raise AuthSessionRetentionContractError("Invalid retention review authority")
+
+    source = validate_retention_recheck_receipt(
+        receipt["source_recheck_receipt"],
+        expected_tenant_id=expected_tenant_id,
+        expected_sha256=receipt["source_recheck_receipt_sha256"],
+    )
+    if (
+        receipt["current_handoff_sha256"] != source["current_handoff_sha256"]
+        or receipt["current_aggregate_fingerprint_sha256"]
+        != source["current_aggregate_fingerprint_sha256"]
+        or receipt["selected_policy_days"]
+        != source["current_handoff"]["selected_policy_days"]
+        or receipt["aggregate_status"] != source["aggregate_status"]
+    ):
+        raise AuthSessionRetentionContractError("Invalid retention review projection")
+    _require_sha256(receipt["disposition_binding_sha256"], field="disposition_binding_sha256")
+    _require_review_disposition(receipt["review_disposition"])
+    _validate_review_disposition(
+        aggregate_status=receipt["aggregate_status"],
+        review_disposition=receipt["review_disposition"],
+    )
+    expected_binding = {
+        "tenant_id": expected_tenant_id,
+        "source_recheck_receipt_sha256": receipt["source_recheck_receipt_sha256"],
+        "current_handoff_sha256": receipt["current_handoff_sha256"],
+        "current_aggregate_fingerprint_sha256": receipt[
+            "current_aggregate_fingerprint_sha256"
+        ],
+        "selected_policy_days": receipt["selected_policy_days"],
+        "aggregate_status": receipt["aggregate_status"],
+        "review_disposition": receipt["review_disposition"],
+    }
+    if receipt["disposition_binding_sha256"] != retention_sha256(expected_binding):
+        raise AuthSessionRetentionContractError("Invalid retention disposition binding")
+    return receipt
 
 
 def validate_retention_recheck_receipt(

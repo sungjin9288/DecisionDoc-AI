@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import Request
 
-from app.middleware.auth_session_retention_audit import auth_session_retention_audit_detail, auth_session_retention_audit_identity
+from app.middleware.auth_session_retention_audit import auth_session_retention_audit_detail, auth_session_retention_audit_network, auth_session_retention_audit_principal
 from app.middleware.document_ops_audit import (
     document_ops_audit_detail,
     document_ops_resource_identity,
@@ -308,8 +308,7 @@ def _append_audit_entries(
         user_id = getattr(request.state, "user_id", "anonymous") or "anonymous"
         username = getattr(request.state, "username", "anonymous") or "anonymous"
         user_role = getattr(request.state, "user_role", "unknown") or "unknown"
-        if action.startswith("auth_session.retention_"):
-            user_id = username = session_id = ""
+        user_id, username, user_role, session_id = auth_session_retention_audit_principal(action, user_id, username, user_role, session_id)
         auth_session_revoked_count = getattr(
             request.state,
             "auth_session_revoked_count",
@@ -726,7 +725,7 @@ def _build_audit_log(
     document_ops_identity = document_ops_resource_identity(request, action)
     if document_ops_identity is not None:
         resource_type, resource_id = document_ops_identity
-    ip_address, user_agent = auth_session_retention_audit_identity(action, _get_client_ip(request), request.headers.get("user-agent", "")[:200])
+    ip_address, user_agent = auth_session_retention_audit_network(action, _get_client_ip(request), request.headers.get("user-agent", "")[:200])
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

@@ -46,9 +46,9 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 44 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 48 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 49 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 11 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 280 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 284 (라우트)
 ```
 
 ```text
@@ -62,7 +62,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │       → rate_limit → auth → tenant → billing → audit → metrics
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │
-  ├─ Routers (23 top-level files, 라우트 280):
+  ├─ Routers (23 top-level files, 라우트 284):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
@@ -250,6 +250,10 @@ M5 (분할)   ── 완료
 - M1·M2·M6 실행 전에는 `python3 scripts/check_completion_readiness.py --print-env-template`으로 필요한 env 입력값을 확인하고, `python3 scripts/check_completion_readiness.py --print-proof-plan`으로 readiness와 no-secret proof receipt 명령을 확인한다. secret은 gitignore된 `.env.prod` 같은 파일에 둔 뒤 `python3 scripts/check_completion_readiness.py --env-file .env.prod`로 provider key, G2B/stage smoke, 배포 smoke 입력값을 먼저 확인한다. 필요하면 `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json`으로 gitignore된 local receipt를 남기고 `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json`로 receipt 계약을 확인한다. 이 명령은 readiness만 확인하며 live provider, G2B live API, AWS runtime은 실행하지 않는다. 실제 proof 실행과 문서 갱신 순서는 [completion-readiness-runbook.md](./completion-readiness-runbook.md)를 따른다.
 - M3·M4·M5는 외부 의존 없는 정리 마일스톤으로 완료됐다.
 - 각 마일스톤 완료 시 [roadmap.md](./roadmap.md)와 README 수치·한계 문구를 함께 갱신한다 (정직성 규칙).
+
+### H119 local reviewer registry
+
+H119 is a completed no-cost local slice. It adds a session-admin-only immutable disposition registry while retaining H118 as a non-persistent deterministic receipt. Parent/Luna review findings were remediated, focused retention `36 passed, 238 deselected`, broad auth/security `500 passed`, full Chromium `84 passed, 1 skipped`, and full non-live `4429 passed, 1 skipped, 4 deselected`. Paid provider, G2B, AWS runtime, Stripe, Statuspage, deployment, and service resume were not run.
 
 ## 6. 하지 않을 것 (Non-Goals)
 

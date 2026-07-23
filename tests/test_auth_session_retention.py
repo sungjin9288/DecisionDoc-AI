@@ -1071,3 +1071,131 @@ def test_auth_session_retention_review_disposition_rejects_tampering_and_invalid
     assert invalid_unchanged_disposition.status_code == 422
     assert invalid_changed_disposition.status_code == 422
     assert allowed_changed_disposition.status_code == 200
+
+
+def test_auth_session_retention_registry_requires_session_admin_and_replays_exact_bytes(
+    tmp_path,
+    monkeypatch,
+):
+    from app.services.auth_service import create_access_token, verify_token
+
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    recheck_receipt = _recheck_receipt(client, admin)
+    source = client.post(
+        "/admin/auth-sessions/retention-handoff/review-disposition",
+        headers=_auth(admin),
+        json={
+            "contract_version": "auth-session-retention-review-disposition-request.v1",
+            "source_recheck_receipt": recheck_receipt,
+            "source_recheck_receipt_sha256": _canonical_sha256(recheck_receipt),
+            "review_disposition": "acknowledged_unchanged",
+        },
+    )
+    assert source.status_code == 200
+    source_receipt = source.json()
+    payload = {
+        "contract_version": "auth-session-retention-review-disposition-record-request.v1",
+        "operation_id": "8e6b8e12-6e0e-4e58-8e58-1c82ad9a27f0",
+        "source_disposition_receipt": source_receipt,
+        "source_disposition_receipt_sha256": _canonical_sha256(source_receipt),
+    }
+    created_member = client.post(
+        "/admin/users",
+        headers=_auth(admin),
+        json={
+            "username": "registry-member",
+            "display_name": "Registry member",
+            "email": "registry-member@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+        },
+    )
+    assert created_member.status_code == 200
+    member = client.post(
+        "/auth/login",
+        json={"username": "registry-member", "password": "MemberPass1!"},
+    ).json()
+    claims = verify_token(admin["access_token"])
+    assert claims is not None
+    sessionless = create_access_token(
+        claims["sub"],
+        claims["tenant_id"],
+        "admin",
+        claims["username"],
+        credential_version=claims["credential_version"],
+    )
+
+    unauthenticated = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        json={"unexpected": True},
+    )
+    ops_only = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+        json=payload,
+    )
+    forbidden = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers=_auth(member),
+        json=payload,
+    )
+    sessionless_response = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers={"Authorization": f"Bearer {sessionless}"},
+        json=payload,
+    )
+    first = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers=_auth(admin),
+        json=payload,
+    )
+    replay = client.post(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers=_auth(admin),
+        json=payload,
+    )
+    listing = client.get(
+        "/admin/auth-sessions/retention-review-dispositions",
+        headers=_auth(admin),
+    )
+    read = client.get(
+        f"/admin/auth-sessions/retention-review-dispositions/{payload['operation_id']}",
+        headers=_auth(admin),
+    )
+    downloaded = client.get(
+        f"/admin/auth-sessions/retention-review-dispositions/{payload['operation_id']}/download",
+        headers=_auth(admin),
+    )
+    invalid_read = client.get(
+        "/admin/auth-sessions/retention-review-dispositions/not-a-uuid",
+        headers=_auth(admin),
+    )
+
+    assert unauthenticated.status_code == 401
+    assert ops_only.status_code == 401
+    assert forbidden.status_code == 403
+    assert sessionless_response.status_code == 401
+    assert first.status_code == 201
+    assert replay.status_code == 200
+    assert first.content == replay.content
+    assert first.headers["cache-control"] == "no-store"
+    record = first.json()
+    assert record["reviewer_identity_bound"] is True
+    assert record["registry_record_persisted"] is True
+    assert record["source_disposition_receipt"] == source_receipt
+    assert record["source_disposition_receipt"]["reviewer_identity_bound"] is False
+    assert record["source_disposition_receipt"]["decision_receipt_persisted"] is False
+    assert record["recorded_at"].endswith("+00:00")
+    assert "auth_session_id" not in json.dumps(record)
+    assert listing.status_code == 200
+    assert listing.json()["records"][0]["operation_id"] == payload["operation_id"]
+    assert "source_disposition_receipt" not in listing.json()["records"][0]
+    assert read.status_code == 200
+    assert read.content == first.content
+    assert downloaded.status_code == 200
+    assert downloaded.content == first.content
+    assert downloaded.headers[
+        "x-decisiondoc-auth-session-retention-review-disposition-record-sha256"
+    ] == hashlib.sha256(downloaded.content).hexdigest()
+    assert invalid_read.status_code == 422

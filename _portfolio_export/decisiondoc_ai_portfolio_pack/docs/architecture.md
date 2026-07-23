@@ -357,3 +357,7 @@ Browser profile은 session ID를 DOM에 기록하지 않고 current/other, user 
 | PDF | pdf_service.py | Playwright |
 | XLSX | excel_service.py | xlsxwriter |
 | PPTX | pptx_service.py | python-pptx |
+
+## H119 Retention Disposition Registry
+
+`POST|GET /admin/auth-sessions/retention-review-dispositions`와 record read/download은 current session-bound admin JWT만 사용하는 immutable registry다. `auth-session-retention-review-disposition-record.v1`은 selected backend의 tenant path에 canonical conditional create로 저장한다. H118 source는 nested false identity/persistence flags를 유지하고 H119 wrapper만 reviewer identity/persistence를 true로 한다. UUIDv4-hash path, stable reviewer/source request hash, historical username·recorded-at을 포함한 full-record binding hash, UTC `+00:00` timestamp, tenant/path identity와 all-false authority flags를 every read/list에서 strict 검증한다.

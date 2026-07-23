@@ -7017,6 +7017,21 @@
           aria-label="로그인 세션 보존 검토 처리 기록 내보내기"
           disabled
         >검토 처리 기록 내보내기</button>
+        <button
+          id="ops-auth-session-retention-registry-create"
+          class="auth-retention-handoff"
+          type="button"
+          aria-label="로그인 세션 보존 검토 처리 이력 등록"
+          disabled
+        >이력 등록</button>
+        <button
+          id="ops-auth-session-retention-registry-refresh"
+          class="auth-retention-refresh"
+          type="button"
+          aria-label="로그인 세션 보존 검토 처리 이력 새로고침"
+          title="로그인 세션 보존 검토 처리 이력 새로고침"
+          disabled
+        >↻</button>
       </div>
     </div>
     <div
@@ -7028,6 +7043,7 @@
       <p style="margin:0;color:#cbd5e1;font-size:.82rem;">관리자 세션 또는 Ops Key가 필요합니다.</p>
       <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음</p>
     </div>
+    <div id="ops-auth-session-retention-registry" class="auth-retention-result" aria-live="polite"></div>
   </section>
 
   <!-- ── 로컬 LLM 상태 패널 ───────────────────────────────────── -->
@@ -29550,6 +29566,8 @@ const AUTH_SESSION_RETENTION_RECHECK_RECEIPT_CONTRACT = 'auth-session-retention-
 const AUTH_SESSION_RETENTION_RECHECK_RECEIPT_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Recheck-Receipt-SHA256';
 const AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECEIPT_CONTRACT = 'auth-session-retention-review-disposition-receipt.v1';
 const AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECEIPT_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Receipt-SHA256';
+const AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECORD_CONTRACT = 'auth-session-retention-review-disposition-record.v1';
+const AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECORD_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Review-Disposition-Record-SHA256';
 const AUTH_SESSION_RETENTION_REVIEW_DISPOSITIONS = Object.freeze([
   'acknowledged_unchanged',
   'new_handoff_required',
@@ -29565,6 +29583,10 @@ let _authSessionRetentionComparison = null;
 let _authSessionRetentionComparisonTenant = '';
 let _authSessionRetentionVerifiedHandoff = null;
 let _authSessionRetentionVerifiedRecheckReceipt = null;
+let _authSessionRetentionVerifiedDisposition = null;
+let _authSessionRetentionRegistryGeneration = 0;
+let _authSessionRetentionRegistryPending = null;
+let _authSessionRetentionRegistryCreateInFlight = false;
 
 function normalizeAuthSessionRetentionComparison(payload) {
   const expectedKeys = [
@@ -29786,6 +29808,7 @@ function clearAuthSessionRetentionHandoff() {
 
 function invalidateAuthSessionRetentionHandoff() {
   ++_authSessionRetentionRequestGeneration;
+  ++_authSessionRetentionRegistryGeneration;
   clearAuthSessionRetentionHandoff();
 }
 
@@ -29822,9 +29845,12 @@ function rememberAuthSessionRetentionRecheckReceipt({
 
 function clearAuthSessionRetentionReviewDisposition() {
   _authSessionRetentionVerifiedRecheckReceipt = null;
+  _authSessionRetentionVerifiedDisposition = null;
+  _authSessionRetentionRegistryPending = null;
   configureAuthSessionRetentionReviewDispositions('');
   const button = $id('ops-auth-session-retention-review-disposition-export');
   if (button) button.disabled = true;
+  updateAuthSessionRetentionRegistryControls();
 }
 
 function configureAuthSessionRetentionReviewDispositions(aggregateStatus) {
@@ -30037,6 +30063,262 @@ async function normalizeAuthSessionRetentionReviewDispositionReceipt(payload) {
   };
 }
 
+function isSessionBoundRetentionReviewer() {
+  const claims = readAccessTokenClaims(localStorage.getItem('dd_access_token'));
+  return Boolean(
+    claims?.role === 'admin'
+    && typeof claims?.session_id === 'string'
+    && /^[a-f0-9]{32}$/.test(claims.session_id)
+    && _currentUser?.role === 'admin',
+  );
+}
+
+function updateAuthSessionRetentionRegistryControls() {
+  const createButton = $id('ops-auth-session-retention-registry-create');
+  const refreshButton = $id('ops-auth-session-retention-registry-refresh');
+  if (!createButton || !refreshButton) return;
+  const source = _authSessionRetentionVerifiedDisposition;
+  const sessionBoundAdmin = isSessionBoundRetentionReviewer();
+  createButton.disabled = !(
+    sessionBoundAdmin
+    && !_authSessionRetentionRegistryCreateInFlight
+    && source?.tenantId === _currentTenantId
+    && source?.receipt?.reviewer_identity_bound === false
+    && source?.receipt?.decision_receipt_persisted === false
+  );
+  refreshButton.disabled = !sessionBoundAdmin;
+}
+
+async function normalizeAuthSessionRetentionRegistryRecord(payload) {
+  const expectedKeys = [
+    'contract_version', 'operation_id', 'request_sha256', 'record_binding_sha256',
+    'tenant_id',
+    'reviewer_user_id', 'reviewer_username', 'reviewer_role', 'recorded_at',
+    'source_disposition_receipt', 'source_disposition_receipt_sha256',
+    'source_recheck_receipt_sha256', 'current_handoff_sha256',
+    'current_aggregate_fingerprint_sha256', 'selected_policy_days', 'aggregate_status',
+    'review_disposition', 'disposition_binding_sha256', 'record_status', 'review_only',
+    'reviewer_identity_bound', 'registry_record_persisted', 'approval_granted',
+    'execution_authorized', 'policy_change_authorized', 'deletion_authorized',
+    'scheduler_authorized', 'mass_revoke_authorized', 'snapshot_atomic',
+    'requires_recheck_before_mutation',
+  ];
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(payload, key))) {
+    throw new Error('로그인 세션 보존 이력 record 형식을 검증하지 못했습니다.');
+  }
+  const source = await normalizeAuthSessionRetentionReviewDispositionReceipt(
+    payload.source_disposition_receipt,
+  );
+  const strings = [
+    'operation_id', 'request_sha256', 'record_binding_sha256', 'tenant_id',
+    'reviewer_user_id', 'reviewer_username',
+    'source_disposition_receipt_sha256', 'source_recheck_receipt_sha256',
+    'current_handoff_sha256', 'current_aggregate_fingerprint_sha256',
+    'disposition_binding_sha256',
+  ];
+  const hashes = strings.filter(key => key.includes('sha256'));
+  const recordedAt = new Date(payload.recorded_at);
+  const sourceBytes = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(source.receipt),
+  );
+  const requestBindingBytes = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson({
+      tenant_id: payload.tenant_id,
+      operation_id: payload.operation_id,
+      reviewer_user_id: payload.reviewer_user_id,
+      source_disposition_receipt_sha256: payload.source_disposition_receipt_sha256,
+    }),
+  );
+  const {
+    record_binding_sha256: recordBindingSha256,
+    ...recordBinding
+  } = payload;
+  const recordBindingBytes = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(recordBinding),
+  );
+  if (
+    payload.contract_version !== AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECORD_CONTRACT
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(payload.operation_id)
+    || strings.some(key => typeof payload[key] !== 'string' || !payload[key])
+    || hashes.some(key => !/^[a-f0-9]{64}$/.test(payload[key]))
+    || typeof payload.recorded_at !== 'string' || !payload.recorded_at.endsWith('+00:00')
+    || Number.isNaN(recordedAt.getTime())
+    || payload.reviewer_role !== 'admin'
+    || payload.source_disposition_receipt_sha256 !== await sha256Hex(sourceBytes)
+    || payload.request_sha256 !== await sha256Hex(requestBindingBytes)
+    || recordBindingSha256 !== await sha256Hex(recordBindingBytes)
+    || payload.tenant_id !== source.tenantId
+    || payload.source_recheck_receipt_sha256 !== source.receipt.source_recheck_receipt_sha256
+    || payload.current_handoff_sha256 !== source.receipt.current_handoff_sha256
+    || payload.current_aggregate_fingerprint_sha256 !== source.receipt.current_aggregate_fingerprint_sha256
+    || payload.selected_policy_days !== source.selectedPolicyDays
+    || payload.aggregate_status !== source.aggregateStatus
+    || payload.review_disposition !== source.reviewDisposition
+    || payload.disposition_binding_sha256 !== source.receipt.disposition_binding_sha256
+    || payload.record_status !== 'recorded' || payload.review_only !== true
+    || payload.reviewer_identity_bound !== true || payload.registry_record_persisted !== true
+    || payload.approval_granted !== false || payload.execution_authorized !== false
+    || payload.policy_change_authorized !== false || payload.deletion_authorized !== false
+    || payload.scheduler_authorized !== false || payload.mass_revoke_authorized !== false
+    || payload.snapshot_atomic !== false || payload.requires_recheck_before_mutation !== true
+  ) throw new Error('로그인 세션 보존 이력 record를 검증하지 못했습니다.');
+  return { record: payload, source, tenantId: payload.tenant_id };
+}
+
+function normalizeAuthSessionRetentionRegistrySummary(payload) {
+  const expectedKeys = [
+    'operation_id', 'tenant_id', 'reviewer_user_id', 'reviewer_username',
+    'reviewer_role', 'recorded_at', 'record_sha256',
+    'source_disposition_receipt_sha256', 'selected_policy_days',
+    'aggregate_status', 'review_disposition', 'record_status',
+    'read_only', 'snapshot_atomic',
+  ];
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(payload.operation_id)
+    || typeof payload.tenant_id !== 'string' || !payload.tenant_id
+    || typeof payload.reviewer_user_id !== 'string' || !payload.reviewer_user_id
+    || typeof payload.reviewer_username !== 'string' || !payload.reviewer_username
+    || payload.reviewer_role !== 'admin'
+    || typeof payload.recorded_at !== 'string' || !payload.recorded_at.endsWith('+00:00')
+    || Number.isNaN(new Date(payload.recorded_at).getTime())
+    || !/^[a-f0-9]{64}$/.test(payload.record_sha256)
+    || !/^[a-f0-9]{64}$/.test(payload.source_disposition_receipt_sha256)
+    || !AUTH_SESSION_RETENTION_POLICY_DAYS.includes(payload.selected_policy_days)
+    || !['unchanged', 'changed'].includes(payload.aggregate_status)
+    || !AUTH_SESSION_RETENTION_REVIEW_DISPOSITIONS.includes(payload.review_disposition)
+    || payload.record_status !== 'recorded'
+    || payload.read_only !== true
+    || payload.snapshot_atomic !== false) {
+    throw new Error('로그인 세션 보존 이력 summary를 검증하지 못했습니다.');
+  }
+  return payload;
+}
+
+function renderAuthSessionRetentionRegistry(records) {
+  const target = $id('ops-auth-session-retention-registry');
+  if (!target) return;
+  if (!Array.isArray(records) || records.length === 0) {
+    target.innerHTML = '<p class="auth-retention-boundary">등록된 검토 처리 이력이 없습니다.</p>';
+    return;
+  }
+  target.innerHTML = `<table class="auth-retention-policy-table"><thead><tr><th>기록 시각</th><th>검토자</th><th>상태</th><th>처리</th><th></th></tr></thead><tbody>${records.map(record => `<tr><td>${escapeHtml(record.recorded_at)}</td><td>${escapeHtml(record.reviewer_username)}</td><td>${escapeHtml(record.aggregate_status)}</td><td>${escapeHtml(record.review_disposition)}</td><td><button class="auth-retention-handoff" type="button" data-auth-retention-record-download="${escapeHtml(record.operation_id)}">다운로드</button></td></tr>`).join('')}</tbody></table>`;
+  target.querySelectorAll('[data-auth-retention-record-download]').forEach(button => {
+    button.addEventListener('click', () => downloadAuthSessionRetentionRegistryRecord(button.dataset.authRetentionRecordDownload));
+  });
+}
+
+async function loadAuthSessionRetentionRegistry() {
+  const target = $id('ops-auth-session-retention-registry');
+  if (!target) return;
+  if (!isSessionBoundRetentionReviewer()) {
+    target.innerHTML = '<p class="auth-retention-boundary">현재 관리자 로그인 세션이 필요합니다.</p>';
+    updateAuthSessionRetentionRegistryControls();
+    return;
+  }
+  const generation = ++_authSessionRetentionRegistryGeneration;
+  const authSessionRevision = _authSessionRevision;
+  const tenantId = _currentTenantId;
+  try {
+    const response = await fetch('/admin/auth-sessions/retention-review-dispositions', { headers: getAuthHeaders() });
+    if (generation !== _authSessionRetentionRegistryGeneration
+      || authSessionRevision !== _authSessionRevision
+      || tenantId !== _currentTenantId) return;
+    if (!response.ok) throw new Error(authSessionRetentionRegistryErrorMessage(response.status));
+    const payload = await response.json();
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+      || Object.keys(payload).length !== 1 || !Array.isArray(payload.records)) {
+      throw new Error('로그인 세션 보존 이력 목록을 검증하지 못했습니다.');
+    }
+    const records = payload.records.map(normalizeAuthSessionRetentionRegistrySummary);
+    const operationIds = new Set();
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      if (record.tenant_id !== tenantId || operationIds.has(record.operation_id)) {
+        throw new Error('로그인 세션 보존 이력 목록을 검증하지 못했습니다.');
+      }
+      operationIds.add(record.operation_id);
+      if (index > 0) {
+        const previous = records[index - 1];
+        const correctlyOrdered = previous.recorded_at > record.recorded_at
+          || (
+            previous.recorded_at === record.recorded_at
+            && previous.operation_id > record.operation_id
+          );
+        if (!correctlyOrdered) {
+          throw new Error('로그인 세션 보존 이력 정렬을 검증하지 못했습니다.');
+        }
+      }
+    }
+    renderAuthSessionRetentionRegistry(records);
+  } catch (error) {
+    if (generation === _authSessionRetentionRegistryGeneration
+      && authSessionRevision === _authSessionRevision
+      && tenantId === _currentTenantId) {
+      target.innerHTML = `<p class="auth-retention-boundary">${escapeHtml(error.message || String(error))}</p>`;
+    }
+  }
+}
+
+async function createAuthSessionRetentionRegistryRecord() {
+  const source = _authSessionRetentionVerifiedDisposition;
+  if (_authSessionRetentionRegistryCreateInFlight || !isSessionBoundRetentionReviewer() || !source || source.tenantId !== _currentTenantId) return;
+  const reviewerUserId = _currentUser?.sub || _currentUser?.user_id;
+  const reviewerUsername = _currentUser?.username;
+  if (!reviewerUserId || !reviewerUsername) return;
+  const pending = _authSessionRetentionRegistryPending;
+  const operationId = pending?.source === source && pending?.tenantId === _currentTenantId
+    ? pending.operationId : crypto.randomUUID();
+  const generation = ++_authSessionRetentionRegistryGeneration;
+  const authSessionRevision = _authSessionRevision;
+  _authSessionRetentionRegistryCreateInFlight = true;
+  _authSessionRetentionRegistryPending = { source, tenantId: _currentTenantId, reviewerUserId, reviewerUsername, operationId };
+  updateAuthSessionRetentionRegistryControls();
+  try {
+    const response = await fetch('/admin/auth-sessions/retention-review-dispositions', {
+      method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contract_version: 'auth-session-retention-review-disposition-record-request.v1', operation_id: operationId, source_disposition_receipt: source.receipt, source_disposition_receipt_sha256: source.bodySha256 }),
+    });
+    if (generation !== _authSessionRetentionRegistryGeneration || authSessionRevision !== _authSessionRevision || source !== _authSessionRetentionVerifiedDisposition || _currentTenantId !== source.tenantId || reviewerUserId !== (_currentUser?.sub || _currentUser?.user_id) || reviewerUsername !== _currentUser?.username) return;
+    if (!response.ok) throw new Error(authSessionRetentionRegistryErrorMessage(response.status));
+    const bodyBytes = new Uint8Array(await response.arrayBuffer());
+    const headerHash = String(response.headers.get(AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECORD_SHA256_HEADER) || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(headerHash) || headerHash !== await sha256Hex(bodyBytes)) throw new Error('로그인 세션 보존 이력 SHA-256을 검증하지 못했습니다.');
+    const record = await normalizeAuthSessionRetentionRegistryRecord(JSON.parse(new TextDecoder().decode(bodyBytes)));
+    if (record.tenantId !== source.tenantId || record.record.reviewer_user_id !== reviewerUserId) return;
+    _authSessionRetentionRegistryPending = null;
+    showNotification('검토 처리 이력을 기록했습니다.', 'success');
+    await loadAuthSessionRetentionRegistry();
+  } catch (error) {
+    if (generation === _authSessionRetentionRegistryGeneration && authSessionRevision === _authSessionRevision) showNotification(error.message || String(error), 'error');
+  } finally {
+    _authSessionRetentionRegistryCreateInFlight = false;
+    updateAuthSessionRetentionRegistryControls();
+  }
+}
+
+async function downloadAuthSessionRetentionRegistryRecord(operationId) {
+  if (!isSessionBoundRetentionReviewer() || !/^[0-9a-f-]{36}$/.test(String(operationId || ''))) return;
+  const generation = ++_authSessionRetentionRegistryGeneration;
+  const authSessionRevision = _authSessionRevision;
+  const tenantId = _currentTenantId;
+  const response = await fetch(`/admin/auth-sessions/retention-review-dispositions/${encodeURIComponent(operationId)}/download`, { headers: getAuthHeaders() });
+  if (generation !== _authSessionRetentionRegistryGeneration
+    || authSessionRevision !== _authSessionRevision
+    || tenantId !== _currentTenantId || !response.ok) return;
+  const bodyBytes = new Uint8Array(await response.arrayBuffer());
+  const headerHash = String(response.headers.get(AUTH_SESSION_RETENTION_REVIEW_DISPOSITION_RECORD_SHA256_HEADER) || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(headerHash) || headerHash !== await sha256Hex(bodyBytes)) return;
+  const record = await normalizeAuthSessionRetentionRegistryRecord(JSON.parse(new TextDecoder().decode(bodyBytes)));
+  if (generation !== _authSessionRetentionRegistryGeneration
+    || authSessionRevision !== _authSessionRevision
+    || record.tenantId !== tenantId || record.record.operation_id !== operationId) return;
+  _triggerBrowserDownload(new Blob([bodyBytes], { type: 'application/json' }), `auth-session-retention-review-disposition-record-${operationId}.json`, '로그인 세션 보존 검토 처리 이력');
+}
+
 function renderAuthSessionRetentionComparison(
   payload,
   { aggregateStatus = '', reviewDisposition = '' } = {},
@@ -30107,6 +30389,13 @@ function authSessionRetentionErrorMessage(status) {
   if (status === 401 || status === 403) return '관리자 세션 또는 유효한 Ops Key가 필요합니다.';
   if (status === 503) return '로그인 세션 상태를 신뢰할 수 없어 조회를 중단했습니다.';
   return '로그인 세션 보존 상태를 불러오지 못했습니다.';
+}
+
+function authSessionRetentionRegistryErrorMessage(status) {
+  if (status === 401 || status === 403) return '현재 관리자 로그인 세션이 필요합니다.';
+  if (status === 409) return '동일 operation ID가 다른 검토 처리 이력에 사용되었습니다.';
+  if (status === 503) return '로그인 세션 보존 검토 이력을 신뢰할 수 없어 중단했습니다.';
+  return '로그인 세션 보존 검토 이력을 처리하지 못했습니다.';
 }
 
 async function loadAuthSessionRetentionComparison() {
@@ -30504,6 +30793,16 @@ async function downloadAuthSessionRetentionReviewDisposition() {
         reviewDisposition: disposition.reviewDisposition,
       });
     }
+    _authSessionRetentionVerifiedDisposition = {
+      receipt: disposition.receipt,
+      bodyBytes: new Uint8Array(bodyBytes),
+      bodySha256: responseSha256,
+      tenantId,
+      selectedPolicyDays: retentionDays,
+      aggregateStatus: disposition.aggregateStatus,
+      reviewDisposition,
+    };
+    updateAuthSessionRetentionRegistryControls();
     _triggerBrowserDownload(
       new Blob([bodyBytes], { type: 'application/json' }),
       _filenameFromContentDisposition(
@@ -30524,6 +30823,9 @@ async function downloadAuthSessionRetentionReviewDisposition() {
 
 function selectAuthSessionRetentionReviewDisposition() {
   ++_authSessionRetentionRequestGeneration;
+  ++_authSessionRetentionRegistryGeneration;
+  _authSessionRetentionVerifiedDisposition = null;
+  _authSessionRetentionRegistryPending = null;
   const daysSelect = $id('ops-auth-session-retention-days');
   const button = $id('ops-auth-session-retention-review-disposition-export');
   const source = _authSessionRetentionVerifiedRecheckReceipt;
@@ -30541,6 +30843,7 @@ function selectAuthSessionRetentionReviewDisposition() {
       Number(daysSelect.value),
     );
   }
+  updateAuthSessionRetentionRegistryControls();
 }
 
 function selectAuthSessionRetentionPolicy() {
@@ -30582,6 +30885,14 @@ $id('ops-auth-session-retention-review-disposition-export')?.addEventListener(
 $id('ops-auth-session-retention-review-disposition')?.addEventListener(
   'change',
   selectAuthSessionRetentionReviewDisposition,
+);
+$id('ops-auth-session-retention-registry-create')?.addEventListener(
+  'click',
+  createAuthSessionRetentionRegistryRecord,
+);
+$id('ops-auth-session-retention-registry-refresh')?.addEventListener(
+  'click',
+  loadAuthSessionRetentionRegistry,
 );
 
 /* ════════════════════════════════════════════════════════════════

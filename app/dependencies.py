@@ -29,6 +29,16 @@ def require_admin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
 
+def require_session_bound_admin(request: Request) -> None:
+    """Require a current JWT admin session; an Ops Key is intentionally insufficient."""
+    require_auth(request)
+    if getattr(request.state, "user_role", "") != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    session_id = getattr(request.state, "auth_session_id", None)
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(status_code=401, detail="세션 결합 관리자 로그인이 필요합니다.")
+
+
 def get_tenant_id(request: Request) -> str:
     """Extract the current tenant ID from request state, defaulting to 'system'."""
     return getattr(request.state, "tenant_id", "system") or "system"

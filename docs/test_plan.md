@@ -746,3 +746,7 @@ Python: 3.12.x
 pytest: 9.0.x
 주요 의존성: fastapi, pydantic v2, PyJWT, bcrypt, cryptography
 ```
+
+## H119 Retention Registry
+
+H119 regression은 auth-first session-admin denial, exact H118 source validation, UUIDv4/hash path binding, full-record binding의 historical username·recorded-at tamper rejection, local/fake-S3 concurrency, username rename replay, changed source/reviewer conflict, response-loss read-back, corrupt/foreign/path drift와 list disappearance preservation, list sorting, canonical read/download bytes/hash, reviewer-only audit projection과 browser JWT-only registration/history download guard를 포함한다.

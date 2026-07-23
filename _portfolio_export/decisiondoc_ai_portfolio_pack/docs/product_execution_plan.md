@@ -264,4 +264,6 @@ The product execution plan is working when the repository contains:
 - a versioned local evidence CLI contract and manifest validation receipt path,
 - docs that describe only verified behavior as implemented.
 
+H119 adds a local immutable reviewer-evidence step after H118: validate the exact source, conditionally create one canonical record, then list/read/download it without policy mutation, provider calls, training, deployment, or service resume.
+
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.
