@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import uuid
+from urllib.parse import parse_qs, urlparse
 from urllib import request as urllib_request
 
 import pytest
@@ -2613,6 +2614,218 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
 
     ctx.close()
     browser.close()
+
+
+def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
+    page,
+    live_server,
+    tmp_path,
+):
+    requests: list[int] = []
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    unauthorized_urls: list[str] = []
+    page.on(
+        "console",
+        lambda message: console_errors.append(message.text)
+        if message.type == "error"
+        else None,
+    )
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.on(
+        "response",
+        lambda response: unauthorized_urls.append(response.url)
+        if response.status == 401
+        else None,
+    )
+
+    def fulfill_preview(route):
+        retention_days = int(
+            parse_qs(urlparse(route.request.url).query)["retention_days"][0]
+        )
+        requests.append(retention_days)
+        eligible_sessions = 3 if retention_days == 30 else 1
+        retained_inactive_sessions = 2 if retention_days == 30 else 4
+        payload = {
+            "contract_version": "auth-session-retention-preview.v1",
+            "generated_at": "2026-07-23T01:30:00+00:00",
+            "retention_days": retention_days,
+            "eligible_before": "2026-06-23T01:30:00+00:00",
+            "inspected_sessions": 9,
+            "eligible_sessions": eligible_sessions,
+            "eligible_by_reason": {
+                "expired": max(eligible_sessions - 1, 0),
+                "revoked": 1,
+            },
+            "active_sessions": 4,
+            "retained_inactive_sessions": retained_inactive_sessions,
+            "oldest_eligible_inactive_at": "2026-04-14T03:10:00+00:00",
+            "read_only": True,
+            "deletion_authorized": False,
+        }
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(payload),
+        )
+
+    page.route("**/admin/auth-sessions/retention-preview?*", fulfill_preview)
+    page.goto(f"{live_server['base_url']}?ops=1")
+    page.wait_for_selector(
+        '#ops-auth-session-retention-result[data-state="ready"]',
+        timeout=10000,
+    )
+
+    panel = page.locator("#ops-auth-session-retention-section")
+    panel_text = panel.inner_text()
+    assert requests == [30]
+    assert panel.locator('[data-auth-retention-metric="inspected"] dd').inner_text() == "9"
+    assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "3"
+    assert panel.locator('[data-auth-retention-metric="expired"] dd').inner_text() == "2"
+    assert panel.locator('[data-auth-retention-metric="revoked"] dd').inner_text() == "1"
+    assert "읽기 전용" in panel_text
+    assert "삭제 권한 없음" in panel_text
+    assert panel.get_by_role("button").count() == 1
+    assert panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 상태 새로고침",
+    ).count() == 1
+
+    page.select_option("#ops-auth-session-retention-days", "90")
+    page.wait_for_function(
+        """() => document.querySelector('#ops-auth-session-retention-result')
+          ?.dataset.retentionDays === '90'"""
+    )
+    assert requests == [30, 90]
+    assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "1"
+
+    stale_result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const pending = [];
+          const makePayload = (retentionDays, eligibleSessions, retainedInactive) => ({
+            contract_version: 'auth-session-retention-preview.v1',
+            generated_at: '2026-07-23T01:30:00+00:00',
+            retention_days: retentionDays,
+            eligible_before: '2026-06-23T01:30:00+00:00',
+            inspected_sessions: 9,
+            eligible_sessions: eligibleSessions,
+            eligible_by_reason: { expired: Math.max(eligibleSessions - 1, 0), revoked: 1 },
+            active_sessions: 4,
+            retained_inactive_sessions: retainedInactive,
+            oldest_eligible_inactive_at: '2026-04-14T03:10:00+00:00',
+            read_only: true,
+            deletion_authorized: false,
+          });
+          const respond = payload => new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          window.fetch = (url, options) => {
+            if (String(url).startsWith('/admin/auth-sessions/retention-preview?')) {
+              return new Promise(resolve => pending.push({ url: String(url), resolve }));
+            }
+            return nativeFetch(url, options);
+          };
+
+          try {
+            const select = document.querySelector('#ops-auth-session-retention-days');
+            select.value = '30';
+            const older = loadAuthSessionRetentionPreview();
+            select.value = '90';
+            const newer = loadAuthSessionRetentionPreview();
+            pending[1].resolve(respond(makePayload(90, 1, 4)));
+            await newer;
+            pending[0].resolve(respond(makePayload(30, 3, 2)));
+            await older;
+            const result = document.querySelector('#ops-auth-session-retention-result');
+            return {
+              retentionDays: result?.dataset.retentionDays,
+              eligible: result?.querySelector('[data-auth-retention-metric="eligible"] dd')?.textContent,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert stale_result == {"retentionDays": "90", "eligible": "1"}
+
+    page.screenshot(
+        path=str(tmp_path / "auth-session-retention-preview-desktop.png"),
+        full_page=True,
+    )
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(
+        path=str(tmp_path / "auth-session-retention-preview-mobile.png"),
+        full_page=True,
+    )
+    overflowing = page.evaluate(
+        """() => {
+          const section = document.querySelector('#ops-auth-session-retention-section');
+          if (!section) return ['missing-section'];
+          const sectionBounds = section.getBoundingClientRect();
+          const failures = [];
+          if (sectionBounds.left < 0 || sectionBounds.right > window.innerWidth) {
+            failures.push(`section:${sectionBounds.left}:${sectionBounds.right}`);
+          }
+          [...section.querySelectorAll('*')].forEach(element => {
+            if (element.tagName === 'OPTION') return;
+            const bounds = element.getBoundingClientRect();
+            if (
+              bounds.left < sectionBounds.left - 1
+              || bounds.right > sectionBounds.right + 1
+            ) {
+              failures.push(`${element.tagName.toLowerCase()}#${element.id}.${element.className}`);
+            }
+          });
+          return failures;
+        }"""
+    )
+    assert overflowing == []
+
+    invalid_contract = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const payload = {
+            contract_version: 'auth-session-retention-preview.v1',
+            generated_at: '2026-07-23T01:30:00+00:00',
+            retention_days: 90,
+            eligible_before: '2026-04-24T01:30:00+00:00',
+            inspected_sessions: 9,
+            eligible_sessions: 1,
+            eligible_by_reason: { expired: 0, revoked: 1 },
+            active_sessions: 4,
+            retained_inactive_sessions: 4,
+            oldest_eligible_inactive_at: '2026-04-14T03:10:00+00:00',
+            read_only: true,
+            deletion_authorized: true,
+          };
+          window.fetch = () => Promise.resolve(new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }));
+          try {
+            await loadAuthSessionRetentionPreview();
+            const result = document.querySelector('#ops-auth-session-retention-result');
+            return {
+              state: result?.dataset.state,
+              text: result?.textContent,
+              metrics: result?.querySelectorAll('[data-auth-retention-metric]').length,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert invalid_contract["state"] == "error"
+    assert "응답을 검증하지 못했습니다" in invalid_contract["text"]
+    assert invalid_contract["metrics"] == 0
+    assert all(url.endswith("/billing/plans") for url in unauthorized_urls)
+    unexpected_console_errors = [
+        message for message in console_errors if "401 (Unauthorized)" not in message
+    ]
+    assert unexpected_console_errors == []
+    assert page_errors == []
 
 
 def test_bundle_selection_enables_generate_button(page):

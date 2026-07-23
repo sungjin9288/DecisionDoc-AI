@@ -4347,6 +4347,52 @@
     .audit-page-btn { width: 32px; height: 32px; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; background: rgba(255,255,255,.08); color: #e2e8f0; cursor: pointer; }
     .audit-page-btn:disabled { opacity: .35; cursor: default; }
 
+    /* ── Auth-session retention preview ─────────────────────────── */
+    .auth-retention-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap;
+    }
+    .auth-retention-controls { display: flex; align-items: flex-end; gap: 8px; }
+    .auth-retention-field { display: grid; gap: 5px; color: #cbd5e1; font-size: .72rem; }
+    .auth-retention-field select {
+      min-width: 132px; height: 36px; padding: 0 10px;
+      border: 1px solid rgba(255,255,255,.22); border-radius: 6px;
+      background: #292653; color: #f8fafc;
+    }
+    .auth-retention-refresh {
+      width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.22);
+      border-radius: 6px; background: rgba(255,255,255,.09); color: #f8fafc;
+      font-size: 1rem; line-height: 1; cursor: pointer;
+    }
+    .auth-retention-refresh:disabled { opacity: .45; cursor: default; }
+    .auth-retention-result { margin-top: 14px; }
+    .auth-retention-summary {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid rgba(255,255,255,.14);
+      border-bottom: 1px solid rgba(255,255,255,.14);
+    }
+    .auth-retention-metric { min-width: 0; padding: 12px 10px; }
+    .auth-retention-metric + .auth-retention-metric { border-left: 1px solid rgba(255,255,255,.1); }
+    .auth-retention-metric dt { color: #94a3b8; font-size: .68rem; }
+    .auth-retention-metric dd { margin: 5px 0 0; color: #f8fafc; font-size: 1rem; font-weight: 800; }
+    .auth-retention-meta {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 18px; margin-top: 12px; color: #cbd5e1; font-size: .72rem;
+    }
+    .auth-retention-boundary {
+      margin: 12px 0 0; padding-left: 10px; border-left: 3px solid #34d399;
+      color: #a7f3d0; font-size: .74rem; font-weight: 700;
+    }
+    @media (max-width: 560px) {
+      .auth-retention-controls { width: 100%; }
+      .auth-retention-field { flex: 1; }
+      .auth-retention-field select { width: 100%; min-width: 0; }
+      .auth-retention-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .auth-retention-metric:nth-child(odd) { border-left: 0; }
+      .auth-retention-metric:nth-child(n + 3) { border-top: 1px solid rgba(255,255,255,.1); }
+      .auth-retention-meta { grid-template-columns: 1fr; }
+    }
+
     /* ── SSO ──────────────────────────────────────────────────────── */
     .sso-tabs { display:flex; gap:.5rem; margin-bottom:1rem; flex-wrap:wrap; }
     .sso-tab { padding:.4rem .9rem; border:1.5px solid rgba(255,255,255,.25); border-radius:var(--radius-sm);
@@ -6894,6 +6940,43 @@
     </div>
   </div>
 
+  <hr style="border-color:rgba(255,255,255,.12);margin:1.5rem 0;"/>
+  <section class="ops-section" id="ops-auth-session-retention-section">
+    <div class="auth-retention-header">
+      <div>
+        <h5 style="font-size:.875rem;font-weight:800;margin:0;color:#c4b5fd;">로그인 세션 보존 상태</h5>
+        <p style="margin:.35rem 0 0;color:#cbd5e1;font-size:.78rem;">현재 테넌트의 만료·폐기 세션 집계</p>
+      </div>
+      <div class="auth-retention-controls">
+        <label class="auth-retention-field" for="ops-auth-session-retention-days">
+          보존 기준
+          <select id="ops-auth-session-retention-days">
+            <option value="30" selected>30일</option>
+            <option value="90">90일</option>
+            <option value="180">180일</option>
+            <option value="365">365일</option>
+          </select>
+        </label>
+        <button
+          id="ops-auth-session-retention-refresh"
+          class="auth-retention-refresh"
+          type="button"
+          aria-label="로그인 세션 보존 상태 새로고침"
+          title="로그인 세션 보존 상태 새로고침"
+        >↻</button>
+      </div>
+    </div>
+    <div
+      id="ops-auth-session-retention-result"
+      class="auth-retention-result"
+      data-state="idle"
+      aria-live="polite"
+    >
+      <p style="margin:0;color:#cbd5e1;font-size:.82rem;">관리자 세션 또는 Ops Key가 필요합니다.</p>
+      <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음</p>
+    </div>
+  </section>
+
   <!-- ── 로컬 LLM 상태 패널 ───────────────────────────────────── -->
   <hr style="border-color:rgba(255,255,255,.12);margin:1.5rem 0;"/>
   <h4 style="font-size:.875rem;font-weight:800;margin:0 0 1rem;color:#c4b5fd;">🤖 로컬 LLM 설정</h4>
@@ -6923,6 +7006,7 @@
         <option value="document_ops.trajectory_review">DocumentOps 사람 검토</option>
         <option value="document_ops.governance_view">DocumentOps governance 조회</option>
         <option value="document_ops.governance_handoff_download">DocumentOps governance handoff</option>
+        <option value="auth_session.retention_preview">로그인 세션 보존 상태 조회</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -13660,6 +13744,10 @@
     return headers;
   }
 
+  function hasOpsAccessCredential() {
+    return Boolean(localStorage.getItem('dd_access_token') || getOpsKeyValue());
+  }
+
   function hydrateOpsKeyInput() {
     const stored = localStorage.getItem('dd_ops_key') || '';
     [$id('ops-key-input'), $id('docops-ops-key-input')].filter(Boolean).forEach(input => {
@@ -17225,6 +17313,7 @@
     if (opsPanel) opsPanel.style.display = 'block';
     window.addEventListener('load', () => {
       window.loadOpsPostDeployReports?.();
+      window.loadAuthSessionRetentionPreview?.();
       window.loadLocalLLMStatus?.();
       window.loadSSOConfig?.();
       window.loadBillingStatus?.();
@@ -29385,6 +29474,167 @@ document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
 });
 
 /* ════════════════════════════════════════════════════════════════
+   로그인 세션 보존 상태 (read-only)
+════════════════════════════════════════════════════════════════ */
+
+const AUTH_SESSION_RETENTION_PREVIEW_CONTRACT = 'auth-session-retention-preview.v1';
+let _authSessionRetentionRequestGeneration = 0;
+
+function normalizeAuthSessionRetentionPreview(payload, expectedRetentionDays) {
+  const counts = [
+    payload?.inspected_sessions,
+    payload?.eligible_sessions,
+    payload?.eligible_by_reason?.expired,
+    payload?.eligible_by_reason?.revoked,
+    payload?.active_sessions,
+    payload?.retained_inactive_sessions,
+  ];
+  const generatedAtMs = new Date(payload?.generated_at).getTime();
+  const eligibleBeforeMs = new Date(payload?.eligible_before).getTime();
+  const timestampsAreValid = typeof payload?.generated_at === 'string'
+    && typeof payload?.eligible_before === 'string'
+    && !Number.isNaN(generatedAtMs)
+    && !Number.isNaN(eligibleBeforeMs);
+  const oldest = payload?.oldest_eligible_inactive_at;
+  const oldestMs = new Date(oldest).getTime();
+  const oldestIsValid = typeof oldest === 'string' && !Number.isNaN(oldestMs);
+  const countsAreValid = counts.every(value => Number.isInteger(value) && value >= 0);
+  const totalsMatch = payload?.eligible_sessions
+      === payload?.eligible_by_reason?.expired + payload?.eligible_by_reason?.revoked
+    && payload?.inspected_sessions
+      === payload?.eligible_sessions
+        + payload?.active_sessions
+        + payload?.retained_inactive_sessions;
+  const timelineIsValid = timestampsAreValid
+    && eligibleBeforeMs <= generatedAtMs
+    && (
+      payload?.eligible_sessions === 0
+        ? oldest === null
+        : oldestIsValid && oldestMs <= eligibleBeforeMs
+    );
+
+  if (
+    payload?.contract_version !== AUTH_SESSION_RETENTION_PREVIEW_CONTRACT
+    || payload.read_only !== true
+    || payload.deletion_authorized !== false
+    || !Number.isInteger(payload.retention_days)
+    || payload.retention_days !== expectedRetentionDays
+    || !countsAreValid
+    || !timelineIsValid
+    || !totalsMatch
+  ) {
+    throw new Error('로그인 세션 보존 상태 응답을 검증하지 못했습니다.');
+  }
+  return payload;
+}
+
+function renderAuthSessionRetentionPreview(payload) {
+  const result = $id('ops-auth-session-retention-result');
+  if (!result) return;
+  const metrics = [
+    ['inspected', '확인한 세션', payload.inspected_sessions],
+    ['eligible', '정리 후보', payload.eligible_sessions],
+    ['expired', '만료', payload.eligible_by_reason.expired],
+    ['revoked', '폐기', payload.eligible_by_reason.revoked],
+    ['active', '활성', payload.active_sessions],
+    ['retained-inactive', '기준일 이내 비활성', payload.retained_inactive_sessions],
+  ];
+  result.dataset.state = 'ready';
+  result.dataset.retentionDays = String(payload.retention_days);
+  result.innerHTML = `
+    <dl class="auth-retention-summary">
+      ${metrics.map(([key, label, value]) => `
+        <div class="auth-retention-metric" data-auth-retention-metric="${escapeHtml(key)}">
+          <dt>${escapeHtml(label)}</dt>
+          <dd>${escapeHtml(String(value))}</dd>
+        </div>
+      `).join('')}
+    </dl>
+    <div class="auth-retention-meta">
+      <span>정리 후보 기준 · ${escapeHtml(formatAuthSessionTime(payload.eligible_before))}</span>
+      <span>가장 오래된 후보 · ${escapeHtml(formatAuthSessionTime(payload.oldest_eligible_inactive_at))}</span>
+      <span>확인 시각 · ${escapeHtml(formatAuthSessionTime(payload.generated_at))}</span>
+      <span>보존 기준 · ${escapeHtml(String(payload.retention_days))}일</span>
+    </div>
+    <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음</p>
+  `;
+}
+
+function authSessionRetentionErrorMessage(status) {
+  if (status === 401 || status === 403) return '관리자 세션 또는 유효한 Ops Key가 필요합니다.';
+  if (status === 503) return '로그인 세션 상태를 신뢰할 수 없어 조회를 중단했습니다.';
+  return '로그인 세션 보존 상태를 불러오지 못했습니다.';
+}
+
+async function loadAuthSessionRetentionPreview() {
+  const result = $id('ops-auth-session-retention-result');
+  const daysSelect = $id('ops-auth-session-retention-days');
+  const refreshButton = $id('ops-auth-session-retention-refresh');
+  if (!result || !daysSelect || !refreshButton) return;
+
+  const requestGeneration = ++_authSessionRetentionRequestGeneration;
+  if (!hasOpsAccessCredential()) {
+    result.dataset.state = 'idle';
+    result.removeAttribute('data-retention-days');
+    result.innerHTML = `
+      <p style="margin:0;color:#94a3b8;font-size:.82rem;">관리자 세션 또는 Ops Key가 필요합니다.</p>
+      <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음</p>
+    `;
+    refreshButton.disabled = false;
+    return;
+  }
+
+  const retentionDays = Number(daysSelect.value);
+  const tenantId = _currentTenantId;
+  const params = new URLSearchParams({ retention_days: String(retentionDays) });
+  result.dataset.state = 'loading';
+  result.removeAttribute('data-retention-days');
+  result.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">보존 상태 확인 중...</p>';
+  refreshButton.disabled = true;
+
+  try {
+    const response = await fetch(`/admin/auth-sessions/retention-preview?${params}`, {
+      headers: getOpsAccessHeaders(),
+    });
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    if (!response.ok) throw new Error(authSessionRetentionErrorMessage(response.status));
+    const payload = normalizeAuthSessionRetentionPreview(
+      await response.json(),
+      retentionDays,
+    );
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    renderAuthSessionRetentionPreview(payload);
+  } catch (error) {
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    result.dataset.state = 'error';
+    result.innerHTML = `<p style="margin:0;color:#fca5a5;font-size:.82rem;">${escapeHtml(error.message || String(error))}</p>`;
+  } finally {
+    if (requestGeneration === _authSessionRetentionRequestGeneration) {
+      refreshButton.disabled = false;
+    }
+  }
+}
+
+window.loadAuthSessionRetentionPreview = loadAuthSessionRetentionPreview;
+$id('ops-auth-session-retention-refresh')?.addEventListener(
+  'click',
+  loadAuthSessionRetentionPreview,
+);
+$id('ops-auth-session-retention-days')?.addEventListener(
+  'change',
+  loadAuthSessionRetentionPreview,
+);
+
+/* ════════════════════════════════════════════════════════════════
    감사 로그 (Audit Log) UI
 ════════════════════════════════════════════════════════════════ */
 
@@ -29471,6 +29721,15 @@ function renderAuditEvidence(log, detail) {
     if (detail.state_fingerprint_persisted != null) {
       evidence.push(`fingerprint_persisted=${String(detail.state_fingerprint_persisted === true)}`);
     }
+    return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
+  }
+  if (log?.action === 'auth_session.retention_preview') {
+    const evidence = [
+      `retention_days=${detail.retention_days ?? '-'}`,
+      `inspected_sessions=${detail.inspected_sessions ?? '-'}`,
+      `eligible_sessions=${detail.eligible_sessions ?? '-'}`,
+      `read_only=${String(detail.read_only === true)}`,
+    ];
     return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
   }
   return '';

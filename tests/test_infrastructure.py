@@ -1355,6 +1355,42 @@ def test_auth_session_retention_preview_contract_is_read_only_and_documented():
     assert "H113 Auth session retention preview" in evidence
 
 
+def test_auth_session_retention_preview_ops_ui_preserves_read_only_contract():
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+    section_start = content.index('id="ops-auth-session-retention-section"')
+    section_end = content.index("<!-- ── 로컬 LLM 상태 패널", section_start)
+    section = content[section_start:section_end]
+
+    assert 'id="ops-auth-session-retention-days"' in section
+    assert 'id="ops-auth-session-retention-refresh"' in section
+    assert 'id="ops-auth-session-retention-result"' in section
+    assert 'data-auth-session-retention-delete' not in section
+    assert "읽기 전용 · 삭제 권한 없음" in section
+    assert "fetch(`/admin/auth-sessions/retention-preview?${params}`" in content
+    assert "getOpsAccessHeaders()" in content
+    assert "auth-session-retention-preview.v1" in content
+    assert "payload.read_only !== true" in content
+    assert "payload.deletion_authorized !== false" in content
+    assert "payload.retention_days !== expectedRetentionDays" in content
+    assert "oldestMs <= eligibleBeforeMs" in content
+    assert "if (!hasOpsAccessCredential())" in content
+    assert "localStorage.getItem('dd_access_token') || getOpsKeyValue()" in content
+    assert "_authSessionRetentionRequestGeneration" in content
+    assert '<option value="auth_session.retention_preview">' in content
+    assert "auth_session.retention_preview" in content
+    for document in (architecture, security_policy, test_plan):
+        assert "30/90/180/365" in document
+        assert "auth-session-retention-preview.v1" in document
+    assert "H114 Auth session retention Ops UI" in evidence
+
+
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     roster_start = content.index('<section id="ai-rank-roster"')
