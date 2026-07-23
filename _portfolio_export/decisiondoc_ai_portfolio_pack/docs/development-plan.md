@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,397 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-23 H115) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,404 passed, 1 skipped, 4 deselected, 2026-07-23 H116) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-23 H115 실측: 4397 passed, 2 skipped, 4 deselected, 1 warning
+pytest tests/ -m "not live" -q     # 2026-07-23 H116 실측: 4404 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -44,7 +44,7 @@ python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-
 python3 scripts/count_readme_metrics.py --field service_files     # → 44 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 47 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 10 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 277 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 278 (라우트)
 ```
 
 ```text
@@ -58,7 +58,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │       → rate_limit → auth → tenant → billing → audit → metrics
   │     audit context helper: document_ops_audit
   │
-  ├─ Routers (23 top-level files, 라우트 277):
+  ├─ Routers (23 top-level files, 라우트 278):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
@@ -129,6 +129,7 @@ Providers (5)    Storage (47 modules)   Ops
 41. Auth-session retention preview는 admin JWT 또는 Ops key만 허용하고 selected local/S3 backend의 tenant prefix 전체를 strict 검증한다. `auth-session-retention-preview.v1` 응답과 audit은 user ID, session ID와 label을 제외한 aggregate만 사용하고 `read_only=true`, `deletion_authorized=false`, `no-store`를 유지한다. 조회는 object를 쓰거나 삭제하지 않으며 corrupt·unavailable state는 원본 보존 `503`으로 닫는다. 실제 deletion, scheduler와 retention policy 적용은 별도 명시 승인 전까지 이 계약 밖이다.
 42. Ops auth-session retention UI는 access token 또는 Ops key가 있을 때만 preview를 호출하고 30/90/180/365일 selector와 icon refresh만 제공한다. Browser는 version, read/delete boundary, aggregate count와 timestamp consistency를 strict 검증하고 현재 tenant의 최신 request generation만 렌더링한다. Invalid/stale 응답은 aggregate를 표시하지 않으며 삭제·scheduler·mutation control은 추가하지 않는다.
 43. Auth-session retention policy comparison은 admin JWT 또는 Ops key 아래 한 번의 strict prefix inspection에서 30/90/180/365일 aggregate를 함께 계산한다. `auth-session-retention-comparison.v1`은 exact policy order와 count/timestamp monotonicity를 유지하고 `read_only=true`, `deletion_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`를 명시한다. Browser selector는 검증된 comparison만 다시 렌더링하고 refresh만 새 request를 시작한다. 응답·audit에는 user ID, session ID, label과 token을 포함하지 않으며 실제 deletion과 scheduler 권한은 추가하지 않는다.
+44. Auth-session retention review handoff는 선택한 30/90/180/365일 policy와 한 번 strict inspection한 comparison을 `auth-session-retention-review-handoff.v1` JSON attachment로 전달한다. Canonical comparison SHA-256와 exact response-body SHA-256을 함께 검증하며 `review_only=true`, `policy_change_authorized=false`, `deletion_authorized=false`, `scheduler_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`, `handoff_persisted=false`를 고정한다. Browser는 hash, flag, current tenant/request generation을 통과한 response만 화면과 download에 사용하고, audit은 selected policy·aggregate count·read-only 경계만 남긴다. Session delete, scheduler, policy 저장/적용과 server-side handoff persistence는 추가하지 않는다.
 
 ---
 

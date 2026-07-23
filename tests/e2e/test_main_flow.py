@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -2680,7 +2681,53 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
             body=json.dumps(comparison_payload([3, 1, 0, 0])),
         )
 
+    handoff_requests = 0
+    handoff_comparison = comparison_payload([4, 3, 0, 0])
+    canonical_comparison = json.dumps(
+        handoff_comparison,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    handoff_payload = {
+        "contract_version": "auth-session-retention-review-handoff.v1",
+        "selected_policy_days": 90,
+        "comparison": handoff_comparison,
+        "comparison_sha256": hashlib.sha256(canonical_comparison).hexdigest(),
+        "review_only": True,
+        "policy_change_authorized": False,
+        "deletion_authorized": False,
+        "scheduler_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+        "handoff_persisted": False,
+    }
+    handoff_body = json.dumps(
+        handoff_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+    def fulfill_handoff(route):
+        nonlocal handoff_requests
+        handoff_requests += 1
+        route.fulfill(
+            status=200,
+            body=handoff_body,
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Content-Disposition": (
+                    'attachment; filename="auth-session-retention-review-handoff-90d.json"'
+                ),
+                "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256": (
+                    hashlib.sha256(handoff_body).hexdigest()
+                ),
+            },
+        )
+
     page.route("**/admin/auth-sessions/retention-comparison", fulfill_comparison)
+    page.route("**/admin/auth-sessions/retention-handoff?*", fulfill_handoff)
     page.goto(f"{live_server['base_url']}?ops=1")
     page.wait_for_selector(
         '#ops-auth-session-retention-result[data-state="ready"]',
@@ -2696,10 +2743,14 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert panel.locator('[data-auth-retention-metric="revoked"] dd').inner_text() == "1"
     assert "읽기 전용" in panel_text
     assert "삭제 권한 없음" in panel_text
-    assert panel.get_by_role("button").count() == 1
+    assert panel.get_by_role("button").count() == 2
     assert panel.get_by_role(
         "button",
         name="로그인 세션 보존 상태 새로고침",
+    ).count() == 1
+    assert panel.get_by_role(
+        "button",
+        name="로그인 세션 보존 검토용 JSON 내보내기",
     ).count() == 1
     assert panel.locator("[data-auth-retention-policy]").count() == 4
 
@@ -2711,6 +2762,18 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     assert requests == 1
     assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "1"
     assert panel.locator('[data-auth-retention-policy="90"]').get_attribute("aria-current") == "true"
+
+    with page.expect_download() as download_info:
+        panel.get_by_role(
+            "button",
+            name="로그인 세션 보존 검토용 JSON 내보내기",
+        ).click()
+    download = download_info.value
+    downloaded_path = tmp_path / download.suggested_filename
+    download.save_as(str(downloaded_path))
+    assert handoff_requests == 1
+    assert downloaded_path.read_bytes() == handoff_body
+    assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "3"
 
     stale_result = page.evaluate(
         """async () => {
@@ -2768,6 +2831,156 @@ def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
         }"""
     )
     assert stale_result == {"retentionDays": "90", "eligible": "1"}
+
+    handoff_rejection = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const nativeCreateObjectUrl = URL.createObjectURL;
+          const originalTenant = _currentTenantId;
+          const comparison = JSON.parse(JSON.stringify(_authSessionRetentionComparison));
+          let objectUrlCalls = 0;
+          URL.createObjectURL = (...args) => {
+            objectUrlCalls += 1;
+            return nativeCreateObjectUrl(...args);
+          };
+          const responseFor = async (changes = {}, headerSha256 = '') => {
+            const handoff = {
+              contract_version: 'auth-session-retention-review-handoff.v1',
+              selected_policy_days: 90,
+              comparison,
+              comparison_sha256: await sha256Hex(
+                new TextEncoder().encode(canonicalAuthSessionRetentionJson(comparison)),
+              ),
+              review_only: true,
+              policy_change_authorized: false,
+              deletion_authorized: false,
+              scheduler_authorized: false,
+              snapshot_atomic: false,
+              requires_recheck_before_mutation: true,
+              handoff_persisted: false,
+              ...changes,
+            };
+            const bytes = new TextEncoder().encode(JSON.stringify(handoff));
+            return new Response(bytes, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256': (
+                  headerSha256 || await sha256Hex(bytes)
+                ),
+              },
+            });
+          };
+          try {
+            window.fetch = async url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return responseFor({ deletion_authorized: true });
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionHandoff();
+            const eligibleMetric = () => document.querySelector(
+              '[data-auth-retention-metric="eligible"] dd',
+            )?.textContent;
+            const afterAuthorityTamper = eligibleMetric();
+
+            window.fetch = async url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return responseFor({ comparison_sha256: '0'.repeat(64) });
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionHandoff();
+            const afterComparisonHashTamper = eligibleMetric();
+
+            const nestedComparison = JSON.parse(JSON.stringify(comparison));
+            nestedComparison.policies[0].session_ids = ['private-session'];
+            const nestedComparisonSha256 = await sha256Hex(
+              new TextEncoder().encode(canonicalAuthSessionRetentionJson(nestedComparison)),
+            );
+            window.fetch = async url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return responseFor({
+                  comparison: nestedComparison,
+                  comparison_sha256: nestedComparisonSha256,
+                });
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionHandoff();
+            const afterNestedSchemaDrift = eligibleMetric();
+
+            window.fetch = async url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return responseFor({}, '0'.repeat(64));
+              }
+              return nativeFetch(url);
+            };
+            await downloadAuthSessionRetentionHandoff();
+            const afterBodyHashTamper = eligibleMetric();
+
+            let resolveDelayed;
+            window.fetch = url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return new Promise(resolve => { resolveDelayed = resolve; });
+              }
+              return nativeFetch(url);
+            };
+            const pendingTenantHandoff = downloadAuthSessionRetentionHandoff();
+            _currentTenantId = 'tenant-after-request';
+            resolveDelayed(await responseFor({}));
+            await pendingTenantHandoff;
+            const afterTenantMismatch = eligibleMetric();
+            _currentTenantId = originalTenant;
+
+            const freshComparison = JSON.parse(JSON.stringify(comparison));
+            const freshSelectedPolicy = freshComparison.policies[1];
+            freshSelectedPolicy.eligible_sessions = 0;
+            freshSelectedPolicy.eligible_by_reason = { expired: 0, revoked: 0 };
+            freshSelectedPolicy.retained_inactive_sessions = 5;
+            freshSelectedPolicy.oldest_eligible_inactive_at = null;
+            let resolveStaleHandoff;
+            window.fetch = url => {
+              if (String(url).startsWith('/admin/auth-sessions/retention-handoff')) {
+                return new Promise(resolve => { resolveStaleHandoff = resolve; });
+              }
+              if (String(url) === '/admin/auth-sessions/retention-comparison') {
+                return Promise.resolve(new Response(JSON.stringify(freshComparison), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' },
+                }));
+              }
+              return nativeFetch(url);
+            };
+            const staleHandoff = downloadAuthSessionRetentionHandoff();
+            await loadAuthSessionRetentionComparison();
+            resolveStaleHandoff(await responseFor({}));
+            await staleHandoff;
+            return {
+              afterAuthorityTamper,
+              afterComparisonHashTamper,
+              afterNestedSchemaDrift,
+              afterBodyHashTamper,
+              afterTenantMismatch,
+              afterRefreshWins: eligibleMetric(),
+              objectUrlCalls,
+            };
+          } finally {
+            _currentTenantId = originalTenant;
+            URL.createObjectURL = nativeCreateObjectUrl;
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert handoff_rejection == {
+        "afterAuthorityTamper": "1",
+        "afterComparisonHashTamper": "1",
+        "afterNestedSchemaDrift": "1",
+        "afterBodyHashTamper": "1",
+        "afterTenantMismatch": "1",
+        "afterRefreshWins": "0",
+        "objectUrlCalls": 0,
+    }
 
     page.screenshot(
         path=str(tmp_path / "auth-session-retention-preview-desktop.png"),

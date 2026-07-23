@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -27,6 +28,7 @@ AUTH_SESSION_RETENTION_MAX_DAYS = 3650
 AUTH_SESSION_RETENTION_POLICY_DAYS = (30, 90, 180, 365)
 _RETENTION_PREVIEW_CONTRACT_VERSION = "auth-session-retention-preview.v1"
 _RETENTION_COMPARISON_CONTRACT_VERSION = "auth-session-retention-comparison.v1"
+_RETENTION_REVIEW_HANDOFF_CONTRACT_VERSION = "auth-session-retention-review-handoff.v1"
 _LEGACY_RECORD_FIELDS = {
     "contract_version",
     "session_id",
@@ -89,6 +91,15 @@ def _parse_timestamp(value: object, *, field: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise AuthSessionStoreError(f"Invalid authentication session {field}")
     return parsed.astimezone(timezone.utc)
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 class AuthSessionStore:
@@ -360,6 +371,35 @@ class AuthSessionStore:
             "snapshot_atomic": False,
             "requires_recheck_before_mutation": True,
         }
+
+    def build_retention_review_handoff(self, *, retention_days: int) -> dict[str, Any]:
+        """Create review evidence from one read-only retention inspection."""
+        if retention_days not in AUTH_SESSION_RETENTION_POLICY_DAYS:
+            raise ValueError(
+                "retention_days must be one of "
+                f"{', '.join(map(str, AUTH_SESSION_RETENTION_POLICY_DAYS))}"
+            )
+
+        comparison = self.compare_retention_policies()
+        return {
+            "contract_version": _RETENTION_REVIEW_HANDOFF_CONTRACT_VERSION,
+            "selected_policy_days": retention_days,
+            "comparison": comparison,
+            "comparison_sha256": hashlib.sha256(
+                _canonical_json_bytes(comparison)
+            ).hexdigest(),
+            "review_only": True,
+            "policy_change_authorized": False,
+            "deletion_authorized": False,
+            "scheduler_authorized": False,
+            "snapshot_atomic": False,
+            "requires_recheck_before_mutation": True,
+            "handoff_persisted": False,
+        }
+
+    @staticmethod
+    def serialize_retention_review_handoff(handoff: dict[str, Any]) -> bytes:
+        return _canonical_json_bytes(handoff)
 
     def _inspect_retention_state(
         self,

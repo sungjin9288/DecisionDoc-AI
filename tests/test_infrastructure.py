@@ -1414,6 +1414,37 @@ def test_auth_session_retention_comparison_uses_one_read_only_inspection():
     assert "H115 Auth session retention policy comparison" in evidence
 
 
+def test_auth_session_retention_handoff_download_is_hash_bound_and_review_only():
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    router = (root / "app" / "routers" / "admin" / "_auth_sessions.py").read_text(
+        encoding="utf-8"
+    )
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+
+    assert 'router.get("/admin/auth-sessions/retention-handoff")' in router
+    assert "auth-session-retention-review-handoff.v1" in content
+    assert "X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256" in router
+    assert "X-Content-Type-Options" in router
+    assert 'id="ops-auth-session-retention-handoff"' in content
+    assert "downloadAuthSessionRetentionHandoff" in content
+    assert "auth_session.retention_handoff" in content
+    assert "comparison_sha256" in content
+    assert "policy_change_authorized" in content
+    assert "scheduler_authorized" in content
+    assert "handoff_persisted" in content
+    for document in (architecture, security_policy, test_plan):
+        assert "auth-session-retention-review-handoff.v1" in document
+        assert "handoff_persisted=false" in document
+        assert "policy_change_authorized=false" in document
+    assert "H116 Auth session retention review handoff" in evidence
+
+
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     roster_start = content.index('<section id="ai-rank-roster"')

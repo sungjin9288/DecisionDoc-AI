@@ -985,6 +985,66 @@ def test_audit_auth_session_retention_comparison_records_only_aggregate_evidence
     assert login["refresh_token"] not in serialized
 
 
+def test_audit_auth_session_retention_handoff_records_only_review_aggregate(
+    tmp_path,
+    monkeypatch,
+):
+    import app.storage.auth_session_store as auth_session_module
+    from app.storage.audit_store import AuditStore
+    from app.storage.auth_session_store import AuthSessionStore
+
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    clock = [now - timedelta(days=100)]
+    monkeypatch.setattr(auth_session_module, "_utcnow", lambda: clock[0])
+    store = AuthSessionStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    )
+    candidate_user_id = "handoff-candidate-user"
+    session_id = store.create(user_id=candidate_user_id, credential_version=0)
+    label = "handoff-private-label"
+    assert store.set_label(
+        session_id,
+        user_id=candidate_user_id,
+        credential_version=0,
+        label=label,
+    )
+    clock[0] = now
+
+    response = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(login),
+        params={"retention_days": 90},
+    )
+    entries = AuditStore("system").query(
+        filters={"action": "auth_session.retention_handoff"}
+    )
+    serialized = json.dumps(entries, ensure_ascii=False)
+
+    assert response.status_code == 200
+    assert len(entries) == 1
+    assert entries[0]["detail"] == {
+        "method": "GET",
+        "path": "/admin/auth-sessions/retention-handoff",
+        "status_code": 200,
+        "duration_ms": entries[0]["detail"]["duration_ms"],
+        "retention_days": 90,
+        "policy_days": [30, 90, 180, 365],
+        "inspected_sessions": 3,
+        "eligible_sessions_by_policy": [1, 0, 0, 0],
+        "read_only": True,
+        "snapshot_atomic": False,
+    }
+    assert session_id not in serialized
+    assert candidate_user_id not in serialized
+    assert label not in serialized
+    assert login["access_token"] not in serialized
+    assert login["refresh_token"] not in serialized
+
+
 def test_audit_403_access_blocked_logged(tmp_path, monkeypatch):
     """Accessing an admin endpoint without admin role logs access.blocked."""
     client = _make_client(tmp_path, monkeypatch)

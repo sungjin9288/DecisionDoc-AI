@@ -38,6 +38,10 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
         "GET",
         "/admin/auth-sessions/retention-comparison",
     ): "auth_session.retention_comparison",
+    (
+        "GET",
+        "/admin/auth-sessions/retention-handoff",
+    ): "auth_session.retention_handoff",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",

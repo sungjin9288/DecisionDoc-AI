@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 
 from fastapi.testclient import TestClient
@@ -305,5 +306,131 @@ def test_auth_session_retention_comparison_fails_closed_on_corrupt_state(
         headers=_auth(admin),
     )
 
+    assert failed.status_code == 503
+    assert client.app.state.state_backend.read_text(corrupt_path) == corrupt
+
+
+def test_auth_session_retention_handoff_download_is_redacted_and_hash_bound(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    now, claims, expired, revoked = _seed_old_sessions(client, login, monkeypatch)
+    prefix = "tenants/system/auth_sessions"
+    backend = client.app.state.state_backend
+    paths = backend.list_prefix(prefix)
+    original = {path: backend.read_text(path) for path in paths}
+
+    response = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(login),
+        params={"retention_days": 90},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="auth-session-retention-review-handoff-90d.json"'
+    )
+    assert response.headers["x-decisiondoc-auth-session-retention-handoff-sha256"] == (
+        hashlib.sha256(response.content).hexdigest()
+    )
+    handoff = response.json()
+    canonical_comparison = json.dumps(
+        handoff["comparison"],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    assert handoff["contract_version"] == "auth-session-retention-review-handoff.v1"
+    assert handoff["selected_policy_days"] == 90
+    assert handoff["comparison"]["generated_at"] == now.isoformat()
+    assert handoff["comparison_sha256"] == hashlib.sha256(canonical_comparison).hexdigest()
+    assert handoff["review_only"] is True
+    assert handoff["policy_change_authorized"] is False
+    assert handoff["deletion_authorized"] is False
+    assert handoff["scheduler_authorized"] is False
+    assert handoff["snapshot_atomic"] is False
+    assert handoff["requires_recheck_before_mutation"] is True
+    assert handoff["handoff_persisted"] is False
+    serialized = response.text
+    for private_value in (
+        expired,
+        revoked,
+        claims["sub"],
+        "private expired label",
+        "private revoked label",
+        login["access_token"],
+        login["refresh_token"],
+    ):
+        assert private_value not in serialized
+    assert {path: backend.read_text(path) for path in paths} == original
+
+
+def test_auth_session_retention_handoff_requires_allowed_policy_and_healthy_state(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    created = client.post(
+        "/admin/users",
+        headers=_auth(admin),
+        json={
+            "username": "member-handoff",
+            "display_name": "Member",
+            "email": "member-handoff@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+        },
+    )
+    assert created.status_code == 200
+    member = client.post(
+        "/auth/login",
+        json={"username": "member-handoff", "password": "MemberPass1!"},
+    ).json()
+
+    unauthorized = client.get("/admin/auth-sessions/retention-handoff")
+    forbidden = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(member),
+    )
+    allowed = [
+        client.get(
+            "/admin/auth-sessions/retention-handoff",
+            headers=_auth(admin),
+            params={"retention_days": retention_days},
+        )
+        for retention_days in (30, 90, 180, 365)
+    ]
+    ops = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+        params={"retention_days": 365},
+    )
+    invalid_policy = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers=_auth(admin),
+        params={"retention_days": 31},
+    )
+    corrupt_path = f"tenants/system/auth_sessions/{'f' * 32}.json"
+    corrupt = '{"session_id":"duplicate","session_id":"forged"}'
+    assert client.app.state.state_backend.write_text_if_absent(corrupt_path, corrupt)
+    failed = client.get(
+        "/admin/auth-sessions/retention-handoff",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+        params={"retention_days": 30},
+    )
+
+    assert unauthorized.status_code == 401
+    assert forbidden.status_code == 403
+    assert [
+        response.json()["selected_policy_days"] for response in allowed
+    ] == [30, 90, 180, 365]
+    assert ops.status_code == 200
+    assert ops.json()["selected_policy_days"] == 365
+    assert invalid_policy.status_code == 422
     assert failed.status_code == 503
     assert client.app.state.state_backend.read_text(corrupt_path) == corrupt

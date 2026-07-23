@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 
 import pytest
@@ -318,6 +319,66 @@ def test_auth_session_store_retention_comparison_fails_closed_on_corrupt_prefix(
         store.compare_retention_policies()
 
     assert corrupt_path.read_bytes() == corrupt
+
+
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_builds_read_only_retention_review_handoff(
+    tmp_path,
+    monkeypatch,
+    backend_kind,
+):
+    import app.storage.auth_session_store as auth_session_module
+
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+        backend = store._backend
+
+    now = datetime(2026, 7, 23, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(auth_session_module, "_utcnow", lambda: now)
+    session_id = store.create(user_id="private-user", credential_version=0)
+    assert store.set_label(
+        session_id,
+        user_id="private-user",
+        credential_version=0,
+        label="private label",
+    )
+    prefix = "tenants/tenant-a/auth_sessions"
+    paths = backend.list_prefix(prefix)
+    original = {path: backend.read_text(path) for path in paths}
+
+    handoff = store.build_retention_review_handoff(retention_days=90)
+
+    comparison = handoff["comparison"]
+    canonical_comparison = json.dumps(
+        comparison,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    assert handoff == {
+        "contract_version": "auth-session-retention-review-handoff.v1",
+        "selected_policy_days": 90,
+        "comparison": comparison,
+        "comparison_sha256": hashlib.sha256(canonical_comparison).hexdigest(),
+        "review_only": True,
+        "policy_change_authorized": False,
+        "deletion_authorized": False,
+        "scheduler_authorized": False,
+        "snapshot_atomic": False,
+        "requires_recheck_before_mutation": True,
+        "handoff_persisted": False,
+    }
+    serialized = json.dumps(handoff, ensure_ascii=False)
+    assert session_id not in serialized
+    assert "private-user" not in serialized
+    assert "private label" not in serialized
+    assert {path: backend.read_text(path) for path in paths} == original
+
+    with pytest.raises(ValueError, match="retention_days"):
+        store.build_retention_review_handoff(retention_days=31)
 
 
 @pytest.mark.parametrize("backend_kind", ["local", "s3"])

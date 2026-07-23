@@ -4365,6 +4365,12 @@
       font-size: 1rem; line-height: 1; cursor: pointer;
     }
     .auth-retention-refresh:disabled { opacity: .45; cursor: default; }
+    .auth-retention-handoff {
+      min-height: 36px; padding: 0 10px; border: 1px solid rgba(167,243,208,.42);
+      border-radius: 6px; background: rgba(16,185,129,.13); color: #d1fae5;
+      font-size: .72rem; font-weight: 700; cursor: pointer;
+    }
+    .auth-retention-handoff:disabled { opacity: .45; cursor: default; }
     .auth-retention-result { margin-top: 14px; }
     .auth-retention-summary {
       display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6983,6 +6989,12 @@
           aria-label="로그인 세션 보존 상태 새로고침"
           title="로그인 세션 보존 상태 새로고침"
         >↻</button>
+        <button
+          id="ops-auth-session-retention-handoff"
+          class="auth-retention-handoff"
+          type="button"
+          aria-label="로그인 세션 보존 검토용 JSON 내보내기"
+        >검토용 JSON 내보내기</button>
       </div>
     </div>
     <div
@@ -7027,6 +7039,7 @@
         <option value="document_ops.governance_handoff_download">DocumentOps governance handoff</option>
         <option value="auth_session.retention_preview">로그인 세션 보존 상태 조회</option>
         <option value="auth_session.retention_comparison">로그인 세션 보존 정책 비교</option>
+        <option value="auth_session.retention_handoff">로그인 세션 보존 검토 자료 내보내기</option>
       </select>
       <select id="audit-result-filter" aria-label="결과 필터">
         <option value="">전체 결과</option>
@@ -29498,12 +29511,26 @@ document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
 ════════════════════════════════════════════════════════════════ */
 
 const AUTH_SESSION_RETENTION_COMPARISON_CONTRACT = 'auth-session-retention-comparison.v1';
+const AUTH_SESSION_RETENTION_HANDOFF_CONTRACT = 'auth-session-retention-review-handoff.v1';
+const AUTH_SESSION_RETENTION_HANDOFF_SHA256_HEADER = 'X-DecisionDoc-Auth-Session-Retention-Handoff-SHA256';
 const AUTH_SESSION_RETENTION_POLICY_DAYS = Object.freeze([30, 90, 180, 365]);
 let _authSessionRetentionRequestGeneration = 0;
 let _authSessionRetentionComparison = null;
 let _authSessionRetentionComparisonTenant = '';
 
 function normalizeAuthSessionRetentionComparison(payload) {
+  const expectedKeys = [
+    'contract_version', 'generated_at', 'policy_days', 'inspected_sessions',
+    'active_sessions', 'policies', 'read_only', 'deletion_authorized',
+    'snapshot_atomic', 'requires_recheck_before_mutation',
+  ];
+  if (
+    !payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+  ) {
+    throw new Error('로그인 세션 보존 정책 비교 응답을 검증하지 못했습니다.');
+  }
   const generatedAtMs = new Date(payload?.generated_at).getTime();
   const policyDaysAreValid = Array.isArray(payload?.policy_days)
     && payload.policy_days.length === AUTH_SESSION_RETENTION_POLICY_DAYS.length
@@ -29535,6 +29562,28 @@ function normalizeAuthSessionRetentionComparison(payload) {
   let previousEligible = Number.POSITIVE_INFINITY;
   let previousRetainedInactive = -1;
   payload.policies.forEach((policy, index) => {
+    const expectedPolicyKeys = [
+      'retention_days', 'eligible_before', 'eligible_sessions',
+      'eligible_by_reason', 'retained_inactive_sessions',
+      'oldest_eligible_inactive_at',
+    ];
+    const expectedReasonKeys = ['expired', 'revoked'];
+    if (
+      !policy || typeof policy !== 'object' || Array.isArray(policy)
+      || Object.keys(policy).length !== expectedPolicyKeys.length
+      || expectedPolicyKeys.some(
+        key => !Object.prototype.hasOwnProperty.call(policy, key),
+      )
+      || !policy.eligible_by_reason
+      || typeof policy.eligible_by_reason !== 'object'
+      || Array.isArray(policy.eligible_by_reason)
+      || Object.keys(policy.eligible_by_reason).length !== expectedReasonKeys.length
+      || expectedReasonKeys.some(
+        key => !Object.prototype.hasOwnProperty.call(policy.eligible_by_reason, key),
+      )
+    ) {
+      throw new Error('로그인 세션 보존 정책 비교 응답을 검증하지 못했습니다.');
+    }
     const expectedDays = AUTH_SESSION_RETENTION_POLICY_DAYS[index];
     const eligibleBeforeMs = new Date(policy?.eligible_before).getTime();
     const oldest = policy?.oldest_eligible_inactive_at;
@@ -29579,6 +29628,66 @@ function normalizeAuthSessionRetentionComparison(payload) {
     previousRetainedInactive = policy.retained_inactive_sessions;
   });
   return payload;
+}
+
+function canonicalAuthSessionRetentionJson(value) {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('검토 자료 숫자 형식이 올바르지 않습니다.');
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalAuthSessionRetentionJson).join(',')}]`;
+  }
+  if (!value || typeof value !== 'object') {
+    throw new Error('검토 자료 형식이 올바르지 않습니다.');
+  }
+  return `{${Object.keys(value).sort().map(key => (
+    `${JSON.stringify(key)}:${canonicalAuthSessionRetentionJson(value[key])}`
+  )).join(',')}}`;
+}
+
+async function normalizeAuthSessionRetentionHandoff(payload) {
+  const expectedKeys = [
+    'contract_version', 'selected_policy_days', 'comparison', 'comparison_sha256',
+    'review_only', 'policy_change_authorized', 'deletion_authorized',
+    'scheduler_authorized', 'snapshot_atomic', 'requires_recheck_before_mutation',
+    'handoff_persisted',
+  ];
+  if (
+    !payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== expectedKeys.length
+    || expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+  ) {
+    throw new Error('로그인 세션 보존 검토 자료 응답을 검증하지 못했습니다.');
+  }
+  const comparison = normalizeAuthSessionRetentionComparison(payload.comparison);
+  const selectedPolicyDays = payload.selected_policy_days;
+  const comparisonSha256 = String(payload.comparison_sha256 || '').toLowerCase();
+  const canonicalComparison = new TextEncoder().encode(
+    canonicalAuthSessionRetentionJson(comparison),
+  );
+  if (
+    payload.contract_version !== AUTH_SESSION_RETENTION_HANDOFF_CONTRACT
+    || !AUTH_SESSION_RETENTION_POLICY_DAYS.includes(selectedPolicyDays)
+    || !/^[a-f0-9]{64}$/.test(comparisonSha256)
+    || comparisonSha256 !== await sha256Hex(canonicalComparison)
+    || payload.review_only !== true
+    || payload.policy_change_authorized !== false
+    || payload.deletion_authorized !== false
+    || payload.scheduler_authorized !== false
+    || payload.snapshot_atomic !== false
+    || payload.requires_recheck_before_mutation !== true
+    || payload.handoff_persisted !== false
+    || comparison.deletion_authorized !== false
+    || comparison.snapshot_atomic !== false
+    || comparison.requires_recheck_before_mutation !== true
+  ) {
+    throw new Error('로그인 세션 보존 검토 자료 응답을 검증하지 못했습니다.');
+  }
+  return { comparison, selectedPolicyDays };
 }
 
 function renderAuthSessionRetentionComparison(payload) {
@@ -29645,7 +29754,8 @@ async function loadAuthSessionRetentionComparison() {
   const result = $id('ops-auth-session-retention-result');
   const daysSelect = $id('ops-auth-session-retention-days');
   const refreshButton = $id('ops-auth-session-retention-refresh');
-  if (!result || !daysSelect || !refreshButton) return;
+  const handoffButton = $id('ops-auth-session-retention-handoff');
+  if (!result || !daysSelect || !refreshButton || !handoffButton) return;
 
   const requestGeneration = ++_authSessionRetentionRequestGeneration;
   if (!hasOpsAccessCredential()) {
@@ -29658,6 +29768,7 @@ async function loadAuthSessionRetentionComparison() {
       <p class="auth-retention-boundary">읽기 전용 · 삭제 권한 없음</p>
     `;
     refreshButton.disabled = false;
+    handoffButton.disabled = false;
     return;
   }
 
@@ -29668,6 +29779,7 @@ async function loadAuthSessionRetentionComparison() {
   result.removeAttribute('data-retention-days');
   result.innerHTML = '<p style="margin:0;color:#cbd5e1;font-size:.82rem;">보존 상태 확인 중...</p>';
   refreshButton.disabled = true;
+  handoffButton.disabled = true;
 
   try {
     const response = await fetch('/admin/auth-sessions/retention-comparison', {
@@ -29698,6 +29810,73 @@ async function loadAuthSessionRetentionComparison() {
   } finally {
     if (requestGeneration === _authSessionRetentionRequestGeneration) {
       refreshButton.disabled = false;
+      handoffButton.disabled = false;
+    }
+  }
+}
+
+async function downloadAuthSessionRetentionHandoff() {
+  const result = $id('ops-auth-session-retention-result');
+  const daysSelect = $id('ops-auth-session-retention-days');
+  const handoffButton = $id('ops-auth-session-retention-handoff');
+  if (!result || !daysSelect || !handoffButton) return;
+  if (!hasOpsAccessCredential()) {
+    showNotification('관리자 세션 또는 유효한 Ops Key가 필요합니다.', 'error');
+    return;
+  }
+
+  const tenantId = _currentTenantId;
+  const requestGeneration = ++_authSessionRetentionRequestGeneration;
+  const retentionDays = Number(daysSelect.value);
+  handoffButton.disabled = true;
+  try {
+    const response = await fetch(
+      `/admin/auth-sessions/retention-handoff?retention_days=${encodeURIComponent(String(retentionDays))}`,
+      { headers: getOpsAccessHeaders() },
+    );
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    if (!response.ok) throw new Error(authSessionRetentionErrorMessage(response.status));
+    const bodyBytes = new Uint8Array(await response.arrayBuffer());
+    const responseSha256 = String(
+      response.headers.get(AUTH_SESSION_RETENTION_HANDOFF_SHA256_HEADER) || '',
+    ).trim().toLowerCase();
+    if (
+      !/^[a-f0-9]{64}$/.test(responseSha256)
+      || responseSha256 !== await sha256Hex(bodyBytes)
+    ) {
+      throw new Error('로그인 세션 보존 검토 자료의 SHA-256을 검증하지 못했습니다.');
+    }
+    const handoff = await normalizeAuthSessionRetentionHandoff(
+      JSON.parse(new TextDecoder().decode(bodyBytes)),
+    );
+    if (
+      handoff.selectedPolicyDays !== retentionDays
+      || requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    _authSessionRetentionComparison = handoff.comparison;
+    _authSessionRetentionComparisonTenant = tenantId;
+    renderAuthSessionRetentionComparison(handoff.comparison);
+    _triggerBrowserDownload(
+      new Blob([bodyBytes], { type: 'application/json' }),
+      _filenameFromContentDisposition(
+        response.headers.get('Content-Disposition'),
+        `auth-session-retention-review-handoff-${retentionDays}d.json`,
+      ),
+      '로그인 세션 보존 검토 자료',
+    );
+  } catch (error) {
+    if (
+      requestGeneration !== _authSessionRetentionRequestGeneration
+      || tenantId !== _currentTenantId
+    ) return;
+    showNotification(error.message || String(error), 'error');
+  } finally {
+    if (requestGeneration === _authSessionRetentionRequestGeneration) {
+      handoffButton.disabled = false;
     }
   }
 }
@@ -29723,6 +29902,10 @@ $id('ops-auth-session-retention-refresh')?.addEventListener(
 $id('ops-auth-session-retention-days')?.addEventListener(
   'change',
   selectAuthSessionRetentionPolicy,
+);
+$id('ops-auth-session-retention-handoff')?.addEventListener(
+  'click',
+  downloadAuthSessionRetentionHandoff,
 );
 
 /* ════════════════════════════════════════════════════════════════
@@ -29826,6 +30009,16 @@ function renderAuditEvidence(log, detail) {
   if (log?.action === 'auth_session.retention_comparison') {
     const evidence = [
       `policy_days=${Array.isArray(detail.policy_days) ? detail.policy_days.join(',') : '-'}`,
+      `eligible_by_policy=${Array.isArray(detail.eligible_sessions_by_policy) ? detail.eligible_sessions_by_policy.join(',') : '-'}`,
+      `inspected_sessions=${detail.inspected_sessions ?? '-'}`,
+      `read_only=${String(detail.read_only === true)}`,
+      `snapshot_atomic=${String(detail.snapshot_atomic === true)}`,
+    ];
+    return `<div class="audit-evidence">${evidence.map(value => escapeHtml(value)).join('<br>')}</div>`;
+  }
+  if (log?.action === 'auth_session.retention_handoff') {
+    const evidence = [
+      `retention_days=${detail.retention_days ?? '-'}`,
       `eligible_by_policy=${Array.isArray(detail.eligible_sessions_by_policy) ? detail.eligible_sessions_by_policy.join(',') : '-'}`,
       `inspected_sessions=${detail.inspected_sessions ?? '-'}`,
       `read_only=${String(detail.read_only === true)}`,
