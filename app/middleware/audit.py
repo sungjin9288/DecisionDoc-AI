@@ -30,6 +30,10 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/auth/sessions/revoke"): "user.session_revoke",
     ("POST", "/auth/sessions/revoke-others"): "user.session_revoke_others",
     ("POST", "/auth/sessions/revoke-all"): "user.session_revoke_all",
+    (
+        "GET",
+        "/admin/auth-sessions/retention-preview",
+    ): "auth_session.retention_preview",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",
@@ -303,6 +307,26 @@ def _append_audit_entries(
             "auth_session_revoked_count",
             None,
         )
+        auth_session_retention_days = getattr(
+            request.state,
+            "auth_session_retention_days",
+            None,
+        )
+        auth_session_retention_inspected_count = getattr(
+            request.state,
+            "auth_session_retention_inspected_count",
+            None,
+        )
+        auth_session_retention_eligible_count = getattr(
+            request.state,
+            "auth_session_retention_eligible_count",
+            None,
+        )
+        auth_session_retention_read_only = getattr(
+            request.state,
+            "auth_session_retention_read_only",
+            None,
+        )
 
         procurement_project_id = getattr(request.state, "procurement_project_id", "") or ""
         decision_council_project_id = getattr(request.state, "decision_council_project_id", "") or ""
@@ -437,6 +461,14 @@ def _append_audit_entries(
         }
         if auth_session_revoked_count is not None:
             detail["revoked_sessions"] = auth_session_revoked_count
+        if auth_session_retention_days is not None:
+            detail["retention_days"] = auth_session_retention_days
+        if auth_session_retention_inspected_count is not None:
+            detail["inspected_sessions"] = auth_session_retention_inspected_count
+        if auth_session_retention_eligible_count is not None:
+            detail["eligible_sessions"] = auth_session_retention_eligible_count
+        if auth_session_retention_read_only is not None:
+            detail["read_only"] = auth_session_retention_read_only
         if procurement_error_code:
             detail["error_code"] = procurement_error_code
         if procurement_project_id:

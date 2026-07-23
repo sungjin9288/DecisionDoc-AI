@@ -91,6 +91,108 @@ def test_auth_session_store_lists_and_revokes_selected_s3_backend_authority():
 
 
 @pytest.mark.parametrize("backend_kind", ["local", "s3"])
+def test_auth_session_store_retention_preview_is_read_only_and_aggregate_only(
+    tmp_path,
+    monkeypatch,
+    backend_kind,
+):
+    import app.storage.auth_session_store as auth_session_module
+
+    if backend_kind == "s3":
+        backend, _ = s3_backend()
+        store = AuthSessionStore("tenant-a", backend=backend)
+    else:
+        store = _store(tmp_path)
+        backend = store._backend
+
+    now = datetime(2026, 7, 23, 12, tzinfo=timezone.utc)
+    clock = [now - timedelta(days=100)]
+    monkeypatch.setattr(auth_session_module, "_utcnow", lambda: clock[0])
+
+    expired = store.create(user_id="user-expired", credential_version=0)
+    assert store.set_label(
+        expired,
+        user_id="user-expired",
+        credential_version=0,
+        label="private expired label",
+    )
+    revoked = store.create(user_id="user-revoked", credential_version=0)
+    assert store.set_label(
+        revoked,
+        user_id="user-revoked",
+        credential_version=0,
+        label="private revoked label",
+    )
+    clock[0] = now - timedelta(days=80)
+    assert store.revoke(revoked, user_id="user-revoked")
+
+    clock[0] = now - timedelta(days=10)
+    recent_revoked = store.create(user_id="user-recent", credential_version=0)
+    clock[0] = now - timedelta(days=5)
+    assert store.revoke(recent_revoked, user_id="user-recent")
+    active = store.create(user_id="user-active", credential_version=0)
+
+    prefix = "tenants/tenant-a/auth_sessions"
+    paths = backend.list_prefix(prefix)
+    original = {path: backend.read_text(path) for path in paths}
+    clock[0] = now
+
+    preview = store.preview_retention(retention_days=30)
+
+    assert preview == {
+        "contract_version": "auth-session-retention-preview.v1",
+        "generated_at": now.isoformat(),
+        "retention_days": 30,
+        "eligible_before": (now - timedelta(days=30)).isoformat(),
+        "inspected_sessions": 4,
+        "eligible_sessions": 2,
+        "eligible_by_reason": {"expired": 1, "revoked": 1},
+        "active_sessions": 1,
+        "retained_inactive_sessions": 1,
+        "oldest_eligible_inactive_at": (now - timedelta(days=80)).isoformat(),
+        "read_only": True,
+        "deletion_authorized": False,
+    }
+    serialized = json.dumps(preview, ensure_ascii=False)
+    for private_value in (
+        expired,
+        revoked,
+        recent_revoked,
+        active,
+        "user-expired",
+        "private expired label",
+        "private revoked label",
+    ):
+        assert private_value not in serialized
+    assert {path: backend.read_text(path) for path in paths} == original
+
+
+def test_auth_session_store_retention_preview_rejects_invalid_policy_and_corrupt_prefix(
+    tmp_path,
+):
+    store = _store(tmp_path)
+    store.create(user_id="user-a", credential_version=0)
+    corrupt_path = (
+        tmp_path
+        / "tenants"
+        / "tenant-a"
+        / "auth_sessions"
+        / f"{'f' * 32}.json"
+    )
+    corrupt = b'{"session_id":"duplicate","session_id":"forged"}'
+    corrupt_path.write_bytes(corrupt)
+
+    with pytest.raises(ValueError, match="retention_days"):
+        store.preview_retention(retention_days=0)
+    with pytest.raises(ValueError, match="retention_days"):
+        store.preview_retention(retention_days=3651)
+    with pytest.raises(AuthSessionStoreError):
+        store.preview_retention(retention_days=30)
+
+    assert corrupt_path.read_bytes() == corrupt
+
+
+@pytest.mark.parametrize("backend_kind", ["local", "s3"])
 def test_auth_session_store_sets_and_clears_owned_session_label(
     tmp_path,
     backend_kind,

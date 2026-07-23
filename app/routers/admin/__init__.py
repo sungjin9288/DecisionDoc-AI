@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.routers.admin._auth_sessions import router as _auth_sessions_router
 from app.routers.admin._bundles import router as _bundles_router
 from app.routers.admin._invite import router as _invite_router
 from app.routers.admin._locations import router as _locations_router
@@ -42,6 +43,7 @@ from app.routers.admin._tenants import router as _tenants_router
 
 router = APIRouter(tags=["admin"])
 
+router.include_router(_auth_sessions_router)
 router.include_router(_bundles_router)
 router.include_router(_invite_router)
 router.include_router(_tenants_router)

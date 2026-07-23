@@ -1336,6 +1336,25 @@ def test_auth_session_label_contract_docs_match_the_v2_runtime():
     assert "H112 Auth session label Unicode display safety" in evidence
 
 
+def test_auth_session_retention_preview_contract_is_read_only_and_documented():
+    root = Path(__file__).resolve().parents[1]
+    router = (root / "app" / "routers" / "admin" / "_auth_sessions.py").read_text(
+        encoding="utf-8"
+    )
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+
+    assert 'router.get("/admin/auth-sessions/retention-preview")' in router
+    for document in (architecture, security_policy, test_plan):
+        assert "auth-session-retention-preview.v1" in document
+        assert "deletion_authorized=false" in document
+    assert "H113 Auth session retention preview" in evidence
+
+
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():
     content = open("app/static/index.html", encoding="utf-8").read()
     roster_start = content.index('<section id="ai-rank-roster"')

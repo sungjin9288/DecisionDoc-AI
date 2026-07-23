@@ -21,6 +21,10 @@ _SESSION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_LIFETIME = timedelta(days=30)
 _MAX_CREATE_ATTEMPTS = 4
 _MAX_MUTATION_ATTEMPTS = 32
+AUTH_SESSION_RETENTION_DEFAULT_DAYS = 30
+AUTH_SESSION_RETENTION_MIN_DAYS = 1
+AUTH_SESSION_RETENTION_MAX_DAYS = 3650
+_RETENTION_PREVIEW_CONTRACT_VERSION = "auth-session-retention-preview.v1"
 _LEGACY_RECORD_FIELDS = {
     "contract_version",
     "session_id",
@@ -172,6 +176,43 @@ class AuthSessionStore:
             return None, None
         return raw, self._decode(raw, session_id=session_id)
 
+    def _list_validated_records(self) -> list[dict[str, Any]]:
+        """Read every direct session object only after validating the whole prefix."""
+        prefix = self._relative_prefix()
+        child_prefix = f"{prefix}/"
+        try:
+            paths = self._backend.list_prefix(prefix)
+        except StateBackendError as exc:
+            raise AuthSessionStoreError(
+                "Failed to list authentication session state"
+            ) from exc
+
+        records: list[dict[str, Any]] = []
+        for relative_path in paths:
+            if not relative_path.startswith(child_prefix):
+                raise AuthSessionStoreError(
+                    "Authentication session prefix contains an unexpected object"
+                )
+            filename = relative_path.removeprefix(child_prefix)
+            if "/" in filename or not filename.endswith(".json"):
+                raise AuthSessionStoreError(
+                    "Authentication session prefix contains an unexpected object"
+                )
+            session_id = filename.removesuffix(".json")
+            try:
+                canonical_session_id = require_auth_session_id(session_id)
+                raw = self._backend.read_text(relative_path)
+            except (StateBackendError, UnicodeError, ValueError) as exc:
+                raise AuthSessionStoreError(
+                    "Failed to read authentication session inventory"
+                ) from exc
+            if raw is None:
+                raise AuthSessionStoreError(
+                    "Authentication session inventory changed during inspection"
+                )
+            records.append(self._decode(raw, session_id=canonical_session_id))
+        return records
+
     def create(self, *, user_id: str, credential_version: int) -> str:
         canonical_user_id = _require_user_id(user_id)
         canonical_version = _require_credential_version(credential_version)
@@ -240,40 +281,9 @@ class AuthSessionStore:
         """Return current-version sessions after validating the whole tenant prefix."""
         canonical_user_id = _require_user_id(user_id)
         canonical_version = _require_credential_version(credential_version)
-        prefix = self._relative_prefix()
-        child_prefix = f"{prefix}/"
-        try:
-            paths = self._backend.list_prefix(prefix)
-        except StateBackendError as exc:
-            raise AuthSessionStoreError(
-                "Failed to list authentication session state"
-            ) from exc
-
         now = _utcnow()
         active: list[dict[str, Any]] = []
-        for relative_path in paths:
-            if not relative_path.startswith(child_prefix):
-                raise AuthSessionStoreError(
-                    "Authentication session prefix contains an unexpected object"
-                )
-            filename = relative_path.removeprefix(child_prefix)
-            if "/" in filename or not filename.endswith(".json"):
-                raise AuthSessionStoreError(
-                    "Authentication session prefix contains an unexpected object"
-                )
-            session_id = filename.removesuffix(".json")
-            try:
-                canonical_session_id = require_auth_session_id(session_id)
-                raw = self._backend.read_text(relative_path)
-            except (StateBackendError, UnicodeError, ValueError) as exc:
-                raise AuthSessionStoreError(
-                    "Failed to read authentication session inventory"
-                ) from exc
-            if raw is None:
-                raise AuthSessionStoreError(
-                    "Authentication session inventory changed during inspection"
-                )
-            record = self._decode(raw, session_id=canonical_session_id)
+        for record in self._list_validated_records():
             if (
                 record["user_id"] == canonical_user_id
                 and record["credential_version"] == canonical_version
@@ -290,6 +300,74 @@ class AuthSessionStore:
             reverse=True,
         )
         return active
+
+    def preview_retention(self, *, retention_days: int) -> dict[str, Any]:
+        """Summarize old inactive sessions without exposing or changing records."""
+        if (
+            type(retention_days) is not int
+            or retention_days < AUTH_SESSION_RETENTION_MIN_DAYS
+            or retention_days > AUTH_SESSION_RETENTION_MAX_DAYS
+        ):
+            raise ValueError(
+                "retention_days must be an integer between "
+                f"{AUTH_SESSION_RETENTION_MIN_DAYS} and "
+                f"{AUTH_SESSION_RETENTION_MAX_DAYS}"
+            )
+
+        now = _utcnow()
+        eligible_before = now - timedelta(days=retention_days)
+        records = self._list_validated_records()
+        eligible_by_reason = {"expired": 0, "revoked": 0}
+        active_sessions = 0
+        retained_inactive_sessions = 0
+        eligible_inactive_times: list[datetime] = []
+
+        for record in records:
+            expires_at = _parse_timestamp(record["expires_at"], field="expires_at")
+            revoked_at = (
+                _parse_timestamp(record["revoked_at"], field="revoked_at")
+                if record["revoked_at"] is not None
+                else None
+            )
+            if revoked_at is None and expires_at > now:
+                active_sessions += 1
+                continue
+
+            inactive_at = (
+                min(expires_at, revoked_at)
+                if revoked_at is not None
+                else expires_at
+            )
+            if inactive_at > eligible_before:
+                retained_inactive_sessions += 1
+                continue
+
+            reason = (
+                "revoked"
+                if revoked_at is not None and revoked_at <= expires_at
+                else "expired"
+            )
+            eligible_by_reason[reason] += 1
+            eligible_inactive_times.append(inactive_at)
+
+        return {
+            "contract_version": _RETENTION_PREVIEW_CONTRACT_VERSION,
+            "generated_at": now.isoformat(),
+            "retention_days": retention_days,
+            "eligible_before": eligible_before.isoformat(),
+            "inspected_sessions": len(records),
+            "eligible_sessions": len(eligible_inactive_times),
+            "eligible_by_reason": eligible_by_reason,
+            "active_sessions": active_sessions,
+            "retained_inactive_sessions": retained_inactive_sessions,
+            "oldest_eligible_inactive_at": (
+                min(eligible_inactive_times).isoformat()
+                if eligible_inactive_times
+                else None
+            ),
+            "read_only": True,
+            "deletion_authorized": False,
+        }
 
     def set_label(
         self,
