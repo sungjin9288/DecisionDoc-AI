@@ -1373,13 +1373,7 @@ def test_auth_session_retention_preview_ops_ui_preserves_read_only_contract():
     assert 'id="ops-auth-session-retention-result"' in section
     assert 'data-auth-session-retention-delete' not in section
     assert "읽기 전용 · 삭제 권한 없음" in section
-    assert "fetch(`/admin/auth-sessions/retention-preview?${params}`" in content
     assert "getOpsAccessHeaders()" in content
-    assert "auth-session-retention-preview.v1" in content
-    assert "payload.read_only !== true" in content
-    assert "payload.deletion_authorized !== false" in content
-    assert "payload.retention_days !== expectedRetentionDays" in content
-    assert "oldestMs <= eligibleBeforeMs" in content
     assert "if (!hasOpsAccessCredential())" in content
     assert "localStorage.getItem('dd_access_token') || getOpsKeyValue()" in content
     assert "_authSessionRetentionRequestGeneration" in content
@@ -1389,6 +1383,35 @@ def test_auth_session_retention_preview_ops_ui_preserves_read_only_contract():
         assert "30/90/180/365" in document
         assert "auth-session-retention-preview.v1" in document
     assert "H114 Auth session retention Ops UI" in evidence
+
+
+def test_auth_session_retention_comparison_uses_one_read_only_inspection():
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    router = (root / "app" / "routers" / "admin" / "_auth_sessions.py").read_text(
+        encoding="utf-8"
+    )
+    architecture = (root / "docs" / "architecture.md").read_text(encoding="utf-8")
+    security_policy = (root / "docs" / "security_policy.md").read_text(
+        encoding="utf-8"
+    )
+    test_plan = (root / "docs" / "test_plan.md").read_text(encoding="utf-8")
+    evidence = (root / "docs" / "evidence-checklist.md").read_text(encoding="utf-8")
+
+    assert 'router.get("/admin/auth-sessions/retention-comparison")' in router
+    assert "auth-session-retention-comparison.v1" in content
+    assert "fetch('/admin/auth-sessions/retention-comparison'" in content
+    assert "payload.snapshot_atomic !== false" in content
+    assert "payload.requires_recheck_before_mutation !== true" in content
+    assert "AUTH_SESSION_RETENTION_POLICY_DAYS" in content
+    assert 'data-auth-retention-policy="${policy.retention_days}"' in content
+    assert '<option value="auth_session.retention_comparison">' in content
+    for document in (architecture, security_policy, test_plan):
+        assert "auth-session-retention-comparison.v1" in document
+        assert "snapshot_atomic=false" in document
+        assert "requires_recheck_before_mutation=true" in document
+        assert "deletion_authorized=false" in document
+    assert "H115 Auth session retention policy comparison" in evidence
 
 
 def test_index_html_ai_rank_cards_use_event_listeners_not_inline_handlers():

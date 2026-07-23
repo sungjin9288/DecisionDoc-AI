@@ -1,12 +1,11 @@
 """Playwright E2E tests — core user flows."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import uuid
-from urllib.parse import parse_qs, urlparse
 from urllib import request as urllib_request
 
 import pytest
@@ -2616,12 +2615,12 @@ def test_ops_dashboard_post_deploy_panel_renders_with_ops_key(playwright, live_s
     browser.close()
 
 
-def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
+def test_ops_auth_session_retention_comparison_is_read_only_and_responsive(
     page,
     live_server,
     tmp_path,
 ):
-    requests: list[int] = []
+    requests = 0
     console_errors: list[str] = []
     page_errors: list[str] = []
     unauthorized_urls: list[str] = []
@@ -2639,37 +2638,49 @@ def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
         else None,
     )
 
-    def fulfill_preview(route):
-        retention_days = int(
-            parse_qs(urlparse(route.request.url).query)["retention_days"][0]
-        )
-        requests.append(retention_days)
-        eligible_sessions = 3 if retention_days == 30 else 1
-        retained_inactive_sessions = 2 if retention_days == 30 else 4
-        payload = {
-            "contract_version": "auth-session-retention-preview.v1",
-            "generated_at": "2026-07-23T01:30:00+00:00",
-            "retention_days": retention_days,
-            "eligible_before": "2026-06-23T01:30:00+00:00",
+    def comparison_payload(eligible_counts):
+        generated_at = datetime(2026, 7, 23, 1, 30, tzinfo=timezone.utc)
+        policy_days = [30, 90, 180, 365]
+        return {
+            "contract_version": "auth-session-retention-comparison.v1",
+            "generated_at": generated_at.isoformat(),
+            "policy_days": policy_days,
             "inspected_sessions": 9,
-            "eligible_sessions": eligible_sessions,
-            "eligible_by_reason": {
-                "expired": max(eligible_sessions - 1, 0),
-                "revoked": 1,
-            },
             "active_sessions": 4,
-            "retained_inactive_sessions": retained_inactive_sessions,
-            "oldest_eligible_inactive_at": "2026-04-14T03:10:00+00:00",
+            "policies": [
+                {
+                    "retention_days": days,
+                    "eligible_before": (
+                        generated_at - timedelta(days=days)
+                    ).isoformat(),
+                    "eligible_sessions": eligible,
+                    "eligible_by_reason": {
+                        "expired": max(eligible - 1, 0),
+                        "revoked": 1 if eligible else 0,
+                    },
+                    "retained_inactive_sessions": 5 - eligible,
+                    "oldest_eligible_inactive_at": (
+                        "2025-04-14T03:10:00+00:00" if eligible else None
+                    ),
+                }
+                for days, eligible in zip(policy_days, eligible_counts, strict=True)
+            ],
             "read_only": True,
             "deletion_authorized": False,
+            "snapshot_atomic": False,
+            "requires_recheck_before_mutation": True,
         }
+
+    def fulfill_comparison(route):
+        nonlocal requests
+        requests += 1
         route.fulfill(
             status=200,
             content_type="application/json",
-            body=json.dumps(payload),
+            body=json.dumps(comparison_payload([3, 1, 0, 0])),
         )
 
-    page.route("**/admin/auth-sessions/retention-preview?*", fulfill_preview)
+    page.route("**/admin/auth-sessions/retention-comparison", fulfill_comparison)
     page.goto(f"{live_server['base_url']}?ops=1")
     page.wait_for_selector(
         '#ops-auth-session-retention-result[data-state="ready"]',
@@ -2678,7 +2689,7 @@ def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
 
     panel = page.locator("#ops-auth-session-retention-section")
     panel_text = panel.inner_text()
-    assert requests == [30]
+    assert requests == 1
     assert panel.locator('[data-auth-retention-metric="inspected"] dd').inner_text() == "9"
     assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "3"
     assert panel.locator('[data-auth-retention-metric="expired"] dd').inner_text() == "2"
@@ -2690,53 +2701,61 @@ def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
         "button",
         name="로그인 세션 보존 상태 새로고침",
     ).count() == 1
+    assert panel.locator("[data-auth-retention-policy]").count() == 4
 
     page.select_option("#ops-auth-session-retention-days", "90")
     page.wait_for_function(
         """() => document.querySelector('#ops-auth-session-retention-result')
           ?.dataset.retentionDays === '90'"""
     )
-    assert requests == [30, 90]
+    assert requests == 1
     assert panel.locator('[data-auth-retention-metric="eligible"] dd').inner_text() == "1"
+    assert panel.locator('[data-auth-retention-policy="90"]').get_attribute("aria-current") == "true"
 
     stale_result = page.evaluate(
         """async () => {
           const nativeFetch = window.fetch;
           const pending = [];
-          const makePayload = (retentionDays, eligibleSessions, retainedInactive) => ({
-            contract_version: 'auth-session-retention-preview.v1',
+          const policyDays = [30, 90, 180, 365];
+          const makePayload = eligibleCounts => ({
+            contract_version: 'auth-session-retention-comparison.v1',
             generated_at: '2026-07-23T01:30:00+00:00',
-            retention_days: retentionDays,
-            eligible_before: '2026-06-23T01:30:00+00:00',
+            policy_days: policyDays,
             inspected_sessions: 9,
-            eligible_sessions: eligibleSessions,
-            eligible_by_reason: { expired: Math.max(eligibleSessions - 1, 0), revoked: 1 },
             active_sessions: 4,
-            retained_inactive_sessions: retainedInactive,
-            oldest_eligible_inactive_at: '2026-04-14T03:10:00+00:00',
+            policies: policyDays.map((days, index) => {
+              const eligible = eligibleCounts[index];
+              return {
+                retention_days: days,
+                eligible_before: new Date(Date.parse('2026-07-23T01:30:00+00:00') - days * 86400000).toISOString(),
+                eligible_sessions: eligible,
+                eligible_by_reason: { expired: Math.max(eligible - 1, 0), revoked: eligible ? 1 : 0 },
+                retained_inactive_sessions: 5 - eligible,
+                oldest_eligible_inactive_at: eligible ? '2025-04-14T03:10:00+00:00' : null,
+              };
+            }),
             read_only: true,
             deletion_authorized: false,
+            snapshot_atomic: false,
+            requires_recheck_before_mutation: true,
           });
           const respond = payload => new Response(JSON.stringify(payload), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
           window.fetch = (url, options) => {
-            if (String(url).startsWith('/admin/auth-sessions/retention-preview?')) {
+            if (String(url) === '/admin/auth-sessions/retention-comparison') {
               return new Promise(resolve => pending.push({ url: String(url), resolve }));
             }
             return nativeFetch(url, options);
           };
 
           try {
-            const select = document.querySelector('#ops-auth-session-retention-days');
-            select.value = '30';
-            const older = loadAuthSessionRetentionPreview();
-            select.value = '90';
-            const newer = loadAuthSessionRetentionPreview();
-            pending[1].resolve(respond(makePayload(90, 1, 4)));
+            const older = loadAuthSessionRetentionComparison();
+            const newer = loadAuthSessionRetentionComparison();
+            pending[1].resolve(respond(makePayload([2, 1, 0, 0])));
             await newer;
-            pending[0].resolve(respond(makePayload(30, 3, 2)));
+            pending[0].resolve(respond(makePayload([4, 3, 1, 0])));
             await older;
             const result = document.querySelector('#ops-auth-session-retention-result');
             return {
@@ -2787,25 +2806,30 @@ def test_ops_auth_session_retention_preview_is_read_only_and_responsive(
         """async () => {
           const nativeFetch = window.fetch;
           const payload = {
-            contract_version: 'auth-session-retention-preview.v1',
+            contract_version: 'auth-session-retention-comparison.v1',
             generated_at: '2026-07-23T01:30:00+00:00',
-            retention_days: 90,
-            eligible_before: '2026-04-24T01:30:00+00:00',
+            policy_days: [30, 90, 180, 365],
             inspected_sessions: 9,
-            eligible_sessions: 1,
-            eligible_by_reason: { expired: 0, revoked: 1 },
             active_sessions: 4,
-            retained_inactive_sessions: 4,
-            oldest_eligible_inactive_at: '2026-04-14T03:10:00+00:00',
+            policies: [30, 90, 180, 365].map(days => ({
+              retention_days: days,
+              eligible_before: new Date(Date.parse('2026-07-23T01:30:00+00:00') - days * 86400000).toISOString(),
+              eligible_sessions: 1,
+              eligible_by_reason: { expired: 0, revoked: 1 },
+              retained_inactive_sessions: 4,
+              oldest_eligible_inactive_at: '2025-04-14T03:10:00+00:00',
+            })),
             read_only: true,
             deletion_authorized: true,
+            snapshot_atomic: false,
+            requires_recheck_before_mutation: true,
           };
           window.fetch = () => Promise.resolve(new Response(JSON.stringify(payload), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }));
           try {
-            await loadAuthSessionRetentionPreview();
+            await loadAuthSessionRetentionComparison();
             const result = document.querySelector('#ops-auth-session-retention-result');
             return {
               state: result?.dataset.state,

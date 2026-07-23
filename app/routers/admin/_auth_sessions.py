@@ -61,3 +61,36 @@ def preview_auth_session_retention(
     ]
     request.state.auth_session_retention_read_only = True
     return JSONResponse(content=preview, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/admin/auth-sessions/retention-comparison")
+def compare_auth_session_retention(request: Request) -> JSONResponse:
+    """Compare fixed cleanup policies against one redacted inspection."""
+    require_admin(request)
+    tenant_id = get_tenant_id(request)
+    try:
+        comparison = get_auth_session_store(
+            tenant_id,
+            data_dir=request.app.state.data_dir,
+            backend=request.app.state.state_backend,
+        ).compare_retention_policies()
+    except AuthSessionStoreError as exc:
+        logger.error(
+            "[Auth] Session retention comparison failed - failing CLOSED.",
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 세션 보존 정책을 일시적으로 비교할 수 없습니다.",
+        ) from exc
+
+    request.state.auth_session_retention_policy_days = comparison["policy_days"]
+    request.state.auth_session_retention_inspected_count = comparison[
+        "inspected_sessions"
+    ]
+    request.state.auth_session_retention_eligible_counts = [
+        policy["eligible_sessions"] for policy in comparison["policies"]
+    ]
+    request.state.auth_session_retention_read_only = True
+    request.state.auth_session_retention_snapshot_atomic = False
+    return JSONResponse(content=comparison, headers={"Cache-Control": "no-store"})

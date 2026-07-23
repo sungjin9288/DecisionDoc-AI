@@ -28,6 +28,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 프로젝트·결재 상태 무결성 | 프로젝트와 결재 record를 tenant별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key/identity와 owned schema drift를 원본 보존 상태로 차단. 두 store의 mutation은 conditional create/CAS와 충돌 재시도로 worker 간 overwrite를 방지 |
 | 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. Conditional create/CAS와 충돌 재시도로 worker 간 update 유실과 상충하는 최종 결정을 방지 |
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. Conditional create/CAS와 `log_id` commit reconciliation으로 worker 간 append 유실을 방지. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
+| 로그인 세션 보존 정책 비교 | Admin JWT 또는 Ops key로 한 번의 strict session inspection에서 30/90/180/365일 aggregate를 비교. 식별자를 노출하지 않고 read-only·non-atomic snapshot·변경 전 재확인·삭제 비승인 경계를 API, UI, audit에 유지 |
 | 멀티테넌시·관리자 | `/admin/tenants`, 모델 학습/승격(`/admin/models/...`). Root tenant registry mutation은 conditional create/CAS와 bounded private receipt로 worker 간 create·update·API key rotation 유실을 방지 |
 | Fine-tune·model authority 무결성 | dataset JSONL, export metadata와 model lifecycle을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 fail closed 처리. 객체별 conditional create/CAS, private append/incarnation receipt와 immutable export create로 worker 간 append·clear·export·model update 유실과 불확실 commit을 조정 |
 | DocumentOps governance review overview | Ops 전용 read-only API가 training governance, selected-backend artifact inventory, reviewer sign-off를 독립적으로 읽어 하나의 검토 상태와 다음 행동으로 정리. Source report 생성 시각만 제외한 SHA-256으로 직전 browser 관측과 `최초·동일·변경`을 구분하되 비교값을 저장하지 않음. Export·freeze·dry-run approval·execution request·audit 저장 또는 planning provider/model 변경 뒤에는 열린 overview를 즉시 `RECHECK REQUIRED`로 낮추고, 성공한 새 조회가 끝나야 ready 표시를 복구함. Trajectory Stats, task-filtered Reviewed SFT export 목록, Training Readiness, Training Execution Request Records는 같은 tenant의 연속 요청 중 최신 success/error만 반영해 이전 응답이 현재 count, artifact 목록, freeze 승인 대상, two-person guard 기록을 되돌리지 못함. Training Audit Checklist도 최신 request·tenant·provider/model 조건만 반영하며 조건 변경 시 기존 `Audit 저장` control을 제거하고, audit 저장 결과를 진행 중 이전 read가 가리지 못하게 함. Adapter Contract과 Rehearsal은 독립 request version·tenant·planning query에 결속해 오래된 config 안전 표시나 artifact reference가 현재 provider/model 조건을 대신하지 못하고, 조건 변경 시 즉시 `RECHECK REQUIRED`로 전환함. SFT Export Preview와 artifact 목록은 조회를 시작한 task에, Training Plan Preview는 시작 시점의 provider/model query에 결속하며 입력이 바뀌면 진행 중 응답과 열린 결과를 함께 무효화함. Governance 조회와 sign-off handoff 다운로드는 surface·aggregate status·read-only 여부만 append-only audit에 남기고 fingerprint와 source report는 복사하지 않음. 합성 snapshot의 원자성을 주장하지 않고 object 삭제, dataset upload, provider call, training, model promotion을 허용하지 않음 |
@@ -86,7 +87,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   ├─ Middleware 구성 (10개 파일): request_id / observability / security_headers
   │     / rate_limit / audit / auth / tenant / billing / metrics / document_ops_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 276): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 277): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -165,10 +166,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **276개**입니다.
+FastAPI 라우트는 **277개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 276
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 277
 ```
 
 대표 도메인:
@@ -270,10 +271,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,602개**, **258개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,609개**, **258개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3602
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3609
 python3 scripts/count_readme_metrics.py --field test_files      # → 258
 ```
 
@@ -303,7 +304,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,389 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-23 H114 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 non-live test suite는 통과했습니다 (`pytest tests/ -m "not live" -q` → 4,397 passed, 2 skipped, 4 deselected, 1 warning, 2026-07-23 H115 실측). "완성"을 막는 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -338,7 +339,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
-- 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 각 active session에 최대 40자의 직접 지정 기기 이름을 저장·삭제하고, 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 이름은 audit에 복사하지 않고 session state/inventory에도 User-Agent·IP 필드를 자동 결합하지 않습니다. Admin/Ops retention 화면은 30/90/180/365일 기준의 aggregate-only read path이며 새로고침 외 mutation control이 없습니다. Browser가 `auth-session-retention-preview.v1`, `read_only=true`, `deletion_authorized=false`, count/timestamp consistency를 검증하지 못하면 결과를 표시하지 않습니다. Prefix 전체는 bulk mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·label·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
+- 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 각 active session에 최대 40자의 직접 지정 기기 이름을 저장·삭제하고, 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 이름은 audit에 복사하지 않고 session state/inventory에도 User-Agent·IP 필드를 자동 결합하지 않습니다. Admin/Ops retention 화면은 한 번의 strict inspection에서 30/90/180/365일 aggregate를 비교하고 새로고침 외 mutation control을 두지 않습니다. Browser가 `auth-session-retention-comparison.v1`, `read_only=true`, `deletion_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`, 정책 순서·count·timestamp consistency를 검증하지 못하면 결과를 표시하지 않습니다. Prefix 전체는 bulk mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·label·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
 - 보고서 워크플로우 이력은 tenant별 local/S3 공통 backend에 결속하고 blank·malformed·invalid UTF-8·duplicate identity와 backend failure를 fail closed로 처리합니다. Mutation은 local conditional file write와 S3 conditional create/ETag CAS를 사용하고 충돌할 때마다 최신 state의 ownership·schema·transition을 다시 검증합니다. 최근 mutation receipt는 64개로 제한해 후속 CAS 뒤에도 불확실한 commit을 조정하며, 손상 receipt는 원본을 보존하고 fail closed 처리합니다. 이 보장은 tenant별 단일 report workflow state object에 한정되고 실제 AWS runtime과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
 - 감사 로그 append는 기존 JSONL byte prefix를 보존하고 local/S3 공통 backend를 사용합니다. Missing object는 conditional create, 기존 object는 검증된 원문을 expected value로 사용하는 CAS를 적용하며, 충돌 시 최신 JSONL을 다시 검증하고 append를 재적용합니다. Commit 응답이 불확실하면 `log_id`와 exact entry를 read-back해 후속 append 뒤에도 성공을 조정합니다. 이 보장은 tenant별 단일 audit JSONL object 범위이며 실제 AWS runtime은 검증하지 않았습니다.
@@ -378,4 +379,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 276 · 테스트 3,602 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 277 · 테스트 3,609 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

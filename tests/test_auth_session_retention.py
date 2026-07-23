@@ -170,6 +170,94 @@ def test_auth_session_retention_preview_requires_admin_or_ops_key(
     assert ops.json()["deletion_authorized"] is False
 
 
+def test_auth_session_retention_comparison_returns_one_redacted_inspection(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client)
+    now, claims, expired, revoked = _seed_old_sessions(client, login, monkeypatch)
+    prefix = "tenants/system/auth_sessions"
+    backend = client.app.state.state_backend
+    paths = backend.list_prefix(prefix)
+    original = {path: backend.read_text(path) for path in paths}
+
+    response = client.get(
+        "/admin/auth-sessions/retention-comparison",
+        headers=_auth(login),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["contract_version"] == "auth-session-retention-comparison.v1"
+    assert payload["generated_at"] == now.isoformat()
+    assert payload["policy_days"] == [30, 90, 180, 365]
+    assert payload["inspected_sessions"] == 4
+    assert payload["active_sessions"] == 2
+    assert [policy["eligible_sessions"] for policy in payload["policies"]] == [
+        2,
+        0,
+        0,
+        0,
+    ]
+    assert payload["read_only"] is True
+    assert payload["deletion_authorized"] is False
+    assert payload["snapshot_atomic"] is False
+    assert payload["requires_recheck_before_mutation"] is True
+    serialized = json.dumps(payload, ensure_ascii=False)
+    for private_value in (
+        expired,
+        revoked,
+        claims["sub"],
+        "private expired label",
+        "private revoked label",
+        login["access_token"],
+        login["refresh_token"],
+    ):
+        assert private_value not in serialized
+    assert {path: backend.read_text(path) for path in paths} == original
+
+
+def test_auth_session_retention_comparison_requires_admin_or_ops_key(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    created = client.post(
+        "/admin/users",
+        headers=_auth(admin),
+        json={
+            "username": "member-comparison",
+            "display_name": "Member",
+            "email": "member-comparison@test.com",
+            "password": "MemberPass1!",
+            "role": "member",
+        },
+    )
+    assert created.status_code == 200
+    member = client.post(
+        "/auth/login",
+        json={"username": "member-comparison", "password": "MemberPass1!"},
+    ).json()
+
+    unauthenticated = client.get("/admin/auth-sessions/retention-comparison")
+    forbidden = client.get(
+        "/admin/auth-sessions/retention-comparison",
+        headers=_auth(member),
+    )
+    ops = client.get(
+        "/admin/auth-sessions/retention-comparison",
+        headers={"X-DecisionDoc-Ops-Key": "ops-secret"},
+    )
+
+    assert unauthenticated.status_code == 401
+    assert forbidden.status_code == 403
+    assert ops.status_code == 200
+    assert ops.json()["policy_days"] == [30, 90, 180, 365]
+
+
 def test_auth_session_retention_preview_validates_query_and_fails_closed_on_corrupt_state(
     tmp_path,
     monkeypatch,
@@ -198,5 +286,24 @@ def test_auth_session_retention_preview_validates_query_and_fails_closed_on_corr
 
     assert too_short.status_code == 422
     assert too_long.status_code == 422
+    assert failed.status_code == 503
+    assert client.app.state.state_backend.read_text(corrupt_path) == corrupt
+
+
+def test_auth_session_retention_comparison_fails_closed_on_corrupt_state(
+    tmp_path,
+    monkeypatch,
+):
+    client = _make_client(tmp_path, monkeypatch)
+    admin = _register_and_login(client)
+    corrupt_path = f"tenants/system/auth_sessions/{'f' * 32}.json"
+    corrupt = '{"session_id":"duplicate","session_id":"forged"}'
+    assert client.app.state.state_backend.write_text_if_absent(corrupt_path, corrupt)
+
+    failed = client.get(
+        "/admin/auth-sessions/retention-comparison",
+        headers=_auth(admin),
+    )
+
     assert failed.status_code == 503
     assert client.app.state.state_backend.read_text(corrupt_path) == corrupt

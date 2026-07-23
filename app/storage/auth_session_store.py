@@ -24,7 +24,9 @@ _MAX_MUTATION_ATTEMPTS = 32
 AUTH_SESSION_RETENTION_DEFAULT_DAYS = 30
 AUTH_SESSION_RETENTION_MIN_DAYS = 1
 AUTH_SESSION_RETENTION_MAX_DAYS = 3650
+AUTH_SESSION_RETENTION_POLICY_DAYS = (30, 90, 180, 365)
 _RETENTION_PREVIEW_CONTRACT_VERSION = "auth-session-retention-preview.v1"
+_RETENTION_COMPARISON_CONTRACT_VERSION = "auth-session-retention-comparison.v1"
 _LEGACY_RECORD_FIELDS = {
     "contract_version",
     "session_id",
@@ -314,13 +316,58 @@ class AuthSessionStore:
                 f"{AUTH_SESSION_RETENTION_MAX_DAYS}"
             )
 
+        now, inspected_sessions, active_sessions, inactive_sessions = (
+            self._inspect_retention_state()
+        )
+        policy = self._summarize_retention_policy(
+            inactive_sessions,
+            now=now,
+            retention_days=retention_days,
+        )
+
+        return {
+            "contract_version": _RETENTION_PREVIEW_CONTRACT_VERSION,
+            "generated_at": now.isoformat(),
+            **policy,
+            "inspected_sessions": inspected_sessions,
+            "active_sessions": active_sessions,
+            "read_only": True,
+            "deletion_authorized": False,
+        }
+
+    def compare_retention_policies(self) -> dict[str, Any]:
+        """Compare fixed retention policies against one validated inspection."""
+        now, inspected_sessions, active_sessions, inactive_sessions = (
+            self._inspect_retention_state()
+        )
+        policies = [
+            self._summarize_retention_policy(
+                inactive_sessions,
+                now=now,
+                retention_days=retention_days,
+            )
+            for retention_days in AUTH_SESSION_RETENTION_POLICY_DAYS
+        ]
+        return {
+            "contract_version": _RETENTION_COMPARISON_CONTRACT_VERSION,
+            "generated_at": now.isoformat(),
+            "policy_days": list(AUTH_SESSION_RETENTION_POLICY_DAYS),
+            "inspected_sessions": inspected_sessions,
+            "active_sessions": active_sessions,
+            "policies": policies,
+            "read_only": True,
+            "deletion_authorized": False,
+            "snapshot_atomic": False,
+            "requires_recheck_before_mutation": True,
+        }
+
+    def _inspect_retention_state(
+        self,
+    ) -> tuple[datetime, int, int, list[tuple[datetime, str]]]:
         now = _utcnow()
-        eligible_before = now - timedelta(days=retention_days)
         records = self._list_validated_records()
-        eligible_by_reason = {"expired": 0, "revoked": 0}
         active_sessions = 0
-        retained_inactive_sessions = 0
-        eligible_inactive_times: list[datetime] = []
+        inactive_sessions: list[tuple[datetime, str]] = []
 
         for record in records:
             expires_at = _parse_timestamp(record["expires_at"], field="expires_at")
@@ -333,40 +380,44 @@ class AuthSessionStore:
                 active_sessions += 1
                 continue
 
-            inactive_at = (
-                min(expires_at, revoked_at)
-                if revoked_at is not None
-                else expires_at
-            )
-            if inactive_at > eligible_before:
-                retained_inactive_sessions += 1
-                continue
-
+            inactive_at = min(expires_at, revoked_at) if revoked_at else expires_at
             reason = (
                 "revoked"
                 if revoked_at is not None and revoked_at <= expires_at
                 else "expired"
             )
-            eligible_by_reason[reason] += 1
-            eligible_inactive_times.append(inactive_at)
+            inactive_sessions.append((inactive_at, reason))
 
+        return now, len(records), active_sessions, inactive_sessions
+
+    @staticmethod
+    def _summarize_retention_policy(
+        inactive_sessions: list[tuple[datetime, str]],
+        *,
+        now: datetime,
+        retention_days: int,
+    ) -> dict[str, Any]:
+        eligible_before = now - timedelta(days=retention_days)
+        eligible_by_reason = {"expired": 0, "revoked": 0}
+        eligible_inactive_times: list[datetime] = []
+
+        for inactive_at, reason in inactive_sessions:
+            if inactive_at <= eligible_before:
+                eligible_by_reason[reason] += 1
+                eligible_inactive_times.append(inactive_at)
+
+        eligible_sessions = len(eligible_inactive_times)
         return {
-            "contract_version": _RETENTION_PREVIEW_CONTRACT_VERSION,
-            "generated_at": now.isoformat(),
             "retention_days": retention_days,
             "eligible_before": eligible_before.isoformat(),
-            "inspected_sessions": len(records),
-            "eligible_sessions": len(eligible_inactive_times),
+            "eligible_sessions": eligible_sessions,
             "eligible_by_reason": eligible_by_reason,
-            "active_sessions": active_sessions,
-            "retained_inactive_sessions": retained_inactive_sessions,
+            "retained_inactive_sessions": len(inactive_sessions) - eligible_sessions,
             "oldest_eligible_inactive_at": (
                 min(eligible_inactive_times).isoformat()
                 if eligible_inactive_times
                 else None
             ),
-            "read_only": True,
-            "deletion_authorized": False,
         }
 
     def set_label(

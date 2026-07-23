@@ -34,6 +34,10 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
         "GET",
         "/admin/auth-sessions/retention-preview",
     ): "auth_session.retention_preview",
+    (
+        "GET",
+        "/admin/auth-sessions/retention-comparison",
+    ): "auth_session.retention_comparison",
     ("POST", "/generate/stream"): "doc.generate",
     ("POST", "/generate/with-attachments"): "doc.generate",
     ("POST", "/generate/from-documents"): "doc.generate",
@@ -327,6 +331,15 @@ def _append_audit_entries(
             "auth_session_retention_read_only",
             None,
         )
+        auth_session_retention_policy_days = getattr(
+            request.state, "auth_session_retention_policy_days", None
+        )
+        auth_session_retention_eligible_counts = getattr(
+            request.state, "auth_session_retention_eligible_counts", None
+        )
+        auth_session_retention_snapshot_atomic = getattr(
+            request.state, "auth_session_retention_snapshot_atomic", None
+        )
 
         procurement_project_id = getattr(request.state, "procurement_project_id", "") or ""
         decision_council_project_id = getattr(request.state, "decision_council_project_id", "") or ""
@@ -469,6 +482,12 @@ def _append_audit_entries(
             detail["eligible_sessions"] = auth_session_retention_eligible_count
         if auth_session_retention_read_only is not None:
             detail["read_only"] = auth_session_retention_read_only
+        if auth_session_retention_policy_days is not None:
+            detail["policy_days"] = auth_session_retention_policy_days
+        if auth_session_retention_eligible_counts is not None:
+            detail["eligible_sessions_by_policy"] = auth_session_retention_eligible_counts
+        if auth_session_retention_snapshot_atomic is not None:
+            detail["snapshot_atomic"] = auth_session_retention_snapshot_atomic
         if procurement_error_code:
             detail["error_code"] = procurement_error_code
         if procurement_project_id:
