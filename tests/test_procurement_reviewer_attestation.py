@@ -623,6 +623,15 @@ def test_completed_v1_review_remains_listable_and_downloadable(
     )
     assert downloaded.status_code == 200
     assert downloaded.content == reviewed_package
+    original_packet = client.get(
+        (
+            f"/projects/{project_id}/procurement/reviews/"
+            f"{packet.sha256}/packet"
+        ),
+        headers=reviewer_headers,
+    )
+    assert original_packet.status_code == 200
+    assert original_packet.content == packet.content
 
     created_member = client.post(
         "/admin/users",
@@ -650,6 +659,14 @@ def test_completed_v1_review_remains_listable_and_downloadable(
         headers=member_headers,
     )
     assert forbidden.status_code == 403
+    original_packet_forbidden = client.get(
+        (
+            f"/projects/{project_id}/procurement/reviews/"
+            f"{packet.sha256}/packet"
+        ),
+        headers=member_headers,
+    )
+    assert original_packet_forbidden.status_code == 403
     member_inbox = client.get("/procurement/reviews", headers=member_headers)
     assert member_inbox.status_code == 200
     assert member_inbox.json()["summary"] == {

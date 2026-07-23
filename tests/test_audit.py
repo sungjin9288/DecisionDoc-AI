@@ -582,6 +582,19 @@ def test_resolve_action_procurement_review_inbox_view():
     assert _resolve_action("GET", "/procurement/reviews", 200) == "procurement.review_inbox_view"
 
 
+def test_resolve_action_procurement_review_packet_download():
+    from app.middleware.audit import _resolve_action
+
+    assert (
+        _resolve_action(
+            "GET",
+            "/projects/proj-1/procurement/reviews/abc123/packet",
+            200,
+        )
+        == "procurement.review_packet_download"
+    )
+
+
 def test_procurement_review_inbox_view_is_audited_with_queue_counts(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROCUREMENT_COPILOT_ENABLED", "1")
     client = _make_client(tmp_path, monkeypatch)

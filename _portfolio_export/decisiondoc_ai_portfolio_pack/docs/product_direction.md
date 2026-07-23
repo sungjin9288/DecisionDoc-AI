@@ -351,3 +351,7 @@ H120 applies the same evidence principle to project procurement review. A packet
 ## H121 Procurement Review Access Policy
 
 H121 closes the surrounding read and assignment boundary. A session-bound admin may assign any active tenant admin/member and inspect tenant-wide review evidence. A session-bound member may self-assign and see only v2 records bound to that user. The assignee or an admin may download a v2 package; a legacy v1 package remains admin-only because it has no stable assignment. The browser receives `assigned_to_current_user`, `completed_by`, and `access_scope`, then discards stale review responses and packet/package blobs after auth, role, user, or tenant changes.
+
+## H122 Verified Original Review Packet Re-download
+
+H122 lets an authorized reviewer return to the exact immutable source packet without rebuilding it. The server checks the current session-bound admin or stable assignee before reading bytes, then revalidates the stored SHA-256, receipt binding, package semantics, recommendation, and false operational-authority boundary. The browser compares the safe response headers with its current review projection, verifies the downloaded byte length and SHA-256, and revokes the context-bound object URL and fallback link when the user, tenant, or project context changes. This is evidence retrieval only; it does not reassign a reviewer, complete a review, approve operations, submit a bid, call a provider, or resume a service.

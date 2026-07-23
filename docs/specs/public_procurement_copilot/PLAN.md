@@ -206,10 +206,12 @@ Expose the feature through minimal additive surfaces and finish operational hard
 - add eval / regression coverage
 - add docs and smoke guidance
 - update any relevant operational notes
+- let an authorized reviewer re-download the exact stored source packet after a fresh integrity check
 
 ### Acceptance criteria
 - users can reach the new procurement-decision flow from the project workspace
 - approval/history/audit expectations are preserved
+- original packet re-download authorizes before byte access and fails closed on record or artifact drift
 - the feature can be disabled cleanly with configuration
 - `STATUS.md` and initiative docs are updated
 

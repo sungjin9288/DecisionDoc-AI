@@ -1,6 +1,6 @@
 # Case Study
 
-분석 기준: 2026-07-17 현재 저장소 코드, README, docs, local evidence를 기준으로 업데이트했다. 구현 완료 표현은 코드와 검증 경로가 있는 항목에만 사용했다.
+분석 기준: 2026-07-24 현재 저장소 코드, README, docs, local evidence를 기준으로 업데이트했다. 구현 완료 표현은 코드와 검증 경로가 있는 항목에만 사용했다.
 
 ## 1. 배경
 
@@ -71,7 +71,7 @@
 - billing account state의 per-tenant conditional create/CAS, bounded private receipt와 uncertain commit reconciliation
 - usage event log와 monthly summary의 object별 conditional create/CAS, exact one-event gap repair와 uncertain commit reconciliation
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
-- tenant/project/packet SHA-256-bound procurement review record·packet·content-addressed reviewed-package의 selected-backend 결속, conditional write/CAS, fail-closed semantic integrity, reviewer inbox, downstream freshness, share/approval drift acknowledgement
+- tenant/project/packet SHA-256-bound procurement review record·packet·content-addressed reviewed-package의 selected-backend 결속, authorization-before-read 원본 packet 재다운로드, browser byte/hash 검증과 context-bound URL 폐기, conditional write/CAS, fail-closed semantic integrity, reviewer inbox, downstream freshness, share/approval drift acknowledgement
 - Dockerfile, Docker Compose, AWS SAM 설정
 - pytest 테스트 suite와 smoke script
 - 대표 bundle의 local mock sample, canonical golden fingerprint, validator/lint 결과를 묶은 tracked quality evidence package

@@ -1,6 +1,6 @@
 # Project Card
 
-분석 기준: 2026-07-17 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review state authority와 reproducible portfolio pack까지 반영했다.
+분석 기준: 2026-07-24 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review state authority와 검증된 원본 packet 재다운로드, reproducible portfolio pack을 반영했다.
 
 ## 1. Snapshot
 
@@ -47,7 +47,7 @@
   - message·notification object의 conditional create/CAS, bounded private receipt와 worker update 유실 방지
   - template·history·share object의 conditional create/CAS, bounded private receipt, disjoint lifecycle update와 immutable-incarnation reconciliation
   - local procurement decision package evidence path with versioned CLI stdout contract and receipt checking
-  - tenant/project/packet SHA-256-bound procurement review state, fail-closed artifact integrity, reviewer inbox, downstream freshness and share/approval drift safeguards
+  - tenant/project/packet SHA-256-bound procurement review state, authorization-before-read 원본 packet 재다운로드, browser byte/hash 검증과 context-bound URL 폐기, reviewer inbox, downstream freshness and share/approval drift safeguards
   - DOCX, PDF, HWP, XLSX, PPTX 관련 service와 endpoint 테스트 파일
 - 개발 중인 기능:
   - report quality learning, document ops agent, fine-tuning/training artifact workflow
@@ -139,7 +139,7 @@ User / Team
 | 구현 완료 | local/S3 storage abstraction | 구현 완료 | `app/storage/base.py`, `app/storage/factory.py`, `app/storage/local.py`, `app/storage/s3.py` | 가능 |
 | 구현 완료 | account/invite cross-worker state authority | 구현 완료 | `app/storage/user_store.py`, `app/storage/invite_store.py`, `tests/test_identity_store_integrity.py` | 가능 |
 | 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
-| 구현 완료 | procurement review state/freshness/audit boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
+| 구현 완료 | procurement review state/freshness/audit와 verified original-packet retrieval boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/projects/procurement_review_packets.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
 | 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |
 | 구현 완료 | health/metrics/version | 구현 완료 | `app/routers/health.py` | 가능 |
 | 개발 중 | report workflow quality learning | 개발 중/고도화 중 | `app/routers/report_workflows.py`, `app/services/report_quality_learning.py` | 조건부 가능 |

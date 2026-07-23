@@ -26,6 +26,7 @@ Sub-modules:
   `/projects/{id}/procurement*`, `/projects/{id}/decision-council*`).
 - procurement_reviews: tenant review inbox, packet export, packet-bound review
   history, one-time receipt completion, and reviewed-package download endpoints.
+- procurement_review_packets: immutable original review-packet re-download.
 
 Re-exports:
   Internal helpers are re-exported here for backward compatibility with any
@@ -68,6 +69,7 @@ from app.routers.projects.core import router as _core_router
 from app.routers.projects.meeting_recordings import router as _meeting_recordings_router
 from app.routers.projects.procurement import router as _procurement_router
 from app.routers.projects.procurement_reviews import router as _procurement_reviews_router
+from app.routers.projects.procurement_review_packets import router as _procurement_review_packets_router
 
 router = APIRouter(tags=["projects"])
 
@@ -75,3 +77,4 @@ router.include_router(_core_router)
 router.include_router(_meeting_recordings_router)
 router.include_router(_procurement_router)
 router.include_router(_procurement_reviews_router)
+router.include_router(_procurement_review_packets_router)

@@ -427,6 +427,26 @@ Rules:
 - do not widen this helper into a generic fixture loader or long-lived demo environment manager
 - bypass existing project-scoped provenance or audit behavior
 
+## 9.2 Original review packet re-download rule
+
+The original packet is immutable review evidence, not a request to rebuild or resume work.
+
+Rules:
+- expose `GET /projects/{project_id}/procurement/reviews/{packet_sha256}/packet`
+- require the same current session-bound admin or stable v2 assignee policy used for reviewed-package access; legacy v1 remains admin-only
+- resolve tenant and project scope, load the review record, and authorize before reading packet bytes
+- use the configured `ProcurementReviewStore.read_packet()` path, then independently verify packet membership, hashes, package semantics, recommendation, and record binding
+- return exact stored bytes with `no-store`, `nosniff`, safe binding headers, and `operational_approval=false`
+- keep receipt, rationale, attestation body/hash, stable target identity, token, session ID, IP, and User-Agent out of the response and audit detail
+- make missing, corrupt, drifted, or backend-failed evidence fail closed without rewriting it
+- bind browser download to the current review projection; verify response headers, byte length, and SHA-256 before creating a download
+- revoke the packet object URL and remove its fallback link when auth, tenant, user, or project context changes
+
+Do not:
+- regenerate the packet
+- reassign or complete the review
+- grant approval, bid, legal, contractual, provider, training, deployment, or service-resume authority
+
 ---
 
 ## 10. Anti-patterns

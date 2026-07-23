@@ -47,7 +47,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 품질 학습 상태 무결성 | feedback·eval evidence·runtime prompt override를 tenant별 local/S3 state에 결속하고 손상·중복 JSON key·owned schema drift를 원본 보존 상태로 fail closed 처리. Override mutation은 conditional create/CAS, payload-bound save receipt와 stable incarnation으로 refresh 경쟁 중 applied count와 불확실 commit을 조정 |
 | 품질 실험·요청 패턴 상태 무결성 | A/B prompt experiment와 freeform·sketch request pattern을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 빈 상태로 축소하지 않는다. Variant·hint·experiment identity를 한 CAS assignment로 결속하고 result도 같은 incarnation에만 기록하며, resumable winner claim과 snapshot-bound clear로 worker 경쟁을 조정 |
 | 공개 공유 상태 무결성 | 외부 공개 링크의 생성·조회·접근 횟수·취소 lifecycle을 tenant별 local/S3 state에 결속하고 손상·identity drift를 원본 보존 상태로 fail closed 처리 |
-| 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, 1회 완료 receipt, 검증된 reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
+| 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, assignee/admin의 검증된 원본 packet 재다운로드, 1회 완료 receipt, reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
@@ -88,7 +88,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 284): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 285): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -117,7 +117,7 @@ python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
 python3 scripts/count_readme_metrics.py --field service_files     # → 45
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 284
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 285
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -177,10 +177,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **284개**입니다.
+FastAPI 라우트는 **285개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 284
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 285
 ```
 
 대표 도메인:
@@ -195,7 +195,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 284
 | Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/pilot-package/verify`, `/report-workflows/learning/correction-artifacts/export` |
-| Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
+| Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 | DocumentOps | `/api/agent/document-ops/trajectories`, `/api/agent/document-ops/trajectories/governance/overview`, `/api/agent/document-ops/trajectories/governance-artifacts/inventory` |
 
 UI에서 내려받은 품질 교정 검토 패키지를 local review pack으로 가져옵니다.
@@ -282,10 +282,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,652개**, **261개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,656개**, **261개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3652
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3656
 python3 scripts/count_readme_metrics.py --field test_files      # → 261
 ```
 
@@ -391,4 +391,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 284 · 테스트 3,652 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 285 · 테스트 3,656 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

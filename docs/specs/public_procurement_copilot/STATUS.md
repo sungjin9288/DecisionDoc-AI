@@ -12033,3 +12033,15 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - the first full non-live run found three coupled count/UI-marker/800-line contract drifts; after extracting access-aware query logic and resynchronizing docs/contracts, the final gate passed: 4,444 passed, 2 skipped, 4 deselected
   - Ruff E/F/W, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
   - paid providers, G2B live API, AWS runtime, Stripe, Statuspage, deployment, service resume, dataset upload, training execution, model promotion, bid submission, legal approval, and contractual commitment were not executed
+
+- H122 verified original review packet re-download
+  - added `GET /projects/{project_id}/procurement/reviews/{packet_sha256}/packet` for the current session-bound tenant admin or stable v2 assignee; legacy v1 remains admin-only
+  - access is decided before `read_packet()`, then the persisted packet SHA-256, receipt and record binding, package semantics, recommendation, and false operational-authority boundary are independently revalidated
+  - the response returns exact immutable ZIP bytes with `no-store`, `nosniff`, safe package/status/identity headers, and no receipt, rationale, attestation, stable target identity, session, or network metadata
+  - the browser checks the current review projection, response headers, byte length, and SHA-256 before download; auth, tenant, user, project change, or detail exit revokes the scoped object URL and removes the fallback link
+  - completed history and inbox controls use the same admin-or-assignee predicate, and missing, corrupt, or drifted evidence fails closed without rewriting source bytes
+  - Luna review identified one retained fallback URL P1 and two header/UI authorization P2 findings; all were corrected with context-bound URL cleanup, full safe-header/content verification, and completed-row access gating
+  - post-review focused API/audit/infrastructure regression passed: 286 tests; focused Chromium passed: 3 tests
+  - full Chromium passed: 88 tests, 1 skipped; full non-live regression passed: 4,448 tests, 2 skipped, 4 deselected
+  - Ruff E/F/W, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
+  - paid providers, G2B live API, AWS runtime, Stripe, Statuspage, deployment, service resume, dataset upload, training execution, model promotion, bid submission, legal approval, and contractual commitment were not executed

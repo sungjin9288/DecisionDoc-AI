@@ -114,6 +114,38 @@ def require_reviewed_package_access(
     access: ProcurementReviewAccess,
 ) -> None:
     """Authorize package access before any artifact read or verification."""
+    _require_review_artifact_access(
+        record,
+        access,
+        denial_message=(
+            "지정된 검토 담당자 또는 관리자만 완료 패키지를 "
+            "내려받을 수 있습니다."
+        ),
+    )
+
+
+def require_review_packet_access(
+    record: ProcurementReviewRecord,
+    access: ProcurementReviewAccess,
+) -> None:
+    """Authorize the original packet before its immutable ZIP is read."""
+    _require_review_artifact_access(
+        record,
+        access,
+        denial_message=(
+            "지정된 검토 담당자 또는 관리자만 원본 패킷을 "
+            "내려받을 수 있습니다."
+        ),
+    )
+
+
+def _require_review_artifact_access(
+    record: ProcurementReviewRecord,
+    access: ProcurementReviewAccess,
+    *,
+    denial_message: str,
+) -> None:
+    """Share the admin-or-stable-assignee policy across immutable artifacts."""
     if access.is_admin:
         return
     assignment = record.reviewer_assignment
@@ -123,10 +155,7 @@ def require_reviewed_package_access(
         and assignment["user_id"] == access.user_id
     ):
         return
-    raise HTTPException(
-        status_code=403,
-        detail="지정된 검토 담당자 또는 관리자만 완료 패키지를 내려받을 수 있습니다.",
-    )
+    raise HTTPException(status_code=403, detail=denial_message)
 
 
 def review_summary(

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -16,6 +15,10 @@ from app.dependencies import (
 from app.routers.projects.procurement import (
     _apply_procurement_observability,
     _ensure_procurement_copilot_enabled,
+)
+from app.routers.projects.procurement_review_shared import (
+    ensure_project_exists,
+    require_packet_sha256,
 )
 from app.schemas import (
     CompleteProjectProcurementReviewRequest,
@@ -35,7 +38,6 @@ from app.services.procurement_review_access import (
 
 
 router = APIRouter()
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _canonical_json_bytes(value: dict) -> bytes:
@@ -71,24 +73,6 @@ def _reviewed_package_response(
             "X-DecisionDoc-Operational-Approval": "false",
         },
     )
-
-
-def _require_packet_sha256(packet_sha256: str) -> str:
-    if not _SHA256_PATTERN.fullmatch(packet_sha256):
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "invalid_procurement_review_packet_sha256",
-                "message": "검토 패킷 SHA256 형식이 올바르지 않습니다.",
-            },
-        )
-    return packet_sha256
-
-
-def _ensure_project_exists(request: Request, *, project_id: str, tenant_id: str) -> None:
-    project = request.app.state.project_store.get(project_id, tenant_id=tenant_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
 
 def _resolve_reviewer_assignment(
@@ -229,7 +213,7 @@ def export_project_procurement_review_packet_endpoint(
     tenant_id = get_tenant_id(request)
     access = get_procurement_review_access(request)
     request.state.procurement_review_access_scope = access.scope
-    _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
+    ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
     if record is None or record.opportunity is None or record.recommendation is None:
@@ -328,7 +312,7 @@ def list_project_procurement_reviews_endpoint(project_id: str, request: Request)
     tenant_id = get_tenant_id(request)
     access = get_procurement_review_access(request)
     request.state.procurement_review_access_scope = access.scope
-    _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
+    ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     review_store = request.app.state.procurement_review_store
     has_records = (
@@ -392,7 +376,7 @@ def complete_project_procurement_review_endpoint(
     )
 
     _ensure_procurement_copilot_enabled(request)
-    packet_sha256 = _require_packet_sha256(packet_sha256)
+    packet_sha256 = require_packet_sha256(packet_sha256)
     _apply_procurement_observability(
         request,
         action="review_complete",
@@ -400,7 +384,7 @@ def complete_project_procurement_review_endpoint(
         packet_sha256=packet_sha256,
     )
     tenant_id = get_tenant_id(request)
-    _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
+    ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     review_store = request.app.state.procurement_review_store
     review_record = review_store.get(
@@ -631,7 +615,7 @@ def download_project_procurement_reviewed_package_endpoint(
     )
 
     _ensure_procurement_copilot_enabled(request)
-    packet_sha256 = _require_packet_sha256(packet_sha256)
+    packet_sha256 = require_packet_sha256(packet_sha256)
     _apply_procurement_observability(
         request,
         action="reviewed_package_download",
@@ -641,7 +625,7 @@ def download_project_procurement_reviewed_package_endpoint(
     tenant_id = get_tenant_id(request)
     access = get_procurement_review_access(request)
     request.state.procurement_review_access_scope = access.scope
-    _ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
+    ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
     review_store = request.app.state.procurement_review_store
     review_record = review_store.get(

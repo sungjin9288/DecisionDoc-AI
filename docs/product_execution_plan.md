@@ -270,4 +270,6 @@ H120 adds the project procurement counterpart: packet preparation resolves an ac
 
 H121 applies the same session boundary to assignment and read access. It preserves the v1/v2 storage contracts while making the HTTP projection and browser state explicitly role-scoped.
 
+H122 completes the evidence retrieval loop with a verified original-packet re-download. The route authorizes before reading, revalidates the immutable bytes and record binding, returns only safe evidence headers, and keeps browser downloads bound to the current review projection and auth context. It adds no reassignment, review completion, approval, provider, training, deployment, or service-resume authority.
+
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.

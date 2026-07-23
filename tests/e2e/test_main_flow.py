@@ -245,6 +245,9 @@ def test_procurement_review_package_actions_discard_late_identity_bound_blobs(pa
           _triggerBrowserDownload = () => { window.__h121PackageDownloads += 1; };
           window.fetch = (url, options) => {
             const path = String(url);
+            if (path.endsWith('/packet')) {
+              return new Promise(resolve => { window.__h122ResolvePacketDownload = resolve; });
+            }
             if (path.endsWith('/reviewed-package')) {
               return new Promise(resolve => { window.__h121ResolveDownload = resolve; });
             }
@@ -257,6 +260,8 @@ def test_procurement_review_package_actions_discard_late_identity_bound_blobs(pa
           host.id = 'h121-late-package-actions';
           host.innerHTML = renderProjectProcurementReviewWorkspace(projectId, [{
             packet_sha256: packetSha256,
+            packet_size_bytes: 16,
+            package_id: 'late-package',
             assigned_reviewer: _currentUser.username,
             assigned_to_current_user: true,
             access_scope: 'assigned',
@@ -268,6 +273,41 @@ def test_procurement_review_package_actions_discard_late_identity_bound_blobs(pa
         }""",
         {"projectId": project_id, "packetSha256": packet_sha256},
     )
+
+    page.evaluate(
+        """({ projectId, packetSha256 }) => {
+          const button = document.querySelector(
+            `#h121-late-package-actions [data-project-detail-action="procurement-review-packet-download"][data-packet-sha256="${packetSha256}"]`,
+          );
+          window.__h122PacketDownloadPromise =
+            downloadProjectProcurementReviewPacketOriginal(projectId, packetSha256, button);
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+    page.wait_for_function(
+        "() => typeof window.__h122ResolvePacketDownload === 'function'"
+    )
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'packet-replacement-user' };
+          invalidateProcurementReviewViews();
+          window.__h122ResolvePacketDownload({
+            ok: true,
+            headers: new Headers({
+              'Content-Disposition': 'attachment; filename="late-packet.zip"',
+            }),
+            blob: async () => new Blob(['late-packet']),
+          });
+        }"""
+    )
+    page.evaluate("() => window.__h122PacketDownloadPromise")
+    assert page.evaluate("() => window.__h121PackageDownloads") == 0
+    assert page.locator(
+        (
+            '#h121-late-package-actions '
+            '[data-project-detail-action="procurement-review-packet-download"]'
+        )
+    ).is_disabled()
 
     page.evaluate(
         """({ projectId, packetSha256 }) => {
@@ -318,6 +358,174 @@ def test_procurement_review_package_actions_discard_late_identity_bound_blobs(pa
     )
     page.evaluate("() => window.__h121CompletePromise")
     assert page.evaluate("() => window.__h121PackageDownloads") == 0
+
+
+def test_procurement_review_packet_download_verifies_bytes_and_revokes_fallback(page):
+    project_id = "h122-verified-packet-project"
+    packet_content = b"verified-packet"
+    tampered_content = b"tampered-packet"
+    packet_sha256 = hashlib.sha256(packet_content).hexdigest()
+
+    page.evaluate(
+        """({ projectId, packetSha256, packetSize, packetText, tamperedText }) => {
+          _currentUser = {
+            ..._currentUser,
+            sub: 'h122-admin-id',
+            username: 'h122-admin',
+            role: 'admin',
+          };
+          const review = {
+            packet_sha256: packetSha256,
+            packet_size_bytes: packetSize,
+            package_id: 'h122-package',
+            assigned_reviewer: 'h122-member',
+            assigned_to_current_user: false,
+            access_scope: 'tenant',
+            review_status: 'completed',
+            reviewer_identity_bound: true,
+            reviewer_session_bound: true,
+            decision: 'accepted',
+          };
+          const host = document.createElement('div');
+          host.id = 'h122-verified-packet';
+          host.innerHTML = `
+            ${renderProjectProcurementReviewWorkspace(projectId, [review])}
+            <div id="project-procurement-download-fallback" style="display:none;"></div>
+          `;
+          document.body.appendChild(host);
+
+          window.__h122PacketBody = packetText;
+          window.__h122TamperedBody = tamperedText;
+          window.__h122UseTamperedBody = false;
+          window.fetch = async url => {
+            if (!String(url).endsWith('/packet')) {
+              throw new Error(`Unexpected fetch: ${url}`);
+            }
+            const text = window.__h122UseTamperedBody
+              ? window.__h122TamperedBody
+              : window.__h122PacketBody;
+            const bytes = new TextEncoder().encode(text);
+            return {
+              ok: true,
+              headers: new Headers({
+                'Content-Type': 'application/zip',
+                'Content-Disposition': 'attachment; filename="h122-packet.zip"',
+                'X-DecisionDoc-Packet-SHA256': packetSha256,
+                'X-DecisionDoc-Package-Id': 'h122-package',
+                'X-DecisionDoc-Artifact-Count': '12',
+                'X-DecisionDoc-Review-Status': 'completed',
+                'X-DecisionDoc-Reviewer-Identity-Bound': 'true',
+                'X-DecisionDoc-Operational-Approval': 'false',
+              }),
+              arrayBuffer: async () => bytes.buffer.slice(
+                bytes.byteOffset,
+                bytes.byteOffset + bytes.byteLength,
+              ),
+            };
+          };
+        }""",
+        {
+            "projectId": project_id,
+            "packetSha256": packet_sha256,
+            "packetSize": len(packet_content),
+            "packetText": packet_content.decode(),
+            "tamperedText": tampered_content.decode(),
+        },
+    )
+
+    packet_button = page.locator(
+        (
+            '#h122-verified-packet '
+            '[data-project-detail-action="procurement-review-packet-download"]'
+        )
+    )
+    reviewed_package_button = page.locator(
+        (
+            '#h122-verified-packet '
+            '[data-project-detail-action="procurement-reviewed-package-download"]'
+        )
+    )
+    assert packet_button.is_enabled()
+    assert reviewed_package_button.is_enabled()
+
+    page.evaluate(
+        """async ({ projectId, packetSha256 }) => {
+          const button = document.querySelector(
+            '#h122-verified-packet [data-project-detail-action="procurement-review-packet-download"]',
+          );
+          await downloadProjectProcurementReviewPacketOriginal(
+            projectId,
+            packetSha256,
+            button,
+          );
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+    assert page.locator("#project-procurement-download-fallback a").count() == 1
+    assert page.evaluate(
+        """() => _exportDownloadUrls.filter(
+          entry => entry.scope === PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
+        ).length"""
+    ) == 1
+
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, sub: 'replacement-admin-id' };
+          invalidateProcurementReviewViews();
+        }"""
+    )
+    assert page.locator("#project-procurement-download-fallback a").count() == 0
+    assert page.locator("#project-procurement-download-fallback").is_hidden()
+    assert page.evaluate(
+        """() => _exportDownloadUrls.filter(
+          entry => entry.scope === PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
+        ).length"""
+    ) == 0
+
+    page.evaluate(
+        """async ({ projectId, packetSha256 }) => {
+          window.__h122UseTamperedBody = true;
+          const button = document.querySelector(
+            '#h122-verified-packet [data-project-detail-action="procurement-review-packet-download"]',
+          );
+          await downloadProjectProcurementReviewPacketOriginal(
+            projectId,
+            packetSha256,
+            button,
+          );
+        }""",
+        {"projectId": project_id, "packetSha256": packet_sha256},
+    )
+    assert page.locator("#project-procurement-download-fallback a").count() == 0
+    assert page.evaluate(
+        """() => _exportDownloadUrls.filter(
+          entry => entry.scope === PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
+        ).length"""
+    ) == 0
+
+    page.evaluate(
+        """() => {
+          _currentUser = { ..._currentUser, role: 'member' };
+          const host = document.getElementById('h122-verified-packet');
+          host.innerHTML = renderProjectProcurementReviewWorkspace(
+            'h122-verified-packet-project',
+            [{
+              packet_sha256: 'f'.repeat(64),
+              packet_size_bytes: 16,
+              package_id: 'foreign-package',
+              assigned_reviewer: 'foreign-member',
+              assigned_to_current_user: false,
+              access_scope: 'assigned',
+              review_status: 'completed',
+              reviewer_identity_bound: true,
+              reviewer_session_bound: true,
+              decision: 'accepted',
+            }],
+          );
+        }"""
+    )
+    assert packet_button.is_disabled()
+    assert reviewed_package_button.is_disabled()
 
 
 def _governance_inventory_payload(*, attention_required: bool) -> dict:

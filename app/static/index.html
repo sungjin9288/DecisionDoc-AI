@@ -13309,19 +13309,62 @@
   }
 
   const EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000;
+  const PROCUREMENT_REVIEW_DOWNLOAD_SCOPE = 'procurement-review';
   let _exportDownloadUrls = [];
+
+  function _clearDownloadFallback(containerId) {
+    const container = containerId ? $id(containerId) : null;
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.display = 'none';
+  }
 
   function _cleanupExpiredExportDownloadUrls(now = Date.now()) {
     const keep = [];
+    const expiredContainers = new Set();
     for (const entry of _exportDownloadUrls) {
       if (!entry?.url) continue;
       if (entry.expiresAt <= now) {
         try { URL.revokeObjectURL(entry.url); } catch (_) {}
+        if (entry.fallbackContainerId) {
+          expiredContainers.add(entry.fallbackContainerId);
+        }
       } else {
         keep.push(entry);
       }
     }
-    _exportDownloadUrls = keep.slice(-6);
+    const retained = keep.slice(-6);
+    for (const entry of keep.slice(0, -6)) {
+      try { URL.revokeObjectURL(entry.url); } catch (_) {}
+      if (entry.fallbackContainerId) {
+        expiredContainers.add(entry.fallbackContainerId);
+      }
+    }
+    _exportDownloadUrls = retained;
+    for (const containerId of expiredContainers) {
+      if (!retained.some(entry => entry.fallbackContainerId === containerId)) {
+        _clearDownloadFallback(containerId);
+      }
+    }
+  }
+
+  function _clearScopedExportDownloadUrls(scope) {
+    const keep = [];
+    const clearedContainers = new Set();
+    for (const entry of _exportDownloadUrls) {
+      if (entry?.scope !== scope) {
+        keep.push(entry);
+        continue;
+      }
+      try { URL.revokeObjectURL(entry.url); } catch (_) {}
+      if (entry.fallbackContainerId) {
+        clearedContainers.add(entry.fallbackContainerId);
+      }
+    }
+    _exportDownloadUrls = keep;
+    for (const containerId of clearedContainers) {
+      _clearDownloadFallback(containerId);
+    }
   }
 
   function _showExportDownloadFallback(url, filename, label, fallbackContainerId) {
@@ -13346,7 +13389,13 @@
   function _triggerBrowserDownload(blob, filename, label, options = {}) {
     _cleanupExpiredExportDownloadUrls();
     const url = URL.createObjectURL(blob);
-    _exportDownloadUrls.push({ url, expiresAt: Date.now() + EXPORT_DOWNLOAD_URL_TTL_MS });
+    const fallbackContainerId = String(options?.fallbackContainerId || '');
+    _exportDownloadUrls.push({
+      url,
+      expiresAt: Date.now() + EXPORT_DOWNLOAD_URL_TTL_MS,
+      fallbackContainerId,
+      scope: String(options?.scope || ''),
+    });
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
@@ -13356,7 +13405,7 @@
     a.click();
     document.body.removeChild(a);
     window.setTimeout(() => _cleanupExpiredExportDownloadUrls(), EXPORT_DOWNLOAD_URL_TTL_MS + 1000);
-    _showExportDownloadFallback(url, filename, label, options?.fallbackContainerId);
+    _showExportDownloadFallback(url, filename, label, fallbackContainerId);
     return url;
   }
 
@@ -20948,6 +20997,7 @@
       const projectId = String(review?.project_id || '');
       const packetSha256 = String(review?.packet_sha256 || '');
       const completed = review?.review_status === 'completed';
+      const canDownloadPacket = canDownloadProcurementReviewArtifact(review);
       const projectName = project?.name || '삭제되었거나 접근할 수 없는 프로젝트';
       const projectMeta = [project?.client, project?.fiscal_year ? `${project.fiscal_year}년` : '']
         .filter(Boolean)
@@ -20965,6 +21015,7 @@
           </div>
           <div class="procurement-review-inbox-actions">
             <button type="button" data-procurement-review-inbox-open="${escapeHtml(projectId)}" ${project ? '' : 'disabled'}>프로젝트 열기</button>
+            <button type="button" data-procurement-review-inbox-packet="${escapeHtml(packetSha256)}" data-project-id="${escapeHtml(projectId)}" ${procurementReviewPacketDownloadAttributes(review)} ${project && canDownloadPacket ? '' : 'disabled'}>원본 패킷 ZIP</button>
             ${completed ? `<button type="button" data-procurement-review-inbox-download="${escapeHtml(packetSha256)}" data-project-id="${escapeHtml(projectId)}" ${project ? '' : 'disabled'}>완료 패키지</button>` : ''}
           </div>
         </article>`;
@@ -21025,6 +21076,7 @@
     _procurementReviewInboxLoadId += 1;
     _procurementReviewInboxPayload = null;
     _projectDetailLoadId += 1;
+    _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
   }
 
   function wireProcurementReviewInboxActions(section) {
@@ -21037,6 +21089,13 @@
       button.addEventListener('click', () => downloadProjectProcurementReviewedPackage(
         button.dataset.projectId || '',
         button.dataset.procurementReviewInboxDownload || '',
+      ));
+    });
+    section?.querySelectorAll('[data-procurement-review-inbox-packet]').forEach(button => {
+      button.addEventListener('click', () => downloadProjectProcurementReviewPacketOriginal(
+        button.dataset.projectId || '',
+        button.dataset.procurementReviewInboxPacket || '',
+        button,
       ));
     });
   }
@@ -21422,6 +21481,8 @@
         return '이미 완료된 검토 기록은 다시 변경할 수 없습니다.';
       case 'procurement_review_completion_rejected':
         return fallbackMessage || '검토 담당자와 패킷 상태를 확인해주세요.';
+      case 'procurement_review_packet_invalid':
+        return '저장된 원본 검토 패킷의 무결성을 확인할 수 없습니다.';
       case 'procurement_reviewed_package_invalid':
         return '저장된 완료 패키지의 무결성을 확인할 수 없습니다.';
       default:
@@ -23374,6 +23435,26 @@
     }[decision] || '미기록';
   }
 
+  function canDownloadProcurementReviewArtifact(review) {
+    const role = String(_currentUser?.role || '');
+    if (role === 'admin' && review?.access_scope === 'tenant') return true;
+    return (
+      ['admin', 'member'].includes(role)
+      && review?.access_scope === 'assigned'
+      && review?.reviewer_identity_bound === true
+      && review?.assigned_to_current_user === true
+    );
+  }
+
+  function procurementReviewPacketDownloadAttributes(review) {
+    return [
+      `data-procurement-review-package-id="${escapeHtml(String(review?.package_id || ''))}"`,
+      `data-procurement-review-packet-size="${escapeHtml(String(review?.packet_size_bytes || ''))}"`,
+      `data-procurement-review-status="${escapeHtml(String(review?.review_status || ''))}"`,
+      `data-procurement-review-identity-bound="${review?.reviewer_identity_bound === true ? 'true' : 'false'}"`,
+    ].join(' ');
+  }
+
   function renderProjectProcurementReviewWorkspace(projectId, reviews = []) {
     const pendingReviews = reviews.filter(review => review?.review_status === 'pending');
     const completedReviews = reviews.filter(review => review?.review_status === 'completed');
@@ -23382,6 +23463,7 @@
     const pendingHtml = pendingReviews.map(review => {
       const packetSha256 = String(review.packet_sha256 || '');
       const reviewer = String(review?.assigned_reviewer || '');
+      const canDownloadPacket = canDownloadProcurementReviewArtifact(review);
       const canComplete = Boolean(
         review?.reviewer_identity_bound === true
         && review?.assigned_to_current_user === true
@@ -23418,6 +23500,7 @@
               data-packet-sha256="${escapeHtml(packetSha256)}"
               ${canComplete ? '' : 'disabled'}
             >검토 완료 ZIP</button>
+            <button type="button" data-project-detail-action="procurement-review-packet-download" data-project-id="${escapeHtml(projectId)}" data-packet-sha256="${escapeHtml(packetSha256)}" ${procurementReviewPacketDownloadAttributes(review)} ${canDownloadPacket ? '' : 'disabled'}>원본 패킷 ZIP</button>
           </div>
           <p class="procurement-review-export-note">${canComplete ? '현재 로그인한 지정 담당자만 완료할 수 있습니다.' : '지정 담당자 계정으로 로그인하면 완료할 수 있습니다.'} 완료 기록은 원본 packet SHA256에 묶이며 운영 승인이나 입찰 제출 권한을 부여하지 않습니다.</p>
         </section>
@@ -23428,6 +23511,7 @@
       <div class="procurement-review-history" aria-label="완료된 조달 검토 이력">
         ${completedReviews.map(review => {
           const packetSha256 = String(review.packet_sha256 || '');
+          const canDownloadPacket = canDownloadProcurementReviewArtifact(review);
           return `
             <div class="procurement-review-history-row" data-procurement-review-status="completed" data-packet-sha256="${escapeHtml(packetSha256)}">
               <div class="procurement-review-record-header">
@@ -23435,11 +23519,13 @@
                 <strong>${escapeHtml(getProcurementReviewDecisionLabel(review.decision))}</strong>
                 <span class="procurement-review-record-meta">${escapeHtml(review?.completed_by || review?.assigned_reviewer || '')} · ${review?.reviewer_session_bound === true ? '세션 증명됨' : '기존 증빙'} · ${escapeHtml(formatProcurementActivityTime(review.reviewed_at, '완료됨'))} · packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
               </div>
+              <button type="button" data-project-detail-action="procurement-review-packet-download" data-project-id="${escapeHtml(projectId)}" data-packet-sha256="${escapeHtml(packetSha256)}" ${procurementReviewPacketDownloadAttributes(review)} ${canDownloadPacket ? '' : 'disabled'}>원본 패킷 ZIP</button>
               <button
                 type="button"
                 data-project-detail-action="procurement-reviewed-package-download"
                 data-project-id="${escapeHtml(projectId)}"
                 data-packet-sha256="${escapeHtml(packetSha256)}"
+                ${canDownloadPacket ? '' : 'disabled'}
               >완료 패키지 ZIP</button>
             </div>
           `;
@@ -23492,6 +23578,7 @@
       const packetSha256 = res.headers.get('X-DecisionDoc-Packet-SHA256') || '';
       _triggerBrowserDownload(blob, filename, 'Procurement 검토 패킷 ZIP', {
         fallbackContainerId: 'project-procurement-download-fallback',
+        scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
       });
       await loadProjectDetail(projectId);
       setProcurementActionStatus('검토 패킷 ZIP을 검증하고 다운로드했습니다.', 'success');
@@ -23561,6 +23648,7 @@
       const packageSha256 = res.headers.get('X-DecisionDoc-Reviewed-Package-SHA256') || '';
       _triggerBrowserDownload(blob, filename, 'Procurement 검토 완료 패키지 ZIP', {
         fallbackContainerId: 'project-procurement-download-fallback',
+        scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
       });
       await loadProjectDetail(projectId);
       setProcurementActionStatus('검토 결과를 기록하고 완료 패키지를 다운로드했습니다.', 'success');
@@ -23607,6 +23695,7 @@
       );
       _triggerBrowserDownload(blob, filename, 'Procurement 검토 완료 패키지 ZIP', {
         fallbackContainerId: 'project-procurement-download-fallback',
+        scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
       });
       setProcurementActionStatus('완료 패키지를 재검증하고 다운로드했습니다.', 'success');
     } catch (error) {
@@ -23615,7 +23704,132 @@
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
     } finally {
-      if (button) button.disabled = false;
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
+  async function downloadProjectProcurementReviewPacketOriginal(
+    projectId,
+    packetSha256,
+    button = null,
+  ) {
+    const packageId = String(button?.dataset.procurementReviewPackageId || '');
+    const packetSizeBytes = Number(button?.dataset.procurementReviewPacketSize || 0);
+    const reviewStatus = String(button?.dataset.procurementReviewStatus || '');
+    const reviewerIdentityBound = String(
+      button?.dataset.procurementReviewIdentityBound || '',
+    );
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
+    if (button) button.disabled = true;
+    setProcurementActionStatus(
+      '저장된 원본 검토 패킷을 다시 검증하는 중입니다...',
+      'loading',
+    );
+    try {
+      if (
+        !packageId
+        || !Number.isSafeInteger(packetSizeBytes)
+        || packetSizeBytes <= 0
+        || !['pending', 'completed'].includes(reviewStatus)
+        || !['true', 'false'].includes(reviewerIdentityBound)
+      ) {
+        throw Object.assign(
+          new Error('원본 검토 패킷의 화면 결속 정보를 확인할 수 없습니다.'),
+          { code: 'procurement_review_packet_invalid' },
+        );
+      }
+      const res = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/procurement/reviews/${encodeURIComponent(packetSha256)}/packet`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!res.ok) {
+        const err = await resolveApiErrorResponse(res);
+        if (!requestIsCurrent()) return;
+        throw Object.assign(new Error(err.message), { code: err.code });
+      }
+
+      const verifiedPacketSha256 = (
+        res.headers.get('X-DecisionDoc-Packet-SHA256') || ''
+      );
+      const operationalApproval = (
+        res.headers.get('X-DecisionDoc-Operational-Approval') || ''
+      );
+      const responsePackageId = (
+        res.headers.get('X-DecisionDoc-Package-Id') || ''
+      );
+      const artifactCount = Number(
+        res.headers.get('X-DecisionDoc-Artifact-Count') || 0,
+      );
+      const responseReviewStatus = (
+        res.headers.get('X-DecisionDoc-Review-Status') || ''
+      );
+      const responseIdentityBound = (
+        res.headers.get('X-DecisionDoc-Reviewer-Identity-Bound') || ''
+      );
+      const contentType = String(res.headers.get('Content-Type') || '')
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase();
+      if (
+        verifiedPacketSha256 !== packetSha256
+        || responsePackageId !== packageId
+        || !Number.isSafeInteger(artifactCount)
+        || artifactCount <= 0
+        || responseReviewStatus !== reviewStatus
+        || responseIdentityBound !== reviewerIdentityBound
+        || contentType !== 'application/zip'
+        || operationalApproval !== 'false'
+      ) {
+        throw Object.assign(
+          new Error('원본 검토 패킷의 검증 헤더가 요청과 일치하지 않습니다.'),
+          { code: 'procurement_review_packet_invalid' },
+        );
+      }
+
+      const packetBytes = await res.arrayBuffer();
+      if (!requestIsCurrent()) return;
+      if (
+        packetBytes.byteLength !== packetSizeBytes
+        || await sha256Hex(packetBytes) !== packetSha256
+      ) {
+        throw Object.assign(
+          new Error('원본 검토 패킷의 다운로드 내용이 저장 증빙과 일치하지 않습니다.'),
+          { code: 'procurement_review_packet_invalid' },
+        );
+      }
+      if (!requestIsCurrent()) return;
+      const blob = new Blob([packetBytes], { type: 'application/zip' });
+      const fallback = `procurement_review_packet_${packetSha256.slice(0, 12)}.zip`;
+      const filename = _filenameFromContentDisposition(
+        res.headers.get('Content-Disposition'),
+        fallback,
+      );
+      _triggerBrowserDownload(
+        blob,
+        filename,
+        'Procurement 원본 검토 패킷 ZIP',
+        {
+          fallbackContainerId: 'project-procurement-download-fallback',
+          scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
+        },
+      );
+      setProcurementActionStatus(
+        '원본 검토 패킷을 재검증하고 다운로드했습니다.',
+        'success',
+      );
+      showNotification(
+        `원본 검토 패킷 다운로드 시작: ${filename}. 운영 승인은 부여되지 않았습니다.`,
+        'success',
+      );
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      const message = getProcurementErrorMessage(error.code, error.message);
+      setProcurementActionStatus(message, 'error');
+      showNotification(message, 'error');
+    } finally {
+      if (button && requestIsCurrent()) button.disabled = false;
     }
   }
 
@@ -24058,6 +24272,7 @@
     clearLocationProcurementSummaryUrlState();
     dismissProjectProcurementRemediationContext(projectId);
     clearProjectProcurementSummaryReturnContext(projectId);
+    _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
     const detailEl = document.getElementById('project-detail');
     const listEl = document.getElementById('project-list');
     if (detailEl) detailEl.style.display = 'none';
@@ -24070,6 +24285,9 @@
     const docs = p.documents || [];
     const recordings = p.meeting_recordings || [];
     const previousProjectId = _currentProjectDetail?.project?.project_id;
+    if (previousProjectId && previousProjectId !== p.project_id) {
+      _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+    }
     const procurementEnabled = Boolean(options.procurementEnabled);
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
     const decisionCouncilSession = options.decisionCouncilSession || null;
@@ -24355,6 +24573,14 @@
 	      downloadProjectProcurementReviewedPackage(
 	        projectId,
 	        btn.dataset.packetSha256 || '',
+	      );
+	      return;
+	    }
+	    if (action === 'procurement-review-packet-download') {
+	      downloadProjectProcurementReviewPacketOriginal(
+	        projectId,
+	        btn.dataset.packetSha256 || '',
+	        btn,
 	      );
 	      return;
 	    }

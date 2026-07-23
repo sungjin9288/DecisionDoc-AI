@@ -95,6 +95,7 @@ Needs:
 - evaluation coverage for core decision behavior
 - additive rollout behind a feature flag
 - session-bound procurement review assignment, read, and download policy
+- authorized, integrity-verified re-download of the immutable original review packet
 
 ## 5.2 Out of scope for v1
 

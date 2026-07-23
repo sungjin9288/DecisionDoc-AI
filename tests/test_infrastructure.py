@@ -1058,7 +1058,8 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
     assert export_document_fn is not None
     assert "EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000" in content
     assert "export-download-fallback" in content
-    assert "_showExportDownloadFallback(url, filename, label, options?.fallbackContainerId)" in trigger_fn.group("body")
+    assert "const fallbackContainerId = String(options?.fallbackContainerId || '')" in trigger_fn.group("body")
+    assert "_showExportDownloadFallback(url, filename, label, fallbackContainerId)" in trigger_fn.group("body")
     assert "URL.revokeObjectURL(url)" not in export_document_fn.group("body")
     assert "_triggerBrowserDownload(blob, filename, label)" in export_document_fn.group("body")
 
@@ -2127,6 +2128,12 @@ def test_index_html_procurement_review_workspace_contract_is_connected():
         "function renderProjectProcurementReviewWorkspace(projectId, reviews = [])",
         'data-project-detail-action="procurement-review-complete"',
         'data-project-detail-action="procurement-reviewed-package-download"',
+        'data-project-detail-action="procurement-review-packet-download"',
+        'data-procurement-review-inbox-packet=',
+        "procurementReviewPacketDownloadAttributes(review)",
+        "downloadProjectProcurementReviewPacketOriginal(",
+        "await sha256Hex(packetBytes) !== packetSha256",
+        "_clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE)",
         "procurement_review_source_changed",
         "procurementReviews = Array.isArray(reviewsPayload?.reviews)",
         "renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)",
@@ -3668,6 +3675,7 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
     paths = (
         root / "app" / "storage" / "procurement_review_store.py",
         root / "app" / "routers" / "projects" / "procurement_reviews.py",
+        root / "app" / "routers" / "projects" / "procurement_review_packets.py",
         root / "app" / "services" / "generation" / "service_context_injection_mixin.py",
     )
     artifact_methods = {"read_packet", "complete", "read_reviewed_package"}
@@ -3690,7 +3698,7 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
                 incomplete_calls.append(f"{relative_path}:{node.lineno}:{method_name}")
 
     assert discovered == {
-        "read_packet": 6,
+        "read_packet": 7,
         "complete": 1,
         "read_reviewed_package": 4,
     }

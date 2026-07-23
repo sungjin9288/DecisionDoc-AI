@@ -154,6 +154,13 @@ def _prepare_packet(
     )
 
 
+def _original_packet_path(project_id: str, packet_sha256: str) -> str:
+    return (
+        f"/projects/{project_id}/procurement/reviews/"
+        f"{packet_sha256}/packet"
+    )
+
+
 def test_packet_preparation_requires_bound_session_and_authorized_assignment(
     client: TestClient,
 ) -> None:
@@ -228,6 +235,7 @@ def test_review_read_routes_reject_non_session_reviewer_credentials(
     paths = (
         "/procurement/reviews",
         f"/projects/{project_id}/procurement/reviews",
+        _original_packet_path(project_id, packet_sha256),
         (
             f"/projects/{project_id}/procurement/reviews/"
             f"{packet_sha256}/reviewed-package"
@@ -345,6 +353,168 @@ def test_reviewed_package_read_is_assignee_or_admin_only_before_artifact_access(
         headers=admin_headers,
     ).status_code == 200
     assert artifact_reads == 2
+
+
+def test_original_packet_download_reverifies_exact_bytes_after_access_check(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    admin_headers = _login(client, "h122-admin", role="admin")
+    member_headers = _create_user(client, admin_headers, "h122-member")
+    other_headers = _create_user(client, admin_headers, "h122-other")
+    project_id = _ready_project(
+        client,
+        admin_headers,
+        name="Original packet re-download",
+    )
+    prepared = _prepare_packet(
+        client,
+        project_id,
+        admin_headers,
+        "h122-member",
+    )
+    assert prepared.status_code == 200
+    packet_sha256 = prepared.headers["x-decisiondoc-packet-sha256"]
+    path = _original_packet_path(project_id, packet_sha256)
+
+    store = client.app.state.procurement_review_store
+    original_read = store.read_packet
+    artifact_reads = 0
+
+    def observe_read(*args, **kwargs):
+        nonlocal artifact_reads
+        artifact_reads += 1
+        return original_read(*args, **kwargs)
+
+    monkeypatch.setattr(store, "read_packet", observe_read)
+
+    foreign = client.get(path, headers=other_headers)
+    assert foreign.status_code == 403
+    assert artifact_reads == 0
+
+    pending = client.get(path, headers=member_headers)
+    assert pending.status_code == 200
+    assert pending.content == prepared.content
+    assert artifact_reads == 1
+    assert pending.headers["cache-control"] == "no-store"
+    assert pending.headers["x-content-type-options"] == "nosniff"
+    assert pending.headers["x-decisiondoc-packet-sha256"] == packet_sha256
+    assert pending.headers["x-decisiondoc-review-status"] == "pending"
+    assert pending.headers["x-decisiondoc-reviewer-identity-bound"] == "true"
+    assert pending.headers["x-decisiondoc-operational-approval"] == "false"
+    assert int(pending.headers["x-decisiondoc-artifact-count"]) > 0
+
+    admin_copy = client.get(path, headers=admin_headers)
+    assert admin_copy.status_code == 200
+    assert admin_copy.content == prepared.content
+    assert artifact_reads == 2
+
+    monkeypatch.setattr(store, "read_packet", original_read)
+    completed = client.post(
+        (
+            f"/projects/{project_id}/procurement/reviews/"
+            f"{packet_sha256}/complete"
+        ),
+        json={
+            "decision": "accepted",
+            "rationale": "Original packet evidence verified.",
+        },
+        headers=member_headers,
+    )
+    assert completed.status_code == 200
+
+    completed_source = client.get(path, headers=member_headers)
+    assert completed_source.status_code == 200
+    assert completed_source.content == prepared.content
+    assert completed_source.headers["x-decisiondoc-review-status"] == "completed"
+
+    def reject_record_drift(*args, **kwargs):
+        raise ValueError("procurement review record changed before packet read")
+
+    monkeypatch.setattr(store, "read_packet", reject_record_drift)
+    drifted = client.get(path, headers=member_headers)
+    assert drifted.status_code == 409
+    assert drifted.json()["detail"]["code"] == "procurement_review_packet_invalid"
+    monkeypatch.setattr(store, "read_packet", original_read)
+
+    audit = AuditStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+    ).find_latest_entry(
+        actions=("procurement.review_packet_download",),
+        result="success",
+    )
+    assert audit is not None
+    expected_detail = {
+        "review_status": "completed",
+        "procurement_review_packet_sha256": packet_sha256,
+        "access_scope": "assigned",
+        "procurement_review_operational_approval": False,
+        "reviewer_identity_bound": True,
+    }
+    assert all(
+        audit["detail"].get(field) == expected
+        for field, expected in expected_detail.items()
+    )
+    serialized = json.dumps(audit, ensure_ascii=False)
+    for private_value in (
+        "reviewer_assignment",
+        "reviewer_attestation",
+        "rationale",
+        "receipt",
+        "Original packet evidence verified.",
+    ):
+        assert private_value not in serialized
+    assert audit["session_id"] == ""
+    assert audit["ip_address"] == ""
+    assert audit["user_agent"] == ""
+
+
+def test_original_packet_download_fails_closed_on_persisted_corruption(
+    client: TestClient,
+) -> None:
+    admin_headers = _login(client, "h122-corrupt-admin", role="admin")
+    project_id = _ready_project(
+        client,
+        admin_headers,
+        name="Corrupt original packet",
+    )
+    prepared = _prepare_packet(
+        client,
+        project_id,
+        admin_headers,
+        "h122-corrupt-admin",
+    )
+    assert prepared.status_code == 200
+    packet_sha256 = prepared.headers["x-decisiondoc-packet-sha256"]
+    packet_path = (
+        Path(client.app.state.data_dir)
+        / "tenants"
+        / "system"
+        / "procurement_reviews"
+        / project_id
+        / packet_sha256
+        / "packet.zip"
+    )
+    tampered = b"x" * len(prepared.content)
+    packet_path.write_bytes(tampered)
+
+    probe_client = TestClient(client.app, raise_server_exceptions=False)
+    response = probe_client.get(
+        _original_packet_path(project_id, packet_sha256),
+        headers=admin_headers,
+    )
+    assert response.status_code == 500
+    assert packet_path.read_bytes() == tampered
+
+    packet_path.write_bytes(prepared.content)
+    packet_path.unlink()
+    missing = probe_client.get(
+        _original_packet_path(project_id, packet_sha256),
+        headers=admin_headers,
+    )
+    assert missing.status_code == 500
+    assert not packet_path.exists()
 
 
 def test_member_inbox_filters_foreign_record_before_artifact_validation(
