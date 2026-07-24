@@ -364,6 +364,7 @@ async def generate_stream(
                     procurement_review_operational_approval=metadata.get(
                         "procurement_review_operational_approval", False
                     ),
+                    decision_evidence_refs=metadata.get("decision_evidence_refs", []),
                     docs=result["docs"],
                 )
                 yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
@@ -396,6 +397,9 @@ async def generate_stream(
                             ),
                             source_procurement_review_operational_approval=metadata.get(
                                 "procurement_review_operational_approval"
+                            ),
+                            source_evidence_refs=metadata.get(
+                                "decision_evidence_refs", []
                             ),
                         )
                     except Exception:

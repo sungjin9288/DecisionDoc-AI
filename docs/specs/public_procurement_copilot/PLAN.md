@@ -223,6 +223,41 @@ Expose the feature through minimal additive surfaces and finish operational hard
 
 ---
 
+## Post-milestone follow-up — Decision Evidence Map
+
+### Goal
+Make the existing decision lineage inspectable without creating a second source
+of truth or expanding operational authority.
+
+### Tasks
+- add a pure, deterministic projection service and strict response contract
+- add a tenant- and session-authorized project GET route
+- project procurement, Council, document, review, approval, report workflow,
+  and knowledge metadata through safe allowlists
+- persist exact canonical requirement references through generation and report
+  workflow promotion
+- render a fixed-column SVG, accessible table, filters, details, coverage,
+  Proposal Blueprint, and diagnostics in project detail
+- document read-only, non-atomic, no-export, no-provider, and no-submission
+  boundaries
+
+### Acceptance criteria
+- exact canonical references can produce explicit reference coverage
+- legacy or fuzzy text cannot be promoted to proof
+- project and review access remains tenant- and current-session-bound
+- private review evidence is not returned
+- projection fingerprints and ordering are deterministic
+- the UI exposes no mutation or execution control
+- existing report/PPTX paths remain reusable and unchanged
+
+### Validation
+- run focused service, API, static UI, and Playwright tests
+- run project, review, approval, Council, report workflow, and PPTX regression
+  tests
+- run the full no-cost suite before closeout
+
+---
+
 ## Milestone boundaries
 
 ### Explicit non-goals during implementation

@@ -760,5 +760,6 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         procurement_review_operational_approval=metadata.get(
             "procurement_review_operational_approval", False
         ),
+        decision_evidence_refs=metadata.get("decision_evidence_refs", []),
         docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )

@@ -1301,6 +1301,324 @@
     .decision-council-binding-alert strong {
       color: #7f1d1d;
     }
+    .decision-evidence-map {
+      margin: 18px 0;
+      padding: 18px 0;
+      border-top: 1px solid var(--border, #e5e7eb);
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .decision-evidence-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .decision-evidence-head h4 {
+      margin: 0;
+      color: var(--text, #111827);
+      font-size: 1rem;
+      font-weight: 800;
+    }
+    .decision-evidence-head p {
+      max-width: 720px;
+      margin: 5px 0 0;
+      color: var(--muted, #6b7280);
+      font-size: 0.8rem;
+      line-height: 1.55;
+    }
+    .decision-evidence-readonly {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid #9ca3af;
+      border-radius: 4px;
+      color: #374151;
+      background: #f9fafb;
+      font-size: 0.72rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .decision-evidence-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 14px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface, #fff);
+    }
+    .decision-evidence-metric {
+      min-width: 0;
+      padding: 11px 12px;
+      border-right: 1px solid var(--border, #e5e7eb);
+    }
+    .decision-evidence-metric:last-child { border-right: 0; }
+    .decision-evidence-metric span {
+      display: block;
+      color: var(--muted, #6b7280);
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .decision-evidence-metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--text, #111827);
+      font-size: 1rem;
+      overflow-wrap: anywhere;
+    }
+    .decision-evidence-toolbar {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) minmax(150px, 220px);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .decision-evidence-toolbar label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted, #6b7280);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .decision-evidence-toolbar input,
+    .decision-evidence-toolbar select {
+      width: 100%;
+      min-height: 38px;
+      box-sizing: border-box;
+      border: 1px solid var(--border, #d1d5db);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: var(--text, #111827);
+      padding: 7px 9px;
+      font: inherit;
+    }
+    .decision-evidence-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+      gap: 14px;
+      align-items: stretch;
+    }
+    .decision-evidence-canvas {
+      min-width: 0;
+      max-height: 620px;
+      overflow: auto;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+      background:
+        linear-gradient(#f8fafc 1px, transparent 1px),
+        linear-gradient(90deg, #f8fafc 1px, transparent 1px),
+        var(--surface, #fff);
+      background-size: 24px 24px;
+    }
+    .decision-evidence-canvas svg {
+      display: block;
+      min-width: 980px;
+      width: 100%;
+    }
+    .decision-evidence-edge {
+      fill: none;
+      stroke: #94a3b8;
+      stroke-width: 1.25;
+      opacity: 0.56;
+      vector-effect: non-scaling-stroke;
+    }
+    .decision-evidence-node {
+      cursor: pointer;
+      outline: none;
+    }
+    .decision-evidence-node rect {
+      fill: #fff;
+      stroke: #64748b;
+      stroke-width: 1.5;
+      transition: stroke-width 120ms ease, filter 120ms ease;
+    }
+    .decision-evidence-node[data-node-type="source"] rect,
+    .decision-evidence-node[data-node-type="document"] rect { stroke: #0284c7; }
+    .decision-evidence-node[data-node-type="claim"] rect,
+    .decision-evidence-node[data-node-type="recommendation"] rect { stroke: #0f766e; }
+    .decision-evidence-node[data-node-type="requirement"] rect,
+    .decision-evidence-node[data-node-type="risk"] rect { stroke: #b45309; }
+    .decision-evidence-node[data-node-type="alternative"] rect,
+    .decision-evidence-node[data-node-type="review"] rect { stroke: #7c3aed; }
+    .decision-evidence-node[data-node-type="approval"] rect { stroke: #15803d; }
+    .decision-evidence-node[data-node-type="export"] rect { stroke: #475569; }
+    .decision-evidence-node:hover rect,
+    .decision-evidence-node:focus-visible rect,
+    .decision-evidence-node.selected rect {
+      stroke-width: 3;
+      filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.14));
+    }
+    .decision-evidence-node text {
+      fill: var(--text, #111827);
+      pointer-events: none;
+      letter-spacing: 0;
+    }
+    .decision-evidence-node .node-type {
+      fill: #64748b;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .decision-evidence-node .node-label {
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .decision-evidence-detail {
+      min-height: 300px;
+      padding: 14px;
+      border-left: 3px solid #0f766e;
+      background: #f8fafc;
+      color: var(--text, #111827);
+    }
+    .decision-evidence-detail h5 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+    }
+    .decision-evidence-detail p {
+      margin: 0 0 10px;
+      color: var(--muted, #4b5563);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .decision-evidence-detail dl {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 7px 10px;
+      margin: 0;
+      font-size: 0.75rem;
+    }
+    .decision-evidence-detail dt {
+      color: var(--muted, #6b7280);
+      font-weight: 700;
+    }
+    .decision-evidence-detail dd {
+      min-width: 0;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .decision-evidence-section {
+      margin-top: 16px;
+    }
+    .decision-evidence-section h5 {
+      margin: 0 0 8px;
+      color: var(--text, #111827);
+      font-size: 0.84rem;
+    }
+    .decision-evidence-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+    }
+    .decision-evidence-table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+      background: var(--surface, #fff);
+      font-size: 0.75rem;
+    }
+    .decision-evidence-table th,
+    .decision-evidence-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+      text-align: left;
+      vertical-align: top;
+    }
+    .decision-evidence-table tbody tr:last-child td { border-bottom: 0; }
+    .decision-evidence-table th {
+      color: var(--muted, #4b5563);
+      background: #f8fafc;
+      font-weight: 800;
+    }
+    .decision-evidence-table button {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #0369a1;
+      font: inherit;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+    }
+    .decision-evidence-table button:focus-visible {
+      outline: 2px solid #0284c7;
+      outline-offset: 3px;
+    }
+    .decision-evidence-status {
+      display: inline-block;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 0.68rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .decision-evidence-status.missing,
+    .decision-evidence-status.blocked,
+    .decision-evidence-status.rejected,
+    .decision-evidence-status.conflicting { background: #fee2e2; color: #991b1b; }
+    .decision-evidence-status.stale,
+    .decision-evidence-status.pending,
+    .decision-evidence-status.unverifiable { background: #fef3c7; color: #92400e; }
+    .decision-evidence-status.current,
+    .decision-evidence-status.approved,
+    .decision-evidence-status.available,
+    .decision-evidence-status.explicit { background: #dcfce7; color: #166534; }
+    .decision-evidence-diagnostics {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .decision-evidence-diagnostics li {
+      padding: 9px 10px;
+      border-left: 3px solid #f59e0b;
+      background: #fffbeb;
+      color: #78350f;
+      font-size: 0.75rem;
+      line-height: 1.5;
+    }
+    .decision-evidence-diagnostics li.error { border-left-color: #dc2626; background: #fef2f2; color: #991b1b; }
+    .decision-evidence-blueprint {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(100px, .55fr));
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      background: #f0f9ff;
+    }
+    .decision-evidence-blueprint h5 {
+      margin: 0 0 5px;
+      color: #0c4a6e;
+      font-size: 0.84rem;
+    }
+    .decision-evidence-blueprint p {
+      margin: 0;
+      color: #075985;
+      font-size: 0.75rem;
+      line-height: 1.5;
+    }
+    .decision-evidence-blueprint-stat span {
+      display: block;
+      color: #0369a1;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .decision-evidence-blueprint-stat strong {
+      display: block;
+      margin-top: 3px;
+      color: #0c4a6e;
+      font-size: 0.95rem;
+    }
+    .decision-evidence-empty {
+      padding: 16px 0;
+      color: var(--muted, #6b7280);
+      font-size: 0.8rem;
+      line-height: 1.6;
+    }
     .procurement-summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2866,6 +3184,16 @@
       .procurement-review-inbox-actions { justify-content: flex-start; }
       .decision-council-form { grid-template-columns: 1fr; }
       .decision-council-actions button { width: 100%; }
+      .decision-evidence-head { align-items: stretch; flex-direction: column; }
+      .decision-evidence-readonly { align-self: flex-start; }
+      .decision-evidence-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .decision-evidence-metric:nth-child(2) { border-right: 0; }
+      .decision-evidence-metric:nth-child(-n + 2) { border-bottom: 1px solid var(--border, #e5e7eb); }
+      .decision-evidence-toolbar { grid-template-columns: 1fr; }
+      .decision-evidence-layout { grid-template-columns: 1fr; }
+      .decision-evidence-detail { min-height: 0; border-left-width: 0; border-top: 3px solid #0f766e; }
+      .decision-evidence-blueprint { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .decision-evidence-blueprint > div:first-child { grid-column: 1 / -1; }
       .procurement-handoff-track { grid-template-columns: 1fr; }
       .procurement-role-grid { grid-template-columns: 1fr; }
       .procurement-role-brief-grid { grid-template-columns: 1fr; }
@@ -7168,6 +7496,13 @@
   let _procurementReviewInboxPayload = null;
   let _procurementReviewInboxLoadId = 0;
   let _projectDetailLoadId = 0;
+  let _decisionEvidenceMapState = {
+    projectId: '',
+    query: '',
+    nodeType: 'all',
+    status: 'all',
+    selectedNodeId: '',
+  };
   let _approvalRequestSource = null;
   let _knowledgePromotionTarget = null;
   let _serverVersionInfo = {
@@ -24190,6 +24525,447 @@
     }
   }
 
+  const DECISION_EVIDENCE_NODE_LABELS = {
+    source: 'Source',
+    claim: 'Claim',
+    requirement: 'Requirement',
+    alternative: 'Alternative',
+    risk: 'Risk',
+    recommendation: 'Recommendation',
+    document: 'Document',
+    review: 'Review',
+    approval: 'Approval',
+    export: 'Export readiness',
+  };
+
+  const DECISION_EVIDENCE_NODE_STAGES = {
+    source: 0,
+    claim: 1,
+    requirement: 1,
+    alternative: 2,
+    risk: 2,
+    recommendation: 2,
+    document: 3,
+    review: 3,
+    approval: 4,
+    export: 4,
+  };
+
+  function getDecisionEvidenceNodeId(node) {
+    return String(node?.node_id || node?.id || '');
+  }
+
+  function getDecisionEvidenceNodeType(node) {
+    return String(node?.node_type || node?.type || 'source');
+  }
+
+  function getDecisionEvidenceNodeLabel(node) {
+    return String(node?.label || node?.title || getDecisionEvidenceNodeId(node) || 'Untitled evidence');
+  }
+
+  function normalizeDecisionEvidenceState(map) {
+    const projectId = String(map?.project_id || '');
+    if (_decisionEvidenceMapState.projectId !== projectId) {
+      _decisionEvidenceMapState = {
+        projectId,
+        query: '',
+        nodeType: 'all',
+        status: 'all',
+        selectedNodeId: '',
+      };
+    }
+    return _decisionEvidenceMapState;
+  }
+
+  function getFilteredDecisionEvidenceNodes(map) {
+    const state = normalizeDecisionEvidenceState(map);
+    const query = state.query.trim().toLocaleLowerCase();
+    return (Array.isArray(map?.nodes) ? map.nodes : []).filter(node => {
+      const nodeType = getDecisionEvidenceNodeType(node);
+      const status = String(node?.status || '');
+      if (state.nodeType !== 'all' && nodeType !== state.nodeType) return false;
+      if (state.status !== 'all' && status !== state.status) return false;
+      if (!query) return true;
+      const searchable = [
+        getDecisionEvidenceNodeLabel(node),
+        node?.summary,
+        nodeType,
+        status,
+      ].filter(Boolean).join(' ').toLocaleLowerCase();
+      return searchable.includes(query);
+    });
+  }
+
+  function truncateDecisionEvidenceLabel(value, maxLength = 22) {
+    const text = String(value || '');
+    return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
+  }
+
+  function buildDecisionEvidenceSvg(map, filteredNodes) {
+    const visualNodes = filteredNodes.slice(0, 60);
+    if (!visualNodes.length) {
+      return '<div class="decision-evidence-empty">현재 filter에 맞는 evidence node가 없습니다.</div>';
+    }
+
+    const stageBuckets = Array.from({ length: 5 }, () => []);
+    visualNodes.forEach(node => {
+      const stage = DECISION_EVIDENCE_NODE_STAGES[getDecisionEvidenceNodeType(node)] ?? 0;
+      stageBuckets[stage].push(node);
+    });
+    const positions = {};
+    const columnX = [24, 224, 424, 624, 824];
+    const rowGap = 66;
+    const top = 42;
+    let maxRows = 1;
+    stageBuckets.forEach((nodes, stage) => {
+      maxRows = Math.max(maxRows, nodes.length);
+      nodes.forEach((node, index) => {
+        positions[getDecisionEvidenceNodeId(node)] = {
+          x: columnX[stage],
+          y: top + index * rowGap,
+        };
+      });
+    });
+    const height = Math.max(320, top + maxRows * rowGap + 24);
+    const visibleIds = new Set(Object.keys(positions));
+    const edges = (Array.isArray(map?.edges) ? map.edges : []).filter(edge => (
+      visibleIds.has(String(edge?.source_node_id || edge?.source || ''))
+      && visibleIds.has(String(edge?.target_node_id || edge?.target || ''))
+    ));
+    const selectedNodeId = normalizeDecisionEvidenceState(map).selectedNodeId;
+    const edgeSvg = edges.map(edge => {
+      const source = positions[String(edge?.source_node_id || edge?.source || '')];
+      const target = positions[String(edge?.target_node_id || edge?.target || '')];
+      const sourceX = source.x + 156;
+      const sourceY = source.y + 24;
+      const targetX = target.x;
+      const targetY = target.y + 24;
+      const bend = Math.max(30, (targetX - sourceX) / 2);
+      return `<path class="decision-evidence-edge" d="M ${sourceX} ${sourceY} C ${sourceX + bend} ${sourceY}, ${targetX - bend} ${targetY}, ${targetX} ${targetY}"></path>`;
+    }).join('');
+    const nodeSvg = visualNodes.map(node => {
+      const nodeId = getDecisionEvidenceNodeId(node);
+      const nodeType = getDecisionEvidenceNodeType(node);
+      const position = positions[nodeId];
+      const status = String(node?.status || 'unverifiable');
+      const relationCount = Number(node?.relation_count || 0);
+      const selected = nodeId === selectedNodeId ? ' selected' : '';
+      const ariaLabel = `${DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType}, ${getDecisionEvidenceNodeLabel(node)}, ${status}`;
+      return `
+        <g
+          class="decision-evidence-node${selected}"
+          role="button"
+          tabindex="0"
+          aria-label="${escapeHtml(ariaLabel)}"
+          data-decision-evidence-node-id="${escapeHtml(nodeId)}"
+          data-node-type="${escapeHtml(nodeType)}"
+          transform="translate(${position.x} ${position.y})"
+        >
+          <rect width="156" height="48" rx="6"></rect>
+          <text class="node-type" x="10" y="15">${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</text>
+          <text class="node-label" x="10" y="33">${escapeHtml(truncateDecisionEvidenceLabel(getDecisionEvidenceNodeLabel(node)))}</text>
+          ${relationCount ? `<text class="node-type" x="146" y="15" text-anchor="end">${relationCount}</text>` : ''}
+        </g>`;
+    }).join('');
+
+    return `
+      <div class="decision-evidence-canvas">
+        <svg
+          viewBox="0 0 1004 ${height}"
+          height="${height}"
+          role="img"
+          aria-label="Decision evidence relationship map. The table below contains the same filtered nodes."
+        >
+          ${edgeSvg}
+          ${nodeSvg}
+        </svg>
+      </div>`;
+  }
+
+  function getDecisionEvidenceSelectedNode(map, filteredNodes) {
+    const state = normalizeDecisionEvidenceState(map);
+    const selected = filteredNodes.find(node => getDecisionEvidenceNodeId(node) === state.selectedNodeId);
+    if (selected) return selected;
+    const first = filteredNodes[0] || null;
+    state.selectedNodeId = first ? getDecisionEvidenceNodeId(first) : '';
+    return first;
+  }
+
+  function renderDecisionEvidenceDetail(node) {
+    if (!node) {
+      return `
+        <aside class="decision-evidence-detail">
+          <h5>Evidence detail</h5>
+          <p>선택 가능한 evidence node가 없습니다.</p>
+        </aside>`;
+    }
+    const nodeType = getDecisionEvidenceNodeType(node);
+    const diagnostics = Array.isArray(node?.diagnostic_codes) ? node.diagnostic_codes.join(', ') : '';
+    const sourceRef = node?.source_ref || node?.source_id || node?.evidence_ref || '';
+    const evidenceLevel = node?.evidence_level || node?.coverage_status || '';
+    return `
+      <aside class="decision-evidence-detail" aria-live="polite">
+        <h5>${escapeHtml(getDecisionEvidenceNodeLabel(node))}</h5>
+        <p>${escapeHtml(node?.summary || '추가 설명이 기록되지 않았습니다.')}</p>
+        <dl>
+          <dt>Type</dt><dd>${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</dd>
+          <dt>Status</dt><dd><span class="decision-evidence-status ${escapeHtml(String(node?.status || ''))}">${escapeHtml(String(node?.status || 'unverifiable'))}</span></dd>
+          <dt>Evidence</dt><dd>${escapeHtml(String(evidenceLevel || 'unverifiable'))}</dd>
+          <dt>Relations</dt><dd>${escapeHtml(String(node?.relation_count || 0))}</dd>
+          ${sourceRef ? `<dt>Source ref</dt><dd>${escapeHtml(String(sourceRef))}</dd>` : ''}
+          ${node?.updated_at ? `<dt>Updated</dt><dd>${escapeHtml(String(node.updated_at))}</dd>` : ''}
+          ${diagnostics ? `<dt>Diagnostics</dt><dd>${escapeHtml(diagnostics)}</dd>` : ''}
+        </dl>
+      </aside>`;
+  }
+
+  function renderDecisionEvidenceTable(filteredNodes) {
+    if (!filteredNodes.length) {
+      return '<div class="decision-evidence-empty">표시할 evidence row가 없습니다.</div>';
+    }
+    return `
+      <div class="decision-evidence-table-wrap">
+        <table class="decision-evidence-table">
+          <thead>
+            <tr>
+              <th scope="col">Evidence</th>
+              <th scope="col">Type</th>
+              <th scope="col">Status</th>
+              <th scope="col">Evidence level</th>
+              <th scope="col">Relations</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredNodes.map(node => {
+              const nodeType = getDecisionEvidenceNodeType(node);
+              const nodeId = getDecisionEvidenceNodeId(node);
+              const status = String(node?.status || 'unverifiable');
+              return `
+                <tr>
+                  <td>
+                    <button type="button" data-decision-evidence-node-id="${escapeHtml(nodeId)}">
+                      ${escapeHtml(getDecisionEvidenceNodeLabel(node))}
+                    </button>
+                  </td>
+                  <td>${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</td>
+                  <td><span class="decision-evidence-status ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
+                  <td>${escapeHtml(String(node?.evidence_level || node?.coverage_status || 'unverifiable'))}</td>
+                  <td>${escapeHtml(String(node?.relation_count || 0))}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderDecisionEvidenceDiagnostics(map) {
+    const diagnostics = Array.isArray(map?.diagnostics) ? map.diagnostics : [];
+    if (!diagnostics.length) {
+      return '<div class="decision-evidence-empty">현재 projection에서 추가 조치가 필요한 diagnostic은 없습니다.</div>';
+    }
+    return `
+      <ul class="decision-evidence-diagnostics">
+        ${diagnostics.slice(0, 12).map(diagnostic => {
+          const severity = String(diagnostic?.severity || 'warning');
+          const nextAction = diagnostic?.next_action ? ` 다음 조치: ${diagnostic.next_action}` : '';
+          return `
+            <li class="${escapeHtml(severity)}">
+              <strong>${escapeHtml(String(diagnostic?.code || 'evidence_diagnostic'))}</strong>
+              · ${escapeHtml(String(diagnostic?.message || '확인이 필요한 evidence 상태입니다.'))}${escapeHtml(nextAction)}
+            </li>`;
+        }).join('')}
+      </ul>`;
+  }
+
+  function renderProposalBlueprint(map) {
+    const blueprint = map?.proposal_blueprint || {};
+    const slides = Array.isArray(blueprint?.slides) ? blueprint.slides : [];
+    const narrative = Array.isArray(blueprint?.narrative_arc)
+      ? blueprint.narrative_arc.join(' → ')
+      : String(blueprint?.narrative_arc || blueprint?.summary || '연결된 proposal planning evidence가 아직 없습니다.');
+    const plannedSlides = Number(
+      blueprint?.planned_slide_count
+      || blueprint?.slide_count
+      || slides.length,
+    );
+    const referencedSlides = Number(
+      blueprint?.slides_with_evidence_count
+      || blueprint?.referenced_slide_count
+      || slides.filter(slide => (
+        (Array.isArray(slide?.source_refs) && slide.source_refs.length)
+        || (Array.isArray(slide?.reference_refs) && slide.reference_refs.length)
+      )).length
+      || 0,
+    );
+    const unresolved = Number(
+      blueprint?.unresolved_evidence_count
+      || blueprint?.open_question_count
+      || (
+        (Array.isArray(blueprint?.open_questions) ? blueprint.open_questions.length : 0)
+        + slides.reduce(
+          (count, slide) => count + (Array.isArray(slide?.data_needs) ? slide.data_needs.length : 0),
+          0,
+        )
+      )
+      || 0,
+    );
+    return `
+      <div class="decision-evidence-blueprint">
+        <div>
+          <h5>Proposal Blueprint · ${escapeHtml(String(blueprint?.status || 'not_observed'))}</h5>
+          <p>${escapeHtml(narrative)}</p>
+        </div>
+        <div class="decision-evidence-blueprint-stat">
+          <span>Planned slides</span>
+          <strong>${plannedSlides}</strong>
+        </div>
+        <div class="decision-evidence-blueprint-stat">
+          <span>Referenced slides</span>
+          <strong>${referencedSlides}</strong>
+        </div>
+        <div class="decision-evidence-blueprint-stat">
+          <span>Unresolved</span>
+          <strong>${unresolved}</strong>
+        </div>
+      </div>`;
+  }
+
+  function getDecisionEvidenceMissingCount(map) {
+    const coverage = map?.coverage || {};
+    return Number(
+      coverage?.status_counts?.missing
+      || coverage?.missing_count
+      || coverage?.missing
+      || 0,
+    );
+  }
+
+  function renderDecisionEvidenceMapContent(map) {
+    const state = normalizeDecisionEvidenceState(map);
+    const nodes = Array.isArray(map?.nodes) ? map.nodes : [];
+    const edges = Array.isArray(map?.edges) ? map.edges : [];
+    const filteredNodes = getFilteredDecisionEvidenceNodes(map);
+    const selectedNode = getDecisionEvidenceSelectedNode(map, filteredNodes);
+    const nodeTypes = [...new Set(nodes.map(getDecisionEvidenceNodeType))].sort();
+    const statuses = [...new Set(nodes.map(node => String(node?.status || 'unverifiable')))].sort();
+    const diagnosticCount = Array.isArray(map?.diagnostics) ? map.diagnostics.length : 0;
+    const fingerprint = String(map?.projection_fingerprint || map?.source_fingerprint || '');
+
+    return `
+      <div class="decision-evidence-head">
+        <div>
+          <h4>Decision Evidence Map</h4>
+          <p>조달 판단, source, review, 문서, approval, export readiness를 현재 저장 상태에서 읽기 전용으로 투영합니다. 기존 문서의 추정 일치는 검증된 coverage로 승격하지 않습니다.</p>
+        </div>
+        <span class="decision-evidence-readonly">READ ONLY · NON-ATOMIC SNAPSHOT</span>
+      </div>
+      <div class="decision-evidence-metrics" aria-label="Decision evidence summary">
+        <div class="decision-evidence-metric"><span>Nodes</span><strong>${nodes.length}</strong></div>
+        <div class="decision-evidence-metric"><span>Edges</span><strong>${edges.length}</strong></div>
+        <div class="decision-evidence-metric"><span>Missing</span><strong>${getDecisionEvidenceMissingCount(map)}</strong></div>
+        <div class="decision-evidence-metric"><span>Diagnostics</span><strong>${diagnosticCount}</strong></div>
+      </div>
+      <div class="decision-evidence-toolbar">
+        <label>
+          Search evidence
+          <input id="decision-evidence-search" type="search" value="${escapeHtml(state.query)}" placeholder="label, summary, status">
+        </label>
+        <label>
+          Node type
+          <select id="decision-evidence-type-filter">
+            <option value="all">All types</option>
+            ${nodeTypes.map(nodeType => `
+              <option value="${escapeHtml(nodeType)}" ${state.nodeType === nodeType ? 'selected' : ''}>
+                ${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}
+              </option>`).join('')}
+          </select>
+        </label>
+        <label>
+          Status
+          <select id="decision-evidence-status-filter">
+            <option value="all">All statuses</option>
+            ${statuses.map(status => `
+              <option value="${escapeHtml(status)}" ${state.status === status ? 'selected' : ''}>
+                ${escapeHtml(status)}
+              </option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <div class="decision-evidence-layout">
+        ${buildDecisionEvidenceSvg(map, filteredNodes)}
+        ${renderDecisionEvidenceDetail(selectedNode)}
+      </div>
+      ${filteredNodes.length > 60 ? `<p class="project-import-help">SVG는 현재 filter의 첫 60개 node를 표시합니다. 아래 표에는 ${filteredNodes.length}개 row가 모두 남아 있습니다.</p>` : ''}
+      <div class="decision-evidence-section">
+        <h5>Accessible evidence table · ${filteredNodes.length} rows</h5>
+        ${renderDecisionEvidenceTable(filteredNodes)}
+      </div>
+      <div class="decision-evidence-section">
+        <h5>Diagnostics</h5>
+        ${renderDecisionEvidenceDiagnostics(map)}
+      </div>
+      <div class="decision-evidence-section">
+        ${renderProposalBlueprint(map)}
+      </div>
+      ${map?.truncated ? '<p class="project-import-help">Backend projection limit로 일부 node 또는 edge가 제외되었습니다.</p>' : ''}
+      ${fingerprint ? `<p class="project-import-help">Projection fingerprint: ${escapeHtml(fingerprint.slice(0, 16))}…</p>` : ''}`;
+  }
+
+  function renderDecisionEvidenceMapPanel(map) {
+    if (!map) return '';
+    return `
+      <section id="decision-evidence-map" class="decision-evidence-map" aria-label="Decision Evidence Map">
+        ${renderDecisionEvidenceMapContent(map)}
+      </section>`;
+  }
+
+  function refreshDecisionEvidenceMapPanel() {
+    const map = _currentProjectDetail?.decisionEvidenceMap;
+    const root = document.getElementById('decision-evidence-map');
+    if (!map || !root) return;
+    root.innerHTML = renderDecisionEvidenceMapContent(map);
+    wireDecisionEvidenceMapActions(root);
+  }
+
+  function selectDecisionEvidenceNode(nodeId) {
+    _decisionEvidenceMapState.selectedNodeId = String(nodeId || '');
+    refreshDecisionEvidenceMapPanel();
+  }
+
+  function wireDecisionEvidenceMapActions(root) {
+    root.querySelector('#decision-evidence-search')?.addEventListener('input', event => {
+      _decisionEvidenceMapState.query = event.target.value || '';
+      refreshDecisionEvidenceMapPanel();
+      const search = document.getElementById('decision-evidence-search');
+      if (search) {
+        search.focus();
+        search.setSelectionRange(search.value.length, search.value.length);
+      }
+    });
+    root.querySelector('#decision-evidence-type-filter')?.addEventListener('change', event => {
+      _decisionEvidenceMapState.nodeType = event.target.value || 'all';
+      _decisionEvidenceMapState.selectedNodeId = '';
+      refreshDecisionEvidenceMapPanel();
+    });
+    root.querySelector('#decision-evidence-status-filter')?.addEventListener('change', event => {
+      _decisionEvidenceMapState.status = event.target.value || 'all';
+      _decisionEvidenceMapState.selectedNodeId = '';
+      refreshDecisionEvidenceMapPanel();
+    });
+    root.querySelectorAll('[data-decision-evidence-node-id]').forEach(element => {
+      const select = () => selectDecisionEvidenceNode(element.dataset.decisionEvidenceNodeId || '');
+      element.addEventListener('click', select);
+      if (element.tagName.toLowerCase() === 'g') {
+        element.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            select();
+          }
+        });
+      }
+    });
+  }
+
   async function loadProjectDetail(projectId) {
     const loadId = ++_projectDetailLoadId;
     const authRevision = _authSessionRevision;
@@ -24212,6 +24988,7 @@
       let procurementDecision = null;
       let procurementReviews = [];
       let decisionCouncilSession = null;
+      let decisionEvidenceMap = null;
       if (isProcurementCopilotEnabled()) {
         const procurementRes = await fetch(`/projects/${projectId}/procurement`, { headers: getAuthHeaders() });
         if (!requestIsCurrent()) return;
@@ -24249,12 +25026,28 @@
             }
           }
         }
+        if (['admin', 'member'].includes(String(_currentUser?.role || ''))) {
+          const evidenceRes = await fetch(
+            `/projects/${encodeURIComponent(projectId)}/decision-evidence-map?bundle_type=proposal_kr`,
+            { headers: getAuthHeaders() },
+          );
+          if (!requestIsCurrent()) return;
+          if (evidenceRes.ok) {
+            decisionEvidenceMap = await evidenceRes.json();
+            if (!requestIsCurrent()) return;
+          } else if (![403, 404].includes(evidenceRes.status)) {
+            const err = await resolveApiErrorResponse(evidenceRes);
+            if (!requestIsCurrent()) return;
+            showNotification('Decision Evidence Map 로드 실패: ' + err.message, 'error');
+          }
+        }
       }
       if (!requestIsCurrent()) return;
       renderProjectDetail(project, procurementDecision, {
         procurementEnabled: isProcurementCopilotEnabled(),
         procurementReviews,
         decisionCouncilSession,
+        decisionEvidenceMap,
       });
       const listEl = document.getElementById('project-list');
       const detailEl = document.getElementById('project-detail');
@@ -24291,6 +25084,7 @@
     const procurementEnabled = Boolean(options.procurementEnabled);
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
     const decisionCouncilSession = options.decisionCouncilSession || null;
+    const decisionEvidenceMap = options.decisionEvidenceMap || null;
     const docsById = Object.fromEntries(docs.map(doc => [doc.doc_id, doc]));
     const defaultProcurementRoleBrief = getProcurementOwnerState(p, procurementDecision, docs).currentOwner;
     _activeProcurementRoleBrief = previousProjectId === p.project_id
@@ -24301,6 +25095,7 @@
       procurementDecision,
       procurementReviews,
       decisionCouncilSession,
+      decisionEvidenceMap,
       procurementEnabled,
       docsById,
     };
@@ -24441,7 +25236,9 @@
         ${renderProcurementOwnerStrip(p, procurementDecision, docs)}
         ${renderProcurementRoleBoard(p, procurementDecision, docs)}
         ${renderProcurementRoleBriefPanel(p, procurementDecision, docs)}
-      </div>` : ''}
+      </div>
+      ${renderDecisionEvidenceMapPanel(decisionEvidenceMap)}
+      ` : ''}
       <h4 style="margin:16px 0 8px;font-weight:700;">📄 문서 목록 (${docs.length}건)</h4>
       ${docs.length === 0 ? `
         <div class="empty-state"><p>문서가 없습니다. 문서 생성 시 이 프로젝트를 선택하면 자동으로 추가됩니다.</p></div>` : `
@@ -24524,6 +25321,8 @@
 	    wireProjectDetailActions(container, p.project_id);
 	    wireMeetingRecordingActions(container, p.project_id);
 	    wireProcurementRoleActions(container);
+	    const decisionEvidenceRoot = container.querySelector('#decision-evidence-map');
+	    if (decisionEvidenceRoot) wireDecisionEvidenceMapActions(decisionEvidenceRoot);
 	  }
 
 	  function runProjectDetailAction(btn, fallbackProjectId) {

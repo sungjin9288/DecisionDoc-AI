@@ -1286,6 +1286,15 @@ def test_final_approved_workflow_promotes_to_project_and_knowledge(tmp_path, mon
     client.post(f"/report-workflows/{workflow_id}/planning/generate")
     client.post(f"/report-workflows/{workflow_id}/planning/approve", json={"username": "pm", "comment": ""})
     slides_payload = client.post(f"/report-workflows/{workflow_id}/slides/generate", json={}).json()
+    requirement_ref = "requirement:decision-1:hard_filter:registration"
+    first_slide = slides_payload["slides"][0]
+    client.put(
+        f"/report-workflows/{workflow_id}/slides/{first_slide['slide_id']}/visual-assets",
+        json={
+            "username": "designer",
+            "reference_refs": [requirement_ref],
+        },
+    )
     for slide in slides_payload["slides"]:
         client.post(
             f"/report-workflows/{workflow_id}/slides/{slide['slide_id']}/approve",
@@ -1320,6 +1329,9 @@ def test_final_approved_workflow_promotes_to_project_and_knowledge(tmp_path, mon
     project_detail = client.get(f"/projects/{project['project_id']}").json()
     assert len(project_detail["documents"]) == 1
     assert project_detail["documents"][0]["source_kind"] == "report_workflow"
+    assert project_detail["documents"][0]["source_evidence_refs"] == [
+        requirement_ref
+    ]
 
     knowledge = client.get(f"/knowledge/{project['project_id']}/documents").json()
     assert knowledge["count"] == 2

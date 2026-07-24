@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar
@@ -27,6 +27,22 @@ _MutationResult = TypeVar("_MutationResult")
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_source_evidence_refs(values: list[str] | None) -> list[str]:
+    refs: set[str] = set()
+    for value in values or []:
+        ref = str(value).strip()
+        if (
+            not ref.startswith("requirement:")
+            or len(ref) > 500
+            or any(ord(char) < 32 for char in ref)
+        ):
+            raise ValueError("Invalid project document evidence reference")
+        refs.add(ref)
+    if len(refs) > 200:
+        raise ValueError("Too many project document evidence references")
+    return sorted(refs)
 
 
 @dataclass
@@ -57,6 +73,7 @@ class ProjectDocument:
     source_procurement_reviewed_at: str | None = None
     source_procurement_review_source_updated_at: str | None = None
     source_procurement_review_operational_approval: bool | None = None
+    source_evidence_refs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -133,6 +150,9 @@ class ProjectStore(ProjectStateMutationMixin):
             ),
             source_procurement_review_operational_approval=d.get(
                 "source_procurement_review_operational_approval"
+            ),
+            source_evidence_refs=_normalize_source_evidence_refs(
+                d.get("source_evidence_refs")
             ),
         )
 
@@ -431,6 +451,7 @@ class ProjectStore(ProjectStateMutationMixin):
         source_procurement_reviewed_at: str | None = None,
         source_procurement_review_source_updated_at: str | None = None,
         source_procurement_review_operational_approval: bool | None = None,
+        source_evidence_refs: list[str] | None = None,
     ) -> ProjectDocument:
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
@@ -464,6 +485,9 @@ class ProjectStore(ProjectStateMutationMixin):
             ),
             source_procurement_review_operational_approval=(
                 source_procurement_review_operational_approval
+            ),
+            source_evidence_refs=_normalize_source_evidence_refs(
+                source_evidence_refs
             ),
         )
 

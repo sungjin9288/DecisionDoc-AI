@@ -143,6 +143,20 @@ from app.schemas.document_ops import (
     DocumentOpsTrajectoryExportRequest,
     DocumentOpsTrajectoryReviewRequest,
 )
+from app.schemas.decision_evidence import (
+    DecisionEvidenceAuthority,
+    DecisionEvidenceCoverageItem,
+    DecisionEvidenceCoverageSummary,
+    DecisionEvidenceDiagnostic,
+    DecisionEvidenceEdge,
+    DecisionEvidenceLimits,
+    DecisionEvidenceMapResponse,
+    DecisionEvidenceNode,
+    DecisionEvidenceProposalBlueprint,
+    DecisionEvidenceProposalSlide,
+    DecisionEvidenceProvenance,
+    DecisionEvidenceSourceRevision,
+)
 
 __all__ = [
     "DocType",
@@ -258,4 +272,16 @@ __all__ = [
     "DocumentOpsTrainingAuditExportRequest",
     "FineTuneExportRequest",
     "FineTuneTrainingTriggerRequest",
+    "DecisionEvidenceAuthority",
+    "DecisionEvidenceCoverageItem",
+    "DecisionEvidenceCoverageSummary",
+    "DecisionEvidenceDiagnostic",
+    "DecisionEvidenceEdge",
+    "DecisionEvidenceLimits",
+    "DecisionEvidenceMapResponse",
+    "DecisionEvidenceNode",
+    "DecisionEvidenceProposalBlueprint",
+    "DecisionEvidenceProposalSlide",
+    "DecisionEvidenceProvenance",
+    "DecisionEvidenceSourceRevision",
 ]

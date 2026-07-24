@@ -362,6 +362,20 @@ Add evaluation and regression coverage for:
 - decision bundle generation smoke
 - downstream handoff correctness
 
+### FR16. Decision Evidence Map
+- Provide a tenant-scoped, session-authorized, read-only project projection that
+  connects procurement evidence, Decision Council reasoning, project documents,
+  reviews, approvals, and report workflow state.
+- Preserve deterministic node, edge, provenance, coverage, diagnostic, and
+  projection fingerprint contracts.
+- Mark coverage as explicit only when a persisted project document stores an
+  exact canonical requirement reference. Do not infer proof from text
+  similarity.
+- Surface Proposal Blueprint and PPTX readiness without executing export,
+  provider calls, approvals, bid submission, or contractual commitments.
+- Keep the UI useful without introducing graph, storage, or runtime
+  dependencies.
+
 ---
 
 ## 13. Non-functional requirements

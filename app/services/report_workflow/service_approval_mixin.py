@@ -181,6 +181,14 @@ class ReportWorkflowApprovalMixin:
         resolved_tags = self._promotion_tags(rec, tags or [])
         project_doc: ProjectDocument | None = None
         if not rec.project_document_id:
+            source_evidence_refs = sorted(
+                {
+                    ref
+                    for slide in rec.slides
+                    for ref in [*slide.source_refs, *slide.reference_refs]
+                    if ref.startswith("requirement:")
+                }
+            )
             project_doc = self._project_store.add_document(
                 project_id=project_id,
                 request_id=self._approval_request_id(rec),
@@ -191,6 +199,7 @@ class ReportWorkflowApprovalMixin:
                 tags=resolved_tags,
                 tenant_id=tenant_id,
                 source_kind="report_workflow",
+                source_evidence_refs=source_evidence_refs,
             )
             rec = self.store.mark_project_promoted(
                 report_workflow_id,

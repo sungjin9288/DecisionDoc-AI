@@ -100,6 +100,7 @@ class GenerateResponse(BaseModel):
     procurement_reviewed_at: str | None = None
     procurement_review_source_updated_at: str | None = None
     procurement_review_operational_approval: bool = False
+    decision_evidence_refs: list[str] = Field(default_factory=list)
     docs: list[GeneratedDoc]
 
 

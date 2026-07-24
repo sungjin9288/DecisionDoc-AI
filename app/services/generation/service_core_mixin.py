@@ -191,6 +191,11 @@ class GenerationCoreMixin:
         decision_council_use_case = str(payload.get("_decision_council_use_case") or "").strip() or None
         decision_council_target_bundle = str(payload.get("_decision_council_target_bundle") or "").strip() or None
         decision_council_applied_bundle = str(payload.get("_decision_council_applied_bundle") or "").strip() or None
+        decision_evidence_refs = [
+            str(item).strip()
+            for item in payload.get("_decision_evidence_refs", [])
+            if str(item).strip()
+        ]
 
         provider = self._safe_get_provider(bundle_type=bundle_type, tenant_id=tenant_id)
         timer = Timer()
@@ -427,6 +432,7 @@ class GenerationCoreMixin:
                 "decision_council_use_case": decision_council_use_case,
                 "decision_council_target_bundle": decision_council_target_bundle,
                 "decision_council_applied_bundle": decision_council_applied_bundle,
+                "decision_evidence_refs": decision_evidence_refs,
                 "timings_ms": timer.durations_ms,
                 "llm_prompt_tokens": usage_totals.get("prompt_tokens"),
                 "llm_output_tokens": usage_totals.get("output_tokens"),

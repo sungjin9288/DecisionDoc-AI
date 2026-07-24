@@ -53,3 +53,4 @@ class AddDocumentToProjectRequest(BaseModel):
     docs: list[dict] = Field(default_factory=list)
     approval_id: str | None = None
     tags: list[str] = Field(default_factory=list)
+    source_evidence_refs: list[str] = Field(default_factory=list, max_length=200)

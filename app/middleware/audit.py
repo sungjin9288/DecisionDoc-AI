@@ -56,6 +56,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
     ("GET", "/procurement/reviews"): "procurement.review_inbox_view",
+    ("GET", "/projects/{id}/decision-evidence-map"): "procurement.review_evidence_map_view",
     ("POST", "/projects/{id}/procurement/reviews/{id}/complete"): "procurement.review_completed",
     ("GET", "/projects/{id}/procurement/reviews/{id}/packet"): "procurement.review_packet_download",
     ("GET", "/projects/{id}/procurement/reviews/{id}/reviewed-package"): "procurement.reviewed_package_download",

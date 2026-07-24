@@ -172,6 +172,7 @@ def add_document_to_project_endpoint(
             docs=payload.docs,
             approval_id=payload.approval_id,
             tags=payload.tags,
+            source_evidence_refs=payload.source_evidence_refs,
             tenant_id=tenant_id,
         )
     except KeyError as e:

@@ -122,6 +122,17 @@ class GenerationContextInjectionMixin:
             procurement_ctx = self._build_procurement_context(project_id=project_id, tenant_id=tenant_id)
             if procurement_ctx:
                 payload["_procurement_context"] = procurement_ctx
+                from app.services.decision_evidence_service import (
+                    procurement_requirement_node_ids,
+                )
+
+                procurement_record = self._procurement_store.get(
+                    project_id,
+                    tenant_id=tenant_id,
+                )
+                payload["_decision_evidence_refs"] = procurement_requirement_node_ids(
+                    procurement_record
+                )
                 _log.info(
                     "[Procurement] Injected handoff context project=%s bundle=%s len=%d request_id=%s",
                     project_id,

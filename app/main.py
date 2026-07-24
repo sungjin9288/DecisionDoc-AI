@@ -207,6 +207,8 @@ def create_app() -> FastAPI:
     decision_council_service = DecisionCouncilService(
         decision_council_store=decision_council_store,
     )
+    from app.services.decision_evidence_service import DecisionEvidenceService
+    decision_evidence_service = DecisionEvidenceService()
     ops_service = get_ops_service()
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
     project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
@@ -306,6 +308,7 @@ def create_app() -> FastAPI:
     app.state.procurement_review_store = procurement_review_store
     app.state.decision_council_store = decision_council_store
     app.state.decision_council_service = decision_council_service
+    app.state.decision_evidence_service = decision_evidence_service
     app.state.procurement_copilot_enabled = procurement_copilot_enabled
     app.state.project_store = project_store
     app.state.meeting_recording_store = meeting_recording_store

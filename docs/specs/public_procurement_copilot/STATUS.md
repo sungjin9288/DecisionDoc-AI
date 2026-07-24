@@ -3,6 +3,37 @@
 ## Current milestone
 Milestone 6 completed
 
+## Post-milestone Decision Evidence Map completion
+
+- `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
+  projection across procurement decisions, Decision Council, project documents,
+  authorized review summaries, approvals, report workflows, and knowledge
+  metadata. The tenant/session-bound GET route returns `no-store`, omits tenant
+  and private review evidence, requires a member's exact review assignment
+  before project lookup, gives unassigned/foreign/nonexistent project IDs the
+  same member-facing not-found result, and keeps all mutation, approval, export,
+  provider, bid submission, and contractual authority false.
+- Project detail now provides a fixed-column SVG, complete accessible table,
+  search and filters, keyboard-selectable details, coverage, Proposal Blueprint,
+  and diagnostics. The map states that its snapshot is non-atomic and exposes no
+  execution control.
+- Generation and final report workflow promotion preserve validated canonical
+  `requirement:` references on project documents. Only an exact persisted
+  reference can produce `explicit` reference coverage; fuzzy or legacy text
+  matching cannot become proof, and explicit reference coverage does not assert
+  requirement satisfaction.
+- Focused Decision Evidence Map checks passed (`16 passed`). Project, report
+  workflow, approval, procurement review authorization, Decision Council, and
+  PPTX regression checks passed (`383 passed`). Decision Evidence plus
+  infrastructure passed (`184 passed`), portfolio/metric/infrastructure
+  coupling passed (`178 passed`), and the full no-cost suite passed
+  (`4465 passed, 1 skipped, 4 deselected`). Luna independent review findings for
+  assignment access, project-existence disclosure, misleading reference
+  labeling, and module size were resolved. These checks were local/mock only;
+  provider API, AWS runtime, G2B live API, dataset upload, training, promotion,
+  production resume, bid submission, legal approval, and contractual commitment
+  were not executed.
+
 ## Post-milestone project knowledge cross-worker authority completion
 
 - `KnowledgeStore`의 add/style/metadata/delete mutation은 tenant/project별 단일 `index.json`의 검증된 원문을 expected value로 사용하는 conditional create/CAS retry loop로 확정한다. 충돌하면 최신 ownership·schema·document identity 위에 같은 operation을 최대 32회 재적용한다. Legacy list index는 읽되 첫 mutation에서 `knowledge_index.v2` envelope로 승격한다.
