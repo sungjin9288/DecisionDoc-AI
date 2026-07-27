@@ -130,11 +130,55 @@ legal commitment.
 
 The project detail screen renders:
 
-- a fixed-column SVG for the first 60 filtered nodes;
-- an accessible table for the complete bounded result;
-- search, node-type, and status filters;
-- keyboard-selectable node details;
+- a pointer-selectable decorative fixed-column SVG for up to 60 filtered nodes,
+  prioritizing the selected node and its direct neighbors;
+- the canonical accessible table for the complete bounded result, with native
+  button keyboard behavior and pressed state;
+- search, node-type, status, gaps-only, lineage-only, and source-visibility
+  filters with an explicit filtered count and reset control;
+- keyboard-selectable table node details with one-hop focus/dimming and focus
+  restoration after rerender;
+- separate inbound and outbound relation detail, including stored edge
+  provenance: relation type and status, counterpart node, source kind/ID/
+  revision, field path, content SHA-256, and provenance level;
+- diagnostic targets that select an in-projection node without silently
+  substituting another filtered node; a filtered target is explicitly included
+  and announced, while a target outside the bounded projection is reported as
+  omitted;
+- an Escape-exit presentation layout that changes only the panel CSS layout;
 - coverage, Proposal Blueprint reference counts, and diagnostic summaries.
+
+Browser state is scoped to the current tenant, user, authorization revision,
+project, bundle type, and projection fingerprint. A changed scope resets
+selection, filters, and presentation layout rather than carrying an earlier
+reader's interpretation into a new projection. The browser builds an O(N+E)
+adjacency index from the bounded response; it does not request additional data
+or infer new relationships.
+
+`Gaps only` includes non-explicit requirement coverage, explicit failure
+states, and warning/error diagnostic targets. `pending` and `in_review` do not
+become gaps solely because of their status. `Lineage only` narrows the table and
+SVG to the selected node plus its direct neighbors. Hiding sources removes source
+nodes, their incident edges, and source counterparts from relation detail. If a
+diagnostic targets a hidden source, the browser reports that conflict and does
+not silently reinsert or substitute a node. Visible and full-projection relation
+counts remain separately labeled. Full labels remain available through SVG
+titles, detail, and the canonical table.
+
+The SVG is `aria-hidden` and not keyboard-focusable because the table is the
+canonical accessible surface. Pointer selection on the SVG remains available
+and restores focus to the corresponding table button. Presentation mode changes
+only panel layout, remains one column at mobile width, and exits with Escape.
+Reduced-motion preference removes node and edge transitions.
+
+`authoritative` is presented as a provenance level only. It does not establish
+truth, approval authority, requirement satisfaction, or an external source's
+authenticity. A source revision or content SHA-256 records what this projection
+observed; it is not an external verification claim.
+
+Edge line style provides a non-color provenance cue: `authoritative` is solid,
+`record_binding` is dashed, and `derived` is dotted. These styles describe stored
+provenance level only; they are not proof or approval.
 
 Proposal Blueprint labels slide counts with any stored source/reference string
 as `Referenced slides`. That count is navigation metadata, not verified
@@ -148,13 +192,22 @@ approval, export, provider, or submission control.
 No-cost verification:
 
 ```bash
+# H124 UI/service/E2E subset: 17 passed (2026-07-27)
+.venv/bin/pytest -q \
+  tests/test_decision_evidence_service.py \
+  tests/test_decision_evidence_ui_static.py \
+  tests/e2e/test_decision_evidence_map.py
+
+# H124 focused with API boundary: 21 passed (2026-07-27)
 .venv/bin/pytest -q \
   tests/test_decision_evidence_service.py \
   tests/test_decision_evidence_api.py \
   tests/test_decision_evidence_ui_static.py \
   tests/e2e/test_decision_evidence_map.py
 
+# Adjacent authorization/workflow: 387 passed (2026-07-27)
 .venv/bin/pytest -q \
+  tests/test_decision_evidence_api.py \
   tests/test_project_management.py \
   tests/test_report_workflow_store.py \
   tests/test_report_workflow_store_integrity.py \
@@ -165,6 +218,12 @@ No-cost verification:
   tests/test_decision_council_store_integrity.py \
   tests/test_project_approval_store_integrity.py \
   tests/test_pptx_endpoint.py
+
+# Combined focused + adjacent: 404 passed (2026-07-27)
+# Run the union of the two file lists above.
+
+# Full non-live: 4470 passed, 1 skipped, 4 deselected (2026-07-27)
+.venv/bin/pytest -q tests/ -m "not live"
 ```
 
 These checks use mock/local fixtures. Provider APIs, AWS runtime, G2B live API,

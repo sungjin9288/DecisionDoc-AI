@@ -3,7 +3,7 @@
 ## Current milestone
 Milestone 6 completed
 
-## Post-milestone Decision Evidence Map completion
+## Post-milestone Decision Evidence Map and H124 Evidence Neighborhood Explorer completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
   projection across procurement decisions, Decision Council, project documents,
@@ -13,26 +13,40 @@ Milestone 6 completed
   before project lookup, gives unassigned/foreign/nonexistent project IDs the
   same member-facing not-found result, and keeps all mutation, approval, export,
   provider, bid submission, and contractual authority false.
-- Project detail now provides a fixed-column SVG, complete accessible table,
-  search and filters, keyboard-selectable details, coverage, Proposal Blueprint,
-  and diagnostics. The map states that its snapshot is non-atomic and exposes no
-  execution control.
+- Project detail now provides the H124 Evidence Neighborhood Explorer: a
+  pointer-selectable decorative fixed-column SVG, canonical accessible table, scope-bound
+  selection/filter state, one-hop focus/dimming, provenance-aware inbound and
+  outbound relation detail, filter-safe diagnostic target navigation, and an
+  Escape-exit presentation layout with a mobile one-column override. Source
+  visibility also removes source incident edges and relation counterparts.
+  Provenance line styles are non-color cues, not proof or approval. Gaps,
+  lineage, and source-visibility filters always show their filtered count and
+  never add execution control. The map remains non-atomic and read-only.
 - Generation and final report workflow promotion preserve validated canonical
   `requirement:` references on project documents. Only an exact persisted
   reference can produce `explicit` reference coverage; fuzzy or legacy text
   matching cannot become proof, and explicit reference coverage does not assert
   requirement satisfaction.
-- Focused Decision Evidence Map checks passed (`16 passed`). Project, report
+- Historical H123 baseline: focused Decision Evidence Map checks passed (`16 passed`). Project, report
   workflow, approval, procurement review authorization, Decision Council, and
   PPTX regression checks passed (`383 passed`). Decision Evidence plus
   infrastructure passed (`184 passed`), portfolio/metric/infrastructure
   coupling passed (`178 passed`), and the full no-cost suite passed
-  (`4465 passed, 1 skipped, 4 deselected`). Luna independent review findings for
+  (`4465 passed, 1 skipped, 4 deselected`). These are 2026-07-24 H123 results,
+  not current H124 full-suite evidence. Luna independent review findings for
   assignment access, project-existence disclosure, misleading reference
   labeling, and module size were resolved. These checks were local/mock only;
   provider API, AWS runtime, G2B live API, dataset upload, training, promotion,
   production resume, bid submission, legal approval, and contractual commitment
   were not executed.
+- Fresh H124 no-cost verification on 2026-07-27: UI/service/E2E subset
+  `17 passed`, API boundary를 포함한 focused `21 passed`, adjacent API
+  authorization and project/report/approval/procurement review/Decision
+  Council/PPTX `387 passed`, combined union `404 passed`, and full non-live
+  `4470 passed, 1 skipped, 4 deselected`. These gates used local/mock fixtures
+  and Chromium only; they did not call a provider API, AWS, G2B, dataset
+  upload, training, promotion, production service, bid submission, legal
+  approval, or contractual endpoint.
 
 ## Post-milestone project knowledge cross-worker authority completion
 

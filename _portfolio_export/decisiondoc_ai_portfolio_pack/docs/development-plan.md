@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-24** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H123 focused local verification과 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-07-27** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H124 no-cost local verification과 최근 확인한 CI/CD success 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | non-live test suite 통과 (`pytest tests/ -m "not live" -q` → 4,465 passed, 1 skipped, 4 deselected, 2026-07-24 H123) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | H124 no-cost gate: focused API 포함 `21 passed`, adjacent `387 passed`, combined union `404 passed`, full non-live `4,470 passed, 1 skipped, 4 deselected` (2026-07-27) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-24 H123 실측: 4465 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-27 H124: 4470 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -60,6 +60,31 @@ existence oracle, misleading evidence label과 800-line guide 문제를 모두
 해소했다. Focused Decision Evidence `16 passed`, 인접 project/report/review/
 approval/Council/PPTX `383 passed`, focused+infrastructure `184 passed`, 최종
 전체 non-live `4465 passed, 1 skipped, 4 deselected`로 no-cost 검증했다.
+이 수치는 2026-07-24 H123 historical baseline이며 H124 current pass 수치가 아니다.
+
+### H124 Evidence Neighborhood Explorer
+
+H123 projection을 변경하지 않고 project detail의 read-only 탐색성을 강화한다.
+Browser state는 tenant, user, auth revision, project, bundle, projection
+fingerprint에 결속하고 scope 변경 시 선택·filter·presentation layout을 초기화한다.
+Bounded response에서 O(N+E) adjacency index를 만들고 selected node의 inbound/
+outbound relation과 stored provenance를 표시한다. One-hop focus/dimming,
+gaps/lineage/source visibility filter, diagnostic target navigation, keyboard
+focus restoration, reduced-motion, 60-node SVG priority와 complete table을
+제공한다. 이 surface는 approval, export execution, provider/training, bid
+submission 또는 legal authority를 만들지 않는다.
+
+Luna review 반영으로 filtered diagnostic target은 다른 node로 대체하지 않고
+명시적으로 포함하며 filter summary에 그 상태를 표시한다. Source visibility는
+detail relation과 incident edge에도 적용한다. SVG는 pointer interaction만 남긴
+장식 surface이고 table button이 canonical keyboard surface다. Provenance level은
+authoritative=solid, record binding=dashed, derived=dotted line style로
+비색상 설명하며 proof/approval을 뜻하지 않는다. Content SHA-256도 projection이
+관측한 field-content binding일 뿐 external authenticity 검증이 아니다.
+2026-07-27 no-cost fresh gate는 H124 UI/service/E2E subset `17 passed`, API를
+포함한 focused `21 passed`, adjacent authorization/workflow `387 passed`,
+combined union `404 passed`, full non-live `4,470 passed, 1 skipped,
+4 deselected`다.
 
 ---
 

@@ -1391,6 +1391,47 @@
       padding: 7px 9px;
       font: inherit;
     }
+    .decision-evidence-quick-filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+      margin: 0 0 12px;
+      color: var(--muted, #4b5563);
+      font-size: 0.75rem;
+    }
+    .decision-evidence-quick-filters label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+    }
+    .decision-evidence-quick-filters input { accent-color: #0f766e; }
+    .decision-evidence-quick-filters button,
+    .decision-evidence-presentation-toggle {
+      min-height: 32px;
+      border: 1px solid var(--border, #cbd5e1);
+      border-radius: 5px;
+      background: var(--surface, #fff);
+      color: var(--text, #111827);
+      padding: 5px 8px;
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .decision-evidence-quick-filters button:disabled { cursor: not-allowed; opacity: .55; }
+    .decision-evidence-filter-summary {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0 0 12px;
+      color: var(--muted, #4b5563);
+      font-size: 0.75rem;
+      line-height: 1.45;
+    }
+    .decision-evidence-filter-summary strong { color: var(--text, #111827); }
     .decision-evidence-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
@@ -1420,10 +1461,21 @@
       stroke-width: 1.25;
       opacity: 0.56;
       vector-effect: non-scaling-stroke;
+      transition: opacity 120ms ease, stroke-width 120ms ease;
     }
+    .decision-evidence-edge.focused {
+      stroke: #0f766e;
+      stroke-width: 2.25;
+      opacity: 1;
+    }
+    .decision-evidence-edge.dimmed { opacity: .16; }
+    .decision-evidence-edge[data-provenance-level="authoritative"] { stroke-dasharray: none; }
+    .decision-evidence-edge[data-provenance-level="record_binding"] { stroke-dasharray: 8 4; }
+    .decision-evidence-edge[data-provenance-level="derived"] { stroke-dasharray: 2 4; }
+    .decision-evidence-node.dimmed { opacity: .34; }
+    .decision-evidence-node.neighbor rect { stroke-width: 2.25; }
     .decision-evidence-node {
       cursor: pointer;
-      outline: none;
     }
     .decision-evidence-node rect {
       fill: #fff;
@@ -1442,7 +1494,6 @@
     .decision-evidence-node[data-node-type="approval"] rect { stroke: #15803d; }
     .decision-evidence-node[data-node-type="export"] rect { stroke: #475569; }
     .decision-evidence-node:hover rect,
-    .decision-evidence-node:focus-visible rect,
     .decision-evidence-node.selected rect {
       stroke-width: 3;
       filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.14));
@@ -1495,6 +1546,65 @@
       min-width: 0;
       margin: 0;
       overflow-wrap: anywhere;
+    }
+    .decision-evidence-provenance-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px 14px;
+      margin: 0 0 10px;
+      color: var(--muted, #4b5563);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+    .decision-evidence-provenance-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .decision-evidence-provenance-line {
+      display: inline-block;
+      width: 28px;
+      height: 0;
+      border-top: 2px solid #64748b;
+    }
+    .decision-evidence-provenance-line.record-binding { border-top-style: dashed; }
+    .decision-evidence-provenance-line.derived { border-top-style: dotted; }
+    .decision-evidence-provenance-note {
+      flex-basis: 100%;
+      margin: 0;
+    }
+    .decision-evidence-relations {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .decision-evidence-relations h6 {
+      margin: 0;
+      color: var(--text, #111827);
+      font-size: 0.76rem;
+    }
+    .decision-evidence-relation-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .decision-evidence-relation {
+      padding: 9px;
+      border: 1px solid var(--border, #dbe3ec);
+      background: var(--surface, #fff);
+      font-size: 0.72rem;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .decision-evidence-relation strong { color: var(--text, #111827); }
+    .decision-evidence-relation dl {
+      grid-template-columns: 96px minmax(0, 1fr);
+      margin-top: 7px;
+      font-size: 0.7rem;
     }
     .decision-evidence-section {
       margin-top: 16px;
@@ -1580,6 +1690,24 @@
       line-height: 1.5;
     }
     .decision-evidence-diagnostics li.error { border-left-color: #dc2626; background: #fef2f2; color: #991b1b; }
+    .decision-evidence-diagnostic-targets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 7px;
+    }
+    .decision-evidence-diagnostic-targets button {
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      background: #fff;
+      color: inherit;
+      padding: 3px 5px;
+      font: inherit;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .decision-evidence-diagnostic-targets span { font-size: 0.7rem; }
     .decision-evidence-blueprint {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(100px, .55fr));
@@ -1618,6 +1746,21 @@
       color: var(--muted, #6b7280);
       font-size: 0.8rem;
       line-height: 1.6;
+    }
+    .decision-evidence-map.presentation-mode {
+      margin-inline: -18px;
+      padding: 18px;
+      background: var(--surface, #fff);
+      position: relative;
+      z-index: 2;
+    }
+    .decision-evidence-map.presentation-mode .decision-evidence-layout {
+      grid-template-columns: minmax(0, 1.55fr) minmax(280px, .8fr);
+    }
+    .decision-evidence-map.presentation-mode .decision-evidence-canvas { max-height: 760px; }
+    @media (prefers-reduced-motion: reduce) {
+      .decision-evidence-node rect,
+      .decision-evidence-edge { transition: none; }
     }
     .procurement-summary-grid {
       display: grid;
@@ -3191,6 +3334,15 @@
       .decision-evidence-metric:nth-child(-n + 2) { border-bottom: 1px solid var(--border, #e5e7eb); }
       .decision-evidence-toolbar { grid-template-columns: 1fr; }
       .decision-evidence-layout { grid-template-columns: 1fr; }
+      .decision-evidence-map.presentation-mode {
+        width: 100%;
+        max-width: 100%;
+        margin-inline: 0;
+        padding: 12px;
+      }
+      .decision-evidence-map.presentation-mode .decision-evidence-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
       .decision-evidence-detail { min-height: 0; border-left-width: 0; border-top: 3px solid #0f766e; }
       .decision-evidence-blueprint { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .decision-evidence-blueprint > div:first-child { grid-column: 1 / -1; }
@@ -7497,11 +7649,16 @@
   let _procurementReviewInboxLoadId = 0;
   let _projectDetailLoadId = 0;
   let _decisionEvidenceMapState = {
-    projectId: '',
+    scopeKey: '',
     query: '',
     nodeType: 'all',
     status: 'all',
+    gapsOnly: false,
+    lineageOnly: false,
+    showSources: true,
     selectedNodeId: '',
+    forcedVisibleNodeId: '',
+    presentationMode: false,
   };
   let _approvalRequestSource = null;
   let _knowledgePromotionTarget = null;
@@ -24563,37 +24720,203 @@
     return String(node?.label || node?.title || getDecisionEvidenceNodeId(node) || 'Untitled evidence');
   }
 
+  function getDecisionEvidenceScopeKey(map) {
+    return [
+      _currentTenantId,
+      _currentUser?.sub || _currentUser?.user_id || 'anonymous',
+      _authSessionRevision,
+      map?.project_id || '',
+      map?.bundle_type || '',
+      map?.projection_fingerprint || map?.source_fingerprint || '',
+    ].map(value => String(value || '')).join('|');
+  }
+
   function normalizeDecisionEvidenceState(map) {
-    const projectId = String(map?.project_id || '');
-    if (_decisionEvidenceMapState.projectId !== projectId) {
+    const scopeKey = getDecisionEvidenceScopeKey(map);
+    if (_decisionEvidenceMapState.scopeKey !== scopeKey) {
       _decisionEvidenceMapState = {
-        projectId,
+        scopeKey,
         query: '',
         nodeType: 'all',
         status: 'all',
+        gapsOnly: false,
+        lineageOnly: false,
+        showSources: true,
         selectedNodeId: '',
+        forcedVisibleNodeId: '',
+        presentationMode: false,
       };
     }
     return _decisionEvidenceMapState;
   }
 
-  function getFilteredDecisionEvidenceNodes(map) {
-    const state = normalizeDecisionEvidenceState(map);
+  function getDecisionEvidenceEdgeSourceId(edge) {
+    return String(edge?.source_node_id || edge?.source || '');
+  }
+
+  function getDecisionEvidenceEdgeTargetId(edge) {
+    return String(edge?.target_node_id || edge?.target || '');
+  }
+
+  function buildDecisionEvidenceIndex(map) {
+    const nodeById = new Map();
+    const inboundById = new Map();
+    const outboundById = new Map();
+    const diagnosticNodeIds = new Set();
+    const nodes = Array.isArray(map?.nodes) ? map.nodes : [];
+    const edges = Array.isArray(map?.edges) ? map.edges : [];
+
+    nodes.forEach(node => {
+      const nodeId = getDecisionEvidenceNodeId(node);
+      if (!nodeId) return;
+      nodeById.set(nodeId, node);
+      inboundById.set(nodeId, []);
+      outboundById.set(nodeId, []);
+    });
+    edges.forEach(edge => {
+      const sourceId = getDecisionEvidenceEdgeSourceId(edge);
+      const targetId = getDecisionEvidenceEdgeTargetId(edge);
+      if (!nodeById.has(sourceId) || !nodeById.has(targetId)) return;
+      outboundById.get(sourceId).push(edge);
+      inboundById.get(targetId).push(edge);
+    });
+    (Array.isArray(map?.diagnostics) ? map.diagnostics : []).forEach(diagnostic => {
+      if (!['warning', 'error'].includes(String(diagnostic?.severity || ''))) return;
+      (Array.isArray(diagnostic?.node_ids) ? diagnostic.node_ids : []).forEach(nodeId => {
+        if (nodeById.has(String(nodeId))) diagnosticNodeIds.add(String(nodeId));
+      });
+    });
+    return { nodeById, inboundById, outboundById, diagnosticNodeIds };
+  }
+
+  function isDecisionEvidenceFailureStatus(status) {
+    return ['missing', 'blocked', 'rejected', 'conflicting', 'stale'].includes(String(status || ''));
+  }
+
+  function isDecisionEvidenceGap(node, index) {
+    const coverageStatus = String(node?.coverage_status || '');
+    return (
+      (coverageStatus && coverageStatus !== 'explicit')
+      || isDecisionEvidenceFailureStatus(node?.status)
+      || index.diagnosticNodeIds.has(getDecisionEvidenceNodeId(node))
+    );
+  }
+
+  function getDecisionEvidenceNeighborIds(nodeId, index) {
+    const neighborIds = new Set();
+    [...(index.inboundById.get(nodeId) || []), ...(index.outboundById.get(nodeId) || [])].forEach(edge => {
+      const sourceId = getDecisionEvidenceEdgeSourceId(edge);
+      const targetId = getDecisionEvidenceEdgeTargetId(edge);
+      neighborIds.add(sourceId === nodeId ? targetId : sourceId);
+    });
+    neighborIds.delete(nodeId);
+    return neighborIds;
+  }
+
+  function deriveDecisionEvidenceView(map, state, index) {
+    const nodes = Array.isArray(map?.nodes) ? map.nodes : [];
     const query = state.query.trim().toLocaleLowerCase();
-    return (Array.isArray(map?.nodes) ? map.nodes : []).filter(node => {
+    const matchingNodes = nodes.filter(node => {
       const nodeType = getDecisionEvidenceNodeType(node);
       const status = String(node?.status || '');
       if (state.nodeType !== 'all' && nodeType !== state.nodeType) return false;
       if (state.status !== 'all' && status !== state.status) return false;
+      if (!state.showSources && nodeType === 'source') return false;
+      if (state.gapsOnly && !isDecisionEvidenceGap(node, index)) return false;
       if (!query) return true;
-      const searchable = [
-        getDecisionEvidenceNodeLabel(node),
-        node?.summary,
-        nodeType,
-        status,
-      ].filter(Boolean).join(' ').toLocaleLowerCase();
-      return searchable.includes(query);
+      return [getDecisionEvidenceNodeLabel(node), node?.summary, nodeType, status]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(query);
     });
+    const matchingNodeIds = new Set(matchingNodes.map(getDecisionEvidenceNodeId));
+    const forcedNode = index.nodeById.get(state.forcedVisibleNodeId);
+    const diagnosticTargetHiddenBySourceFilter = Boolean(
+      forcedNode
+      && !state.showSources
+      && getDecisionEvidenceNodeType(forcedNode) === 'source',
+    );
+    const diagnosticTargetIncluded = Boolean(
+      forcedNode
+      && !diagnosticTargetHiddenBySourceFilter
+      && !matchingNodeIds.has(getDecisionEvidenceNodeId(forcedNode)),
+    );
+    const baseNodes = diagnosticTargetIncluded
+      ? [forcedNode, ...matchingNodes]
+      : matchingNodes;
+    if (state.forcedVisibleNodeId && !forcedNode) {
+      state.forcedVisibleNodeId = '';
+    }
+    const baseNodeIds = new Set(baseNodes.map(getDecisionEvidenceNodeId));
+    if (diagnosticTargetHiddenBySourceFilter) {
+      state.selectedNodeId = '';
+    } else if (!baseNodeIds.has(state.selectedNodeId)) {
+      state.selectedNodeId = getDecisionEvidenceNodeId(baseNodes[0]);
+    }
+    const selectedNodeId = state.selectedNodeId;
+    const neighborIds = selectedNodeId ? getDecisionEvidenceNeighborIds(selectedNodeId, index) : new Set();
+    const filteredNodes = state.lineageOnly && selectedNodeId
+      ? baseNodes.filter(node => {
+        const nodeId = getDecisionEvidenceNodeId(node);
+        return nodeId === selectedNodeId || neighborIds.has(nodeId);
+      })
+      : baseNodes;
+    const visualNodes = [
+      ...filteredNodes.filter(node => {
+        const nodeId = getDecisionEvidenceNodeId(node);
+        return nodeId === selectedNodeId || neighborIds.has(nodeId);
+      }),
+      ...filteredNodes.filter(node => {
+        const nodeId = getDecisionEvidenceNodeId(node);
+        return nodeId !== selectedNodeId && !neighborIds.has(nodeId);
+      }),
+    ].slice(0, 60);
+    const filteredNodeIds = new Set(filteredNodes.map(getDecisionEvidenceNodeId));
+    const projectionRelationCountById = new Map(
+      filteredNodes.map(node => {
+        const nodeId = getDecisionEvidenceNodeId(node);
+        const inboundCount = (index.inboundById.get(nodeId) || []).length;
+        const outboundCount = (index.outboundById.get(nodeId) || []).length;
+        return [nodeId, inboundCount + outboundCount];
+      }),
+    );
+    const visibleRelationCountById = new Map(
+      filteredNodes.map(node => [getDecisionEvidenceNodeId(node), 0]),
+    );
+    (Array.isArray(map?.edges) ? map.edges : []).forEach(edge => {
+      const sourceId = getDecisionEvidenceEdgeSourceId(edge);
+      const targetId = getDecisionEvidenceEdgeTargetId(edge);
+      if (!filteredNodeIds.has(sourceId) || !filteredNodeIds.has(targetId)) return;
+      visibleRelationCountById.set(sourceId, (visibleRelationCountById.get(sourceId) || 0) + 1);
+      visibleRelationCountById.set(targetId, (visibleRelationCountById.get(targetId) || 0) + 1);
+    });
+    const visualNodeIds = new Set(visualNodes.map(getDecisionEvidenceNodeId));
+    const visualEdges = (Array.isArray(map?.edges) ? map.edges : []).filter(edge => (
+      visualNodeIds.has(getDecisionEvidenceEdgeSourceId(edge))
+      && visualNodeIds.has(getDecisionEvidenceEdgeTargetId(edge))
+    ));
+    const selectedInbound = (index.inboundById.get(selectedNodeId) || []).filter(
+      edge => filteredNodeIds.has(getDecisionEvidenceEdgeSourceId(edge)),
+    );
+    const selectedOutbound = (index.outboundById.get(selectedNodeId) || []).filter(
+      edge => filteredNodeIds.has(getDecisionEvidenceEdgeTargetId(edge)),
+    );
+    return {
+      nodes,
+      filteredNodes,
+      selectedNodeId,
+      selectedNode: index.nodeById.get(selectedNodeId) || null,
+      neighborIds,
+      visualNodes,
+      visualEdges,
+      selectedInbound,
+      selectedOutbound,
+      projectionRelationCountById,
+      visibleRelationCountById,
+      diagnosticTargetIncluded,
+      diagnosticTargetHiddenBySourceFilter,
+    };
   }
 
   function truncateDecisionEvidenceLabel(value, maxLength = 22) {
@@ -24601,14 +24924,13 @@
     return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
   }
 
-  function buildDecisionEvidenceSvg(map, filteredNodes) {
-    const visualNodes = filteredNodes.slice(0, 60);
-    if (!visualNodes.length) {
+  function buildDecisionEvidenceSvg(view) {
+    if (!view.visualNodes.length) {
       return '<div class="decision-evidence-empty">현재 filter에 맞는 evidence node가 없습니다.</div>';
     }
 
     const stageBuckets = Array.from({ length: 5 }, () => []);
-    visualNodes.forEach(node => {
+    view.visualNodes.forEach(node => {
       const stage = DECISION_EVIDENCE_NODE_STAGES[getDecisionEvidenceNodeType(node)] ?? 0;
       stageBuckets[stage].push(node);
     });
@@ -24627,40 +24949,39 @@
       });
     });
     const height = Math.max(320, top + maxRows * rowGap + 24);
-    const visibleIds = new Set(Object.keys(positions));
-    const edges = (Array.isArray(map?.edges) ? map.edges : []).filter(edge => (
-      visibleIds.has(String(edge?.source_node_id || edge?.source || ''))
-      && visibleIds.has(String(edge?.target_node_id || edge?.target || ''))
-    ));
-    const selectedNodeId = normalizeDecisionEvidenceState(map).selectedNodeId;
-    const edgeSvg = edges.map(edge => {
-      const source = positions[String(edge?.source_node_id || edge?.source || '')];
-      const target = positions[String(edge?.target_node_id || edge?.target || '')];
+    const edgeSvg = view.visualEdges.map(edge => {
+      const sourceId = getDecisionEvidenceEdgeSourceId(edge);
+      const targetId = getDecisionEvidenceEdgeTargetId(edge);
+      const source = positions[sourceId];
+      const target = positions[targetId];
       const sourceX = source.x + 156;
       const sourceY = source.y + 24;
       const targetX = target.x;
       const targetY = target.y + 24;
       const bend = Math.max(30, (targetX - sourceX) / 2);
-      return `<path class="decision-evidence-edge" d="M ${sourceX} ${sourceY} C ${sourceX + bend} ${sourceY}, ${targetX - bend} ${targetY}, ${targetX} ${targetY}"></path>`;
+      const focused = sourceId === view.selectedNodeId || targetId === view.selectedNodeId;
+      const dimmed = view.selectedNodeId && !focused ? ' dimmed' : '';
+      const evidenceLevel = String(edge?.provenance?.evidence_level || 'derived');
+      return `<path class="decision-evidence-edge${focused ? ' focused' : ''}${dimmed}" data-decision-evidence-edge-id="${escapeHtml(String(edge?.edge_id || ''))}" data-provenance-level="${escapeHtml(evidenceLevel)}" d="M ${sourceX} ${sourceY} C ${sourceX + bend} ${sourceY}, ${targetX - bend} ${targetY}, ${targetX} ${targetY}"></path>`;
     }).join('');
-    const nodeSvg = visualNodes.map(node => {
+    const nodeSvg = view.visualNodes.map(node => {
       const nodeId = getDecisionEvidenceNodeId(node);
       const nodeType = getDecisionEvidenceNodeType(node);
       const position = positions[nodeId];
       const status = String(node?.status || 'unverifiable');
-      const relationCount = Number(node?.relation_count || 0);
-      const selected = nodeId === selectedNodeId ? ' selected' : '';
-      const ariaLabel = `${DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType}, ${getDecisionEvidenceNodeLabel(node)}, ${status}`;
+      const relationCount = view.visibleRelationCountById.get(nodeId) || 0;
+      const selected = nodeId === view.selectedNodeId;
+      const neighbor = view.neighborIds.has(nodeId);
+      const dimmed = view.selectedNodeId && !selected && !neighbor;
       return `
         <g
-          class="decision-evidence-node${selected}"
-          role="button"
-          tabindex="0"
-          aria-label="${escapeHtml(ariaLabel)}"
+          class="decision-evidence-node${selected ? ' selected' : ''}${neighbor ? ' neighbor' : ''}${dimmed ? ' dimmed' : ''}"
           data-decision-evidence-node-id="${escapeHtml(nodeId)}"
+          data-decision-evidence-surface="canvas"
           data-node-type="${escapeHtml(nodeType)}"
           transform="translate(${position.x} ${position.y})"
         >
+          <title>${escapeHtml(getDecisionEvidenceNodeLabel(node))}</title>
           <rect width="156" height="48" rx="6"></rect>
           <text class="node-type" x="10" y="15">${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</text>
           <text class="node-label" x="10" y="33">${escapeHtml(truncateDecisionEvidenceLabel(getDecisionEvidenceNodeLabel(node)))}</text>
@@ -24673,8 +24994,8 @@
         <svg
           viewBox="0 0 1004 ${height}"
           height="${height}"
-          role="img"
-          aria-label="Decision evidence relationship map. The table below contains the same filtered nodes."
+          aria-hidden="true"
+          focusable="false"
         >
           ${edgeSvg}
           ${nodeSvg}
@@ -24682,16 +25003,42 @@
       </div>`;
   }
 
-  function getDecisionEvidenceSelectedNode(map, filteredNodes) {
-    const state = normalizeDecisionEvidenceState(map);
-    const selected = filteredNodes.find(node => getDecisionEvidenceNodeId(node) === state.selectedNodeId);
-    if (selected) return selected;
-    const first = filteredNodes[0] || null;
-    state.selectedNodeId = first ? getDecisionEvidenceNodeId(first) : '';
-    return first;
+  function renderDecisionEvidenceRelation(edge, direction, index) {
+    const counterpartId = direction === 'Inbound'
+      ? getDecisionEvidenceEdgeSourceId(edge)
+      : getDecisionEvidenceEdgeTargetId(edge);
+    const counterpart = index.nodeById.get(counterpartId);
+    const provenance = edge?.provenance || {};
+    return `
+      <li class="decision-evidence-relation">
+        <strong>${escapeHtml(String(edge?.relation_type || 'related_to'))}</strong>
+        · ${escapeHtml(getDecisionEvidenceNodeLabel(counterpart))}
+        <dl>
+          <dt>Edge status</dt><dd>${escapeHtml(String(edge?.status || 'unverifiable'))}</dd>
+          <dt>Counterpart</dt><dd>${escapeHtml(counterpartId)}</dd>
+          <dt>Provenance level (not proof or approval)</dt><dd aria-describedby="decision-evidence-provenance-note">${escapeHtml(String(provenance?.evidence_level || 'unverifiable'))}</dd>
+          <dt>Source kind</dt><dd>${escapeHtml(String(provenance?.source_kind || ''))}</dd>
+          <dt>Source ID</dt><dd>${escapeHtml(String(provenance?.source_id || ''))}</dd>
+          <dt>Source revision</dt><dd>${escapeHtml(String(provenance?.source_revision || ''))}</dd>
+          <dt>Field path</dt><dd>${escapeHtml(String(provenance?.field_path || ''))}</dd>
+          <dt>Content SHA-256</dt><dd>${escapeHtml(String(provenance?.content_sha256 || ''))}</dd>
+        </dl>
+      </li>`;
   }
 
-  function renderDecisionEvidenceDetail(node) {
+  function renderDecisionEvidenceRelationGroup(title, edges, direction, index) {
+    if (!edges.length) return '';
+    return `
+      <section class="decision-evidence-relations">
+        <h6>${escapeHtml(title)} · ${edges.length}</h6>
+        <ul class="decision-evidence-relation-list">
+          ${edges.map(edge => renderDecisionEvidenceRelation(edge, direction, index)).join('')}
+        </ul>
+      </section>`;
+  }
+
+  function renderDecisionEvidenceDetail(view, index) {
+    const node = view.selectedNode;
     if (!node) {
       return `
         <aside class="decision-evidence-detail">
@@ -24701,7 +25048,6 @@
     }
     const nodeType = getDecisionEvidenceNodeType(node);
     const diagnostics = Array.isArray(node?.diagnostic_codes) ? node.diagnostic_codes.join(', ') : '';
-    const sourceRef = node?.source_ref || node?.source_id || node?.evidence_ref || '';
     const evidenceLevel = node?.evidence_level || node?.coverage_status || '';
     return `
       <aside class="decision-evidence-detail" aria-live="polite">
@@ -24710,17 +25056,19 @@
         <dl>
           <dt>Type</dt><dd>${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</dd>
           <dt>Status</dt><dd><span class="decision-evidence-status ${escapeHtml(String(node?.status || ''))}">${escapeHtml(String(node?.status || 'unverifiable'))}</span></dd>
-          <dt>Evidence</dt><dd>${escapeHtml(String(evidenceLevel || 'unverifiable'))}</dd>
-          <dt>Relations</dt><dd>${escapeHtml(String(node?.relation_count || 0))}</dd>
-          ${sourceRef ? `<dt>Source ref</dt><dd>${escapeHtml(String(sourceRef))}</dd>` : ''}
+          <dt>Provenance level</dt><dd aria-describedby="decision-evidence-provenance-note">${escapeHtml(String(evidenceLevel || 'unverifiable'))}</dd>
+          <dt>Visible relations</dt><dd>${escapeHtml(String(view.visibleRelationCountById.get(getDecisionEvidenceNodeId(node)) || 0))}</dd>
+          <dt>Projection relations</dt><dd>${escapeHtml(String(view.projectionRelationCountById.get(getDecisionEvidenceNodeId(node)) || 0))}</dd>
           ${node?.updated_at ? `<dt>Updated</dt><dd>${escapeHtml(String(node.updated_at))}</dd>` : ''}
           ${diagnostics ? `<dt>Diagnostics</dt><dd>${escapeHtml(diagnostics)}</dd>` : ''}
         </dl>
+        ${renderDecisionEvidenceRelationGroup('Inbound relations', view.selectedInbound, 'Inbound', index)}
+        ${renderDecisionEvidenceRelationGroup('Outbound relations', view.selectedOutbound, 'Outbound', index)}
       </aside>`;
   }
 
-  function renderDecisionEvidenceTable(filteredNodes) {
-    if (!filteredNodes.length) {
+  function renderDecisionEvidenceTable(view) {
+    if (!view.filteredNodes.length) {
       return '<div class="decision-evidence-empty">표시할 evidence row가 없습니다.</div>';
     }
     return `
@@ -24731,26 +25079,26 @@
               <th scope="col">Evidence</th>
               <th scope="col">Type</th>
               <th scope="col">Status</th>
-              <th scope="col">Evidence level</th>
-              <th scope="col">Relations</th>
+              <th scope="col" aria-describedby="decision-evidence-provenance-note">Provenance level</th>
+              <th scope="col">Visible / projection relations</th>
             </tr>
           </thead>
           <tbody>
-            ${filteredNodes.map(node => {
+            ${view.filteredNodes.map(node => {
               const nodeType = getDecisionEvidenceNodeType(node);
               const nodeId = getDecisionEvidenceNodeId(node);
               const status = String(node?.status || 'unverifiable');
               return `
-                <tr>
+                <tr aria-selected="${nodeId === view.selectedNodeId ? 'true' : 'false'}">
                   <td>
-                    <button type="button" data-decision-evidence-node-id="${escapeHtml(nodeId)}">
+                    <button type="button" aria-pressed="${nodeId === view.selectedNodeId ? 'true' : 'false'}" data-decision-evidence-node-id="${escapeHtml(nodeId)}" data-decision-evidence-surface="table">
                       ${escapeHtml(getDecisionEvidenceNodeLabel(node))}
                     </button>
                   </td>
                   <td>${escapeHtml(DECISION_EVIDENCE_NODE_LABELS[nodeType] || nodeType)}</td>
                   <td><span class="decision-evidence-status ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
-                  <td>${escapeHtml(String(node?.evidence_level || node?.coverage_status || 'unverifiable'))}</td>
-                  <td>${escapeHtml(String(node?.relation_count || 0))}</td>
+                  <td aria-describedby="decision-evidence-provenance-note">${escapeHtml(String(node?.evidence_level || node?.coverage_status || 'unverifiable'))}</td>
+                  <td>${escapeHtml(String(view.visibleRelationCountById.get(nodeId) || 0))} / ${escapeHtml(String(view.projectionRelationCountById.get(nodeId) || 0))}</td>
                 </tr>`;
             }).join('')}
           </tbody>
@@ -24758,7 +25106,7 @@
       </div>`;
   }
 
-  function renderDecisionEvidenceDiagnostics(map) {
+  function renderDecisionEvidenceDiagnostics(map, index) {
     const diagnostics = Array.isArray(map?.diagnostics) ? map.diagnostics : [];
     if (!diagnostics.length) {
       return '<div class="decision-evidence-empty">현재 projection에서 추가 조치가 필요한 diagnostic은 없습니다.</div>';
@@ -24768,10 +25116,17 @@
         ${diagnostics.slice(0, 12).map(diagnostic => {
           const severity = String(diagnostic?.severity || 'warning');
           const nextAction = diagnostic?.next_action ? ` 다음 조치: ${diagnostic.next_action}` : '';
+          const targetIds = Array.isArray(diagnostic?.node_ids) ? diagnostic.node_ids.map(String) : [];
+          const visibleTargets = targetIds.filter(nodeId => index.nodeById.has(nodeId));
+          const omittedTargets = targetIds.filter(nodeId => !index.nodeById.has(nodeId));
           return `
             <li class="${escapeHtml(severity)}">
               <strong>${escapeHtml(String(diagnostic?.code || 'evidence_diagnostic'))}</strong>
               · ${escapeHtml(String(diagnostic?.message || '확인이 필요한 evidence 상태입니다.'))}${escapeHtml(nextAction)}
+              ${targetIds.length ? `<div class="decision-evidence-diagnostic-targets">
+                ${visibleTargets.map(nodeId => `<button type="button" data-decision-evidence-diagnostic-target="${escapeHtml(nodeId)}">${escapeHtml(getDecisionEvidenceNodeLabel(index.nodeById.get(nodeId)))}</button>`).join('')}
+                ${omittedTargets.map(nodeId => `<span>Target omitted from current projection: ${escapeHtml(nodeId)}</span>`).join('')}
+              </div>` : ''}
             </li>`;
         }).join('')}
       </ul>`;
@@ -24840,16 +25195,33 @@
     );
   }
 
+  function getDecisionEvidenceActiveFilters(state, view) {
+    const filters = [];
+    if (state.query.trim()) filters.push(`search: ${state.query.trim()}`);
+    if (state.nodeType !== 'all') filters.push(`type: ${state.nodeType}`);
+    if (state.status !== 'all') filters.push(`status: ${state.status}`);
+    if (state.gapsOnly) filters.push('gaps only');
+    if (state.lineageOnly) filters.push('lineage only');
+    if (!state.showSources) filters.push('sources hidden');
+    if (view?.diagnosticTargetIncluded) filters.push('diagnostic target included');
+    if (view?.diagnosticTargetHiddenBySourceFilter) {
+      filters.push('diagnostic source target hidden; enable Show sources');
+    }
+    return filters;
+  }
+
   function renderDecisionEvidenceMapContent(map) {
     const state = normalizeDecisionEvidenceState(map);
     const nodes = Array.isArray(map?.nodes) ? map.nodes : [];
     const edges = Array.isArray(map?.edges) ? map.edges : [];
-    const filteredNodes = getFilteredDecisionEvidenceNodes(map);
-    const selectedNode = getDecisionEvidenceSelectedNode(map, filteredNodes);
+    const index = buildDecisionEvidenceIndex(map);
+    const view = deriveDecisionEvidenceView(map, state, index);
     const nodeTypes = [...new Set(nodes.map(getDecisionEvidenceNodeType))].sort();
     const statuses = [...new Set(nodes.map(node => String(node?.status || 'unverifiable')))].sort();
     const diagnosticCount = Array.isArray(map?.diagnostics) ? map.diagnostics.length : 0;
     const fingerprint = String(map?.projection_fingerprint || map?.source_fingerprint || '');
+    const activeFilters = getDecisionEvidenceActiveFilters(state, view);
+    const hasFilters = activeFilters.length > 0;
 
     return `
       <div class="decision-evidence-head">
@@ -24857,7 +25229,10 @@
           <h4>Decision Evidence Map</h4>
           <p>조달 판단, source, review, 문서, approval, export readiness를 현재 저장 상태에서 읽기 전용으로 투영합니다. 기존 문서의 추정 일치는 검증된 coverage로 승격하지 않습니다.</p>
         </div>
-        <span class="decision-evidence-readonly">READ ONLY · NON-ATOMIC SNAPSHOT</span>
+        <div>
+          <span class="decision-evidence-readonly">READ ONLY · NON-ATOMIC SNAPSHOT</span>
+          <button id="decision-evidence-presentation-toggle" type="button" class="decision-evidence-presentation-toggle" data-decision-evidence-presentation-toggle aria-pressed="${state.presentationMode ? 'true' : 'false'}">${state.presentationMode ? 'Exit presentation' : 'Presentation'}</button>
+        </div>
       </div>
       <div class="decision-evidence-metrics" aria-label="Decision evidence summary">
         <div class="decision-evidence-metric"><span>Nodes</span><strong>${nodes.length}</strong></div>
@@ -24891,18 +25266,34 @@
           </select>
         </label>
       </div>
-      <div class="decision-evidence-layout">
-        ${buildDecisionEvidenceSvg(map, filteredNodes)}
-        ${renderDecisionEvidenceDetail(selectedNode)}
+      <div class="decision-evidence-quick-filters">
+        <label><input id="decision-evidence-gaps-filter" type="checkbox" ${state.gapsOnly ? 'checked' : ''}> Gaps only</label>
+        <label><input id="decision-evidence-lineage-filter" type="checkbox" ${state.lineageOnly ? 'checked' : ''} ${view.selectedNodeId ? '' : 'disabled'}> Lineage only</label>
+        <label><input id="decision-evidence-source-filter" type="checkbox" ${state.showSources ? 'checked' : ''}> Show sources</label>
+        <button type="button" data-decision-evidence-clear-filters ${hasFilters ? '' : 'disabled'}>Clear filters</button>
       </div>
-      ${filteredNodes.length > 60 ? `<p class="project-import-help">SVG는 현재 filter의 첫 60개 node를 표시합니다. 아래 표에는 ${filteredNodes.length}개 row가 모두 남아 있습니다.</p>` : ''}
+      <p class="decision-evidence-filter-summary" aria-live="polite">
+        <strong>Showing ${view.filteredNodes.length} of ${nodes.length}</strong>
+        <span>${activeFilters.length ? `Active filters: ${escapeHtml(activeFilters.join(' · '))}` : 'Active filters: none'}</span>
+      </p>
+      <div class="decision-evidence-provenance-legend" aria-label="Edge provenance line styles">
+        <span><i class="decision-evidence-provenance-line" aria-hidden="true"></i>Authoritative · solid</span>
+        <span><i class="decision-evidence-provenance-line record-binding" aria-hidden="true"></i>Record binding · dashed</span>
+        <span><i class="decision-evidence-provenance-line derived" aria-hidden="true"></i>Derived · dotted</span>
+        <p id="decision-evidence-provenance-note" class="decision-evidence-provenance-note">Provenance level (not proof or approval). Content SHA-256 binds observed field content in this projection; it does not establish external authenticity.</p>
+      </div>
+      <div class="decision-evidence-layout">
+        ${buildDecisionEvidenceSvg(view)}
+        ${renderDecisionEvidenceDetail(view, index)}
+      </div>
+      ${view.filteredNodes.length > 60 ? `<p class="project-import-help">SVG는 선택 node와 직접 연결된 node를 우선해 최대 60개를 표시합니다. 아래 표에는 ${view.filteredNodes.length}개 row가 모두 남아 있습니다.</p>` : ''}
       <div class="decision-evidence-section">
-        <h5>Accessible evidence table · ${filteredNodes.length} rows</h5>
-        ${renderDecisionEvidenceTable(filteredNodes)}
+        <h5>Accessible evidence table · ${view.filteredNodes.length} rows</h5>
+        ${renderDecisionEvidenceTable(view)}
       </div>
       <div class="decision-evidence-section">
         <h5>Diagnostics</h5>
-        ${renderDecisionEvidenceDiagnostics(map)}
+        ${renderDecisionEvidenceDiagnostics(map, index)}
       </div>
       <div class="decision-evidence-section">
         ${renderProposalBlueprint(map)}
@@ -24913,56 +25304,139 @@
 
   function renderDecisionEvidenceMapPanel(map) {
     if (!map) return '';
+    const state = normalizeDecisionEvidenceState(map);
     return `
-      <section id="decision-evidence-map" class="decision-evidence-map" aria-label="Decision Evidence Map">
+      <section id="decision-evidence-map" class="decision-evidence-map${state.presentationMode ? ' presentation-mode' : ''}" aria-label="Decision Evidence Map">
         ${renderDecisionEvidenceMapContent(map)}
       </section>`;
   }
 
-  function refreshDecisionEvidenceMapPanel() {
+  function restoreDecisionEvidenceFocus(root, focus) {
+    if (!focus) return;
+    let target = null;
+    if (focus.controlId) target = root.querySelector(`#${focus.controlId}`);
+    if (!target && focus.nodeId) {
+      target = [...root.querySelectorAll('[data-decision-evidence-node-id]')].find(element => (
+        element.dataset.decisionEvidenceNodeId === focus.nodeId
+        && (!focus.surface || element.dataset.decisionEvidenceSurface === focus.surface)
+      ));
+    }
+    if (!target && focus.diagnosticNodeId) {
+      target = [...root.querySelectorAll('[data-decision-evidence-diagnostic-target]')].find(element => (
+        element.dataset.decisionEvidenceDiagnosticTarget === focus.diagnosticNodeId
+      ));
+    }
+    target?.focus();
+    if (target?.setSelectionRange && Number.isInteger(focus.selectionStart)) {
+      target.setSelectionRange(focus.selectionStart, focus.selectionStart);
+    }
+  }
+
+  function refreshDecisionEvidenceMapPanel({ focus = null } = {}) {
     const map = _currentProjectDetail?.decisionEvidenceMap;
     const root = document.getElementById('decision-evidence-map');
     if (!map || !root) return;
     root.innerHTML = renderDecisionEvidenceMapContent(map);
+    root.classList.toggle('presentation-mode', normalizeDecisionEvidenceState(map).presentationMode);
     wireDecisionEvidenceMapActions(root);
+    restoreDecisionEvidenceFocus(root, focus);
   }
 
-  function selectDecisionEvidenceNode(nodeId) {
+  function handleDecisionEvidencePresentationEscape(event) {
+    if (event.key !== 'Escape' || !_decisionEvidenceMapState.presentationMode) return;
+    if (!document.getElementById('decision-evidence-map')) return;
+    event.preventDefault();
+    _decisionEvidenceMapState.presentationMode = false;
+    refreshDecisionEvidenceMapPanel({
+      focus: { controlId: 'decision-evidence-presentation-toggle' },
+    });
+  }
+
+  document.addEventListener('keydown', handleDecisionEvidencePresentationEscape, true);
+
+  function selectDecisionEvidenceNode(nodeId, focus = {}) {
+    _decisionEvidenceMapState.forcedVisibleNodeId = '';
     _decisionEvidenceMapState.selectedNodeId = String(nodeId || '');
-    refreshDecisionEvidenceMapPanel();
+    refreshDecisionEvidenceMapPanel({ focus: { nodeId: _decisionEvidenceMapState.selectedNodeId, ...focus } });
+  }
+
+  function selectDecisionEvidenceDiagnosticTarget(nodeId) {
+    const targetId = String(nodeId || '');
+    _decisionEvidenceMapState.forcedVisibleNodeId = targetId;
+    _decisionEvidenceMapState.selectedNodeId = targetId;
+    refreshDecisionEvidenceMapPanel({ focus: { diagnosticNodeId: targetId } });
+  }
+
+  function clearDecisionEvidenceFilters() {
+    _decisionEvidenceMapState.query = '';
+    _decisionEvidenceMapState.nodeType = 'all';
+    _decisionEvidenceMapState.status = 'all';
+    _decisionEvidenceMapState.gapsOnly = false;
+    _decisionEvidenceMapState.lineageOnly = false;
+    _decisionEvidenceMapState.showSources = true;
+    _decisionEvidenceMapState.selectedNodeId = '';
+    _decisionEvidenceMapState.forcedVisibleNodeId = '';
   }
 
   function wireDecisionEvidenceMapActions(root) {
     root.querySelector('#decision-evidence-search')?.addEventListener('input', event => {
       _decisionEvidenceMapState.query = event.target.value || '';
-      refreshDecisionEvidenceMapPanel();
-      const search = document.getElementById('decision-evidence-search');
-      if (search) {
-        search.focus();
-        search.setSelectionRange(search.value.length, search.value.length);
-      }
+      _decisionEvidenceMapState.forcedVisibleNodeId = '';
+      const selectionStart = event.target.selectionStart ?? String(event.target.value || '').length;
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-search', selectionStart } });
     });
     root.querySelector('#decision-evidence-type-filter')?.addEventListener('change', event => {
       _decisionEvidenceMapState.nodeType = event.target.value || 'all';
       _decisionEvidenceMapState.selectedNodeId = '';
-      refreshDecisionEvidenceMapPanel();
+      _decisionEvidenceMapState.forcedVisibleNodeId = '';
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-type-filter' } });
     });
     root.querySelector('#decision-evidence-status-filter')?.addEventListener('change', event => {
       _decisionEvidenceMapState.status = event.target.value || 'all';
       _decisionEvidenceMapState.selectedNodeId = '';
-      refreshDecisionEvidenceMapPanel();
+      _decisionEvidenceMapState.forcedVisibleNodeId = '';
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-status-filter' } });
+    });
+    root.querySelector('#decision-evidence-gaps-filter')?.addEventListener('change', event => {
+      _decisionEvidenceMapState.gapsOnly = event.target.checked;
+      _decisionEvidenceMapState.selectedNodeId = '';
+      _decisionEvidenceMapState.forcedVisibleNodeId = '';
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-gaps-filter' } });
+    });
+    root.querySelector('#decision-evidence-lineage-filter')?.addEventListener('change', event => {
+      _decisionEvidenceMapState.lineageOnly = event.target.checked;
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-lineage-filter' } });
+    });
+    root.querySelector('#decision-evidence-source-filter')?.addEventListener('change', event => {
+      _decisionEvidenceMapState.showSources = event.target.checked;
+      _decisionEvidenceMapState.selectedNodeId = event.target.checked
+        ? _decisionEvidenceMapState.forcedVisibleNodeId
+        : '';
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-source-filter' } });
+    });
+    root.querySelector('[data-decision-evidence-clear-filters]')?.addEventListener('click', () => {
+      clearDecisionEvidenceFilters();
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-search' } });
+    });
+    root.querySelector('[data-decision-evidence-presentation-toggle]')?.addEventListener('click', () => {
+      _decisionEvidenceMapState.presentationMode = !_decisionEvidenceMapState.presentationMode;
+      refreshDecisionEvidenceMapPanel({ focus: { controlId: 'decision-evidence-presentation-toggle' } });
     });
     root.querySelectorAll('[data-decision-evidence-node-id]').forEach(element => {
-      const select = () => selectDecisionEvidenceNode(element.dataset.decisionEvidenceNodeId || '');
+      const select = () => selectDecisionEvidenceNode(
+        element.dataset.decisionEvidenceNodeId || '',
+        {
+          surface: element.dataset.decisionEvidenceSurface === 'canvas'
+            ? 'table'
+            : element.dataset.decisionEvidenceSurface || '',
+        },
+      );
       element.addEventListener('click', select);
-      if (element.tagName.toLowerCase() === 'g') {
-        element.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            select();
-          }
-        });
-      }
+    });
+    root.querySelectorAll('[data-decision-evidence-diagnostic-target]').forEach(element => {
+      element.addEventListener('click', () => selectDecisionEvidenceDiagnosticTarget(
+        element.dataset.decisionEvidenceDiagnosticTarget || '',
+      ));
     });
   }
 

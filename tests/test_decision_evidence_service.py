@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.decision_evidence_service import (
     NODE_TYPE_ORDER,
     DecisionEvidenceService,
+    _ProjectionBuilder,
     procurement_requirement_node_ids,
 )
 
@@ -189,6 +190,35 @@ def test_review_edge_requires_exact_document_packet_binding():
     assert review_edges[0].target_node_id == "document:document-1"
 
 
+def test_edges_keep_source_revision_and_provenance_contract():
+    result = DecisionEvidenceService().build(
+        project_id="project-1",
+        bundle_type="proposal_kr",
+        procurement_record=_procurement_record(),
+        generated_at="2026-07-24T12:00:00+00:00",
+    )
+
+    edge = next(
+        edge
+        for edge in result.edges
+        if edge.relation_type == "defines_requirement"
+        and edge.provenance.field_path == "hard_filters.registration"
+    )
+    assert edge.provenance.source_kind == "procurement_decision"
+    assert edge.provenance.source_id == "decision-1"
+    assert edge.provenance.source_revision == "2026-07-24T00:00:00+00:00"
+    assert edge.provenance.content_sha256 == (
+        "c061dbf7d6f0290a327c5b84ed17787ad937510458ed6fd1bd5a07dfc3de9b64"
+    )
+    assert edge.provenance.evidence_level == "authoritative"
+    assert any(
+        revision.source_kind == edge.provenance.source_kind
+        and revision.source_id == edge.provenance.source_id
+        and revision.revision == edge.provenance.source_revision
+        for revision in result.source_revisions
+    )
+
+
 def test_projection_never_promotes_existing_text_to_explicit_coverage():
     result = DecisionEvidenceService().build(
         project_id="project-1",
@@ -333,3 +363,51 @@ def test_projection_caps_nodes_and_edges_with_transparent_diagnostic():
     assert len(result.edges) <= 400
     assert result.truncated is True
     assert "projection_truncated" in {item.code for item in result.diagnostics}
+
+
+def test_projection_edge_limit_is_exact_at_400():
+    def build_projection(edge_count: int):
+        builder = _ProjectionBuilder(
+            project_id="project-edge-limit",
+            bundle_type="proposal_kr",
+        )
+        for node_id, node_type in (
+            ("source:edge-limit", "source"),
+            ("claim:edge-limit", "claim"),
+        ):
+            builder._add_node(
+                node_id=node_id,
+                node_type=node_type,
+                label=node_id,
+                status="current",
+                summary="",
+                updated_at="2026-07-27T00:00:00+00:00",
+                evidence_level="derived",
+            )
+        for index in range(edge_count):
+            builder._add_edge(
+                relation_type=f"edge_{index}",
+                source_node_id="source:edge-limit",
+                target_node_id="claim:edge-limit",
+                status="current",
+                source_kind="edge_limit_fixture",
+                source_id="edge-limit",
+                source_revision="1",
+                field_path=f"edges.{index}",
+                content={"index": index},
+                evidence_level="derived",
+            )
+        return builder.finish(generated_at="2026-07-27T00:00:00+00:00")
+
+    exact = build_projection(400)
+    overflow = build_projection(401)
+
+    assert len(exact.nodes) == 2
+    assert len(exact.edges) == 400
+    assert exact.truncated is False
+    assert "projection_truncated" not in {item.code for item in exact.diagnostics}
+
+    assert len(overflow.nodes) == 2
+    assert len(overflow.edges) == 400
+    assert overflow.truncated is True
+    assert "projection_truncated" in {item.code for item in overflow.diagnostics}
